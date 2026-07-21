@@ -1,4 +1,4 @@
-use std::{error::Error, fmt, time::Duration};
+use std::{error::Error, fmt, sync::Arc, time::Duration};
 
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 
@@ -12,7 +12,13 @@ pub(crate) const DECLARATIVE_SCHEMA: &str =
 #[derive(Clone)]
 pub(crate) enum Persistence {
     Disabled,
-    SeaOrm(DatabaseConnection),
+    /// One pool, shared. `Arc` rather than a bare `DatabaseConnection` because
+    /// SeaORM drops the `Clone` impl on `DatabaseConnection` when the `mock`
+    /// feature is on (`#[cfg_attr(not(feature = "mock"), derive(Clone))]`), and
+    /// the store tests in `src/stores.rs` need that feature. Sharing one pool
+    /// behind an `Arc` is what the code did anyway — `Clone` on
+    /// `DatabaseConnection` clones the handle, not the pool.
+    SeaOrm(Arc<DatabaseConnection>),
 }
 
 impl Persistence {
@@ -91,7 +97,7 @@ impl Persistence {
             pool.min_connections = min_connections,
             "SeaORM persistence initialized"
         );
-        Ok(Self::SeaOrm(connection))
+        Ok(Self::SeaOrm(Arc::new(connection)))
     }
 
     pub(crate) fn is_enabled(&self) -> bool {

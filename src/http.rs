@@ -45,15 +45,15 @@ pub(super) async fn readyz(State(state): State<AppState>) -> Response {
 }
 
 pub(super) async fn metrics(State(state): State<AppState>) -> Response {
-    let (current_jobs, current_artifacts) = state
-        .jobs
-        .read()
-        .map(|jobs| jobs.counts())
-        .unwrap_or((0, 0));
+    // Gauges, not counters: a store read that fails reports zero rather than
+    // failing the scrape, because /metrics going dark is worse than one stale
+    // gauge — the counters below are what alerting keys off.
+    let (current_jobs, current_artifacts) = state.jobs.counts().await.unwrap_or((0, 0));
     let current_learning_outcomes = state
         .learning
-        .read()
-        .map(|learning| learning.count())
+        .recent(crate::MAX_LEARNING_OUTCOMES)
+        .await
+        .map(|outcomes| outcomes.len())
         .unwrap_or(0);
     let mut body = format!(
         "# HELP dd_fabrication_server_plan_requests_total Fabrication plan requests received.\n\
@@ -101,31 +101,31 @@ pub(super) async fn metrics(State(state): State<AppState>) -> Response {
          # HELP dd_fabrication_server_mdp_published_total MDP optimization requests published for fabrication policy learning.\n\
          # TYPE dd_fabrication_server_mdp_published_total counter\n\
          dd_fabrication_server_mdp_published_total {}\n\
-         # HELP dd_fabrication_server_jobs_stored_total Fabrication jobs recorded in the in-process artifact ledger.\n\
+         # HELP dd_fabrication_server_jobs_stored_total Fabrication jobs written to the shared job ledger (daedalus.fab_jobs, or the in-process store when no database is configured).\n\
          # TYPE dd_fabrication_server_jobs_stored_total counter\n\
          dd_fabrication_server_jobs_stored_total {}\n\
          # HELP dd_fabrication_server_jobs_displaced_total Stored jobs that replaced an existing job of the same id (expected on NATS redelivery; sustained nonzero means distinct jobs are colliding).\n\
          # TYPE dd_fabrication_server_jobs_displaced_total counter\n\
          dd_fabrication_server_jobs_displaced_total {}\n\
-         # HELP dd_fabrication_server_artifacts_stored_total Fabrication artifacts recorded in the in-process artifact ledger.\n\
+         # HELP dd_fabrication_server_artifacts_stored_total Fabrication artifacts written to the shared job ledger.\n\
          # TYPE dd_fabrication_server_artifacts_stored_total counter\n\
          dd_fabrication_server_artifacts_stored_total {}\n\
          # HELP dd_fabrication_server_artifact_requests_total Artifact detail requests served by the fabrication server.\n\
          # TYPE dd_fabrication_server_artifact_requests_total counter\n\
          dd_fabrication_server_artifact_requests_total {}\n\
-         # HELP dd_fabrication_server_learning_events_stored_total Learning events recorded in the in-process policy memory.\n\
+         # HELP dd_fabrication_server_learning_events_stored_total Distinct learning outcomes written to the shared outcome store; a redelivered outcome upserts and is not counted twice.\n\
          # TYPE dd_fabrication_server_learning_events_stored_total counter\n\
          dd_fabrication_server_learning_events_stored_total {}\n\
          # HELP dd_fabrication_server_costing_result_reviews_total Costing result review submissions accepted for cost, yield, scrap, and split/combine route learning.\n\
          # TYPE dd_fabrication_server_costing_result_reviews_total counter\n\
          dd_fabrication_server_costing_result_reviews_total {}\n\
-         # HELP dd_fabrication_server_current_jobs Current jobs retained in the bounded in-process artifact ledger.\n\
+         # HELP dd_fabrication_server_current_jobs Jobs currently inside the ledger's retention window.\n\
          # TYPE dd_fabrication_server_current_jobs gauge\n\
          dd_fabrication_server_current_jobs {}\n\
-         # HELP dd_fabrication_server_current_artifacts Current artifacts retained in the bounded in-process artifact ledger.\n\
+         # HELP dd_fabrication_server_current_artifacts Artifacts currently inside the ledger's retention window.\n\
          # TYPE dd_fabrication_server_current_artifacts gauge\n\
          dd_fabrication_server_current_artifacts {}\n\
-         # HELP dd_fabrication_server_current_learning_outcomes Current outcomes retained in bounded policy memory.\n\
+         # HELP dd_fabrication_server_current_learning_outcomes Outcomes currently inside the learning store's retention window.\n\
          # TYPE dd_fabrication_server_current_learning_outcomes gauge\n\
          dd_fabrication_server_current_learning_outcomes {}\n",
         state.metrics.plan_requests_total.load(Ordering::Relaxed),
@@ -217,7 +217,7 @@ pub(super) async fn metrics(State(state): State<AppState>) -> Response {
 mod tests {
     use super::*;
     use axum::body::to_bytes;
-    use std::sync::{Arc, RwLock};
+    use std::sync::Arc;
     use tokio::sync::Semaphore;
 
     use crate::{
@@ -225,9 +225,8 @@ mod tests {
         metrics::Metrics,
         persistence::Persistence,
         realtime::{EventHub, ServiceSurface},
-        FabricationJobStore, LearningMemory, FABRICATION_REQUESTS_QUEUE_GROUP,
-        FABRICATION_REQUESTS_SUBJECT, FABRICATION_RESULTS_SUBJECT, MAX_LEARNING_OUTCOMES,
-        MAX_STORED_JOBS, MDP_OPTIMIZE_SUBJECT, RUNTIME_EVENTS_SUBJECT,
+        FABRICATION_REQUESTS_QUEUE_GROUP, FABRICATION_REQUESTS_SUBJECT,
+        FABRICATION_RESULTS_SUBJECT, MDP_OPTIMIZE_SUBJECT, RUNTIME_EVENTS_SUBJECT,
     };
 
     fn test_state() -> AppState {
@@ -247,8 +246,8 @@ mod tests {
             coordination: Arc::new(NoopCoordination::default()) as Arc<dyn Coordination>,
             lease_ttl: std::time::Duration::from_millis(DEFAULT_LEASE_TTL_MS),
             metrics: Arc::new(Metrics::default()),
-            jobs: Arc::new(RwLock::new(FabricationJobStore::new(MAX_STORED_JOBS))),
-            learning: Arc::new(RwLock::new(LearningMemory::new(MAX_LEARNING_OUTCOMES))),
+            jobs: Arc::new(crate::stores::InMemoryJobStore::default()),
+            learning: Arc::new(crate::stores::InMemoryLearningStore::default()),
         }
     }
 

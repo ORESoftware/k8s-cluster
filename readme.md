@@ -941,7 +941,7 @@ is supplied.
   turning, sheet-cutting, hybrid split/combine, postprocess, inspection, and
   special-process method families so clients can discover which process
   families the planner may print, mill, turn, cut, inspect, join, or learn from.
-- A bounded in-process job and artifact ledger for generated design summaries,
+- A retention-bounded, replica-shared job and artifact ledger (`daedalus.fab_jobs`) for generated design summaries,
   parametric design payloads, design packages, design export bundles, process plans,
   production plans, machine programs, validation reports, boundary summaries,
   resolution plans, intervention maps, execution plans, postprocess plans, POMDP
@@ -6083,8 +6083,8 @@ before fetching a job artifact. It names retrieval routes such as `GET /jobs`,
 `releaseBundle.artifacts`, `generatedPrograms`, `improvedPrograms`,
 `designExports`, `releasePackagePlan`, `learning`, and artifact fields such as
 `artifactId`, `kind`, `mediaType`, `draft`, `machineReady`, and `content`.
-Catalog entries describe bounded in-process evidence surfaces, not durable
-database storage or certified machine release; generated design exports, machine programs, improved programs,
+Catalog entries describe retention-bounded review evidence, not an archive of
+record or certified machine release; generated design exports, machine programs, improved programs,
 release packages, DES/POMDP/neural artifacts, and
 learning outcomes remain draft evidence until validation, simulation,
 controller, setup, quality, and signoff gates clear.
@@ -6162,7 +6162,7 @@ bypass release gates.
 
 `GET /jobs/catalog` and the gateway-prefixed `GET /fabrication/jobs/catalog`
 return the live `dd.fabrication.job-evidence-catalog.v1` discovery payload for
-the bounded in-process job ledger before callers fetch specific jobs,
+the retention-bounded shared job ledger before callers fetch specific jobs,
 release-bundles, or artifacts. The payload reports `maxJobs`, current retained
 job/artifact counts, current job kinds, retrieval routes, producer routes,
 record/detail/release-bundle surfaces, artifact families, and learning surfaces
@@ -6173,7 +6173,7 @@ The release-bundle surface list includes `bundleManifest`, `releaseGateMatrix`,
 discover gate triage fields before fetching a retained bundle.
 Catalog policy makes the boundary explicit: retained jobs are review evidence
 for CAD/CAM, slicer, controller, setup, simulation, release, and learning
-workers, not durable database storage or certified production history; release
+workers, not an archive of record or certified production history; release
 bundles remain draft evidence until machine-release blockers, controller checks,
 simulation, setup, quality, and operator or automation signoff clear.
 
@@ -7340,8 +7340,10 @@ Core handoff fields include `designPackage`, `designExports`, `designInputReview
 
 Every successful planning, instruction-analysis, learning-observation, or
 learning-outcome request is recorded in a
-bounded in-process ledger. This is not durable storage yet; it is the current
-runtime inspection boundary while the database contract is still being designed.
+retention-bounded ledger in `daedalus.fab_jobs`, shared by every replica. It is
+durable and readable from any pod, but it is a *retention* window and not an
+archive of record: the newest `maxJobs` jobs are kept and older ones are swept
+away. Anything that must outlive that window belongs somewhere else.
 
 - `GET /jobs/catalog` returns the
   `dd.fabrication.job-evidence-catalog.v1` route, retention, artifact-family,
@@ -7605,12 +7607,23 @@ Database access is through **SeaORM**; the service has no direct `sqlx`
 dependency. SeaORM's Postgres driver uses its own transitive driver internals,
 but application code imports and exposes only SeaORM types.
 
-The connection is optional until the dedicated bounded-context contract is
-added at
-`k8s-cluster/remote/libs/pg-defs/schema/databases/dd_fabrication_server/schema.sql`.
-It must not use `dd_build_server`: build execution and fabrication planning are
-different data owners. The current bounded job and learning ledgers therefore
-remain in process; neither binary creates tables or runs migrations. Configure
+The service must not use `dd_build_server`: build execution and fabrication
+planning are different data owners.
+
+Two tables in the `daedalus` schema hold the state that used to live in
+process, and they are reached through the `JobStore` / `LearningStore` traits in
+`src/stores.rs` rather than by any planning call site directly:
+
+| Table | Holds | Key |
+| --- | --- | --- |
+| `daedalus.fab_jobs` | `StoredFabricationJob` — plan, analysis, learning response and every artifact — in `payload`; the other columns are what the store queries, filters and orders by | `job_id`, upserted `ON CONFLICT DO UPDATE` |
+| `daedalus.fab_learning_outcomes` | `LearningOutcomeRecord` in `payload`; `success`, `reward` and the dimension columns feed the aggregate | `outcome_id`, upserted so a redelivery is not double-counted |
+
+The connection remains **optional**: with no URL configured, `build_stores`
+selects the in-process implementations and logs a warning at boot
+(`store.jobs.mode=memory`). That keeps tests and database-less local runs
+working, and it is safe only at one replica — see "Scaling Past One Replica".
+Neither binary creates tables or runs migrations. Configure
 the API/worker connection, in precedence order, with
 `FABRICATION_DATABASE_URL`, `RDS_DATABASE_URL`, or `DATABASE_URL`.
 `FABRICATION_DATABASE_REQUIRED=true` makes a missing URL a startup error.
@@ -7646,43 +7659,83 @@ the deployment collector and Prometheus scrape definitions live in
 
 ## Scaling Past One Replica
 
-`deploy/k8s/deployment.yaml` pins `replicas: 1` with `strategy: Recreate`. That
-is not a capacity decision and it is not a placeholder — it is the only setting
-under which this service is correct today. Two load-bearing pieces of state live
-in process memory and are not shared between pods:
+`deploy/k8s/deployment.yaml` runs `replicas: 2` with `strategy: RollingUpdate`
+(`maxUnavailable: 0`, `maxSurge: 1`). It was pinned to `replicas: 1` with
+`Recreate` until both load-bearing pieces of state moved out of process; that
+condition is now met, and this section records what "met" means.
 
-- **`FabricationJobStore`** holds jobs and their artifacts. `GET /jobs/{id}` and
-  the artifact and release-bundle routes are answered by whichever pod the
-  Service happens to pick, so a job produced on pod A returns `404` from pod B.
-- **`LearningMemory`** accumulates run outcomes and feeds
-  `plan_fabrication_with_policy`. JetStream spreads deliveries across replicas,
-  so each pod would accumulate a disjoint slice of the outcome stream. Their
-  aggregates then diverge permanently and the same plan request returns
-  different plans depending on which pod answers — silently, with no metric and
-  nothing in the API that surfaces it.
+### What changed
 
-Neither is a mutual-exclusion problem, so **the leases described below do not
-fix them.** A distributed lock stops two pods from doing the same work at the
-same time; it does not make one pod's memory visible to another. Both stores
-need shared storage.
+Both stores are behind traits in `src/stores.rs` — `JobStore` and
+`LearningStore` — with an in-memory implementation and a Postgres one, selected
+at boot from `Persistence` and logged once with `store.jobs.mode` /
+`store.learning.mode`, exactly the way `src/coordination.rs` selects and logs
+its lease backend.
 
-Before `replicas` may go above 1, all of the following must be true:
+- **Jobs** are rows in `daedalus.fab_jobs`. `GET /jobs`, `GET /jobs/{id}`, the
+  artifact route and the release-bundle route all read from that table, so a job
+  produced on pod A is served by pod B. `job_id` is the primary key and inserts
+  are `ON CONFLICT DO UPDATE`: a NATS redelivery that regenerates the same
+  deterministic id upserts instead of failing the delivery on a duplicate key.
+  The "displaced" warning and `jobs_displaced_total` still fire on that event —
+  an upsert that updated an existing row is the same signal it always was.
+- **Learning outcomes** are rows in `daedalus.fab_learning_outcomes`. The
+  `LearningPolicySnapshot` that `plan_fabrication_with_policy` consumes is
+  computed from the newest 512 rows on every request, so every pod aggregates
+  the same outcomes and an identical plan request returns an identical plan
+  whichever pod answers. `outcome_id` is the primary key, so a redelivered
+  outcome updates its row rather than being counted a second time — the
+  in-process version appended unconditionally, which meant `max_deliver: 5`
+  could contribute one physical outcome to the aggregate five times.
 
-1. `FabricationJobStore` is backed by the daedalus Postgres schema
-   (`k8s-cluster/remote/libs/pg-defs/schema/databases/dd_fabrication_server/schema.sql`),
-   through SeaORM, with jobs and artifacts readable from any pod.
-2. `LearningMemory` is likewise backed by that schema, so outcome aggregation
-   has exactly one owner and one answer.
-3. The schema change has gone through the declarative-migrations/DPM workflow —
-   application startup still applies no DDL.
-4. Distributed leases are enabled (see "Coordination"), so a JetStream
-   redelivery racing an in-flight attempt cannot be processed twice.
-5. `strategy` may become `RollingUpdate` only after 1–3; until then `maxSurge`
-   briefly runs two pods and reintroduces exactly the divergence the setting
-   exists to prevent.
+The whole `StoredFabricationJob` / `LearningOutcomeRecord` lives in the
+`payload` jsonb column; the other columns are the fields the store queries,
+filters and orders by. The service issues no DDL — the schema is owned by
+pg-defs (`remote/libs/pg-defs/schema/schema.sql`) and goes through the
+declarative-migrations workflow.
 
-Until then, a second replica trades correctness for availability, and the
-service will not tell you it has done so.
+### Retention is a policy now, not a cap
+
+`MAX_STORED_JOBS` (128) and `MAX_LEARNING_OUTCOMES` (512) were **hard caps** in
+memory: the 129th job evicted the 1st inside the same `insert`. In Postgres they
+are **retention targets**:
+
+- A bounded `DELETE` keeps the newest N and runs every 32 writes, not every
+  write, so the table transiently holds more than the target.
+- Several pods write the same table, so concurrent inserts can push the count
+  past the target between sweeps.
+- A sweep removes at most 512 rows, so a table that somehow grew large is
+  trimmed across several writes instead of in one long statement.
+
+Reads are bounded regardless — every query carries an explicit `LIMIT`. But
+"there are never more than 128 rows in `fab_jobs`" is not a property the code
+provides, and nothing should be built on it.
+
+The sweep runs **on write and therefore needs no lease**: it is an idempotent,
+bounded, keep-newest-N delete, so two pods sweeping at the same instant reach
+the same end state as one. A *scheduled* sweep would be a different matter — a
+timer fires on every replica, which is exactly the double-fire the `Coordination`
+seam below exists to prevent — and that is the second reason it is not on a
+timer.
+
+### What running two replicas still requires
+
+1. **A database.** With no connection URL, `build_stores` falls back to the
+   in-process implementations and logs a warning, and two pods immediately
+   reproduce every failure this migration removed. That is why
+   `FABRICATION_DATABASE_REQUIRED=true` is set in the manifest: a missing URL
+   must be a refused startup, not a silent return to divergence.
+2. **The schema applied**, through the declarative-migrations/DPM workflow.
+   Startup applies no DDL and will not create these tables for you.
+3. **Leases, for exactly-once *processing*.** Shared storage fixes divergence,
+   not duplicate work: without `FIDUCIA_LOCKS_API_KEY` two pods can both process
+   one redelivered request. Because both now write the same deterministic row
+   that is wasteful rather than corrupting, but see "Coordination" below and
+   enable the leases for the full guarantee.
+
+`k8s/deployment.yaml` — the older, non-Argo copy of the manifests — is
+deliberately left at `replicas: 1`. It does not carry the same environment
+block, so scaling it up would not be backed by the same guarantees.
 
 ## Coordination
 

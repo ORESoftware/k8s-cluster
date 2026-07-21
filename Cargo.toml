@@ -6,6 +6,11 @@ description = "Rust fabrication planner and instruction validator for 3D printer
 
 [dependencies]
 dd-telemetry = { path = "../../libs/telemetry-rs" }
+# Generated SeaORM entities for the daedalus schema. `daedalus.fab_jobs` and
+# `daedalus.fab_learning_outcomes` back src/stores.rs; this crate never issues
+# DDL — the schema is owned by pg-defs.
+dd-pg-defs-sea-orm = { path = "../../libs/pg-defs/generated/rust/sea-orm" }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tracing = "0.1"
 async-nats = "=0.38.0"
 async-trait = "0.1"
@@ -17,7 +22,7 @@ futures-util = "0.3"
 jsonwebtoken = "9"
 maud = "0.27"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-sea-orm = { version = "1.1", default-features = false, features = ["runtime-tokio-rustls", "sqlx-postgres"] }
+sea-orm = { version = "1.1", default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "with-chrono", "with-json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
@@ -29,3 +34,8 @@ tokio-tungstenite = { version = "0.24", default-features = false, features = ["c
 # enumeration test, which is what keeps a newly added route from shipping
 # unauthenticated.
 tower = { version = "0.5", features = ["util"] }
+# `mock` carries no extra dependencies (it is `mock = []` upstream) and is the
+# only way to exercise src/stores.rs's Postgres implementations — the upsert,
+# the ordering, and the retention statement — without a live database. It is a
+# dev-dependency so the shipped binary never carries the mock backend.
+sea-orm = { version = "1.1", default-features = false, features = ["mock"] }

@@ -4,7 +4,7 @@ use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     error::Error,
     net::SocketAddr,
-    sync::{atomic::Ordering, Arc, RwLock},
+    sync::{atomic::Ordering, Arc},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -72,6 +72,7 @@ use error::ServiceError;
 use metrics::Metrics;
 use persistence::Persistence;
 use realtime::{EventHub, ServiceSurface};
+use stores::{build_stores, JobStore, LearningStore, StoreError};
 use supabase_auth::{bearer_token, Operator, SupabaseVerifier};
 
 mod additive_printing;
@@ -135,6 +136,7 @@ mod setup_catalog_content;
 mod simulation_catalog_content;
 mod simulation_preflight_content;
 mod slicer_catalog;
+mod stores;
 mod supabase_auth;
 mod support_strategy_catalog_content;
 mod tolerance_catalog_content;
@@ -195,8 +197,15 @@ struct AppState {
     /// Lease lifetime for a single NATS request; renewals run at a third of it.
     lease_ttl: Duration,
     metrics: Arc<Metrics>,
-    jobs: Arc<RwLock<FabricationJobStore>>,
-    learning: Arc<RwLock<LearningMemory>>,
+    /// Fabrication jobs and their artifacts. Behind a trait so the same call
+    /// sites serve the in-process store (no database configured) and the
+    /// shared `daedalus.fab_jobs` table; only the latter lets a second replica
+    /// answer `/jobs/{id}` for a job it did not produce. See [`crate::stores`].
+    jobs: Arc<dyn JobStore>,
+    /// Run outcomes and the policy aggregate derived from them. Shared for the
+    /// same reason: per-pod aggregates make identical plan requests return
+    /// different plans. See [`crate::stores`].
+    learning: Arc<dyn LearningStore>,
 }
 
 /// Paths served without a Supabase bearer token.
@@ -4549,12 +4558,126 @@ struct FabricationOutcomeRequest {
     reward_weights: Option<BTreeMap<String, f64>>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+// Compile-time constants that are serialized but never deserialized.
+//
+// These fields are `&'static str`, which serde cannot deserialize into: there
+// is no owned `String` to borrow from and nothing may be leaked from untrusted
+// input. Restoring the *current* constant on read is also the more correct
+// behaviour than echoing whatever an older writer persisted, because the
+// schema version a response advertises must describe the code rendering it.
+fn const_boundary_intervention_map_schema_version() -> &'static str {
+    "dd.fabrication.intervention-map.v1"
+}
+fn const_controller_plan_schema_version() -> &'static str {
+    "dd.fabrication.controller-plan.v1"
+}
+fn const_decomposition_plan_schema_version() -> &'static str {
+    "dd.fabrication.decomposition-plan.v1"
+}
+fn const_design_export_bundle_schema_version() -> &'static str {
+    "dd.fabrication.design-export-bundle.v1"
+}
+fn const_design_input_conversion_step_queue_group() -> &'static str {
+    FABRICATION_DESIGN_CONVERSION_REQUESTS_QUEUE_GROUP
+}
+fn const_design_input_conversion_step_request_subject() -> &'static str {
+    FABRICATION_DESIGN_CONVERSION_REQUESTS_SUBJECT
+}
+fn const_design_input_conversion_step_result_subject() -> &'static str {
+    FABRICATION_DESIGN_CONVERSION_RESULTS_SUBJECT
+}
+fn const_design_input_review_schema_version() -> &'static str {
+    "dd.fabrication.design-input-review.v1"
+}
+fn const_design_package_schema_version() -> &'static str {
+    "dd.fabrication.design-package.v1"
+}
+fn const_execution_readiness_plan_schema_version() -> &'static str {
+    "dd.fabrication.execution-plan.v1"
+}
+fn const_fabrication_des_instruction_model_engine() -> &'static str {
+    "des_engine::des::studio::StudioModelSpec"
+}
+fn const_fabrication_des_instruction_model_model_kind() -> &'static str {
+    "submitted-instruction-review-queue-model"
+}
+fn const_fabrication_des_instruction_model_schema_version() -> &'static str {
+    "dd.fabrication.des-instruction-model.v1"
+}
+fn const_fabrication_des_schedule_model_engine() -> &'static str {
+    "des_engine::des::studio::StudioModelSpec"
+}
+fn const_fabrication_des_schedule_model_model_kind() -> &'static str {
+    "machine-lane-queue-model"
+}
+fn const_fabrication_des_schedule_model_schema_version() -> &'static str {
+    "dd.fabrication.des-schedule-model.v1"
+}
+fn const_fabrication_plan_response_schema_version() -> &'static str {
+    SCHEMA_VERSION
+}
+fn const_fixture_plan_schema_version() -> &'static str {
+    "dd.fabrication.fixture-plan.v1"
+}
+fn const_hybrid_make_plan_schema_version() -> &'static str {
+    "dd.fabrication.hybrid-make-plan.v1"
+}
+fn const_instruction_intent_map_schema_version() -> &'static str {
+    "dd.fabrication.instruction-intent-map.v1"
+}
+fn const_instruction_patch_manifest_schema_version() -> &'static str {
+    "dd.fabrication.instruction-patch-manifest.v1"
+}
+fn const_interface_control_plan_schema_version() -> &'static str {
+    "dd.fabrication.interface-control-plan.v1"
+}
+fn const_machine_schedule_schema_version() -> &'static str {
+    "dd.fabrication.machine-schedule.v1"
+}
+fn const_manufacturing_handoff_schema_version() -> &'static str {
+    "dd.fabrication.manufacturing-handoff.v1"
+}
+fn const_material_plan_schema_version() -> &'static str {
+    "dd.fabrication.material-plan.v1"
+}
+fn const_monitoring_plan_schema_version() -> &'static str {
+    "dd.fabrication.monitoring-plan.v1"
+}
+fn const_operator_intervention_plan_schema_version() -> &'static str {
+    "dd.fabrication.operator-intervention-plan.v1"
+}
+fn const_outcome_remediation_plan_schema_version() -> &'static str {
+    "dd.fabrication.outcome-remediation.v1"
+}
+fn const_postprocess_plan_schema_version() -> &'static str {
+    "dd.fabrication.postprocess-plan.v1"
+}
+fn const_production_plan_schema_version() -> &'static str {
+    "dd.fabrication.production-plan.v1"
+}
+fn const_quality_plan_schema_version() -> &'static str {
+    "dd.fabrication.quality-plan.v1"
+}
+fn const_release_package_plan_schema_version() -> &'static str {
+    "dd.fabrication.release-package-plan.v1"
+}
+fn const_simulation_risk_profile_schema_version() -> &'static str {
+    "dd.fabrication.simulation-risk-profile.v1"
+}
+fn const_tooling_plan_schema_version() -> &'static str {
+    "dd.fabrication.tooling-plan.v1"
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FabricationPlanResponse {
     ok: bool,
     job_id: String,
     request_id: String,
+    #[serde(
+        skip_deserializing,
+        default = "const_fabrication_plan_response_schema_version"
+    )]
     schema_version: &'static str,
     objective: String,
     material: MaterialSpec,
@@ -4600,7 +4723,7 @@ struct FabricationPlanResponse {
     generated_at_ms: u128,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct InstructionAnalysisResponse {
     ok: bool,
@@ -4624,7 +4747,7 @@ struct InstructionAnalysisResponse {
     generated_at_ms: u128,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FabricationLearningResponse {
     ok: bool,
@@ -4645,9 +4768,13 @@ struct FabricationLearningResponse {
     generated_at_ms: u128,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OutcomeRemediationPlan {
+    #[serde(
+        skip_deserializing,
+        default = "const_outcome_remediation_plan_schema_version"
+    )]
     schema_version: &'static str,
     status: String,
     severity: String,
@@ -4659,7 +4786,7 @@ struct OutcomeRemediationPlan {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OutcomeRootCause {
     cause_id: String,
@@ -4671,7 +4798,7 @@ struct OutcomeRootCause {
     machine_kind: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OutcomeRemediationAction {
     action_id: String,
@@ -4682,7 +4809,7 @@ struct OutcomeRemediationAction {
     rationale: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LearningRewardTerm {
     name: String,
@@ -4691,7 +4818,7 @@ struct LearningRewardTerm {
     contribution: f64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FabricationJobRecord {
     job_id: String,
@@ -4707,7 +4834,7 @@ struct FabricationJobRecord {
     updated_at_ms: u128,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FabricationArtifactSummary {
     artifact_id: String,
@@ -4722,7 +4849,7 @@ struct FabricationArtifactSummary {
     created_at_ms: u128,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FabricationArtifact {
     artifact_id: String,
@@ -4739,7 +4866,7 @@ struct FabricationArtifact {
     created_at_ms: u128,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StoredFabricationJob {
     record: FabricationJobRecord,
@@ -4749,7 +4876,7 @@ struct StoredFabricationJob {
     artifacts: BTreeMap<String, FabricationArtifact>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FabricationJobDetail {
     record: FabricationJobRecord,
@@ -4768,7 +4895,7 @@ struct FabricationJobStore {
     max_jobs: usize,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ImprovedInstructionProgram {
     program_id: String,
@@ -4782,9 +4909,13 @@ struct ImprovedInstructionProgram {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct InstructionPatchManifest {
+    #[serde(
+        skip_deserializing,
+        default = "const_instruction_patch_manifest_schema_version"
+    )]
     schema_version: &'static str,
     status: String,
     program_id: String,
@@ -4799,7 +4930,7 @@ struct InstructionPatchManifest {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct InstructionPatchOperation {
     operation_id: String,
@@ -4811,7 +4942,7 @@ struct InstructionPatchOperation {
     requires_human_review: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DesignSummary {
     representation: String,
@@ -4821,9 +4952,10 @@ struct DesignSummary {
     manufacturability_notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DesignPackage {
+    #[serde(skip_deserializing, default = "const_design_package_schema_version")]
     schema_version: &'static str,
     representation: String,
     units: String,
@@ -4836,7 +4968,7 @@ struct DesignPackage {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DesignPackagePart {
     part_id: String,
@@ -4852,7 +4984,7 @@ struct DesignPackagePart {
     review_gates: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DesignAssemblyExport {
     assembly_id: String,
@@ -4862,7 +4994,7 @@ struct DesignAssemblyExport {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DesignExportTarget {
     target_id: String,
@@ -4873,9 +5005,13 @@ struct DesignExportTarget {
     blockers: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DesignExportBundle {
+    #[serde(
+        skip_deserializing,
+        default = "const_design_export_bundle_schema_version"
+    )]
     schema_version: &'static str,
     object_id: String,
     units: String,
@@ -4886,7 +5022,7 @@ struct DesignExportBundle {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GeneratedDesignExport {
     export_id: String,
@@ -4903,7 +5039,7 @@ struct GeneratedDesignExport {
     review_gates: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GeneratedAssemblyDesignExport {
     export_id: String,
@@ -4917,7 +5053,7 @@ struct GeneratedAssemblyDesignExport {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DesignExportBundleSummary {
     export_count: usize,
@@ -4928,9 +5064,13 @@ struct DesignExportBundleSummary {
     draft_ready_exports: usize,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DesignInputReview {
+    #[serde(
+        skip_deserializing,
+        default = "const_design_input_review_schema_version"
+    )]
     schema_version: &'static str,
     input_count: usize,
     supported_count: usize,
@@ -4946,7 +5086,7 @@ struct DesignInputReview {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ReviewedDesignInput {
     input_id: String,
@@ -4967,14 +5107,26 @@ struct ReviewedDesignInput {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DesignInputConversionStep {
     input_id: String,
     status: String,
     worker_lane: String,
+    #[serde(
+        skip_deserializing,
+        default = "const_design_input_conversion_step_request_subject"
+    )]
     request_subject: &'static str,
+    #[serde(
+        skip_deserializing,
+        default = "const_design_input_conversion_step_queue_group"
+    )]
     queue_group: &'static str,
+    #[serde(
+        skip_deserializing,
+        default = "const_design_input_conversion_step_result_subject"
+    )]
     result_subject: &'static str,
     source_system: String,
     source_format: String,
@@ -4984,7 +5136,7 @@ struct DesignInputConversionStep {
     release_blockers: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SupportedDesignFormat {
     normalized_format: String,
@@ -4999,7 +5151,7 @@ struct SupportedDesignFormat {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PartPlan {
     id: String,
@@ -5011,7 +5163,7 @@ struct PartPlan {
     interfaces: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProcessStep {
     step: u32,
@@ -5025,7 +5177,7 @@ struct ProcessStep {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProcessGraph {
     release_state: String,
@@ -5034,7 +5186,7 @@ struct ProcessGraph {
     gates: Vec<ProcessGraphGate>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProcessGraphNode {
     node_id: String,
@@ -5048,7 +5200,7 @@ struct ProcessGraphNode {
     requires_human_intervention: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProcessGraphDependency {
     from_node_id: String,
@@ -5057,7 +5209,7 @@ struct ProcessGraphDependency {
     reason: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProcessGraphGate {
     gate_id: String,
@@ -5069,7 +5221,7 @@ struct ProcessGraphGate {
     next_state: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MachineSelectionTrace {
     part_id: String,
@@ -5084,7 +5236,7 @@ struct MachineSelectionTrace {
     warnings: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MachineSelectionCandidate {
     machine_id: String,
@@ -5100,9 +5252,13 @@ struct MachineSelectionCandidate {
     reasons: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ManufacturingHandoff {
+    #[serde(
+        skip_deserializing,
+        default = "const_manufacturing_handoff_schema_version"
+    )]
     schema_version: &'static str,
     release_state: String,
     units: String,
@@ -5112,7 +5268,7 @@ struct ManufacturingHandoff {
     release_gates: Vec<ManufacturingHandoffGate>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ManufacturingHandoffPart {
     part_id: String,
@@ -5130,7 +5286,7 @@ struct ManufacturingHandoffPart {
     machine_ready: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ManufacturingHandoffGate {
     gate_id: String,
@@ -5142,9 +5298,10 @@ struct ManufacturingHandoffGate {
     requires_human_intervention: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MaterialPlan {
+    #[serde(skip_deserializing, default = "const_material_plan_schema_version")]
     schema_version: &'static str,
     status: String,
     review_required: bool,
@@ -5156,7 +5313,7 @@ struct MaterialPlan {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MaterialRouteRequirement {
     requirement_id: String,
@@ -5174,9 +5331,10 @@ struct MaterialRouteRequirement {
     learning_observation: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct QualityPlan {
+    #[serde(skip_deserializing, default = "const_quality_plan_schema_version")]
     schema_version: &'static str,
     status: String,
     units: String,
@@ -5187,7 +5345,7 @@ struct QualityPlan {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct QualityInspectionPoint {
     inspection_id: String,
@@ -5202,7 +5360,7 @@ struct QualityInspectionPoint {
     records_to_capture: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct QualityMeasurementTarget {
     target_id: String,
@@ -5214,9 +5372,10 @@ struct QualityMeasurementTarget {
     sample_size: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ToolingPlan {
+    #[serde(skip_deserializing, default = "const_tooling_plan_schema_version")]
     schema_version: &'static str,
     status: String,
     human_review_required: bool,
@@ -5226,7 +5385,7 @@ struct ToolingPlan {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ToolingRequirement {
     tooling_id: String,
@@ -5245,9 +5404,10 @@ struct ToolingRequirement {
     release_blockers: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FixturePlan {
+    #[serde(skip_deserializing, default = "const_fixture_plan_schema_version")]
     schema_version: &'static str,
     status: String,
     setup_count: usize,
@@ -5259,7 +5419,7 @@ struct FixturePlan {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FixtureSetupPlan {
     setup_id: String,
@@ -5279,7 +5439,7 @@ struct FixtureSetupPlan {
     learning_observation: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FixtureDatumTransfer {
     transfer_id: String,
@@ -5292,9 +5452,10 @@ struct FixtureDatumTransfer {
     learning_observation: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MonitoringPlan {
+    #[serde(skip_deserializing, default = "const_monitoring_plan_schema_version")]
     schema_version: &'static str,
     status: String,
     human_review_required: bool,
@@ -5307,7 +5468,7 @@ struct MonitoringPlan {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MonitoringPoint {
     monitor_id: String,
@@ -5326,7 +5487,7 @@ struct MonitoringPoint {
     learning_observation: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MonitoringAlertRule {
     rule_id: String,
@@ -5340,9 +5501,13 @@ struct MonitoringAlertRule {
     requires_human_intervention: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct InterfaceControlPlan {
+    #[serde(
+        skip_deserializing,
+        default = "const_interface_control_plan_schema_version"
+    )]
     schema_version: &'static str,
     status: String,
     interface_count: usize,
@@ -5356,7 +5521,7 @@ struct InterfaceControlPlan {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct InterfaceControlRecord {
     control_id: String,
@@ -5377,7 +5542,7 @@ struct InterfaceControlRecord {
     learning_observation: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct InterfaceDecisionLink {
     link_id: String,
@@ -5392,9 +5557,10 @@ struct InterfaceDecisionLink {
     learning_observation: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProductionPlan {
+    #[serde(skip_deserializing, default = "const_production_plan_schema_version")]
     schema_version: &'static str,
     quantity: u32,
     release_state: String,
@@ -5404,7 +5570,7 @@ struct ProductionPlan {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProductionBatch {
     batch_id: String,
@@ -5421,9 +5587,10 @@ struct ProductionBatch {
     release_blockers: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MachineSchedule {
+    #[serde(skip_deserializing, default = "const_machine_schedule_schema_version")]
     schema_version: &'static str,
     release_state: String,
     horizon_minutes: u32,
@@ -5434,7 +5601,7 @@ struct MachineSchedule {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MachineScheduleLane {
     machine_id: String,
@@ -5446,7 +5613,7 @@ struct MachineScheduleLane {
     next_available_minute: u32,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MachineScheduleOperation {
     operation_id: String,
@@ -5472,7 +5639,7 @@ struct MachineScheduleOperation {
     predecessor_operation_ids: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MachineScheduleHold {
     hold_id: String,
@@ -5484,11 +5651,23 @@ struct MachineScheduleHold {
     blocks_machine_start: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FabricationDesScheduleModel {
+    #[serde(
+        skip_deserializing,
+        default = "const_fabrication_des_schedule_model_schema_version"
+    )]
     schema_version: &'static str,
+    #[serde(
+        skip_deserializing,
+        default = "const_fabrication_des_schedule_model_engine"
+    )]
     engine: &'static str,
+    #[serde(
+        skip_deserializing,
+        default = "const_fabrication_des_schedule_model_model_kind"
+    )]
     model_kind: &'static str,
     model_spec: StudioModelSpec,
     analysis: StudioAnalysis,
@@ -5496,7 +5675,7 @@ struct FabricationDesScheduleModel {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FabricationDesScheduleLaneModel {
     machine_id: String,
@@ -5510,11 +5689,23 @@ struct FabricationDesScheduleLaneModel {
     utilization_ratio: f64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FabricationDesInstructionModel {
+    #[serde(
+        skip_deserializing,
+        default = "const_fabrication_des_instruction_model_schema_version"
+    )]
     schema_version: &'static str,
+    #[serde(
+        skip_deserializing,
+        default = "const_fabrication_des_instruction_model_engine"
+    )]
     engine: &'static str,
+    #[serde(
+        skip_deserializing,
+        default = "const_fabrication_des_instruction_model_model_kind"
+    )]
     model_kind: &'static str,
     model_spec: StudioModelSpec,
     analysis: StudioAnalysis,
@@ -5522,7 +5713,7 @@ struct FabricationDesInstructionModel {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FabricationDesInstructionProgramModel {
     program_id: String,
@@ -5537,7 +5728,7 @@ struct FabricationDesInstructionProgramModel {
     machine_ready_candidate: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GeneratedProgram {
     program_id: String,
@@ -5551,7 +5742,7 @@ struct GeneratedProgram {
     safety_notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ValidationReport {
     ok: bool,
@@ -5560,7 +5751,7 @@ struct ValidationReport {
     failure_boundaries: Vec<FailureBoundary>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BoundarySummary {
     ok: bool,
@@ -5578,7 +5769,7 @@ struct BoundarySummary {
     recommended_actions: Vec<BoundaryRecommendedAction>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AutomationRequirement {
     requirement_id: String,
@@ -5590,7 +5781,7 @@ struct AutomationRequirement {
     fallback: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BoundaryKindSummary {
     kind: String,
@@ -5598,7 +5789,7 @@ struct BoundaryKindSummary {
     severity: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BoundaryRecommendedAction {
     action: String,
@@ -5608,7 +5799,7 @@ struct BoundaryRecommendedAction {
     reason: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BoundaryResolutionPlan {
     status: String,
@@ -5618,7 +5809,7 @@ struct BoundaryResolutionPlan {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BoundaryResolutionStep {
     step: u32,
@@ -5632,9 +5823,13 @@ struct BoundaryResolutionStep {
     suggested_resolution: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BoundaryInterventionMap {
+    #[serde(
+        skip_deserializing,
+        default = "const_boundary_intervention_map_schema_version"
+    )]
     schema_version: &'static str,
     status: String,
     machine_release_blocked: bool,
@@ -5647,7 +5842,7 @@ struct BoundaryInterventionMap {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BoundaryHumanInterventionPoint {
     intervention_id: String,
@@ -5661,7 +5856,7 @@ struct BoundaryHumanInterventionPoint {
     next_state: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BoundarySplitCombineDecision {
     decision_id: String,
@@ -5676,7 +5871,7 @@ struct BoundarySplitCombineDecision {
     requires_human_intervention: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BoundarySplitCombineInterfacePlan {
     interface_id: String,
@@ -5689,7 +5884,7 @@ struct BoundarySplitCombineInterfacePlan {
     learning_observation: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BoundaryAutomationPath {
     path_id: String,
@@ -5702,7 +5897,7 @@ struct BoundaryAutomationPath {
     next_state: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProgramBoundaryTrace {
     trace_id: String,
@@ -5717,9 +5912,13 @@ struct ProgramBoundaryTrace {
     suggested_resolution: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OperatorInterventionPlan {
+    #[serde(
+        skip_deserializing,
+        default = "const_operator_intervention_plan_schema_version"
+    )]
     schema_version: &'static str,
     status: String,
     machine_release_blocked: bool,
@@ -5732,7 +5931,7 @@ struct OperatorInterventionPlan {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OperatorInterventionAction {
     action_id: String,
@@ -5749,7 +5948,7 @@ struct OperatorInterventionAction {
     next_state: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OperatorEvidenceGate {
     gate_id: String,
@@ -5761,7 +5960,7 @@ struct OperatorEvidenceGate {
     blocks_machine_start: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OperatorAutomationCandidate {
     path_id: String,
@@ -5774,7 +5973,7 @@ struct OperatorAutomationCandidate {
     required_evidence: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct OperatorSplitCombineReview {
     review_id: String,
@@ -5789,7 +5988,7 @@ struct OperatorSplitCombineReview {
     required_evidence: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MachineReleaseReport {
     status: String,
@@ -5803,7 +6002,7 @@ struct MachineReleaseReport {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MachineReleaseBlocker {
     blocker_id: String,
@@ -5816,7 +6015,7 @@ struct MachineReleaseBlocker {
     required_action: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MachineReleaseChecklistItem {
     item: String,
@@ -5825,9 +6024,13 @@ struct MachineReleaseChecklistItem {
     program_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExecutionReadinessPlan {
+    #[serde(
+        skip_deserializing,
+        default = "const_execution_readiness_plan_schema_version"
+    )]
     schema_version: &'static str,
     status: String,
     can_start: bool,
@@ -5840,7 +6043,7 @@ struct ExecutionReadinessPlan {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExecutionProgramRun {
     run_id: String,
@@ -5857,7 +6060,7 @@ struct ExecutionProgramRun {
     stop_point_ids: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExecutionCheckpoint {
     checkpoint_id: String,
@@ -5868,7 +6071,7 @@ struct ExecutionCheckpoint {
     required_before: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExecutionStopPoint {
     stop_id: String,
@@ -5883,9 +6086,10 @@ struct ExecutionStopPoint {
     next_state: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PostprocessPlan {
+    #[serde(skip_deserializing, default = "const_postprocess_plan_schema_version")]
     schema_version: &'static str,
     status: String,
     machine_release_blocked: bool,
@@ -5896,7 +6100,7 @@ struct PostprocessPlan {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PostprocessTarget {
     target_id: String,
@@ -5918,7 +6122,7 @@ struct PostprocessTarget {
     blocker_ids: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PostprocessGate {
     gate_id: String,
@@ -5928,7 +6132,7 @@ struct PostprocessGate {
     required_before: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PostprocessBlocker {
     blocker_id: String,
@@ -5939,9 +6143,10 @@ struct PostprocessBlocker {
     required_action: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ControllerPlan {
+    #[serde(skip_deserializing, default = "const_controller_plan_schema_version")]
     schema_version: &'static str,
     status: String,
     machine_release_blocked: bool,
@@ -5955,7 +6160,7 @@ struct ControllerPlan {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ControllerCompatibilityTarget {
     target_id: String,
@@ -5980,7 +6185,7 @@ struct ControllerCompatibilityTarget {
     learning_observation: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ControllerDialectSummary {
     dialect_family: String,
@@ -5992,7 +6197,7 @@ struct ControllerDialectSummary {
     required_checks: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ControllerReleaseGate {
     gate_id: String,
@@ -6004,7 +6209,7 @@ struct ControllerReleaseGate {
     release_blocker: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SimulationReport {
     ok: bool,
@@ -6015,7 +6220,7 @@ struct SimulationReport {
     failure_boundaries: Vec<FailureBoundary>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SimulationProgramTrace {
     program_id: String,
@@ -6029,7 +6234,7 @@ struct SimulationProgramTrace {
     spindle_or_heatup_observed: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SimulationAxisExtent {
     axis: String,
@@ -6040,9 +6245,13 @@ struct SimulationAxisExtent {
     exceeds_limit: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SimulationRiskProfile {
+    #[serde(
+        skip_deserializing,
+        default = "const_simulation_risk_profile_schema_version"
+    )]
     schema_version: &'static str,
     status: String,
     aggregate_risk_score: f64,
@@ -6054,7 +6263,7 @@ struct SimulationRiskProfile {
     recommended_actions: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SimulationProgramRisk {
     program_id: String,
@@ -6071,7 +6280,7 @@ struct SimulationProgramRisk {
     learning_observations: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ValidationFinding {
     severity: String,
@@ -6081,7 +6290,7 @@ struct ValidationFinding {
     message: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FailureBoundary {
     kind: String,
@@ -6093,7 +6302,7 @@ struct FailureBoundary {
     suggested_resolution: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct InstructionImprovement {
     program_id: Option<String>,
@@ -6102,7 +6311,7 @@ struct InstructionImprovement {
     reason: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AssemblyPlan {
     strategy: String,
@@ -6113,7 +6322,7 @@ struct AssemblyPlan {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AssemblyGraph {
     nodes: Vec<AssemblyGraphNode>,
@@ -6121,7 +6330,7 @@ struct AssemblyGraph {
     sequence: Vec<AssemblySequenceStep>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AssemblyGraphNode {
     part_id: String,
@@ -6130,7 +6339,7 @@ struct AssemblyGraphNode {
     role: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AssemblyInterface {
     interface_id: String,
@@ -6143,7 +6352,7 @@ struct AssemblyInterface {
     requires_human_intervention: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AssemblySequenceStep {
     step: u32,
@@ -6153,9 +6362,10 @@ struct AssemblySequenceStep {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct HybridMakePlan {
+    #[serde(skip_deserializing, default = "const_hybrid_make_plan_schema_version")]
     schema_version: &'static str,
     status: String,
     selected_strategy: String,
@@ -6170,7 +6380,7 @@ struct HybridMakePlan {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct HybridPartRoute {
     part_id: String,
@@ -6183,7 +6393,7 @@ struct HybridPartRoute {
     rationale: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct HybridJoinOperation {
     join_id: String,
@@ -6198,7 +6408,7 @@ struct HybridJoinOperation {
     learning_observation: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct HybridSplitCombineDecision {
     decision_id: String,
@@ -6211,9 +6421,13 @@ struct HybridSplitCombineDecision {
     requires_human_review: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DecompositionPlan {
+    #[serde(
+        skip_deserializing,
+        default = "const_decomposition_plan_schema_version"
+    )]
     schema_version: &'static str,
     status: String,
     release_blocked: bool,
@@ -6230,7 +6444,7 @@ struct DecompositionPlan {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DecompositionTarget {
     target_id: String,
@@ -6251,7 +6465,7 @@ struct DecompositionTarget {
     learning_observation: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DecompositionRouteContract {
     contract_id: String,
@@ -6267,7 +6481,7 @@ struct DecompositionRouteContract {
     learning_observation: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DecompositionInterface {
     interface_id: String,
@@ -6281,7 +6495,7 @@ struct DecompositionInterface {
     learning_observation: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DecompositionReleaseGate {
     gate_id: String,
@@ -6295,9 +6509,13 @@ struct DecompositionReleaseGate {
     next_state: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ReleasePackagePlan {
+    #[serde(
+        skip_deserializing,
+        default = "const_release_package_plan_schema_version"
+    )]
     schema_version: &'static str,
     status: String,
     machine_release_blocked: bool,
@@ -6311,7 +6529,7 @@ struct ReleasePackagePlan {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ReleasePackage {
     package_id: String,
@@ -6337,7 +6555,7 @@ struct ReleasePackage {
     learning_observation: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ReleasePackageGate {
     gate_id: String,
@@ -6349,14 +6567,14 @@ struct ReleasePackageGate {
     release_blocker: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NeuralActionScore {
     action: String,
     score: f64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NeuralPolicySketch {
     schema_version: String,
@@ -6368,7 +6586,7 @@ struct NeuralPolicySketch {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NeuralEngineInference {
     schema_version: String,
@@ -6383,7 +6601,7 @@ struct NeuralEngineInference {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NeuralTrainingCorpus {
     schema_version: String,
@@ -6395,7 +6613,7 @@ struct NeuralTrainingCorpus {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NeuralTrainingExample {
     example_id: String,
@@ -6408,7 +6626,7 @@ struct NeuralTrainingExample {
     observations: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct NeuralInferenceCandidate {
     candidate_id: String,
@@ -6419,7 +6637,7 @@ struct NeuralInferenceCandidate {
     rationale: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LearningEngineMetadata {
     crate_name: String,
@@ -6429,7 +6647,7 @@ struct LearningEngineMetadata {
     preferred_for: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LearningMdpEnginePolicy {
     schema_version: String,
@@ -6445,7 +6663,7 @@ struct LearningMdpEnginePolicy {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LearningPlan {
     model_family: String,
@@ -6465,7 +6683,7 @@ struct LearningPlan {
     training_examples: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PomdpBeliefState {
     schema_version: String,
@@ -6475,7 +6693,7 @@ struct PomdpBeliefState {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PomdpHiddenStateBelief {
     state: String,
@@ -6485,7 +6703,7 @@ struct PomdpHiddenStateBelief {
     if_true_next_state: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PomdpObservationLikelihood {
     observation: String,
@@ -6494,7 +6712,7 @@ struct PomdpObservationLikelihood {
     source: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PomdpProbe {
     probe_id: String,
@@ -6504,7 +6722,7 @@ struct PomdpProbe {
     required_before_state: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ReleaseProbePlan {
     schema_version: String,
@@ -6515,7 +6733,7 @@ struct ReleaseProbePlan {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ReleaseProbe {
     probe_id: String,
@@ -6528,7 +6746,7 @@ struct ReleaseProbe {
     release_blocker: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StrategyCandidate {
     strategy_id: String,
@@ -6541,7 +6759,7 @@ struct StrategyCandidate {
     rationale: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct InterventionLearningSignal {
     signal_id: String,
@@ -6579,7 +6797,7 @@ struct LearningOutcomeRequest {
     extra: BTreeMap<String, Value>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LearningOutcomeRecord {
     outcome_id: String,
@@ -6598,7 +6816,7 @@ struct LearningOutcomeRecord {
     created_at_ms: u128,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LearningPreference {
     key: String,
@@ -6609,7 +6827,7 @@ struct LearningPreference {
     recommendation: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LearningRemediationRisk {
     key: String,
@@ -6626,7 +6844,7 @@ struct LearningRemediationRisk {
     last_outcome_id: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct LearningPolicySnapshot {
     outcome_count: usize,
@@ -6667,7 +6885,7 @@ struct LearningRemediationAggregate {
     last_outcome_id: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AnalyzedProgram {
     program_id: String,
@@ -6681,9 +6899,13 @@ struct AnalyzedProgram {
     has_program_end: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct InstructionIntentMap {
+    #[serde(
+        skip_deserializing,
+        default = "const_instruction_intent_map_schema_version"
+    )]
     schema_version: &'static str,
     program_count: usize,
     language_counts: BTreeMap<String, usize>,
@@ -6696,7 +6918,7 @@ struct InstructionIntentMap {
     notes: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct InstructionReviewPriority {
     priority_id: String,
@@ -6708,7 +6930,7 @@ struct InstructionReviewPriority {
     release_policy: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProgramInstructionIntent {
     program_id: String,
@@ -7213,78 +7435,24 @@ impl FabricationJobStore {
         displaced
     }
 
-    fn list(&self) -> Vec<FabricationJobRecord> {
+    /// The newest `limit` jobs, newest first.
+    ///
+    /// The single read primitive: `/jobs`, `/jobs/{id}`, the artifact and
+    /// release-bundle routes and the evidence catalog are all projections of
+    /// this, defined once on [`crate::stores::JobStore`] so the in-memory and
+    /// Postgres stores cannot answer the same question differently.
+    fn recent(&self, limit: usize) -> Vec<StoredFabricationJob> {
         self.order
             .iter()
             .rev()
+            .take(limit)
             .filter_map(|job_id| self.jobs.get(job_id))
-            .map(|job| job.record.clone())
+            .cloned()
             .collect()
-    }
-
-    fn release_gate_summaries(&self) -> Vec<Value> {
-        self.order
-            .iter()
-            .rev()
-            .filter_map(|job_id| self.jobs.get(job_id))
-            .map(|job| {
-                let release_bundle = job_release_bundle_response(job);
-                json!({
-                    "jobId": job.record.job_id,
-                    "requestId": job.record.request_id,
-                    "kind": job.record.kind,
-                    "severity": job.record.severity,
-                    "ok": job.record.ok,
-                    "releaseGateSummary": release_bundle
-                        .get("releaseGateSummary")
-                        .cloned()
-                        .unwrap_or_else(|| json!({})),
-                    "releaseBundleRoute": format!("/fabrication/jobs/{}/release-bundle", job.record.job_id)
-                })
-            })
-            .collect()
-    }
-
-    fn detail(&self, job_id: &str) -> Option<FabricationJobDetail> {
-        self.jobs.get(job_id).map(|job| {
-            let release_bundle = job_release_bundle_response(job);
-            FabricationJobDetail {
-                record: job.record.clone(),
-                plan: job.plan.clone(),
-                analysis: job.analysis.clone(),
-                learning: job.learning.clone(),
-                release_gate_summary: release_bundle
-                    .get("releaseGateSummary")
-                    .cloned()
-                    .unwrap_or_else(|| json!({})),
-                release_bundle_route: format!("/fabrication/jobs/{job_id}/release-bundle"),
-                artifacts: job
-                    .artifacts
-                    .values()
-                    .map(FabricationArtifact::summary)
-                    .collect(),
-            }
-        })
     }
 
     fn get(&self, job_id: &str) -> Option<StoredFabricationJob> {
         self.jobs.get(job_id).cloned()
-    }
-
-    fn artifact(&self, job_id: &str, artifact_id: &str) -> Option<FabricationArtifact> {
-        self.jobs
-            .get(job_id)
-            .and_then(|job| job.artifacts.get(artifact_id))
-            .cloned()
-    }
-
-    fn release_bundle(&self, job_id: &str) -> Option<Value> {
-        self.jobs.get(job_id).map(job_release_bundle_response)
-    }
-
-    fn counts(&self) -> (usize, usize) {
-        let artifact_count = self.jobs.values().map(|job| job.artifacts.len()).sum();
-        (self.jobs.len(), artifact_count)
     }
 }
 
@@ -7889,6 +8057,20 @@ impl LearningMemory {
         }
     }
 
+    /// Build a window over outcomes that were read from somewhere else,
+    /// oldest first.
+    ///
+    /// This is how the Postgres store computes a [`LearningPolicySnapshot`]:
+    /// the aggregation below is a pure function of the retained window, so it
+    /// is written once and both backends run exactly the same arithmetic.
+    fn from_outcomes(outcomes: Vec<LearningOutcomeRecord>, max_outcomes: usize) -> Self {
+        let mut memory = Self::new(max_outcomes);
+        for outcome in outcomes {
+            memory.insert(outcome);
+        }
+        memory
+    }
+
     fn insert(&mut self, outcome: LearningOutcomeRecord) {
         self.outcomes.push_back(outcome);
         while self.outcomes.len() > self.max_outcomes {
@@ -7896,8 +8078,32 @@ impl LearningMemory {
         }
     }
 
-    fn count(&self) -> usize {
-        self.outcomes.len()
+    /// Insert, or replace an outcome already present under the same id.
+    ///
+    /// Returns whether an existing outcome was replaced. `insert` appends
+    /// unconditionally, which means a JetStream redelivery (`max_deliver: 5`)
+    /// could contribute one physical outcome to the aggregate five times and
+    /// bias every subsequent plan. Keyed replacement makes a redelivery
+    /// arithmetically free, and keeps the outcome at its original position so
+    /// the retention window still reflects when it was first observed. This
+    /// mirrors the `ON CONFLICT DO UPDATE` the Postgres store performs.
+    fn upsert(&mut self, outcome: LearningOutcomeRecord) -> bool {
+        if let Some(existing) = self
+            .outcomes
+            .iter_mut()
+            .find(|existing| existing.outcome_id == outcome.outcome_id)
+        {
+            *existing = outcome;
+            return true;
+        }
+        self.insert(outcome);
+        false
+    }
+
+    /// The newest `limit` outcomes, oldest first.
+    fn recent(&self, limit: usize) -> Vec<LearningOutcomeRecord> {
+        let skip = self.outcomes.len().saturating_sub(limit);
+        self.outcomes.iter().skip(skip).cloned().collect()
     }
 
     fn snapshot(&self) -> LearningPolicySnapshot {
@@ -13481,8 +13687,8 @@ fn stored_design_import_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_design_import_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_design_import_result_job(response));
+async fn store_design_import_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_design_import_result_job(response)).await;
 }
 
 fn design_conversion_plan_response(request: DesignImportReviewRequest) -> Result<Value, String> {
@@ -14996,8 +15202,8 @@ fn stored_instruction_generation_result_job(response: &Value) -> StoredFabricati
     }
 }
 
-fn store_instruction_generation_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_instruction_generation_result_job(response));
+async fn store_instruction_generation_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_instruction_generation_result_job(response)).await;
 }
 
 fn validate_machine_code_result_programs(
@@ -15930,8 +16136,8 @@ fn stored_machine_code_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_machine_code_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_machine_code_result_job(response));
+async fn store_machine_code_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_machine_code_result_job(response)).await;
 }
 
 fn validate_instruction_review_result_findings(
@@ -16694,8 +16900,8 @@ fn stored_instruction_review_result_job(response: &Value) -> StoredFabricationJo
     }
 }
 
-fn store_instruction_review_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_instruction_review_result_job(response));
+async fn store_instruction_review_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_instruction_review_result_job(response)).await;
 }
 
 fn validate_instruction_validation_result_findings(
@@ -17593,8 +17799,8 @@ fn stored_instruction_validation_result_job(response: &Value) -> StoredFabricati
     }
 }
 
-fn store_instruction_validation_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_instruction_validation_result_job(response));
+async fn store_instruction_validation_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_instruction_validation_result_job(response)).await;
 }
 
 fn validate_instruction_improvement_result_programs(
@@ -18103,8 +18309,8 @@ fn stored_instruction_improvement_result_job(response: &Value) -> StoredFabricat
     }
 }
 
-fn store_instruction_improvement_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_instruction_improvement_result_job(response));
+async fn store_instruction_improvement_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_instruction_improvement_result_job(response)).await;
 }
 
 fn validate_boundary_remediation_result_actions(
@@ -18933,8 +19139,8 @@ fn stored_boundary_remediation_result_job(response: &Value) -> StoredFabrication
     }
 }
 
-fn store_boundary_remediation_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_boundary_remediation_result_job(response));
+async fn store_boundary_remediation_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_boundary_remediation_result_job(response)).await;
 }
 
 fn validate_boundary_analysis_result_findings(
@@ -19770,8 +19976,8 @@ fn stored_boundary_analysis_result_job(response: &Value) -> StoredFabricationJob
     }
 }
 
-fn store_boundary_analysis_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_boundary_analysis_result_job(response));
+async fn store_boundary_analysis_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_boundary_analysis_result_job(response)).await;
 }
 
 fn validate_instruction_simulation_envelope_checks(
@@ -20596,8 +20802,8 @@ fn stored_instruction_simulation_result_job(response: &Value) -> StoredFabricati
     }
 }
 
-fn store_instruction_simulation_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_instruction_simulation_result_job(response));
+async fn store_instruction_simulation_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_instruction_simulation_result_job(response)).await;
 }
 
 fn validate_release_readiness_decisions(
@@ -21328,8 +21534,8 @@ fn stored_release_readiness_result_job(response: &Value) -> StoredFabricationJob
     }
 }
 
-fn store_release_readiness_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_release_readiness_result_job(response));
+async fn store_release_readiness_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_release_readiness_result_job(response)).await;
 }
 
 fn validate_assembly_planning_result_part_routes(
@@ -22198,8 +22404,8 @@ fn stored_assembly_planning_result_job(response: &Value) -> StoredFabricationJob
     }
 }
 
-fn store_assembly_planning_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_assembly_planning_result_job(response));
+async fn store_assembly_planning_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_assembly_planning_result_job(response)).await;
 }
 
 fn validate_interface_result_checks(
@@ -22937,8 +23143,8 @@ fn stored_interface_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_interface_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_interface_result_job(response));
+async fn store_interface_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_interface_result_job(response)).await;
 }
 
 fn validate_execution_run_segments(
@@ -23847,8 +24053,8 @@ fn stored_execution_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_execution_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_execution_result_job(response));
+async fn store_execution_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_execution_result_job(response)).await;
 }
 
 fn validate_request_parts(
@@ -60793,18 +60999,24 @@ fn enrich_outcome_with_stored_job_context(
     }
 }
 
-fn enrich_outcome_from_store(
+async fn enrich_outcome_from_store(
     state: &AppState,
     request: FabricationOutcomeRequest,
 ) -> FabricationOutcomeRequest {
     let Some(source_job_id) = request.source_job_id.clone() else {
         return request;
     };
-    let job = match state.jobs.read() {
-        Ok(jobs) => jobs.get(&source_job_id),
+    // Best-effort enrichment: a store that cannot answer leaves the outcome
+    // exactly as the caller sent it, which is what happened before when the
+    // source job simply lived on another pod.
+    let job = match state.jobs.get(&source_job_id).await {
+        Ok(job) => job,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            tracing::error!("{SERVICE_NAME} outcome source job store lock failed: {error}");
+            tracing::error!(
+                job.id = %source_job_id,
+                "{SERVICE_NAME} outcome source job read failed: {error}"
+            );
             None
         }
     };
@@ -61765,25 +61977,26 @@ fn stored_learning_job(response: &FabricationLearningResponse) -> StoredFabricat
     }
 }
 
-fn store_job(state: &AppState, job: StoredFabricationJob) {
+async fn store_job(state: &AppState, job: StoredFabricationJob) {
     let artifact_count = job.artifacts.len() as u64;
-    match state.jobs.write() {
-        Ok(mut jobs) => {
-            let job_id = job.record.job_id.clone();
-            if let Some(displaced) = jobs.insert(job) {
+    let job_id = job.record.job_id.clone();
+    match state.jobs.insert(job).await {
+        Ok(outcome) => {
+            if outcome.displaced {
                 // Job ids are deterministic in (kind, request_id, ms), so this
                 // is reachable from a NATS redelivery replaying the same
                 // request. Overwriting is correct for a redelivery of the same
                 // logical job; it is data loss if two different jobs collided.
                 // The store cannot tell them apart, so it says so out loud
-                // rather than dropping the previous job in silence.
+                // rather than dropping the previous job in silence. On Postgres
+                // the same event is an upsert that updated an existing row.
                 state
                     .metrics
                     .jobs_displaced_total
                     .fetch_add(1, Ordering::Relaxed);
                 tracing::warn!(
                     job.id = %job_id,
-                    displaced.artifacts = displaced.artifacts.len(),
+                    displaced.artifacts = outcome.displaced_artifacts,
                     "job id collision: a stored job was replaced. Expected on a NATS \
                      redelivery of the same request; otherwise a distinct job and its \
                      artifacts have been lost."
@@ -61800,54 +62013,67 @@ fn store_job(state: &AppState, job: StoredFabricationJob) {
         }
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            tracing::error!("{SERVICE_NAME} job store lock failed: {error}");
+            tracing::error!(job.id = %job_id, "{SERVICE_NAME} job store write failed: {error}");
         }
     }
 }
 
-fn store_plan_response(state: &AppState, response: &FabricationPlanResponse) {
-    store_job(state, stored_plan_job(response));
+async fn store_plan_response(state: &AppState, response: &FabricationPlanResponse) {
+    store_job(state, stored_plan_job(response)).await;
 }
 
-fn store_analysis_response(state: &AppState, response: &InstructionAnalysisResponse) {
-    store_job(state, stored_analysis_job(response));
+async fn store_analysis_response(state: &AppState, response: &InstructionAnalysisResponse) {
+    store_job(state, stored_analysis_job(response)).await;
 }
 
-fn store_learning_record(
+async fn store_learning_record(
     state: &AppState,
     record: LearningOutcomeRecord,
 ) -> Result<LearningPolicySnapshot, String> {
-    match state.learning.write() {
-        Ok(mut learning) => {
-            learning.insert(record);
-            state
-                .metrics
-                .learning_events_stored_total
-                .fetch_add(1, Ordering::Relaxed);
-            Ok(learning.snapshot())
+    let outcome_id = record.outcome_id.clone();
+    match state.learning.insert(record).await {
+        Ok(outcome) => {
+            if outcome.displaced {
+                // A redelivery of an outcome already stored. Counted once, not
+                // once per delivery attempt — see stores::PostgresLearningStore.
+                tracing::info!(
+                    outcome.id = %outcome_id,
+                    "learning outcome was already stored and was updated in place rather \
+                     than counted a second time"
+                );
+            } else {
+                state
+                    .metrics
+                    .learning_events_stored_total
+                    .fetch_add(1, Ordering::Relaxed);
+            }
         }
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            Err(format!("learning memory lock failed: {error}"))
+            return Err(format!("learning outcome store write failed: {error}"));
         }
     }
+    learning_policy_snapshot(state).await
 }
 
-fn store_learning_response(
+async fn store_learning_response(
     state: &AppState,
     response: &FabricationLearningResponse,
     record: LearningOutcomeRecord,
 ) -> Result<LearningPolicySnapshot, String> {
-    store_job(state, stored_learning_job(response));
-    store_learning_record(state, record)
+    store_job(state, stored_learning_job(response)).await;
+    store_learning_record(state, record).await
 }
 
-fn learning_policy_snapshot(state: &AppState) -> Result<LearningPolicySnapshot, String> {
-    match state.learning.read() {
-        Ok(learning) => Ok(learning.snapshot()),
+async fn learning_policy_snapshot(state: &AppState) -> Result<LearningPolicySnapshot, String> {
+    match state.learning.snapshot().await {
+        Ok(snapshot) => Ok(snapshot),
         Err(error) => {
+            // A read failure must never be answered with an empty aggregate:
+            // "no outcomes" and "the outcome table is unreachable" produce very
+            // different plans, and only one of them is honest.
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-            Err(format!("learning memory lock failed: {error}"))
+            Err(format!("learning outcome store read failed: {error}"))
         }
     }
 }
@@ -63204,7 +63430,7 @@ async fn run_nats_loop(state: AppState) {
                 let processing = async {
                     match parse_fabrication_nats_request(&payload) {
                         Ok(FabricationNatsRequest::Plan(request)) => {
-                            let policy_snapshot = learning_policy_snapshot(&task_state).ok();
+                            let policy_snapshot = learning_policy_snapshot(&task_state).await.ok();
                             match plan_fabrication_with_policy(request, policy_snapshot.as_ref()) {
                                 Ok(response) => {
                                     task_state
@@ -63212,7 +63438,7 @@ async fn run_nats_loop(state: AppState) {
                                         .plan_requests_total
                                         .fetch_add(1, Ordering::Relaxed);
                                     record_plan_metrics(&task_state, &response);
-                                    store_plan_response(&task_state, &response);
+                                    store_plan_response(&task_state, &response).await;
                                     let published =
                                         publish_plan_outputs(&task_state, &response).await;
                                     publish_event(
@@ -63244,7 +63470,7 @@ async fn run_nats_loop(state: AppState) {
                                         .analysis_requests_total
                                         .fetch_add(1, Ordering::Relaxed);
                                     record_analysis_metrics(&task_state, &response);
-                                    store_analysis_response(&task_state, &response);
+                                    store_analysis_response(&task_state, &response).await;
                                     let published =
                                         publish_analysis_outputs(&task_state, &response).await;
                                     publish_event(
@@ -63273,10 +63499,12 @@ async fn run_nats_loop(state: AppState) {
                                 .metrics
                                 .learning_requests_total
                                 .fetch_add(1, Ordering::Relaxed);
-                            let request = enrich_outcome_from_store(&task_state, request);
+                            let request = enrich_outcome_from_store(&task_state, request).await;
                             match learn_from_outcome(request) {
                                 Ok((response, record)) => {
-                                    match store_learning_response(&task_state, &response, record) {
+                                    match store_learning_response(&task_state, &response, record)
+                                        .await
+                                    {
                                         Ok(_) => {
                                             let published =
                                                 publish_learning_outputs(&task_state, &response)
@@ -63322,7 +63550,7 @@ async fn run_nats_loop(state: AppState) {
                             match learning_outcome_record(request) {
                                 Ok(record) => {
                                     let outcome_id = record.outcome_id.clone();
-                                    match store_learning_record(&task_state, record) {
+                                    match store_learning_record(&task_state, record).await {
                                         Ok(snapshot) => {
                                             let published = publish_learning_outcome_outputs(
                                                 &task_state,
@@ -66054,8 +66282,8 @@ fn stored_decomposition_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_decomposition_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_decomposition_result_job(response));
+async fn store_decomposition_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_decomposition_result_job(response)).await;
 }
 
 async fn decomposition_catalog_http() -> impl IntoResponse {
@@ -67016,8 +67244,8 @@ fn stored_release_preview_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_release_preview_response(state: &AppState, response: &Value) {
-    store_job(state, stored_release_preview_job(response));
+async fn store_release_preview_response(state: &AppState, response: &Value) {
+    store_job(state, stored_release_preview_job(response)).await;
 }
 
 fn execution_planning_response(
@@ -69114,8 +69342,8 @@ fn stored_strategy_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_strategy_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_strategy_result_job(response));
+async fn store_strategy_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_strategy_result_job(response)).await;
 }
 
 fn schedule_catalog_contracts() -> Vec<Value> {
@@ -70106,8 +70334,8 @@ fn stored_schedule_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_schedule_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_schedule_result_job(response));
+async fn store_schedule_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_schedule_result_job(response)).await;
 }
 
 async fn schedule_catalog_http() -> impl IntoResponse {
@@ -71445,8 +71673,8 @@ fn stored_disposition_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_disposition_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_disposition_result_job(response));
+async fn store_disposition_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_disposition_result_job(response)).await;
 }
 
 fn costing_catalog_entries() -> Vec<Value> {
@@ -72206,8 +72434,8 @@ fn stored_costing_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_costing_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_costing_result_job(response));
+async fn store_costing_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_costing_result_job(response)).await;
 }
 
 fn utilities_catalog_entries() -> Vec<Value> {
@@ -73013,8 +73241,8 @@ fn stored_energy_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_energy_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_energy_result_job(response));
+async fn store_energy_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_energy_result_job(response)).await;
 }
 
 fn validate_utilities_result_checks(
@@ -73651,8 +73879,8 @@ fn stored_utilities_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_utilities_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_utilities_result_job(response));
+async fn store_utilities_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_utilities_result_job(response)).await;
 }
 
 fn telemetry_catalog_entries() -> Vec<Value> {
@@ -74511,8 +74739,8 @@ fn stored_availability_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_availability_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_availability_result_job(response));
+async fn store_availability_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_availability_result_job(response)).await;
 }
 
 fn maintenance_catalog_entries() -> Vec<Value> {
@@ -75307,8 +75535,8 @@ fn stored_maintenance_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_maintenance_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_maintenance_result_job(response));
+async fn store_maintenance_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_maintenance_result_job(response)).await;
 }
 
 fn validate_telemetry_result_sensor_windows(
@@ -76036,8 +76264,8 @@ fn stored_telemetry_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_telemetry_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_telemetry_result_job(response));
+async fn store_telemetry_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_telemetry_result_job(response)).await;
 }
 
 fn quality_planning_response(
@@ -77066,8 +77294,8 @@ fn stored_quality_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_quality_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_quality_result_job(response));
+async fn store_quality_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_quality_result_job(response)).await;
 }
 
 fn validate_calibration_result_checks(
@@ -77915,8 +78143,8 @@ fn stored_calibration_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_calibration_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_calibration_result_job(response));
+async fn store_calibration_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_calibration_result_job(response)).await;
 }
 
 fn validate_setup_result_checks(
@@ -78817,8 +79045,8 @@ fn stored_setup_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_setup_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_setup_result_job(response));
+async fn store_setup_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_setup_result_job(response)).await;
 }
 
 fn validate_monitoring_result_channels(
@@ -79657,8 +79885,8 @@ fn stored_monitoring_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_monitoring_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_monitoring_result_job(response));
+async fn store_monitoring_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_monitoring_result_job(response)).await;
 }
 
 async fn quality_catalog_http() -> impl IntoResponse {
@@ -80985,8 +81213,8 @@ fn stored_intervention_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_intervention_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_intervention_result_job(response));
+async fn store_intervention_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_intervention_result_job(response)).await;
 }
 
 fn setup_catalog_contracts() -> Vec<Value> {
@@ -82100,8 +82328,8 @@ fn stored_tooling_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_tooling_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_tooling_result_job(response));
+async fn store_tooling_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_tooling_result_job(response)).await;
 }
 
 fn consumables_catalog_entries() -> Vec<Value> {
@@ -83086,8 +83314,8 @@ fn stored_consumables_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_consumables_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_consumables_result_job(response));
+async fn store_consumables_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_consumables_result_job(response)).await;
 }
 
 fn workholding_catalog_entries() -> Vec<Value> {
@@ -84413,8 +84641,8 @@ fn stored_workholding_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_workholding_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_workholding_result_job(response));
+async fn store_workholding_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_workholding_result_job(response)).await;
 }
 
 fn nesting_catalog_entries() -> Vec<Value> {
@@ -85252,8 +85480,8 @@ fn stored_nesting_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_nesting_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_nesting_result_job(response));
+async fn store_nesting_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_nesting_result_job(response)).await;
 }
 
 async fn nesting_result_http(
@@ -85262,7 +85490,7 @@ async fn nesting_result_http(
 ) -> Response {
     match nesting_result_review_response(request) {
         Ok(response) => {
-            store_nesting_result_response(&state, &response);
+            store_nesting_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -86228,8 +86456,8 @@ fn stored_support_strategy_result_job(response: &Value) -> StoredFabricationJob 
     }
 }
 
-fn store_support_strategy_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_support_strategy_result_job(response));
+async fn store_support_strategy_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_support_strategy_result_job(response)).await;
 }
 
 fn process_recipe_catalog_entries() -> Vec<Value> {
@@ -86965,8 +87193,8 @@ fn stored_process_recipe_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_process_recipe_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_process_recipe_result_job(response));
+async fn store_process_recipe_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_process_recipe_result_job(response)).await;
 }
 
 fn kinematics_catalog_entries() -> Vec<Value> {
@@ -87715,8 +87943,8 @@ fn stored_kinematics_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_kinematics_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_kinematics_result_job(response));
+async fn store_kinematics_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_kinematics_result_job(response)).await;
 }
 
 fn validate_tolerance_result_checks(
@@ -88381,8 +88609,8 @@ fn stored_tolerance_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_tolerance_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_tolerance_result_job(response));
+async fn store_tolerance_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_tolerance_result_job(response)).await;
 }
 
 fn tolerance_catalog_entries() -> Vec<Value> {
@@ -89897,8 +90125,8 @@ fn stored_process_capability_result_job(response: &Value) -> StoredFabricationJo
     }
 }
 
-fn store_process_capability_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_process_capability_result_job(response));
+async fn store_process_capability_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_process_capability_result_job(response)).await;
 }
 
 fn manufacturability_catalog_entries() -> Vec<Value> {
@@ -90975,8 +91203,8 @@ fn stored_manufacturability_result_job(response: &Value) -> StoredFabricationJob
     }
 }
 
-fn store_manufacturability_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_manufacturability_result_job(response));
+async fn store_manufacturability_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_manufacturability_result_job(response)).await;
 }
 
 fn failure_mode_catalog_entries() -> Vec<Value> {
@@ -92178,8 +92406,8 @@ fn stored_failure_mode_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_failure_mode_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_failure_mode_result_job(response));
+async fn store_failure_mode_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_failure_mode_result_job(response)).await;
 }
 
 fn safety_catalog_entries() -> Vec<Value> {
@@ -93310,8 +93538,8 @@ fn stored_safety_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_safety_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_safety_result_job(response));
+async fn store_safety_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_safety_result_job(response)).await;
 }
 
 fn environment_catalog_entries() -> Vec<Value> {
@@ -94483,8 +94711,8 @@ fn stored_environment_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_environment_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_environment_result_job(response));
+async fn store_environment_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_environment_result_job(response)).await;
 }
 
 fn provenance_catalog_entries() -> Vec<Value> {
@@ -95927,8 +96155,8 @@ fn stored_as_built_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_as_built_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_as_built_result_job(response));
+async fn store_as_built_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_as_built_result_job(response)).await;
 }
 
 fn validate_provenance_result_lineage_checks(
@@ -96713,8 +96941,8 @@ fn stored_provenance_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_provenance_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_provenance_result_job(response));
+async fn store_provenance_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_provenance_result_job(response)).await;
 }
 
 fn setup_planning_response(
@@ -97241,7 +97469,7 @@ async fn monitoring_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -97255,7 +97483,7 @@ async fn monitoring_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -97283,7 +97511,7 @@ async fn monitoring_result_http(
 ) -> Response {
     match monitoring_result_review_response(request) {
         Ok(response) => {
-            store_monitoring_result_response(&state, &response);
+            store_monitoring_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -97300,7 +97528,7 @@ async fn intervention_result_http(
 ) -> Response {
     match intervention_result_review_response(request) {
         Ok(response) => {
-            store_intervention_result_response(&state, &response);
+            store_intervention_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -97317,7 +97545,7 @@ async fn utilities_result_http(
 ) -> Response {
     match utilities_result_review_response(request) {
         Ok(response) => {
-            store_utilities_result_response(&state, &response);
+            store_utilities_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -97334,7 +97562,7 @@ async fn energy_result_http(
 ) -> Response {
     match energy_result_review_response(request) {
         Ok(response) => {
-            store_energy_result_response(&state, &response);
+            store_energy_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -97351,7 +97579,7 @@ async fn availability_result_http(
 ) -> Response {
     match availability_result_review_response(request) {
         Ok(response) => {
-            store_availability_result_response(&state, &response);
+            store_availability_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -97368,7 +97596,7 @@ async fn maintenance_result_http(
 ) -> Response {
     match maintenance_result_review_response(request) {
         Ok(response) => {
-            store_maintenance_result_response(&state, &response);
+            store_maintenance_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -97385,7 +97613,7 @@ async fn consumables_result_http(
 ) -> Response {
     match consumables_result_review_response(request) {
         Ok(response) => {
-            store_consumables_result_response(&state, &response);
+            store_consumables_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -97402,7 +97630,7 @@ async fn tooling_result_http(
 ) -> Response {
     match tooling_result_review_response(request) {
         Ok(response) => {
-            store_tooling_result_response(&state, &response);
+            store_tooling_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -97421,7 +97649,7 @@ async fn workholding_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -97435,7 +97663,7 @@ async fn workholding_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -97463,7 +97691,7 @@ async fn workholding_result_http(
 ) -> Response {
     match workholding_result_review_response(request) {
         Ok(response) => {
-            store_workholding_result_response(&state, &response);
+            store_workholding_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -97480,7 +97708,7 @@ async fn telemetry_result_http(
 ) -> Response {
     match telemetry_result_review_response(request) {
         Ok(response) => {
-            store_telemetry_result_response(&state, &response);
+            store_telemetry_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -99679,8 +99907,8 @@ fn stored_postprocess_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_postprocess_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_postprocess_result_job(response));
+async fn store_postprocess_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_postprocess_result_job(response)).await;
 }
 
 async fn postprocess_catalog_http() -> impl IntoResponse {
@@ -99695,7 +99923,7 @@ async fn postprocess_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -99709,7 +99937,7 @@ async fn postprocess_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -99737,7 +99965,7 @@ async fn postprocess_result_http(
 ) -> Response {
     match postprocess_result_review_response(request) {
         Ok(response) => {
-            store_postprocess_result_response(&state, &response);
+            store_postprocess_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -100850,8 +101078,8 @@ fn stored_controller_postprocessor_result_job(response: &Value) -> StoredFabrica
     }
 }
 
-fn store_controller_postprocessor_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_controller_postprocessor_result_job(response));
+async fn store_controller_postprocessor_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_controller_postprocessor_result_job(response)).await;
 }
 
 fn material_catalog_family(material: &str) -> &'static str {
@@ -102381,8 +102609,8 @@ fn stored_material_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_material_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_material_result_job(response));
+async fn store_material_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_material_result_job(response)).await;
 }
 
 async fn material_catalog_http() -> impl IntoResponse {
@@ -102397,7 +102625,7 @@ async fn material_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -102411,7 +102639,7 @@ async fn material_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -102439,7 +102667,7 @@ async fn material_result_http(
 ) -> Response {
     match material_result_review_response(request) {
         Ok(response) => {
-            store_material_result_response(&state, &response);
+            store_material_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -103638,7 +103866,7 @@ async fn instruction_import_review_http(
 ) -> Response {
     match instruction_import_review_response(request) {
         Ok(response) => {
-            store_instruction_import_review_response(&state, &response);
+            store_instruction_import_review_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -103976,8 +104204,8 @@ fn stored_instruction_import_review_job(response: &Value) -> StoredFabricationJo
     }
 }
 
-fn store_instruction_import_review_response(state: &AppState, response: &Value) {
-    store_job(state, stored_instruction_import_review_job(response));
+async fn store_instruction_import_review_response(state: &AppState, response: &Value) {
+    store_job(state, stored_instruction_import_review_job(response)).await;
 }
 
 fn instruction_validation_catalog_check_contracts() -> Vec<Value> {
@@ -106550,8 +106778,8 @@ fn stored_toolpath_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_toolpath_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_toolpath_result_job(response));
+async fn store_toolpath_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_toolpath_result_job(response)).await;
 }
 
 fn instruction_improvement_catalog_action_contracts() -> Vec<Value> {
@@ -112861,7 +113089,7 @@ async fn machine_select_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -112875,7 +113103,7 @@ async fn machine_select_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -113117,10 +113345,10 @@ fn artifact_catalog_response() -> Value {
             "learning"
         ],
         "storagePolicy": [
-            "artifact catalog entries describe retained in-process evidence surfaces, not durable database storage or certified machine release",
+            "artifact catalog entries describe retained review evidence in daedalus.fab_jobs under a retention policy, not an archive of record or certified machine release",
             "generated design exports, machine programs, improved programs, release packages, DES/POMDP/neural artifacts, and learning outcomes remain draft evidence until validation, simulation, controller, setup, quality, and signoff gates clear",
             "job release bundles collect full retained design, machine-code, release, simulation, and learning artifacts for downstream CAD/CAM, slicer, operator-review, and MDP/POMDP/neural workers",
-            "artifact IDs are stable within the bounded runtime ledger and are retrieved through GET /jobs/:job_id/artifacts/:artifact_id or GET /fabrication/jobs/:job_id/artifacts/:artifact_id"
+            "artifact IDs are stable for as long as their job is retained and are retrieved through GET /jobs/:job_id/artifacts/:artifact_id or GET /fabrication/jobs/:job_id/artifacts/:artifact_id"
         ],
         "artifactContracts": artifact_contracts
     })
@@ -113224,7 +113452,7 @@ fn job_evidence_catalog_response(
             "outcome-learning-event"
         ],
         "catalogPolicy": [
-            "job evidence catalog describes the bounded in-process ledger, not durable database storage or certified production history",
+            "job evidence catalog describes a retention-bounded shared ledger in daedalus.fab_jobs readable by every replica, not an archive of record or certified production history",
             "retained jobs and artifacts are review evidence for CAD/CAM, slicer, controller, setup, simulation, release, and learning workers",
             "release bundles remain draft evidence until machineRelease blockers, controller/postprocessor checks, simulation, setup, quality, and operator or automation signoff clear"
         ]
@@ -113232,24 +113460,18 @@ fn job_evidence_catalog_response(
 }
 
 async fn job_evidence_catalog_http(State(state): State<AppState>) -> Response {
-    match state.jobs.read() {
-        Ok(jobs) => {
-            let (current_job_count, current_artifact_count) = jobs.counts();
-            let current_job_kinds =
-                unique_sorted(jobs.list().into_iter().map(|record| record.kind));
-            Json(job_evidence_catalog_response(
-                current_job_count,
-                current_artifact_count,
-                current_job_kinds,
-            ))
-            .into_response()
-        }
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "ok": false, "error": format!("job ledger lock failed: {error}") })),
-        )
-            .into_response(),
-    }
+    let jobs = match state.jobs.recent(MAX_STORED_JOBS).await {
+        Ok(jobs) => jobs,
+        Err(error) => return job_store_error(&state, "job ledger", error),
+    };
+    let current_artifact_count = jobs.iter().map(|job| job.artifacts.len()).sum();
+    let current_job_kinds = unique_sorted(jobs.iter().map(|job| job.record.kind.clone()));
+    Json(job_evidence_catalog_response(
+        jobs.len(),
+        current_artifact_count,
+        current_job_kinds,
+    ))
+    .into_response()
 }
 
 fn learning_capability_catalog_response() -> Value {
@@ -114856,8 +115078,8 @@ fn stored_learning_model_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_learning_model_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_learning_model_result_job(response));
+async fn store_learning_model_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_learning_model_result_job(response)).await;
 }
 
 async fn learning_model_result_http(
@@ -114866,7 +115088,7 @@ async fn learning_model_result_http(
 ) -> Response {
     match learning_model_result_review_response(request) {
         Ok(response) => {
-            store_learning_model_result_response(&state, &response);
+            store_learning_model_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -115355,8 +115577,8 @@ fn stored_learning_optimizer_result_job(response: &Value) -> StoredFabricationJo
     }
 }
 
-fn store_learning_optimizer_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_learning_optimizer_result_job(response));
+async fn store_learning_optimizer_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_learning_optimizer_result_job(response)).await;
 }
 
 async fn learning_optimizer_result_http(
@@ -115365,7 +115587,7 @@ async fn learning_optimizer_result_http(
 ) -> Response {
     match learning_optimizer_result_review_response(request) {
         Ok(response) => {
-            store_learning_optimizer_result_response(&state, &response);
+            store_learning_optimizer_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -116542,8 +116764,8 @@ fn stored_slicer_profile_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_slicer_profile_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_slicer_profile_result_job(response));
+async fn store_slicer_profile_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_slicer_profile_result_job(response)).await;
 }
 
 fn validate_mesh_repair_result_checks(
@@ -117220,8 +117442,8 @@ fn stored_mesh_repair_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_mesh_repair_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_mesh_repair_result_job(response));
+async fn store_mesh_repair_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_mesh_repair_result_job(response)).await;
 }
 
 fn mesh_repair_catalog_entries() -> Vec<Value> {
@@ -118379,8 +118601,8 @@ fn stored_handoff_result_job(response: &Value) -> StoredFabricationJob {
     }
 }
 
-fn store_handoff_result_response(state: &AppState, response: &Value) {
-    store_job(state, stored_handoff_result_job(response));
+async fn store_handoff_result_response(state: &AppState, response: &Value) {
+    store_job(state, stored_handoff_result_job(response)).await;
 }
 
 fn subject_catalog_lanes() -> Vec<Value> {
@@ -119105,7 +119327,7 @@ async fn fabrication_package_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -119119,7 +119341,7 @@ async fn fabrication_package_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -121373,41 +121595,35 @@ async fn examples() -> impl IntoResponse {
 }
 
 async fn list_jobs(State(state): State<AppState>) -> Response {
-    match state.jobs.read() {
-        Ok(jobs) => {
-            let records = jobs.list();
-            let release_gate_summaries = jobs.release_gate_summaries();
-            Json(json!({
-                "ok": true,
-                "count": records.len(),
-                "releaseGateSummaries": release_gate_summaries,
-                "jobs": records,
-            }))
-            .into_response()
-        }
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "ok": false, "error": format!("job store lock failed: {error}") })),
-        )
-            .into_response(),
-    }
+    // One bounded read serves both projections; going back to the store twice
+    // would let the list and its release-gate summaries disagree.
+    let jobs = match state.jobs.recent(MAX_STORED_JOBS).await {
+        Ok(jobs) => jobs,
+        Err(error) => return job_store_error(&state, "job store", error),
+    };
+    let release_gate_summaries = jobs
+        .iter()
+        .map(stores::release_gate_summary)
+        .collect::<Vec<_>>();
+    let records = jobs.into_iter().map(|job| job.record).collect::<Vec<_>>();
+    Json(json!({
+        "ok": true,
+        "count": records.len(),
+        "releaseGateSummaries": release_gate_summaries,
+        "jobs": records,
+    }))
+    .into_response()
 }
 
 async fn get_job(State(state): State<AppState>, Path(job_id): Path<String>) -> Response {
-    match state.jobs.read() {
-        Ok(jobs) => match jobs.detail(&job_id) {
-            Some(detail) => Json(json!({ "ok": true, "job": detail })).into_response(),
-            None => (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "ok": false, "error": "fabrication job not found" })),
-            )
-                .into_response(),
-        },
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "ok": false, "error": format!("job store lock failed: {error}") })),
+    match state.jobs.detail(&job_id).await {
+        Ok(Some(detail)) => Json(json!({ "ok": true, "job": detail })).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "ok": false, "error": "fabrication job not found" })),
         )
             .into_response(),
+        Err(error) => job_store_error(&state, "job store", error),
     }
 }
 
@@ -121419,20 +121635,14 @@ async fn get_job_release_bundle(
         .metrics
         .artifact_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    match state.jobs.read() {
-        Ok(jobs) => match jobs.release_bundle(&job_id) {
-            Some(bundle) => Json(bundle).into_response(),
-            None => (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "ok": false, "error": "fabrication job release bundle not found" })),
-            )
-                .into_response(),
-        },
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "ok": false, "error": format!("job store lock failed: {error}") })),
+    match state.jobs.release_bundle(&job_id).await {
+        Ok(Some(bundle)) => Json(bundle).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "ok": false, "error": "fabrication job release bundle not found" })),
         )
             .into_response(),
+        Err(error) => job_store_error(&state, "job store", error),
     }
 }
 
@@ -121444,20 +121654,14 @@ async fn get_artifact(
         .metrics
         .artifact_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    match state.jobs.read() {
-        Ok(jobs) => match jobs.artifact(&job_id, &artifact_id) {
-            Some(artifact) => Json(json!({ "ok": true, "artifact": artifact })).into_response(),
-            None => (
-                StatusCode::NOT_FOUND,
-                Json(json!({ "ok": false, "error": "fabrication artifact not found" })),
-            )
-                .into_response(),
-        },
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "ok": false, "error": format!("job store lock failed: {error}") })),
+    match state.jobs.artifact(&job_id, &artifact_id).await {
+        Ok(Some(artifact)) => Json(json!({ "ok": true, "artifact": artifact })).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "ok": false, "error": "fabrication artifact not found" })),
         )
             .into_response(),
+        Err(error) => job_store_error(&state, "job store", error),
     }
 }
 
@@ -121469,7 +121673,7 @@ async fn plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -121483,7 +121687,7 @@ async fn plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -121513,7 +121717,7 @@ async fn workflow_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -121527,7 +121731,7 @@ async fn workflow_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -121566,7 +121770,7 @@ async fn design_import_result_http(
 ) -> Response {
     match design_import_result_review_response(request) {
         Ok(response) => {
-            store_design_import_result_response(&state, &response);
+            store_design_import_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -121583,7 +121787,7 @@ async fn slicer_profile_result_http(
 ) -> Response {
     match slicer_profile_result_review_response(request) {
         Ok(response) => {
-            store_slicer_profile_result_response(&state, &response);
+            store_slicer_profile_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -121602,7 +121806,7 @@ async fn slicer_profile_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -121616,7 +121820,7 @@ async fn slicer_profile_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -121648,7 +121852,7 @@ async fn mesh_repair_result_http(
 ) -> Response {
     match mesh_repair_result_review_response(request) {
         Ok(response) => {
-            store_mesh_repair_result_response(&state, &response);
+            store_mesh_repair_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -121745,7 +121949,7 @@ async fn handoff_result_http(
 ) -> Response {
     match handoff_result_review_response(request) {
         Ok(response) => {
-            store_handoff_result_response(&state, &response);
+            store_handoff_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -121762,7 +121966,7 @@ async fn instruction_generation_result_http(
 ) -> Response {
     match instruction_generation_result_review_response(request) {
         Ok(response) => {
-            store_instruction_generation_result_response(&state, &response);
+            store_instruction_generation_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -121779,7 +121983,7 @@ async fn machine_code_result_http(
 ) -> Response {
     match machine_code_result_review_response(request) {
         Ok(response) => {
-            store_machine_code_result_response(&state, &response);
+            store_machine_code_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -121796,7 +122000,7 @@ async fn instruction_review_result_http(
 ) -> Response {
     match instruction_review_result_review_response(request) {
         Ok(response) => {
-            store_instruction_review_result_response(&state, &response);
+            store_instruction_review_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -121813,7 +122017,7 @@ async fn instruction_validation_result_http(
 ) -> Response {
     match instruction_validation_result_review_response(request) {
         Ok(response) => {
-            store_instruction_validation_result_response(&state, &response);
+            store_instruction_validation_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -121830,7 +122034,7 @@ async fn instruction_improvement_result_http(
 ) -> Response {
     match instruction_improvement_result_review_response(request) {
         Ok(response) => {
-            store_instruction_improvement_result_response(&state, &response);
+            store_instruction_improvement_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -121847,7 +122051,7 @@ async fn instruction_simulation_result_http(
 ) -> Response {
     match instruction_simulation_result_review_response(request) {
         Ok(response) => {
-            store_instruction_simulation_result_response(&state, &response);
+            store_instruction_simulation_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -121864,7 +122068,7 @@ async fn decomposition_result_http(
 ) -> Response {
     match decomposition_result_review_response(request) {
         Ok(response) => {
-            store_decomposition_result_response(&state, &response);
+            store_decomposition_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -121883,7 +122087,7 @@ async fn manufacturability_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -121897,7 +122101,7 @@ async fn manufacturability_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -121929,7 +122133,7 @@ async fn manufacturability_result_http(
 ) -> Response {
     match manufacturability_result_review_response(request) {
         Ok(response) => {
-            store_manufacturability_result_response(&state, &response);
+            store_manufacturability_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -121946,7 +122150,7 @@ async fn disposition_result_http(
 ) -> Response {
     match disposition_result_review_response(request) {
         Ok(response) => {
-            store_disposition_result_response(&state, &response);
+            store_disposition_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -121967,7 +122171,7 @@ async fn costing_result_http(
                 .metrics
                 .costing_result_reviews_total
                 .fetch_add(1, Ordering::Relaxed);
-            store_costing_result_response(&state, &response);
+            store_costing_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -121984,7 +122188,7 @@ async fn support_strategy_result_http(
 ) -> Response {
     match support_strategy_result_review_response(request) {
         Ok(response) => {
-            store_support_strategy_result_response(&state, &response);
+            store_support_strategy_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -122001,7 +122205,7 @@ async fn process_recipe_result_http(
 ) -> Response {
     match process_recipe_result_review_response(request) {
         Ok(response) => {
-            store_process_recipe_result_response(&state, &response);
+            store_process_recipe_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -122018,7 +122222,7 @@ async fn kinematics_result_http(
 ) -> Response {
     match kinematics_result_review_response(request) {
         Ok(response) => {
-            store_kinematics_result_response(&state, &response);
+            store_kinematics_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -122037,7 +122241,7 @@ async fn tolerance_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -122051,7 +122255,7 @@ async fn tolerance_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -122079,7 +122283,7 @@ async fn tolerance_result_http(
 ) -> Response {
     match tolerance_result_review_response(request) {
         Ok(response) => {
-            store_tolerance_result_response(&state, &response);
+            store_tolerance_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -122098,7 +122302,7 @@ async fn process_capability_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -122112,7 +122316,7 @@ async fn process_capability_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -122144,7 +122348,7 @@ async fn process_capability_result_http(
 ) -> Response {
     match process_capability_result_review_response(request) {
         Ok(response) => {
-            store_process_capability_result_response(&state, &response);
+            store_process_capability_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -122163,7 +122367,7 @@ async fn safety_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -122177,7 +122381,7 @@ async fn safety_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -122205,7 +122409,7 @@ async fn safety_result_http(
 ) -> Response {
     match safety_result_review_response(request) {
         Ok(response) => {
-            store_safety_result_response(&state, &response);
+            store_safety_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -122224,7 +122428,7 @@ async fn environment_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -122238,7 +122442,7 @@ async fn environment_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -122266,7 +122470,7 @@ async fn environment_result_http(
 ) -> Response {
     match environment_result_review_response(request) {
         Ok(response) => {
-            store_environment_result_response(&state, &response);
+            store_environment_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -122285,7 +122489,7 @@ async fn provenance_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -122299,7 +122503,7 @@ async fn provenance_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -122327,7 +122531,7 @@ async fn provenance_result_http(
 ) -> Response {
     match provenance_result_review_response(request) {
         Ok(response) => {
-            store_provenance_result_response(&state, &response);
+            store_provenance_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -122346,7 +122550,7 @@ async fn as_built_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -122360,7 +122564,7 @@ async fn as_built_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -122388,7 +122592,7 @@ async fn as_built_result_http(
 ) -> Response {
     match as_built_result_review_response(request) {
         Ok(response) => {
-            store_as_built_result_response(&state, &response);
+            store_as_built_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -122407,7 +122611,7 @@ async fn failure_mode_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -122421,7 +122625,7 @@ async fn failure_mode_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -122449,7 +122653,7 @@ async fn failure_mode_result_http(
 ) -> Response {
     match failure_mode_result_review_response(request) {
         Ok(response) => {
-            store_failure_mode_result_response(&state, &response);
+            store_failure_mode_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -122466,7 +122670,7 @@ async fn release_readiness_result_http(
 ) -> Response {
     match release_readiness_result_review_response(request) {
         Ok(response) => {
-            store_release_readiness_result_response(&state, &response);
+            store_release_readiness_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -122483,7 +122687,7 @@ async fn assembly_planning_result_http(
 ) -> Response {
     match assembly_planning_result_review_response(request) {
         Ok(response) => {
-            store_assembly_planning_result_response(&state, &response);
+            store_assembly_planning_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -122500,7 +122704,7 @@ async fn interface_result_http(
 ) -> Response {
     match interface_result_review_response(request) {
         Ok(response) => {
-            store_interface_result_response(&state, &response);
+            store_interface_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -122517,7 +122721,7 @@ async fn schedule_result_http(
 ) -> Response {
     match schedule_result_review_response(request) {
         Ok(response) => {
-            store_schedule_result_response(&state, &response);
+            store_schedule_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -122534,7 +122738,7 @@ async fn execution_result_http(
 ) -> Response {
     match execution_result_review_response(request) {
         Ok(response) => {
-            store_execution_result_response(&state, &response);
+            store_execution_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -122553,7 +122757,7 @@ async fn design_generate_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -122567,7 +122771,7 @@ async fn design_generate_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -122597,7 +122801,7 @@ async fn instruction_generate_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -122611,7 +122815,7 @@ async fn instruction_generate_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -122641,7 +122845,7 @@ async fn machine_code_generate_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -122655,7 +122859,7 @@ async fn machine_code_generate_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -122689,7 +122893,7 @@ async fn toolpath_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -122703,7 +122907,7 @@ async fn toolpath_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -122733,7 +122937,7 @@ async fn controller_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -122747,7 +122951,7 @@ async fn controller_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -122775,7 +122979,7 @@ async fn controller_postprocessor_result_http(
 ) -> Response {
     match controller_postprocessor_result_review_response(request) {
         Ok(response) => {
-            store_controller_postprocessor_result_response(&state, &response);
+            store_controller_postprocessor_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -122792,7 +122996,7 @@ async fn toolpath_result_http(
 ) -> Response {
     match toolpath_result_review_response(request) {
         Ok(response) => {
-            store_toolpath_result_response(&state, &response);
+            store_toolpath_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -122811,7 +123015,7 @@ async fn release_preview_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -122832,7 +123036,7 @@ async fn release_preview_http(
             )
             .await;
             let preview = release_preview_response(&response, &policy_snapshot);
-            store_release_preview_response(&state, &preview);
+            store_release_preview_response(&state, &preview).await;
             Json(preview).into_response()
         }
         Err(error) => {
@@ -122854,7 +123058,7 @@ async fn execution_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -122868,7 +123072,7 @@ async fn execution_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -122898,7 +123102,7 @@ async fn strategy_recommend_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -122941,7 +123145,7 @@ async fn strategy_result_http(
 ) -> Response {
     match strategy_result_review_response(request) {
         Ok(response) => {
-            store_strategy_result_response(&state, &response);
+            store_strategy_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -122960,7 +123164,7 @@ async fn decomposition_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -122974,7 +123178,7 @@ async fn decomposition_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -123004,7 +123208,7 @@ async fn assembly_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -123018,7 +123222,7 @@ async fn assembly_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -123048,7 +123252,7 @@ async fn hybrid_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -123062,7 +123266,7 @@ async fn hybrid_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -123092,7 +123296,7 @@ async fn simulation_run_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -123106,7 +123310,7 @@ async fn simulation_run_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -123136,7 +123340,7 @@ async fn quality_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -123150,7 +123354,7 @@ async fn quality_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -123178,7 +123382,7 @@ async fn quality_result_http(
 ) -> Response {
     match quality_result_review_response(request) {
         Ok(response) => {
-            store_quality_result_response(&state, &response);
+            store_quality_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -123197,7 +123401,7 @@ async fn setup_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -123211,7 +123415,7 @@ async fn setup_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -123239,7 +123443,7 @@ async fn setup_result_http(
 ) -> Response {
     match setup_result_review_response(request) {
         Ok(response) => {
-            store_setup_result_response(&state, &response);
+            store_setup_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -123258,7 +123462,7 @@ async fn calibration_plan_http(
         .metrics
         .plan_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let policy_snapshot = match learning_policy_snapshot(&state) {
+    let policy_snapshot = match learning_policy_snapshot(&state).await {
         Ok(snapshot) => snapshot,
         Err(error) => {
             state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
@@ -123272,7 +123476,7 @@ async fn calibration_plan_http(
     match plan_fabrication_with_policy(request, Some(&policy_snapshot)) {
         Ok(response) => {
             record_plan_metrics(&state, &response);
-            store_plan_response(&state, &response);
+            store_plan_response(&state, &response).await;
             publish_plan_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -123300,7 +123504,7 @@ async fn calibration_result_http(
 ) -> Response {
     match calibration_result_review_response(request) {
         Ok(response) => {
-            store_calibration_result_response(&state, &response);
+            store_calibration_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -123322,7 +123526,7 @@ async fn analyze_http(
     match analyze_instruction_request(request) {
         Ok(response) => {
             record_analysis_metrics(&state, &response);
-            store_analysis_response(&state, &response);
+            store_analysis_response(&state, &response).await;
             publish_analysis_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -123355,7 +123559,7 @@ async fn instruction_validate_http(
     match analyze_instruction_request(request) {
         Ok(response) => {
             record_analysis_metrics(&state, &response);
-            store_analysis_response(&state, &response);
+            store_analysis_response(&state, &response).await;
             publish_analysis_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -123388,7 +123592,7 @@ async fn instruction_improve_http(
     match analyze_instruction_request(request) {
         Ok(response) => {
             record_analysis_metrics(&state, &response);
-            store_analysis_response(&state, &response);
+            store_analysis_response(&state, &response).await;
             publish_analysis_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -123421,7 +123625,7 @@ async fn instruction_boundary_review_http(
     match analyze_instruction_request(request) {
         Ok(response) => {
             record_analysis_metrics(&state, &response);
-            store_analysis_response(&state, &response);
+            store_analysis_response(&state, &response).await;
             publish_analysis_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -123454,7 +123658,7 @@ async fn boundary_remediation_plan_http(
     match analyze_instruction_request(request) {
         Ok(response) => {
             record_analysis_metrics(&state, &response);
-            store_analysis_response(&state, &response);
+            store_analysis_response(&state, &response).await;
             publish_analysis_outputs(&state, &response).await;
             publish_event(
                 &state,
@@ -123482,7 +123686,7 @@ async fn boundary_remediation_result_http(
 ) -> Response {
     match boundary_remediation_result_review_response(request) {
         Ok(response) => {
-            store_boundary_remediation_result_response(&state, &response);
+            store_boundary_remediation_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -123499,7 +123703,7 @@ async fn boundary_analysis_result_http(
 ) -> Response {
     match boundary_analysis_result_review_response(request) {
         Ok(response) => {
-            store_boundary_analysis_result_response(&state, &response);
+            store_boundary_analysis_result_response(&state, &response).await;
             Json(response).into_response()
         }
         Err(error) => (
@@ -123518,10 +123722,10 @@ async fn learning_observe_http(
         .metrics
         .learning_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let request = enrich_outcome_from_store(&state, request);
+    let request = enrich_outcome_from_store(&state, request).await;
     match learn_from_outcome(request) {
         Ok((response, record)) => {
-            let snapshot = match store_learning_response(&state, &response, record) {
+            let snapshot = match store_learning_response(&state, &response, record).await {
                 Ok(snapshot) => snapshot,
                 Err(error) => {
                     return (
@@ -123568,7 +123772,7 @@ async fn learning_outcome_http(
     match learning_outcome_record(request) {
         Ok(record) => {
             let outcome_id = record.outcome_id.clone();
-            let snapshot = match store_learning_record(&state, record) {
+            let snapshot = match store_learning_record(&state, record).await {
                 Ok(snapshot) => snapshot,
                 Err(error) => {
                     return (
@@ -123651,7 +123855,7 @@ fn learning_policy_response(snapshot: &LearningPolicySnapshot) -> Value {
 }
 
 async fn learning_policy_http(State(state): State<AppState>) -> Response {
-    match learning_policy_snapshot(&state) {
+    match learning_policy_snapshot(&state).await {
         Ok(snapshot) => Json(learning_policy_response(&snapshot)).into_response(),
         Err(error) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -123703,7 +123907,7 @@ fn learning_corpus_response(snapshot: &LearningPolicySnapshot) -> Value {
 }
 
 async fn learning_corpus_http(State(state): State<AppState>) -> Response {
-    match learning_policy_snapshot(&state) {
+    match learning_policy_snapshot(&state).await {
         Ok(snapshot) => Json(learning_corpus_response(&snapshot)).into_response(),
         Err(error) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -123848,14 +124052,26 @@ fn learning_outcomes_memory_response(memory: &LearningMemory) -> Value {
 }
 
 async fn learning_outcomes_http(State(state): State<AppState>) -> Response {
-    match state.learning.read() {
-        Ok(memory) => Json(learning_outcomes_memory_response(&memory)).into_response(),
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "ok": false, "error": format!("learning memory lock failed: {error}") })),
-        )
-            .into_response(),
+    match state.learning.window().await {
+        Ok(window) => Json(learning_outcomes_memory_response(&window)).into_response(),
+        Err(error) => job_store_error(&state, "learning outcome store", error),
     }
+}
+
+/// One shape for every store read failure.
+///
+/// A failed read is a 500, never an empty result: "this job does not exist" and
+/// "the jobs table could not be reached" are different answers, and collapsing
+/// them is exactly the ambiguity that made the single-replica pin necessary in
+/// the first place. The detail is logged; the caller gets a coarse message.
+fn job_store_error(state: &AppState, what: &str, error: StoreError) -> Response {
+    state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
+    tracing::error!("{SERVICE_NAME} {what} read failed: {error}");
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        Json(json!({ "ok": false, "error": format!("{what} read failed") })),
+    )
+        .into_response()
 }
 
 async fn api_docs_html() -> axum::response::Html<&'static str> {
@@ -123953,6 +124169,7 @@ pub async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     );
 
     let coordination = build_coordination(&config.fiducia);
+    let (jobs, learning) = build_stores(&persistence);
 
     let state = AppState {
         verifier,
@@ -123972,8 +124189,8 @@ pub async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
         coordination,
         lease_ttl: Duration::from_millis(config.fiducia.lease_ttl_ms),
         metrics: Arc::new(Metrics::default()),
-        jobs: Arc::new(RwLock::new(FabricationJobStore::new(MAX_STORED_JOBS))),
-        learning: Arc::new(RwLock::new(LearningMemory::new(MAX_LEARNING_OUTCOMES))),
+        jobs,
+        learning,
     };
     tokio::spawn(run_nats_loop(state.clone()));
 
@@ -140342,8 +140559,8 @@ mod tests {
             })));
     }
 
-    #[test]
-    fn instruction_simulation_result_endpoint_reviews_boundaries_artifacts_and_learning() {
+    #[tokio::test]
+    async fn instruction_simulation_result_endpoint_reviews_boundaries_artifacts_and_learning() {
         let payload = instruction_simulation_result_review_response(
             InstructionSimulationResultReviewRequest {
                 request_id: Some("unit-instruction-simulation-result".to_string()),
@@ -140572,13 +140789,15 @@ mod tests {
                 boundary.get("code").and_then(Value::as_str) == Some("workholding-release-required")
             })));
 
-        let mut store = FabricationJobStore::new(2);
+        let store = stores::InMemoryJobStore::new(2);
         assert!(
-            store.insert(job).is_none(),
+            !store.insert(job).await.expect("insert").displaced,
             "a fresh store cannot displace anything"
         );
         let detail = store
             .detail(simulation_result_job_id)
+            .await
+            .expect("store read")
             .expect("simulation result job should be retrievable");
         assert_eq!(detail.record.kind, "instruction-simulation-result");
         assert!(detail
@@ -140610,24 +140829,27 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_job_id_collision_is_reported_rather_than_silently_overwriting() {
+    #[tokio::test]
+    async fn a_job_id_collision_is_reported_rather_than_silently_overwriting() {
         // safe_job_id is deterministic in (kind, request_id, generated_at_ms),
         // so a NATS redelivery replaying one request regenerates the same id.
         // Before this returned the displaced job, the previous job and every
         // artifact hanging off it were dropped with no error and no metric,
         // while jobs_stored_total still counted up.
-        let mut store = FabricationJobStore::new(8);
+        let store = stores::InMemoryJobStore::new(8);
         let first = stored_job_fixture("job-collide", "alpha");
         let second = stored_job_fixture("job-collide", "beta");
 
-        assert!(store.insert(first).is_none(), "nothing to displace yet");
-        let displaced = store
-            .insert(second)
-            .expect("re-inserting the same id must report the job it replaced");
-        assert_eq!(displaced.record.job_id, "job-collide");
+        assert!(
+            !store.insert(first).await.expect("insert").displaced,
+            "nothing to displace yet"
+        );
+        assert!(
+            store.insert(second).await.expect("insert").displaced,
+            "re-inserting the same id must report the job it replaced"
+        );
 
-        let (job_count, _) = store.counts();
+        let (job_count, _) = store.counts().await.expect("counts");
         assert_eq!(job_count, 1, "a collision must not grow the store");
     }
 
@@ -141401,8 +141623,8 @@ mod tests {
             coordination: Arc::new(NoopCoordination::default()),
             lease_ttl: Duration::from_millis(coordination::DEFAULT_LEASE_TTL_MS),
             metrics: Arc::new(Metrics::default()),
-            jobs: Arc::new(RwLock::new(FabricationJobStore::new(MAX_STORED_JOBS))),
-            learning: Arc::new(RwLock::new(LearningMemory::new(MAX_LEARNING_OUTCOMES))),
+            jobs: Arc::new(stores::InMemoryJobStore::default()),
+            learning: Arc::new(stores::InMemoryLearningStore::default()),
         };
 
         let _response = costing_result_http(
@@ -151368,7 +151590,7 @@ mod tests {
             .and_then(Value::as_array)
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
-                .is_some_and(|item| item.contains("not durable database storage")))));
+                .is_some_and(|item| item.contains("not an archive of record")))));
     }
 
     #[test]
@@ -179507,8 +179729,60 @@ mod tests {
             .any(|example| example.contains("hybrid-success-1")));
     }
 
+    /// The whole point of `fab_jobs.payload`: a stored job must come back out
+    /// byte-identical, or a second replica serves a different `/jobs/{id}` than
+    /// the one that produced it.
+    ///
+    /// A full plan response is the worst case — ~150 nested types, including
+    /// every `schemaVersion` that is a `&'static str` and therefore cannot be
+    /// deserialized, only restored from the constant. This test is what keeps a
+    /// newly added field from silently failing to survive the database.
     #[test]
-    fn plan_job_store_records_design_program_and_learning_artifacts() {
+    fn a_stored_plan_job_round_trips_through_the_payload_encoding() {
+        let response = plan_fabrication(FabricationPlanRequest {
+            request_id: Some("unit-payload-round-trip".to_string()),
+            objective: "PETG enclosure with printed shell and machined datum insert".to_string(),
+            material: Some(material("petg", "polymer")),
+            stock: None,
+            tolerance_mm: Some(0.12),
+            quantity: Some(2),
+            machines: None,
+            constraints: None,
+            parts: None,
+            design_inputs: None,
+            existing_instructions: None,
+            learning: None,
+        })
+        .expect("plan should succeed");
+
+        let job = stored_plan_job(&response);
+        let encoded = serde_json::to_value(&job).expect("a job must encode");
+        let decoded: StoredFabricationJob =
+            serde_json::from_value(encoded.clone()).expect("a stored job must decode back");
+
+        assert_eq!(
+            serde_json::to_value(&decoded).expect("re-encode"),
+            encoded,
+            "a job read back from fab_jobs.payload must be indistinguishable from the \
+             job that was written"
+        );
+        // Spot-check the fields that cannot round-trip through serde and are
+        // restored from the constant instead.
+        let plan = decoded.plan.expect("the plan survives");
+        assert_eq!(plan.schema_version, SCHEMA_VERSION);
+        assert_eq!(
+            plan.release_package_plan.schema_version,
+            "dd.fabrication.release-package-plan.v1"
+        );
+        assert_eq!(
+            plan.controller_plan.schema_version,
+            "dd.fabrication.controller-plan.v1"
+        );
+        assert_eq!(decoded.artifacts.len(), job.artifacts.len());
+    }
+
+    #[tokio::test]
+    async fn plan_job_store_records_design_program_and_learning_artifacts() {
         let response = plan_fabrication(FabricationPlanRequest {
             request_id: Some("unit-artifact-plan".to_string()),
             objective: "PLA prototype cover with a machined datum face".to_string(),
@@ -180255,16 +180529,18 @@ mod tests {
                         == Some("selected"))))));
         assert_eq!(parametric_design.machine_ready, false);
 
-        let mut store = FabricationJobStore::new(2);
+        let store = stores::InMemoryJobStore::new(2);
         assert!(
-            store.insert(job).is_none(),
+            !store.insert(job).await.expect("insert").displaced,
             "first store of a job id cannot displace anything"
         );
-        let (job_count, artifact_count) = store.counts();
+        let (job_count, artifact_count) = store.counts().await.expect("counts");
         assert_eq!(job_count, 1);
         assert!(artifact_count >= 3);
         let detail = store
             .detail(&response.job_id)
+            .await
+            .expect("store read")
             .expect("stored plan should be retrievable");
         assert_eq!(detail.record.kind, "fabrication-plan");
         assert!(detail.plan.is_some());
@@ -180274,8 +180550,8 @@ mod tests {
             .any(|artifact| artifact.artifact_id == "learning-plan"));
     }
 
-    #[test]
-    fn job_release_bundle_exposes_design_program_release_and_learning_artifacts() {
+    #[tokio::test]
+    async fn job_release_bundle_exposes_design_program_release_and_learning_artifacts() {
         let response = plan_fabrication(FabricationPlanRequest {
             request_id: Some("unit-release-bundle".to_string()),
             objective: "PETG enclosure with printed shell and machined datum insert".to_string(),
@@ -180292,13 +180568,19 @@ mod tests {
         })
         .expect("release bundle plan should succeed");
 
-        let mut store = FabricationJobStore::new(2);
+        let store = stores::InMemoryJobStore::new(2);
         assert!(
-            store.insert(stored_plan_job(&response)).is_none(),
+            !store
+                .insert(stored_plan_job(&response))
+                .await
+                .expect("insert")
+                .displaced,
             "first store of a job id cannot displace anything"
         );
         let bundle = store
             .release_bundle(&response.job_id)
+            .await
+            .expect("store read")
             .expect("stored plan should expose release bundle");
 
         assert_eq!(
@@ -180418,7 +180700,13 @@ mod tests {
             .is_some_and(|gate_ids| gate_ids
                 .iter()
                 .any(|gate_id| gate_id.as_str() == Some("learning-disposition"))));
-        let listed_gate_summaries = store.release_gate_summaries();
+        let listed_gate_summaries = store
+            .recent(MAX_STORED_JOBS)
+            .await
+            .expect("store read")
+            .iter()
+            .map(stores::release_gate_summary)
+            .collect::<Vec<_>>();
         assert!(listed_gate_summaries.iter().any(|entry| {
             entry.get("jobId").and_then(Value::as_str) == Some(response.job_id.as_str())
                 && entry
@@ -180433,6 +180721,8 @@ mod tests {
         }));
         let detail = store
             .detail(&response.job_id)
+            .await
+            .expect("store read")
             .expect("stored plan detail should be retrievable");
         assert_eq!(
             detail
@@ -181196,8 +181486,8 @@ mod route_authorization_tests {
             coordination: Arc::new(NoopCoordination::default()),
             lease_ttl: Duration::from_millis(coordination::DEFAULT_LEASE_TTL_MS),
             metrics: Arc::new(Metrics::default()),
-            jobs: Arc::new(RwLock::new(FabricationJobStore::new(MAX_STORED_JOBS))),
-            learning: Arc::new(RwLock::new(LearningMemory::new(MAX_LEARNING_OUTCOMES))),
+            jobs: Arc::new(stores::InMemoryJobStore::default()),
+            learning: Arc::new(stores::InMemoryLearningStore::default()),
         }
     }
 

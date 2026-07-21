@@ -8,32 +8,54 @@ metadata:
     app.kubernetes.io/part-of: daedalus
     app.kubernetes.io/component: fabrication-planner
 spec:
-  # ONE replica, on purpose. Two load-bearing pieces of this service's state are
-  # in-process and are NOT shared:
+  # TWO replicas. The condition that pinned this to one is now met.
   #
-  #   * LearningMemory (src/lib.rs) accumulates run outcomes and is fed into
-  #     plan_fabrication_with_policy. JetStream splits deliveries across
-  #     replicas, so each pod accumulates a disjoint half of the outcome stream
-  #     and their aggregates diverge permanently. The same plan request then
-  #     returns different plans depending on which pod answers — silently, with
-  #     no metric and nothing in the API surfacing it.
-  #   * FabricationJobStore holds jobs and their artifacts. /jobs/{id} and the
-  #     artifact/release-bundle routes are served by whichever pod the Service
-  #     picks, so a job produced on one pod 404s on the other.
+  # Both pieces of load-bearing state moved out of process into the daedalus
+  # Postgres schema, behind the traits in src/stores.rs, and BOTH READ from it:
   #
-  # Neither is a mutual-exclusion problem, so a distributed lock does not fix
-  # them — they need shared storage. Until both move into the daedalus Postgres
-  # schema, a second replica trades correctness for availability. Scale back up
-  # only after that migration; see readme.md "Scaling past one replica".
+  #   * Run outcomes are rows in daedalus.fab_learning_outcomes. The aggregate
+  #     that plan_fabrication_with_policy consumes is computed from the newest
+  #     512 rows on every request, so every pod aggregates the same outcomes and
+  #     an identical plan request gets an identical plan whichever pod answers.
+  #     outcome_id is the primary key, so a JetStream redelivery upserts instead
+  #     of being counted a second time.
+  #   * Jobs and their artifacts are rows in daedalus.fab_jobs. /jobs,
+  #     /jobs/{id}, the artifact route and the release-bundle route all read
+  #     from that table, so a job produced on one pod is served by the other.
+  #     job_id is the primary key and inserts are ON CONFLICT DO UPDATE, so a
+  #     redelivery of one request no longer destroys the previous row.
   #
-  # Recreate, not RollingUpdate: maxSurge would briefly run two pods and
-  # reintroduce exactly the divergence this setting exists to prevent.
-  replicas: 1
+  # The 128-job / 512-outcome limits are now RETENTION TARGETS swept on write,
+  # not hard caps — see the module docs in src/stores.rs. Reads stay bounded by
+  # an explicit LIMIT regardless.
+  #
+  # THE PRECONDITION IS THE DATABASE, NOT THE CODE. With no connection URL the
+  # service falls back to the in-process stores and every failure described
+  # above comes back, silently, on two pods. FABRICATION_DATABASE_REQUIRED is
+  # set to "true" below precisely so that a missing URL is a refused startup
+  # rather than a quiet return to divergence. Do not remove it while replicas
+  # is above 1.
+  #
+  # Still not fixed by this, and unchanged: duplicate *processing* of one NATS
+  # delivery. That is a mutual-exclusion problem and it is what the fiducia
+  # leases in src/coordination.rs are for; without FIDUCIA_LOCKS_API_KEY two
+  # pods can both work the same redelivered request. The stores make that
+  # wasteful rather than divergent — both pods now write the same row — but
+  # enable the leases for the full guarantee. See readme.md "Scaling Past One
+  # Replica".
+  replicas: 2
   selector:
     matchLabels:
       app.kubernetes.io/name: dd-fabrication-server
+  # RollingUpdate is safe now that both pods read the same rows. maxUnavailable
+  # 0 keeps the service answering throughout a deploy; maxSurge 1 means at most
+  # three pods exist briefly, which is only a capacity question now, not a
+  # correctness one.
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   template:
     metadata:
       annotations:
@@ -135,6 +157,14 @@ spec:
               value: "256"
             # Persistence. src/persistence.rs reads FABRICATION_DATABASE_URL,
             # then RDS_DATABASE_URL, then DATABASE_URL.
+            #
+            # REQUIRED, not optional, because replicas > 1. Without a database
+            # src/stores.rs falls back to the in-process job and learning
+            # stores, and two pods then serve 404s for each other's jobs and
+            # diverging plans for identical requests. Refusing to start is the
+            # only failure mode that is visible.
+            - name: FABRICATION_DATABASE_REQUIRED
+              value: "true"
             - name: FABRICATION_DATABASE_MAX_CONNECTIONS
               value: "8"
             - name: FABRICATION_DATABASE_URL

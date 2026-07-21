@@ -71,6 +71,7 @@ fn infrastructure_modules_remain_transport_agnostic() {
         "observability.rs",
         "persistence.rs",
         "secrets.rs",
+        "stores.rs",
     ] {
         let source = read_source(&root.join(module));
         for transport_detail in ["axum::", "Router::", "IntoResponse", "StatusCode"] {
@@ -82,15 +83,22 @@ fn infrastructure_modules_remain_transport_agnostic() {
     }
 }
 
+/// SeaORM stays inside the persistence layer, which is exactly two files.
+///
+/// `persistence.rs` owns the pool and `stores.rs` owns the two tables behind
+/// the `JobStore`/`LearningStore` traits. Nothing else may name `sea_orm::` —
+/// the point of those traits is that the ~120 planning call sites talk to a
+/// store, not to an ORM, and a third entry in this list means that boundary
+/// has been crossed rather than extended.
 #[test]
-fn seaorm_access_is_confined_to_the_persistence_module() {
+fn seaorm_access_is_confined_to_the_persistence_layer() {
     let users: Vec<String> = rust_sources()
         .into_iter()
         .filter(|path| read_source(path).contains("sea_orm::"))
         .map(|path| relative_source_name(&path))
         .collect();
 
-    assert_eq!(users, ["persistence.rs"]);
+    assert_eq!(users, ["persistence.rs", "stores.rs"]);
 }
 
 #[test]
@@ -194,7 +202,7 @@ fn runtime_sources_do_not_own_database_ddl() {
 #[test]
 fn stateful_infrastructure_modules_keep_local_unit_tests() {
     let root = source_root();
-    for module in ["config.rs", "persistence.rs", "secrets.rs"] {
+    for module in ["config.rs", "persistence.rs", "secrets.rs", "stores.rs"] {
         let source = read_source(&root.join(module));
         assert!(
             source.contains("#[cfg(test)]"),
