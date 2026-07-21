@@ -53,7 +53,7 @@ spec:
             matchLabels: { app: dd-shared-auth }
       containers:
         - name: shared-auth
-          image: ghcr.io/oresoftware/shared-auth-server:main
+          image: ghcr.io/shared-auth/shared-auth-server:main
           imagePullPolicy: IfNotPresent
           args: ["serve"]
           ports:

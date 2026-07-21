@@ -3,7 +3,7 @@
 # startup. Secrets (signing key, DB URL, project list, Supabase PAT) are
 # environment-only and are deliberately NOT accepted as flags.
 [help]
-url = "https://github.com/oresoftware/shared-auth-server.rs"
+url = "https://github.com/shared-auth/shared-auth-server.rs"
 columns = ["options", "env", "type", "default", "description"]
 
 [parse]

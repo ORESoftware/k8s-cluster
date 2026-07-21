@@ -41,8 +41,8 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/oresoftware/shared-auth-server:main
-            ghcr.io/oresoftware/shared-auth-server:sha-${{ github.sha }}
+            ghcr.io/shared-auth/shared-auth-server:main
+            ghcr.io/shared-auth/shared-auth-server:sha-${{ github.sha }}
 
       # GitOps promotion: pin the immutable digest so ArgoCD deploys exactly what
       # CI built (a moving :main tag would not reliably trigger a rollout).
@@ -51,7 +51,7 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
-          img="ghcr.io/oresoftware/shared-auth-server@${DIGEST}"
+          img="ghcr.io/shared-auth/shared-auth-server@${DIGEST}"
           sed -i -E "s#image: ghcr\.io/oresoftware/shared-auth-server.*#image: ${img}#" deploy/k8s/deployment.yaml
           if git diff --quiet; then echo "digest unchanged"; exit 0; fi
           git config user.name "ore-gitops-bot"
