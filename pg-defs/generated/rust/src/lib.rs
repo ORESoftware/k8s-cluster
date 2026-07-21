@@ -22154,7 +22154,8 @@ pub const FAB_DESIGNS_SELECT_SQL: &str = r###"select
 pub enum FabDesignsFormat {
     Step,
     Stl,
-    3mf,
+    #[serde(rename = "3mf")]
+    V3mf,
     Dxf,
     Iges,
     Obj,
@@ -22167,7 +22168,7 @@ impl FabDesignsFormat {
         match self {
             Self::Step => "step",
             Self::Stl => "stl",
-            Self::3mf => "3mf",
+            Self::V3mf => "3mf",
             Self::Dxf => "dxf",
             Self::Iges => "iges",
             Self::Obj => "obj",
@@ -22182,7 +22183,7 @@ impl TryFrom<&str> for FabDesignsFormat {
         match value {
             "step" => Ok(Self::Step),
             "stl" => Ok(Self::Stl),
-            "3mf" => Ok(Self::3mf),
+            "3mf" => Ok(Self::V3mf),
             "dxf" => Ok(Self::Dxf),
             "iges" => Ok(Self::Iges),
             "obj" => Ok(Self::Obj),
@@ -22547,6 +22548,145 @@ pub fn validate_web_sessions_row(value: &WebSessionsRow) -> Result<(), String> {
 pub fn validate_web_sessions_insert(value: &WebSessionsInsert) -> Result<(), String> {
     if let Some(value) = &value.owner_email {
         if (value).as_bytes().len() > 320 { return Err("web_sessions.owner_email exceeds 320 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub const FAB_JOBS_TABLE: &str = "daedalus.fab_jobs";
+pub const FAB_JOBS_COLUMNS: &[&str] = &["job_id", "request_id", "kind", "status", "ok", "severity", "summary", "artifact_count", "payload", "created_at", "updated_at"];
+pub const FAB_JOBS_SELECT_SQL: &str = r###"select
+      job_id,
+      request_id,
+      kind,
+      status,
+      ok,
+      severity,
+      summary,
+      artifact_count,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from daedalus.fab_jobs"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct FabJobsRow {
+    pub job_id: String,
+    pub request_id: String,
+    pub kind: String,
+    pub status: String,
+    pub ok: bool,
+    pub severity: String,
+    pub summary: String,
+    pub artifact_count: i32,
+    pub payload: Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FabJobsInsert {
+    pub job_id: Option<String>,
+    pub request_id: Option<String>,
+    pub kind: Option<String>,
+    pub status: Option<String>,
+    pub ok: Option<bool>,
+    pub severity: Option<String>,
+    pub summary: Option<String>,
+    pub artifact_count: Option<i32>,
+    pub payload: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_fab_jobs_row(value: &FabJobsRow) -> Result<(), String> {
+    if (&value.job_id).as_bytes().len() > 200 { return Err("fab_jobs.job_id exceeds 200 bytes".to_string()); }
+    if (&value.request_id).as_bytes().len() > 200 { return Err("fab_jobs.request_id exceeds 200 bytes".to_string()); }
+    if (&value.summary).as_bytes().len() > 20000 { return Err("fab_jobs.summary exceeds 20000 bytes".to_string()); }
+    if *(&value.artifact_count) < 0 { return Err("fab_jobs.artifact_count is below the minimum".to_string()); }
+    if !(&value.payload).is_object() { return Err("fab_jobs.payload must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_fab_jobs_insert(value: &FabJobsInsert) -> Result<(), String> {
+    if let Some(value) = &value.job_id {
+        if (value).as_bytes().len() > 200 { return Err("fab_jobs.job_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.request_id {
+        if (value).as_bytes().len() > 200 { return Err("fab_jobs.request_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.summary {
+        if (value).as_bytes().len() > 20000 { return Err("fab_jobs.summary exceeds 20000 bytes".to_string()); }
+    }
+    if let Some(value) = &value.artifact_count {
+        if *(value) < 0 { return Err("fab_jobs.artifact_count is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("fab_jobs.payload must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const FAB_LEARNING_OUTCOMES_TABLE: &str = "daedalus.fab_learning_outcomes";
+pub const FAB_LEARNING_OUTCOMES_COLUMNS: &[&str] = &["outcome_id", "request_id", "job_id", "objective", "machine_kind", "assembly_strategy", "success", "reward", "payload", "created_at"];
+pub const FAB_LEARNING_OUTCOMES_SELECT_SQL: &str = r###"select
+      outcome_id,
+      request_id,
+      job_id,
+      objective,
+      machine_kind,
+      assembly_strategy,
+      success,
+      reward,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_learning_outcomes"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct FabLearningOutcomesRow {
+    pub outcome_id: String,
+    pub request_id: String,
+    pub job_id: Option<String>,
+    pub objective: Option<String>,
+    pub machine_kind: Option<String>,
+    pub assembly_strategy: Option<String>,
+    pub success: bool,
+    pub reward: f64,
+    pub payload: Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FabLearningOutcomesInsert {
+    pub outcome_id: Option<String>,
+    pub request_id: Option<String>,
+    pub job_id: Option<String>,
+    pub objective: Option<String>,
+    pub machine_kind: Option<String>,
+    pub assembly_strategy: Option<String>,
+    pub success: Option<bool>,
+    pub reward: Option<f64>,
+    pub payload: Option<Value>,
+    pub created_at: Option<String>,
+}
+
+pub fn validate_fab_learning_outcomes_row(value: &FabLearningOutcomesRow) -> Result<(), String> {
+    if (&value.outcome_id).as_bytes().len() > 200 { return Err("fab_learning_outcomes.outcome_id exceeds 200 bytes".to_string()); }
+    if !(&value.payload).is_object() { return Err("fab_learning_outcomes.payload must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_fab_learning_outcomes_insert(value: &FabLearningOutcomesInsert) -> Result<(), String> {
+    if let Some(value) = &value.outcome_id {
+        if (value).as_bytes().len() > 200 { return Err("fab_learning_outcomes.outcome_id exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.payload {
+        if !(value).is_object() { return Err("fab_learning_outcomes.payload must be a JSON object".to_string()); }
     }
     Ok(())
 }

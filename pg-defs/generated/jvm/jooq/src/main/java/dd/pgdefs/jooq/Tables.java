@@ -2566,4 +2566,31 @@ public final class Tables {
     public static final Field<OffsetDateTime> WEB_SESSIONS_ABSOLUTE_EXPIRES_AT = DSL.field(DSL.name("daedalus", "web_sessions", "absolute_expires_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<OffsetDateTime> WEB_SESSIONS_REVOKED_AT = DSL.field(DSL.name("daedalus", "web_sessions", "revoked_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
 
+    public static final Name FAB_JOBS_NAME = DSL.name("daedalus", "fab_jobs");
+    public static final Table<org.jooq.Record> FAB_JOBS = DSL.table(FAB_JOBS_NAME);
+    public static final Field<String> FAB_JOBS_JOB_ID = DSL.field(DSL.name("daedalus", "fab_jobs", "job_id"), SQLDataType.CLOB);
+    public static final Field<String> FAB_JOBS_REQUEST_ID = DSL.field(DSL.name("daedalus", "fab_jobs", "request_id"), SQLDataType.CLOB);
+    public static final Field<String> FAB_JOBS_KIND = DSL.field(DSL.name("daedalus", "fab_jobs", "kind"), SQLDataType.CLOB);
+    public static final Field<String> FAB_JOBS_STATUS = DSL.field(DSL.name("daedalus", "fab_jobs", "status"), SQLDataType.CLOB);
+    public static final Field<Boolean> FAB_JOBS_OK = DSL.field(DSL.name("daedalus", "fab_jobs", "ok"), SQLDataType.BOOLEAN);
+    public static final Field<String> FAB_JOBS_SEVERITY = DSL.field(DSL.name("daedalus", "fab_jobs", "severity"), SQLDataType.CLOB);
+    public static final Field<String> FAB_JOBS_SUMMARY = DSL.field(DSL.name("daedalus", "fab_jobs", "summary"), SQLDataType.CLOB);
+    public static final Field<Integer> FAB_JOBS_ARTIFACT_COUNT = DSL.field(DSL.name("daedalus", "fab_jobs", "artifact_count"), SQLDataType.INTEGER);
+    public static final Field<JSONB> FAB_JOBS_PAYLOAD = DSL.field(DSL.name("daedalus", "fab_jobs", "payload"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> FAB_JOBS_CREATED_AT = DSL.field(DSL.name("daedalus", "fab_jobs", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> FAB_JOBS_UPDATED_AT = DSL.field(DSL.name("daedalus", "fab_jobs", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name FAB_LEARNING_OUTCOMES_NAME = DSL.name("daedalus", "fab_learning_outcomes");
+    public static final Table<org.jooq.Record> FAB_LEARNING_OUTCOMES = DSL.table(FAB_LEARNING_OUTCOMES_NAME);
+    public static final Field<String> FAB_LEARNING_OUTCOMES_OUTCOME_ID = DSL.field(DSL.name("daedalus", "fab_learning_outcomes", "outcome_id"), SQLDataType.CLOB);
+    public static final Field<String> FAB_LEARNING_OUTCOMES_REQUEST_ID = DSL.field(DSL.name("daedalus", "fab_learning_outcomes", "request_id"), SQLDataType.CLOB);
+    public static final Field<String> FAB_LEARNING_OUTCOMES_JOB_ID = DSL.field(DSL.name("daedalus", "fab_learning_outcomes", "job_id"), SQLDataType.CLOB);
+    public static final Field<String> FAB_LEARNING_OUTCOMES_OBJECTIVE = DSL.field(DSL.name("daedalus", "fab_learning_outcomes", "objective"), SQLDataType.CLOB);
+    public static final Field<String> FAB_LEARNING_OUTCOMES_MACHINE_KIND = DSL.field(DSL.name("daedalus", "fab_learning_outcomes", "machine_kind"), SQLDataType.CLOB);
+    public static final Field<String> FAB_LEARNING_OUTCOMES_ASSEMBLY_STRATEGY = DSL.field(DSL.name("daedalus", "fab_learning_outcomes", "assembly_strategy"), SQLDataType.CLOB);
+    public static final Field<Boolean> FAB_LEARNING_OUTCOMES_SUCCESS = DSL.field(DSL.name("daedalus", "fab_learning_outcomes", "success"), SQLDataType.BOOLEAN);
+    public static final Field<Double> FAB_LEARNING_OUTCOMES_REWARD = DSL.field(DSL.name("daedalus", "fab_learning_outcomes", "reward"), SQLDataType.DOUBLE);
+    public static final Field<JSONB> FAB_LEARNING_OUTCOMES_PAYLOAD = DSL.field(DSL.name("daedalus", "fab_learning_outcomes", "payload"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> FAB_LEARNING_OUTCOMES_CREATED_AT = DSL.field(DSL.name("daedalus", "fab_learning_outcomes", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
 }

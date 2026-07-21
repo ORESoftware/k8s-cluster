@@ -2058,6 +2058,15 @@ function renderRust(contract) {
   return `${lines.join('\n').trimEnd()}\n`;
 }
 
+// Postgres enum labels may start with a digit (e.g. the `3mf` model format),
+// but Rust identifiers may not. Those get a `V` prefix plus an explicit
+// `#[serde(rename)]` so the wire value stays the raw label — the enum's
+// `rename_all = "lowercase"` would otherwise serialize the prefixed name.
+function rustEnumVariant(value) {
+  const name = pascal(value);
+  return /^[0-9]/.test(name) ? `V${name}` : name;
+}
+
 function renderRustEnum(baseName, column) {
   const enumName = `${baseName}${pascal(column.name)}`;
   const lines = [
@@ -2066,7 +2075,10 @@ function renderRustEnum(baseName, column) {
     `pub enum ${enumName} {`,
   ];
   for (const value of column.enumValues) {
-    lines.push(`    ${pascal(value)},`);
+    if (rustEnumVariant(value) !== pascal(value)) {
+      lines.push(`    #[serde(rename = ${JSON.stringify(value)})]`);
+    }
+    lines.push(`    ${rustEnumVariant(value)},`);
   }
   lines.push('}');
   lines.push('');
@@ -2078,7 +2090,7 @@ function renderRustEnum(baseName, column) {
   lines.push("    pub fn as_str(self) -> &'static str {");
   lines.push('        match self {');
   for (const value of column.enumValues) {
-    lines.push(`            Self::${pascal(value)} => ${JSON.stringify(value)},`);
+    lines.push(`            Self::${rustEnumVariant(value)} => ${JSON.stringify(value)},`);
   }
   lines.push('        }');
   lines.push('    }');
@@ -2090,7 +2102,7 @@ function renderRustEnum(baseName, column) {
   lines.push('    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {');
   lines.push('        match value {');
   for (const value of column.enumValues) {
-    lines.push(`            ${JSON.stringify(value)} => Ok(Self::${pascal(value)}),`);
+    lines.push(`            ${JSON.stringify(value)} => Ok(Self::${rustEnumVariant(value)}),`);
   }
   lines.push(`            _ => Err(format!("unsupported ${column.name}: {value}")),`);
   lines.push('        }');

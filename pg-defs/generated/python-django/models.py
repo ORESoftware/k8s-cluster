@@ -3333,3 +3333,40 @@ class WebSessions(models.Model):
         managed = False
         app_label = "dd_pg_defs"
         db_table = "daedalus\".\"web_sessions"
+
+
+class FabJobs(models.Model):
+    job_id = models.TextField(primary_key=True)
+    request_id = models.TextField()
+    kind = models.TextField()
+    status = models.TextField()
+    ok = models.BooleanField()
+    severity = models.TextField(default="info")
+    summary = models.TextField(default="")
+    artifact_count = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    payload = models.JSONField(default=dict)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "daedalus\".\"fab_jobs"
+
+
+class FabLearningOutcomes(models.Model):
+    outcome_id = models.TextField(primary_key=True)
+    request_id = models.TextField(default="")
+    job_id = models.TextField(null=True, blank=True)
+    objective = models.TextField(null=True, blank=True)
+    machine_kind = models.TextField(null=True, blank=True)
+    assembly_strategy = models.TextField(null=True, blank=True)
+    success = models.BooleanField()
+    reward = models.FloatField(default=0)
+    payload = models.JSONField(default=dict)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "daedalus\".\"fab_learning_outcomes"

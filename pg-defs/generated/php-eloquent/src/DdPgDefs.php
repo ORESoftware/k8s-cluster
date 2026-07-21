@@ -4453,3 +4453,51 @@ class WebSessions extends Model
         ];
     }
 }
+
+class FabJobs extends Model
+{
+    protected $table = 'daedalus.fab_jobs';
+    protected $primaryKey = 'job_id';
+    public $timestamps = true;
+    protected $fillable = ['request_id', 'kind', 'status', 'ok', 'severity', 'summary', 'artifact_count', 'payload', 'created_at', 'updated_at'];
+    protected $casts = ['ok' => 'boolean', 'artifact_count' => 'integer', 'payload' => 'array', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'request_id' => ['required', 'string'],
+            'kind' => ['required', 'string'],
+            'status' => ['required', 'string'],
+            'ok' => ['required', 'boolean'],
+            'severity' => ['nullable', 'string'],
+            'summary' => ['nullable', 'string'],
+            'artifact_count' => ['nullable', 'integer', 'min:0'],
+            'payload' => ['nullable', 'array'],
+        ];
+    }
+}
+
+class FabLearningOutcomes extends Model
+{
+    protected $table = 'daedalus.fab_learning_outcomes';
+    protected $primaryKey = 'outcome_id';
+    public $timestamps = false;
+    protected $fillable = ['request_id', 'job_id', 'objective', 'machine_kind', 'assembly_strategy', 'success', 'reward', 'payload', 'created_at'];
+    protected $casts = ['success' => 'boolean', 'reward' => 'double', 'payload' => 'array', 'created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'request_id' => ['nullable', 'string'],
+            'job_id' => ['nullable', 'string'],
+            'objective' => ['nullable', 'string'],
+            'machine_kind' => ['nullable', 'string'],
+            'assembly_strategy' => ['nullable', 'string'],
+            'success' => ['required', 'boolean'],
+            'reward' => ['nullable', 'numeric'],
+            'payload' => ['nullable', 'array'],
+        ];
+    }
+}

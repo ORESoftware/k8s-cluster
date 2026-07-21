@@ -8006,6 +8006,83 @@ func (value WebSessionsGorm) Validate() error {
 	return nil
 }
 
+const FabJobsTable = "daedalus.fab_jobs"
+const FabJobsSelectSQL = `select
+      job_id,
+      request_id,
+      kind,
+      status,
+      ok,
+      severity,
+      summary,
+      artifact_count,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from daedalus.fab_jobs`
+
+type FabJobsGorm struct {
+	JobId string `gorm:"column:job_id;type:text;primaryKey" json:"jobId"`
+	RequestId string `gorm:"column:request_id;type:text;not null" json:"requestId"`
+	Kind string `gorm:"column:kind;type:text;not null" json:"kind"`
+	Status string `gorm:"column:status;type:text;not null" json:"status"`
+	Ok bool `gorm:"column:ok;type:boolean;not null" json:"ok"`
+	Severity string `gorm:"column:severity;type:text;default:'info';not null" json:"severity"`
+	Summary string `gorm:"column:summary;type:text;default:'';not null" json:"summary"`
+	ArtifactCount int32 `gorm:"column:artifact_count;type:integer;default:0;not null" json:"artifactCount"`
+	Payload datatypes.JSON `gorm:"column:payload;type:jsonb;default:'{}'::jsonb;not null" json:"payload"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (FabJobsGorm) TableName() string { return FabJobsTable }
+
+func (value FabJobsGorm) Validate() error {
+	if len([]byte(value.JobId)) > 200 { return errors.New("fab_jobs.job_id exceeds 200 bytes") }
+	if len([]byte(value.JobId)) < 1 { return errors.New("fab_jobs.job_id is below 1 bytes") }
+	if len([]byte(value.RequestId)) > 200 { return errors.New("fab_jobs.request_id exceeds 200 bytes") }
+	if len([]byte(value.Summary)) > 20000 { return errors.New("fab_jobs.summary exceeds 20000 bytes") }
+	if value.ArtifactCount < 0 { return errors.New("fab_jobs.artifact_count is below the minimum") }
+	if !validateJSONString(value.Payload) { return errors.New("fab_jobs.payload must be valid JSON") }
+	return nil
+}
+
+const FabLearningOutcomesTable = "daedalus.fab_learning_outcomes"
+const FabLearningOutcomesSelectSQL = `select
+      outcome_id,
+      request_id,
+      job_id,
+      objective,
+      machine_kind,
+      assembly_strategy,
+      success,
+      reward,
+      payload,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_learning_outcomes`
+
+type FabLearningOutcomesGorm struct {
+	OutcomeId string `gorm:"column:outcome_id;type:text;primaryKey" json:"outcomeId"`
+	RequestId string `gorm:"column:request_id;type:text;default:'';not null" json:"requestId"`
+	JobId *string `gorm:"column:job_id;type:text" json:"jobId,omitempty"`
+	Objective *string `gorm:"column:objective;type:text" json:"objective,omitempty"`
+	MachineKind *string `gorm:"column:machine_kind;type:text" json:"machineKind,omitempty"`
+	AssemblyStrategy *string `gorm:"column:assembly_strategy;type:text" json:"assemblyStrategy,omitempty"`
+	Success bool `gorm:"column:success;type:boolean;not null" json:"success"`
+	Reward float64 `gorm:"column:reward;type:double precision;default:0;not null" json:"reward"`
+	Payload datatypes.JSON `gorm:"column:payload;type:jsonb;default:'{}'::jsonb;not null" json:"payload"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+}
+
+func (FabLearningOutcomesGorm) TableName() string { return FabLearningOutcomesTable }
+
+func (value FabLearningOutcomesGorm) Validate() error {
+	if len([]byte(value.OutcomeId)) > 200 { return errors.New("fab_learning_outcomes.outcome_id exceeds 200 bytes") }
+	if len([]byte(value.OutcomeId)) < 1 { return errors.New("fab_learning_outcomes.outcome_id is below 1 bytes") }
+	if !validateJSONString(value.Payload) { return errors.New("fab_learning_outcomes.payload must be valid JSON") }
+	return nil
+}
+
 func validateJSONString(value datatypes.JSON) bool {
 	if len(value) == 0 {
 		return true

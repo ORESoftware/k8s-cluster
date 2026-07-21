@@ -12119,3 +12119,75 @@ let web_sessions_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : we
     web_sessions_absolute_expires_at = get 11;
     web_sessions_revoked_at = (if is_null 12 then None else Some (get 12));
   }
+
+let fab_jobs_table = "daedalus.fab_jobs"
+
+let fab_jobs_columns = ["job_id"; "request_id"; "kind"; "status"; "ok"; "severity"; "summary"; "artifact_count"; "payload"; "created_at"; "updated_at"]
+
+let fab_jobs_select_sql = "select\n      job_id,\n      request_id,\n      kind,\n      status,\n      ok,\n      severity,\n      summary,\n      artifact_count,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_jobs"
+
+type fab_jobs_row = {
+  fab_jobs_job_id : string;
+  fab_jobs_request_id : string;
+  fab_jobs_kind : string;
+  fab_jobs_status : string;
+  fab_jobs_ok : bool;
+  fab_jobs_severity : string;
+  fab_jobs_summary : string;
+  fab_jobs_artifact_count : int;
+  fab_jobs_payload : string;
+  fab_jobs_created_at : string;
+  fab_jobs_updated_at : string;
+}
+
+let fab_jobs_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : fab_jobs_row =
+  {
+    fab_jobs_job_id = get 0;
+    fab_jobs_request_id = get 1;
+    fab_jobs_kind = get 2;
+    fab_jobs_status = get 3;
+    fab_jobs_ok = (get 4 = "t");
+    fab_jobs_severity = get 5;
+    fab_jobs_summary = get 6;
+    fab_jobs_artifact_count = int_of_string (get 7);
+    fab_jobs_payload = get 8;
+    fab_jobs_created_at = get 9;
+    fab_jobs_updated_at = get 10;
+  }
+
+let validate_fab_jobs_artifact_count (value : int) : (int, string) result =
+  if value < 0 then Error "fab_jobs.artifact_count is below the minimum"
+  else Ok value
+
+let fab_learning_outcomes_table = "daedalus.fab_learning_outcomes"
+
+let fab_learning_outcomes_columns = ["outcome_id"; "request_id"; "job_id"; "objective"; "machine_kind"; "assembly_strategy"; "success"; "reward"; "payload"; "created_at"]
+
+let fab_learning_outcomes_select_sql = "select\n      outcome_id,\n      request_id,\n      job_id,\n      objective,\n      machine_kind,\n      assembly_strategy,\n      success,\n      reward,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_learning_outcomes"
+
+type fab_learning_outcomes_row = {
+  fab_learning_outcomes_outcome_id : string;
+  fab_learning_outcomes_request_id : string;
+  fab_learning_outcomes_job_id : string option;
+  fab_learning_outcomes_objective : string option;
+  fab_learning_outcomes_machine_kind : string option;
+  fab_learning_outcomes_assembly_strategy : string option;
+  fab_learning_outcomes_success : bool;
+  fab_learning_outcomes_reward : float;
+  fab_learning_outcomes_payload : string;
+  fab_learning_outcomes_created_at : string;
+}
+
+let fab_learning_outcomes_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : fab_learning_outcomes_row =
+  {
+    fab_learning_outcomes_outcome_id = get 0;
+    fab_learning_outcomes_request_id = get 1;
+    fab_learning_outcomes_job_id = (if is_null 2 then None else Some (get 2));
+    fab_learning_outcomes_objective = (if is_null 3 then None else Some (get 3));
+    fab_learning_outcomes_machine_kind = (if is_null 4 then None else Some (get 4));
+    fab_learning_outcomes_assembly_strategy = (if is_null 5 then None else Some (get 5));
+    fab_learning_outcomes_success = (get 6 = "t");
+    fab_learning_outcomes_reward = float_of_string (get 7);
+    fab_learning_outcomes_payload = get 8;
+    fab_learning_outcomes_created_at = get 9;
+  }

@@ -14677,4 +14677,99 @@ inline WebSessionsRow web_sessions_row_of_row(const std::function<std::string(in
     return row;
 }
 
+inline const char* fab_jobs_table = "daedalus.fab_jobs";
+inline const std::vector<std::string> fab_jobs_columns = { "job_id", "request_id", "kind", "status", "ok", "severity", "summary", "artifact_count", "payload", "created_at", "updated_at" };
+inline const char* fab_jobs_select_sql = R"SQL(select
+      job_id,
+      request_id,
+      kind,
+      status,
+      ok,
+      severity,
+      summary,
+      artifact_count,
+      payload::text as payload_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from daedalus.fab_jobs)SQL";
+
+struct FabJobsRow {
+    std::string job_id;
+    std::string request_id;
+    std::string kind;
+    std::string status;
+    bool ok;
+    std::string severity;
+    std::string summary;
+    int32_t artifact_count;
+    std::string payload;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline FabJobsRow fab_jobs_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    FabJobsRow row;
+    (void)is_null;
+    row.job_id = get(0);
+    row.request_id = get(1);
+    row.kind = get(2);
+    row.status = get(3);
+    row.ok = (get(4) == "t");
+    row.severity = get(5);
+    row.summary = get(6);
+    row.artifact_count = std::stoi(get(7));
+    row.payload = get(8);
+    row.created_at = get(9);
+    row.updated_at = get(10);
+    return row;
+}
+inline std::optional<std::string> validate_fab_jobs_artifact_count(int32_t value) {
+    if (value < 0) return std::string("fab_jobs.artifact_count is below the minimum");
+    return std::nullopt;
+}
+
+inline const char* fab_learning_outcomes_table = "daedalus.fab_learning_outcomes";
+inline const std::vector<std::string> fab_learning_outcomes_columns = { "outcome_id", "request_id", "job_id", "objective", "machine_kind", "assembly_strategy", "success", "reward", "payload", "created_at" };
+inline const char* fab_learning_outcomes_select_sql = R"SQL(select
+      outcome_id,
+      request_id,
+      job_id,
+      objective,
+      machine_kind,
+      assembly_strategy,
+      success,
+      reward,
+      payload::text as payload_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at
+    from daedalus.fab_learning_outcomes)SQL";
+
+struct FabLearningOutcomesRow {
+    std::string outcome_id;
+    std::string request_id;
+    std::optional<std::string> job_id;
+    std::optional<std::string> objective;
+    std::optional<std::string> machine_kind;
+    std::optional<std::string> assembly_strategy;
+    bool success;
+    double reward;
+    std::string payload;
+    std::string created_at;
+};
+
+inline FabLearningOutcomesRow fab_learning_outcomes_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    FabLearningOutcomesRow row;
+    (void)is_null;
+    row.outcome_id = get(0);
+    row.request_id = get(1);
+    row.job_id = is_null(2) ? std::nullopt : std::optional<std::string>(get(2));
+    row.objective = is_null(3) ? std::nullopt : std::optional<std::string>(get(3));
+    row.machine_kind = is_null(4) ? std::nullopt : std::optional<std::string>(get(4));
+    row.assembly_strategy = is_null(5) ? std::nullopt : std::optional<std::string>(get(5));
+    row.success = (get(6) == "t");
+    row.reward = std::stod(get(7));
+    row.payload = get(8);
+    row.created_at = get(9);
+    return row;
+}
+
 }  // namespace dd_pg_defs
