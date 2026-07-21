@@ -1,0 +1,75 @@
+# Non-secret command-line configuration for shared-auth-server, parsed by
+# flags-2-env (github.com/oresoftware/flags-2-env) into env-var overrides at
+# startup. Secrets (signing key, DB URL, project list, Supabase PAT) are
+# environment-only and are deliberately NOT accepted as flags.
+[help]
+url = "https://github.com/oresoftware/shared-auth-server.rs"
+columns = ["options", "env", "type", "default", "description"]
+
+[parse]
+allow_unknown = false
+
+# These may hold secrets — flags-2-env must never surface them in help/echo.
+[env]
+ignore = [
+  "AUTH_SIGNING_KEY_PEM",
+  "AUTH_DATABASE_URL",
+  "AUTH_SUPABASE_PROJECTS",
+  "SUPABASE_ACCESS_TOKEN",
+]
+
+[flags.bind-addr]
+env = "AUTH_BIND_ADDR"
+aliases = ["bind-addr", "bind"]
+short = "b"
+type = "string"
+default = "0.0.0.0:8120"
+help = "HTTP listen address."
+
+[flags.issuer]
+env = "AUTH_ISSUER"
+aliases = ["issuer"]
+type = "string"
+default = "https://auth.oresoftware.dev"
+help = "iss claim on minted OreSoftware JWTs."
+
+[flags.audience]
+env = "AUTH_AUDIENCE"
+aliases = ["audience", "aud"]
+type = "string"
+default = "oresoftware"
+help = "aud claim on minted OreSoftware JWTs."
+
+[flags.token-ttl-secs]
+env = "AUTH_TOKEN_TTL_SECS"
+aliases = ["token-ttl-secs", "ttl"]
+type = "integer"
+default = 3600
+help = "Lifetime of a minted token, in seconds."
+
+[flags.signing-kid]
+env = "AUTH_SIGNING_KID"
+aliases = ["signing-kid", "kid"]
+type = "string"
+default = "shared-auth-v1"
+help = "kid advertised in our JWKS and stamped on minted tokens."
+
+[flags.log-format]
+env = "AUTH_LOG_FORMAT"
+aliases = ["log-format"]
+type = "string"
+default = "json"
+help = "Log format: json (cluster) or pretty (local)."
+
+[flags.db-max-connections]
+env = "AUTH_DB_MAX_CONNECTIONS"
+aliases = ["db-max-connections"]
+type = "integer"
+default = 5
+help = "Max RDS connection-pool size."
+
+[flags.cors-allow-origins]
+env = "AUTH_CORS_ALLOW_ORIGINS"
+aliases = ["cors-allow-origins"]
+type = "string"
+help = "Comma-separated browser origins allowed by CORS."

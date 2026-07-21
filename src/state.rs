@@ -8,6 +8,7 @@ use anyhow::Context;
 
 use crate::config::AppConfig;
 use crate::db::UserStore;
+use crate::metrics::Metrics;
 use crate::supabase::ProjectRegistry;
 use crate::token::TokenMinter;
 
@@ -22,6 +23,8 @@ pub struct AppState {
     pub db: Option<UserStore>,
     /// Outbound client for JWKS fetches (kept warm; connection-pooled).
     pub http: reqwest::Client,
+    /// Prometheus counters.
+    pub metrics: Metrics,
 }
 
 impl AppState {
@@ -56,6 +59,7 @@ impl AppState {
             minter: Arc::new(minter),
             db,
             http,
+            metrics: Metrics::new(),
         })
     }
 }

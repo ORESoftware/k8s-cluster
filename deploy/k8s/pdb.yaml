@@ -1,0 +1,12 @@
+# Keep at least one auth replica servable during voluntary disruptions (node
+# drain, rolling update), so scale-down/upgrades never take auth fully down.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-shared-auth
+  namespace: shared-auth
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-shared-auth

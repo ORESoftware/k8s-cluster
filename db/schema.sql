@@ -19,7 +19,9 @@ create table if not exists shared_auth.users (
     -- "fiducia-cloud"). Part of the natural key: the same person in two projects
     -- is two identities here.
     supabase_project  text        not null,
-    supabase_user_id  uuid        not null,
+    -- text (not uuid): Supabase sub is a UUID today, but keep the column tolerant
+    -- of any opaque provider subject rather than rejecting at the DB layer.
+    supabase_user_id  text        not null,
 
     email             text,
     email_verified    boolean     not null default false,

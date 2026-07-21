@@ -16,6 +16,15 @@ metadata:
     app.kubernetes.io/part-of: shared-auth
 spec:
   replicas: 2
+  # Zero-downtime rolling update: never drop below the desired count, add one at
+  # a time. Combined with the PDB below and the readiness gate, an ArgoCD sync (or
+  # a node drain) rolls without an auth outage. For blue/green, front this with an
+  # Argo Rollouts Rollout (see docs/DESIGN.md) — the app is stateless so either fits.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: dd-shared-auth
@@ -25,6 +34,10 @@ spec:
         app: dd-shared-auth
         app.kubernetes.io/name: dd-shared-auth
         app.kubernetes.io/part-of: shared-auth
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8120"
+        prometheus.io/path: /metrics
     spec:
       securityContext:
         runAsNonRoot: true
@@ -52,6 +65,15 @@ spec:
             - { name: AUTH_ISSUER, value: "https://auth.oresoftware.dev" }
             - { name: AUTH_AUDIENCE, value: "oresoftware" }
             - { name: RUST_LOG, value: "info" }
+            # OTel traces → cluster collector; logs (JSON stdout) → promtail → Loki;
+            # /metrics → Prometheus → Grafana. See src/telemetry.rs.
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://dd-otel-collector.observability.svc.cluster.local:4318" }
+            - { name: OTEL_SERVICE_NAME, value: "dd-shared-auth" }
+            # Downward API → k8s.pod.name / k8s.namespace.name resource attributes.
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: POD_NAMESPACE
+              valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
           # Secrets (project list, signing key, RDS DSN) come from the shared
           # ClusterSecretStore via the ExternalSecret in this dir.
           envFrom:

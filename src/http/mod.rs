@@ -1,19 +1,23 @@
 //! The axum surface.
 //!
-//! Routes, mounted under the cluster gateway at `/shared-auth/`:
-//! - `GET  /healthz`                    liveness
-//! - `GET  /readyz`                     readiness (DB ping if configured)
-//! - `GET  /.well-known/jwks.json`      our public JWKS (downstream verifiers)
-//! - `POST /auth/exchange`              Supabase access token → OreSoftware JWT
-//! - `POST /auth/introspect`            validate an OreSoftware JWT → claims
-//! - `GET  /auth/verify`                lightweight bearer check (gateway auth_request)
-//! - `GET  /metrics`                    Prometheus
+//! JSON API + a small Maud/htmx HTML UI. No websockets.
+//! - `GET  /`                           status landing (HTML)
+//! - `GET  /ui`                          token-exchange helper (HTML)
+//! - `POST /ui/exchange`                 htmx fragment (HTML)
+//! - `GET  /healthz`                     liveness
+//! - `GET  /readyz`                      readiness (DB ping if configured)
+//! - `GET  /.well-known/jwks.json`       our public JWKS (downstream verifiers)
+//! - `POST /auth/exchange`               Supabase access token → OreSoftware JWT
+//! - `POST /auth/introspect`             validate an OreSoftware JWT → claims
+//! - `GET  /auth/verify`                 bearer check (gateway auth_request)
+//! - `GET  /metrics`                     Prometheus
 
 mod exchange;
 mod health;
 mod introspect;
 mod jwks;
 mod metrics;
+mod ui;
 
 use std::time::Duration;
 
@@ -24,14 +28,22 @@ use axum::{
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
-use tower_http::trace::TraceLayer;
 
 use crate::state::AppState;
 
+// TimeoutLayer::new is deprecated in tower-http 0.6 in favour of
+// with_status_code; new() still produces the same 408-on-timeout behaviour we
+// want, so allow it rather than pin to the newer signature.
+#[allow(deprecated)]
 pub fn router(state: AppState) -> Router {
     let cors = build_cors(&state);
 
     Router::new()
+        // HTML UI
+        .route("/", get(ui::landing))
+        .route("/ui", get(ui::sign_in))
+        .route("/ui/exchange", post(ui::ui_exchange))
+        // JSON API
         .route("/healthz", get(health::healthz))
         .route("/readyz", get(health::readyz))
         .route("/.well-known/jwks.json", get(jwks::jwks))
@@ -39,9 +51,10 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/introspect", post(introspect::introspect))
         .route("/auth/verify", get(introspect::verify))
         .route("/metrics", get(metrics::metrics))
-        .layer(TraceLayer::new_for_http())
+        // One tracing span per request (W3C traceparent → OTLP), then limits.
+        .layer(crate::telemetry::http_trace_layer())
         .layer(TimeoutLayer::new(Duration::from_secs(10)))
-        .layer(RequestBodyLimitLayer::new(16 * 1024))
+        .layer(RequestBodyLimitLayer::new(64 * 1024))
         .layer(cors)
         .with_state(state)
 }

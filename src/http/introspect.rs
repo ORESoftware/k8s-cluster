@@ -28,7 +28,17 @@ pub async fn introspect(
     State(state): State<AppState>,
     Json(req): Json<IntrospectRequest>,
 ) -> Json<serde_json::Value> {
-    match state.minter.verify(&req.token) {
+    let verified = state.minter.verify(&req.token);
+    state
+        .metrics
+        .introspections
+        .with_label_values(&[if verified.is_ok() {
+            "active"
+        } else {
+            "inactive"
+        }])
+        .inc();
+    match verified {
         Ok(claims) => Json(json!({
             "active": true,
             "sub": claims.sub,

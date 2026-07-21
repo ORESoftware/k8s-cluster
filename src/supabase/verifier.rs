@@ -5,8 +5,14 @@
 //! `iss` and `aud`, keep a bounded JWKS cache, and single-flight/rate-limit
 //! refreshes so an unknown-`kid` flood cannot amplify into outbound requests.
 //!
-//! The one generalization: this verifier is instantiated once *per project*, and
-//! [`super::ProjectRegistry`] owns routing an incoming token to the right one.
+//! ## Tandem resilience (Supabase down → we keep working)
+//! The cache has two thresholds. Within [`JWKS_SOFT_TTL`] a cached key is served
+//! directly. Past it we try to refresh — but if Supabase is unreachable and the
+//! key is still within the longer [`JWKS_GRACE_TTL`], we serve the **stale**
+//! cached key rather than failing. JWKS keys rotate rarely, so serving a
+//! recently-fetched key through a multi-minute Supabase outage is safe and keeps
+//! the exchange path alive. (A brand-new, never-seen `kid` during an outage is
+//! still rejected — we cannot verify a key we never fetched.)
 
 use std::time::{Duration, Instant};
 
@@ -18,9 +24,12 @@ use crate::error::AuthError;
 
 use super::claims::{SupabaseClaims, VerifiedIdentity};
 
-/// Supabase's JWKS edge cache is ten minutes; do not retain keys longer or an
-/// emergency revocation stays trusted past the provider cache.
-const JWKS_CACHE_TTL: Duration = Duration::from_secs(600);
+/// Fresh window: a cached key newer than this is used without any refresh.
+/// Matches Supabase's JWKS edge cache.
+const JWKS_SOFT_TTL: Duration = Duration::from_secs(600);
+/// Grace window: past the soft TTL, a cached key is still served if a refresh
+/// fails (Supabase down). Comfortably survives a multi-minute outage.
+const JWKS_GRACE_TTL: Duration = Duration::from_secs(3600);
 /// Floor between outbound JWKS fetches, so unknown-`kid` misses can't amplify.
 const JWKS_MIN_REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 
@@ -59,10 +68,6 @@ impl SupabaseVerifier {
         &self.issuer
     }
 
-    pub fn project(&self) -> &str {
-        &self.project
-    }
-
     fn validation(&self, alg: Algorithm) -> Validation {
         let mut validation = Validation::new(alg);
         validation.set_audience(&[self.audience.as_str()]);
@@ -72,8 +77,7 @@ impl SupabaseVerifier {
     }
 
     /// Verify a bearer token against this project and extract the identity.
-    /// Every failure returns [`AuthError::Unauthorized`] so callers cannot probe
-    /// which projects or users exist.
+    /// Every failure returns [`AuthError::Unauthorized`].
     pub async fn verify(
         &self,
         http: &reqwest::Client,
@@ -124,51 +128,72 @@ impl SupabaseVerifier {
         })
     }
 
-    /// Resolve a `kid` to a decoding key, refreshing the JWKS at most once per
-    /// [`JWKS_MIN_REFRESH_INTERVAL`] and single-flighting concurrent misses.
+    /// Resolve a `kid` to a decoding key with tandem resilience.
     async fn decoding_key_for(
         &self,
         http: &reqwest::Client,
         kid: &str,
     ) -> Result<DecodingKey, AuthError> {
-        if let Some(key) = self.lookup_cached(kid).await {
+        // 1. Fresh cache hit.
+        if let Some(key) = self.cached_key(kid, JWKS_SOFT_TTL).await {
             return Ok(key);
         }
 
-        // Miss: take the single-flight lock so concurrent misses share one fetch.
+        // 2. Need a refresh (cold / soft-expired / unknown kid). Single-flight.
         let _guard = self.refresh_lock.lock().await;
-        // Another waiter may have refreshed while we waited on the lock.
-        if let Some(key) = self.lookup_cached(kid).await {
-            return Ok(key);
+        if let Some(key) = self.cached_key(kid, JWKS_SOFT_TTL).await {
+            return Ok(key); // another waiter refreshed while we held for the lock
         }
 
-        {
+        let may_fetch = {
             let last = *self.last_refresh.read().await;
-            if let Some(last) = last {
-                if last.elapsed() < JWKS_MIN_REFRESH_INTERVAL {
-                    // Rate-limited: don't hammer the provider on a bad-kid flood.
+            last.map(|t| t.elapsed() >= JWKS_MIN_REFRESH_INTERVAL)
+                .unwrap_or(true)
+        };
+        if may_fetch {
+            *self.last_refresh.write().await = Some(Instant::now());
+            match self.fetch_jwks(http).await {
+                Ok(set) => {
+                    let key = set
+                        .find(kid)
+                        .and_then(|jwk| DecodingKey::from_jwk(jwk).ok());
+                    *self.cache.write().await = Some(JwksCacheEntry {
+                        fetched_at: Instant::now(),
+                        set,
+                    });
+                    if let Some(key) = key {
+                        return Ok(key);
+                    }
+                    // Fresh JWKS genuinely lacks this kid → reject.
                     return Err(AuthError::Unauthorized);
+                }
+                Err(_) => {
+                    // Supabase unreachable — fall through to the grace path.
+                    tracing::warn!(
+                        project = %self.project,
+                        "Supabase JWKS refresh failed; attempting stale-within-grace"
+                    );
                 }
             }
         }
 
-        *self.last_refresh.write().await = Some(Instant::now());
-        let set = self.fetch_jwks(http).await?;
-        let key = set
-            .find(kid)
-            .and_then(|jwk| DecodingKey::from_jwk(jwk).ok())
-            .ok_or(AuthError::Unauthorized)?;
-        *self.cache.write().await = Some(JwksCacheEntry {
-            fetched_at: Instant::now(),
-            set,
-        });
-        Ok(key)
+        // 3. Refresh unavailable or rate-limited: serve a stale key within grace.
+        if let Some(key) = self.cached_key(kid, JWKS_GRACE_TTL).await {
+            tracing::warn!(
+                project = %self.project,
+                "serving stale JWKS key within grace window (Supabase refresh unavailable)"
+            );
+            return Ok(key);
+        }
+        Err(AuthError::Unauthorized)
     }
 
-    async fn lookup_cached(&self, kid: &str) -> Option<DecodingKey> {
+    /// A cached decoding key for `kid`, iff the cache entry is younger than
+    /// `max_age` and contains `kid`.
+    async fn cached_key(&self, kid: &str, max_age: Duration) -> Option<DecodingKey> {
         let guard = self.cache.read().await;
         let entry = guard.as_ref()?;
-        if entry.fetched_at.elapsed() >= JWKS_CACHE_TTL {
+        if entry.fetched_at.elapsed() >= max_age {
             return None;
         }
         entry
@@ -187,5 +212,169 @@ impl SupabaseVerifier {
             return Err(AuthError::Upstream);
         }
         resp.json::<JwkSet>().await.map_err(|_| AuthError::Upstream)
+    }
+
+    /// Test-only: seed the JWKS cache as though a fetch just happened, so the
+    /// stale-within-grace path can be exercised without a network.
+    #[cfg(test)]
+    pub async fn seed_cache_for_test(&self, set: JwkSet, age: Duration) {
+        *self.cache.write().await = Some(JwksCacheEntry {
+            fetched_at: Instant::now() - age,
+            set,
+        });
+        // Mark a very recent refresh attempt so decoding_key_for skips the fetch
+        // and goes straight to the grace path.
+        *self.last_refresh.write().await = Some(Instant::now());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jsonwebtoken::{Algorithm, EncodingKey, Header};
+    use p256::pkcs8::{DecodePrivateKey, EncodePrivateKey, LineEnding};
+
+    /// A deterministic P-256 signing key from a fixed scalar (no transcription
+    /// risk, no RNG). `seed` distinguishes independent keys.
+    fn supa_pem() -> String {
+        let sk = p256::SecretKey::from_slice(&[9u8; 32]).unwrap();
+        sk.to_pkcs8_pem(LineEnding::LF).unwrap().to_string()
+    }
+
+    fn now_plus(secs: i64) -> i64 {
+        chrono::Utc::now().timestamp() + secs
+    }
+
+    fn hs256_project() -> SupabaseProject {
+        SupabaseProject {
+            name: "test-org".to_string(),
+            project_ref: "testref".to_string(),
+            issuer: Some("https://testref.supabase.co/auth/v1".to_string()),
+            jwks_url: Some("http://127.0.0.1:1/jwks".to_string()),
+            audience: "authenticated".to_string(),
+            hs256_secret: Some("super-secret-test-key".to_string()),
+        }
+    }
+
+    fn es256_project() -> SupabaseProject {
+        SupabaseProject {
+            name: "es-org".to_string(),
+            project_ref: "esref".to_string(),
+            issuer: Some("https://esref.supabase.co/auth/v1".to_string()),
+            // Dead address: any real fetch fails, forcing the grace path.
+            jwks_url: Some("http://127.0.0.1:1/jwks".to_string()),
+            audience: "authenticated".to_string(),
+            hs256_secret: None,
+        }
+    }
+
+    fn sign_hs256(secret: &str, claims: serde_json::Value) -> String {
+        jsonwebtoken::encode(
+            &Header::new(Algorithm::HS256),
+            &claims,
+            &EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .unwrap()
+    }
+
+    /// Build a one-key JWKS from a PEM's public half, tagged with `kid`.
+    fn jwks_from(pem: &str, kid: &str) -> JwkSet {
+        let sk = p256::SecretKey::from_pkcs8_pem(pem).unwrap();
+        let mut jwk = serde_json::to_value(sk.public_key().to_jwk()).unwrap();
+        let obj = jwk.as_object_mut().unwrap();
+        obj.insert("kid".into(), kid.into());
+        obj.insert("alg".into(), "ES256".into());
+        obj.insert("use".into(), "sig".into());
+        serde_json::from_value(serde_json::json!({ "keys": [jwk] })).unwrap()
+    }
+
+    fn sign_es256(pem: &str, kid: &str, claims: serde_json::Value) -> String {
+        let mut header = Header::new(Algorithm::ES256);
+        header.kid = Some(kid.to_string());
+        jsonwebtoken::encode(
+            &header,
+            &claims,
+            &EncodingKey::from_ec_pem(pem.as_bytes()).unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn hs256_verifies_and_extracts_identity() {
+        let v = SupabaseVerifier::new(&hs256_project());
+        let token = sign_hs256(
+            "super-secret-test-key",
+            serde_json::json!({
+                "sub": "user-123", "aud": "authenticated",
+                "iss": "https://testref.supabase.co/auth/v1",
+                "exp": now_plus(3600), "email": "a@b.co", "email_verified": true,
+            }),
+        );
+        let id = v.verify(&reqwest::Client::new(), &token).await.unwrap();
+        assert_eq!(id.supabase_user_id, "user-123");
+        assert_eq!(id.project, "test-org");
+        assert!(id.email_verified);
+        assert_eq!(id.email.as_deref(), Some("a@b.co"));
+    }
+
+    #[tokio::test]
+    async fn rejects_wrong_secret_and_wrong_issuer() {
+        let v = SupabaseVerifier::new(&hs256_project());
+        let bad_sig = sign_hs256(
+            "not-the-secret",
+            serde_json::json!({"sub":"x","aud":"authenticated","iss":"https://testref.supabase.co/auth/v1","exp":now_plus(60)}),
+        );
+        assert!(v.verify(&reqwest::Client::new(), &bad_sig).await.is_err());
+
+        let wrong_iss = sign_hs256(
+            "super-secret-test-key",
+            serde_json::json!({"sub":"x","aud":"authenticated","iss":"https://evil.example/auth/v1","exp":now_plus(60)}),
+        );
+        assert!(v.verify(&reqwest::Client::new(), &wrong_iss).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn expired_token_is_rejected() {
+        let v = SupabaseVerifier::new(&hs256_project());
+        let expired = sign_hs256(
+            "super-secret-test-key",
+            serde_json::json!({"sub":"x","aud":"authenticated","iss":"https://testref.supabase.co/auth/v1","exp":now_plus(-3600)}),
+        );
+        assert!(v.verify(&reqwest::Client::new(), &expired).await.is_err());
+    }
+
+    // Tandem resilience: Supabase JWKS endpoint is unreachable, but a recently
+    // cached key is still within grace → verification keeps working.
+    #[tokio::test]
+    async fn stale_jwks_within_grace_still_verifies_when_supabase_down() {
+        let v = SupabaseVerifier::new(&es256_project());
+        // Cache is 12 minutes old: past the 10-min soft TTL, inside the 60-min grace.
+        v.seed_cache_for_test(jwks_from(&supa_pem(), "k1"), Duration::from_secs(720))
+            .await;
+        let token = sign_es256(
+            &supa_pem(),
+            "k1",
+            serde_json::json!({
+                "sub":"es-user","aud":"authenticated",
+                "iss":"https://esref.supabase.co/auth/v1","exp":now_plus(3600),
+            }),
+        );
+        // jwks_url points at a dead port, so the refresh fails and the grace path runs.
+        let id = v.verify(&reqwest::Client::new(), &token).await.unwrap();
+        assert_eq!(id.supabase_user_id, "es-user");
+    }
+
+    // Beyond the grace window, a stale key is no longer trusted.
+    #[tokio::test]
+    async fn stale_jwks_beyond_grace_is_rejected() {
+        let v = SupabaseVerifier::new(&es256_project());
+        v.seed_cache_for_test(jwks_from(&supa_pem(), "k1"), Duration::from_secs(7200))
+            .await; // 2h > 60m grace
+        let token = sign_es256(
+            &supa_pem(),
+            "k1",
+            serde_json::json!({"sub":"es-user","aud":"authenticated","iss":"https://esref.supabase.co/auth/v1","exp":now_plus(3600)}),
+        );
+        assert!(v.verify(&reqwest::Client::new(), &token).await.is_err());
     }
 }

@@ -68,3 +68,77 @@ fn base64_url_decode(input: &str) -> Option<Vec<u8>> {
         .decode(input)
         .ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::SupabaseProject;
+    use jsonwebtoken::{Algorithm, EncodingKey, Header};
+
+    fn hs_project(name: &str, reff: &str, secret: &str) -> SupabaseProject {
+        SupabaseProject {
+            name: name.into(),
+            project_ref: reff.into(),
+            issuer: Some(format!("https://{reff}.supabase.co/auth/v1")),
+            jwks_url: Some("http://127.0.0.1:1/jwks".into()),
+            audience: "authenticated".into(),
+            hs256_secret: Some(secret.into()),
+        }
+    }
+
+    fn token(reff: &str, secret: &str, sub: &str) -> String {
+        let claims = serde_json::json!({
+            "sub": sub, "aud": "authenticated",
+            "iss": format!("https://{reff}.supabase.co/auth/v1"),
+            "exp": chrono::Utc::now().timestamp() + 3600,
+        });
+        jsonwebtoken::encode(
+            &Header::new(Algorithm::HS256),
+            &claims,
+            &EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .unwrap()
+    }
+
+    // Multi-project: a token is routed by its issuer to the right project and
+    // verified there. This is the core multi-org Supabase integration.
+    #[tokio::test]
+    async fn routes_token_to_its_issuing_project() {
+        let reg = ProjectRegistry::from_projects(&[
+            hs_project("fiducia-cloud", "fid", "secret-a"),
+            hs_project("3fa-app", "threefa", "secret-b"),
+        ])
+        .unwrap();
+        assert_eq!(reg.len(), 2);
+
+        let id = reg
+            .verify(
+                &reqwest::Client::new(),
+                &token("threefa", "secret-b", "u-b"),
+            )
+            .await
+            .unwrap();
+        assert_eq!(id.project, "3fa-app");
+        assert_eq!(id.supabase_user_id, "u-b");
+    }
+
+    #[tokio::test]
+    async fn unknown_issuer_is_unauthorized() {
+        let reg =
+            ProjectRegistry::from_projects(&[hs_project("fiducia-cloud", "fid", "s")]).unwrap();
+        // Valid signature but an issuer no project owns.
+        let res = reg
+            .verify(&reqwest::Client::new(), &token("other", "s", "u"))
+            .await;
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn duplicate_issuer_is_rejected_at_build() {
+        let dup = ProjectRegistry::from_projects(&[
+            hs_project("a", "same", "s1"),
+            hs_project("b", "same", "s2"),
+        ]);
+        assert!(dup.is_err());
+    }
+}

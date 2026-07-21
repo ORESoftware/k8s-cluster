@@ -113,3 +113,74 @@ fn now_secs() -> u64 {
         .map(|d| d.as_secs())
         .unwrap_or(0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::SigningConfig;
+
+    use p256::pkcs8::{EncodePrivateKey, LineEnding};
+
+    fn signing_pem() -> String {
+        p256::SecretKey::from_slice(&[7u8; 32])
+            .unwrap()
+            .to_pkcs8_pem(LineEnding::LF)
+            .unwrap()
+            .to_string()
+    }
+
+    fn minter() -> TokenMinter {
+        TokenMinter::from_config(&SigningConfig {
+            ec_private_pem: signing_pem(),
+            key_id: "test-kid".to_string(),
+            issuer: "https://auth.test".to_string(),
+            audience: "oresoftware".to_string(),
+            ttl_secs: 3600,
+        })
+        .unwrap()
+    }
+
+    // Our minted tokens verify against our own key with NO Supabase dependency —
+    // the half of tandem-resilience that keeps downstream auth alive even if
+    // Supabase is fully down.
+    #[test]
+    fn mint_then_verify_roundtrip() {
+        let m = minter();
+        let minted = m
+            .mint(
+                "shared-42",
+                "fiducia-cloud",
+                "sub-1",
+                Some("a@b.co".into()),
+                true,
+            )
+            .unwrap();
+        let claims = m.verify(&minted.token).unwrap();
+        assert_eq!(claims.sub, "shared-42");
+        assert_eq!(claims.project, "fiducia-cloud");
+        assert_eq!(claims.supabase_user_id, "sub-1");
+        assert_eq!(claims.email.as_deref(), Some("a@b.co"));
+        assert!(claims.email_verified);
+        assert!(claims.exp > claims.iat);
+    }
+
+    #[test]
+    fn tampered_token_is_rejected() {
+        let m = minter();
+        let minted = m.mint("s", "p", "u", None, false).unwrap();
+        let mut bad = minted.token.clone();
+        bad.push('x'); // corrupt the signature segment
+        assert!(m.verify(&bad).is_err());
+    }
+
+    #[test]
+    fn jwks_advertises_our_kid_and_es256() {
+        let m = minter();
+        let jwks = m.jwks().as_json();
+        let key = &jwks["keys"][0];
+        assert_eq!(key["kid"], "test-kid");
+        assert_eq!(key["alg"], "ES256");
+        assert_eq!(key["kty"], "EC");
+        assert_eq!(key["use"], "sig");
+    }
+}

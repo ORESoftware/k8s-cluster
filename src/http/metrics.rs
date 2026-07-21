@@ -1,21 +1,12 @@
-//! Prometheus exposition. Uses the default registry; the process registers its
-//! counters at first use. Kept intentionally small — the cluster scrapes this at
-//! `dd-shared-auth.shared-auth.svc:8120/metrics`.
+//! Prometheus exposition from the app's own registry (see [`crate::metrics`]).
 
+use axum::extract::State;
 use axum::http::{header, StatusCode};
 use axum::response::IntoResponse;
-use prometheus::{Encoder, TextEncoder};
 
-pub async fn metrics() -> impl IntoResponse {
-    let encoder = TextEncoder::new();
-    let mut buffer = Vec::new();
-    if encoder.encode(&prometheus::gather(), &mut buffer).is_err() {
-        return (StatusCode::INTERNAL_SERVER_ERROR, "encode error").into_response();
-    }
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, encoder.format_type())],
-        buffer,
-    )
-        .into_response()
+use crate::state::AppState;
+
+pub async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
+    let (content_type, body) = state.metrics.render();
+    (StatusCode::OK, [(header::CONTENT_TYPE, content_type)], body)
 }

@@ -1,0 +1,17 @@
+# Cloudflare Worker — edge session gate for OreSoftware apps. Deploy per app in
+# front of the protected origin. Holds no secrets: verifies via public JWKS and
+# delegates minting to shared-auth.
+name = "shared-auth-edge"
+main = "src/index.mjs"
+compatibility_date = "2025-01-01"
+
+# Non-secret config. Set per environment / per app.
+[vars]
+SHARED_AUTH_BASE = "https://gateway.example/shared-auth"
+AUTH_ISSUER = "https://auth.oresoftware.dev"
+AUTH_AUDIENCE = "oresoftware"
+LOGIN_PATH = "/auth/sign-in"
+JWKS_TTL_SECONDS = "3600"
+
+# Routes are configured per deployment (dashboard or `routes = [...]`), e.g.
+#   routes = [{ pattern = "app.example.com/*", zone_name = "example.com" }]

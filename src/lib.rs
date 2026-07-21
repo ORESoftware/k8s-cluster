@@ -23,21 +23,34 @@
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod flags;
 pub mod http;
+pub mod metrics;
 pub mod state;
 pub mod supabase;
 pub mod telemetry;
 pub mod token;
+pub mod views;
 
 use anyhow::Context;
 
-/// Process entrypoint: initialise telemetry then dispatch the subcommand.
+/// OTel service.name / metrics namespace for this process.
+pub const SERVICE_NAME: &str = "dd-shared-auth";
+
+/// Process entrypoint: apply CLI flags, initialise telemetry, dispatch subcommand.
 ///
 /// - `serve` (default) — run the HTTP auth server.
 /// - `discover` — enumerate the account's Supabase orgs/projects via the
 ///   Management API and print a ready-to-paste `AUTH_SUPABASE_PROJECTS` value.
 pub async fn run() -> anyhow::Result<()> {
-    telemetry::init();
+    // Ensure a rustls crypto provider is installed for reqwest + sqlx (both use
+    // rustls). Best-effort: a later duplicate install is a harmless no-op.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
+    // CLI flags → env BEFORE telemetry/config read, so `--flag` overrides win.
+    flags::apply_cli_flags();
+
+    let _otel = telemetry::init(SERVICE_NAME);
 
     let mode = std::env::args()
         .nth(1)

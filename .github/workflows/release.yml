@@ -1,0 +1,72 @@
+name: release
+
+# On every push to main: build + push the image, then pin the exact digest into
+# deploy/k8s. ArgoCD tracks THIS repo's deploy/k8s path directly, so that pin
+# commit is the deploy trigger — it rolls the Deployment (maxUnavailable: 0,
+# maxSurge: 1 → zero-downtime). No k8s-cluster change is needed to deploy; the
+# submodule pin there is inventory only and is bumped separately (below).
+on:
+  push:
+    branches: [main]
+    paths: ["src/**", "Cargo.*", "Dockerfile", "deploy/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-pin:
+    # Skip the run triggered by our own digest-pin commit, so we don't loop.
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/oresoftware/shared-auth-server:main
+            ghcr.io/oresoftware/shared-auth-server:sha-${{ github.sha }}
+
+      # GitOps promotion: pin the immutable digest so ArgoCD deploys exactly what
+      # CI built (a moving :main tag would not reliably trigger a rollout).
+      - name: Pin digest into deploy/k8s
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          img="ghcr.io/oresoftware/shared-auth-server@${DIGEST}"
+          sed -i -E "s#image: ghcr\.io/oresoftware/shared-auth-server.*#image: ${img}#" deploy/k8s/deployment.yaml
+          if git diff --quiet; then echo "digest unchanged"; exit 0; fi
+          git config user.name "ore-gitops-bot"
+          git config user.email "bot@oresoftware.dev"
+          git commit -am "deploy: pin dd-shared-auth to ${DIGEST} [skip ci]"
+          git push
+
+      # Optional, inventory only: tell k8s-cluster to refresh its submodule pin.
+      # Does NOT redeploy (ArgoCD tracks this repo, not the submodule path).
+      # Requires an org PAT secret with contents:write on k8s-cluster.
+      - name: Refresh k8s-cluster submodule pin (inventory)
+        if: ${{ secrets.ORG_GITOPS_TOKEN != '' }}
+        run: |
+          curl -sf -X POST \
+            -H "Authorization: Bearer ${{ secrets.ORG_GITOPS_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/ORESoftware/k8s-cluster/dispatches \
+            -d '{"event_type":"shared-auth-bump"}'

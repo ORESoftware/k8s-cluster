@@ -55,3 +55,27 @@ pub struct VerifiedIdentity {
     pub user_metadata: serde_json::Value,
     pub app_metadata: serde_json::Value,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn email_confirmation_reads_toplevel_and_legacy_metadata() {
+        let top: SupabaseClaims = serde_json::from_value(serde_json::json!({
+            "sub": "x", "email_verified": true
+        }))
+        .unwrap();
+        assert!(top.email_is_confirmed());
+
+        let legacy: SupabaseClaims = serde_json::from_value(serde_json::json!({
+            "sub": "x", "user_metadata": { "email_verified": true }
+        }))
+        .unwrap();
+        assert!(legacy.email_is_confirmed());
+
+        let neither: SupabaseClaims =
+            serde_json::from_value(serde_json::json!({ "sub": "x" })).unwrap();
+        assert!(!neither.email_is_confirmed());
+    }
+}
