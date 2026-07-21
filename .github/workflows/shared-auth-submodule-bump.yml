@@ -1,0 +1,48 @@
+name: shared-auth-submodule-bump
+
+# Refreshes the remote/submodules/shared-auth-server.rs gitlink to the app repo's
+# latest main. INVENTORY ONLY — it does NOT redeploy anything: ArgoCD tracks the
+# app repo directly (remote/argocd/apps/shared-auth.application.yaml, repoURL =
+# the app repo), so the submodule pin is just the recorded-current-commit, kept
+# fresh for local dev + promotion bookkeeping. Fired by the app repo's release
+# workflow via repository_dispatch, or manually.
+on:
+  repository_dispatch:
+    types: [shared-auth-bump]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: shared-auth-submodule-bump
+  cancel-in-progress: true
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+          # A PAT with read on the private app repo (for the submodule fetch) and
+          # write on this repo. Falls back to GITHUB_TOKEN for same-repo pushes.
+          token: ${{ secrets.ORG_GITOPS_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Bump the shared-auth submodule pin
+        run: |
+          set -euo pipefail
+          path=remote/submodules/shared-auth-server.rs
+          git submodule update --init "$path" || true
+          git -C "$path" fetch origin main
+          git -C "$path" checkout --detach origin/main
+          if git diff --quiet -- "$path"; then
+            echo "pin already current"
+            exit 0
+          fi
+          git config user.name "ore-gitops-bot"
+          git config user.email "bot@oresoftware.dev"
+          git add "$path"
+          git commit -m "bump shared-auth-server.rs submodule pin (inventory) [skip ci]"
+          git push
