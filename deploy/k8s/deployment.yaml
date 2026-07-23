@@ -39,6 +39,8 @@ spec:
         prometheus.io/port: "8120"
         prometheus.io/path: /metrics
     spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -64,6 +66,10 @@ spec:
             - { name: AUTH_LOG_FORMAT, value: "json" }
             - { name: AUTH_ISSUER, value: "https://auth.oresoftware.dev" }
             - { name: AUTH_AUDIENCE, value: "oresoftware" }
+            - { name: AUTH_ACCESS_TOKEN_TTL_SECS, value: "900" }
+            - { name: AUTH_REFRESH_TOKEN_TTL_SECS, value: "2592000" }
+            # Enable only after the product's invite/registration policy is ready.
+            - { name: AUTH_ALLOW_REGISTRATION, value: "false" }
             - { name: RUST_LOG, value: "info" }
             # OTel traces → cluster collector; logs (JSON stdout) → promtail → Loki;
             # /metrics → Prometheus → Grafana. See src/telemetry.rs.
@@ -87,6 +93,10 @@ spec:
             httpGet: { path: /healthz, port: http }
             initialDelaySeconds: 10
             periodSeconds: 20
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            failureThreshold: 30
+            periodSeconds: 2
           resources:
             requests: { cpu: 50m, memory: 64Mi }
             limits: { cpu: 500m, memory: 256Mi }

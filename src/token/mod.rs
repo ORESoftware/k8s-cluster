@@ -11,4 +11,4 @@ mod minter;
 
 pub use claims::OreClaims;
 pub use jwks::PublicJwks;
-pub use minter::{MintedToken, TokenMinter};
+pub use minter::{MintContext, MintedToken, TokenMinter};

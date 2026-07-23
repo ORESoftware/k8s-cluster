@@ -4,42 +4,113 @@
 -- server connects with search_path=shared_auth and runs NO DDL. One namespace
 -- per app, per the org convention (see the pg-defs + dpm memory).
 --
--- This is a mirror of *identity*, not credentials. Supabase remains the identity
--- provider and password store; we only index the users we have verified so
--- downstream services can resolve a stable OreSoftware user id.
+-- Postgres is the authoritative shared-auth store. External identity providers
+-- (Supabase today; Clerk/Cognito may be added later) are linked through
+-- provider_identities rather than being baked into the principals table. Passwords
+-- are never stored: local_credentials contains Argon2id PHC strings only.
 
 create schema if not exists shared_auth;
 
-create table if not exists shared_auth.users (
-    -- Stable OreSoftware identity. This is the `sub` of the JWTs we mint, so it
-    -- must never change for a given (project, supabase user).
+create table if not exists shared_auth.principals (
     shared_user_id    uuid        primary key default gen_random_uuid(),
-
-    -- Which Supabase project/org vouched for this identity (config slug, e.g.
-    -- "fiducia-cloud"). Part of the natural key: the same person in two projects
-    -- is two identities here.
-    supabase_project  text        not null,
-    -- text (not uuid): Supabase sub is a UUID today, but keep the column tolerant
-    -- of any opaque provider subject rather than rejecting at the DB layer.
-    supabase_user_id  text        not null,
-
     email             text,
     email_verified    boolean     not null default false,
     phone             text,
-
-    -- Verbatim Supabase metadata blobs, for downstream authorization decisions.
-    user_metadata     jsonb       not null default '{}'::jsonb,
-    app_metadata      jsonb       not null default '{}'::jsonb,
-
+    display_name      text,
+    status            text        not null default 'active'
+                                  check (status in ('active', 'disabled', 'deleted')),
+    profile           jsonb       not null default '{}'::jsonb,
     created_at        timestamptz not null default now(),
     updated_at        timestamptz not null default now(),
     last_seen_at      timestamptz not null default now(),
-
-    unique (supabase_project, supabase_user_id)
+    check (email is null or (length(email) between 3 and 320)),
+    check (phone is null or length(phone) <= 64),
+    check (display_name is null or length(display_name) <= 160)
 );
 
-create index if not exists users_email_idx
-    on shared_auth.users (lower(email));
+create unique index if not exists users_email_unique_idx
+    on shared_auth.principals (lower(email))
+    where email is not null and status <> 'deleted';
 
-create index if not exists users_project_idx
-    on shared_auth.users (supabase_project);
+create index if not exists users_status_idx
+    on shared_auth.principals (status);
+
+create table if not exists shared_auth.provider_identities (
+    provider_identity_id uuid        primary key default gen_random_uuid(),
+    shared_user_id       uuid        not null references shared_auth.principals(shared_user_id) on delete cascade,
+    provider             text        not null,
+    provider_tenant      text        not null default 'default',
+    provider_subject     text        not null,
+    email                text,
+    email_verified       boolean     not null default false,
+    metadata             jsonb       not null default '{}'::jsonb,
+    created_at           timestamptz not null default now(),
+    updated_at           timestamptz not null default now(),
+    last_seen_at         timestamptz not null default now(),
+    unique (provider, provider_tenant, provider_subject),
+    check (length(provider) between 1 and 64),
+    check (length(provider_tenant) between 1 and 255),
+    check (length(provider_subject) between 1 and 512)
+);
+
+create index if not exists provider_identities_user_idx
+    on shared_auth.provider_identities (shared_user_id);
+
+create table if not exists shared_auth.local_credentials (
+    shared_user_id       uuid        primary key references shared_auth.principals(shared_user_id) on delete cascade,
+    password_hash        text        not null,
+    password_changed_at  timestamptz not null default now(),
+    failed_attempts      integer     not null default 0 check (failed_attempts >= 0),
+    locked_until         timestamptz,
+    created_at           timestamptz not null default now(),
+    updated_at           timestamptz not null default now(),
+    check (length(password_hash) between 40 and 512)
+);
+
+create table if not exists shared_auth.sessions (
+    session_id          uuid        primary key default gen_random_uuid(),
+    shared_user_id      uuid        not null references shared_auth.principals(shared_user_id) on delete cascade,
+    refresh_token_hash  text        not null unique,
+    provider            text        not null,
+    provider_tenant     text        not null default 'default',
+    provider_subject    text        not null,
+    created_at          timestamptz not null default now(),
+    updated_at          timestamptz not null default now(),
+    last_seen_at        timestamptz not null default now(),
+    expires_at          timestamptz not null,
+    revoked_at          timestamptz,
+    rotated_from        uuid        references shared_auth.sessions(session_id) on delete set null,
+    check (length(refresh_token_hash) = 43),
+    check (expires_at > created_at)
+);
+
+create index if not exists sessions_user_idx
+    on shared_auth.sessions (shared_user_id);
+create index if not exists sessions_active_expiry_idx
+    on shared_auth.sessions (expires_at)
+    where revoked_at is null;
+
+create table if not exists shared_auth.roles (
+    role_id           uuid        primary key default gen_random_uuid(),
+    shared_user_id    uuid        not null references shared_auth.principals(shared_user_id) on delete cascade,
+    role_name         text        not null check (role_name ~ '^[a-z][a-z0-9:_-]{0,63}$'),
+    granted_at        timestamptz not null default now(),
+    granted_by        uuid        references shared_auth.principals(shared_user_id) on delete set null,
+    unique (shared_user_id, role_name)
+);
+
+create index if not exists roles_user_idx
+    on shared_auth.roles (shared_user_id);
+
+-- HMAC-authenticated sync events are recorded before they are applied. The
+-- primary key makes webhook retries idempotent across all replicas.
+create table if not exists shared_auth.webhook_events (
+    event_id           uuid        primary key,
+    provider           text        not null,
+    event_type         text        not null,
+    received_at        timestamptz not null default now(),
+    payload_sha256     text        not null check (length(payload_sha256) = 43)
+);
+
+create index if not exists webhook_events_received_idx
+    on shared_auth.webhook_events (received_at);

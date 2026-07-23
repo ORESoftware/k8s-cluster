@@ -61,7 +61,7 @@ impl SupabaseProject {
 }
 
 /// How this server signs the unified OreSoftware JWTs it mints.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SigningConfig {
     /// PKCS#8 PEM of an EC P-256 private key (ES256). Held in memory only.
     pub ec_private_pem: String,
@@ -79,15 +79,29 @@ pub struct SigningConfig {
 }
 
 /// AWS RDS identity-mirror connection.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct DbConfig {
     /// `postgres://…` DSN. `search_path` should include `shared_auth`.
     pub url: String,
     pub max_connections: u32,
 }
 
+/// Optional Redis/Valkey cache in the private network. It is never the source
+/// of truth; losing it only removes acceleration and distributed rate limits.
+#[derive(Clone)]
+pub struct RedisConfig {
+    pub url: String,
+    pub key_prefix: String,
+}
+
+#[derive(Clone)]
+pub struct SessionConfig {
+    pub refresh_ttl_secs: u64,
+    pub allow_registration: bool,
+}
+
 /// Fully-resolved configuration.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AppConfig {
     pub bind_addr: SocketAddr,
     pub projects: Vec<SupabaseProject>,
@@ -95,6 +109,11 @@ pub struct AppConfig {
     /// Optional: without a DB the server still verifies + mints, it just skips
     /// mirroring identities.
     pub db: Option<DbConfig>,
+    pub redis: Option<RedisConfig>,
+    pub sessions: SessionConfig,
+    /// HMAC secret for `/internal/webhook/sync`. When absent the endpoint is
+    /// disabled (404), rather than exposed without authentication.
+    pub webhook_secret: Option<String>,
     /// Optional CORS allow-list for browser callers.
     pub cors_allow_origins: Vec<String>,
 }
@@ -105,14 +124,13 @@ impl AppConfig {
             .parse()
             .map_err(|_| ConfigError::Invalid("AUTH_BIND_ADDR"))?;
 
-        // AUTH_SUPABASE_PROJECTS is a JSON array of SupabaseProject.
-        let projects_json = require("AUTH_SUPABASE_PROJECTS")
-            .map_err(|_| ConfigError::Missing("AUTH_SUPABASE_PROJECTS"))?;
+        // Supabase is a secondary authority. An empty registry is valid for a
+        // local-only deployment and lets future provider adapters be introduced
+        // without making Supabase a hard startup dependency.
+        let projects_json = env_or("AUTH_SUPABASE_PROJECTS", "[]");
         let projects: Vec<SupabaseProject> = serde_json::from_str(&projects_json)
             .map_err(|_| ConfigError::Invalid("AUTH_SUPABASE_PROJECTS (expected JSON array)"))?;
-        if projects.is_empty() {
-            return Err(ConfigError::Invalid("AUTH_SUPABASE_PROJECTS is empty"));
-        }
+        validate_projects(&projects)?;
 
         let ec_private_pem = load_signing_pem()?;
         let signing = SigningConfig {
@@ -120,10 +138,15 @@ impl AppConfig {
             key_id: env_or("AUTH_SIGNING_KID", "shared-auth-v1"),
             issuer: env_or("AUTH_ISSUER", "https://auth.oresoftware.dev"),
             audience: env_or("AUTH_AUDIENCE", "oresoftware"),
-            ttl_secs: env_or("AUTH_TOKEN_TTL_SECS", "3600")
+            ttl_secs: env_or("AUTH_ACCESS_TOKEN_TTL_SECS", "900")
                 .parse()
-                .map_err(|_| ConfigError::Invalid("AUTH_TOKEN_TTL_SECS"))?,
+                .map_err(|_| ConfigError::Invalid("AUTH_ACCESS_TOKEN_TTL_SECS"))?,
         };
+        if !(60..=86_400).contains(&signing.ttl_secs) {
+            return Err(ConfigError::Invalid(
+                "AUTH_ACCESS_TOKEN_TTL_SECS must be between 60 and 86400",
+            ));
+        }
 
         let db = match std::env::var("AUTH_DATABASE_URL")
             .ok()
@@ -135,8 +158,42 @@ impl AppConfig {
                     .parse()
                     .map_err(|_| ConfigError::Invalid("AUTH_DB_MAX_CONNECTIONS"))?,
             }),
-            None => None,
+            None if parse_bool("AUTH_ALLOW_DBLESS", false)? => None,
+            None => return Err(ConfigError::Missing("AUTH_DATABASE_URL")),
         };
+
+        let redis = std::env::var("AUTH_REDIS_URL")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .map(|url| RedisConfig {
+                url,
+                key_prefix: env_or("AUTH_REDIS_KEY_PREFIX", "shared-auth:v1"),
+            });
+
+        let refresh_ttl_secs = env_or("AUTH_REFRESH_TOKEN_TTL_SECS", "2592000")
+            .parse()
+            .map_err(|_| ConfigError::Invalid("AUTH_REFRESH_TOKEN_TTL_SECS"))?;
+        if !(300..=31_536_000).contains(&refresh_ttl_secs) {
+            return Err(ConfigError::Invalid(
+                "AUTH_REFRESH_TOKEN_TTL_SECS must be between 300 and 31536000",
+            ));
+        }
+        let sessions = SessionConfig {
+            refresh_ttl_secs,
+            allow_registration: parse_bool("AUTH_ALLOW_REGISTRATION", false)?,
+        };
+
+        let webhook_secret = std::env::var("AUTH_WEBHOOK_SECRET")
+            .ok()
+            .filter(|value| !value.is_empty());
+        if webhook_secret
+            .as_ref()
+            .is_some_and(|secret| secret.len() < 32)
+        {
+            return Err(ConfigError::Invalid(
+                "AUTH_WEBHOOK_SECRET must contain at least 32 bytes",
+            ));
+        }
 
         let cors_allow_origins = env_or("AUTH_CORS_ALLOW_ORIGINS", "")
             .split(',')
@@ -150,8 +207,53 @@ impl AppConfig {
             projects,
             signing,
             db,
+            redis,
+            sessions,
+            webhook_secret,
             cors_allow_origins,
         })
+    }
+}
+
+fn validate_projects(projects: &[SupabaseProject]) -> Result<(), ConfigError> {
+    let mut names = std::collections::HashSet::new();
+    let mut issuers = std::collections::HashSet::new();
+    for project in projects {
+        if project.name.is_empty()
+            || project.name.len() > 64
+            || !project
+                .name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        {
+            return Err(ConfigError::Invalid("invalid Supabase project name"));
+        }
+        if !names.insert(project.name.clone()) || !issuers.insert(project.issuer()) {
+            return Err(ConfigError::Invalid("duplicate Supabase project or issuer"));
+        }
+        if project
+            .hs256_secret
+            .as_ref()
+            .is_some_and(|secret| secret.len() < 32)
+        {
+            return Err(ConfigError::Invalid(
+                "Supabase HS256 secrets must contain at least 32 bytes",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn parse_bool(key: &'static str, default: bool) -> Result<bool, ConfigError> {
+    match std::env::var(key)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .as_deref()
+    {
+        None => Ok(default),
+        Some("1" | "true" | "TRUE" | "yes" | "YES") => Ok(true),
+        Some("0" | "false" | "FALSE" | "no" | "NO") => Ok(false),
+        Some(_) => Err(ConfigError::Invalid(key)),
     }
 }
 
@@ -170,13 +272,6 @@ fn load_signing_pem() -> Result<String, ConfigError> {
     Err(ConfigError::Missing(
         "AUTH_SIGNING_KEY_PEM or AUTH_SIGNING_KEY_FILE",
     ))
-}
-
-fn require(key: &'static str) -> Result<String, ConfigError> {
-    std::env::var(key)
-        .ok()
-        .filter(|v| !v.is_empty())
-        .ok_or(ConfigError::Missing(key))
 }
 
 fn env_or(key: &str, default: &str) -> String {

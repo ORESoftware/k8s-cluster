@@ -31,6 +31,17 @@ pub struct MintedToken {
     pub expires_at: u64,
 }
 
+pub struct MintContext {
+    pub shared_user_id: String,
+    pub session_id: Option<uuid::Uuid>,
+    pub provider: String,
+    pub provider_tenant: String,
+    pub provider_subject: String,
+    pub email: Option<String>,
+    pub email_verified: bool,
+    pub roles: Vec<String>,
+}
+
 impl TokenMinter {
     pub fn from_config(config: &SigningConfig) -> anyhow::Result<Self> {
         let encoding_key = EncodingKey::from_ec_pem(config.ec_private_pem.as_bytes())
@@ -52,6 +63,7 @@ impl TokenMinter {
         validation.set_issuer(&[config.issuer.as_str()]);
         validation.set_audience(&[config.audience.as_str()]);
         validation.validate_exp = true;
+        validation.set_required_spec_claims(&["exp", "iss", "aud", "sub", "iat", "nbf"]);
 
         Ok(Self {
             encoding_key,
@@ -78,26 +90,27 @@ impl TokenMinter {
     }
 
     /// Mint a token for a resolved OreSoftware identity.
-    pub fn mint(
-        &self,
-        shared_user_id: &str,
-        project: &str,
-        supabase_user_id: &str,
-        email: Option<String>,
-        email_verified: bool,
-    ) -> Result<MintedToken, AuthError> {
+    pub fn mint(&self, context: MintContext) -> Result<MintedToken, AuthError> {
         let now = now_secs();
         let expires_at = now.saturating_add(self.ttl_secs);
+        let is_supabase = context.provider == "supabase";
         let claims = OreClaims {
-            sub: shared_user_id.to_string(),
+            sub: context.shared_user_id,
             iss: self.issuer.clone(),
             aud: self.audience.clone(),
             iat: now,
             exp: expires_at,
-            project: project.to_string(),
-            supabase_user_id: supabase_user_id.to_string(),
-            email,
-            email_verified,
+            nbf: now.saturating_sub(5),
+            jti: uuid::Uuid::new_v4().to_string(),
+            sid: context.session_id.map(|id| id.to_string()),
+            project: is_supabase.then(|| context.provider_tenant.clone()),
+            supabase_user_id: is_supabase.then(|| context.provider_subject.clone()),
+            provider: context.provider,
+            provider_tenant: context.provider_tenant,
+            provider_subject: context.provider_subject,
+            email: context.email,
+            email_verified: context.email_verified,
+            roles: context.roles,
         };
         let token = encode(&self.header, &claims, &self.encoding_key).map_err(|err| {
             tracing::error!(error = %err, "token signing failed");
@@ -147,18 +160,23 @@ mod tests {
     fn mint_then_verify_roundtrip() {
         let m = minter();
         let minted = m
-            .mint(
-                "shared-42",
-                "fiducia-cloud",
-                "sub-1",
-                Some("a@b.co".into()),
-                true,
-            )
+            .mint(MintContext {
+                shared_user_id: "shared-42".into(),
+                session_id: Some(uuid::Uuid::from_u128(42)),
+                provider: "supabase".into(),
+                provider_tenant: "fiducia-cloud".into(),
+                provider_subject: "sub-1".into(),
+                email: Some("a@b.co".into()),
+                email_verified: true,
+                roles: vec!["user".into()],
+            })
             .unwrap();
         let claims = m.verify(&minted.token).unwrap();
         assert_eq!(claims.sub, "shared-42");
-        assert_eq!(claims.project, "fiducia-cloud");
-        assert_eq!(claims.supabase_user_id, "sub-1");
+        assert_eq!(claims.project.as_deref(), Some("fiducia-cloud"));
+        assert_eq!(claims.supabase_user_id.as_deref(), Some("sub-1"));
+        assert_eq!(claims.provider, "supabase");
+        assert_eq!(claims.roles, vec!["user"]);
         assert_eq!(claims.email.as_deref(), Some("a@b.co"));
         assert!(claims.email_verified);
         assert!(claims.exp > claims.iat);
@@ -167,7 +185,18 @@ mod tests {
     #[test]
     fn tampered_token_is_rejected() {
         let m = minter();
-        let minted = m.mint("s", "p", "u", None, false).unwrap();
+        let minted = m
+            .mint(MintContext {
+                shared_user_id: "s".into(),
+                session_id: None,
+                provider: "local".into(),
+                provider_tenant: "default".into(),
+                provider_subject: "u".into(),
+                email: None,
+                email_verified: false,
+                roles: vec![],
+            })
+            .unwrap();
         let mut bad = minted.token.clone();
         bad.push('x'); // corrupt the signature segment
         assert!(m.verify(&bad).is_err());

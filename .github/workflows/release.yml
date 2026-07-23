@@ -52,7 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           img="ghcr.io/shared-auth/shared-auth-server@${DIGEST}"
-          sed -i -E "s#image: ghcr\.io/oresoftware/shared-auth-server.*#image: ${img}#" deploy/k8s/deployment.yaml
+          sed -i -E "s#image: ghcr\.io/shared-auth/shared-auth-server.*#image: ${img}#" deploy/k8s/deployment.yaml
           if git diff --quiet; then echo "digest unchanged"; exit 0; fi
           git config user.name "ore-gitops-bot"
           git config user.email "bot@oresoftware.dev"

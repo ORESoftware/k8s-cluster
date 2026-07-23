@@ -1,126 +1,121 @@
 # shared-auth-server.rs
 
-Centralized OreSoftware auth server. It verifies **Supabase** access tokens issued by any of
-several projects (one per org — 3fa-app, athlet-o-store, fiducia-cloud, sonus-auris, …),
-mirrors the verified identity into an AWS RDS `shared_auth` schema, and mints a single unified
-OreSoftware JWT that every downstream service trusts via this server's published JWKS.
+Development starts with `nix develop ./.nix`. Non-secret CLI options are
+declared in `.cli-flags.toml` and parsed by
+[`flags-2-env`](https://github.com/oresoftware/flags-2-env) before configuration
+is loaded. Runtime logs are structured and spans use OTLP/HTTP OpenTelemetry.
 
-It runs **alongside** Supabase's built-in auth — a shortcut / parallel authority — not as a
-replacement or a copy of Supabase's password store. Supabase authenticates; this server
-verifies, indexes, and re-issues.
+Rust authentication authority for ORESoftware services. Postgres is the source
+of truth for users, provider links, Argon2id credentials, roles, and refresh
+sessions. Supabase Auth remains available as a secondary authority: a verified
+Supabase access token can be exchanged for the same shared-auth session used by
+local accounts.
 
-## Why
+The storage model is provider-neutral. Supabase is the first external adapter;
+Clerk, Cognito, or another OIDC provider can be added by writing a verifier that
+produces the existing `AuthenticatedIdentity` shape.
 
-Supabase JWT verification is currently copy-pasted across ~15 services, inconsistently (some
-on the deprecated HS256 shared-secret path, some on JWKS/RS256). This centralizes it: **one
-verifier to audit, one key to rotate, one identity namespace** (`shared_user_id`) across all
-orgs.
+## Security properties
 
-## What it is / isn't
-
-- ✅ Verifies Supabase tokens from N projects (routes by `iss` → that project's JWKS).
-- ✅ Mirrors identity (id, email, metadata) into `shared_auth.users` on RDS.
-- ✅ Mints unified OreSoftware JWTs (ES256) and publishes `/.well-known/jwks.json`.
-- ❌ Does **not** store passwords or mirror Supabase credentials.
-- ❌ Does **not** use the account-level Supabase credential on the request path (see Security).
+- Local passwords are Argon2id PHC hashes; plaintext passwords never enter the
+  database or logs.
+- Refresh tokens contain 256 bits of randomness, are stored only as SHA-256
+  hashes, and rotate atomically. Replaying a consumed token is rejected.
+- Access tokens are short-lived ES256 JWTs with issuer, audience, expiry,
+  not-before, unique token id, session id, provider provenance, and roles.
+- Postgres is authoritative. Redis/Valkey is optional and only accelerates
+  rate-limit and revocation checks.
+- External identities are never linked merely because their email addresses
+  match. Provider, tenant, and provider subject form the external identity key.
+- The provider-sync endpoint requires a timestamped HMAC signature and records
+  event ids for cross-replica idempotency.
+- JWKS verification pins issuer/audience and accepts only ES256/RS256 for the
+  asymmetric Supabase path. Fetches are bounded, redirect-free, single-flight,
+  and stale-within-grace during provider outages.
+- Request bodies, provider tokens, identifiers, CORS origins, and session
+  lifetimes are bounded.
 
 ## HTTP API
 
-Mounted under the cluster gateway at `/shared-auth/`.
+The cluster gateway mounts the service at `/shared-auth/`; paths below are the
+service-local paths.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/healthz` | liveness |
-| `GET` | `/readyz` | readiness (DB ping if configured) |
-| `GET` | `/.well-known/jwks.json` | our public JWKS — downstream verifiers fetch this |
-| `POST` | `/auth/exchange` | Supabase access token → unified OreSoftware JWT |
-| `POST` | `/auth/introspect` | validate an OreSoftware JWT → claims (RFC 7662 shape) |
-| `GET` | `/auth/verify` | bearer check for the NGINX gateway `auth_request` |
-| `GET` | `/metrics` | Prometheus |
+| `GET` | `/healthz` | Process liveness |
+| `GET` | `/readyz` | Postgres readiness |
+| `GET` | `/.well-known/jwks.json` | Public ES256 JWKS |
+| `POST` | `/auth/register` | Create a local account when registration is enabled |
+| `POST` | `/auth/login` | Local email/password login |
+| `POST` | `/auth/refresh` | Rotate a refresh token and issue a new token pair |
+| `POST` | `/auth/logout` | Revoke a refresh session |
+| `POST` | `/auth/exchange` | Supabase access token to shared-auth token pair |
+| `POST` | `/auth/introspect` | RFC 7662-shaped access-token check |
+| `GET` | `/auth/verify` | Gateway `auth_request` target |
+| `POST` | `/internal/webhook/sync` | HMAC-authenticated provider/session/role sync |
+| `GET` | `/metrics` | Prometheus exposition |
 
-### Exchange
+Local auth request bodies:
 
-```bash
-curl -sS https://<gateway>/shared-auth/auth/exchange \
-  -H "Authorization: Bearer <supabase_access_token>"
-# → { "access_token": "<ore_jwt>", "token_type": "Bearer",
-#     "expires_at": 1753000000, "shared_user_id": "…", "project": "fiducia-cloud" }
+```json
+{ "email": "person@example.com", "password": "a long passphrase" }
 ```
 
-## Configuration (environment)
+Registration accepts an optional `display_name`. Login, registration, and
+Supabase exchange return an access token plus a one-time refresh token. Refresh
+tokens must be sent only to `/auth/refresh` or `/auth/logout`, never as bearer
+tokens to application services.
 
-| Var | Required | Meaning |
-|---|---|---|
-| `AUTH_SUPABASE_PROJECTS` | ✅ | JSON array of projects — see below |
-| `AUTH_SIGNING_KEY_PEM` / `AUTH_SIGNING_KEY_FILE` | ✅ | PKCS#8 EC P-256 private key (ES256) |
-| `AUTH_SIGNING_KID` | | `kid` advertised in our JWKS (default `shared-auth-v1`) |
-| `AUTH_ISSUER` / `AUTH_AUDIENCE` | | claims on minted tokens |
-| `AUTH_TOKEN_TTL_SECS` | | minted-token lifetime (default 3600) |
-| `AUTH_DATABASE_URL` | | RDS DSN (`search_path=shared_auth`); omit to disable mirroring |
-| `AUTH_BIND_ADDR` | | default `0.0.0.0:8120` |
-| `AUTH_CORS_ALLOW_ORIGINS` | | comma-separated browser origins |
+## Configuration
 
-`AUTH_SUPABASE_PROJECTS`:
+| Variable | Required | Meaning |
+|---|---:|---|
+| `AUTH_DATABASE_URL` | yes | RDS Postgres DSN; schema is `shared_auth` |
+| `AUTH_SIGNING_KEY_PEM` or `AUTH_SIGNING_KEY_FILE` | yes | PKCS#8 P-256 private key |
+| `AUTH_SUPABASE_PROJECTS` | no | JSON array of Supabase projects; default `[]` |
+| `AUTH_REDIS_URL` | no | Private Redis/Valkey URL |
+| `AUTH_WEBHOOK_SECRET` | no | 32+ byte HMAC secret; unset disables sync |
+| `AUTH_ALLOW_REGISTRATION` | no | Public local registration; default `false` |
+| `AUTH_ACCESS_TOKEN_TTL_SECS` | no | Access TTL, 60–86400; default 900 |
+| `AUTH_REFRESH_TOKEN_TTL_SECS` | no | Refresh TTL, 300–31536000; default 2592000 |
+| `AUTH_ISSUER` / `AUTH_AUDIENCE` | no | Shared-auth JWT constraints |
+| `AUTH_CORS_ALLOW_ORIGINS` | no | Comma-separated exact browser origins |
+| `AUTH_ALLOW_DBLESS` | no | Explicit development/test escape hatch only |
+
+Example provider registry:
 
 ```json
 [
-  { "name": "fiducia-cloud",  "project_ref": "abcdefghijklmnopqrst" },
-  { "name": "3fa-app",        "project_ref": "uvwxyz0123456789abcd" },
-  { "name": "athlet-o-store", "project_ref": "…" },
-  { "name": "sonus-auris",    "project_ref": "…" }
+  { "name": "fiducia-cloud", "project_ref": "abcdefghijklmnopqrst" },
+  { "name": "threefa", "project_ref": "uvwxyz0123456789abcd" }
 ]
 ```
 
-`issuer` (`https://<ref>.supabase.co/auth/v1`) and `jwks_url` are derived from `project_ref`.
-Set `hs256_secret` on a project only if it is still on legacy shared-secret signing.
+Use `shared-auth-server discover` with `SUPABASE_ACCESS_TOKEN` only from an
+operator workstation to generate this list. The Supabase account token is never
+used by the serving process.
 
-### Discovering projects
+## Database and deployment
 
-Enumerate the account's orgs/projects and print a ready-to-paste config:
+`db/schema.sql` is a reviewable copy of the declarative schema. The canonical
+RDS contract is also kept in the cluster's `pg-defs` repository and migrations
+must be generated/reviewed with `dpm`; the application never executes DDL.
 
-```bash
-SUPABASE_ACCESS_TOKEN=sbp_… shared-auth-server discover
+Kubernetes resources under `deploy/k8s/` are namespace-scoped and consume RDS,
+Redis, signing, provider, and webhook values through External Secrets. Logs are
+structured JSON to stdout for Promtail/Loki, traces use OTLP/HTTP to the cluster
+collector, and `/metrics` is scraped by Prometheus for Grafana.
+
+The Cloudflare Worker lives in `shared-auth-infra`, not this application repo.
+
+## Development
+
+```sh
+cargo fmt --all --check
+cargo clippy --all-targets -- -D warnings
+cargo test --all-targets --locked
 ```
 
-This is the **only** use of the account-level PAT and it never runs in the serving process.
-
-## Generate a signing key
-
-```bash
-openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out signing.pem
-# load into the cluster secret store as AUTH_SIGNING_KEY_PEM (never commit it)
-```
-
-## Security model
-
-- **Account credential off the hot path.** The Supabase PAT for
-  alexander.d.mills@gmail.com can delete projects; it is used only by `discover`. The serving
-  process holds only public JWKS URLs and our own signing key.
-- **Identity mirror, not credential mirror.** `shared_auth.users` holds ids/emails/metadata —
-  never passwords, never the service-role key.
-- **Uniform rejection.** Every auth failure returns `401 unauthorized`, so a caller cannot
-  probe which projects or users exist.
-- **Bounded JWKS fetches.** Per-project cache (10 min) + single-flight + 30s refresh floor, so
-  an unknown-`kid` flood cannot amplify into outbound requests.
-
-## Deploy
-
-`deploy/k8s/` holds the namespace-scoped manifests (Deployment/Service/ExternalSecret/
-NetworkPolicy) for the `shared-auth` tenant. The platform (ORESoftware/k8s-cluster) owns the
-Namespace + AppProject and registers this repo directly with ArgoCD. See
-`docs/DESIGN.md` and the k8s-cluster `docs/app-deploy-contract.md`.
-
-## Layout
-
-```
-src/
-  main.rs            thin entrypoint
-  lib.rs             run(): dispatch serve | discover
-  config.rs          env-driven config
-  supabase/          per-project JWKS verification, issuer routing, Management API
-  db/                RDS identity mirror (shared_auth.users)
-  token/             mint unified JWT + publish our JWKS
-  http/              axum routes
-db/schema.sql        declarative shared_auth schema (owned by pg-defs/dpm)
-deploy/k8s/          tenant manifests
-```
+The integration suite uses the explicit DB-less test configuration. Exercise
+registration/refresh/revocation against a disposable Postgres instance before a
+schema promotion.

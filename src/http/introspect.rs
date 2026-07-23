@@ -1,9 +1,4 @@
-//! Validate the OreSoftware JWTs this server mints.
-//!
-//! - `POST /auth/introspect` — RFC-7662-shaped: body `{ "token": "…" }` →
-//!   `{ "active": bool, … claims }`.
-//! - `GET /auth/verify` — lightweight bearer check for the NGINX gateway's
-//!   `auth_request`: 200 + identity headers, or 401. No body.
+//! Access-token introspection and gateway verification.
 
 use axum::{
     extract::State,
@@ -13,9 +8,11 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
+use uuid::Uuid;
 
 use crate::error::AuthError;
 use crate::state::AppState;
+use crate::token::OreClaims;
 
 use super::bearer;
 
@@ -26,9 +23,13 @@ pub struct IntrospectRequest {
 
 pub async fn introspect(
     State(state): State<AppState>,
-    Json(req): Json<IntrospectRequest>,
+    Json(request): Json<IntrospectRequest>,
 ) -> Json<serde_json::Value> {
-    let verified = state.minter.verify(&req.token);
+    let verified = if request.token.len() <= 16 * 1024 {
+        active_claims(&state, &request.token).await
+    } else {
+        Err(AuthError::Unauthorized)
+    };
     state
         .metrics
         .introspections
@@ -46,39 +47,76 @@ pub async fn introspect(
             "aud": claims.aud,
             "exp": claims.exp,
             "iat": claims.iat,
+            "sid": claims.sid,
+            "provider": claims.provider,
+            "provider_tenant": claims.provider_tenant,
+            "provider_subject": claims.provider_subject,
             "project": claims.project,
             "supabase_user_id": claims.supabase_user_id,
             "email": claims.email,
             "email_verified": claims.email_verified,
+            "roles": claims.roles,
         })),
-        // Per RFC 7662 an invalid token is a normal `{ "active": false }`, not
-        // an error response.
         Err(_) => Json(json!({ "active": false })),
     }
 }
 
-/// Gateway `auth_request` target. Returns 200 with `X-Auth-*` headers the
-/// gateway can forward to upstreams, or 401.
 pub async fn verify(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     let Some(token) = bearer(&headers) else {
         return AuthError::Unauthorized.into_response();
     };
-    match state.minter.verify(token) {
+    match active_claims(&state, token).await {
         Ok(claims) => {
-            let mut out = HeaderMap::new();
-            insert_header(&mut out, "x-auth-user-id", &claims.sub);
-            insert_header(&mut out, "x-auth-project", &claims.project);
-            if let Some(email) = &claims.email {
-                insert_header(&mut out, "x-auth-email", email);
+            let mut output = HeaderMap::new();
+            insert_header(&mut output, "x-auth-user-id", &claims.sub);
+            insert_header(&mut output, "x-auth-provider", &claims.provider);
+            insert_header(
+                &mut output,
+                "x-auth-provider-tenant",
+                &claims.provider_tenant,
+            );
+            insert_header(&mut output, "x-auth-roles", &claims.roles.join(","));
+            if let Some(project) = &claims.project {
+                insert_header(&mut output, "x-auth-project", project);
             }
-            (StatusCode::OK, out).into_response()
+            if let Some(email) = &claims.email {
+                insert_header(&mut output, "x-auth-email", email);
+            }
+            (StatusCode::OK, output).into_response()
         }
-        Err(err) => err.into_response(),
+        Err(error) => error.into_response(),
     }
 }
 
+pub(crate) async fn active_claims(state: &AppState, token: &str) -> Result<OreClaims, AuthError> {
+    let claims = state.minter.verify(token)?;
+    match (&state.db, claims.sid.as_deref()) {
+        (Some(db), Some(raw_session_id)) => {
+            let session_id =
+                Uuid::parse_str(raw_session_id).map_err(|_| AuthError::Unauthorized)?;
+            if let Some(cache) = &state.cache {
+                match cache.is_revoked(session_id).await {
+                    Ok(true) => return Err(AuthError::Unauthorized),
+                    Ok(false) => {}
+                    Err(error) => {
+                        tracing::warn!(%error, %session_id, "Redis revocation check failed")
+                    }
+                }
+            }
+            if !db.session_is_active(session_id).await? {
+                return Err(AuthError::Unauthorized);
+            }
+        }
+        // A production token without a session id bypasses revocation, so reject
+        // it whenever the authoritative session store is configured.
+        (Some(_), None) => return Err(AuthError::Unauthorized),
+        (None, _) => {}
+    }
+    Ok(claims)
+}
+
 fn insert_header(map: &mut HeaderMap, name: &'static str, value: &str) {
-    if let Ok(v) = axum::http::HeaderValue::from_str(value) {
-        map.insert(name, v);
+    if let Ok(value) = axum::http::HeaderValue::from_str(value) {
+        map.insert(name, value);
     }
 }

@@ -11,12 +11,7 @@ allow_unknown = false
 
 # These may hold secrets — flags-2-env must never surface them in help/echo.
 [env]
-ignore = [
-  "AUTH_SIGNING_KEY_PEM",
-  "AUTH_DATABASE_URL",
-  "AUTH_SUPABASE_PROJECTS",
-  "SUPABASE_ACCESS_TOKEN",
-]
+ignore = ["AUTH_SIGNING_KEY_PEM", "AUTH_SIGNING_KEY_FILE", "AUTH_DATABASE_URL", "AUTH_REDIS_URL", "AUTH_WEBHOOK_SECRET", "AUTH_SUPABASE_PROJECTS", "SUPABASE_ACCESS_TOKEN"]
 
 [flags.bind-addr]
 env = "AUTH_BIND_ADDR"
@@ -40,12 +35,26 @@ type = "string"
 default = "oresoftware"
 help = "aud claim on minted OreSoftware JWTs."
 
-[flags.token-ttl-secs]
-env = "AUTH_TOKEN_TTL_SECS"
-aliases = ["token-ttl-secs", "ttl"]
+[flags.access-token-ttl-secs]
+env = "AUTH_ACCESS_TOKEN_TTL_SECS"
+aliases = ["access-token-ttl-secs", "token-ttl-secs", "ttl"]
 type = "integer"
-default = 3600
-help = "Lifetime of a minted token, in seconds."
+default = 900
+help = "Lifetime of a minted access token, in seconds."
+
+[flags.refresh-token-ttl-secs]
+env = "AUTH_REFRESH_TOKEN_TTL_SECS"
+aliases = ["refresh-token-ttl-secs", "refresh-ttl"]
+type = "integer"
+default = 2592000
+help = "Lifetime of an opaque refresh token, in seconds."
+
+[flags.allow-registration]
+env = "AUTH_ALLOW_REGISTRATION"
+aliases = ["allow-registration"]
+type = "bool"
+default = false
+help = "Enable public local-account registration; disabled by default."
 
 [flags.signing-kid]
 env = "AUTH_SIGNING_KID"
@@ -73,3 +82,21 @@ env = "AUTH_CORS_ALLOW_ORIGINS"
 aliases = ["cors-allow-origins"]
 type = "string"
 help = "Comma-separated browser origins allowed by CORS."
+
+[flags.rust-log]
+env = "RUST_LOG"
+aliases = ["rust-log", "log-filter"]
+type = "string"
+help = "tracing-subscriber filter for structured logs."
+
+[flags.otel-endpoint]
+env = "OTEL_EXPORTER_OTLP_ENDPOINT"
+aliases = ["otel-endpoint"]
+type = "string"
+help = "OTLP/HTTP collector base URL."
+
+[flags.otel-resource-attributes]
+env = "OTEL_RESOURCE_ATTRIBUTES"
+aliases = ["otel-resource-attributes"]
+type = "string"
+help = "Comma-separated OpenTelemetry resource attributes."

@@ -21,5 +21,7 @@ pub async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<serde_js
             );
         }
     }
+    // Redis is deliberately not readiness-critical: Postgres remains the
+    // source of truth and the service degrades safely to DB-backed checks.
     (StatusCode::OK, Json(json!({ "status": "ready" })))
 }

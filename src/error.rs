@@ -31,6 +31,14 @@ pub enum AuthError {
     /// Upstream dependency failed (JWKS fetch, DB). Logged with detail.
     #[error("upstream unavailable")]
     Upstream,
+    #[error("service unavailable")]
+    Unavailable,
+    #[error("request conflict")]
+    Conflict,
+    #[error("forbidden")]
+    Forbidden,
+    #[error("rate limited")]
+    RateLimited,
     /// Programming/there-is-no-good-recovery errors.
     #[error("internal error")]
     Internal,
@@ -42,6 +50,10 @@ impl IntoResponse for AuthError {
             AuthError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             AuthError::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
             AuthError::Upstream => (StatusCode::BAD_GATEWAY, "upstream_unavailable"),
+            AuthError::Unavailable => (StatusCode::SERVICE_UNAVAILABLE, "unavailable"),
+            AuthError::Conflict => (StatusCode::CONFLICT, "request_conflict"),
+            AuthError::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
+            AuthError::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
             AuthError::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
         };
         // Log the real cause; return only the coarse code to the caller.

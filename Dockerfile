@@ -3,12 +3,11 @@
 # k8s-cluster scaling docs on why in-pod cargo builds pin pods to a node).
 FROM rust:1.96-bookworm AS build
 WORKDIR /src
-# Cache deps.
+# Fetch the locked dependency graph before copying frequently changing sources.
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir src && echo 'fn main() {}' > src/main.rs && echo '' > src/lib.rs \
-    && cargo build --release --locked || true
+RUN cargo fetch --locked
 COPY . .
-RUN touch src/main.rs src/lib.rs && cargo build --release --locked
+RUN cargo build --release --locked
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \

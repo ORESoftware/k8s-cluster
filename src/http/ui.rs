@@ -1,4 +1,4 @@
-//! HTML UI handlers (Maud + htmx). Returns HTML blobs; the auth API stays JSON.
+//! HTML UI handlers (Maud). Returns HTML blobs; the auth API stays JSON.
 
 use axum::{
     extract::State,
@@ -34,8 +34,7 @@ pub struct UiExchangeForm {
     access_token: String,
 }
 
-/// POST /ui/exchange — htmx target. Runs the exchange and returns an HTML
-/// fragment (success table + minted token, or a uniform error).
+/// POST /ui/exchange — runs the exchange and returns an HTML result.
 pub async fn ui_exchange(
     State(state): State<AppState>,
     Form(form): Form<UiExchangeForm>,
@@ -45,12 +44,13 @@ pub async fn ui_exchange(
         return Html(views::error_fragment().into_string());
     }
     match perform_exchange(&state, token).await {
-        Ok((minted, project, _shared_user_id)) => {
+        Ok(exchanged) => {
             // Decode our own token for display (it just came from our minter).
-            match state.minter.verify(&minted.token) {
-                Ok(claims) => {
-                    Html(views::exchange_result(&minted.token, &project, &claims).into_string())
-                }
+            match state.minter.verify(&exchanged.access_token) {
+                Ok(claims) => Html(
+                    views::exchange_result(&exchanged.access_token, &exchanged.project, &claims)
+                        .into_string(),
+                ),
                 Err(_) => Html(views::error_fragment().into_string()),
             }
         }

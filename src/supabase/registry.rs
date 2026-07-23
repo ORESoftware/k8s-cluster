@@ -47,6 +47,9 @@ impl ProjectRegistry {
         http: &reqwest::Client,
         token: &str,
     ) -> Result<VerifiedIdentity, AuthError> {
+        if token.len() > 16 * 1024 {
+            return Err(AuthError::Unauthorized);
+        }
         let issuer = unverified_issuer(token).ok_or(AuthError::Unauthorized)?;
         let verifier = self.by_issuer.get(&issuer).ok_or(AuthError::Unauthorized)?;
         verifier.verify(http, token).await
@@ -57,6 +60,9 @@ impl ProjectRegistry {
 /// verifier. The chosen verifier re-pins `iss` during real verification.
 fn unverified_issuer(token: &str) -> Option<String> {
     let payload_b64 = token.split('.').nth(1)?;
+    if payload_b64.len() > 12 * 1024 {
+        return None;
+    }
     let bytes = base64_url_decode(payload_b64)?;
     let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
     value.get("iss")?.as_str().map(String::from)

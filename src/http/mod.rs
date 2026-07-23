@@ -1,9 +1,9 @@
 //! The axum surface.
 //!
-//! JSON API + a small Maud/htmx HTML UI. No websockets.
+//! JSON API + a small script-free Maud HTML UI. No websockets.
 //! - `GET  /`                           status landing (HTML)
 //! - `GET  /ui`                          token-exchange helper (HTML)
-//! - `POST /ui/exchange`                 htmx fragment (HTML)
+//! - `POST /ui/exchange`                 exchange result (HTML)
 //! - `GET  /healthz`                     liveness
 //! - `GET  /readyz`                      readiness (DB ping if configured)
 //! - `GET  /.well-known/jwks.json`       our public JWKS (downstream verifiers)
@@ -12,21 +12,27 @@
 //! - `GET  /auth/verify`                 bearer check (gateway auth_request)
 //! - `GET  /metrics`                     Prometheus
 
+mod docs;
 mod exchange;
 mod health;
 mod introspect;
 mod jwks;
+mod local;
 mod metrics;
+mod session_tokens;
 mod ui;
+pub mod webhook;
 
 use std::time::Duration;
 
 use axum::{
+    http::{header, HeaderValue, Method},
     routing::{get, post},
     Router,
 };
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
 
 use crate::state::AppState;
@@ -43,18 +49,48 @@ pub fn router(state: AppState) -> Router {
         .route("/", get(ui::landing))
         .route("/ui", get(ui::sign_in))
         .route("/ui/exchange", post(ui::ui_exchange))
+        .route("/docs/api", get(docs::api_docs))
+        .route("/api/docs", get(docs::api_docs))
+        .route("/api/docs.json", get(docs::openapi))
         // JSON API
         .route("/healthz", get(health::healthz))
         .route("/readyz", get(health::readyz))
         .route("/.well-known/jwks.json", get(jwks::jwks))
         .route("/auth/exchange", post(exchange::exchange))
+        .route("/auth/register", post(local::register))
+        .route("/auth/login", post(local::login))
+        .route("/auth/refresh", post(local::refresh))
+        .route("/auth/logout", post(local::logout))
         .route("/auth/introspect", post(introspect::introspect))
         .route("/auth/verify", get(introspect::verify))
+        .route("/internal/webhook/sync", post(webhook::sync_webhook))
         .route("/metrics", get(metrics::metrics))
         // One tracing span per request (W3C traceparent → OTLP), then limits.
         .layer(crate::telemetry::http_trace_layer())
         .layer(TimeoutLayer::new(Duration::from_secs(10)))
         .layer(RequestBodyLimitLayer::new(64 * 1024))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::REFERRER_POLICY,
+            HeaderValue::from_static("no-referrer"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(
+                "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+            ),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::X_FRAME_OPTIONS,
+            HeaderValue::from_static("DENY"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::STRICT_TRANSPORT_SECURITY,
+            HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+        ))
         .layer(cors)
         .with_state(state)
 }
@@ -71,8 +107,8 @@ fn build_cors(state: &AppState) -> CorsLayer {
         .collect::<Vec<_>>();
     CorsLayer::new()
         .allow_origin(origins)
-        .allow_methods(Any)
-        .allow_headers(Any)
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
 }
 
 /// Extract a bearer token from the `Authorization` header.
