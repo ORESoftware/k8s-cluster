@@ -12,7 +12,7 @@ concurrency:
 jobs:
   promote:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     environment: production
     steps:
       - name: Require private-submodule token and public web configuration
@@ -57,6 +57,26 @@ jobs:
             echo "submodule checkout differs from reviewed pins" >&2
             exit 1
           fi
+      - name: Prepare the complete k8s build context for the Gleam release
+        env:
+          GH_TOKEN: ${{ secrets.ORG_SUBMODULE_TOKEN }}
+        run: |
+          set -euo pipefail
+          context="$RUNNER_TEMP/scintilla-k8s-context"
+          gh auth setup-git
+          gh repo clone ORESoftware/k8s-cluster "$context" -- --depth=1 --branch dev
+          git -C "$context" config url."https://github.com/".insteadOf "git@github.com:"
+          git -C "$context" submodule update --init --depth=1 \
+            remote/libs \
+            remote/deployments/scintilla-run-monorepo
+          git -C "$context/remote/libs" fetch --depth=1 origin main
+          git -C "$context/remote/libs" checkout --detach FETCH_HEAD
+          git -C "$context/remote/deployments/scintilla-run-monorepo" fetch --depth=1 origin "$GITHUB_SHA"
+          git -C "$context/remote/deployments/scintilla-run-monorepo" checkout --detach "$GITHUB_SHA"
+          git -C "$context/remote/deployments/scintilla-run-monorepo" submodule update --init --depth=1 \
+            apps/gleam-lambda-runner
+          test "$(git -C "$context/remote/deployments/scintilla-run-monorepo" rev-parse HEAD)" = "$GITHUB_SHA"
+          echo "SCINTILLA_K8S_BUILD_CONTEXT=$context" >> "$GITHUB_ENV"
       - name: Build and publish exact pinned images
         id: images
         env:
@@ -98,9 +118,48 @@ jobs:
           [[ "$ui_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           echo "ui=ghcr.io/scintilla-run/scintilla-ui@$ui_digest" >> "$GITHUB_OUTPUT"
 
-          runner_digest="$(docker buildx imagetools inspect ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine | awk '$1 == "Digest:" { print $2; exit }')"
-          [[ "$runner_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
-          echo "runner=ghcr.io/gleam-lang/gleam@$runner_digest" >> "$GITHUB_OUTPUT"
+          build_context_image() {
+            local output="$1" image="$2" commit="$3" dockerfile="$4" context="$5"
+            local metadata digest
+            metadata="$(mktemp)"
+            docker buildx build --push --provenance=true \
+              --file "$dockerfile" \
+              --tag "$image:$commit" \
+              --metadata-file "$metadata" \
+              "$context"
+            digest="$(jq -r '."containerimage.digest"' "$metadata")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            printf '%s=%s@%s\n' "$output" "$image" "$digest" >> "$GITHUB_OUTPUT"
+          }
+
+          runner_root="$SCINTILLA_K8S_BUILD_CONTEXT/remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner"
+          runner_commit="$(git -C apps/gleam-lambda-runner rev-parse HEAD)"
+          build_context_image runner ghcr.io/scintilla-run/scintilla-runner "$runner_commit" \
+            "$runner_root/Dockerfile" "$SCINTILLA_K8S_BUILD_CONTEXT"
+
+          while IFS= read -r runtime; do
+            name="$(jq -r .name <<<"$runtime")"
+            dockerfile="$(jq -r .dockerfile <<<"$runtime")"
+            context="apps/gleam-lambda-runner"
+            resolved_dockerfile="$context/$dockerfile"
+            if [ "$name" = nodejs ]; then
+              context="$SCINTILLA_K8S_BUILD_CONTEXT/remote"
+              resolved_dockerfile="$runner_root/$dockerfile"
+            fi
+            build_context_image "runtime_$name" "ghcr.io/scintilla-run/scintilla-runtime-$name" \
+              "$runner_commit" "$resolved_dockerfile" "$context"
+          done < <(jq -c '.runtimes[]' apps/gleam-lambda-runner/runtime-images/matrix.json)
+      - name: Invoke the compiled runtime images end to end
+        env:
+          SCINTILLA_RUNTIME_E2E_PULL: always
+          SCINTILLA_RUNTIME_NODEJS_IMAGE: ${{ steps.images.outputs.runtime_nodejs }}
+          SCINTILLA_RUNTIME_GOLANG_IMAGE: ${{ steps.images.outputs.runtime_golang }}
+          SCINTILLA_RUNTIME_JAVA_IMAGE: ${{ steps.images.outputs.runtime_java }}
+          SCINTILLA_RUNTIME_ERLANG_IMAGE: ${{ steps.images.outputs.runtime_erlang }}
+          SCINTILLA_RUNTIME_ELIXIR_IMAGE: ${{ steps.images.outputs.runtime_elixir }}
+          SCINTILLA_RUNTIME_GLEAM_IMAGE: ${{ steps.images.outputs.runtime_gleam }}
+          SCINTILLA_RUNTIME_RUST_IMAGE: ${{ steps.images.outputs.runtime_rust }}
+        run: node apps/gleam-lambda-runner/test/runtime-images-docker.e2e.mjs
       - name: Render immutable app-of-apps desired state
         env:
           SCINTILLA_MONOREPO_ROOT: ${{ github.workspace }}
@@ -111,6 +170,18 @@ jobs:
           SCINTILLA_UI_IMAGE: ${{ steps.images.outputs.ui }}
           SCINTILLA_SYNC_IMAGE: ${{ steps.images.outputs.sync }}
           SCINTILLA_RUNNER_IMAGE: ${{ steps.images.outputs.runner }}
+          SCINTILLA_RUNTIME_NODEJS_IMAGE: ${{ steps.images.outputs.runtime_nodejs }}
+          SCINTILLA_RUNTIME_PYTHON3_IMAGE: ${{ steps.images.outputs.runtime_python3 }}
+          SCINTILLA_RUNTIME_RUBY_IMAGE: ${{ steps.images.outputs.runtime_ruby }}
+          SCINTILLA_RUNTIME_BASH_IMAGE: ${{ steps.images.outputs.runtime_bash }}
+          SCINTILLA_RUNTIME_GOLANG_IMAGE: ${{ steps.images.outputs.runtime_golang }}
+          SCINTILLA_RUNTIME_DART_IMAGE: ${{ steps.images.outputs.runtime_dart }}
+          SCINTILLA_RUNTIME_JAVA_IMAGE: ${{ steps.images.outputs.runtime_java }}
+          SCINTILLA_RUNTIME_ERLANG_IMAGE: ${{ steps.images.outputs.runtime_erlang }}
+          SCINTILLA_RUNTIME_ELIXIR_IMAGE: ${{ steps.images.outputs.runtime_elixir }}
+          SCINTILLA_RUNTIME_GLEAM_IMAGE: ${{ steps.images.outputs.runtime_gleam }}
+          SCINTILLA_RUNTIME_RUST_IMAGE: ${{ steps.images.outputs.runtime_rust }}
+          SCINTILLA_RUNTIME_BROWSER_IMAGE: ${{ steps.images.outputs.runtime_browser }}
         run: |
           node apps/scintilla-run-infra/scripts/render-gitops.mjs
           git diff --check -- gitops/ec2

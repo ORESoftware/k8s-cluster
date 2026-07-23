@@ -19,3 +19,20 @@ test('monorepo structural integrity', () => {
     // Check flake.nix
     assert.ok(fs.existsSync('flake.nix'), 'flake.nix is missing');
 });
+
+test('production deploy publishes and pins the complete runtime matrix', () => {
+    const workflow = fs.readFileSync('.github/workflows/deploy.yml', 'utf8');
+    const matrix = JSON.parse(fs.readFileSync('apps/gleam-lambda-runner/runtime-images/matrix.json', 'utf8'));
+    assert.match(workflow, /SCINTILLA_K8S_BUILD_CONTEXT/);
+    assert.match(workflow, /scintilla-runner/);
+    assert.match(workflow, /runtime-images-docker\.e2e\.mjs/);
+    assert.doesNotMatch(workflow, /imagetools inspect ghcr\.io\/gleam-lang\/gleam/);
+    for (const runtime of matrix.runtimes) {
+        const output = `runtime_${runtime.name}`;
+        assert.ok(workflow.includes(output), `deploy output ${output} is missing`);
+        assert.ok(
+            workflow.includes(`SCINTILLA_RUNTIME_${runtime.name.toUpperCase()}_IMAGE`),
+            `renderer input for ${runtime.name} is missing`,
+        );
+    }
+});
