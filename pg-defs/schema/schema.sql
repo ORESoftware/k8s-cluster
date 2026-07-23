@@ -1310,7 +1310,7 @@ create table if not exists lambda_functions (
   display_name varchar(200) not null,
   description text default '' not null,
   runtime varchar(40) default 'nodejs' not null,
-  entry_command text default 'env -i PATH="$PATH" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs' not null,
+  entry_command text default '' not null,
   function_body text not null,
   reuse_key varchar(200),
   idle_timeout_seconds integer default 300 not null,
@@ -1335,7 +1335,7 @@ create table if not exists lambda_functions (
   constraint lambda_functions_body_size_chk
     check (octet_length(function_body) <= 262144),
   constraint lambda_functions_entry_command_chk
-    check (octet_length(entry_command) between 1 and 512),
+    check (octet_length(entry_command) <= 512),
   constraint lambda_functions_container_image_size_chk
     check (container_image is null or octet_length(container_image) <= 512),
   constraint lambda_functions_container_build_error_size_chk
@@ -1349,7 +1349,7 @@ create table if not exists lambda_functions (
   constraint lambda_functions_status_chk
     check (status in ('draft', 'active', 'paused', 'archived')),
   constraint lambda_functions_runtime_chk
-    check (runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm')),
+    check (runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm', 'gleam', 'gleamlang', 'rust', 'rs', 'browser')),
   constraint lambda_functions_container_build_status_chk
     check (container_build_status in ('not_requested', 'pending', 'building', 'built', 'failed', 'skipped'))
 );

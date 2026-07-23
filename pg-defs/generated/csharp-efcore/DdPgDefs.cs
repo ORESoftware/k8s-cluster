@@ -1771,7 +1771,7 @@ public class LambdaFunction
     [Required]
     [Column("runtime")]
     [MaxLength(40)]
-    [RegularExpression(@"^(nodejs|javascript|typescript|python3|python|ruby|bash|shell|golang|go|dart|erlang|erl|elixir|ex|java|jvm)$")]
+    [RegularExpression(@"^(nodejs|javascript|typescript|python3|python|ruby|bash|shell|golang|go|dart|erlang|erl|elixir|ex|java|jvm|gleam|gleamlang|rust|rs|browser)$")]
     public string Runtime { get; set; } = null!;
 
     [Required]

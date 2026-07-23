@@ -954,7 +954,7 @@ lambda_functions_select_sql() -> <<"select
       updated_by::text as updated_by
     from lambda_functions">>.
 
-lambda_functions_runtime_values() -> [<<"nodejs">>, <<"javascript">>, <<"typescript">>, <<"python3">>, <<"python">>, <<"ruby">>, <<"bash">>, <<"shell">>, <<"golang">>, <<"go">>, <<"dart">>, <<"erlang">>, <<"erl">>, <<"elixir">>, <<"ex">>, <<"java">>, <<"jvm">>].
+lambda_functions_runtime_values() -> [<<"nodejs">>, <<"javascript">>, <<"typescript">>, <<"python3">>, <<"python">>, <<"ruby">>, <<"bash">>, <<"shell">>, <<"golang">>, <<"go">>, <<"dart">>, <<"erlang">>, <<"erl">>, <<"elixir">>, <<"ex">>, <<"java">>, <<"jvm">>, <<"gleam">>, <<"gleamlang">>, <<"rust">>, <<"rs">>, <<"browser">>].
 
 validate_lambda_functions_runtime(Value) when is_binary(Value) ->
     case lists:member(Value, lambda_functions_runtime_values()) of

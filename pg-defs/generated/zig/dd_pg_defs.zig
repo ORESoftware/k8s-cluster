@@ -2626,6 +2626,11 @@ pub const LambdaFunctionRuntime = enum {
     ex,
     java,
     jvm,
+    gleam,
+    gleamlang,
+    rust,
+    rs,
+    browser,
 
     pub fn toString(self: LambdaFunctionRuntime) []const u8 {
         return switch (self) {
@@ -2646,6 +2651,11 @@ pub const LambdaFunctionRuntime = enum {
             .ex => "ex",
             .java => "java",
             .jvm => "jvm",
+            .gleam => "gleam",
+            .gleamlang => "gleamlang",
+            .rust => "rust",
+            .rs => "rs",
+            .browser => "browser",
         };
     }
 
@@ -2667,6 +2677,11 @@ pub const LambdaFunctionRuntime = enum {
         if (std.mem.eql(u8, value, "ex")) return .ex;
         if (std.mem.eql(u8, value, "java")) return .java;
         if (std.mem.eql(u8, value, "jvm")) return .jvm;
+        if (std.mem.eql(u8, value, "gleam")) return .gleam;
+        if (std.mem.eql(u8, value, "gleamlang")) return .gleamlang;
+        if (std.mem.eql(u8, value, "rust")) return .rust;
+        if (std.mem.eql(u8, value, "rs")) return .rs;
+        if (std.mem.eql(u8, value, "browser")) return .browser;
         return null;
     }
 };

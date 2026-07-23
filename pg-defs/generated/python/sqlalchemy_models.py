@@ -2809,7 +2809,7 @@ class MipSolverEventsInsert(BaseModel):
     payload: dict[str, Any] | None = Field(default_factory=dict)
     createdAt: datetime | None = None
 
-LambdaFunctionRuntime = Literal["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"]
+LambdaFunctionRuntime = Literal["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"]
 LambdaFunctionContainerBuildStatus = Literal["not_requested", "pending", "building", "built", "failed", "skipped"]
 LambdaFunctionStatus = Literal["draft", "active", "paused", "archived"]
 
@@ -2818,14 +2818,14 @@ class LambdaFunction(Base):
     __table_args__ = (
         CheckConstraint("slug ~ '^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$'", name="lambda_functions_slug_format_chk"),
         CheckConstraint("octet_length(function_body) <= 262144", name="lambda_functions_body_size_chk"),
-        CheckConstraint("octet_length(entry_command) between 1 and 512", name="lambda_functions_entry_command_chk"),
+        CheckConstraint("octet_length(entry_command) <= 512", name="lambda_functions_entry_command_chk"),
         CheckConstraint("container_image is null or octet_length(container_image) <= 512", name="lambda_functions_container_image_size_chk"),
         CheckConstraint("container_build_error is null or octet_length(container_build_error) <= 8192", name="lambda_functions_container_build_error_size_chk"),
         CheckConstraint("jsonb_typeof(labels) = 'array'", name="lambda_functions_labels_array_chk"),
         CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="lambda_functions_meta_object_chk"),
         CheckConstraint("jsonb_typeof(env) = 'object'", name="lambda_functions_env_object_chk"),
         CheckConstraint("status in ('draft', 'active', 'paused', 'archived')", name="lambda_functions_status_chk"),
-        CheckConstraint("runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm')", name="lambda_functions_runtime_chk"),
+        CheckConstraint("runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm', 'gleam', 'gleamlang', 'rust', 'rs', 'browser')", name="lambda_functions_runtime_chk"),
         CheckConstraint("container_build_status in ('not_requested', 'pending', 'building', 'built', 'failed', 'skipped')", name="lambda_functions_container_build_status_chk"),
         Index("lambda_functions_slug_active_uq", "slug", unique=True, postgresql_where=text("is_soft_deleted = false")),
         Index("lambda_functions_status_idx", "status", postgresql_where=text("is_soft_deleted = false")),
@@ -2838,7 +2838,7 @@ class LambdaFunction(Base):
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
     runtime: Mapped[str] = mapped_column(String(40), nullable=False, server_default=text("'nodejs'"))
-    entry_command: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs'"))
+    entry_command: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
     function_body: Mapped[str] = mapped_column(Text(), nullable=False)
     reuse_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
     idle_timeout_seconds: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("300"))
@@ -2924,7 +2924,7 @@ class LambdaFunctionInsert(BaseModel):
     displayName: str = Field(..., min_length=1, max_length=200)
     description: str | None = ""
     runtime: LambdaFunctionRuntime | None = "nodejs"
-    entryCommand: str | None = "env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs"
+    entryCommand: str | None = ""
     functionBody: str = Field(..., min_length=1)
     reuseKey: str | None = Field(None, max_length=200)
     idleTimeoutSeconds: int | None = Field(300, ge=1, le=3600)

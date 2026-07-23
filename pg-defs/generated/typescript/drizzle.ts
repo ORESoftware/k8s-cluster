@@ -2194,7 +2194,7 @@ export type MipSolverEventsRow = z.infer<typeof mipSolverEventsRowSchema>;
 export type MipSolverEventsInsert = z.infer<typeof mipSolverEventsInsertSchema>;
 export type MipSolverEventsUpdate = z.infer<typeof mipSolverEventsUpdateSchema>;
 
-export const lambdaFunctionRuntimeValues = ["nodejs","javascript","typescript","python3","python","ruby","bash","shell","golang","go","dart","erlang","erl","elixir","ex","java","jvm"] as const;
+export const lambdaFunctionRuntimeValues = ["nodejs","javascript","typescript","python3","python","ruby","bash","shell","golang","go","dart","erlang","erl","elixir","ex","java","jvm","gleam","gleamlang","rust","rs","browser"] as const;
 export const lambdaFunctionRuntimeSchema = z.enum(lambdaFunctionRuntimeValues);
 export type LambdaFunctionRuntime = z.infer<typeof lambdaFunctionRuntimeSchema>;
 
@@ -2214,7 +2214,7 @@ export const lambdaFunctions = pgTable(
     displayName: varchar("display_name", { length: 200 }).notNull(),
     description: text("description").default(sql`''`).notNull(),
     runtime: varchar("runtime", { length: 40 }).default(sql`'nodejs'`).notNull(),
-    entryCommand: text("entry_command").default(sql`'env -i PATH="$PATH" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs'`).notNull(),
+    entryCommand: text("entry_command").default(sql`''`).notNull(),
     functionBody: text("function_body").notNull(),
     reuseKey: varchar("reuse_key", { length: 200 }),
     idleTimeoutSeconds: integer("idle_timeout_seconds").default(sql`300`).notNull(),
@@ -2238,14 +2238,14 @@ export const lambdaFunctions = pgTable(
   (table) => ({
     lambdaFunctionsSlugFormatChk: check("lambda_functions_slug_format_chk", sql.raw("slug ~ '^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$'")),
     lambdaFunctionsBodySizeChk: check("lambda_functions_body_size_chk", sql.raw("octet_length(function_body) <= 262144")),
-    lambdaFunctionsEntryCommandChk: check("lambda_functions_entry_command_chk", sql.raw("octet_length(entry_command) between 1 and 512")),
+    lambdaFunctionsEntryCommandChk: check("lambda_functions_entry_command_chk", sql.raw("octet_length(entry_command) <= 512")),
     lambdaFunctionsContainerImageSizeChk: check("lambda_functions_container_image_size_chk", sql.raw("container_image is null or octet_length(container_image) <= 512")),
     lambdaFunctionsContainerBuildErrorSizeChk: check("lambda_functions_container_build_error_size_chk", sql.raw("container_build_error is null or octet_length(container_build_error) <= 8192")),
     lambdaFunctionsLabelsArrayChk: check("lambda_functions_labels_array_chk", sql.raw("jsonb_typeof(labels) = 'array'")),
     lambdaFunctionsMetaObjectChk: check("lambda_functions_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
     lambdaFunctionsEnvObjectChk: check("lambda_functions_env_object_chk", sql.raw("jsonb_typeof(env) = 'object'")),
     lambdaFunctionsStatusChk: check("lambda_functions_status_chk", sql.raw("status in ('draft', 'active', 'paused', 'archived')")),
-    lambdaFunctionsRuntimeChk: check("lambda_functions_runtime_chk", sql.raw("runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm')")),
+    lambdaFunctionsRuntimeChk: check("lambda_functions_runtime_chk", sql.raw("runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm', 'gleam', 'gleamlang', 'rust', 'rs', 'browser')")),
     lambdaFunctionsContainerBuildStatusChk: check("lambda_functions_container_build_status_chk", sql.raw("container_build_status in ('not_requested', 'pending', 'building', 'built', 'failed', 'skipped')")),
     lambdaFunctionsSlugActiveUq: uniqueIndex("lambda_functions_slug_active_uq").on(table.slug).where(sql.raw("is_soft_deleted = false")),
     lambdaFunctionsStatusIdx: index("lambda_functions_status_idx").on(table.status).where(sql.raw("is_soft_deleted = false")),
@@ -2288,7 +2288,7 @@ export const lambdaFunctionInsertSchema = z.object({
   displayName: z.string().min(1).max(200),
   description: z.string().optional().default(""),
   runtime: lambdaFunctionRuntimeSchema.optional().default("nodejs"),
-  entryCommand: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").optional().default("env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs"),
+  entryCommand: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").optional().default(""),
   functionBody: z.string().min(1).refine((value) => byteLength(value) <= 262144, "Must be at most 262144 bytes"),
   reuseKey: z.string().max(200).nullable().optional(),
   idleTimeoutSeconds: z.number().int().min(1).max(3600).optional().default(300),

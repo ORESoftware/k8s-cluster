@@ -2276,7 +2276,7 @@ let lambda_functions_columns = ["id"; "slug"; "display_name"; "description"; "ru
 
 let lambda_functions_select_sql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      status,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_functions"
 
-type lambda_functions_runtime = [ `Nodejs | `Javascript | `Typescript | `Python3 | `Python | `Ruby | `Bash | `Shell | `Golang | `Go | `Dart | `Erlang | `Erl | `Elixir | `Ex | `Java | `Jvm ]
+type lambda_functions_runtime = [ `Nodejs | `Javascript | `Typescript | `Python3 | `Python | `Ruby | `Bash | `Shell | `Golang | `Go | `Dart | `Erlang | `Erl | `Elixir | `Ex | `Java | `Jvm | `Gleam | `Gleamlang | `Rust | `Rs | `Browser ]
 
 let lambda_functions_runtime_to_string (value : lambda_functions_runtime) : string =
   match value with
@@ -2297,6 +2297,11 @@ let lambda_functions_runtime_to_string (value : lambda_functions_runtime) : stri
   | `Ex -> "ex"
   | `Java -> "java"
   | `Jvm -> "jvm"
+  | `Gleam -> "gleam"
+  | `Gleamlang -> "gleamlang"
+  | `Rust -> "rust"
+  | `Rs -> "rs"
+  | `Browser -> "browser"
 
 let parse_lambda_functions_runtime (value : string) : (lambda_functions_runtime, string) result =
   match value with
@@ -2317,6 +2322,11 @@ let parse_lambda_functions_runtime (value : string) : (lambda_functions_runtime,
   | "ex" -> Ok `Ex
   | "java" -> Ok `Java
   | "jvm" -> Ok `Jvm
+  | "gleam" -> Ok `Gleam
+  | "gleamlang" -> Ok `Gleamlang
+  | "rust" -> Ok `Rust
+  | "rs" -> Ok `Rs
+  | "browser" -> Ok `Browser
   | _ -> Error ("unsupported lambda_functions.runtime: " ^ value)
 
 type lambda_functions_container_build_status = [ `NotRequested | `Pending | `Building | `Built | `Failed | `Skipped ]

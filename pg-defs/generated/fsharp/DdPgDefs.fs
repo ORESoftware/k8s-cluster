@@ -2392,6 +2392,11 @@ type LambdaFunctionRuntime =
     | Ex
     | Java
     | Jvm
+    | Gleam
+    | Gleamlang
+    | Rust
+    | Rs
+    | Browser
 
 let lambdaFunctionRuntimeToString (value: LambdaFunctionRuntime) : string =
     match value with
@@ -2412,6 +2417,11 @@ let lambdaFunctionRuntimeToString (value: LambdaFunctionRuntime) : string =
     | LambdaFunctionRuntime.Ex -> "ex"
     | LambdaFunctionRuntime.Java -> "java"
     | LambdaFunctionRuntime.Jvm -> "jvm"
+    | LambdaFunctionRuntime.Gleam -> "gleam"
+    | LambdaFunctionRuntime.Gleamlang -> "gleamlang"
+    | LambdaFunctionRuntime.Rust -> "rust"
+    | LambdaFunctionRuntime.Rs -> "rs"
+    | LambdaFunctionRuntime.Browser -> "browser"
 
 let parseLambdaFunctionRuntime (value: string) : Result<LambdaFunctionRuntime, string> =
     match value with
@@ -2432,6 +2442,11 @@ let parseLambdaFunctionRuntime (value: string) : Result<LambdaFunctionRuntime, s
     | "ex" -> Ok LambdaFunctionRuntime.Ex
     | "java" -> Ok LambdaFunctionRuntime.Java
     | "jvm" -> Ok LambdaFunctionRuntime.Jvm
+    | "gleam" -> Ok LambdaFunctionRuntime.Gleam
+    | "gleamlang" -> Ok LambdaFunctionRuntime.Gleamlang
+    | "rust" -> Ok LambdaFunctionRuntime.Rust
+    | "rs" -> Ok LambdaFunctionRuntime.Rs
+    | "browser" -> Ok LambdaFunctionRuntime.Browser
     | _ -> Error ("unsupported lambda_functions.runtime: " + value)
 
 [<RequireQualifiedAccess>]

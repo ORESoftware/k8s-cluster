@@ -1903,6 +1903,11 @@ pub type LambdaFunctionRuntime {
   LambdaFunctionRuntimeEx
   LambdaFunctionRuntimeJava
   LambdaFunctionRuntimeJvm
+  LambdaFunctionRuntimeGleam
+  LambdaFunctionRuntimeGleamlang
+  LambdaFunctionRuntimeRust
+  LambdaFunctionRuntimeRs
+  LambdaFunctionRuntimeBrowser
 }
 
 pub fn lambda_functions_runtime_to_string(value: LambdaFunctionRuntime) -> String {
@@ -1924,6 +1929,11 @@ pub fn lambda_functions_runtime_to_string(value: LambdaFunctionRuntime) -> Strin
     LambdaFunctionRuntimeEx -> "ex"
     LambdaFunctionRuntimeJava -> "java"
     LambdaFunctionRuntimeJvm -> "jvm"
+    LambdaFunctionRuntimeGleam -> "gleam"
+    LambdaFunctionRuntimeGleamlang -> "gleamlang"
+    LambdaFunctionRuntimeRust -> "rust"
+    LambdaFunctionRuntimeRs -> "rs"
+    LambdaFunctionRuntimeBrowser -> "browser"
   }
 }
 
@@ -1946,6 +1956,11 @@ pub fn parse_lambda_functions_runtime(value: String) -> Result(LambdaFunctionRun
     "ex" -> Ok(LambdaFunctionRuntimeEx)
     "java" -> Ok(LambdaFunctionRuntimeJava)
     "jvm" -> Ok(LambdaFunctionRuntimeJvm)
+    "gleam" -> Ok(LambdaFunctionRuntimeGleam)
+    "gleamlang" -> Ok(LambdaFunctionRuntimeGleamlang)
+    "rust" -> Ok(LambdaFunctionRuntimeRust)
+    "rs" -> Ok(LambdaFunctionRuntimeRs)
+    "browser" -> Ok(LambdaFunctionRuntimeBrowser)
     _ -> Error("unsupported lambda_functions.runtime: " <> value)
   }
 }
@@ -2047,7 +2062,7 @@ pub fn validate_lambda_functions_slug(value: String) -> Result(String, String) {
 }
 
 pub fn validate_lambda_functions_runtime(value: String) -> Result(String, String) {
-  case list.contains(["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"], value) {
+  case list.contains(["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"], value) {
     True -> Ok(value)
     False -> Error("unsupported lambda_functions.runtime: " <> value)
   }

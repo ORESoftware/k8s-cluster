@@ -886,7 +886,7 @@ class LambdaFunction extends Model
             'slug' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$/'],
             'display_name' => ['required', 'string', 'min:1', 'max:200'],
             'description' => ['nullable', 'string'],
-            'runtime' => ['nullable', 'string', 'in:nodejs,javascript,typescript,python3,python,ruby,bash,shell,golang,go,dart,erlang,erl,elixir,ex,java,jvm'],
+            'runtime' => ['nullable', 'string', 'in:nodejs,javascript,typescript,python3,python,ruby,bash,shell,golang,go,dart,erlang,erl,elixir,ex,java,jvm,gleam,gleamlang,rust,rs,browser'],
             'entry_command' => ['nullable', 'string'],
             'function_body' => ['required', 'string', 'min:1'],
             'reuse_key' => ['nullable', 'string', 'max:200'],

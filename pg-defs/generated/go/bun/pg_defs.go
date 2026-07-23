@@ -1695,7 +1695,7 @@ const LambdaFunctionSelectSQL = `select
       updated_by::text as updated_by
     from lambda_functions`
 
-var LambdaFunctionRuntimeValues = []string{"nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"}
+var LambdaFunctionRuntimeValues = []string{"nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"}
 var LambdaFunctionContainerBuildStatusValues = []string{"not_requested", "pending", "building", "built", "failed", "skipped"}
 var LambdaFunctionStatusValues = []string{"draft", "active", "paused", "archived"}
 
@@ -1706,7 +1706,7 @@ type LambdaFunctionBun struct {
 	DisplayName string `bun:"display_name,type:varchar(200)" json:"displayName"`
 	Description string `bun:"description,type:text,default:''" json:"description"`
 	Runtime string `bun:"runtime,type:varchar(40),default:'nodejs'" json:"runtime"`
-	EntryCommand string `bun:"entry_command,type:text,default:'env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs'" json:"entryCommand"`
+	EntryCommand string `bun:"entry_command,type:text,default:''" json:"entryCommand"`
 	FunctionBody string `bun:"function_body,type:text" json:"functionBody"`
 	ReuseKey *string `bun:"reuse_key,type:varchar(200),nullzero" json:"reuseKey,omitempty"`
 	IdleTimeoutSeconds int32 `bun:"idle_timeout_seconds,type:integer,default:300" json:"idleTimeoutSeconds"`
@@ -1732,7 +1732,6 @@ func (value LambdaFunctionBun) Validate() error {
 	if !lambdaFunctionSlugPattern.MatchString(value.Slug) { return errors.New("lambda_functions.slug does not match the required pattern") }
 	if !containsString(LambdaFunctionRuntimeValues, value.Runtime) { return errors.New("unsupported lambda_functions.runtime") }
 	if len([]byte(value.EntryCommand)) > 512 { return errors.New("lambda_functions.entry_command exceeds 512 bytes") }
-	if len([]byte(value.EntryCommand)) < 1 { return errors.New("lambda_functions.entry_command is below 1 bytes") }
 	if len([]byte(value.FunctionBody)) > 262144 { return errors.New("lambda_functions.function_body exceeds 262144 bytes") }
 	if value.IdleTimeoutSeconds < 1 { return errors.New("lambda_functions.idle_timeout_seconds is below the minimum") }
 	if value.IdleTimeoutSeconds > 3600 { return errors.New("lambda_functions.idle_timeout_seconds is above the maximum") }

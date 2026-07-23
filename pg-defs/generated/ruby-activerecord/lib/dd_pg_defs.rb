@@ -506,7 +506,7 @@ module DdPgDefs
     validates :slug, format: { with: Regexp.new("\\A[a-z0-9][a-z0-9-]{1,118}[a-z0-9]\\z") }
     validates :display_name, presence: true
     validates :display_name, length: { minimum: 1, maximum: 200 }
-    validates :runtime, inclusion: { in: ["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"] }
+    validates :runtime, inclusion: { in: ["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"] }
     validates :function_body, presence: true
     validates :function_body, length: { minimum: 1 }
     validates :reuse_key, length: { maximum: 200 }, allow_nil: true

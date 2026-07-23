@@ -2815,7 +2815,7 @@ inline const char* lambda_functions_select_sql = R"SQL(select
       updated_by::text as updated_by
     from lambda_functions)SQL";
 
-enum class LambdaFunctionRuntime { Nodejs, Javascript, Typescript, Python3, Python, Ruby, Bash, Shell, Golang, Go, Dart, Erlang, Erl, Elixir, Ex, Java, Jvm };
+enum class LambdaFunctionRuntime { Nodejs, Javascript, Typescript, Python3, Python, Ruby, Bash, Shell, Golang, Go, Dart, Erlang, Erl, Elixir, Ex, Java, Jvm, Gleam, Gleamlang, Rust, Rs, Browser };
 inline std::string lambda_functions_runtime_to_string(LambdaFunctionRuntime value) {
     switch (value) {
         case LambdaFunctionRuntime::Nodejs: return "nodejs";
@@ -2835,6 +2835,11 @@ inline std::string lambda_functions_runtime_to_string(LambdaFunctionRuntime valu
         case LambdaFunctionRuntime::Ex: return "ex";
         case LambdaFunctionRuntime::Java: return "java";
         case LambdaFunctionRuntime::Jvm: return "jvm";
+        case LambdaFunctionRuntime::Gleam: return "gleam";
+        case LambdaFunctionRuntime::Gleamlang: return "gleamlang";
+        case LambdaFunctionRuntime::Rust: return "rust";
+        case LambdaFunctionRuntime::Rs: return "rs";
+        case LambdaFunctionRuntime::Browser: return "browser";
     }
     return "";
 }
@@ -2856,6 +2861,11 @@ inline std::optional<LambdaFunctionRuntime> parse_lambda_functions_runtime(const
     if (value == "ex") return LambdaFunctionRuntime::Ex;
     if (value == "java") return LambdaFunctionRuntime::Java;
     if (value == "jvm") return LambdaFunctionRuntime::Jvm;
+    if (value == "gleam") return LambdaFunctionRuntime::Gleam;
+    if (value == "gleamlang") return LambdaFunctionRuntime::Gleamlang;
+    if (value == "rust") return LambdaFunctionRuntime::Rust;
+    if (value == "rs") return LambdaFunctionRuntime::Rs;
+    if (value == "browser") return LambdaFunctionRuntime::Browser;
     return std::nullopt;
 }
 

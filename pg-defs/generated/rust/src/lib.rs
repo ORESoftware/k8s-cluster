@@ -4156,10 +4156,15 @@ pub enum LambdaFunctionRuntime {
     Ex,
     Java,
     Jvm,
+    Gleam,
+    Gleamlang,
+    Rust,
+    Rs,
+    Browser,
 }
 
 impl LambdaFunctionRuntime {
-    pub const VALUES: &'static [&'static str] = &["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"];
+    pub const VALUES: &'static [&'static str] = &["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -4180,6 +4185,11 @@ impl LambdaFunctionRuntime {
             Self::Ex => "ex",
             Self::Java => "java",
             Self::Jvm => "jvm",
+            Self::Gleam => "gleam",
+            Self::Gleamlang => "gleamlang",
+            Self::Rust => "rust",
+            Self::Rs => "rs",
+            Self::Browser => "browser",
         }
     }
 }
@@ -4206,6 +4216,11 @@ impl TryFrom<&str> for LambdaFunctionRuntime {
             "ex" => Ok(Self::Ex),
             "java" => Ok(Self::Java),
             "jvm" => Ok(Self::Jvm),
+            "gleam" => Ok(Self::Gleam),
+            "gleamlang" => Ok(Self::Gleamlang),
+            "rust" => Ok(Self::Rust),
+            "rs" => Ok(Self::Rs),
+            "browser" => Ok(Self::Browser),
             _ => Err(format!("unsupported runtime: {value}")),
         }
     }
@@ -4353,7 +4368,7 @@ pub struct LambdaFunctionInsert {
 pub fn validate_lambda_functions_row(value: &LambdaFunctionRow) -> Result<(), String> {
     validate_slug("lambda_functions.slug", &value.slug)?;
     validate_string_length("lambda_functions.display_name", &value.display_name, Some(1), Some(200))?;
-    if !["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"].contains(&(&value.runtime).as_str()) { return Err(format!("unsupported lambda_functions.runtime: {}", &value.runtime)); }
+    if !["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"].contains(&(&value.runtime).as_str()) { return Err(format!("unsupported lambda_functions.runtime: {}", &value.runtime)); }
     if (&value.entry_command).as_bytes().len() > 512 { return Err("lambda_functions.entry_command exceeds 512 bytes".to_string()); }
     validate_string_length("lambda_functions.function_body", &value.function_body, Some(1), None)?;
     if (&value.function_body).as_bytes().len() > 262144 { return Err("lambda_functions.function_body exceeds 262144 bytes".to_string()); }
@@ -4386,7 +4401,7 @@ pub fn validate_lambda_functions_insert(value: &LambdaFunctionInsert) -> Result<
         validate_string_length("lambda_functions.display_name", value, Some(1), Some(200))?;
     }
     if let Some(value) = &value.runtime {
-        if !["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"].contains(&(value).as_str()) { return Err(format!("unsupported lambda_functions.runtime: {}", value)); }
+        if !["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"].contains(&(value).as_str()) { return Err(format!("unsupported lambda_functions.runtime: {}", value)); }
     }
     if let Some(value) = &value.entry_command {
         if (value).as_bytes().len() > 512 { return Err("lambda_functions.entry_command exceeds 512 bytes".to_string()); }
