@@ -57,6 +57,7 @@
     "test:cli:rust-pg-defs-wiring": "pnpm exec tsx --test general/rust-pg-defs-wiring.test.ts",
     "test:cli:runtime-split-config": "pnpm exec tsx --test general/runtime-split-config.test.ts",
     "test:cli:selenium-server-config": "pnpm exec tsx --test general/selenium-server-config.test.ts",
+    "test:cli:scintilla-run-gitops": "pnpm exec tsx --test general/scintilla-run-gitops.test.ts",
     "test:cli:sonus-auris-site-config": "pnpm exec tsx --test general/sonus-auris-site-config.test.ts",
     "test:cli:thread-fleet-exporter-go-config": "pnpm exec tsx --test general/thread-fleet-exporter-go-config.test.ts",
     "test:cli:thread-operator-go-config": "pnpm exec tsx --test general/thread-operator-go-config.test.ts",
