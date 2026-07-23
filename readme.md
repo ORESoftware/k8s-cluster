@@ -126,6 +126,7 @@ bootstrap labels, approval controls, and the legacy-Application cutover.
 - `apps/fiducia-node-sidecar.rs`
 - `apps/fiducia-node.rs`
 - `apps/fiducia-operations-control-plane`
+- `apps/fiducia-payments.rs`
 - `apps/fiducia-routing.rs`
 - `apps/fiducia-sync`
 - `apps/fiducia-telemetry.rs`

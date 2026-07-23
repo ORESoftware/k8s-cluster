@@ -105,3 +105,4 @@
 [submodule "apps/fiducia-payments.rs"]
 	path = apps/fiducia-payments.rs
 	url = git@github.com:fiducia-cloud/fiducia-payments.rs
+	branch = main
