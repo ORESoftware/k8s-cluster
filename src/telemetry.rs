@@ -25,8 +25,8 @@
 //! - Telemetry setup **does not panic** on a bad/unreachable collector (traces are
 //!   simply disabled and the service logs normally) and is **idempotent** — a
 //!   second `init` is a no-op rather than a double-install panic. Call it from
-//!   within a Tokio runtime (e.g. under `#[tokio::main]`): the batch span exporter
-//!   is installed via `install_batch(runtime::Tokio)`, which requires one.
+//!   within a Tokio runtime (e.g. under `#[tokio::main]`) so the batch span exporter
+//!   can schedule its background work.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -37,7 +37,7 @@ use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::KeyValue;
 use opentelemetry_http::HeaderExtractor;
 use opentelemetry_otlp::{Protocol, WithExportConfig};
-use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::Config, Resource};
+use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SdkTracerProvider, Resource};
 use opentelemetry_semantic_conventions::resource as semconv;
 use tower_http::classify::{ServerErrorsAsFailures, SharedClassifier};
 use tower_http::trace::{DefaultOnRequest, MakeSpan, OnResponse, TraceLayer};
@@ -54,24 +54,20 @@ const DEFAULT_OTLP_ENDPOINT: &str = "http://dd-otel-collector.observability.svc.
 /// all of `main` — `let _otel = dd_telemetry::init(...)` — or spans may be lost.
 #[must_use = "hold the OtelGuard for the lifetime of the process; dropping it flushes and shuts telemetry down"]
 pub struct OtelGuard {
-    provider: Option<opentelemetry_sdk::trace::TracerProvider>,
+    provider: Option<SdkTracerProvider>,
 }
 
 impl Drop for OtelGuard {
     fn drop(&mut self) {
         // Only the guard that actually owns a provider tears telemetry down. An
-        // inert guard (logs-only, or a redundant `init` call) must NOT call
-        // `global::shutdown_tracer_provider`, or it would kill the real provider
-        // installed by the owning guard.
+        // inert guard (logs-only, or a redundant `init` call) must not shut down
+        // the provider installed by the owning guard.
         if let Some(provider) = self.provider.take() {
-            for result in provider.force_flush() {
-                if let Err(error) = result {
-                    // Use eprintln here: the subscriber may already be tearing down.
-                    eprintln!("dd-telemetry: span flush on shutdown failed: {error:?}");
-                }
+            if let Err(error) = provider.force_flush() {
+                // Use eprintln here: the subscriber may already be tearing down.
+                eprintln!("dd-telemetry: span flush on shutdown failed: {error:?}");
             }
             let _ = provider.shutdown();
-            global::shutdown_tracer_provider();
         }
     }
 }
@@ -211,7 +207,9 @@ impl<B> MakeSpan<B> for OtelMakeSpan {
         let parent = global::get_text_map_propagator(|propagator| {
             propagator.extract(&HeaderExtractor(request.headers()))
         });
-        span.set_parent(parent);
+        // This is best-effort when the service is in logs-only mode and no
+        // OpenTelemetry tracing layer is installed.
+        let _ = span.set_parent(parent);
         span
     }
 }
@@ -268,21 +266,21 @@ fn env_nonempty(key: &str) -> Option<String> {
 
 fn build_tracer_provider(
     service_name: &str,
-) -> Result<opentelemetry_sdk::trace::TracerProvider, opentelemetry::trace::TraceError> {
-    let exporter = opentelemetry_otlp::new_exporter()
-        .http()
+) -> Result<SdkTracerProvider, opentelemetry_otlp::ExporterBuildError> {
+    let exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_http()
         .with_endpoint(otlp_traces_endpoint())
         .with_protocol(Protocol::HttpBinary)
-        .with_timeout(Duration::from_secs(5));
+        .with_timeout(Duration::from_secs(5))
+        .build()?;
 
-    opentelemetry_otlp::new_pipeline()
-        .tracing()
-        .with_exporter(exporter)
-        .with_trace_config(Config::default().with_resource(resource(service_name)))
-        .install_batch(opentelemetry_sdk::runtime::Tokio)
+    Ok(SdkTracerProvider::builder()
+        .with_resource(resource(service_name))
+        .with_batch_exporter(exporter)
+        .build())
 }
 
-/// Build the OTel `Resource`. `Resource::default()` already folds in `OTEL_SERVICE_NAME`
+/// Build the OTel `Resource`. `Resource::builder()` folds in `OTEL_SERVICE_NAME`
 /// and `OTEL_RESOURCE_ATTRIBUTES` from the environment; we overlay an explicit
 /// `service.name` fallback plus the k8s pod/namespace from the downward-API env vars.
 fn resource(service_name: &str) -> Resource {
@@ -296,7 +294,7 @@ fn resource(service_name: &str) -> Resource {
         attributes.push(KeyValue::new(semconv::K8S_POD_NAME, pod));
     }
 
-    Resource::default().merge(&mut Resource::new(attributes))
+    Resource::builder().with_attributes(attributes).build()
 }
 
 fn first_env(keys: &[&str]) -> Option<String> {

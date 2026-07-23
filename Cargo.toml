@@ -20,7 +20,9 @@ tower-http = { version = "0.7", features = ["cors", "limit", "set-header", "time
 http = "1"
 
 # --- JWT: verify Supabase tokens + sign/verify our own (ES256) ---
-jsonwebtoken = "10"
+# v10 requires exactly one explicit crypto provider; AWS-LC avoids pulling the
+# unused RustCrypto RSA implementation covered by RUSTSEC-2023-0071.
+jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 p256 = { version = "0.13", features = ["ecdsa", "jwk", "pem", "pkcs8"] }
 sha2 = "0.11"
 hmac = "0.13"
@@ -75,7 +77,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 # Used by integration tests to sign Supabase-style test tokens and build JWKS.
-jsonwebtoken = "10"
+jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
 p256 = { version = "0.13", features = ["ecdsa", "jwk", "pem", "pkcs8"] }
 serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }

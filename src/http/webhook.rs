@@ -7,7 +7,7 @@
 use axum::{body::Bytes, extract::State, http::HeaderMap, Json};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde::Deserialize;
 use sha2::Sha256;
 use uuid::Uuid;
@@ -147,8 +147,8 @@ fn verify_signature(state: &AppState, headers: &HeaderMap, body: &[u8]) -> Resul
         .and_then(|value| value.to_str().ok())
         .and_then(|value| URL_SAFE_NO_PAD.decode(value).ok())
         .ok_or(AuthError::Unauthorized)?;
-    let mut mac =
-        Hmac::<Sha256>::new_from_slice(secret.as_bytes()).map_err(|_| AuthError::Internal)?;
+    let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret.as_bytes())
+        .map_err(|_| AuthError::Internal)?;
     mac.update(timestamp.to_string().as_bytes());
     mac.update(b".");
     mac.update(body);

@@ -2,8 +2,7 @@
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::{rngs::SysRng, TryRng};
 use sha2::{Digest, Sha256};
 
 pub const REFRESH_TOKEN_PREFIX: &str = "sat_refresh_";
@@ -17,7 +16,9 @@ pub struct RefreshToken {
 impl RefreshToken {
     pub fn generate() -> Self {
         let mut entropy = [0_u8; 32];
-        OsRng.fill_bytes(&mut entropy);
+        SysRng
+            .try_fill_bytes(&mut entropy)
+            .expect("operating system randomness is required for refresh-token generation");
         let plaintext = format!("{REFRESH_TOKEN_PREFIX}{}", URL_SAFE_NO_PAD.encode(entropy));
         let hash = hash_token(&plaintext);
         Self { plaintext, hash }

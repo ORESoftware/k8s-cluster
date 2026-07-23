@@ -1,0 +1,14 @@
+.git
+.github
+.nix
+.direnv
+target
+result
+result-*
+
+.env
+.env.*
+**/*.pem
+**/*.key
+**/*.rs.bk
+.DS_Store
