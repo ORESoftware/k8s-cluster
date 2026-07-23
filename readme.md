@@ -1060,6 +1060,8 @@ validation, simulation, setup, quality, release, and human or automation evidenc
 `GET /fabrication/machines/catalog` return the live
 `dd.fabrication.machine-catalog.v1` catalog derived from `default_machines()`.
 The payload exposes the supported default fleet for additive printers,
+including explicit Creality K1 and base K2 CoreXY profiles plus a separate
+CFS-equipped K2 multi-material profile,
 large-format pellet/FGF, robotic/gantry additive cells, sheet-lamination/LOM/UAM printers, paste/clay extrusion, bound-metal filament FFF, resin, material jetting, fiber composite, composite layup/vacuum-bag/autoclave, hot-wire foam cutting, binder jet,
 SLS/MJF/powder-bed, metal PBF, DED, vertical/horizontal/five-axis/indexed mills,
 CNC routers, mill-turn centers, Swiss/sliding-headstock turning centers, lathes, laser/waterjet/plasma/wire EDM/sinker
@@ -1085,6 +1087,12 @@ Resin-printer entries advertise `ctb-resin-job`, `photon-resin-job`,
 `lychee-resin-job`, and `chitubox-resin-job` alongside `sla-job` and `resin-job`
 so machine discovery aligns Lychee/Chitubox/Photon/CTB slice packages with the
 resin exposure, peel/lift/recoat, wash/cure, resin lot, and PPE gates.
+The Creality entries use Klipper-compatible G-code, retain the K1
+`220 x 220 x 250 mm` and base K2 `260 x 260 x 260 mm` work envelopes, and
+keep the stock K2 separate from the CFS-equipped multi-material variant so
+planning does not assume optional hardware is installed. Controller discovery
+maps stock K1/K2 jobs to the Klipper additive G-code postprocessor and
+CFS-equipped K2 jobs to the multi-material job packager.
 
 ## `GET /fabrication/printers/catalog`
 
@@ -1112,7 +1120,8 @@ simulation, and operator or automation evidence clear.
 `dd.fabrication.fdm-printer-catalog.v1` discovery view for extrusion-style
 additive machines. The catalog narrows the printer catalog to FDM/FFF,
 multi-material FDM/toolchanger, pellet/FGF, paste/clay extrusion, and
-bound-metal filament FFF profiles. It lists the setup evidence needed before
+bound-metal filament FFF profiles, including the Creality K1, K2, and
+CFS-equipped K2 profiles. It lists the setup evidence needed before
 positive extrusion, including hotend and bed temperature waits, filament or
 feedstock lot/dry-storage/moisture and capacity checks, slicer profile,
 nozzle diameter, extrusion calibration, flow or pressure-advance and

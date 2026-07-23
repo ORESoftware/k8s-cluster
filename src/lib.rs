@@ -10096,6 +10096,68 @@ fn default_machines() -> Vec<MachineProfile> {
             profile_evidence: None,
         },
         MachineProfile {
+            id: "creality-k1".to_string(),
+            kind: "fdm-printer".to_string(),
+            controller: Some("klipper".to_string()),
+            materials: Some(vec![
+                "pla".to_string(),
+                "petg".to_string(),
+                "pet".to_string(),
+                "tpu".to_string(),
+                "pa".to_string(),
+                "nylon".to_string(),
+                "abs".to_string(),
+                "asa".to_string(),
+                "pc".to_string(),
+                "pla-cf".to_string(),
+                "pa-cf".to_string(),
+                "pet-cf".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![220.0, 220.0, 250.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "additive-print".to_string(),
+                "corexy-print".to_string(),
+                "high-speed-fdm-print".to_string(),
+                "direct-drive-extrusion".to_string(),
+                "input-shaping".to_string(),
+                "auto-bed-leveling".to_string(),
+                "filament-runout-detection".to_string(),
+                "power-loss-recovery".to_string(),
+                "creality-print-slicer".to_string(),
+                "lan-or-wifi-print".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "creality-k2".to_string(),
+            kind: "fdm-printer".to_string(),
+            controller: Some("klipper".to_string()),
+            materials: Some(vec![
+                "pla".to_string(),
+                "petg".to_string(),
+                "pet".to_string(),
+                "abs".to_string(),
+                "pla-cf".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![260.0, 260.0, 260.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "additive-print".to_string(),
+                "corexy-print".to_string(),
+                "high-speed-fdm-print".to_string(),
+                "direct-drive-extrusion".to_string(),
+                "input-shaping".to_string(),
+                "smart-auto-leveling".to_string(),
+                "filament-runout-detection".to_string(),
+                "power-loss-recovery".to_string(),
+                "creality-print-slicer".to_string(),
+                "lan-or-wifi-print".to_string(),
+                "cfs-ready".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
             id: "multi-material-fdm-printer-1".to_string(),
             kind: "multi-material-fdm-printer".to_string(),
             controller: Some("multi-material-fdm-job".to_string()),
@@ -10123,6 +10185,36 @@ fn default_machines() -> Vec<MachineProfile> {
                 "purge-tower".to_string(),
                 "wipe-tower".to_string(),
                 "filament-change-automation".to_string(),
+            ]),
+            profile_evidence: None,
+        },
+        MachineProfile {
+            id: "creality-k2-cfs".to_string(),
+            kind: "multi-material-fdm-printer".to_string(),
+            controller: Some("klipper".to_string()),
+            materials: Some(vec![
+                "pla".to_string(),
+                "petg".to_string(),
+                "pet".to_string(),
+                "abs".to_string(),
+            ]),
+            work_envelope_mm: Some(vec![260.0, 260.0, 260.0]),
+            axes: Some(3),
+            operations: Some(vec![
+                "additive-print".to_string(),
+                "corexy-print".to_string(),
+                "high-speed-fdm-print".to_string(),
+                "direct-drive-extrusion".to_string(),
+                "input-shaping".to_string(),
+                "smart-auto-leveling".to_string(),
+                "multi-material-fdm-print".to_string(),
+                "creality-filament-system-print".to_string(),
+                "material-map".to_string(),
+                "purge-tower".to_string(),
+                "filament-change-automation".to_string(),
+                "automatic-filament-backup".to_string(),
+                "creality-print-slicer".to_string(),
+                "lan-or-wifi-print".to_string(),
             ]),
             profile_evidence: None,
         },
@@ -24801,6 +24893,15 @@ fn choose_machine<'a>(
     let allow_constraint_method_routing = preferred.is_none();
     if !allow_constraint_method_routing {
         preferred_methods.clear();
+    }
+
+    if let Some(preferred_machine) = preferred.as_ref() {
+        if let Some(machine) = select_machine(machines, material, |machine| {
+            normalize_token(&machine.kind) == *preferred_machine
+                || normalize_token(&machine.id) == *preferred_machine
+        }) {
+            return machine;
+        }
     }
 
     if preferred.is_none() {
@@ -49494,6 +49595,8 @@ fn postprocessor_for(controller: &str, language: &str, machine_kind: &str) -> St
         "press-brake-job-packager"
     } else if wants_gear_cutting(&token) {
         "gear-cutting-job-packager"
+    } else if token.contains("klipper") {
+        "klipper-additive-gcode-postprocessor"
     } else if token.contains("marlin") {
         "marlin-additive-gcode-postprocessor"
     } else if token.contains("grbl") {
@@ -49682,7 +49785,7 @@ fn postprocess_output_format(language: &str, machine_kind: &str) -> String {
         "mill-turn-controller-gcode".to_string()
     } else if token.contains("fanuc") || token.contains("lathe") || token.contains("turning") {
         "turning-controller-gcode".to_string()
-    } else if token.contains("marlin") || token.contains("gcode") {
+    } else if token.contains("klipper") || token.contains("marlin") || token.contains("gcode") {
         "controller-gcode".to_string()
     } else if wants_paste_extrusion_printing(&token) {
         "paste-extrusion-job-package".to_string()
@@ -50437,7 +50540,11 @@ fn controller_dialect_family(
         || token.contains("iso-gcode")
     {
         "subtractive-gcode-controller-dialect".to_string()
-    } else if token.contains("marlin") || token.contains("fdm") || token.contains("gcode") {
+    } else if token.contains("klipper")
+        || token.contains("marlin")
+        || token.contains("fdm")
+        || token.contains("gcode")
+    {
         "additive-firmware-gcode-dialect".to_string()
     } else if wants_composite_layup(&token) {
         "composite-layup-controller-dialect".to_string()
@@ -107170,6 +107277,10 @@ fn machine_catalog_instruction_languages(machine: &MachineProfile) -> Vec<String
     let mut languages = BTreeSet::new();
     if let Some(controller) = machine.controller.as_ref() {
         languages.insert(controller.clone());
+        if normalize_token(controller).contains("klipper") {
+            languages.insert("gcode".to_string());
+            languages.insert("klipper-gcode".to_string());
+        }
     }
     languages.insert("setup-sheet".to_string());
     languages.insert("operator-checklist".to_string());
@@ -107217,7 +107328,11 @@ fn machine_catalog_instruction_languages(machine: &MachineProfile) -> Vec<String
                 languages.insert("sls-job".to_string());
                 languages.insert("powder-job".to_string());
                 languages.insert("powder-bed-job".to_string());
-            } else {
+            } else if !machine
+                .controller
+                .as_deref()
+                .is_some_and(|controller| normalize_token(controller).contains("klipper"))
+            {
                 languages.insert("marlin-gcode".to_string());
             }
         }
@@ -151751,6 +151866,205 @@ mod tests {
             .is_some_and(|gates| gates.iter().any(|gate| gate
                 .as_str()
                 .is_some_and(|gate| gate.contains("final metrology")))));
+    }
+
+    #[test]
+    fn creality_k1_and_k2_profiles_expose_real_machine_constraints() {
+        let payload = machine_catalog_response();
+        let machines = payload
+            .get("machines")
+            .and_then(Value::as_array)
+            .expect("machines should be present");
+
+        let k1 = machines
+            .iter()
+            .find(|machine| machine.get("id").and_then(Value::as_str) == Some("creality-k1"))
+            .expect("Creality K1 should be present");
+        assert_eq!(k1.get("kind").and_then(Value::as_str), Some("fdm-printer"));
+        assert_eq!(
+            k1.get("controller").and_then(Value::as_str),
+            Some("klipper")
+        );
+        assert_eq!(
+            k1.get("workEnvelopeMm"),
+            Some(&json!([220.0, 220.0, 250.0]))
+        );
+        for material in ["pla", "tpu", "pa-cf", "pet-cf"] {
+            assert!(
+                k1.get("materials")
+                    .and_then(Value::as_array)
+                    .is_some_and(|materials| materials
+                        .iter()
+                        .any(|item| item.as_str() == Some(material))),
+                "Creality K1 should support {material}"
+            );
+        }
+        for operation in [
+            "corexy-print",
+            "high-speed-fdm-print",
+            "input-shaping",
+            "auto-bed-leveling",
+        ] {
+            assert!(
+                k1.get("operations")
+                    .and_then(Value::as_array)
+                    .is_some_and(|operations| operations
+                        .iter()
+                        .any(|item| item.as_str() == Some(operation))),
+                "Creality K1 should advertise {operation}"
+            );
+        }
+        assert!(k1
+            .get("acceptedInstructionLanguages")
+            .and_then(Value::as_array)
+            .is_some_and(|languages| languages
+                .iter()
+                .any(|language| language.as_str() == Some("klipper-gcode"))));
+        assert!(!k1
+            .get("acceptedInstructionLanguages")
+            .and_then(Value::as_array)
+            .is_some_and(|languages| languages
+                .iter()
+                .any(|language| language.as_str() == Some("marlin-gcode"))));
+
+        let k2 = machines
+            .iter()
+            .find(|machine| machine.get("id").and_then(Value::as_str) == Some("creality-k2"))
+            .expect("Creality K2 should be present");
+        assert_eq!(k2.get("kind").and_then(Value::as_str), Some("fdm-printer"));
+        assert_eq!(
+            k2.get("controller").and_then(Value::as_str),
+            Some("klipper")
+        );
+        assert_eq!(
+            k2.get("workEnvelopeMm"),
+            Some(&json!([260.0, 260.0, 260.0]))
+        );
+        assert!(k2
+            .get("operations")
+            .and_then(Value::as_array)
+            .is_some_and(|operations| operations
+                .iter()
+                .any(|operation| operation.as_str() == Some("cfs-ready"))));
+        for machine_id in ["creality-k1", "creality-k2"] {
+            let controller_target = controller_catalog_targets()
+                .into_iter()
+                .find(|target| target.get("machineId").and_then(Value::as_str) == Some(machine_id))
+                .expect("Creality controller target should be present");
+            assert_eq!(
+                controller_target
+                    .get("postprocessor")
+                    .and_then(Value::as_str),
+                Some("klipper-additive-gcode-postprocessor")
+            );
+            assert_eq!(
+                controller_target
+                    .get("postprocessorKnown")
+                    .and_then(Value::as_bool),
+                Some(true)
+            );
+            assert_eq!(
+                controller_target
+                    .get("dialectFamily")
+                    .and_then(Value::as_str),
+                Some("additive-firmware-gcode-dialect")
+            );
+        }
+
+        let k2_cfs = machines
+            .iter()
+            .find(|machine| machine.get("id").and_then(Value::as_str) == Some("creality-k2-cfs"))
+            .expect("CFS-equipped Creality K2 should be present");
+        assert_eq!(
+            k2_cfs.get("kind").and_then(Value::as_str),
+            Some("multi-material-fdm-printer")
+        );
+        assert_eq!(
+            k2_cfs.get("workEnvelopeMm"),
+            Some(&json!([260.0, 260.0, 260.0]))
+        );
+        for operation in [
+            "multi-material-fdm-print",
+            "creality-filament-system-print",
+            "material-map",
+            "purge-tower",
+            "filament-change-automation",
+        ] {
+            assert!(
+                k2_cfs
+                    .get("operations")
+                    .and_then(Value::as_array)
+                    .is_some_and(|operations| operations
+                        .iter()
+                        .any(|item| item.as_str() == Some(operation))),
+                "CFS-equipped Creality K2 should advertise {operation}"
+            );
+        }
+        for language in ["klipper-gcode", "multi-material-fdm-job"] {
+            assert!(
+                k2_cfs
+                    .get("acceptedInstructionLanguages")
+                    .and_then(Value::as_array)
+                    .is_some_and(|languages| languages
+                        .iter()
+                        .any(|item| item.as_str() == Some(language))),
+                "CFS-equipped Creality K2 should accept {language}"
+            );
+        }
+        let k2_cfs_controller = controller_catalog_targets()
+            .into_iter()
+            .find(|target| {
+                target.get("machineId").and_then(Value::as_str) == Some("creality-k2-cfs")
+            })
+            .expect("CFS-equipped Creality K2 controller target should be present");
+        assert_eq!(
+            k2_cfs_controller
+                .get("postprocessor")
+                .and_then(Value::as_str),
+            Some("multi-material-fdm-job-packager")
+        );
+        assert_eq!(
+            k2_cfs_controller
+                .get("postprocessorKnown")
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+
+        let fdm_payload = fdm_printer_catalog_response();
+        let fdm_printers = fdm_payload
+            .get("fdmPrinters")
+            .and_then(Value::as_array)
+            .expect("FDM printers should be present");
+        for machine_id in ["creality-k1", "creality-k2", "creality-k2-cfs"] {
+            assert!(
+                fdm_printers.iter().any(|machine| {
+                    machine.get("id").and_then(Value::as_str) == Some(machine_id)
+                }),
+                "FDM catalog should expose {machine_id}"
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_creality_preference_routes_to_the_requested_printer() {
+        let machines = default_machines();
+        let material = MaterialSpec {
+            name: "PLA".to_string(),
+            family: Some("polymer".to_string()),
+            hardness: None,
+        };
+
+        for machine_id in ["creality-k1", "creality-k2", "creality-k2-cfs"] {
+            let part = RequestedPart {
+                id: format!("{machine_id}-part"),
+                description: format!("test part for {machine_id}"),
+                material: Some(material.clone()),
+                preferred_method: Some(machine_id.to_string()),
+                tolerance_mm: None,
+            };
+            let selected = choose_machine(&part, &machines, &material, None);
+            assert_eq!(selected.id.as_str(), machine_id);
+        }
     }
 
     #[test]
