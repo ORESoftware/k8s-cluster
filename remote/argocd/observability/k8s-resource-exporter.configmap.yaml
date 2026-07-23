@@ -25,7 +25,7 @@ data:
     PORT = os.environ.get("KUBERNETES_SERVICE_PORT", "443")
     BASE_URL = "https://%s:%s" % (HOST, PORT)
     SCRAPE_TIMEOUT = float(os.environ.get("SCRAPE_TIMEOUT_SECONDS", "5"))
-    DEFAULT_WATCH_NAMESPACES = "ai-ml,airbyte,anon-proxy,big-data,daedalus,default,shared-auth,fiducia,headlamp,kafka,messaging,observability,presence,spark,threefa,vpn"
+    DEFAULT_WATCH_NAMESPACES = "ai-ml,airbyte,anon-proxy,athleto,big-data,canonical-cloud,daedalus,default,fiducia,headlamp,kafka,messaging,observability,presence,scintilla,shared-auth,spark,threefa,vpn"
     DEFAULT_WATCH_APPS = (
         "dd-agent-worker-broker,dd-ai-ml-pipeline,dd-akka-ws-server,dd-apostille-services-server,"
         "dd-athleto-app-rs,dd-athleto-backend,dd-bastion,"
@@ -63,6 +63,10 @@ data:
         "dd-routing-server-worker,dd-sat-smt-server,dd-soccer-rs,dd-sonus-auris-site,"
         "fiducia-admin,fiducia-auth,fiducia-backend,fiducia-brain,fiducia-load-balance,fiducia-node,"
         "fiducia-otel-agent,threefa-sync-server,tor-client,tor-relay-a,tor-relay-b,tor-relay-c,"
+        "athleto-app-rs,canonical-session-revoker,canonical-web-server,daedalus-api-server,"
+        "daedalus-web-server,dd-soccer-commit-watcher,dd-soccer-learning-rds-continuous,"
+        "dd-sonus-auris-console,drone-mngr-ctrl-server,drone-mngr-mcp-server,"
+        "drone-mngr-web-server,scintilla-app,scintilla-backend,scintilla-ui,"
         "usacc-rest-api-backend-rs"
     )
     WATCH_NAMESPACES = [v.strip() for v in os.environ.get("WATCH_NAMESPACES", DEFAULT_WATCH_NAMESPACES).split(",") if v.strip()]

@@ -32,6 +32,10 @@ const KNOWN_DIRECT_SQLX_DEBT = new Map<string, string>([
     'Move advisory-lock coordination from direct SQLx to SeaORM.',
   ],
   [
+    'remote/deployments/daedalus-monorepo/apps/daedalus-sync/rust/Cargo.toml',
+    'Migrate the Daedalus sync durability adapter from direct SQLx to SeaORM upstream.',
+  ],
+  [
     'remote/deployments/fiducia-monorepo/apps/fiducia-interfaces/generated/rust-db/Cargo.toml',
     'Replace generated SQLx row bindings with the canonical SeaORM bindings upstream.',
   ],
@@ -42,6 +46,10 @@ const KNOWN_DIRECT_SQLX_DEBT = new Map<string, string>([
   [
     'remote/deployments/mip-solver-node.rs/local/Cargo.toml',
     'Migrate the MIP solver local workspace persistence path to SeaORM upstream.',
+  ],
+  [
+    'remote/deployments/scintilla-run-monorepo/apps/scintilla-sync/Cargo.toml',
+    'Migrate the Scintilla sync durability adapter from direct SQLx to SeaORM upstream.',
   ],
 ]);
 const KNOWN_DIRECT_SQLX_HIT_COUNTS = new Map(

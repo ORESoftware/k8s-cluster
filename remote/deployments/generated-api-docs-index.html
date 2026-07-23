@@ -47,7 +47,7 @@
     <p>Central generated index. Each listed HTTP service must also mount <code>/docs/api</code>, <code>/api/docs</code>, and <code>/api/docs.json</code> on its own service port.</p>
     <div class="summary">
       <span>48 services</span>
-      <span>1042 routes</span>
+      <span>1043 routes</span>
       <span>central JSON <code>/api-docs.json</code></span>
     </div>
   </header>
@@ -4152,7 +4152,7 @@
 <details>
   <summary>
     <span><strong>fiducia-customer.rs</strong> <span class="muted">rust</span></span>
-    <span>58 routes</span>
+    <span>59 routes</span>
   </summary>
   <div class="generated">
     <span>Generated JSON: <code>remote/deployments/fiducia-customer.rs/generated/api-docs.json</code></span>
@@ -4167,6 +4167,13 @@
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/</code></td>
   <td data-label="Purpose">Service descriptor, home redirect, or root RPC endpoint.</td>
+</tr>
+<tr>
+  <td data-label="Service"><code>fiducia-customer.rs</code></td>
+  <td data-label="Type"><span class="badge user-generated">user-generated</span></td>
+  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
+  <td data-label="Path"><code>/api/billing/webhooks/:provider</code></td>
+  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
 </tr>
 <tr>
   <td data-label="Service"><code>fiducia-customer.rs</code></td>
