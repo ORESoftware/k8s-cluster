@@ -340,10 +340,10 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
     'remote/argocd/dd-next-runtime/dd-build-server.networkpolicy.yaml',
   );
   const lambdaDeployment = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.deployment.yaml',
+    'remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.deployment.yaml',
   );
   const lambdaService = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.service.yaml',
+    'remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.service.yaml',
   );
   const lambdaApp = await readRepoFile(
     'remote/argocd/apps/dd-gleam-lambda-runner.application.yaml',
@@ -649,11 +649,13 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
   assert.match(buildServerNetworkPolicy, /app:\s*dd-build-server/);
   assert.match(buildServerNetworkPolicy, /app:\s*dd-remote-gateway/);
   assert.match(lambdaDeployment, /name:\s*dd-gleam-lambda-runner/);
-  assert.match(lambdaDeployment, /cd \/opt\/dd-next-1\/remote\/deployments\/gleam-lambda-runner/);
+  assert.match(lambdaDeployment, /remote\/deployments\/scintilla-run-monorepo\/apps\/gleam-lambda-runner/);
   assert.match(lambdaDeployment, /containerPort:\s*8083/);
   assert.match(lambdaService, /name:\s*dd-gleam-lambda-runner/);
   assert.match(lambdaService, /port:\s*8083/);
-  assert.match(lambdaApp, /path:\s*remote\/deployments\/gleam-lambda-runner\/k8s\/ec2/);
+  assert.match(lambdaApp, /name:\s*scintilla-run-root/);
+  assert.match(lambdaApp, /repoURL:\s*git@github\.com:scintilla-run\/scintilla-run-monorepo\.git/);
+  assert.match(lambdaApp, /path:\s*gitops\/ec2\/bootstrap/);
   assert.match(authDeployment, /name:\s*dd-remote-auth/);
   assert.match(
     authDeployment,

@@ -165,3 +165,7 @@
 	path = remote/deployments/daedalus-monorepo
 	url = https://github.com/daedalus-fab/daedalus-monorepo.git
 	branch = main
+[submodule "remote/deployments/scintilla-run-monorepo"]
+	path = remote/deployments/scintilla-run-monorepo
+	url = git@github.com:scintilla-run/scintilla-run-monorepo.git
+	branch = main

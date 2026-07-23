@@ -1,20 +1,23 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: dd-gleam-lambda-runner
+  # Compatibility filename: the former runner-only Application is now the
+  # Scintilla app-of-apps root. The direct runner app would otherwise race the
+  # monorepo's digest-pinned child Application.
+  name: scintilla-run-root
   namespace: argocd
 spec:
   project: default
   source:
-    repoURL: git@github.com:ORESoftware/k8s-cluster.git
-    targetRevision: dev
-    path: remote/deployments/gleam-lambda-runner/k8s/ec2
+    repoURL: git@github.com:scintilla-run/scintilla-run-monorepo.git
+    targetRevision: main
+    path: gitops/ec2/bootstrap
+    directory:
+      recurse: true
   destination:
     server: https://kubernetes.default.svc
-    namespace: default
+    namespace: argocd
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
