@@ -1,6 +1,6 @@
 # Default-deny with explicit allows. The sync server only needs: ingress from
-# the ingress controller, egress to Postgres, DNS, and the in-cluster OTLP
-# collector. It never makes outbound calls to the public internet.
+# the ingress controller, egress to Postgres, DNS, shared-auth through the
+# in-cluster gateway, and the OTLP collector. No public Internet egress.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -42,6 +42,18 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    # Central human-identity verification. shared-auth admits the established
+    # default-namespace gateway, so this service uses that bounded internal hop.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+          podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+      ports:
+        - protocol: TCP
+          port: 80
     # Explicit OTLP/HTTP span export. Keep this namespace- and port-scoped so
     # telemetry works without opening general egress from the zero-knowledge
     # vault service.

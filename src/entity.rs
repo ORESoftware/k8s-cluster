@@ -14,6 +14,7 @@ pub mod account {
         #[sea_orm(unique)]
         pub username: Option<String>,
         pub auth_secret: Option<String>,
+        pub shared_auth_user_id: Option<Uuid>,
         pub supabase_user_id: Option<Uuid>,
         pub email: Option<String>,
         pub created_at: TimeDateTimeWithTimeZone,
@@ -72,7 +73,7 @@ pub mod vault_blob {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sea_orm::{EntityName, PrimaryKeyTrait};
+    use sea_orm::{EntityName, Iden, PrimaryKeyTrait};
 
     #[test]
     fn entities_target_only_the_service_owned_schema() {
@@ -94,5 +95,22 @@ mod tests {
         assert!(!account::PrimaryKey::auto_increment());
         assert!(!device::PrimaryKey::auto_increment());
         assert!(!vault_blob::PrimaryKey::auto_increment());
+    }
+
+    #[test]
+    fn shared_auth_entity_and_reviewed_migration_stay_in_lockstep() {
+        let migration = include_str!("../migrations/0004_shared_auth_identity.sql");
+        for required in [
+            "shared_auth_user_id UUID",
+            "accounts_shared_auth_user_idx",
+            "shared_auth_user_id IS NOT NULL",
+            "accounts_identity_present",
+        ] {
+            assert!(migration.contains(required), "migration missing {required}");
+        }
+        assert_eq!(
+            account::Column::SharedAuthUserId.to_string(),
+            "shared_auth_user_id"
+        );
     }
 }

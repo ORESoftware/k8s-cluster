@@ -45,21 +45,14 @@ sea-orm = { version = "1.1.20", default-features = false, features = [
 uuid = { version = "1", features = ["v4", "serde"] }
 time = { version = "0.3", features = ["serde-well-known"] }
 
-# Auth: Argon2id account verifier + bearer tokens.
-# NOTE: OPAQUE (opaque-ke) is the planned drop-in upgrade — see `auth.rs` — so the
-# server never sees the password at all. The *vault* is zero-knowledge regardless
-# (client E2E-encrypts before upload; see protocol::SealedBlob).
-argon2 = "0.5"
+# Service-local per-device sync tokens; human auth is owned by shared-auth.
 rand = "0.8"
 base64 = "0.22"
 hex = "0.4"
 sha2 = "0.10"
 
-# Supabase identity: verify Supabase-issued JWTs. `jsonwebtoken` covers the
-# asymmetric signing keys (RS256/ES256, resolved from the project JWKS by `kid`)
-# and the legacy shared-secret HS256 fallback. `reqwest` (rustls, already in the
-# tree via the OTLP exporter) fetches the JWKS document.
-jsonwebtoken = "9"
+# Human identity is verified by the centralized github.com/shared-auth service.
+# reqwest uses rustls and carries W3C trace context on exchange/introspection.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 [dev-dependencies]

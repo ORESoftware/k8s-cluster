@@ -8,18 +8,18 @@ use axum::response::{IntoResponse, Response};
 pub enum ApiError {
     #[error("unauthorized")]
     Unauthorized,
-    // Returned when registration hits a unique-constraint (username taken).
-    // (Vault *push* conflicts are a 200 `PushResponse::Conflict` body, not this.)
-    #[error("conflict")]
-    Conflict,
     #[error("bad request")]
     BadRequest,
     #[error("too many requests")]
     TooManyRequests,
-    // Returned when a route is disabled by configuration (e.g. `/v1/auth/supabase`
-    // when Supabase identity is not configured on this deployment).
+    // Returned when human-identity enrollment is disabled because shared-auth
+    // has no configured base URL on this deployment.
     #[error("not implemented")]
     NotImplemented,
+    // Authentication authority could not decide; this is intentionally not a
+    // 401 because an upstream outage is not evidence that a token is invalid.
+    #[error("service unavailable")]
+    Unavailable,
     #[error("internal error")]
     Internal,
 }
@@ -39,10 +39,10 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let code = match self {
             ApiError::Unauthorized => StatusCode::UNAUTHORIZED,
-            ApiError::Conflict => StatusCode::CONFLICT,
             ApiError::BadRequest => StatusCode::BAD_REQUEST,
             ApiError::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
             ApiError::NotImplemented => StatusCode::NOT_IMPLEMENTED,
+            ApiError::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
             ApiError::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         };
         // Body intentionally minimal.
@@ -58,10 +58,10 @@ mod tests {
     fn every_variant_maps_to_its_status_code() {
         let cases = [
             (ApiError::Unauthorized, StatusCode::UNAUTHORIZED),
-            (ApiError::Conflict, StatusCode::CONFLICT),
             (ApiError::BadRequest, StatusCode::BAD_REQUEST),
             (ApiError::TooManyRequests, StatusCode::TOO_MANY_REQUESTS),
             (ApiError::NotImplemented, StatusCode::NOT_IMPLEMENTED),
+            (ApiError::Unavailable, StatusCode::SERVICE_UNAVAILABLE),
             (ApiError::Internal, StatusCode::INTERNAL_SERVER_ERROR),
         ];
         for (err, expected) in cases {

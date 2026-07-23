@@ -151,8 +151,9 @@ pub fn response(metrics: &Metrics) -> Response<Body> {
 
 fn metric_route(path: &str) -> &'static str {
     match path {
-        "/v1/register" => "/v1/register",
-        "/v1/login" => "/v1/login",
+        "/v1/auth/shared" => "/v1/auth/shared",
+        "/v1/auth/supabase" => "/v1/auth/supabase",
+        "/v1/devices" => "/v1/devices",
         "/v1/devices/revoke" => "/v1/devices/revoke",
         "/v1/vault" => "/v1/vault",
         "/livez" => "/livez",
@@ -170,6 +171,8 @@ mod tests {
     #[test]
     fn dynamic_paths_collapse_to_a_bounded_label() {
         assert_eq!(metric_route("/v1/vault"), "/v1/vault");
+        assert_eq!(metric_route("/v1/auth/shared"), "/v1/auth/shared");
+        assert_eq!(metric_route("/v1/auth/supabase"), "/v1/auth/supabase");
         assert_eq!(metric_route("/users/alice/private"), "unmatched");
         assert_eq!(metric_route("/v1/vault/account-secret"), "unmatched");
     }

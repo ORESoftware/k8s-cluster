@@ -1,24 +1,19 @@
 //! Shared application dependencies.
 
 use crate::metrics::Metrics;
-use crate::supabase::SupabaseVerifier;
+use crate::shared_auth::SharedAuthClient;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
-use tokio::sync::Semaphore;
 
 #[derive(Clone)]
 pub struct AppState {
     db: Arc<DatabaseConnection>,
     pub metrics: Arc<Metrics>,
-    pub(crate) auth_slots: Arc<Semaphore>,
-    supabase: Option<SupabaseVerifier>,
+    shared_auth: Option<SharedAuthClient>,
 }
 
 impl AppState {
-    pub fn new(
-        mut db: DatabaseConnection,
-        auth_max_concurrent: usize,
-    ) -> Result<Self, prometheus::Error> {
+    pub fn new(mut db: DatabaseConnection) -> Result<Self, prometheus::Error> {
         let metrics = Arc::new(Metrics::new()?);
         let database_metrics = Arc::clone(&metrics);
         db.set_metric_callback(move |info| {
@@ -27,13 +22,12 @@ impl AppState {
         Ok(Self {
             db: Arc::new(db),
             metrics,
-            auth_slots: Arc::new(Semaphore::new(auth_max_concurrent)),
-            supabase: None,
+            shared_auth: None,
         })
     }
 
-    pub fn with_supabase(mut self, supabase: Option<SupabaseVerifier>) -> Self {
-        self.supabase = supabase;
+    pub fn with_shared_auth(mut self, shared_auth: Option<SharedAuthClient>) -> Self {
+        self.shared_auth = shared_auth;
         self
     }
 
@@ -41,7 +35,7 @@ impl AppState {
         self.db.as_ref()
     }
 
-    pub fn supabase(&self) -> Option<&SupabaseVerifier> {
-        self.supabase.as_ref()
+    pub fn shared_auth(&self) -> Option<&SharedAuthClient> {
+        self.shared_auth.as_ref()
     }
 }

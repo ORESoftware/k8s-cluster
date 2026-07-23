@@ -27,9 +27,8 @@ seeds or your password. Written in Rust (axum + SeaORM/Postgres).
 
 | Method | Path                  | Auth | Purpose                              |
 |--------|-----------------------|------|--------------------------------------|
-| POST   | `/v1/register`        | —    | Create account + first device, returns token |
-| POST   | `/v1/login`           | —    | Verify account, register a device, returns token |
-| POST   | `/v1/auth/supabase`   | JWT  | Enroll a device via a Supabase access token, returns sync token |
+| POST   | `/v1/auth/shared`     | JWT  | Enroll a device via a shared-auth access token, returns sync token |
+| POST   | `/v1/auth/supabase`   | JWT  | Compatibility exchange of a Supabase token through shared-auth |
 | GET    | `/v1/devices`         | ✓    | List this account's devices (id, name, created, last-seen, revoked) |
 | GET    | `/v1/vault`           | ✓    | Pull the sealed vault blob           |
 | POST   | `/v1/vault`           | ✓    | Push a sealed vault blob (version-vector reconciled) |
@@ -38,24 +37,22 @@ seeds or your password. Written in Rust (axum + SeaORM/Postgres).
 | GET    | `/readyz`             | —    | Postgres readiness                   |
 | GET    | `/metrics`            | —    | Prometheus metrics                   |
 
-"Auth ✓" is an account sync token (`Authorization: Bearer <sync_token>`). "Auth
-JWT" is a Supabase access token in the same header — the server verifies it and
-issues a sync token in exchange.
+"Auth ✓" is a service-local sync token (`Authorization: Bearer <sync_token>`).
+"Auth JWT" is a short-lived shared-auth access token. The compatibility route
+accepts a Supabase provider token but sends it to shared-auth for verification
+and exchange; this service never verifies human login credentials itself.
 
 ## Security model
 
 - **Zero-knowledge vault.** Clients E2E-encrypt the whole vault before upload
   (`protocol::SealedBlob`); the DB stores ciphertext only.
-- **Account auth.** Two identity sources, both issuing the same per-device bearer
-  sync token (only the token's SHA-256 is stored):
-  - *Supabase (preferred).* Supabase Auth owns login (email/password, OAuth, MFA)
-    and mints a short-lived access JWT. `/v1/auth/supabase` verifies that JWT —
-    signature via the project JWKS (RS256/ES256, `kid`-selected, cached; legacy
-    HS256 shared-secret supported) plus strict `exp`/`aud`/`iss` — and maps `sub`
-    onto a local account. **The server never receives a password**, so login and
-    the E2E vault key are fully separated.
-  - *Legacy.* `/v1/register` + `/v1/login` with an Argon2id verifier; login is
-    constant-work to avoid user enumeration. Being phased out in favor of Supabase.
+- **Account auth.** [shared-auth](https://github.com/shared-auth) owns human
+  registration, login, provider exchange, token signing, and revocation.
+  `/v1/auth/shared` introspects its access token; `/v1/auth/supabase` delegates
+  the provider-token exchange to the same authority for older clients. A verified
+  stable shared user id is mapped to the local zero-knowledge vault, then this
+  service issues a separate per-device sync token (only its SHA-256 is stored).
+  The retired local password endpoints are not mounted.
 - **Device lifecycle.** Live devices per account are capped
   (`MAX_DEVICES_PER_ACCOUNT`), each authenticated request stamps `last_seen_at`,
   and `GET /v1/devices` lets an owner audit and revoke enrollments.
@@ -77,6 +74,7 @@ export DATABASE_URL=postgres://user:pass@localhost/threefa
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/0001_init.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/0002_isolate_threefa_schema.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/0003_supabase_auth.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/0004_shared_auth_identity.sql
 cargo run
 # serves on :8080 (override with BIND_ADDR)
 ```
@@ -107,28 +105,18 @@ builder is pinned to the multi-architecture Rust 1.95 Bookworm image digest.
 - `/metrics` exposes bounded route/status counters, request latency histograms,
   in-flight requests, SeaORM query count/latency, and vault-conflict counts for
   Prometheus. SQL statements and user identifiers are never metric labels.
-- `THREEFA_AUTH_MAX_CONCURRENT` (default `2`) bounds concurrent Argon2 work;
-  excess login/register requests fail with `429` instead of exhausting memory.
+## Shared-auth identity
 
-## Supabase identity
+Set `SHARED_AUTH_BASE_URL` to the shared-auth service or gateway mount. If it is
+unset, both human-identity enrollment routes return `501`; vault/device routes
+continue to accept already-issued service-local sync tokens. Production uses
+`http://dd-remote-gateway.default.svc.cluster.local/shared-auth`, a bounded
+in-cluster hop allowed by the service NetworkPolicy.
 
-Set these to enable `/v1/auth/supabase` (unset ⇒ the route returns `501`, and the
-server runs legacy-auth only):
-
-- `SUPABASE_PROJECT_URL` — e.g. `https://<ref>.supabase.co`. The issuer
-  (`<url>/auth/v1`) and JWKS URL (`<url>/auth/v1/.well-known/jwks.json`) are
-  derived from it.
-- `SUPABASE_JWT_AUD` — expected audience (default `authenticated`).
-- `SUPABASE_JWT_LEGACY_SECRET` — only if the project still signs with the legacy
-  HS256 shared secret. Prefer asymmetric signing keys (RS256/ES256) and leave this
-  unset; the server resolves those from the JWKS automatically and needs no secret.
-
-The client obtains the access JWT from Supabase, then calls `POST
-/v1/auth/supabase` with `Authorization: Bearer <jwt>` and a `{"device_name":…}`
-body to receive a long-lived sync token. The sync token — not the JWT — is used
-for `/v1/vault` and `/v1/devices`, so an expired JWT does not force a full vault
-re-auth; the client silently refreshes its Supabase session (unlocked locally by
-the app's 6-digit PIN) and keeps its existing sync token.
+New clients call `POST /v1/auth/shared` with a shared-auth access token and a
+`{"device_name":…}` body. Older clients can call `/v1/auth/supabase`; the token
+is exchanged at shared-auth first. In both cases the returned sync token—not a
+human-login token—is used for `/v1/vault` and `/v1/devices`.
 
 ## Layout
 
@@ -137,13 +125,13 @@ src/main.rs        Minimal binary entrypoint
 src/server.rs      Listener lifecycle and graceful SIGTERM shutdown
 src/config.rs      Environment configuration
 src/app.rs         HTTP router and middleware composition
-src/accounts.rs    Registration/login handlers and account persistence
-src/auth.rs        Argon2id verifier + bearer tokens (OPAQUE seam)
+src/accounts.rs    Identity-enrollment response and device-name contracts
+src/auth.rs        Service-local device sync tokens
 src/devices.rs     Device handlers and persistence
 src/vault_blob.rs  Sealed-blob handlers and reconciliation
 src/entity.rs      SeaORM models for the `threefa` schema
-src/supabase.rs    Supabase JWT/JWKS verification
-src/supabase_auth.rs Supabase enrollment handler and account mapping
+src/shared_auth.rs Central shared-auth exchange/introspection client
+src/supabase_auth.rs Shared/provider enrollment and account mapping
 src/telemetry.rs   OTEL traces and Loki-compatible JSON logs
 src/metrics.rs     Prometheus HTTP, database, and domain metrics
 src/protocol.rs    Wire-protocol DTOs (duplicated with the frontend)

@@ -1,9 +1,8 @@
 //! HTTP surface: router composition and cross-cutting middleware.
 //!
 //! Routes:
-//!   POST /v1/register        -> create account + first device, returns token
-//!   POST /v1/login           -> verify account, register a device, returns token
-//!   POST /v1/auth/supabase   -> enroll a device via a Supabase access JWT
+//!   POST /v1/auth/shared     -> enroll a device via a shared-auth access token
+//!   POST /v1/auth/supabase   -> compatibility exchange of a Supabase access JWT
 //!   GET  /v1/devices         -> list this account's devices   (auth)
 //!   POST /v1/devices/revoke  -> revoke a device   (auth)
 //!   GET  /v1/vault           -> pull sealed blob   (auth)
@@ -15,7 +14,7 @@
 //! body-size capped and wrapped in a request timeout (see [`router`]).
 
 use crate::state::AppState;
-use crate::{accounts, devices, health, metrics, supabase_auth, telemetry, vault_blob};
+use crate::{devices, health, metrics, supabase_auth, telemetry, vault_blob};
 use axum::http::{header, HeaderName, HeaderValue, StatusCode};
 use axum::middleware;
 use axum::routing::{get, post};
@@ -45,9 +44,8 @@ pub fn router(state: AppState) -> Router {
     );
 
     let auth_routes = Router::new()
-        .route("/v1/register", post(accounts::register))
-        .route("/v1/login", post(accounts::login))
-        .route("/v1/auth/supabase", post(supabase_auth::enroll))
+        .route("/v1/auth/shared", post(supabase_auth::enroll_shared))
+        .route("/v1/auth/supabase", post(supabase_auth::enroll_provider))
         // Route-only layering preserves the outer router's normal 404 fallback.
         .route_layer(GovernorLayer { config: governor });
 
@@ -105,7 +103,7 @@ mod tests {
 
     fn test_state() -> AppState {
         let database = MockDatabase::new(DatabaseBackend::Postgres).into_connection();
-        AppState::new(database, 1).expect("test state")
+        AppState::new(database).expect("test state")
     }
 
     #[tokio::test]
@@ -122,6 +120,47 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(response.status(), expected, "status for {path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn router_exposes_only_shared_auth_identity_enrollment() {
+        let app = router(test_state());
+        for path in ["/v1/auth/shared", "/v1/auth/supabase"] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(path)
+                        .header(header::AUTHORIZATION, "Bearer test-token")
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .header("x-forwarded-for", "127.0.0.1")
+                        .body(Body::from(r#"{"device_name":"test desktop"}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::NOT_IMPLEMENTED,
+                "configured route for {path}"
+            );
+        }
+
+        for retired in ["/v1/register", "/v1/login"] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(retired)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{retired}");
         }
     }
 
@@ -173,11 +212,20 @@ mod tests {
             "prometheus.io/path: /metrics",
             "OTEL_EXPORTER_OTLP_ENDPOINT",
             "DEPLOYMENT_ENVIRONMENT",
-            "SUPABASE_PROJECT_URL",
+            "SHARED_AUTH_BASE_URL",
             "sea_orm=warn",
         ] {
             assert!(manifest.contains(required), "manifest missing {required}");
         }
         assert!(!manifest.contains("sqlx=warn"));
+        assert!(!manifest.contains("SUPABASE_JWT_LEGACY_SECRET"));
+
+        let network_policy = include_str!("../deploy/k8s/networkpolicy.yaml");
+        for required in ["app: dd-remote-gateway", "port: 80", "port: 4318"] {
+            assert!(
+                network_policy.contains(required),
+                "network policy missing {required}"
+            );
+        }
     }
 }

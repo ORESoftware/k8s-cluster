@@ -43,7 +43,9 @@ pub fn init(service_name: &str) -> Guard {
         .flatten_event(true)
         .with_ansi(false)
         .with_current_span(true)
-        .with_span_list(false)
+        // Loki records retain the parent HTTP span's trace_id/span_id even when
+        // an event is emitted from a nested shared-auth or database span.
+        .with_span_list(true)
         .with_target(true);
 
     match build_provider(service_name) {

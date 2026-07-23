@@ -1,8 +1,8 @@
 //! Process lifecycle and HTTP listener.
 
 use crate::config::Config;
+use crate::shared_auth::SharedAuthClient;
 use crate::state::AppState;
-use crate::supabase::SupabaseVerifier;
 use crate::{app, db, telemetry};
 use std::net::SocketAddr;
 
@@ -10,15 +10,14 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let _telemetry = telemetry::init("threefa-sync-server");
     let config = Config::from_env()?;
     let database = db::connect(&config.database_url).await?;
-    let supabase = SupabaseVerifier::from_env()?;
-    let supabase_auth_enabled = supabase.is_some();
-    let state = AppState::new(database, config.auth_max_concurrent)?.with_supabase(supabase);
+    let shared_auth = config.shared_auth.clone().map(SharedAuthClient::new);
+    let shared_auth_enabled = shared_auth.is_some();
+    let state = AppState::new(database)?.with_shared_auth(shared_auth);
     let router = app::router(state);
 
     tracing::info!(
         server.address = %config.bind_addr,
-        auth.max_concurrent = config.auth_max_concurrent,
-        auth.supabase.enabled = supabase_auth_enabled,
+        auth.shared.enabled = shared_auth_enabled,
         protocol.version = crate::protocol::PROTOCOL_VERSION,
         "3FA sync server listening"
     );
