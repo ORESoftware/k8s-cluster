@@ -60,7 +60,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Setup kubectl
-        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
         with:
           version: v1.32.2
       - name: Validate Akrion release contract and Argo renders
@@ -136,7 +136,7 @@ jobs:
           AKRION_DES_REVISION: ${{ steps.revisions.outputs.des }}
         run: ruby scripts/promote-akrion-gitops.rb
       - name: Setup kubectl
-        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
         with:
           version: v1.32.2
       - name: Validate promoted release and Argo renders
