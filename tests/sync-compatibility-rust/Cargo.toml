@@ -1,0 +1,16 @@
+[package]
+name = "daedalus-sync-compatibility"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[test]]
+name = "compatibility"
+path = "compatibility.rs"
+
+[dependencies]
+daedalus-client = { path = "../../apps/daedalus-clients/clients/rust" }
+daedalus-interfaces = { path = "../../apps/daedalus-interfaces/generated/rust" }
+daedalus-sync = { path = "../../apps/daedalus-sync/rust" }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt"] }

@@ -8,6 +8,7 @@
     "daedalus-infra",
     "daedalus-clients",
     "daedalus-interfaces",
+    "daedalus-sync",
     "daedalus-ui.dart",
     "daedalus-fab-mcp-server.rs"
   ]

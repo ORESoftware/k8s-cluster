@@ -54,6 +54,31 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.ORG_SUBMODULE_TOKEN }}
           persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.token.outputs.present == 'true'
+        with:
+          node-version: '22'
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        if: steps.token.outputs.present == 'true'
+        with:
+          sdk: stable
       - name: Every pinned submodule commit is fetchable and checked out
         if: steps.token.outputs.present == 'true'
         run: git submodule status --recursive
+      - name: Build Daedalus Sync TypeScript package
+        if: steps.token.outputs.present == 'true'
+        run: |
+          npm --prefix apps/daedalus-sync/typescript ci
+          npm --prefix apps/daedalus-sync/typescript run build
+      - name: Verify cross-repository sync compatibility
+        if: steps.token.outputs.present == 'true'
+        run: |
+          npm test
+          cargo test --locked --manifest-path tests/sync-compatibility-rust/Cargo.toml
+      - name: Verify Dart package compatibility
+        if: steps.token.outputs.present == 'true'
+        working-directory: tests/sync-compatibility-dart
+        run: |
+          dart pub get
+          dart analyze
+          dart test
