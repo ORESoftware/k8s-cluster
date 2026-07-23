@@ -66,7 +66,7 @@ Three Applications are already broken this way — their `path` resolves to zero
 |---|---|---|
 | `dd-billing-server` | `remote/deployments/billing-server-rs/k8s/ec2` | point `repoURL` at `quaestor-ledger/quaestor-monorepo`, `path: apps/billing-server.rs/k8s` |
 | `dd-dart-server` | `remote/deployments/dart-server/k8s/ec2` | point `repoURL` at its own repo |
-| `dd-gleam-lambda-runner` | `remote/deployments/gleam-lambda-runner/k8s/ec2` | point `repoURL` at its own repo |
+| `scintilla-run-root` | `gitops/ec2/bootstrap` in `scintilla-run-monorepo` | app-of-apps root; monorepo CI promotes digest-pinned children |
 
 ### The org structure is two levels of submodule
 

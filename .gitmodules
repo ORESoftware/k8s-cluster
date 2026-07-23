@@ -177,3 +177,7 @@
 	path = remote/deployments/drone-mngr-monorepo
 	url = https://github.com/drone-mngr/drone-mngr-monorepo.git
 	branch = main
+[submodule "remote/deployments/scintilla-run-monorepo"]
+	path = remote/deployments/scintilla-run-monorepo
+	url = git@github.com:scintilla-run/scintilla-run-monorepo.git
+	branch = main
