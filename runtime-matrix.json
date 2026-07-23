@@ -1,0 +1,16 @@
+{
+  "runtimes": [
+    "nodejs",
+    "python3",
+    "ruby",
+    "bash",
+    "golang",
+    "dart",
+    "java",
+    "erlang",
+    "elixir",
+    "gleam",
+    "rust",
+    "browser"
+  ]
+}

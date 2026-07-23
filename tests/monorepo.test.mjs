@@ -22,17 +22,32 @@ test('monorepo structural integrity', () => {
 
 test('production deploy publishes and pins the complete runtime matrix', () => {
     const workflow = fs.readFileSync('.github/workflows/deploy.yml', 'utf8');
-    const matrix = JSON.parse(fs.readFileSync('apps/gleam-lambda-runner/runtime-images/matrix.json', 'utf8'));
+    const matrix = JSON.parse(fs.readFileSync('runtime-matrix.json', 'utf8'));
     assert.match(workflow, /SCINTILLA_K8S_BUILD_CONTEXT/);
     assert.match(workflow, /scintilla-runner/);
     assert.match(workflow, /runtime-images-docker\.e2e\.mjs/);
+    assert.match(workflow, /runtime matrix differs from the reviewed release contract/);
     assert.doesNotMatch(workflow, /imagetools inspect ghcr\.io\/gleam-lang\/gleam/);
+    assert.deepEqual(matrix.runtimes, [
+        'nodejs',
+        'python3',
+        'ruby',
+        'bash',
+        'golang',
+        'dart',
+        'java',
+        'erlang',
+        'elixir',
+        'gleam',
+        'rust',
+        'browser',
+    ]);
     for (const runtime of matrix.runtimes) {
-        const output = `runtime_${runtime.name}`;
+        const output = `runtime_${runtime}`;
         assert.ok(workflow.includes(output), `deploy output ${output} is missing`);
         assert.ok(
-            workflow.includes(`SCINTILLA_RUNTIME_${runtime.name.toUpperCase()}_IMAGE`),
-            `renderer input for ${runtime.name} is missing`,
+            workflow.includes(`SCINTILLA_RUNTIME_${runtime.toUpperCase()}_IMAGE`),
+            `renderer input for ${runtime} is missing`,
         );
     }
 });

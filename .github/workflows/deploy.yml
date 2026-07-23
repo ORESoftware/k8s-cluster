@@ -57,6 +57,12 @@ jobs:
             echo "submodule checkout differs from reviewed pins" >&2
             exit 1
           fi
+          jq -e --slurpfile release runtime-matrix.json '
+            [.runtimes[].name] == $release[0].runtimes
+          ' apps/gleam-lambda-runner/runtime-images/matrix.json >/dev/null || {
+            echo "runtime matrix differs from the reviewed release contract" >&2
+            exit 1
+          }
       - name: Prepare the complete k8s build context for the Gleam release
         env:
           GH_TOKEN: ${{ secrets.ORG_SUBMODULE_TOKEN }}
