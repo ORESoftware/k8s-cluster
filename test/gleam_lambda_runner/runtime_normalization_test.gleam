@@ -263,7 +263,7 @@ pub fn entry_command_is_passed_as_one_shell_quoted_environment_value_test() {
   |> should.be_true
   string.contains(
     command,
-    "--tmpfs /work:rw,exec,nosuid,nodev,size=1g,mode=1777",
+    "--tmpfs '/work:rw,exec,nosuid,nodev,size=1g,mode=1777'",
   )
   |> should.be_true
   string.contains(command, " ghcr.io/scintilla-run/custom")
