@@ -43,7 +43,9 @@ pub(crate) fn init(service_name: &str) -> Guard {
         .flatten_event(true)
         .with_ansi(false)
         .with_current_span(true)
-        .with_span_list(false)
+        // Keep the parent request trace ids visible in Loki when nested auth
+        // exchange/verification spans emit an event.
+        .with_span_list(true)
         .with_target(true);
     match build_provider(service_name) {
         Ok(provider) => {

@@ -1,6 +1,7 @@
 //! TOTP enrollment and verification routes.
 
 use crate::cookies::{cookie_value, set_cookie, sign, EMAIL_COOKIE, ENROLL_COOKIE, SESSION_COOKIE};
+use crate::shared_auth::AuthVerdict;
 use crate::state::AppState;
 use crate::totp;
 use crate::views::page;
@@ -12,14 +13,44 @@ use rand::RngCore;
 use serde::Deserialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Session gate. Full Supabase JWT verification remains the next auth step.
 fn session_token(headers: &HeaderMap) -> Option<String> {
     cookie_value(headers, SESSION_COOKIE).filter(|token| !token.trim().is_empty())
 }
 
+async fn session_verdict(state: &AppState, headers: &HeaderMap) -> AuthVerdict {
+    let Some(token) = session_token(headers) else {
+        return AuthVerdict::Unauthenticated;
+    };
+    let Some(shared_auth) = &state.shared_auth else {
+        return AuthVerdict::Degraded;
+    };
+    shared_auth.verify_access_token(&token).await
+}
+
+#[tracing::instrument(
+    name = "enrollment.page",
+    skip_all,
+    fields(auth.authority = "shared-auth")
+)]
 pub(crate) async fn page_handler(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    if session_token(&headers).is_none() {
-        return Redirect::to("/login").into_response();
+    match session_verdict(&state, &headers).await {
+        AuthVerdict::Authenticated => {}
+        AuthVerdict::Unauthenticated => return Redirect::to("/login").into_response(),
+        AuthVerdict::Degraded => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                page(
+                    "Temporarily unavailable",
+                    html! {
+                        div class="card" {
+                            h1 { "Enrollment temporarily unavailable" }
+                            p class="error" { "Your session could not be verified. Try again shortly." }
+                        }
+                    },
+                ),
+            )
+                .into_response();
+        }
     }
 
     let mut secret = [0u8; 20];
@@ -68,6 +99,11 @@ pub(crate) struct VerifyForm {
     code: String,
 }
 
+#[tracing::instrument(
+    name = "enrollment.verify",
+    skip_all,
+    fields(auth.authority = "shared-auth")
+)]
 pub(crate) async fn verify(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -75,6 +111,26 @@ pub(crate) async fn verify(
 ) -> Response {
     let fragment =
         |class: &str, text: &str| Html(html! { p class=(class) { (text) } }.into_string());
+    match session_verdict(&state, &headers).await {
+        AuthVerdict::Authenticated => {}
+        AuthVerdict::Unauthenticated => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                fragment("error", "Your session expired — sign in again."),
+            )
+                .into_response();
+        }
+        AuthVerdict::Degraded => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                fragment(
+                    "error",
+                    "Your session could not be verified — try again shortly.",
+                ),
+            )
+                .into_response();
+        }
+    }
     let Some(cookie) = cookie_value(&headers, ENROLL_COOKIE) else {
         return (
             StatusCode::BAD_REQUEST,

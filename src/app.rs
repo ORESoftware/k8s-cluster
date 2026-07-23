@@ -45,7 +45,7 @@ mod tests {
                                   or any TOTP app, then enter the 6-digit code it shows.";
 
     fn test_state() -> AppState {
-        AppState::new(None, b"test-server-secret".to_vec()).expect("test metrics")
+        AppState::accepting_for_tests(None, b"test-server-secret".to_vec()).expect("test metrics")
     }
 
     async fn body_string(response: Response) -> String {
@@ -68,7 +68,10 @@ mod tests {
                 body.contains(r#"name="password""#),
                 "password input for {uri}"
             );
-            assert!(body.contains("Supabase not configured"), "notice for {uri}");
+            assert!(
+                body.contains("Authentication not configured"),
+                "notice for {uri}"
+            );
         }
     }
 
@@ -88,7 +91,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert!(body_string(response)
             .await
-            .contains("Supabase not configured"));
+            .contains("Authentication is not configured"));
     }
 
     #[tokio::test]
@@ -210,6 +213,7 @@ mod tests {
                 Request::builder()
                     .method("POST")
                     .uri("/enroll/verify")
+                    .header(header::COOKIE, "threefa_session=test-token")
                     .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
                     .body(Body::from("code=000000"))
                     .unwrap(),
@@ -297,6 +301,8 @@ mod tests {
             "prometheus.io/path: /metrics",
             "OTEL_EXPORTER_OTLP_ENDPOINT",
             "DEPLOYMENT_ENVIRONMENT",
+            "SHARED_AUTH_BASE_URL",
+            "dd-shared-auth.shared-auth.svc.cluster.local:8120",
         ] {
             assert!(manifest.contains(required), "manifest missing {required}");
         }

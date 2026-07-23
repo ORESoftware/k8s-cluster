@@ -55,6 +55,8 @@ spec:
               value: info,tower_http=info,hyper=warn
             - name: DEPLOYMENT_ENVIRONMENT
               value: production
+            - name: SHARED_AUTH_BASE_URL
+              value: http://dd-shared-auth.shared-auth.svc.cluster.local:8120
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: http://dd-otel-collector.observability.svc.cluster.local:4318
             - name: POD_NAME
@@ -70,8 +72,8 @@ spec:
                 fieldRef:
                   fieldPath: spec.nodeName
           # SUPABASE_URL / SUPABASE_ANON_KEY / SERVER_SECRET come from an
-          # optional secret so the pod still boots (with login disabled)
-          # before the secret exists.
+          # optional secret. Provider login stays disabled until it exists;
+          # successful provider credentials are always exchanged at shared-auth.
           envFrom:
             - secretRef:
                 name: dd-threefa-web-server-env

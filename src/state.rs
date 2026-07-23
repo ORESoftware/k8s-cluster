@@ -1,12 +1,14 @@
 //! Shared application dependencies.
 
-use crate::config::{Config, SupabaseConfig};
+use crate::config::{Config, SharedAuthConfig, SupabaseConfig};
 use crate::metrics::Metrics;
+use crate::shared_auth::SharedAuthClient;
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub(crate) struct AppState {
     pub supabase: Option<SupabaseConfig>,
+    pub shared_auth: Option<SharedAuthClient>,
     pub server_secret: Arc<Vec<u8>>,
     pub http: reqwest::Client,
     pub metrics: Arc<Metrics>,
@@ -14,18 +16,31 @@ pub(crate) struct AppState {
 
 impl AppState {
     pub fn from_config(config: Config) -> Result<Self, prometheus::Error> {
-        Self::new(config.supabase, config.server_secret)
+        Self::new(config.supabase, config.shared_auth, config.server_secret)
     }
 
     pub fn new(
         supabase: Option<SupabaseConfig>,
+        shared_auth: Option<SharedAuthConfig>,
         server_secret: Vec<u8>,
     ) -> Result<Self, prometheus::Error> {
+        let http = reqwest::Client::new();
         Ok(Self {
             supabase,
+            shared_auth: shared_auth.map(|config| SharedAuthClient::new(config, http.clone())),
             server_secret: Arc::new(server_secret),
-            http: reqwest::Client::new(),
+            http,
             metrics: Arc::new(Metrics::new()?),
         })
+    }
+
+    #[cfg(test)]
+    pub fn accepting_for_tests(
+        supabase: Option<SupabaseConfig>,
+        server_secret: Vec<u8>,
+    ) -> Result<Self, prometheus::Error> {
+        let mut state = Self::new(supabase, None, server_secret)?;
+        state.shared_auth = Some(SharedAuthClient::accepting_for_tests());
+        Ok(state)
     }
 }

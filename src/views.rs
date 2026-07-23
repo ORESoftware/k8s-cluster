@@ -81,7 +81,7 @@ pub(crate) fn login_form(error: Option<&str>, configured: bool) -> Markup {
             }
             @if !configured {
                 p class="notice" {
-                    "Supabase not configured — set SUPABASE_URL and SUPABASE_ANON_KEY to enable sign-in."
+                    "Authentication not configured — set the Supabase provider and SHARED_AUTH_BASE_URL to enable sign-in."
                 }
             }
         }
@@ -95,9 +95,9 @@ mod tests {
     #[test]
     fn login_form_reflects_configuration_without_exposing_values() {
         let unconfigured = login_form(None, false).into_string();
-        assert!(unconfigured.contains("Supabase not configured"));
+        assert!(unconfigured.contains("Authentication not configured"));
         let configured = login_form(None, true).into_string();
-        assert!(!configured.contains("Supabase not configured"));
+        assert!(!configured.contains("Authentication not configured"));
         assert!(configured.contains(r#"autocomplete="current-password""#));
     }
 
