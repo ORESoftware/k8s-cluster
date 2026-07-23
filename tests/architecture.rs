@@ -1,6 +1,6 @@
 //! Regression tests for the service's modular architecture.
 
-use std::{fs, path::PathBuf};
+use std::{fs, future::Future, path::PathBuf};
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -23,6 +23,13 @@ fn rust_sources() -> String {
         .map(|path| fs::read_to_string(path).expect("Rust source must be readable"))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn assert_send_unit_future<F>(future: F)
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    drop(future);
 }
 
 #[test]
@@ -53,6 +60,57 @@ fn library_keeps_process_infrastructure_in_named_modules() {
     }
     assert!(library.contains("pub use service::run;"));
     assert!(read("src/service.rs").contains("pub async fn run()"));
+}
+
+#[test]
+fn exported_run_is_a_sendable_library_future() {
+    assert_send_unit_future(dd_sound_recorder_rs::run());
+}
+
+#[test]
+fn tokio_process_entrypoint_exists_only_in_the_binary() {
+    let sources = rust_sources();
+    assert_eq!(
+        sources.matches("#[tokio::main]").count(),
+        1,
+        "the Tokio process macro must not leak into library modules"
+    );
+    assert!(read("src/main.rs").contains("#[tokio::main]"));
+}
+
+#[test]
+fn connection_and_exporter_setup_stay_out_of_domain_service() {
+    let service = read("src/service.rs");
+    for forbidden in [
+        "Database::connect",
+        "ConnectOptions::new",
+        "tracing_subscriber::",
+        "opentelemetry_otlp::",
+    ] {
+        assert!(
+            !service.contains(forbidden),
+            "domain service took ownership of infrastructure setup {forbidden}"
+        );
+    }
+    assert!(read("src/database.rs").contains("Database::connect"));
+    assert!(read("src/telemetry.rs").contains("opentelemetry_otlp::"));
+}
+
+#[test]
+fn telemetry_remains_a_dependency_leaf() {
+    let telemetry = read("src/telemetry.rs");
+    for forbidden in [
+        "crate::database",
+        "crate::service",
+        "sea_orm::",
+        "Router::new",
+        "AppState",
+    ] {
+        assert!(
+            !telemetry.contains(forbidden),
+            "telemetry depends on application concern {forbidden}"
+        );
+    }
 }
 
 #[test]
