@@ -26,3 +26,7 @@
 	path = apps/shared-auth-e2e
 	url = git@github.com:shared-auth/shared-auth-e2e.git
 	branch = main
+[submodule "apps/shared-auth-sync"]
+	path = apps/shared-auth-sync
+	url = git@github.com:shared-auth/shared-auth-sync.git
+	branch = main
