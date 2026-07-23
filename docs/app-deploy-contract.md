@@ -115,9 +115,12 @@ need `CreateNamespace=true`.
 
 ## Secrets
 
-Platform owns ESO + `ClusterSecretStore/dd-cluster-secrets`. Apps only ever commit an
-`ExternalSecret` pointing at a store path scoped to their org (e.g. AWS Secrets Manager
-`dd/remote-dev/<app>-secrets`). See `remote/deployments/3fa-backend/deploy/k8s/externalsecret.yaml`.
+Platform owns ESO plus `ClusterSecretStore/dd-cluster-secrets` and
+`ClusterSecretStore/dd-fiducia-kv`. Apps only ever commit an `ExternalSecret` pointing at a store
+path scoped to their org (for example AWS Secrets Manager `dd/remote-dev/<app>-secrets`, or Fiducia
+`k8s/<namespace>/<workload>/<ENV_VAR>`). See
+`remote/deployments/3fa-backend/deploy/k8s/externalsecret.yaml` and
+[`fiducia-secret-delivery.md`](fiducia-secret-delivery.md).
 
 ## Cloud resources (DNS, DBs, buckets)
 

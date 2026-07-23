@@ -31,6 +31,7 @@
     "test:cli:fsharp-ws-server-config": "pnpm exec tsx --test general/fsharp-ws-server-config.test.ts",
     "test:cli:fabrication-cad-source-intake": "pnpm exec tsx --test general/fabrication-cad-source-intake.test.ts",
     "test:cli:fabrication-server-config": "pnpm exec tsx --test general/fabrication-server-config.test.ts",
+    "test:cli:fiducia-secret-delivery": "pnpm exec tsx --test general/fiducia-secret-delivery.test.ts",
     "test:cli:gateway-service-directory": "pnpm exec tsx --test general/gateway-service-directory.test.ts",
     "test:cli:gleam-lambda-runner-config": "pnpm exec tsx --test general/gleam-lambda-runner-config.test.ts",
     "test:cli:gleam-lambda-runner-child-checks": "pnpm exec tsx --test general/gleam-lambda-runner-child-checks.test.ts",
