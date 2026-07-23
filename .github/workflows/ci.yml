@@ -18,7 +18,17 @@ jobs:
         run: |
           set -euo pipefail
           mapfile -t paths < <(git config -f .gitmodules --get-regexp '^submodule\..*\.path$' | awk '{print $2}' | sort)
-          test "${#paths[@]}" -eq 7
+          expected_paths=(
+            apps/shared-auth-clients
+            apps/shared-auth-e2e
+            apps/shared-auth-infra
+            apps/shared-auth-interfaces
+            apps/shared-auth-lib
+            apps/shared-auth-mcp-server.rs
+            apps/shared-auth-server.rs
+            apps/shared-auth-sync
+          )
+          test "${paths[*]}" = "${expected_paths[*]}"
           for path in "${paths[@]}"; do
             case "$path" in
               apps/*) ;;
@@ -27,5 +37,5 @@ jobs:
             test "$(git ls-files --stage -- "$path" | awk '{print $1}')" = 160000
           done
           test -z "$(git config -f .gitmodules --get-regexp '^submodule\..*\.url$' | awk '$2 !~ /^git@github\.com:shared-auth\// {print}')"
-          test "$(git config -f .gitmodules --get-regexp '^submodule\..*\.branch$' | wc -l | tr -d ' ')" -eq 7
+          test "$(git config -f .gitmodules --get-regexp '^submodule\..*\.branch$' | wc -l | tr -d ' ')" -eq "${#expected_paths[@]}"
           test -z "$(git config -f .gitmodules --get-regexp '^submodule\..*\.branch$' | awk '$2 != "main" {print}')"

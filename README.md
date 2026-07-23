@@ -16,6 +16,7 @@ the component repository.
 | `apps/shared-auth-infra` | Cloudflare Worker and AWS/Kubernetes integration guidance |
 | `apps/shared-auth-mcp-server.rs` | Read-only Rust MCP server |
 | `apps/shared-auth-e2e` | Independent Playwright, Puppeteer, and Selenium suites |
+| `apps/shared-auth-sync` | Offline-first client queues and Postgres/Supabase reconciliation |
 
 The dormant `shared-auth.github.io` repository is intentionally excluded: the
 organization does not need a GitHub Pages marketing site.
