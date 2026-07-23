@@ -1,7 +1,7 @@
 # Multi-stage build → small runtime image. Built and published by CI as
 # ghcr.io/shared-auth/shared-auth-server:<tag>, NOT compiled in-pod (see the
 # k8s-cluster scaling docs on why in-pod cargo builds pin pods to a node).
-FROM rust:1.96-bookworm AS build
+FROM rust:1.97-bookworm AS build
 WORKDIR /src
 # Fetch the locked dependency graph before copying frequently changing sources.
 COPY Cargo.toml Cargo.lock ./
