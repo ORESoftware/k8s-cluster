@@ -501,15 +501,15 @@ container_command(Runtime, DefinitionJson) ->
             BrowserProfile = is_browser_runtime(RunProfile),
             Memory = case BrowserProfile of
                 true -> env_binary("LAMBDA_BROWSER_CONTAINER_MEMORY", <<"1g">>);
-                false -> env_binary("LAMBDA_CONTAINER_MEMORY", <<"256m">>)
+                false -> env_binary("LAMBDA_CONTAINER_MEMORY", <<"1g">>)
             end,
             MemoryBytes = case BrowserProfile of
                 true -> env_binary("LAMBDA_BROWSER_CONTAINER_MEMORY_BYTES", <<"1073741824">>);
-                false -> env_binary("LAMBDA_CONTAINER_MEMORY_BYTES", <<"268435456">>)
+                false -> env_binary("LAMBDA_CONTAINER_MEMORY_BYTES", <<"1073741824">>)
             end,
             Cpus = case BrowserProfile of
                 true -> env_binary("LAMBDA_BROWSER_CONTAINER_CPUS", <<"1.0">>);
-                false -> env_binary("LAMBDA_CONTAINER_CPUS", <<"0.50">>)
+                false -> env_binary("LAMBDA_CONTAINER_CPUS", <<"1.0">>)
             end,
             TimeoutSecs = env_binary("LAMBDA_CONTAINER_INVOKE_TIMEOUT_SECONDS", <<"120">>),
             case env_binary("LAMBDA_CONTAINER_RUNNER", <<"nerdctl">>) of
@@ -590,10 +590,14 @@ docker_compatible_run_args(Runtime, Network, Memory, Cpus, Image, EntryCommand) 
 %% Locked-down default for the code-only runtimes: read-only rootfs, a small
 %% non-executable tmpfs, all capabilities dropped, tight pid/file/memory limits.
 standard_run_args(Network, Memory, Cpus, Image, EntryCommand) ->
+    WorkTmpfsSize = env_binary("LAMBDA_CONTAINER_WORK_TMPFS_SIZE", <<"1g">>),
     [
         " run --rm -i --pull=never --read-only",
-        " --tmpfs /tmp:rw,noexec,nosuid,size=16m",
-        " --tmpfs /work:rw,exec,nosuid,nodev,size=256m",
+        " --tmpfs /tmp:rw,noexec,nosuid,size=16m,mode=1777",
+        " --tmpfs ",
+        shell_word(iolist_to_binary([
+            "/work:rw,exec,nosuid,nodev,size=", WorkTmpfsSize, ",mode=1777"
+        ])),
         " --network ", shell_word(Network),
         " --user 10001:10001",
         " --cap-drop ALL",
@@ -660,12 +664,16 @@ browser_run_args(Network, Cpus, Image, EntryCommand) ->
     Pids = env_binary("LAMBDA_BROWSER_CONTAINER_PIDS", <<"512">>),
     ShmSize = env_binary("LAMBDA_BROWSER_CONTAINER_SHM_SIZE", <<"256m">>),
     TmpfsSize = env_binary("LAMBDA_BROWSER_CONTAINER_TMPFS_SIZE", <<"256m">>),
+    WorkTmpfsSize = env_binary("LAMBDA_CONTAINER_WORK_TMPFS_SIZE", <<"1g">>),
     NoFile = env_binary("LAMBDA_BROWSER_CONTAINER_NOFILE", <<"1024">>),
     [
         " run --rm -i --pull=never --read-only",
         " --tmpfs ",
-        shell_word(iolist_to_binary(["/tmp:rw,nosuid,size=", TmpfsSize])),
-        " --tmpfs /work:rw,exec,nosuid,nodev,size=256m",
+        shell_word(iolist_to_binary(["/tmp:rw,nosuid,size=", TmpfsSize, ",mode=1777"])),
+        " --tmpfs ",
+        shell_word(iolist_to_binary([
+            "/work:rw,exec,nosuid,nodev,size=", WorkTmpfsSize, ",mode=1777"
+        ])),
         " --shm-size ", shell_word(ShmSize),
         " --network ", shell_word(Network),
         " --user 10001:10001",
@@ -712,6 +720,7 @@ ctr_container_command(Ctr, Namespace, Network, MemoryBytes0, Cpus, Image, Runtim
 %% executable (Chromium execs helpers from it) and add a real /dev/shm so
 %% renderer processes do not crash on the container's tiny default shm.
 ctr_tmpfs_mounts(Runtime) ->
+    WorkTmpfsSize = env_binary("LAMBDA_CONTAINER_WORK_TMPFS_SIZE", <<"1g">>),
     case is_browser_runtime(Runtime) of
         true ->
             TmpfsSize = env_binary("LAMBDA_BROWSER_CONTAINER_TMPFS_SIZE", <<"256m">>),
@@ -719,17 +728,29 @@ ctr_tmpfs_mounts(Runtime) ->
             [
                 " --mount ",
                 shell_word(iolist_to_binary([
-                    "type=tmpfs,dst=/tmp,options=rw:nosuid:size=", TmpfsSize
+                    "type=tmpfs,dst=/tmp,options=rw:nosuid:size=", TmpfsSize, ":mode=1777"
                 ])),
                 " --mount ",
                 shell_word(iolist_to_binary([
-                    "type=tmpfs,dst=/dev/shm,options=rw:nosuid:size=", ShmSize
+                    "type=tmpfs,dst=/dev/shm,options=rw:nosuid:size=", ShmSize, ":mode=1777"
                 ])),
-                " --mount type=tmpfs,dst=/work,options=rw:exec:nosuid:nodev:size=256m"
+                " --mount ",
+                shell_word(iolist_to_binary([
+                    "type=tmpfs,dst=/work,options=rw:exec:nosuid:nodev:size=",
+                    WorkTmpfsSize,
+                    ":mode=1777"
+                ]))
             ];
         false ->
-            " --mount type=tmpfs,dst=/tmp,options=rw:noexec:nosuid:size=16m"
-            " --mount type=tmpfs,dst=/work,options=rw:exec:nosuid:nodev:size=256m"
+            [
+                " --mount type=tmpfs,dst=/tmp,options=rw:noexec:nosuid:size=16m:mode=1777",
+                " --mount ",
+                shell_word(iolist_to_binary([
+                    "type=tmpfs,dst=/work,options=rw:exec:nosuid:nodev:size=",
+                    WorkTmpfsSize,
+                    ":mode=1777"
+                ]))
+            ]
     end.
 
 ctr_network_args(<<"none">>) -> "";

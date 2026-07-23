@@ -68,6 +68,9 @@ function run(command, args, options = {}) {
       env: {
         PATH: env.PATH || '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
         HOME: env.HOME || '/tmp',
+        TMPDIR: env.TMPDIR || '/tmp',
+        ...(env.RUSTUP_HOME ? { RUSTUP_HOME: env.RUSTUP_HOME } : {}),
+        ...(env.CARGO_HOME ? { CARGO_HOME: env.CARGO_HOME } : {}),
         ...(options.env || {}),
       },
       stdio: ['ignore', 'pipe', 'pipe'],

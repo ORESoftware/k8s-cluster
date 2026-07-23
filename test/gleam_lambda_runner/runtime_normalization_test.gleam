@@ -261,6 +261,11 @@ pub fn entry_command_is_passed_as_one_shell_quoted_environment_value_test() {
     "--env 'SCINTILLA_RUNTIME_COMMAND=printf '\"'\"'%s'\"'\"' \"$HOME\"; echo inside'",
   )
   |> should.be_true
+  string.contains(
+    command,
+    "--tmpfs /work:rw,exec,nosuid,nodev,size=1g,mode=1777",
+  )
+  |> should.be_true
   string.contains(command, " ghcr.io/scintilla-run/custom")
   |> should.be_false
 }

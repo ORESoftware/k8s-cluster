@@ -264,6 +264,20 @@ contract. A definition can select a reviewed `containerImage` and set `entryComm
 passes that command as the single `SCINTILLA_RUNTIME_COMMAND` environment value inside the
 container, never as host shell syntax.
 
+Dynamic compilation runs as UID/GID 10001 with a read-only root filesystem. The runner supplies a
+world-writable, executable `/work` tmpfs (default `1g`) while keeping `/tmp` small and
+non-executable. The code-runtime defaults are `1g` memory and one CPU; operators can tune them with
+`LAMBDA_CONTAINER_MEMORY`, `LAMBDA_CONTAINER_MEMORY_BYTES`, `LAMBDA_CONTAINER_CPUS`, and
+`LAMBDA_CONTAINER_WORK_TMPFS_SIZE`.
+
+After building the seven dynamic images with local tags
+`scintilla-runtime-<runtime>:e2e`, exercise their actual compilers and stdio adapters under the
+production isolation flags:
+
+```sh
+node test/runtime-images-docker.e2e.mjs
+```
+
 When the REST API has `LAMBDA_IMAGE_BUILD_ENABLED=true`, saving a containerized function also writes
 a per-function build context under `LAMBDA_IMAGE_BUILD_ROOT` and builds
 `docker.io/library/dd-lambda-function:<slug>-<id>` into the same local `k8s.io` image store.

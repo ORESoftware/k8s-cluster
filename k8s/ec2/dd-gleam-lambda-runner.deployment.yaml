@@ -151,7 +151,9 @@ spec:
             - name: LAMBDA_CONTAINER_CTR
               value: /usr/local/bin/ctr
             - name: LAMBDA_CONTAINER_MEMORY_BYTES
-              value: '268435456'
+              value: '1073741824'
+            - name: LAMBDA_CONTAINER_WORK_TMPFS_SIZE
+              value: 1g
             - name: LAMBDA_BROWSER_CONTAINER_MEMORY
               value: 1g
             - name: LAMBDA_BROWSER_CONTAINER_MEMORY_BYTES

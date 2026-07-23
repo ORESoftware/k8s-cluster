@@ -126,10 +126,29 @@ env = "LAMBDA_CONTAINER_INVOKE_TIMEOUT_SECONDS"
 aliases = ["lambda-container-invoke-timeout-seconds"]
 type = "integer"
 
+[flags.lambda_container_memory]
+env = "LAMBDA_CONTAINER_MEMORY"
+aliases = ["lambda-container-memory"]
+type = "string"
+default = "1g"
+
 [flags.lambda_container_memory_bytes]
 env = "LAMBDA_CONTAINER_MEMORY_BYTES"
 aliases = ["lambda-container-memory-bytes"]
 type = "integer"
+default = 1073741824
+
+[flags.lambda_container_cpus]
+env = "LAMBDA_CONTAINER_CPUS"
+aliases = ["lambda-container-cpus"]
+type = "string"
+default = "1.0"
+
+[flags.lambda_container_work_tmpfs_size]
+env = "LAMBDA_CONTAINER_WORK_TMPFS_SIZE"
+aliases = ["lambda-container-work-tmpfs-size"]
+type = "string"
+default = "1g"
 
 [flags.lambda_nodejs_host_command]
 env = "LAMBDA_NODEJS_HOST_COMMAND"
