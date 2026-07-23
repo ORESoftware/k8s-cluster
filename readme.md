@@ -14,33 +14,51 @@ mill-turn/swiss-turning, and hybrid machine workflows.
 
 ## Authentication
 
-Every HTTP route listed below requires a Supabase access token
-(`Authorization: Bearer <token>`) whose `email` claim is confirmed *and* on
-`FABRICATION_ALLOWED_EMAILS`. The only exceptions are `GET /healthz` and
-`GET /readyz` (kubelet probes) and the `/internal/*` runtime-config endpoints,
-which authenticate with the control plane's own shared server secret.
+Every fabrication API/worker HTTP route listed below requires a bearer token
+(`Authorization: Bearer <token>`) accepted by the organization-wide
+[`shared-auth-lib`](https://github.com/shared-auth/shared-auth-lib) guard and by
+the configured Daedalus email or role policy. The only exceptions are `GET
+/healthz` and `GET /readyz` (kubelet probes) and the `/internal/*`
+runtime-config endpoints, which authenticate with the control plane's own
+shared server secret.
 
-Verification lives in `src/supabase_auth.rs`, ported from
-`daedalus-api-server.rs`: allow-listed algorithms only (HS256/RS256/ES256),
-`aud` **and** `iss` pinned, `email_verified` required, bounded JWKS cache with
-single-flight and rate-limited refresh, and one uniform `401` for every
-rejection reason.
+The service-specific adapter lives in `src/shared_auth.rs`; shared identity and
+wire contracts come from
+[`shared-auth-interfaces`](https://github.com/shared-auth/shared-auth-interfaces).
+The guard races the central shared-auth service and Supabase within one bounded
+deadline, accepts the first valid identity, requires verified email for email
+policy, and emits OpenTelemetry auth spans without logging credentials. An
+invalid token is a uniform `401`; authority exhaustion is a distinct `503` so
+an outage is never misreported as bad credentials. The service has no direct
+`jsonwebtoken` dependency.
 
 | Variable | Purpose |
 | --- | --- |
-| `FABRICATION_SUPABASE_ISSUER` | **Required.** Pins tokens to this Supabase project. |
-| `FABRICATION_SUPABASE_JWT_SECRET` | HS256 verification key (or use JWKS below). |
-| `FABRICATION_SUPABASE_JWKS_URL` | RS256/ES256 verification via rotating JWKS. |
-| `FABRICATION_SUPABASE_AUDIENCE` | Defaults to `authenticated`. |
-| `FABRICATION_ALLOWED_EMAILS` | **Required.** Comma-separated operator allow-list. |
+| `FABRICATION_SHARED_AUTH_BASE` | Central authority URL; defaults to the in-cluster `dd-shared-auth` service on port 8120. |
+| `FABRICATION_SHARED_AUTH_ISSUER` | Shared token issuer; defaults to `https://auth.oresoftware.dev`. |
+| `FABRICATION_SHARED_AUTH_AUDIENCE` | Shared token audience; defaults to `oresoftware`. |
+| `FABRICATION_SUPABASE_URL` | Supabase project URL used as the second authority. A legacy `FABRICATION_SUPABASE_ISSUER` ending in `/auth/v1` is converted for compatibility. |
+| `FABRICATION_SUPABASE_PUBLISHABLE_KEY` | Publishable/anon project key; a service-role key is not required. |
+| `FABRICATION_AUTH_PROVIDER_TENANT` | Provider tenant/project identity; derived from the Supabase URL when omitted. |
+| `FABRICATION_ALLOWED_EMAILS` | Comma-separated verified operator email policy. |
+| `FABRICATION_ALLOWED_ROLES` | Comma-separated shared role policy. At least an email or role policy is required. |
+| `FABRICATION_AUTH_ARM_TIMEOUT_MS` | Per-authority timeout, bounded to 100–10,000 ms. |
+| `FABRICATION_AUTH_DEADLINE_MS` | Overall auth race deadline, bounded to 100–15,000 ms. |
 
-The gate is **fail-closed**: unless an issuer, a key, and a non-empty allow-list
-are all configured, authenticated routes return `503` rather than serving
-anonymously. The gate is applied once as a router-level layer over everything
-outside the public allowlist, and
+The gate is **fail-closed**: unless both authority inputs, a provider tenant,
+and a non-empty email or role policy are configured, authenticated routes
+return `503` rather than serving anonymously. The gate is applied once as a
+router-level layer over everything outside the public allowlist, and
 `route_authorization_tests::every_route_outside_the_public_allowlist_is_gated`
 drives a real request through every declared route to prove it — a new route
 added without auth fails CI.
+
+The separately deployable `dd-fabrication-web-server` uses the same shared-auth
+guard for its MASH page, realtime JSON endpoint, and HTML/JSON WebSocket
+upgrades. Its `GET /healthz`, `GET /readyz`, and `GET /metrics` endpoints remain
+public for Kubernetes and Prometheus. Consequently, browser ingress must inject
+or forward the shared-auth bearer token; missing auth fails with `401`, while a
+missing authority configuration fails closed with `503`.
 
 ### Realtime TCP transport (port 8114)
 
@@ -50,6 +68,12 @@ token. It is therefore **opt-in and disabled by default**: set
 `FABRICATION_TCP_ENABLED=true` to start it. Treat it as a trusted-network-only
 debug transport — the NetworkPolicy confines it to the `daedalus` namespace, and
 nothing else should be relied on to protect it.
+
+The web process has the same constraint on port `8116`, so its TCP listener is
+also disabled by default. Set `FABRICATION_WEB_TCP_ENABLED=true` only for a
+trusted-network deployment. The setting is independent of
+`FABRICATION_TCP_ENABLED` so enabling one process never silently exposes the
+other.
 
 It exposes:
 
@@ -7519,6 +7543,11 @@ share process state:
   updates, JSON WebSockets, TCP clients, and fan-in from the fabrication JSON
   WebSocket, Supabase Realtime, and NATS.
 
+Both processes apply the shared-auth guard to standard HTTP, MASH, and
+WebSocket-upgrade routes. Their newline-delimited JSON TCP listeners cannot
+carry that bearer contract and are therefore separate, disabled-by-default
+trusted-network interfaces.
+
 Runtime concerns are kept in focused modules:
 
 - `config.rs` owns environment parsing and the Kubernetes-facing service
@@ -7846,7 +7875,9 @@ cargo run --release --bin dd-fabrication-web-server
 Default listeners are fabrication HTTP `8113`, fabrication TCP `8114`, web HTTP
 `8115`, and web TCP `8116`. Override them with `PORT`,
 `FABRICATION_TCP_PORT`, `FABRICATION_WEB_PORT`, and
-`FABRICATION_WEB_TCP_PORT` respectively.
+`FABRICATION_WEB_TCP_PORT` respectively. The HTTP listeners start normally;
+the TCP listeners require `FABRICATION_TCP_ENABLED=true` and
+`FABRICATION_WEB_TCP_ENABLED=true` respectively.
 
 > **ORM policy:** application database code uses **SeaORM**, not direct sqlx
 > (MASH stack: maud, axum, SeaORM, supabase, htmx).

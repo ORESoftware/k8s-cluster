@@ -15,6 +15,7 @@ const OBSERVABILITY: &str = include_str!("../src/observability.rs");
 const PERSISTENCE: &str = include_str!("../src/persistence.rs");
 const REALTIME: &str = include_str!("../src/realtime.rs");
 const SECRETS: &str = include_str!("../src/secrets.rs");
+const SHARED_AUTH: &str = include_str!("../src/shared_auth.rs");
 const TRANSPORT: &str = include_str!("../src/transport/mod.rs");
 const WEB_SERVER: &str = include_str!("../src/web_server/mod.rs");
 const MANIFEST: &str = include_str!("../Cargo.toml");
@@ -70,6 +71,7 @@ fn runtime_concerns_have_dedicated_modules() {
         "persistence",
         "realtime",
         "secrets",
+        "shared_auth",
         "transport",
         "web_server",
     ] {
@@ -92,6 +94,7 @@ fn runtime_concerns_have_dedicated_modules() {
     assert!(TRANSPORT.contains("pub(crate) fn router"));
     assert!(WEB_SERVER.contains("pub(crate) async fn run"));
     assert!(SECRETS.contains("struct SecretOverlay"));
+    assert!(SHARED_AUTH.contains("struct SharedAuthVerifier"));
     assert!(LIB.contains("pub async fn run()"));
     assert!(LIB.contains("pub async fn run_web()"));
 
@@ -127,6 +130,27 @@ fn persistence_uses_seaorm_without_a_direct_sqlx_dependency() {
             "{name} must not bypass SeaORM with SQLx"
         );
     }
+}
+
+#[test]
+fn shared_auth_owns_both_complete_fail_closed_http_gates() {
+    assert!(has_direct_dependency(MANIFEST, "shared-auth-lib"));
+    assert!(!has_direct_dependency(MANIFEST, "jsonwebtoken"));
+    assert!(SHARED_AUTH.contains("AuthGuard"));
+    assert!(SHARED_AUTH.contains("AuthOutcome::Degraded"));
+    assert!(SHARED_AUTH.contains("async fn authorize_bearer"));
+    assert!(SHARED_AUTH.contains("async fn require_operator"));
+    assert!(SHARED_AUTH.contains("impl FromRequestParts<AppState> for Operator"));
+    assert!(SHARED_AUTH.contains("#[tracing::instrument("));
+    assert!(SHARED_AUTH.contains("auth.authorization.succeeded"));
+    assert!(WEB_SERVER.contains("authorize_bearer"));
+    assert!(WEB_SERVER.contains("async fn require_operator"));
+    assert!(WEB_SERVER.contains("route_layer(middleware::from_fn_with_state"));
+    assert!(WEB_SERVER.contains("auth.authorization.succeeded"));
+    assert!(!LIB.contains("impl FromRequestParts<AppState> for Operator"));
+    assert!(!std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src/supabase_auth.rs")
+        .exists());
 }
 
 #[test]
@@ -179,6 +203,11 @@ fn observability_is_composed_at_service_boundaries() {
     assert!(LIB.contains(".route(\"/metrics\""));
     assert!(HTTP.contains("dd_fabrication_server_persistence_enabled"));
     assert!(OBSERVABILITY.contains("persistence.enabled"));
+    assert!(OBSERVABILITY.contains("auth.system = \"shared-auth\""));
+    assert!(OBSERVABILITY.contains("shared-auth+supabase"));
+    assert!(OBSERVABILITY.contains("telemetry.logs = \"stdout/loki\""));
+    assert!(OBSERVABILITY.contains("telemetry.traces = \"otlp\""));
+    assert!(OBSERVABILITY.contains("telemetry.metrics = \"prometheus\""));
 
     for deployment_component in ["OpenTelemetry", "Loki", "Prometheus"] {
         assert!(

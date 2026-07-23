@@ -9,9 +9,9 @@ use std::{
 };
 
 use axum::{
-    extract::{DefaultBodyLimit, FromRequestParts, Path, Request, State},
-    http::{request::Parts, StatusCode},
-    middleware::{self, Next},
+    extract::{DefaultBodyLimit, Path, State},
+    http::StatusCode,
+    middleware,
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -68,12 +68,11 @@ use config::{env_u64, env_value, ServiceConfig};
 use coordination::{
     maintain_lease, Coordination, CoordinationError, FiduciaCoordination, NoopCoordination,
 };
-use error::ServiceError;
 use metrics::Metrics;
 use persistence::Persistence;
 use realtime::{EventHub, ServiceSurface};
+use shared_auth::{require_operator, SharedAuthVerifier};
 use stores::{build_stores, JobStore, LearningStore, StoreError};
-use supabase_auth::{bearer_token, Operator, SupabaseVerifier};
 
 mod additive_printing;
 mod as_built_catalog_content;
@@ -133,11 +132,11 @@ mod root_inventory_content;
 mod safety_catalog_content;
 mod secrets;
 mod setup_catalog_content;
+mod shared_auth;
 mod simulation_catalog_content;
 mod simulation_preflight_content;
 mod slicer_catalog;
 mod stores;
-mod supabase_auth;
 mod support_strategy_catalog_content;
 mod tolerance_catalog_content;
 mod tooling_catalog_content;
@@ -173,11 +172,11 @@ const SIMULATED_MOTION_AXES: [char; 7] = ['X', 'Y', 'Z', 'A', 'B', 'C', 'E'];
 
 #[derive(Clone)]
 struct AppState {
-    /// Verified-identity gate for every non-public route. `None` means Supabase
+    /// Verified-identity gate for every non-public route. `None` means shared
     /// auth is unconfigured, which is treated as "refuse authenticated routes",
-    /// never as "allow" — see [`Operator::authorize`].
-    verifier: Option<Arc<SupabaseVerifier>>,
-    /// Outbound client used only for JWKS fetches.
+    /// never as "allow" — see [`shared_auth::require_operator`].
+    verifier: Option<Arc<SharedAuthVerifier>>,
+    /// Outbound client used only for the bounded shared-auth authority race.
     http: reqwest::Client,
     nats: Option<async_nats::Client>,
     persistence: Persistence,
@@ -208,7 +207,7 @@ struct AppState {
     learning: Arc<dyn LearningStore>,
 }
 
-/// Paths served without a Supabase bearer token.
+/// Paths served without a shared-auth bearer token.
 ///
 /// This is the *entire* unauthenticated surface of the HTTP server and it is
 /// asserted route-by-route in `every_route_outside_the_public_allowlist_is_gated`.
@@ -240,67 +239,6 @@ const PUBLIC_ROUTES: &[&str] = &[
 /// everything outside [`PUBLIC_ROUTES`], so on this service the extractor is
 /// how a handler *reads* the caller's identity rather than the only place the
 /// check happens.
-#[axum::async_trait]
-impl FromRequestParts<AppState> for Operator {
-    type Rejection = ServiceError;
-
-    async fn from_request_parts(
-        parts: &mut Parts,
-        state: &AppState,
-    ) -> Result<Self, Self::Rejection> {
-        // The router-level gate already authorized this request and stashed the
-        // identity; re-verifying would mean a second signature check (and, on a
-        // cold JWKS cache, a second outbound fetch) per extraction.
-        if let Some(operator) = parts.extensions.get::<Operator>() {
-            return Ok(operator.clone());
-        }
-        Self::authorize(parts, state).await
-    }
-}
-
-impl Operator {
-    /// The authorization decision itself.
-    async fn authorize(parts: &mut Parts, state: &AppState) -> Result<Self, ServiceError> {
-        let verifier = state.verifier.as_ref().ok_or_else(|| {
-            // Fail closed. An unconfigured gate must never mean "allow".
-            ServiceError::Unavailable(
-                "Supabase auth is not configured; refusing to serve authenticated routes"
-                    .to_string(),
-            )
-        })?;
-        let header = parts
-            .headers
-            .get(axum::http::header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok());
-        let token = bearer_token(header).ok_or(ServiceError::Unauthorized)?;
-        verifier.authorize(&state.http, token).await
-    }
-}
-
-/// Router-level gate applied once to every non-public route.
-///
-/// This runs *before* the handler, which is what makes the WebSocket routes
-/// safe: an unauthenticated client receives a 401 response and the upgrade
-/// never happens, rather than getting an open socket that is then policed.
-async fn require_operator(
-    State(state): State<AppState>,
-    request: Request,
-    next: Next,
-) -> Result<Response, ServiceError> {
-    let (mut parts, body) = request.into_parts();
-    let operator = Operator::authorize(&mut parts, &state).await?;
-    tracing::debug!(
-        auth.subject = %operator.subject,
-        auth.email = %operator.email,
-        "request authorized"
-    );
-    let mut request = Request::from_parts(parts, body);
-    // Handlers that want the identity take `Operator` (or read the extension);
-    // the verification itself has already happened exactly once.
-    request.extensions_mut().insert(operator);
-    Ok(next.run(request).await)
-}
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FabricationPlanRequest {
@@ -124151,21 +124089,24 @@ pub async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
         );
     }
 
-    let verifier = SupabaseVerifier::from_config(&config.supabase).map(Arc::new);
-    if verifier.is_none() {
+    let auth_configured = config.auth.is_enabled();
+    let verifier = SharedAuthVerifier::from_config(&config.auth).map(Arc::new);
+    let auth_enabled = auth_configured && verifier.is_some();
+    if !auth_configured || verifier.is_none() {
         // Loud, because every route outside PUBLIC_ROUTES will refuse to serve
         // in this state.
         tracing::warn!(
-            "Supabase auth is NOT configured (need FABRICATION_SUPABASE_JWT_SECRET or \
-             FABRICATION_SUPABASE_JWKS_URL, FABRICATION_SUPABASE_ISSUER, *and* \
-             FABRICATION_ALLOWED_EMAILS); authenticated routes will return 503"
+            "shared-auth is NOT configured (need FABRICATION_SUPABASE_URL or a legacy \
+             FABRICATION_SUPABASE_ISSUER, a provider tenant, and FABRICATION_ALLOWED_EMAILS \
+             or FABRICATION_ALLOWED_ROLES); authenticated routes will return 503"
         );
     }
     // Log the unauthenticated surface at startup so it is visible in the pod
     // logs of every deploy, not only in a source review.
     tracing::info!(
         http.public_routes = ?PUBLIC_ROUTES,
-        "every other HTTP route requires a verified, allow-listed Supabase operator"
+        auth.system = "shared-auth",
+        "every other HTTP route requires a verified shared-auth operator"
     );
 
     let coordination = build_coordination(&config.fiducia);
@@ -124198,7 +124139,12 @@ pub async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
-    observability::server_listening(http_address, persistence_enabled, nats_enabled);
+    observability::server_listening(
+        http_address,
+        persistence_enabled,
+        nats_enabled,
+        auth_enabled,
+    );
     let listener = tokio::net::TcpListener::bind(http_address).await?;
     axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
         .with_graceful_shutdown(async {
@@ -181389,13 +181335,12 @@ mod route_authorization_tests {
     use super::*;
     use axum::body::Body;
     use axum::http::Request as HttpRequest;
-    use config::SupabaseConfig;
     use tower::ServiceExt;
 
     /// Source files whose `.route(...)` declarations end up in [`build_router`].
     ///
     /// `src/web_server/` is deliberately absent: it builds a different service
-    /// (`run_web`) with its own router and its own Supabase gate.
+    /// (`run_web`) with its own router and dependency boundary.
     const ROUTED_SOURCES: &[&str] = &[
         "src/lib.rs",
         "src/transport/mod.rs",
@@ -181462,16 +181407,21 @@ mod route_authorization_tests {
     /// distinction is what makes the assertions below prove the gate is wired
     /// up, not merely that the service is misconfigured.
     fn gated_state() -> AppState {
-        let supabase = SupabaseConfig {
-            audience: "authenticated".to_string(),
-            issuer: Some("https://proj.supabase.co/auth/v1".to_string()),
-            jwt_secret: Some("enumeration-test-secret".to_string()),
-            jwks_url: None,
+        let auth = config::AuthConfig {
+            shared_auth_base: "http://shared-auth.test".to_string(),
+            issuer: "https://auth.oresoftware.dev".to_string(),
+            audience: "oresoftware".to_string(),
+            supabase_url: Some("https://proj.supabase.co".to_string()),
+            supabase_api_key: Some("enumeration-test-key".to_string()),
+            provider_tenant: "proj".to_string(),
             allowed_emails: vec!["operator@example.com".to_string()],
+            allowed_roles: vec!["daedalus-operator".to_string()],
+            arm_timeout_ms: 100,
+            deadline_ms: 200,
         };
-        assert!(supabase.is_enabled(), "test fixture must enable the gate");
+        assert!(auth.is_enabled(), "test fixture must enable the gate");
         AppState {
-            verifier: SupabaseVerifier::from_config(&supabase).map(Arc::new),
+            verifier: SharedAuthVerifier::from_config(&auth).map(Arc::new),
             http: reqwest::Client::new(),
             nats: None,
             persistence: Persistence::Disabled,

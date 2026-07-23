@@ -38,6 +38,32 @@ fn relative_source_name(path: &Path) -> String {
         .to_string()
 }
 
+fn source_owners(fragment: &str) -> Vec<String> {
+    rust_sources()
+        .into_iter()
+        .filter(|path| read_source(path).contains(fragment))
+        .map(|path| relative_source_name(&path))
+        .collect()
+}
+
+fn module_files(directory: &str) -> Vec<String> {
+    let directory = source_root().join(directory);
+    let mut files: Vec<String> = fs::read_dir(&directory)
+        .unwrap_or_else(|error| panic!("read module directory {}: {error}", directory.display()))
+        .filter_map(|entry| {
+            let path = entry.expect("read module entry").path();
+            (path.extension().is_some_and(|extension| extension == "rs")).then(|| {
+                path.file_name()
+                    .expect("module file name")
+                    .to_string_lossy()
+                    .into_owned()
+            })
+        })
+        .collect();
+    files.sort();
+    files
+}
+
 #[test]
 fn every_declared_top_level_module_has_its_own_source() {
     let root = source_root();
@@ -202,7 +228,159 @@ fn runtime_sources_do_not_own_database_ddl() {
 #[test]
 fn stateful_infrastructure_modules_keep_local_unit_tests() {
     let root = source_root();
-    for module in ["config.rs", "persistence.rs", "secrets.rs", "stores.rs"] {
+    for module in [
+        "config.rs",
+        "persistence.rs",
+        "secrets.rs",
+        "shared_auth.rs",
+        "stores.rs",
+    ] {
+        let source = read_source(&root.join(module));
+        assert!(
+            source.contains("#[cfg(test)]"),
+            "{module} needs local tests"
+        );
+        assert!(source.contains("mod tests"), "{module} needs a test module");
+    }
+}
+
+#[test]
+fn protocol_implementations_have_exactly_one_source_owner() {
+    for (fragment, expected_owner) in [
+        ("dd_telemetry::init(", "observability.rs"),
+        ("use shared_auth_lib::", "shared_auth.rs"),
+        (
+            "impl FromRequestParts<AppState> for Operator",
+            "shared_auth.rs",
+        ),
+        ("async_nats::ConnectOptions::new(", "messaging.rs"),
+        ("WebSocketUpgrade", "transport/websocket.rs"),
+        ("use maud::", "transport/views.rs"),
+        (
+            ".route(\"/printing/preflight\"",
+            "additive_printing/http.rs",
+        ),
+        (".route(\"/ws/html\"", "transport/mod.rs"),
+        (".route(\"/ws/json\"", "transport/mod.rs"),
+    ] {
+        assert_eq!(
+            source_owners(fragment),
+            [expected_owner],
+            "{fragment} must have one deliberate module owner"
+        );
+    }
+
+    assert_eq!(
+        source_owners("Database::connect("),
+        ["persistence.rs", "stores.rs"],
+        "database connections stay inside the two-file SeaORM persistence boundary"
+    );
+}
+
+#[test]
+fn shared_transport_and_realtime_layers_do_not_depend_on_fab_application_state() {
+    let realtime = read_source(&source_root().join("realtime.rs"));
+    for forbidden in [
+        "axum::",
+        "async_nats::",
+        "maud::",
+        "sea_orm::",
+        "AppState",
+        "WebState",
+    ] {
+        assert!(
+            !realtime.contains(forbidden),
+            "realtime.rs must remain transport-neutral and cannot depend on {forbidden}"
+        );
+    }
+
+    for path in rust_sources()
+        .into_iter()
+        .filter(|path| relative_source_name(path).starts_with("transport/"))
+    {
+        let name = relative_source_name(&path);
+        let source = read_source(&path);
+        for forbidden in [
+            "AppState",
+            "WebState",
+            "plan_http",
+            "JobStore",
+            "LearningStore",
+            "additive_printing",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "{name} must remain reusable by both processes and cannot depend on {forbidden}"
+            );
+        }
+    }
+}
+
+#[test]
+fn web_process_does_not_absorb_fab_domain_implementation() {
+    for path in rust_sources()
+        .into_iter()
+        .filter(|path| relative_source_name(path).starts_with("web_server/"))
+    {
+        let name = relative_source_name(&path);
+        let source = read_source(&path);
+        for forbidden in [
+            "AppState",
+            "authenticated_router",
+            "plan_http",
+            "additive_printing::",
+            "InMemoryJobStore",
+            "LearningStore",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "{name} crossed the web/fab service boundary through {forbidden}"
+            );
+        }
+    }
+}
+
+#[test]
+fn feature_directories_have_an_explicit_complete_module_inventory() {
+    assert_eq!(
+        module_files("additive_printing"),
+        ["analysis.rs", "http.rs", "mod.rs", "model.rs"]
+    );
+    assert_eq!(
+        module_files("transport"),
+        ["mod.rs", "nats.rs", "tcp.rs", "views.rs", "websocket.rs"]
+    );
+    assert_eq!(
+        module_files("web_server"),
+        [
+            "backend.rs",
+            "config.rs",
+            "http.rs",
+            "mod.rs",
+            "supabase.rs"
+        ]
+    );
+}
+
+#[test]
+fn extracted_behavioral_modules_keep_tests_beside_the_behavior() {
+    let root = source_root();
+    for module in [
+        "http.rs",
+        "realtime.rs",
+        "transport/mod.rs",
+        "transport/nats.rs",
+        "transport/tcp.rs",
+        "transport/views.rs",
+        "transport/websocket.rs",
+        "web_server/mod.rs",
+        "web_server/backend.rs",
+        "web_server/config.rs",
+        "web_server/http.rs",
+        "web_server/supabase.rs",
+        "additive_printing/analysis.rs",
+        "additive_printing/http.rs",
+    ] {
         let source = read_source(&root.join(module));
         assert!(
             source.contains("#[cfg(test)]"),

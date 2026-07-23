@@ -17,19 +17,26 @@ pub(crate) fn init_for(service_name: &str) -> dd_telemetry::OtelGuard {
 pub(crate) fn web_server_listening(
     http_address: SocketAddr,
     tcp_address: SocketAddr,
+    tcp_enabled: bool,
     persistence_enabled: bool,
     nats_enabled: bool,
     supabase_enabled: bool,
+    auth_enabled: bool,
 ) {
     tracing::info!(
         service.name = "dd-fabrication-web-server",
         server.address = %http_address,
         network.peer.address = %tcp_address,
+        network.transport = "tcp",
+        network.enabled = tcp_enabled,
         db.client = "seaorm",
         persistence.enabled = persistence_enabled,
         messaging.system = "nats",
         messaging.enabled = nats_enabled,
         supabase.realtime.enabled = supabase_enabled,
+        auth.system = "shared-auth",
+        auth.authorities = "shared-auth+supabase",
+        auth.enabled = auth_enabled,
         telemetry.logs = "stdout/loki",
         telemetry.traces = "otlp",
         telemetry.metrics = "prometheus",
@@ -37,7 +44,12 @@ pub(crate) fn web_server_listening(
     );
 }
 
-pub(crate) fn server_listening(address: SocketAddr, persistence_enabled: bool, nats_enabled: bool) {
+pub(crate) fn server_listening(
+    address: SocketAddr,
+    persistence_enabled: bool,
+    nats_enabled: bool,
+    auth_enabled: bool,
+) {
     tracing::info!(
         service.name = crate::SERVICE_NAME,
         server.address = %address,
@@ -45,9 +57,23 @@ pub(crate) fn server_listening(address: SocketAddr, persistence_enabled: bool, n
         persistence.enabled = persistence_enabled,
         messaging.system = "nats",
         messaging.enabled = nats_enabled,
+        auth.system = "shared-auth",
+        auth.authorities = "shared-auth+supabase",
+        auth.enabled = auth_enabled,
         telemetry.logs = "stdout/loki",
         telemetry.traces = "otlp",
         telemetry.metrics = "prometheus",
         "fabrication server listening"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn telemetry_owner_names_every_kubernetes_backend_and_auth_authority() {
+        let source = include_str!("observability.rs");
+        for expected in ["stdout/loki", "prometheus", "otlp", "shared-auth+supabase"] {
+            assert!(source.contains(expected), "missing {expected}");
+        }
+    }
 }

@@ -25,7 +25,7 @@ pub(crate) struct ServiceConfig {
     pub(crate) mdp_autopublish: bool,
     pub(crate) nats_max_inflight: usize,
     pub(crate) realtime_buffer: usize,
-    pub(crate) supabase: SupabaseConfig,
+    pub(crate) auth: AuthConfig,
     pub(crate) fiducia: FiduciaConfig,
 }
 
@@ -44,7 +44,7 @@ impl ServiceConfig {
             nats_max_inflight: env_u64("FABRICATION_NATS_MAX_INFLIGHT", 8, 1, 128) as usize,
             realtime_buffer: env_u64("FABRICATION_REALTIME_BUFFER", 256, 8, 4_096) as usize,
             tcp_enabled: env_bool("FABRICATION_TCP_ENABLED", false),
-            supabase: SupabaseConfig::from_env(),
+            auth: AuthConfig::from_env(),
             fiducia: FiduciaConfig::from_env(),
         })
     }
@@ -101,67 +101,93 @@ impl FiduciaConfig {
     }
 }
 
-/// Supabase access-token verification settings.
+/// Shared-auth authority and application authorization policy.
 ///
-/// `allowed_emails` is the org's access gate: the Daedalus surfaces are
-/// single-operator today, so a token that verifies cryptographically is still
-/// rejected unless its `email` claim is on the list. An empty list means the
-/// gate is unconfigured, which [`SupabaseConfig::is_enabled`] treats as
-/// auth-disabled rather than allow-all — failing closed on misconfiguration.
+/// The shared-auth library races the central authority against Supabase, while
+/// this service keeps the final Daedalus operator policy explicit. An empty
+/// email/role policy disables the guard and therefore fails closed.
 #[derive(Debug, Clone)]
-pub(crate) struct SupabaseConfig {
+pub(crate) struct AuthConfig {
+    pub(crate) shared_auth_base: String,
+    pub(crate) issuer: String,
     pub(crate) audience: String,
-    pub(crate) issuer: Option<String>,
-    pub(crate) jwt_secret: Option<String>,
-    pub(crate) jwks_url: Option<String>,
+    pub(crate) supabase_url: Option<String>,
+    pub(crate) supabase_api_key: Option<String>,
+    pub(crate) provider_tenant: String,
     pub(crate) allowed_emails: Vec<String>,
+    pub(crate) allowed_roles: Vec<String>,
+    pub(crate) arm_timeout_ms: u64,
+    pub(crate) deadline_ms: u64,
 }
 
-impl SupabaseConfig {
+impl AuthConfig {
     pub(crate) fn from_env() -> Self {
+        let legacy_issuer = optional_env("FABRICATION_SUPABASE_ISSUER");
+        let supabase_url = optional_env("FABRICATION_SUPABASE_URL")
+            .or_else(|| legacy_issuer.as_deref().and_then(supabase_url_from_issuer));
         Self {
-            audience: env_value("FABRICATION_SUPABASE_AUDIENCE", "authenticated"),
-            issuer: optional_env("FABRICATION_SUPABASE_ISSUER"),
-            jwt_secret: optional_env("FABRICATION_SUPABASE_JWT_SECRET"),
-            jwks_url: optional_env("FABRICATION_SUPABASE_JWKS_URL"),
-            allowed_emails: optional_env("FABRICATION_ALLOWED_EMAILS")
-                .map(|raw| {
-                    raw.split(',')
-                        .map(|entry| entry.trim().to_ascii_lowercase())
-                        .filter(|entry| !entry.is_empty())
-                        .collect()
-                })
+            shared_auth_base: env_value(
+                "FABRICATION_SHARED_AUTH_BASE",
+                "http://dd-shared-auth.shared-auth.svc.cluster.local:8120",
+            ),
+            issuer: env_value(
+                "FABRICATION_SHARED_AUTH_ISSUER",
+                "https://auth.oresoftware.dev",
+            ),
+            audience: env_value("FABRICATION_SHARED_AUTH_AUDIENCE", "oresoftware"),
+            provider_tenant: optional_env("FABRICATION_AUTH_PROVIDER_TENANT")
+                .or_else(|| supabase_url.as_deref().and_then(supabase_project_from_url))
                 .unwrap_or_default(),
+            supabase_url,
+            supabase_api_key: optional_env("FABRICATION_SUPABASE_PUBLISHABLE_KEY")
+                .or_else(|| optional_env("FABRICATION_SUPABASE_ANON_KEY")),
+            allowed_emails: optional_env("FABRICATION_ALLOWED_EMAILS")
+                .map(|raw| normalized_csv(&raw, true))
+                .unwrap_or_default(),
+            allowed_roles: optional_env("FABRICATION_ALLOWED_ROLES")
+                .map(|raw| normalized_csv(&raw, false))
+                .unwrap_or_default(),
+            arm_timeout_ms: env_u64("FABRICATION_AUTH_ARM_TIMEOUT_MS", 1_200, 100, 10_000),
+            deadline_ms: env_u64("FABRICATION_AUTH_DEADLINE_MS", 1_500, 100, 15_000),
         }
     }
 
-    /// Auth is live only when a verification key, an issuer, AND an allow-list
-    /// are all configured. Verifying a signature without gating on identity
-    /// would let any Supabase user in the project through.
-    ///
-    /// The issuer is required rather than optional: `aud` is the literal string
-    /// `"authenticated"` on *every* Supabase project, so without `iss` pinning,
-    /// a token minted by an unrelated project (whose JWKS an attacker can
-    /// influence, or whose HS256 secret they know) satisfies every other check.
-    /// `iss` is the only claim that binds a token to this project.
     pub(crate) fn is_enabled(&self) -> bool {
-        (self.jwt_secret.is_some() || self.jwks_url.is_some())
-            && self.issuer.is_some()
-            && !self.allowed_emails.is_empty()
+        !self.shared_auth_base.trim().is_empty()
+            && self.supabase_url.is_some()
+            && !self.provider_tenant.trim().is_empty()
+            && (!self.allowed_emails.is_empty() || !self.allowed_roles.is_empty())
     }
+}
 
-    /// Case-insensitive allow-list membership. Callers must pass an email that
-    /// came from a verified token, never a client-asserted header.
-    pub(crate) fn permits(&self, email: Option<&str>) -> bool {
-        match email {
-            Some(email) => {
-                let email = email.trim().to_ascii_lowercase();
-                self.allowed_emails.contains(&email)
+fn normalized_csv(raw: &str, lowercase: bool) -> Vec<String> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| {
+            if lowercase {
+                entry.to_ascii_lowercase()
+            } else {
+                entry.to_string()
             }
-            // A token with no email claim can never satisfy an email gate.
-            None => false,
-        }
-    }
+        })
+        .collect()
+}
+
+fn supabase_url_from_issuer(issuer: &str) -> Option<String> {
+    let url = issuer.trim().trim_end_matches('/');
+    url.strip_suffix("/auth/v1")
+        .filter(|base| base.starts_with("https://"))
+        .map(str::to_string)
+}
+
+fn supabase_project_from_url(url: &str) -> Option<String> {
+    url.trim()
+        .strip_prefix("https://")?
+        .split('.')
+        .next()
+        .filter(|project| !project.is_empty())
+        .map(str::to_string)
 }
 
 pub(crate) fn env_value(key: &str, fallback: &str) -> String {
@@ -252,40 +278,57 @@ mod tests {
         assert_eq!(fiducia.locks_api_key, None);
     }
 
-    fn config_with(allowed: &[&str], secret: Option<&str>) -> SupabaseConfig {
-        SupabaseConfig {
-            audience: "authenticated".to_string(),
-            issuer: Some("https://proj.supabase.co/auth/v1".to_string()),
-            jwt_secret: secret.map(str::to_string),
-            jwks_url: None,
+    fn config_with(allowed: &[&str], roles: &[&str]) -> AuthConfig {
+        AuthConfig {
+            shared_auth_base: "http://dd-shared-auth.shared-auth.svc:8120".to_string(),
+            issuer: "https://auth.oresoftware.dev".to_string(),
+            audience: "oresoftware".to_string(),
+            supabase_url: Some("https://proj.supabase.co".to_string()),
+            supabase_api_key: Some("publishable-test-key".to_string()),
+            provider_tenant: "proj".to_string(),
             allowed_emails: allowed.iter().map(|e| e.to_string()).collect(),
+            allowed_roles: roles.iter().map(|role| role.to_string()).collect(),
+            arm_timeout_ms: 1_200,
+            deadline_ms: 1_500,
         }
     }
 
     #[test]
-    fn auth_requires_a_key_an_issuer_and_an_allow_list() {
-        // A key with no allow-list would authenticate any project user.
-        assert!(!config_with(&[], Some("secret")).is_enabled());
-        // An allow-list with no key cannot verify anything.
-        assert!(!config_with(&["a@b.com"], None).is_enabled());
-        // No issuer means no binding to *this* Supabase project — `aud` is the
-        // literal "authenticated" everywhere, so it distinguishes nothing.
-        let mut unpinned = config_with(&["a@b.com"], Some("secret"));
-        unpinned.issuer = None;
-        assert!(!unpinned.is_enabled());
+    fn auth_requires_two_authorities_and_an_explicit_policy() {
+        assert!(!config_with(&[], &[]).is_enabled());
+        assert!(config_with(&["a@b.com"], &[]).is_enabled());
+        assert!(config_with(&[], &["daedalus-operator"]).is_enabled());
 
-        assert!(config_with(&["a@b.com"], Some("secret")).is_enabled());
+        let mut no_shared_auth = config_with(&["a@b.com"], &[]);
+        no_shared_auth.shared_auth_base.clear();
+        assert!(!no_shared_auth.is_enabled());
+
+        let mut no_provider = config_with(&["a@b.com"], &[]);
+        no_provider.supabase_url = None;
+        assert!(!no_provider.is_enabled());
     }
 
     #[test]
-    fn allow_list_is_case_insensitive_and_rejects_missing_emails() {
-        let config = config_with(&["alexander.d.mills@gmail.com"], Some("secret"));
-        assert!(config.permits(Some("alexander.d.mills@gmail.com")));
-        assert!(config.permits(Some("  Alexander.D.Mills@GMAIL.com  ")));
-        assert!(!config.permits(Some("someone.else@gmail.com")));
-        assert!(!config.permits(None));
-        // Substring/prefix confusion must not pass the gate.
-        assert!(!config.permits(Some("alexander.d.mills@gmail.com.evil.tld")));
-        assert!(!config.permits(Some("alexander.d.mills@gmail.co")));
+    fn legacy_supabase_issuer_derives_provider_url_and_tenant() {
+        let url = supabase_url_from_issuer("https://project-ref.supabase.co/auth/v1/")
+            .expect("valid legacy issuer");
+        assert_eq!(url, "https://project-ref.supabase.co");
+        assert_eq!(
+            supabase_project_from_url(&url).as_deref(),
+            Some("project-ref")
+        );
+        assert_eq!(supabase_url_from_issuer("https://example.com/oidc"), None);
+    }
+
+    #[test]
+    fn authorization_csv_normalizes_emails_but_preserves_role_ids() {
+        assert_eq!(
+            normalized_csv(" Operator@Example.COM, second@example.com ", true),
+            ["operator@example.com", "second@example.com"]
+        );
+        assert_eq!(
+            normalized_csv("Daedalus.Admin, fabrication-operator", false),
+            ["Daedalus.Admin", "fabrication-operator"]
+        );
     }
 }

@@ -4,18 +4,20 @@ use std::net::SocketAddr;
 
 use dd_nats_subject_defs::{FABRICATION_RESULTS_SUBJECT, RUNTIME_EVENTS_SUBJECT};
 
-use crate::config::{env_u64, env_value, optional_env};
+use crate::config::{env_bool, env_u64, env_value, optional_env, AuthConfig};
 
 #[derive(Clone)]
 pub(crate) struct WebConfig {
     pub(crate) host: String,
     pub(crate) port: u16,
     pub(crate) tcp_port: u16,
+    pub(crate) tcp_enabled: bool,
     pub(crate) event_buffer: usize,
     pub(crate) backend_ws_url: String,
     pub(crate) nats_result_subject: String,
     pub(crate) nats_event_subject: String,
     pub(crate) supabase: Option<SupabaseConfig>,
+    pub(crate) auth: AuthConfig,
 }
 
 #[derive(Clone)]
@@ -33,6 +35,7 @@ impl WebConfig {
             host: env_value("FABRICATION_WEB_HOST", "0.0.0.0"),
             port: env_value("FABRICATION_WEB_PORT", "8115").parse()?,
             tcp_port: env_value("FABRICATION_WEB_TCP_PORT", "8116").parse()?,
+            tcp_enabled: env_bool("FABRICATION_WEB_TCP_ENABLED", false),
             event_buffer: env_u64("FABRICATION_WEB_EVENT_BUFFER", 256, 8, 4_096) as usize,
             backend_ws_url: env_value(
                 "FABRICATION_BACKEND_WS_URL",
@@ -44,6 +47,7 @@ impl WebConfig {
             ),
             nats_event_subject: env_value("FABRICATION_WEB_EVENT_SUBJECT", RUNTIME_EVENTS_SUBJECT),
             supabase: SupabaseConfig::from_env(),
+            auth: AuthConfig::from_env(),
         })
     }
 
@@ -83,5 +87,11 @@ mod tests {
         assert_ne!(http.port(), 8113);
         assert_ne!(tcp.port(), http.port());
         assert_eq!(FABRICATION_RESULTS_SUBJECT, "dd.remote.fabrication.results");
+    }
+
+    #[test]
+    fn unauthenticated_web_tcp_transport_is_explicitly_opt_in() {
+        let source = include_str!("config.rs");
+        assert!(source.contains(r#"env_bool("FABRICATION_WEB_TCP_ENABLED", false)"#));
     }
 }
