@@ -1,5 +1,5 @@
 # AppProject for the shared auth server — STRICT. The app repo
-# (ORESoftware/shared-auth-server.rs) was authored against the contract (no
+# (shared-auth/shared-auth-server.rs) was authored against the contract (no
 # Namespace/ClusterRole/CRD in deploy/k8s), so this enforces
 # clusterResourceWhitelist: [] from day one.
 #
