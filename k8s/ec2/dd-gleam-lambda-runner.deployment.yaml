@@ -20,103 +20,64 @@ spec:
       serviceAccountName: dd-gleam-lambda-runner
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
+      # These short init containers make kubelet pull every runtime image into
+      # containerd's k8s.io namespace. The nested ctr runner uses --pull=never,
+      # so an invocation can only start an image reviewed and pinned by GitOps.
       initContainers:
-        - name: build-gleam-lambda-runner
-          image: ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine
+        - name: cache-runtime-nodejs
+          image: docker.io/library/dd-lambda-nodejs-runtime:dev
           imagePullPolicy: IfNotPresent
-          command:
-            - /bin/sh
-            - -lc
-          args:
-            - |
-              set -eu
-              if ! apk add --no-cache \
-                --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
-                --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
-                rebar3 >/tmp/dd-lambda-build-apk.log 2>&1; then
-                cat /tmp/dd-lambda-build-apk.log
-                exit 1
-              fi
-              # Compile from a clean, pod-local projection. Host-mounted macOS
-              # AppleDouble files (._*) are not source modules and otherwise
-              # cause Gleam/Erlang compilation failures on the Linux node.
-              clean_root=/work/dd-next-1
-              mkdir -p "$clean_root"
-              tar \
-                --exclude='._*' \
-                --exclude='*/._*' \
-                --exclude='*/build' \
-                -C /opt/dd-next-1 \
-                -cf - \
-                remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner \
-                remote/libs/nats/subject-defs/generated/gleam \
-                remote/libs/nats/subject-defs/generated/javascript \
-                remote/libs/cli-config-client-gleam \
-                remote/libs/otel-client-gleam \
-                remote/libs/pg-defs/generated/gleam \
-                remote/libs/runtime-config-client-gleam \
-                | tar -C "$clean_root" -xf -
-              cd "$clean_root/remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner"
-              gleam deps download || { sleep 10; gleam deps download; } || { sleep 10; gleam deps download; }
-              gleam build
-              if [ -d build/dev/erlang/hpack/src ] && [ ! -f build/dev/erlang/hpack/ebin/hpack.app ]; then
-                mkdir -p build/dev/erlang/hpack/ebin
-                erlc -o build/dev/erlang/hpack/ebin build/dev/erlang/hpack/src/*.erl
-                cp build/dev/erlang/hpack/src/hpack.app.src build/dev/erlang/hpack/ebin/hpack.app
-              fi
-              test -f build/dev/erlang/gleam_lambda_runner/ebin/gleam_lambda_runner@@main.beam
-          env:
-            - name: ERL_FLAGS
-              value: '+S 2:2 +SDcpu 1:1 +SDio 1 +Q 4096 +P 65536 +sbwt none +sbwtdcpu none +sbwtdio none'
-            - name: ERL_COMPILER_OPTIONS
-              value: '[nowarn_deprecated_catch]'
-          resources:
-            requests:
-              cpu: 250m
-              memory: 512Mi
-              ephemeral-storage: 512Mi
-            limits:
-              cpu: '2'
-              memory: 8Gi
-              ephemeral-storage: 4Gi
-          volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
-              readOnly: true
-            - name: work
-              mountPath: /work
+          command: ["/bin/sh", "-c", "exit 0"]
+        - name: cache-runtime-python3
+          image: docker.io/library/dd-lambda-python3-runtime:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "exit 0"]
+        - name: cache-runtime-ruby
+          image: docker.io/library/dd-lambda-ruby-runtime:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "exit 0"]
+        - name: cache-runtime-bash
+          image: docker.io/library/dd-lambda-bash-runtime:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "exit 0"]
+        - name: cache-runtime-golang
+          image: docker.io/library/dd-lambda-golang-runtime:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "exit 0"]
+        - name: cache-runtime-dart
+          image: docker.io/library/dd-lambda-dart-runtime:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "exit 0"]
+        - name: cache-runtime-erlang
+          image: docker.io/library/dd-lambda-erlang-runtime:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "exit 0"]
+        - name: cache-runtime-elixir
+          image: docker.io/library/dd-lambda-elixir-runtime:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "exit 0"]
+        - name: cache-runtime-java
+          image: docker.io/library/dd-lambda-java-runtime:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "exit 0"]
+        - name: cache-runtime-gleam
+          image: docker.io/library/dd-lambda-gleam-runtime:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "exit 0"]
+        - name: cache-runtime-rust
+          image: docker.io/library/dd-lambda-rust-runtime:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "exit 0"]
+        - name: cache-runtime-browser
+          image: docker.io/library/dd-lambda-browser-runtime:dev
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c", "exit 0"]
       containers:
         - name: gleam-lambda-runner
-          image: ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine
+          image: ghcr.io/scintilla-run/scintilla-runner:development
           imagePullPolicy: IfNotPresent
           securityContext:
             privileged: true
-          command:
-            - /bin/sh
-            - -lc
-          args:
-            - |
-              set -eu
-              if ! apk add --no-cache \
-                --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
-                --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
-                nodejs-current \
-                python3 \
-                ruby \
-                bash \
-                gcompat \
-                libc6-compat \
-                postgresql-client >/tmp/dd-lambda-runner-apk.log 2>&1; then
-                cat /tmp/dd-lambda-runner-apk.log
-                exit 1
-              fi
-              cd /work/dd-next-1/remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner
-              if [ ! -f build/dev/erlang/gleam_lambda_runner/ebin/gleam_lambda_runner@@main.beam ]; then
-                echo "boot: missing Gleam BEAM artifacts from build init container"
-                exit 1
-              fi
-              exec erl -pa build/dev/erlang/*/ebin -noshell \
-                -eval 'gleam_lambda_runner@@main:run(gleam_lambda_runner).'
           env:
             - name: HOST
               value: 0.0.0.0
@@ -141,6 +102,14 @@ spec:
               value: dd.remote.lambdas.functions
             - name: NATS_LAMBDA_MAX_PAYLOAD_BYTES
               value: '5242880'
+            - name: OTEL_SERVICE_NAME
+              value: scintilla-runner
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4317
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_PROPAGATORS
+              value: tracecontext,baggage
             - name: SERVER_AUTH_SECRET
               valueFrom:
                 secretKeyRef:
@@ -203,6 +172,20 @@ spec:
               value: docker.io/library/dd-lambda-ruby-runtime:dev
             - name: LAMBDA_BASH_CONTAINER_IMAGE
               value: docker.io/library/dd-lambda-bash-runtime:dev
+            - name: LAMBDA_GOLANG_CONTAINER_IMAGE
+              value: docker.io/library/dd-lambda-golang-runtime:dev
+            - name: LAMBDA_DART_CONTAINER_IMAGE
+              value: docker.io/library/dd-lambda-dart-runtime:dev
+            - name: LAMBDA_ERLANG_CONTAINER_IMAGE
+              value: docker.io/library/dd-lambda-erlang-runtime:dev
+            - name: LAMBDA_ELIXIR_CONTAINER_IMAGE
+              value: docker.io/library/dd-lambda-elixir-runtime:dev
+            - name: LAMBDA_JAVA_CONTAINER_IMAGE
+              value: docker.io/library/dd-lambda-java-runtime:dev
+            - name: LAMBDA_GLEAM_CONTAINER_IMAGE
+              value: docker.io/library/dd-lambda-gleam-runtime:dev
+            - name: LAMBDA_RUST_CONTAINER_IMAGE
+              value: docker.io/library/dd-lambda-rust-runtime:dev
             - name: LAMBDA_BROWSER_CONTAINER_IMAGE
               value: docker.io/library/dd-lambda-browser-runtime:dev
             - name: LAMBDA_BROWSER_ENGINE
@@ -277,11 +260,6 @@ spec:
               cpu: '2'
               memory: 2Gi
           volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
-              readOnly: true
-            - name: work
-              mountPath: /work
             - name: containerd-run
               mountPath: /run/containerd
               mountPropagation: Bidirectional
@@ -295,13 +273,6 @@ spec:
               mountPath: /usr/local/bin/ctr
               readOnly: true
       volumes:
-        - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
-        - name: work
-          emptyDir:
-            sizeLimit: 4Gi
         - name: containerd-run
           hostPath:
             path: /run/containerd

@@ -1,0 +1,94 @@
+{
+  "contractVersion": "scintilla.run/runtime.v1",
+  "protocol": "line-delimited-json-stdio",
+  "entrypoint": "/usr/local/bin/scintilla-entrypoint",
+  "commandOverrideEnvironment": "SCINTILLA_RUNTIME_COMMAND",
+  "runtimes": [
+    {
+      "name": "nodejs",
+      "aliases": ["javascript", "typescript", "node"],
+      "dockerfile": "runtime-images/nodejs.Dockerfile",
+      "imageEnvironment": "LAMBDA_NODEJS_CONTAINER_IMAGE",
+      "dynamicTarget": "dynamic",
+      "productionTarget": "runtime"
+    },
+    {
+      "name": "python3",
+      "aliases": ["python"],
+      "dockerfile": "runtime-images/python3.Dockerfile",
+      "imageEnvironment": "LAMBDA_PYTHON3_CONTAINER_IMAGE"
+    },
+    {
+      "name": "ruby",
+      "aliases": [],
+      "dockerfile": "runtime-images/ruby.Dockerfile",
+      "imageEnvironment": "LAMBDA_RUBY_CONTAINER_IMAGE"
+    },
+    {
+      "name": "bash",
+      "aliases": ["shell"],
+      "dockerfile": "runtime-images/bash.Dockerfile",
+      "imageEnvironment": "LAMBDA_BASH_CONTAINER_IMAGE"
+    },
+    {
+      "name": "golang",
+      "aliases": ["go"],
+      "dockerfile": "runtime-images/golang.Dockerfile",
+      "imageEnvironment": "LAMBDA_GOLANG_CONTAINER_IMAGE",
+      "dynamicTarget": "dynamic",
+      "productionTarget": "runtime"
+    },
+    {
+      "name": "dart",
+      "aliases": [],
+      "dockerfile": "runtime-images/dart.Dockerfile",
+      "imageEnvironment": "LAMBDA_DART_CONTAINER_IMAGE"
+    },
+    {
+      "name": "java",
+      "aliases": ["jvm"],
+      "dockerfile": "runtime-images/java.Dockerfile",
+      "imageEnvironment": "LAMBDA_JAVA_CONTAINER_IMAGE",
+      "dynamicTarget": "dynamic",
+      "productionTarget": "runtime"
+    },
+    {
+      "name": "erlang",
+      "aliases": ["erl"],
+      "dockerfile": "runtime-images/erlang.Dockerfile",
+      "imageEnvironment": "LAMBDA_ERLANG_CONTAINER_IMAGE",
+      "dynamicTarget": "dynamic",
+      "productionTarget": "runtime"
+    },
+    {
+      "name": "elixir",
+      "aliases": ["ex"],
+      "dockerfile": "runtime-images/elixir.Dockerfile",
+      "imageEnvironment": "LAMBDA_ELIXIR_CONTAINER_IMAGE",
+      "dynamicTarget": "dynamic",
+      "productionTarget": "runtime"
+    },
+    {
+      "name": "gleam",
+      "aliases": ["gleamlang"],
+      "dockerfile": "runtime-images/gleam.Dockerfile",
+      "imageEnvironment": "LAMBDA_GLEAM_CONTAINER_IMAGE",
+      "dynamicTarget": "dynamic",
+      "productionTarget": "runtime"
+    },
+    {
+      "name": "rust",
+      "aliases": ["rs"],
+      "dockerfile": "runtime-images/rust.Dockerfile",
+      "imageEnvironment": "LAMBDA_RUST_CONTAINER_IMAGE",
+      "dynamicTarget": "dynamic",
+      "productionTarget": "runtime"
+    },
+    {
+      "name": "browser",
+      "aliases": ["playwright", "puppeteer", "chromium", "headless", "scraper", "scraping"],
+      "dockerfile": "runtime-images/browser.Dockerfile",
+      "imageEnvironment": "LAMBDA_BROWSER_CONTAINER_IMAGE"
+    }
+  ]
+}

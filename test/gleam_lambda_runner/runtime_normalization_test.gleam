@@ -88,6 +88,17 @@ pub fn legacy_erl_and_ex_normalize_to_beam_pools_test() {
   )
 }
 
+pub fn rust_and_gleam_aliases_normalize_to_canonical_pools_test() {
+  expect_error_containing(
+    invoke_runtime("rs"),
+    "containerized=true for host execution: rust",
+  )
+  expect_error_containing(
+    invoke_runtime("gleamlang"),
+    "containerized=true for host execution: gleam",
+  )
+}
+
 pub fn playwright_normalizes_to_browser_pool_test() {
   expect_error_containing(
     invoke_runtime("playwright"),
@@ -232,4 +243,38 @@ pub fn container_image_characters_are_validated_test() {
     1000,
   )
   |> expect_error_containing("containerImage contains unsupported characters")
+}
+
+pub fn entry_command_is_passed_as_one_shell_quoted_environment_value_test() {
+  let definition =
+    "{"
+    <> "\"runtime\":\"rust\","
+    <> "\"containerized\":true,"
+    <> "\"entryCommand\":\"printf '%s' \\\"$HOME\\\"; echo inside\","
+    <> "\"containerBuildStatus\":\"built\","
+    <> "\"containerImage\":\"ghcr.io/scintilla-run/custom@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""
+    <> "}"
+  let assert Ok(command) =
+    child_process.container_command_for_test("rust", definition)
+  string.contains(
+    command,
+    "--env 'SCINTILLA_RUNTIME_COMMAND=printf '\"'\"'%s'\"'\"' \"$HOME\"; echo inside'",
+  )
+  |> should.be_true
+  string.contains(command, " ghcr.io/scintilla-run/custom")
+  |> should.be_false
+}
+
+pub fn entry_command_length_is_bounded_before_a_container_starts_test() {
+  let command = string.repeat("x", 513)
+  let definition =
+    "{"
+    <> "\"runtime\":\"rust\","
+    <> "\"containerized\":true,"
+    <> "\"entryCommand\":\""
+    <> command
+    <> "\""
+    <> "}"
+  child_process.container_command_for_test("rust", definition)
+  |> expect_error_containing("entryCommand contains unsupported characters")
 }

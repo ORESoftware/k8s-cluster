@@ -26,6 +26,8 @@ function normalizeRuntime(value) {
   if (runtime === 'erl') return 'erlang';
   if (runtime === 'ex') return 'elixir';
   if (runtime === 'jvm') return 'java';
+  if (runtime === 'rs') return 'rust';
+  if (runtime === 'gleamlang') return 'gleam';
   return runtime;
 }
 
@@ -287,6 +289,101 @@ async function runElixir(definition, request, context, checkOnly) {
   return { result: resultFromStdout(out) };
 }
 
+async function runRust(definition, request, context, checkOnly) {
+  const dir = await workDir();
+  await writeFile(join(dir, 'handler.rs'), definition.functionBody, { mode: 0o600 });
+  await writeFile(
+    join(dir, 'runner.rs'),
+    `mod handler;
+
+fn main() {
+    let request = std::env::var("SCINTILLA_REQUEST_JSON").unwrap_or_else(|_| "{}".to_string());
+    let context = std::env::var("SCINTILLA_CONTEXT_JSON").unwrap_or_else(|_| "{}".to_string());
+    print!("{}", handler::handle(&request, &context));
+}
+`,
+    { mode: 0o600 },
+  );
+  const timeoutMs = runnerTimeoutMs(definition);
+  await run('rustc', ['--edition=2021', '-C', 'opt-level=1', 'runner.rs', '-o', 'runner'], {
+    cwd: dir,
+    timeoutMs,
+  });
+  if (checkOnly) return { mode: 'compile' };
+  const out = await run(join(dir, 'runner'), [], {
+    cwd: dir,
+    timeoutMs,
+    env: {
+      SCINTILLA_REQUEST_JSON: asJson(request),
+      SCINTILLA_CONTEXT_JSON: asJson(context),
+    },
+  });
+  return { result: resultFromStdout(out) };
+}
+
+async function runGleam(definition, request, context, checkOnly) {
+  const dir = await workDir();
+  const source = join(dir, 'src');
+  await mkdir(source, { recursive: true, mode: 0o700 });
+  await writeFile(
+    join(dir, 'gleam.toml'),
+    `name = "scintilla_function"
+version = "0.1.0"
+target = "erlang"
+`,
+    { mode: 0o600 },
+  );
+  await writeFile(join(source, 'handler.gleam'), definition.functionBody, { mode: 0o600 });
+  await writeFile(
+    join(source, 'scintilla_env.erl'),
+    `-module(scintilla_env).
+-export([get/1, print/1]).
+
+get(Name) when is_binary(Name) ->
+    case os:getenv(binary_to_list(Name)) of
+        false -> <<>>;
+        Value -> unicode:characters_to_binary(Value)
+    end.
+
+print(Value) when is_binary(Value) ->
+    io:put_chars(Value),
+    nil.
+`,
+    { mode: 0o600 },
+  );
+  await writeFile(
+    join(source, 'runner.gleam'),
+    `import handler
+
+@external(erlang, "scintilla_env", "get")
+fn get_env(name: String) -> String
+
+@external(erlang, "scintilla_env", "print")
+fn print(value: String) -> Nil
+
+pub fn main() {
+  print(handler.handle(
+    get_env("SCINTILLA_REQUEST_JSON"),
+    get_env("SCINTILLA_CONTEXT_JSON"),
+  ))
+}
+`,
+    { mode: 0o600 },
+  );
+  const timeoutMs = runnerTimeoutMs(definition);
+  await run('gleam', ['build'], { cwd: dir, timeoutMs });
+  if (checkOnly) return { mode: 'compile' };
+  const out = await run('gleam', ['run', '-m', 'runner'], {
+    cwd: dir,
+    timeoutMs,
+    env: {
+      SCINTILLA_REQUEST_JSON: asJson(request),
+      SCINTILLA_CONTEXT_JSON: asJson(context),
+    },
+  });
+  return { result: resultFromStdout(out) };
+}
+
 async function invoke(line) {
   const envelope = JSON.parse(line);
   const definition = resolveDefinition(envelope);
@@ -320,6 +417,8 @@ async function invoke(line) {
     java: runJava,
     erlang: runErlang,
     elixir: runElixir,
+    rust: runRust,
+    gleam: runGleam,
   }[runtime]?.(definition, request, context, checkOnly);
   if (!runResult) {
     throw new Error(`unsupported polyglot runtime: ${runtime}`);

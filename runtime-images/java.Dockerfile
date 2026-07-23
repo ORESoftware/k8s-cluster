@@ -1,12 +1,23 @@
-FROM docker.io/library/eclipse-temurin:21-jdk-alpine
-RUN apk add --no-cache \
-  --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
-  --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
-  nodejs-current \
+FROM docker.io/library/eclipse-temurin:21-jdk-alpine AS toolchain
+RUN apk add --no-cache nodejs ca-certificates \
   && addgroup -S lambda \
   && adduser -S -G lambda -u 10001 lambda
-WORKDIR /opt/dd-lambda
+WORKDIR /opt/scintilla
 COPY child-runtimes/polyglot-function-runner.mjs ./runner.mjs
-ENV LAMBDA_TARGET_RUNTIME=java
+COPY --chmod=0555 runtime-images/scintilla-entrypoint.sh /usr/local/bin/scintilla-entrypoint
+
+FROM docker.io/library/eclipse-temurin:21-jre-alpine AS runtime
+RUN addgroup -S lambda \
+  && adduser -S -G lambda -u 10001 lambda
+WORKDIR /opt/scintilla
+COPY --chmod=0555 runtime-images/scintilla-entrypoint.sh /usr/local/bin/scintilla-entrypoint
+ENV HOME=/work TMPDIR=/work
 USER 10001:10001
-ENTRYPOINT ["node", "/opt/dd-lambda/runner.mjs"]
+ENTRYPOINT ["/usr/local/bin/scintilla-entrypoint"]
+CMD ["java", "-jar", "/opt/scintilla/function.jar"]
+
+FROM toolchain AS dynamic
+ENV LAMBDA_TARGET_RUNTIME=java HOME=/work TMPDIR=/work
+USER 10001:10001
+ENTRYPOINT ["/usr/local/bin/scintilla-entrypoint"]
+CMD ["node", "/opt/scintilla/runner.mjs"]

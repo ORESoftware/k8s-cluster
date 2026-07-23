@@ -6,6 +6,8 @@ RUN apt-get update \
   && apt-get clean
 WORKDIR /opt/dd-lambda
 COPY child-runtimes/polyglot-function-runner.mjs ./runner.mjs
-ENV LAMBDA_TARGET_RUNTIME=dart
+COPY --chmod=0555 runtime-images/scintilla-entrypoint.sh /usr/local/bin/scintilla-entrypoint
+ENV LAMBDA_TARGET_RUNTIME=dart HOME=/work TMPDIR=/work
 USER 10001:10001
-ENTRYPOINT ["node", "/opt/dd-lambda/runner.mjs"]
+ENTRYPOINT ["/usr/local/bin/scintilla-entrypoint"]
+CMD ["node", "/opt/dd-lambda/runner.mjs"]

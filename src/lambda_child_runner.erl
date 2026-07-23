@@ -1,6 +1,13 @@
 -module(lambda_child_runner).
 
--export([invoke/5, invoke_definition/6, check_definition/3, metrics/0, destroy/1]).
+-export([
+    invoke/5,
+    invoke_definition/6,
+    check_definition/3,
+    metrics/0,
+    destroy/1,
+    container_command_for_test/2
+]).
 
 -define(SERVER, lambda_child_runner_manager).
 -define(WORKERS, lambda_child_runner_workers).
@@ -418,7 +425,7 @@ supported_runtime(Runtime) ->
     lists:member(Runtime, [
         <<"nodejs">>, <<"python3">>, <<"ruby">>, <<"bash">>,
         <<"golang">>, <<"dart">>, <<"erlang">>, <<"elixir">>, <<"java">>,
-        <<"browser">>
+        <<"gleam">>, <<"rust">>, <<"browser">>
     ]).
 
 %% Runtimes whose child spawns a real browser (Chromium via Playwright or
@@ -478,48 +485,46 @@ container_command(Runtime, DefinitionJson) ->
         <<>> -> default_container_image(Runtime);
         _ -> Image0
     end,
-    case safe_container_image(Image) of
-        true ->
+    EntryCommand = json_string_field(DefinitionJson, <<"entryCommand">>),
+    case {safe_container_image(Image), safe_entry_command(EntryCommand)} of
+        {true, true} ->
             %% Default to a dedicated namespace so we do not collide with kubelet's
             %% CRI plugin and so periodic reapers can target our containers safely.
             Namespace = env_binary("LAMBDA_CONTAINER_NAMESPACE", <<"dd-lambda">>),
             Network = env_binary("LAMBDA_CONTAINER_NETWORK", <<"bridge">>),
             BrowserAutomation = Runtime =:= <<"nodejs">> andalso
                 json_bool_field(DefinitionJson, <<"browserAutomation">>, false),
-            Memory = case BrowserAutomation of
+            RunProfile = case BrowserAutomation of
+                true -> <<"browser">>;
+                false -> Runtime
+            end,
+            BrowserProfile = is_browser_runtime(RunProfile),
+            Memory = case BrowserProfile of
                 true -> env_binary("LAMBDA_BROWSER_CONTAINER_MEMORY", <<"1g">>);
                 false -> env_binary("LAMBDA_CONTAINER_MEMORY", <<"256m">>)
             end,
-            MemoryBytes = case BrowserAutomation of
+            MemoryBytes = case BrowserProfile of
                 true -> env_binary("LAMBDA_BROWSER_CONTAINER_MEMORY_BYTES", <<"1073741824">>);
                 false -> env_binary("LAMBDA_CONTAINER_MEMORY_BYTES", <<"268435456">>)
             end,
-            Cpus = case BrowserAutomation of
+            Cpus = case BrowserProfile of
                 true -> env_binary("LAMBDA_BROWSER_CONTAINER_CPUS", <<"1.0">>);
                 false -> env_binary("LAMBDA_CONTAINER_CPUS", <<"0.50">>)
-            end,
-            TmpfsSize = case BrowserAutomation of
-                true -> env_binary("LAMBDA_BROWSER_CONTAINER_TMPFS_SIZE", <<"256m">>);
-                false -> env_binary("LAMBDA_CONTAINER_TMPFS_SIZE", <<"16m">>)
-            end,
-            PidsLimit = case BrowserAutomation of
-                true -> env_binary("LAMBDA_BROWSER_CONTAINER_PIDS_LIMIT", <<"256">>);
-                false -> env_binary("LAMBDA_CONTAINER_PIDS_LIMIT", <<"64">>)
             end,
             TimeoutSecs = env_binary("LAMBDA_CONTAINER_INVOKE_TIMEOUT_SECONDS", <<"120">>),
             case env_binary("LAMBDA_CONTAINER_RUNNER", <<"nerdctl">>) of
                 <<"ctr">> ->
                     Ctr = env_binary("LAMBDA_CONTAINER_CTR", <<"/usr/local/bin/ctr">>),
-                    {ok, wrap_with_timeout(TimeoutSecs, ctr_container_command(Ctr, Namespace, Network, MemoryBytes, Cpus, Image, Runtime))};
+                    {ok, wrap_with_timeout(TimeoutSecs, ctr_container_command(Ctr, Namespace, Network, MemoryBytes, Cpus, Image, RunProfile, EntryCommand))};
                 <<"docker">> ->
                     Docker = env_binary("LAMBDA_CONTAINER_DOCKER", <<"/usr/bin/docker">>),
-                    {ok, wrap_with_timeout(TimeoutSecs, docker_cli_container_command(Docker, Network, Memory, Cpus, Image, Runtime))};
+                    {ok, wrap_with_timeout(TimeoutSecs, docker_cli_container_command(Docker, Network, Memory, Cpus, Image, RunProfile, EntryCommand))};
                 <<"podman">> ->
                     Podman = env_binary("LAMBDA_CONTAINER_PODMAN", <<"/usr/bin/podman">>),
-                    {ok, wrap_with_timeout(TimeoutSecs, docker_cli_container_command(Podman, Network, Memory, Cpus, Image, Runtime))};
+                    {ok, wrap_with_timeout(TimeoutSecs, docker_cli_container_command(Podman, Network, Memory, Cpus, Image, RunProfile, EntryCommand))};
                 <<"nerdctl">> ->
                     Nerdctl = env_binary("LAMBDA_CONTAINER_NERDCTL", <<"/usr/local/bin/nerdctl">>),
-                    {ok, wrap_with_timeout(TimeoutSecs, nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, Image, Runtime))};
+                    {ok, wrap_with_timeout(TimeoutSecs, nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, Image, RunProfile, EntryCommand))};
                 Other ->
                     %% Fail closed: an unrecognized runner (typo, stale config) must not
                     %% silently fall back to a different runtime than the operator set.
@@ -528,9 +533,17 @@ container_command(Runtime, DefinitionJson) ->
                         Other
                     ])}
             end;
-        false ->
-            {error, <<"containerImage contains unsupported characters">>}
+        {false, _} ->
+            {error, <<"containerImage contains unsupported characters">>};
+        {_, false} ->
+            {error, <<"entryCommand contains unsupported characters or exceeds 512 bytes">>}
     end.
+
+%% Test-only inspection surface used by the Gleam contract suite. It has no
+%% side effects and deliberately returns the exact command sent to open_port.
+container_command_for_test(Runtime0, DefinitionJson0) ->
+    Runtime = canonical_runtime(to_binary(Runtime0)),
+    container_command(Runtime, to_binary(DefinitionJson0)).
 
 %% Wrap a runner shell command in `timeout` so a stuck nerdctl/ctr invocation cannot
 %% pin an Erlang port forever. `--kill-after=10` ensures SIGKILL on hung shims.
@@ -551,35 +564,36 @@ safe_timeout_value(Value0) ->
         nomatch -> error
     end.
 
-nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, Image, Runtime) ->
+nerdctl_container_command(Nerdctl, Namespace, Network, Memory, Cpus, Image, Runtime, EntryCommand) ->
     %% nerdctl is Docker-CLI compatible but scopes everything to a containerd
     %% namespace via `-n`, which docker/podman do not have.
     iolist_to_binary([
         shell_word(Nerdctl),
         " -n ", shell_word(Namespace),
-        docker_compatible_run_args(Runtime, Network, Memory, Cpus, Image)
+        docker_compatible_run_args(Runtime, Network, Memory, Cpus, Image, EntryCommand)
     ]).
 
 %% Shared by the Docker-CLI compatible runners (docker, podman). Same flag
 %% surface as nerdctl, minus the containerd `-n <namespace>` selector.
-docker_cli_container_command(Binary, Network, Memory, Cpus, Image, Runtime) ->
+docker_cli_container_command(Binary, Network, Memory, Cpus, Image, Runtime, EntryCommand) ->
     iolist_to_binary([
         shell_word(Binary),
-        docker_compatible_run_args(Runtime, Network, Memory, Cpus, Image)
+        docker_compatible_run_args(Runtime, Network, Memory, Cpus, Image, EntryCommand)
     ]).
 
-docker_compatible_run_args(Runtime, Network, Memory, Cpus, Image) ->
+docker_compatible_run_args(Runtime, Network, Memory, Cpus, Image, EntryCommand) ->
     case is_browser_runtime(Runtime) of
-        true -> browser_run_args(Network, Cpus, Image);
-        false -> standard_run_args(Network, Memory, Cpus, Image)
+        true -> browser_run_args(Network, Cpus, Image, EntryCommand);
+        false -> standard_run_args(Network, Memory, Cpus, Image, EntryCommand)
     end.
 
 %% Locked-down default for the code-only runtimes: read-only rootfs, a small
 %% non-executable tmpfs, all capabilities dropped, tight pid/file/memory limits.
-standard_run_args(Network, Memory, Cpus, Image) ->
+standard_run_args(Network, Memory, Cpus, Image, EntryCommand) ->
     [
         " run --rm -i --pull=never --read-only",
         " --tmpfs /tmp:rw,noexec,nosuid,size=16m",
+        " --tmpfs /work:rw,exec,nosuid,nodev,size=256m",
         " --network ", shell_word(Network),
         " --user 10001:10001",
         " --cap-drop ALL",
@@ -588,12 +602,12 @@ standard_run_args(Network, Memory, Cpus, Image) ->
         " --ulimit nofile=64:64",
         " --memory ", shell_word(Memory),
         " --cpus ", shell_word(Cpus),
-        browser_container_env_args(),
+        runtime_container_env_args(EntryCommand),
         " ", shell_word(Image)
     ].
 
 browser_container_env_args() ->
-    browser_container_env_args([
+    container_env_args([
         {"NATS_URL", <<>>},
         {"CONTAINER_POOL_NATS_URL", <<>>},
         {"CONTAINER_POOL_NATS_SUBJECT_PREFIX", <<"dd.remote.container_pool">>},
@@ -608,14 +622,31 @@ browser_container_env_args() ->
         {"LAMBDA_SCRAPING_ALLOW_ROBOTS_OVERRIDE", <<"false">>}
     ]).
 
-browser_container_env_args(Pairs) ->
+container_env_args(Pairs) ->
     lists:map(
         fun({Name, Default}) ->
             Value = env_binary(Name, Default),
-            [" --env ", shell_word(iolist_to_binary([Name, "=", Value]))]
+            container_env_arg(Name, Value)
         end,
         Pairs
     ).
+
+runtime_container_env_args(EntryCommand) ->
+    [
+        container_env_arg("SCINTILLA_RUNTIME_CONTRACT", <<"scintilla.run/runtime.v1">>),
+        container_env_arg("SCINTILLA_RUNTIME_COMMAND", EntryCommand),
+        container_env_arg("HOME", <<"/work">>),
+        container_env_arg("TMPDIR", <<"/work">>),
+        container_env_args([
+        {"OTEL_EXPORTER_OTLP_ENDPOINT", <<>>},
+        {"OTEL_EXPORTER_OTLP_PROTOCOL", <<"grpc">>},
+        {"OTEL_PROPAGATORS", <<"tracecontext,baggage">>},
+        {"OTEL_RESOURCE_ATTRIBUTES", <<>>}
+        ])
+    ].
+
+container_env_arg(Name, Value) ->
+    [" --env ", shell_word(iolist_to_binary([Name, "=", Value]))].
 
 %% Browser-shaped profile for Playwright/Puppeteer. Still non-root, read-only
 %% root, all caps dropped, and no-new-privileges — but Chromium forces a few
@@ -624,7 +655,7 @@ browser_container_env_args(Pairs) ->
 %% renderers crash), forks many short-lived processes (higher `--pids-limit`),
 %% and needs more RAM and file descriptors. Each limit is an env knob so an
 %% operator can tighten or loosen it per cluster.
-browser_run_args(Network, Cpus, Image) ->
+browser_run_args(Network, Cpus, Image, EntryCommand) ->
     Memory = env_binary("LAMBDA_BROWSER_CONTAINER_MEMORY", <<"1g">>),
     Pids = env_binary("LAMBDA_BROWSER_CONTAINER_PIDS", <<"512">>),
     ShmSize = env_binary("LAMBDA_BROWSER_CONTAINER_SHM_SIZE", <<"256m">>),
@@ -634,6 +665,7 @@ browser_run_args(Network, Cpus, Image) ->
         " run --rm -i --pull=never --read-only",
         " --tmpfs ",
         shell_word(iolist_to_binary(["/tmp:rw,nosuid,size=", TmpfsSize])),
+        " --tmpfs /work:rw,exec,nosuid,nodev,size=256m",
         " --shm-size ", shell_word(ShmSize),
         " --network ", shell_word(Network),
         " --user 10001:10001",
@@ -643,10 +675,12 @@ browser_run_args(Network, Cpus, Image) ->
         " --ulimit ", shell_word(iolist_to_binary(["nofile=", NoFile, ":", NoFile])),
         " --memory ", shell_word(Memory),
         " --cpus ", shell_word(Cpus),
+        runtime_container_env_args(EntryCommand),
+        browser_container_env_args(),
         " ", shell_word(Image)
     ].
 
-ctr_container_command(Ctr, Namespace, Network, MemoryBytes0, Cpus, Image, Runtime) ->
+ctr_container_command(Ctr, Namespace, Network, MemoryBytes0, Cpus, Image, Runtime, EntryCommand) ->
     ContainerId = iolist_to_binary(["dd-lambda-", Runtime, "-$(date +%s%N)-$$"]),
     %% Browsers need more RAM than the 256 MiB code-runtime default.
     MemoryBytes = case is_browser_runtime(Runtime) of
@@ -665,6 +699,7 @@ ctr_container_command(Ctr, Namespace, Network, MemoryBytes0, Cpus, Image, Runtim
         " --seccomp",
         " --memory-limit ", shell_word(MemoryBytes),
         " --cpus ", shell_word(Cpus),
+        runtime_container_env_args(EntryCommand),
         case is_browser_runtime(Runtime) of
             true -> browser_container_env_args();
             false -> ""
@@ -689,10 +724,12 @@ ctr_tmpfs_mounts(Runtime) ->
                 " --mount ",
                 shell_word(iolist_to_binary([
                     "type=tmpfs,dst=/dev/shm,options=rw:nosuid:size=", ShmSize
-                ]))
+                ])),
+                " --mount type=tmpfs,dst=/work,options=rw:exec:nosuid:nodev:size=256m"
             ];
         false ->
             " --mount type=tmpfs,dst=/tmp,options=rw:noexec:nosuid:size=16m"
+            " --mount type=tmpfs,dst=/work,options=rw:exec:nosuid:nodev:size=256m"
     end.
 
 ctr_network_args(<<"none">>) -> "";
@@ -724,6 +761,10 @@ default_container_image(<<"elixir">>) ->
     env_binary("LAMBDA_ELIXIR_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-elixir-runtime:dev">>);
 default_container_image(<<"java">>) ->
     env_binary("LAMBDA_JAVA_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-java-runtime:dev">>);
+default_container_image(<<"gleam">>) ->
+    env_binary("LAMBDA_GLEAM_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-gleam-runtime:dev">>);
+default_container_image(<<"rust">>) ->
+    env_binary("LAMBDA_RUST_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-rust-runtime:dev">>);
 default_container_image(<<"browser">>) ->
     env_binary("LAMBDA_BROWSER_CONTAINER_IMAGE", <<"docker.io/library/dd-lambda-browser-runtime:dev">>);
 default_container_image(_Runtime) ->
@@ -783,6 +824,10 @@ canonical_runtime(<<"ex">>) -> <<"elixir">>;
 canonical_runtime(<<"elixir">>) -> <<"elixir">>;
 canonical_runtime(<<"jvm">>) -> <<"java">>;
 canonical_runtime(<<"java">>) -> <<"java">>;
+canonical_runtime(<<"gleamlang">>) -> <<"gleam">>;
+canonical_runtime(<<"gleam">>) -> <<"gleam">>;
+canonical_runtime(<<"rs">>) -> <<"rust">>;
+canonical_runtime(<<"rust">>) -> <<"rust">>;
 %% Browser-automation runtime. Playwright and Puppeteer are both first-class:
 %% the child runner exposes both libraries, so any of these aliases resolves to
 %% the same hardened Chromium-capable image.
@@ -1291,6 +1336,10 @@ csv_env(Name, Default) ->
 
 safe_container_image(Image) ->
     re:run(Image, "^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,511}$", [{capture, none}]) =:= match.
+
+safe_entry_command(Command) ->
+    byte_size(Command) =< 512 andalso
+    binary:match(Command, <<0>>) =:= nomatch.
 
 safe_reuse_key(ReuseKey) ->
     re:run(ReuseKey, "^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$", [{capture, none}]) =:= match.

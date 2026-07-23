@@ -24,6 +24,23 @@ env = "NATS_URL"
 aliases = ["nats-url"]
 type = "string"
 
+[flags.otel_exporter_otlp_endpoint]
+env = "OTEL_EXPORTER_OTLP_ENDPOINT"
+aliases = ["otel-exporter-otlp-endpoint"]
+type = "string"
+
+[flags.otel_exporter_otlp_protocol]
+env = "OTEL_EXPORTER_OTLP_PROTOCOL"
+aliases = ["otel-exporter-otlp-protocol"]
+type = "string"
+default = "grpc"
+
+[flags.otel_service_name]
+env = "OTEL_SERVICE_NAME"
+aliases = ["otel-service-name"]
+type = "string"
+default = "scintilla-runner"
+
 [flags.lambda_invoke_subject]
 env = "NATS_LAMBDA_INVOKE_SUBJECT"
 aliases = ["lambda-invoke-subject"]
@@ -132,6 +149,61 @@ type = "string"
 [flags.lambda_bash_host_command]
 env = "LAMBDA_BASH_HOST_COMMAND"
 aliases = ["lambda-bash-host-command"]
+type = "string"
+
+[flags.lambda_nodejs_container_image]
+env = "LAMBDA_NODEJS_CONTAINER_IMAGE"
+aliases = ["lambda-nodejs-container-image"]
+type = "string"
+
+[flags.lambda_python3_container_image]
+env = "LAMBDA_PYTHON3_CONTAINER_IMAGE"
+aliases = ["lambda-python3-container-image"]
+type = "string"
+
+[flags.lambda_ruby_container_image]
+env = "LAMBDA_RUBY_CONTAINER_IMAGE"
+aliases = ["lambda-ruby-container-image"]
+type = "string"
+
+[flags.lambda_bash_container_image]
+env = "LAMBDA_BASH_CONTAINER_IMAGE"
+aliases = ["lambda-bash-container-image"]
+type = "string"
+
+[flags.lambda_golang_container_image]
+env = "LAMBDA_GOLANG_CONTAINER_IMAGE"
+aliases = ["lambda-golang-container-image"]
+type = "string"
+
+[flags.lambda_dart_container_image]
+env = "LAMBDA_DART_CONTAINER_IMAGE"
+aliases = ["lambda-dart-container-image"]
+type = "string"
+
+[flags.lambda_erlang_container_image]
+env = "LAMBDA_ERLANG_CONTAINER_IMAGE"
+aliases = ["lambda-erlang-container-image"]
+type = "string"
+
+[flags.lambda_elixir_container_image]
+env = "LAMBDA_ELIXIR_CONTAINER_IMAGE"
+aliases = ["lambda-elixir-container-image"]
+type = "string"
+
+[flags.lambda_java_container_image]
+env = "LAMBDA_JAVA_CONTAINER_IMAGE"
+aliases = ["lambda-java-container-image"]
+type = "string"
+
+[flags.lambda_gleam_container_image]
+env = "LAMBDA_GLEAM_CONTAINER_IMAGE"
+aliases = ["lambda-gleam-container-image"]
+type = "string"
+
+[flags.lambda_rust_container_image]
+env = "LAMBDA_RUST_CONTAINER_IMAGE"
+aliases = ["lambda-rust-container-image"]
 type = "string"
 
 [flags.lambda_browser_host_command]

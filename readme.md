@@ -59,9 +59,10 @@ The Rust REST API is responsible for CRUD/read models over Postgres. Invocation 
  directly through the load balancer/gateway to this Gleam service. The BEAM runner loads the active
  function definition from Postgres by immutable function UUID, then maps the function runtime to a
  reusable worker actor. The managed host runtime is `nodejs`; `python3`, `ruby`, `bash`, `golang`,
- `dart`, `erlang`, `elixir`, `java`, and `browser` are supported as managed container runtimes. Legacy
+ `dart`, `erlang`, `elixir`, `java`, `gleam`, `rust`, and `browser` are supported as managed container runtimes. Legacy
  `javascript`, `typescript`, `python`, `shell`, `go`, `erl`, `ex`, and `jvm` values normalize to
- those runtime pools, and `playwright`, `puppeteer`, `chromium`, `headless`, `scraper`, and `scraping`
+ those runtime pools; `gleamlang` and `rs` normalize to `gleam` and `rust`; and `playwright`,
+ `puppeteer`, `chromium`, `headless`, `scraper`, and `scraping`
  all normalize to the `browser` runtime. Each child receives the definition over stdio, so it does not
  need database credentials or `psql`.
 
@@ -118,10 +119,10 @@ node --permission --allow-net child-runtimes/js-function-runner.mjs
 ```
 
 The child is started through `env -i`, so it receives no database secrets, and no filesystem write,
-child-process, worker, addon, or inspector permission is granted. The deployment installs Alpine
-`nodejs-current` because network permissions require Node 25 or newer.
+child-process, worker, addon, or inspector permission is granted. The immutable runner release image
+contains Alpine `nodejs-current`, whose permission model supports the `--allow-net` host policy.
 
-Python, Ruby, Bash, Go, Dart, Erlang, Elixir, and Java do not have a reliable in-process filesystem
+Python, Ruby, Bash, Go, Dart, Erlang, Elixir, Java, Gleam, and Rust do not have a reliable in-process filesystem
 sandbox in this service. The API and runner therefore require `containerized: true` for those
 runtimes by default. Host execution is limited to Node.js unless `LAMBDA_ALLOW_HOST_RUNTIMES` is
 explicitly widened for a trusted environment. The
@@ -135,7 +136,8 @@ runners (`nerdctl`, `docker`, `podman`) share the same hardening flags: `--read-
 --user 10001:10001 --cap-drop ALL --security-opt no-new-privileges --pids-limit 64 --ulimit
 nofile=64:64`. `nerdctl` additionally scopes containers to the `LAMBDA_CONTAINER_NAMESPACE`
 containerd namespace via `-n`, which `docker`/`podman` do not have. `ctr` uses equivalent containerd
-flags for read-only rootfs, tmpfs `/tmp`, non-root user, `LAMBDA_CONTAINER_NETWORK`-selected
+ flags for read-only rootfs, non-executable tmpfs `/tmp`, a bounded executable `/work` tmpfs for
+ compiler outputs, non-root user, `LAMBDA_CONTAINER_NETWORK`-selected
 networking, seccomp, memory/CPU limits, and dropped default capabilities. The runner binary path is
 overridable per backend via `LAMBDA_CONTAINER_NERDCTL`, `LAMBDA_CONTAINER_CTR`,
 `LAMBDA_CONTAINER_DOCKER`, and `LAMBDA_CONTAINER_PODMAN`. No host code is mounted into packaged
@@ -228,12 +230,11 @@ is not a stable generic CNI entrypoint from inside that trusted pod. Treat the r
 node-level infrastructure: keep invocation and CRUD routes authenticated, and rely on the
 per-lambda runtime flags above for the untrusted function containers.
 
-The EC2 manifest includes a `startupProbe` on `/healthz` so package installation does not trip
-liveness before the service is ready. Compilation runs in a dedicated init container with an
-8 GiB build-only limit and writes BEAM artifacts to a pod-local `emptyDir`; the long-running
-process has a 2 GiB limit and executes the compiled entry module directly. The source hostPath is
-read-only, and the init copy excludes macOS `._*` metadata so host artifacts cannot break Linux
-builds or acquire ownership of build outputs.
+The EC2 manifest includes a `startupProbe` on `/healthz`. The runner is compiled once in the
+multi-stage release image and the pod executes the immutable BEAM shipment; no host source tree,
+package installation, or in-cluster compilation is required. Short init containers make kubelet
+pre-pull every digest-pinned managed runtime into containerd's `k8s.io` namespace before the runner
+becomes ready.
 
 ## Runtime images
 
@@ -250,8 +251,18 @@ nerdctl -n dd-lambda build -f "$runner/runtime-images/dart.Dockerfile" -t docker
 nerdctl -n dd-lambda build -f "$runner/runtime-images/erlang.Dockerfile" -t docker.io/library/dd-lambda-erlang-runtime:dev "$runner"
 nerdctl -n dd-lambda build -f "$runner/runtime-images/elixir.Dockerfile" -t docker.io/library/dd-lambda-elixir-runtime:dev "$runner"
 nerdctl -n dd-lambda build -f "$runner/runtime-images/java.Dockerfile" -t docker.io/library/dd-lambda-java-runtime:dev "$runner"
+nerdctl -n dd-lambda build -f "$runner/runtime-images/gleam.Dockerfile" -t docker.io/library/dd-lambda-gleam-runtime:dev "$runner"
+nerdctl -n dd-lambda build -f "$runner/runtime-images/rust.Dockerfile" -t docker.io/library/dd-lambda-rust-runtime:dev "$runner"
 nerdctl -n dd-lambda build -f "$runner/runtime-images/browser.Dockerfile" -t docker.io/library/dd-lambda-browser-runtime:dev "$runner"
 ```
+
+Java, Node.js, Erlang, Elixir, Gleam, Rust, and Go Dockerfiles expose three stages:
+`toolchain`, a minimal `runtime` base for prebuilt functions, and the default `dynamic` image that
+compiles source definitions at invocation time. Every managed image uses
+`/usr/local/bin/scintilla-entrypoint` and the `scintilla.run/runtime.v1` line-delimited JSON stdio
+contract. A definition can select a reviewed `containerImage` and set `entryCommand`; the runner
+passes that command as the single `SCINTILLA_RUNTIME_COMMAND` environment value inside the
+container, never as host shell syntax.
 
 When the REST API has `LAMBDA_IMAGE_BUILD_ENABLED=true`, saving a containerized function also writes
 a per-function build context under `LAMBDA_IMAGE_BUILD_ROOT` and builds

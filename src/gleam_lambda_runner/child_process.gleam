@@ -29,3 +29,9 @@ pub fn metrics() -> String
 
 @external(erlang, "lambda_child_runner", "destroy")
 pub fn destroy(reuse_key: String) -> Result(String, String)
+
+@external(erlang, "lambda_child_runner", "container_command_for_test")
+pub fn container_command_for_test(
+  runtime: String,
+  definition: String,
+) -> Result(String, String)

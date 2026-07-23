@@ -33,3 +33,14 @@ jobs:
         with: { submodules: recursive }
       - run: make -C tools/flags-2-env all
       - run: tools/flags-2-env/build/flags2env audit .cli-flags.toml
+  runtime-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with: { node-version: "22.22.1" }
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
+        with:
+          otp-version: "27"
+          gleam-version: "1.17.0"
+      - run: node --test test/*.test.mjs

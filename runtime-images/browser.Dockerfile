@@ -20,6 +20,7 @@ ENV NODE_ENV=production \
     PUPPETEER_CACHE_DIR=/opt/dd-lambda/.puppeteer
 
 COPY child-runtimes/browser-function-runner.mjs ./runner.mjs
+COPY --chmod=0555 runtime-images/scintilla-entrypoint.sh /usr/local/bin/scintilla-entrypoint
 
 # Install both APIs plus the standards-aware robots parser. Puppeteer uses the
 # Playwright image's pinned Chromium binary, so no second browser is downloaded.
@@ -34,10 +35,12 @@ RUN printf '{"name":"dd-lambda-browser","private":true,"type":"module"}\n' > pac
  && mkdir -p /opt/dd-lambda/.puppeteer /home/lambda \
  && chown -R 10001:10001 /opt/dd-lambda /home/lambda /ms-playwright
 
+ENV HOME=/work TMPDIR=/work
 USER 10001:10001
 
 # Line-delimited JSON over stdio (see browser-function-runner.mjs). No
 # `--permission`: a browser needs the filesystem and child processes, so
 # isolation is provided by the hardened, read-only, cap-dropped container the
 # engine launches this in — not the Node permission model.
-ENTRYPOINT ["node", "/opt/dd-lambda/runner.mjs"]
+ENTRYPOINT ["/usr/local/bin/scintilla-entrypoint"]
+CMD ["node", "/opt/dd-lambda/runner.mjs"]
