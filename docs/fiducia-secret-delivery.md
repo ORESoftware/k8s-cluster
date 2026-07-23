@@ -168,3 +168,12 @@ without it, environment variables do not change until the pod restarts.
 - For high-churn values or applications that cannot restart, use a mounted secret/config client
   instead of environment variables. This pathway intentionally follows Kubernetes' process-start
   environment model.
+
+## Durability boundary
+
+The current development-cluster `fiducia-node` StatefulSet mounts `/var/lib/fiducia` from an
+`emptyDir`. ESO retains the last successfully synchronized Kubernetes Secret, but that is not a
+backup of the Fiducia key/value store. Until the cluster uses the PVC-backed Fiducia deployment
+and tested backups, keep a recoverable source for every value and do not treat this pathway as the
+sole disaster-recovery copy. Migrate the data under change control before enabling it for
+production secrets; replacing the existing StatefulSet volume shape is not an in-place rollout.
