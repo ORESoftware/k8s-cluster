@@ -28,7 +28,6 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/submodules/live-mutex.distributed` | [ORESoftware/live-mutex.distributed](https://github.com/ORESoftware/live-mutex.distributed) | `main` | `~/codes/ores/live-mutex.distributed` |
 | `remote/submodules/soccer-sim-game-engine.rs` | [ORESoftware/soccer-sim-game-engine.rs](https://github.com/ORESoftware/soccer-sim-game-engine.rs) | `main` | `~/codes/ores/soccer-sim-game-engine.rs` |
 | `remote/deployments/dd-sound-recorder-rs` | [sonus-auris/sonus-auris-backend.rs](https://github.com/sonus-auris/sonus-auris-backend.rs) | `main` | `~/codes/sonus-auris/sonus-auris-backend.rs` |
-| `remote/deployments/sonus-auris-interfaces` | [sonus-auris/sonus-auris-interfaces](https://github.com/sonus-auris/sonus-auris-interfaces) | `main` | `~/codes/sonus-auris/sonus-auris-interfaces` |
 | `remote/deployments/3fa-backend` | [3FA-app/3fa-backend.rs](https://github.com/3FA-app/3fa-backend.rs) | `main` | `~/codes/3FA-app/3fa-backend.rs` |
 | `remote/libs` | [ORESoftware/k8s-libs-and-shared-defs](https://github.com/ORESoftware/k8s-libs-and-shared-defs) | `main` | `~/codes/ores/k8s-libs-and-shared-defs` |
 | `remote/deployments/benefactor-backend-rs` | [benefactor-cc/backend.rs](https://github.com/benefactor-cc/backend.rs) | `main` | — _(submodule checkout only)_ |
@@ -52,6 +51,17 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/deployments/usacc-rest-api-backend-rs` | [usa-acc/rest-api-backend.rs](https://github.com/usa-acc/rest-api-backend.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/3fa-web-server-rs` | [3FA-app/3fa-web-server.rs](https://github.com/3FA-app/3fa-web-server.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/sonus-auris-monorepo` | [sonus-auris/sonus-auris-monorepo](https://github.com/sonus-auris/sonus-auris-monorepo) | `main` | `~/codes/sonus-auris/sonus-auris-monorepo` |
+| `remote/deployments/daedalus-monorepo` | [daedalus-fab/daedalus-monorepo](https://github.com/daedalus-fab/daedalus-monorepo) | `main` | — _(submodule checkout only)_ |
+
+Product monorepos (sonus-auris, daedalus) are nested-submodule aggregators: their
+`apps/*` entries pin the per-app repos. Per-app repos already covered by a
+monorepo are **not** pinned again at the top level (the old
+`remote/deployments/sonus-auris-interfaces`, `daedalus-api-server-rs`, and
+`daedalus-web-server-rs` submodules were removed in favor of the monorepo pins;
+`remote/deployments/sonus-auris-interfaces` is now a symlink into the
+sonus-auris-monorepo checkout so the backend's relative-path Cargo dependency
+still resolves). `*.infra` repos stay pinned separately under
+`remote/submodules/` so infra can advance independently of app pins.
 
 ---
 
