@@ -102,3 +102,7 @@
 	path = apps/fiducia-mcp-server.rs
 	url = git@github.com:fiducia-cloud/fiducia-mcp-server.rs
 	branch = main
+[submodule "apps/fiducia-payments.rs"]
+	path = apps/fiducia-payments.rs
+	url = git@github.com:fiducia-cloud/fiducia-payments.rs
+	branch = main

@@ -29,6 +29,8 @@ Public or public-ready repositories:
   explainable hybrid recall primitives and service APIs.
 - `fiducia-messaging.rs`: reusable NATS subject, envelope, fencing, deduplication,
   and optional Postgres/JetStream relay primitives.
+- `fiducia-payments.rs`: provider-agnostic Stripe and PayPal webhook signature
+  verification and event parsing; pure library code with no server or database.
 - `fiducia-ai-agent-manager.rs`: AI-agent lifecycle/dispatch manager; server-auth
   gated, with per-provider child-env isolation.
 - `fiducia-lambda-service.rs`: sandboxed function/runner dispatch service with
@@ -73,7 +75,7 @@ Trusted `main` fleet-audit runs and production checkout use a read-only
 fine-grained `FIDUCIA_SUBMODULE_TOKEN` so private submodules are never silently
 omitted from a deployable-state audit. Public PR contract CI intentionally
 initializes only `fiducia-interfaces` and `fiducia-sync`; it still verifies all
-26 declarations as exact gitlinks without requesting private repository data.
+27 declarations as exact gitlinks without requesting private repository data.
 The token belongs in GitHub Environments/secrets, never in this repository.
 
 ## Rules

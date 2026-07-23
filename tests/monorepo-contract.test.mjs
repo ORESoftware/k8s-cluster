@@ -69,7 +69,7 @@ test("submodule declarations stay complete, pinned to main, and backed by gitlin
       }),
   );
 
-  assert.equal(modules.length, 26);
+  assert.equal(modules.length, 27);
   assert.deepEqual(paths, [
     "apps/fiducia-admin.rs",
     "apps/fiducia-ai-agent-bridge.rs",
@@ -93,6 +93,7 @@ test("submodule declarations stay complete, pinned to main, and backed by gitlin
     "apps/fiducia-node-sidecar.rs",
     "apps/fiducia-node.rs",
     "apps/fiducia-operations-control-plane",
+    "apps/fiducia-payments.rs",
     "apps/fiducia-routing.rs",
     "apps/fiducia-sync",
     "apps/fiducia-telemetry.rs",
