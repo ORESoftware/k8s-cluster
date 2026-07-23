@@ -9339,7 +9339,7 @@ mod tests {
                 "submodule update --init --depth 1 remote/submodules/discrete-event-system.rs"
             ));
             assert!(!manifest.contains("remote/libs"));
-            assert!(manifest.contains("memory: 32Mi"));
+            assert!(manifest.contains("memory: 64Mi"));
             assert!(manifest.contains("failureThreshold: 360"));
         }
 
