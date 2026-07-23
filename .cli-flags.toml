@@ -1,0 +1,19 @@
+[help]
+url = "https://github.com/shared-auth/shared-auth-monorepo"
+columns = ["options", "env", "type", "default", "description"]
+
+[parse]
+allow_unknown = false
+
+[flags.check-submodules]
+env = "SHARED_AUTH_CHECK_SUBMODULES"
+aliases = ["check-submodules"]
+type = "bool"
+default = true
+help = "Verify every apps/ submodule is initialized and pinned to a commit."
+
+[flags.otel-endpoint]
+env = "OTEL_EXPORTER_OTLP_ENDPOINT"
+aliases = ["otel-endpoint"]
+type = "string"
+help = "OTLP collector inherited by monorepo orchestration commands."

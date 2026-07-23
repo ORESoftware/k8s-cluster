@@ -1,0 +1,23 @@
+[submodule "apps/shared-auth-server.rs"]
+	path = apps/shared-auth-server.rs
+	url = git@github.com:shared-auth/shared-auth-server.rs.git
+	branch = main
+[submodule "apps/shared-auth-lib"]
+	path = apps/shared-auth-lib
+	url = git@github.com:shared-auth/shared-auth-lib.git
+[submodule "apps/shared-auth-interfaces"]
+	path = apps/shared-auth-interfaces
+	url = git@github.com:shared-auth/shared-auth-interfaces.git
+	branch = main
+[submodule "apps/shared-auth-clients"]
+	path = apps/shared-auth-clients
+	url = git@github.com:shared-auth/shared-auth-clients.git
+[submodule "apps/shared-auth-infra"]
+	path = apps/shared-auth-infra
+	url = git@github.com:shared-auth/shared-auth-infra.git
+[submodule "apps/shared-auth-mcp-server.rs"]
+	path = apps/shared-auth-mcp-server.rs
+	url = git@github.com:shared-auth/shared-auth-mcp-server.rs.git
+[submodule "apps/shared-auth-e2e"]
+	path = apps/shared-auth-e2e
+	url = git@github.com:shared-auth/shared-auth-e2e.git

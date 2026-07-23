@@ -1,0 +1,29 @@
+name: monorepo-inventory
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate apps-only submodule inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t paths < <(git config -f .gitmodules --get-regexp '^submodule\..*\.path$' | awk '{print $2}' | sort)
+          test "${#paths[@]}" -eq 7
+          for path in "${paths[@]}"; do
+            case "$path" in
+              apps/*) ;;
+              *) echo "submodule outside apps/: $path" >&2; exit 1 ;;
+            esac
+            test "$(git ls-files --stage -- "$path" | awk '{print $1}')" = 160000
+          done
+          test -z "$(git config -f .gitmodules --get-regexp '^submodule\..*\.url$' | awk '$2 !~ /^git@github\.com:shared-auth\// {print}')"
