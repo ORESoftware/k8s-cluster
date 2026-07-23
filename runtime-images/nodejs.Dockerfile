@@ -9,10 +9,10 @@ RUN apk add --no-cache \
   && addgroup -S lambda \
   && adduser -S -G lambda -u 10001 lambda
 WORKDIR /opt/dd-next
-COPY deployments/gleam-lambda-runner/runtime-images/nodejs/package.json deployments/gleam-lambda-runner/runtime-images/nodejs/package-lock.json ./
+COPY deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/runtime-images/nodejs/package.json deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/runtime-images/nodejs/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
   && npm cache clean --force
-COPY deployments/gleam-lambda-runner/child-runtimes/js-function-runner.mjs remote/deployments/gleam-lambda-runner/child-runtimes/js-function-runner.mjs
+COPY deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/child-runtimes/js-function-runner.mjs remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/child-runtimes/js-function-runner.mjs
 COPY libs/nats/subject-defs/generated/javascript/index.mjs remote/libs/nats/subject-defs/generated/javascript/index.mjs
 ENV NODE_NO_WARNINGS=1 \
     HOME=/tmp \
@@ -21,4 +21,4 @@ ENV NODE_NO_WARNINGS=1 \
     LAMBDA_BROWSER_AUTOMATION=1 \
     LAMBDA_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 USER 10001:10001
-ENTRYPOINT ["node", "--permission", "--allow-child-process", "--allow-fs-read=/opt/dd-next", "--allow-fs-read=/usr/bin/chromium-browser", "--allow-fs-read=/usr/lib/chromium", "--allow-fs-read=/etc/fonts", "--allow-fs-read=/usr/share/fonts", "--allow-fs-read=/tmp", "--allow-fs-write=/tmp", "/opt/dd-next/remote/deployments/gleam-lambda-runner/child-runtimes/js-function-runner.mjs"]
+ENTRYPOINT ["node", "--permission", "--allow-child-process", "--allow-fs-read=/opt/dd-next", "--allow-fs-read=/usr/bin/chromium-browser", "--allow-fs-read=/usr/lib/chromium", "--allow-fs-read=/etc/fonts", "--allow-fs-read=/usr/share/fonts", "--allow-fs-read=/tmp", "--allow-fs-write=/tmp", "/opt/dd-next/remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/child-runtimes/js-function-runner.mjs"]

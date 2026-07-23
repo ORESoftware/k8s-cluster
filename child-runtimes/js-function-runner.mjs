@@ -9,7 +9,7 @@ import { compileFunction as compileVmFunction, createContext } from 'node:vm';
 // so this relative path resolves identically on every execution path.
 import {
   containerPoolLanguageRequestsSubject,
-} from '../../../libs/nats/subject-defs/generated/javascript/index.mjs';
+} from '../../../../../libs/nats/subject-defs/generated/javascript/index.mjs';
 
 const maxCompiledFunctions = positiveInt(env.LAMBDA_FUNCTION_CACHE_MAX, 128);
 const maxFunctionBodyBytes = positiveInt(env.LAMBDA_FUNCTION_BODY_MAX_BYTES, 262_144);
