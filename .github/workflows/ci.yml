@@ -27,6 +27,10 @@ jobs:
         with:
           node-version: '22'
       - run: npm test
+      - name: Fetch the public CLI adapter
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git submodule update --init tools/flags-2-env
       - run: make -C tools/flags-2-env all
       - run: tools/flags-2-env/build/flags2env audit .cli-flags.toml
   fleet-audit:
