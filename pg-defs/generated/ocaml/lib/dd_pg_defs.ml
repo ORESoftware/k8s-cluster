@@ -12119,3 +12119,200 @@ let web_sessions_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : we
     web_sessions_absolute_expires_at = get 11;
     web_sessions_revoked_at = (if is_null 12 then None else Some (get 12));
   }
+
+let principals_table = "shared_auth.principals"
+
+let principals_columns = ["shared_user_id"; "email"; "email_verified"; "phone"; "display_name"; "status"; "profile"; "created_at"; "updated_at"; "last_seen_at"]
+
+let principals_select_sql = "select\n      shared_user_id::text as shared_user_id,\n      email,\n      email_verified,\n      phone,\n      display_name,\n      status,\n      profile::text as profile_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.principals"
+
+type principals_status = [ `Active | `Disabled | `Deleted ]
+
+let principals_status_to_string (value : principals_status) : string =
+  match value with
+  | `Active -> "active"
+  | `Disabled -> "disabled"
+  | `Deleted -> "deleted"
+
+let parse_principals_status (value : string) : (principals_status, string) result =
+  match value with
+  | "active" -> Ok `Active
+  | "disabled" -> Ok `Disabled
+  | "deleted" -> Ok `Deleted
+  | _ -> Error ("unsupported principals.status: " ^ value)
+
+type principals_row = {
+  principals_shared_user_id : string;
+  principals_email : string option;
+  principals_email_verified : bool;
+  principals_phone : string option;
+  principals_display_name : string option;
+  principals_status : string;
+  principals_profile : string;
+  principals_created_at : string;
+  principals_updated_at : string;
+  principals_last_seen_at : string;
+}
+
+let principals_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : principals_row =
+  {
+    principals_shared_user_id = get 0;
+    principals_email = (if is_null 1 then None else Some (get 1));
+    principals_email_verified = (get 2 = "t");
+    principals_phone = (if is_null 3 then None else Some (get 3));
+    principals_display_name = (if is_null 4 then None else Some (get 4));
+    principals_status = get 5;
+    principals_profile = get 6;
+    principals_created_at = get 7;
+    principals_updated_at = get 8;
+    principals_last_seen_at = get 9;
+  }
+
+let provider_identities_table = "shared_auth.provider_identities"
+
+let provider_identities_columns = ["provider_identity_id"; "shared_user_id"; "provider"; "provider_tenant"; "provider_subject"; "email"; "email_verified"; "metadata"; "created_at"; "updated_at"; "last_seen_at"]
+
+let provider_identities_select_sql = "select\n      provider_identity_id::text as provider_identity_id,\n      shared_user_id::text as shared_user_id,\n      provider,\n      provider_tenant,\n      provider_subject,\n      email,\n      email_verified,\n      metadata::text as metadata_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.provider_identities"
+
+type provider_identities_row = {
+  provider_identities_provider_identity_id : string;
+  provider_identities_shared_user_id : string;
+  provider_identities_provider : string;
+  provider_identities_provider_tenant : string;
+  provider_identities_provider_subject : string;
+  provider_identities_email : string option;
+  provider_identities_email_verified : bool;
+  provider_identities_metadata : string;
+  provider_identities_created_at : string;
+  provider_identities_updated_at : string;
+  provider_identities_last_seen_at : string;
+}
+
+let provider_identities_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : provider_identities_row =
+  {
+    provider_identities_provider_identity_id = get 0;
+    provider_identities_shared_user_id = get 1;
+    provider_identities_provider = get 2;
+    provider_identities_provider_tenant = get 3;
+    provider_identities_provider_subject = get 4;
+    provider_identities_email = (if is_null 5 then None else Some (get 5));
+    provider_identities_email_verified = (get 6 = "t");
+    provider_identities_metadata = get 7;
+    provider_identities_created_at = get 8;
+    provider_identities_updated_at = get 9;
+    provider_identities_last_seen_at = get 10;
+  }
+
+let local_credentials_table = "shared_auth.local_credentials"
+
+let local_credentials_columns = ["shared_user_id"; "password_hash"; "password_changed_at"; "failed_attempts"; "locked_until"; "created_at"; "updated_at"]
+
+let local_credentials_select_sql = "select\n      shared_user_id::text as shared_user_id,\n      password_hash,\n      to_char(password_changed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as password_changed_at,\n      failed_attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from shared_auth.local_credentials"
+
+type local_credentials_row = {
+  local_credentials_shared_user_id : string;
+  local_credentials_password_hash : string;
+  local_credentials_password_changed_at : string;
+  local_credentials_failed_attempts : int;
+  local_credentials_locked_until : string option;
+  local_credentials_created_at : string;
+  local_credentials_updated_at : string;
+}
+
+let local_credentials_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : local_credentials_row =
+  {
+    local_credentials_shared_user_id = get 0;
+    local_credentials_password_hash = get 1;
+    local_credentials_password_changed_at = get 2;
+    local_credentials_failed_attempts = int_of_string (get 3);
+    local_credentials_locked_until = (if is_null 4 then None else Some (get 4));
+    local_credentials_created_at = get 5;
+    local_credentials_updated_at = get 6;
+  }
+
+let validate_local_credentials_failed_attempts (value : int) : (int, string) result =
+  if value < 0 then Error "local_credentials.failed_attempts is below the minimum"
+  else Ok value
+
+let sessions_table = "shared_auth.sessions"
+
+let sessions_columns = ["session_id"; "shared_user_id"; "refresh_token_hash"; "provider"; "provider_tenant"; "provider_subject"; "created_at"; "updated_at"; "last_seen_at"; "expires_at"; "revoked_at"; "rotated_from"]
+
+let sessions_select_sql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+
+type sessions_row = {
+  sessions_session_id : string;
+  sessions_shared_user_id : string;
+  sessions_refresh_token_hash : string;
+  sessions_provider : string;
+  sessions_provider_tenant : string;
+  sessions_provider_subject : string;
+  sessions_created_at : string;
+  sessions_updated_at : string;
+  sessions_last_seen_at : string;
+  sessions_expires_at : string;
+  sessions_revoked_at : string option;
+  sessions_rotated_from : string option;
+}
+
+let sessions_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : sessions_row =
+  {
+    sessions_session_id = get 0;
+    sessions_shared_user_id = get 1;
+    sessions_refresh_token_hash = get 2;
+    sessions_provider = get 3;
+    sessions_provider_tenant = get 4;
+    sessions_provider_subject = get 5;
+    sessions_created_at = get 6;
+    sessions_updated_at = get 7;
+    sessions_last_seen_at = get 8;
+    sessions_expires_at = get 9;
+    sessions_revoked_at = (if is_null 10 then None else Some (get 10));
+    sessions_rotated_from = (if is_null 11 then None else Some (get 11));
+  }
+
+let roles_table = "shared_auth.roles"
+
+let roles_columns = ["role_id"; "shared_user_id"; "role_name"; "granted_at"; "granted_by"]
+
+let roles_select_sql = "select\n      role_id::text as role_id,\n      shared_user_id::text as shared_user_id,\n      role_name,\n      to_char(granted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as granted_at,\n      granted_by::text as granted_by\n    from shared_auth.roles"
+
+type roles_row = {
+  roles_role_id : string;
+  roles_shared_user_id : string;
+  roles_role_name : string;
+  roles_granted_at : string;
+  roles_granted_by : string option;
+}
+
+let roles_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : roles_row =
+  {
+    roles_role_id = get 0;
+    roles_shared_user_id = get 1;
+    roles_role_name = get 2;
+    roles_granted_at = get 3;
+    roles_granted_by = (if is_null 4 then None else Some (get 4));
+  }
+
+let webhook_events_table = "shared_auth.webhook_events"
+
+let webhook_events_columns = ["event_id"; "provider"; "event_type"; "received_at"; "payload_sha256"]
+
+let webhook_events_select_sql = "select\n      event_id::text as event_id,\n      provider,\n      event_type,\n      to_char(received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as received_at,\n      payload_sha256\n    from shared_auth.webhook_events"
+
+type webhook_events_row = {
+  webhook_events_event_id : string;
+  webhook_events_provider : string;
+  webhook_events_event_type : string;
+  webhook_events_received_at : string;
+  webhook_events_payload_sha256 : string;
+}
+
+let webhook_events_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : webhook_events_row =
+  {
+    webhook_events_event_id = get 0;
+    webhook_events_provider = get 1;
+    webhook_events_event_type = get 2;
+    webhook_events_received_at = get 3;
+    webhook_events_payload_sha256 = get 4;
+  }

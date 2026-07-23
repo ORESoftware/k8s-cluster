@@ -4083,6 +4083,134 @@ class WebSessionsTable extends Table {
   };
 }
 
+@DataClassName("PrincipalsData")
+class PrincipalsTable extends Table {
+  @override String get tableName => "principals";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get sharedUserId => text().named("shared_user_id").customConstraint("UUID")();
+  TextColumn get email => text().named("email").nullable()();
+  BoolColumn get emailVerified => boolean().named("email_verified").clientDefault(() => false)();
+  TextColumn get phone => text().named("phone").nullable()();
+  TextColumn get displayName => text().named("display_name").nullable()();
+  TextColumn get status => text().named("status").clientDefault(() => 'active')();
+  TextColumn get profile => text().named("profile").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastSeenAt => dateTime().named("last_seen_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        sharedUserId,
+  };
+}
+
+@DataClassName("ProviderIdentitiesData")
+class ProviderIdentitiesTable extends Table {
+  @override String get tableName => "provider_identities";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get providerIdentityId => text().named("provider_identity_id").customConstraint("UUID")();
+  TextColumn get sharedUserId => text().named("shared_user_id").customConstraint("UUID")();
+  TextColumn get provider => text().named("provider")();
+  TextColumn get providerTenant => text().named("provider_tenant").clientDefault(() => 'default')();
+  TextColumn get providerSubject => text().named("provider_subject")();
+  TextColumn get email => text().named("email").nullable()();
+  BoolColumn get emailVerified => boolean().named("email_verified").clientDefault(() => false)();
+  TextColumn get metadata => text().named("metadata").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastSeenAt => dateTime().named("last_seen_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        providerIdentityId,
+  };
+}
+
+@DataClassName("LocalCredentialsData")
+class LocalCredentialsTable extends Table {
+  @override String get tableName => "local_credentials";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get sharedUserId => text().named("shared_user_id").customConstraint("UUID")();
+  TextColumn get passwordHash => text().named("password_hash")();
+  DateTimeColumn get passwordChangedAt => dateTime().named("password_changed_at").customConstraint("TIMESTAMPTZ")();
+  IntColumn get failedAttempts => integer().named("failed_attempts").clientDefault(() => 0)();
+  DateTimeColumn get lockedUntil => dateTime().named("locked_until").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        sharedUserId,
+  };
+}
+
+@DataClassName("SessionsData")
+class SessionsTable extends Table {
+  @override String get tableName => "sessions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get sessionId => text().named("session_id").customConstraint("UUID")();
+  TextColumn get sharedUserId => text().named("shared_user_id").customConstraint("UUID")();
+  TextColumn get refreshTokenHash => text().named("refresh_token_hash")();
+  TextColumn get provider => text().named("provider")();
+  TextColumn get providerTenant => text().named("provider_tenant").clientDefault(() => 'default')();
+  TextColumn get providerSubject => text().named("provider_subject")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastSeenAt => dateTime().named("last_seen_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get expiresAt => dateTime().named("expires_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get revokedAt => dateTime().named("revoked_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get rotatedFrom => text().named("rotated_from").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        sessionId,
+  };
+}
+
+@DataClassName("RolesData")
+class RolesTable extends Table {
+  @override String get tableName => "roles";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get roleId => text().named("role_id").customConstraint("UUID")();
+  TextColumn get sharedUserId => text().named("shared_user_id").customConstraint("UUID")();
+  TextColumn get roleName => text().named("role_name")();
+  DateTimeColumn get grantedAt => dateTime().named("granted_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get grantedBy => text().named("granted_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        roleId,
+  };
+}
+
+@DataClassName("WebhookEventsData")
+class WebhookEventsTable extends Table {
+  @override String get tableName => "webhook_events";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get eventId => text().named("event_id").customConstraint("UUID")();
+  TextColumn get provider => text().named("provider")();
+  TextColumn get eventType => text().named("event_type")();
+  DateTimeColumn get receivedAt => dateTime().named("received_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get payloadSha256 => text().named("payload_sha256")();
+
+  @override
+  Set<Column> get primaryKey => {
+        eventId,
+  };
+}
+
 // Drift annotation users should re-export the table classes via:
 // @DriftDatabase(tables: [...registeredDriftTables])
 const List<Type> registeredDriftTables = <Type>[
@@ -4241,4 +4369,10 @@ const List<Type> registeredDriftTables = <Type>[
   FabInstructionsTable,
   FabRunsTable,
   WebSessionsTable,
+  PrincipalsTable,
+  ProviderIdentitiesTable,
+  LocalCredentialsTable,
+  SessionsTable,
+  RolesTable,
+  WebhookEventsTable,
 ];

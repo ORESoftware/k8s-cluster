@@ -2871,6 +2871,86 @@ object WebSessions : Table("daedalus.web_sessions") {
     override val primaryKey = PrimaryKey(id)
 }
 
+object Principals : Table("shared_auth.principals") {
+    val sharedUserId = uuid("shared_user_id")
+    val email = text("email").nullable()
+    val emailVerified = bool("email_verified")
+    val phone = text("phone").nullable()
+    val displayName = text("display_name").nullable()
+    val status = text("status")
+    val profile = jsonb<String>("profile", { it }, { it })
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+    val lastSeenAt = timestampWithTimeZone("last_seen_at")
+
+    override val primaryKey = PrimaryKey(sharedUserId)
+}
+
+object ProviderIdentities : Table("shared_auth.provider_identities") {
+    val providerIdentityId = uuid("provider_identity_id")
+    val sharedUserId = uuid("shared_user_id")
+    val provider = text("provider")
+    val providerTenant = text("provider_tenant")
+    val providerSubject = text("provider_subject")
+    val email = text("email").nullable()
+    val emailVerified = bool("email_verified")
+    val metadata = jsonb<String>("metadata", { it }, { it })
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+    val lastSeenAt = timestampWithTimeZone("last_seen_at")
+
+    override val primaryKey = PrimaryKey(providerIdentityId)
+}
+
+object LocalCredentials : Table("shared_auth.local_credentials") {
+    val sharedUserId = uuid("shared_user_id")
+    val passwordHash = text("password_hash")
+    val passwordChangedAt = timestampWithTimeZone("password_changed_at")
+    val failedAttempts = integer("failed_attempts")
+    val lockedUntil = timestampWithTimeZone("locked_until").nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(sharedUserId)
+}
+
+object Sessions : Table("shared_auth.sessions") {
+    val sessionId = uuid("session_id")
+    val sharedUserId = uuid("shared_user_id")
+    val refreshTokenHash = text("refresh_token_hash")
+    val provider = text("provider")
+    val providerTenant = text("provider_tenant")
+    val providerSubject = text("provider_subject")
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+    val lastSeenAt = timestampWithTimeZone("last_seen_at")
+    val expiresAt = timestampWithTimeZone("expires_at")
+    val revokedAt = timestampWithTimeZone("revoked_at").nullable()
+    val rotatedFrom = uuid("rotated_from").nullable()
+
+    override val primaryKey = PrimaryKey(sessionId)
+}
+
+object Roles : Table("shared_auth.roles") {
+    val roleId = uuid("role_id")
+    val sharedUserId = uuid("shared_user_id")
+    val roleName = text("role_name")
+    val grantedAt = timestampWithTimeZone("granted_at")
+    val grantedBy = uuid("granted_by").nullable()
+
+    override val primaryKey = PrimaryKey(roleId)
+}
+
+object WebhookEvents : Table("shared_auth.webhook_events") {
+    val eventId = uuid("event_id")
+    val provider = text("provider")
+    val eventType = text("event_type")
+    val receivedAt = timestampWithTimeZone("received_at")
+    val payloadSha256 = text("payload_sha256")
+
+    override val primaryKey = PrimaryKey(eventId)
+}
+
 data class AccountsRow(
     val id: UUID,
     val username: String,
@@ -7953,4 +8033,140 @@ fun toWebSessionsRow(row: ResultRow): WebSessionsRow = WebSessionsRow(
     row[WebSessions.idleExpiresAt],
     row[WebSessions.absoluteExpiresAt],
     row[WebSessions.revokedAt],
+)
+
+data class PrincipalsRow(
+    val sharedUserId: UUID,
+    val email: String?,
+    val emailVerified: Boolean,
+    val phone: String?,
+    val displayName: String?,
+    val status: String,
+    val profile: String,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+    val lastSeenAt: OffsetDateTime,
+)
+
+fun toPrincipalsRow(row: ResultRow): PrincipalsRow = PrincipalsRow(
+    row[Principals.sharedUserId],
+    row[Principals.email],
+    row[Principals.emailVerified],
+    row[Principals.phone],
+    row[Principals.displayName],
+    row[Principals.status],
+    row[Principals.profile],
+    row[Principals.createdAt],
+    row[Principals.updatedAt],
+    row[Principals.lastSeenAt],
+)
+
+data class ProviderIdentitiesRow(
+    val providerIdentityId: UUID,
+    val sharedUserId: UUID,
+    val provider: String,
+    val providerTenant: String,
+    val providerSubject: String,
+    val email: String?,
+    val emailVerified: Boolean,
+    val metadata: String,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+    val lastSeenAt: OffsetDateTime,
+)
+
+fun toProviderIdentitiesRow(row: ResultRow): ProviderIdentitiesRow = ProviderIdentitiesRow(
+    row[ProviderIdentities.providerIdentityId],
+    row[ProviderIdentities.sharedUserId],
+    row[ProviderIdentities.provider],
+    row[ProviderIdentities.providerTenant],
+    row[ProviderIdentities.providerSubject],
+    row[ProviderIdentities.email],
+    row[ProviderIdentities.emailVerified],
+    row[ProviderIdentities.metadata],
+    row[ProviderIdentities.createdAt],
+    row[ProviderIdentities.updatedAt],
+    row[ProviderIdentities.lastSeenAt],
+)
+
+data class LocalCredentialsRow(
+    val sharedUserId: UUID,
+    val passwordHash: String,
+    val passwordChangedAt: OffsetDateTime,
+    val failedAttempts: Int,
+    val lockedUntil: OffsetDateTime?,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toLocalCredentialsRow(row: ResultRow): LocalCredentialsRow = LocalCredentialsRow(
+    row[LocalCredentials.sharedUserId],
+    row[LocalCredentials.passwordHash],
+    row[LocalCredentials.passwordChangedAt],
+    row[LocalCredentials.failedAttempts],
+    row[LocalCredentials.lockedUntil],
+    row[LocalCredentials.createdAt],
+    row[LocalCredentials.updatedAt],
+)
+
+data class SessionsRow(
+    val sessionId: UUID,
+    val sharedUserId: UUID,
+    val refreshTokenHash: String,
+    val provider: String,
+    val providerTenant: String,
+    val providerSubject: String,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+    val lastSeenAt: OffsetDateTime,
+    val expiresAt: OffsetDateTime,
+    val revokedAt: OffsetDateTime?,
+    val rotatedFrom: UUID?,
+)
+
+fun toSessionsRow(row: ResultRow): SessionsRow = SessionsRow(
+    row[Sessions.sessionId],
+    row[Sessions.sharedUserId],
+    row[Sessions.refreshTokenHash],
+    row[Sessions.provider],
+    row[Sessions.providerTenant],
+    row[Sessions.providerSubject],
+    row[Sessions.createdAt],
+    row[Sessions.updatedAt],
+    row[Sessions.lastSeenAt],
+    row[Sessions.expiresAt],
+    row[Sessions.revokedAt],
+    row[Sessions.rotatedFrom],
+)
+
+data class RolesRow(
+    val roleId: UUID,
+    val sharedUserId: UUID,
+    val roleName: String,
+    val grantedAt: OffsetDateTime,
+    val grantedBy: UUID?,
+)
+
+fun toRolesRow(row: ResultRow): RolesRow = RolesRow(
+    row[Roles.roleId],
+    row[Roles.sharedUserId],
+    row[Roles.roleName],
+    row[Roles.grantedAt],
+    row[Roles.grantedBy],
+)
+
+data class WebhookEventsRow(
+    val eventId: UUID,
+    val provider: String,
+    val eventType: String,
+    val receivedAt: OffsetDateTime,
+    val payloadSha256: String,
+)
+
+fun toWebhookEventsRow(row: ResultRow): WebhookEventsRow = WebhookEventsRow(
+    row[WebhookEvents.eventId],
+    row[WebhookEvents.provider],
+    row[WebhookEvents.eventType],
+    row[WebhookEvents.receivedAt],
+    row[WebhookEvents.payloadSha256],
 )

@@ -3085,3 +3085,95 @@ class WebSessions(BaseModel):
     class Meta:
         table_name = "web_sessions"
         schema = "daedalus"
+
+
+class Principals(BaseModel):
+    shared_user_id = UUIDField(primary_key=True)
+    email = TextField(null=True)
+    email_verified = BooleanField()
+    phone = TextField(null=True)
+    display_name = TextField(null=True)
+    status = TextField()
+    profile = BinaryJSONField()
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+    last_seen_at = DateTimeField()
+
+    class Meta:
+        table_name = "principals"
+        schema = "shared_auth"
+
+
+class ProviderIdentities(BaseModel):
+    provider_identity_id = UUIDField(primary_key=True)
+    shared_user_id = UUIDField()
+    provider = TextField()
+    provider_tenant = TextField()
+    provider_subject = TextField()
+    email = TextField(null=True)
+    email_verified = BooleanField()
+    metadata = BinaryJSONField()
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+    last_seen_at = DateTimeField()
+
+    class Meta:
+        table_name = "provider_identities"
+        schema = "shared_auth"
+
+
+class LocalCredentials(BaseModel):
+    shared_user_id = UUIDField(primary_key=True)
+    password_hash = TextField()
+    password_changed_at = DateTimeField()
+    failed_attempts = IntegerField()
+    locked_until = DateTimeField(null=True)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "local_credentials"
+        schema = "shared_auth"
+
+
+class Sessions(BaseModel):
+    session_id = UUIDField(primary_key=True)
+    shared_user_id = UUIDField()
+    refresh_token_hash = TextField()
+    provider = TextField()
+    provider_tenant = TextField()
+    provider_subject = TextField()
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+    last_seen_at = DateTimeField()
+    expires_at = DateTimeField()
+    revoked_at = DateTimeField(null=True)
+    rotated_from = UUIDField(null=True)
+
+    class Meta:
+        table_name = "sessions"
+        schema = "shared_auth"
+
+
+class Roles(BaseModel):
+    role_id = UUIDField(primary_key=True)
+    shared_user_id = UUIDField()
+    role_name = TextField()
+    granted_at = DateTimeField()
+    granted_by = UUIDField(null=True)
+
+    class Meta:
+        table_name = "roles"
+        schema = "shared_auth"
+
+
+class WebhookEvents(BaseModel):
+    event_id = UUIDField(primary_key=True)
+    provider = TextField()
+    event_type = TextField()
+    received_at = DateTimeField()
+    payload_sha256 = TextField()
+
+    class Meta:
+        table_name = "webhook_events"
+        schema = "shared_auth"

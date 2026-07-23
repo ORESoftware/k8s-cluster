@@ -3238,3 +3238,90 @@ model WebSessions {
   // Check constraints live in schema.sql and must be migrated from the SQL contract.
   @@map("web_sessions")
 }
+
+model Principals {
+  sharedUserId String @map("shared_user_id") @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email String? @db.Text
+  emailVerified Boolean @map("email_verified") @default(false)
+  phone String? @db.Text
+  displayName String? @map("display_name") @db.Text
+  status String @default("active") @db.Text
+  profile Json @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  lastSeenAt DateTime @map("last_seen_at") @default(now()) @db.Timestamptz(6)
+  // shared_auth_users_email_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  @@index([status], map: "shared_auth_users_status_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("principals")
+}
+
+model ProviderIdentities {
+  providerIdentityId String @map("provider_identity_id") @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sharedUserId String @map("shared_user_id") @db.Uuid
+  provider String @db.Text
+  providerTenant String @map("provider_tenant") @default("default") @db.Text
+  providerSubject String @map("provider_subject") @db.Text
+  email String? @db.Text
+  emailVerified Boolean @map("email_verified") @default(false)
+  metadata Json @default("{}")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  lastSeenAt DateTime @map("last_seen_at") @default(now()) @db.Timestamptz(6)
+  @@index([sharedUserId], map: "shared_auth_provider_identities_user_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("provider_identities")
+}
+
+model LocalCredentials {
+  sharedUserId String @map("shared_user_id") @id @db.Uuid
+  passwordHash String @map("password_hash") @db.Text
+  passwordChangedAt DateTime @map("password_changed_at") @default(now()) @db.Timestamptz(6)
+  failedAttempts Int @map("failed_attempts") @default(0)
+  lockedUntil DateTime? @map("locked_until") @db.Timestamptz(6)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("local_credentials")
+}
+
+model Sessions {
+  sessionId String @map("session_id") @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sharedUserId String @map("shared_user_id") @db.Uuid
+  refreshTokenHash String @map("refresh_token_hash") @db.Text
+  provider String @db.Text
+  providerTenant String @map("provider_tenant") @default("default") @db.Text
+  providerSubject String @map("provider_subject") @db.Text
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  lastSeenAt DateTime @map("last_seen_at") @default(now()) @db.Timestamptz(6)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  rotatedFrom String? @map("rotated_from") @db.Uuid
+  @@index([sharedUserId], map: "shared_auth_sessions_user_idx")
+  // shared_auth_sessions_active_expiry_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("sessions")
+}
+
+model Roles {
+  roleId String @map("role_id") @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sharedUserId String @map("shared_user_id") @db.Uuid
+  roleName String @map("role_name") @db.Text
+  grantedAt DateTime @map("granted_at") @default(now()) @db.Timestamptz(6)
+  grantedBy String? @map("granted_by") @db.Uuid
+  @@index([sharedUserId], map: "shared_auth_roles_user_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("roles")
+}
+
+model WebhookEvents {
+  eventId String @map("event_id") @id @db.Uuid
+  provider String @db.Text
+  eventType String @map("event_type") @db.Text
+  receivedAt DateTime @map("received_at") @default(now()) @db.Timestamptz(6)
+  payloadSha256 String @map("payload_sha256") @db.Text
+  @@index([receivedAt], map: "shared_auth_webhook_events_received_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("webhook_events")
+}

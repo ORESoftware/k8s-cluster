@@ -14076,3 +14076,201 @@ pub const WebSessionsRow = struct {
         };
     }
 };
+
+pub const principals_table: []const u8 = "shared_auth.principals";
+pub const principals_columns = [_][]const u8{ "shared_user_id", "email", "email_verified", "phone", "display_name", "status", "profile", "created_at", "updated_at", "last_seen_at" };
+pub const principals_select_sql: []const u8 = "select\n      shared_user_id::text as shared_user_id,\n      email,\n      email_verified,\n      phone,\n      display_name,\n      status,\n      profile::text as profile_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.principals";
+
+pub const PrincipalsStatus = enum {
+    active,
+    disabled,
+    deleted,
+
+    pub fn toString(self: PrincipalsStatus) []const u8 {
+        return switch (self) {
+            .active => "active",
+            .disabled => "disabled",
+            .deleted => "deleted",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?PrincipalsStatus {
+        if (std.mem.eql(u8, value, "active")) return .active;
+        if (std.mem.eql(u8, value, "disabled")) return .disabled;
+        if (std.mem.eql(u8, value, "deleted")) return .deleted;
+        return null;
+    }
+};
+
+pub const PrincipalsRow = struct {
+    shared_user_id: []const u8,
+    email: ?[]const u8,
+    email_verified: bool,
+    phone: ?[]const u8,
+    display_name: ?[]const u8,
+    status: []const u8,
+    profile: []const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+    last_seen_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) PrincipalsRow {
+        return PrincipalsRow{
+            .shared_user_id = reader.text(0),
+            .email = if (reader.is_null(1)) null else reader.text(1),
+            .email_verified = reader.boolean(2),
+            .phone = if (reader.is_null(3)) null else reader.text(3),
+            .display_name = if (reader.is_null(4)) null else reader.text(4),
+            .status = reader.text(5),
+            .profile = reader.text(6),
+            .created_at = reader.text(7),
+            .updated_at = reader.text(8),
+            .last_seen_at = reader.text(9),
+        };
+    }
+};
+
+pub const provider_identities_table: []const u8 = "shared_auth.provider_identities";
+pub const provider_identities_columns = [_][]const u8{ "provider_identity_id", "shared_user_id", "provider", "provider_tenant", "provider_subject", "email", "email_verified", "metadata", "created_at", "updated_at", "last_seen_at" };
+pub const provider_identities_select_sql: []const u8 = "select\n      provider_identity_id::text as provider_identity_id,\n      shared_user_id::text as shared_user_id,\n      provider,\n      provider_tenant,\n      provider_subject,\n      email,\n      email_verified,\n      metadata::text as metadata_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.provider_identities";
+
+pub const ProviderIdentitiesRow = struct {
+    provider_identity_id: []const u8,
+    shared_user_id: []const u8,
+    provider: []const u8,
+    provider_tenant: []const u8,
+    provider_subject: []const u8,
+    email: ?[]const u8,
+    email_verified: bool,
+    metadata: []const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+    last_seen_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) ProviderIdentitiesRow {
+        return ProviderIdentitiesRow{
+            .provider_identity_id = reader.text(0),
+            .shared_user_id = reader.text(1),
+            .provider = reader.text(2),
+            .provider_tenant = reader.text(3),
+            .provider_subject = reader.text(4),
+            .email = if (reader.is_null(5)) null else reader.text(5),
+            .email_verified = reader.boolean(6),
+            .metadata = reader.text(7),
+            .created_at = reader.text(8),
+            .updated_at = reader.text(9),
+            .last_seen_at = reader.text(10),
+        };
+    }
+};
+
+pub const local_credentials_table: []const u8 = "shared_auth.local_credentials";
+pub const local_credentials_columns = [_][]const u8{ "shared_user_id", "password_hash", "password_changed_at", "failed_attempts", "locked_until", "created_at", "updated_at" };
+pub const local_credentials_select_sql: []const u8 = "select\n      shared_user_id::text as shared_user_id,\n      password_hash,\n      to_char(password_changed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as password_changed_at,\n      failed_attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from shared_auth.local_credentials";
+
+pub const LocalCredentialsRow = struct {
+    shared_user_id: []const u8,
+    password_hash: []const u8,
+    password_changed_at: []const u8,
+    failed_attempts: i32,
+    locked_until: ?[]const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) LocalCredentialsRow {
+        return LocalCredentialsRow{
+            .shared_user_id = reader.text(0),
+            .password_hash = reader.text(1),
+            .password_changed_at = reader.text(2),
+            .failed_attempts = @as(i32, @intCast(reader.int(3))),
+            .locked_until = if (reader.is_null(4)) null else reader.text(4),
+            .created_at = reader.text(5),
+            .updated_at = reader.text(6),
+        };
+    }
+};
+
+pub fn validateLocalCredentialsFailedAttempts(value: i32) ?[]const u8 {
+    if (value < 0) return "local_credentials.failed_attempts is below the minimum";
+    return null;
+}
+
+pub const sessions_table: []const u8 = "shared_auth.sessions";
+pub const sessions_columns = [_][]const u8{ "session_id", "shared_user_id", "refresh_token_hash", "provider", "provider_tenant", "provider_subject", "created_at", "updated_at", "last_seen_at", "expires_at", "revoked_at", "rotated_from" };
+pub const sessions_select_sql: []const u8 = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions";
+
+pub const SessionsRow = struct {
+    session_id: []const u8,
+    shared_user_id: []const u8,
+    refresh_token_hash: []const u8,
+    provider: []const u8,
+    provider_tenant: []const u8,
+    provider_subject: []const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+    last_seen_at: []const u8,
+    expires_at: []const u8,
+    revoked_at: ?[]const u8,
+    rotated_from: ?[]const u8,
+
+    pub fn fromRow(reader: RowReader) SessionsRow {
+        return SessionsRow{
+            .session_id = reader.text(0),
+            .shared_user_id = reader.text(1),
+            .refresh_token_hash = reader.text(2),
+            .provider = reader.text(3),
+            .provider_tenant = reader.text(4),
+            .provider_subject = reader.text(5),
+            .created_at = reader.text(6),
+            .updated_at = reader.text(7),
+            .last_seen_at = reader.text(8),
+            .expires_at = reader.text(9),
+            .revoked_at = if (reader.is_null(10)) null else reader.text(10),
+            .rotated_from = if (reader.is_null(11)) null else reader.text(11),
+        };
+    }
+};
+
+pub const roles_table: []const u8 = "shared_auth.roles";
+pub const roles_columns = [_][]const u8{ "role_id", "shared_user_id", "role_name", "granted_at", "granted_by" };
+pub const roles_select_sql: []const u8 = "select\n      role_id::text as role_id,\n      shared_user_id::text as shared_user_id,\n      role_name,\n      to_char(granted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as granted_at,\n      granted_by::text as granted_by\n    from shared_auth.roles";
+
+pub const RolesRow = struct {
+    role_id: []const u8,
+    shared_user_id: []const u8,
+    role_name: []const u8,
+    granted_at: []const u8,
+    granted_by: ?[]const u8,
+
+    pub fn fromRow(reader: RowReader) RolesRow {
+        return RolesRow{
+            .role_id = reader.text(0),
+            .shared_user_id = reader.text(1),
+            .role_name = reader.text(2),
+            .granted_at = reader.text(3),
+            .granted_by = if (reader.is_null(4)) null else reader.text(4),
+        };
+    }
+};
+
+pub const webhook_events_table: []const u8 = "shared_auth.webhook_events";
+pub const webhook_events_columns = [_][]const u8{ "event_id", "provider", "event_type", "received_at", "payload_sha256" };
+pub const webhook_events_select_sql: []const u8 = "select\n      event_id::text as event_id,\n      provider,\n      event_type,\n      to_char(received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as received_at,\n      payload_sha256\n    from shared_auth.webhook_events";
+
+pub const WebhookEventsRow = struct {
+    event_id: []const u8,
+    provider: []const u8,
+    event_type: []const u8,
+    received_at: []const u8,
+    payload_sha256: []const u8,
+
+    pub fn fromRow(reader: RowReader) WebhookEventsRow {
+        return WebhookEventsRow{
+            .event_id = reader.text(0),
+            .provider = reader.text(1),
+            .event_type = reader.text(2),
+            .received_at = reader.text(3),
+            .payload_sha256 = reader.text(4),
+        };
+    }
+};

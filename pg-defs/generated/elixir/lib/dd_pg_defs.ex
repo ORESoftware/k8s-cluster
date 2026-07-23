@@ -166,6 +166,12 @@ defmodule DdPgDefs do
     DdPgDefs.FabInstructions,
     DdPgDefs.FabRuns,
     DdPgDefs.WebSessions,
+    DdPgDefs.Principals,
+    DdPgDefs.ProviderIdentities,
+    DdPgDefs.LocalCredentials,
+    DdPgDefs.Sessions,
+    DdPgDefs.Roles,
+    DdPgDefs.WebhookEvents,
   ]
 
   @spec tables() :: [module()]

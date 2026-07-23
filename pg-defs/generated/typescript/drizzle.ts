@@ -17,6 +17,7 @@ export const aiAgentBridgeSchema = pgSchema("ai_agent_bridge");
 export const fiduciaSchema = pgSchema("fiducia");
 export const t2vSchema = pgSchema("t2v");
 export const daedalusSchema = pgSchema("daedalus");
+export const sharedAuthSchema = pgSchema("shared_auth");
 
 export const accounts = threefaSchema.table(
   "accounts",
@@ -11251,3 +11252,299 @@ export const webSessionsUpdateSchema = webSessionsInsertSchema.partial();
 export type WebSessionsRow = z.infer<typeof webSessionsRowSchema>;
 export type WebSessionsInsert = z.infer<typeof webSessionsInsertSchema>;
 export type WebSessionsUpdate = z.infer<typeof webSessionsUpdateSchema>;
+
+export const principalsStatusValues = ["active","disabled","deleted"] as const;
+export const principalsStatusSchema = z.enum(principalsStatusValues);
+export type PrincipalsStatus = z.infer<typeof principalsStatusSchema>;
+
+export const principals = sharedAuthSchema.table(
+  "principals",
+  {
+    sharedUserId: uuid("shared_user_id").default(sql`gen_random_uuid()`).primaryKey(),
+    email: text("email"),
+    emailVerified: boolean("email_verified").default(sql`false`).notNull(),
+    phone: text("phone"),
+    displayName: text("display_name"),
+    status: text("status").default(sql`'active'`).notNull(),
+    profile: jsonb("profile").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    sharedAuthUsersEmailSizeChk: check("shared_auth_users_email_size_chk", sql.raw("email is null or octet_length(email) between 3 and 320")),
+    sharedAuthUsersPhoneSizeChk: check("shared_auth_users_phone_size_chk", sql.raw("phone is null or octet_length(phone) <= 64")),
+    sharedAuthUsersDisplayNameSizeChk: check("shared_auth_users_display_name_size_chk", sql.raw("display_name is null or octet_length(display_name) <= 160")),
+    sharedAuthUsersStatusChk: check("shared_auth_users_status_chk", sql.raw("status in ('active', 'disabled', 'deleted')")),
+    sharedAuthUsersProfileObjectChk: check("shared_auth_users_profile_object_chk", sql.raw("jsonb_typeof(profile) = 'object'")),
+    sharedAuthUsersEmailUq: uniqueIndex("shared_auth_users_email_uq").on(table.lower(email)).where(sql.raw("email is not null and status <> 'deleted'")),
+    sharedAuthUsersStatusIdx: index("shared_auth_users_status_idx").on(table.status),
+  }),
+);
+
+export const principalsRowSchema = z.object({
+  sharedUserId: z.string().uuid(),
+  email: z.string().refine((value) => byteLength(value) <= 320, "Must be at most 320 bytes").nullable(),
+  emailVerified: z.boolean(),
+  phone: z.string().refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes").nullable(),
+  displayName: z.string().refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes").nullable(),
+  status: principalsStatusSchema,
+  profile: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSeenAt: z.string().datetime(),
+});
+
+export const principalsInsertSchema = z.object({
+  sharedUserId: z.string().uuid().optional(),
+  email: z.string().refine((value) => byteLength(value) <= 320, "Must be at most 320 bytes").nullable().optional(),
+  emailVerified: z.boolean().optional().default(false),
+  phone: z.string().refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes").nullable().optional(),
+  displayName: z.string().refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes").nullable().optional(),
+  status: principalsStatusSchema.optional().default("active"),
+  profile: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  lastSeenAt: z.string().datetime().optional(),
+});
+
+export const principalsUpdateSchema = principalsInsertSchema.partial();
+export type PrincipalsRow = z.infer<typeof principalsRowSchema>;
+export type PrincipalsInsert = z.infer<typeof principalsInsertSchema>;
+export type PrincipalsUpdate = z.infer<typeof principalsUpdateSchema>;
+
+export const providerIdentities = sharedAuthSchema.table(
+  "provider_identities",
+  {
+    providerIdentityId: uuid("provider_identity_id").default(sql`gen_random_uuid()`).primaryKey(),
+    sharedUserId: uuid("shared_user_id").notNull(),
+    provider: text("provider").notNull(),
+    providerTenant: text("provider_tenant").default(sql`'default'`).notNull(),
+    providerSubject: text("provider_subject").notNull(),
+    email: text("email"),
+    emailVerified: boolean("email_verified").default(sql`false`).notNull(),
+    metadata: jsonb("metadata").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    sharedAuthProviderIdentitiesProviderSizeChk: check("shared_auth_provider_identities_provider_size_chk", sql.raw("octet_length(provider) between 1 and 64")),
+    sharedAuthProviderIdentitiesTenantSizeChk: check("shared_auth_provider_identities_tenant_size_chk", sql.raw("octet_length(provider_tenant) between 1 and 255")),
+    sharedAuthProviderIdentitiesSubjectSizeChk: check("shared_auth_provider_identities_subject_size_chk", sql.raw("octet_length(provider_subject) between 1 and 512")),
+    sharedAuthProviderIdentitiesEmailSizeChk: check("shared_auth_provider_identities_email_size_chk", sql.raw("email is null or octet_length(email) between 3 and 320")),
+    sharedAuthProviderIdentitiesMetadataObjectChk: check("shared_auth_provider_identities_metadata_object_chk", sql.raw("jsonb_typeof(metadata) = 'object'")),
+    sharedAuthProviderIdentitiesUserIdx: index("shared_auth_provider_identities_user_idx").on(table.sharedUserId),
+  }),
+);
+
+export const providerIdentitiesRowSchema = z.object({
+  providerIdentityId: z.string().uuid(),
+  sharedUserId: z.string().uuid(),
+  provider: z.string().refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes"),
+  providerTenant: z.string().refine((value) => byteLength(value) <= 255, "Must be at most 255 bytes"),
+  providerSubject: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  email: z.string().refine((value) => byteLength(value) <= 320, "Must be at most 320 bytes").nullable(),
+  emailVerified: z.boolean(),
+  metadata: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSeenAt: z.string().datetime(),
+});
+
+export const providerIdentitiesInsertSchema = z.object({
+  providerIdentityId: z.string().uuid().optional(),
+  sharedUserId: z.string().uuid(),
+  provider: z.string().refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes"),
+  providerTenant: z.string().refine((value) => byteLength(value) <= 255, "Must be at most 255 bytes").optional().default("default"),
+  providerSubject: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  email: z.string().refine((value) => byteLength(value) <= 320, "Must be at most 320 bytes").nullable().optional(),
+  emailVerified: z.boolean().optional().default(false),
+  metadata: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  lastSeenAt: z.string().datetime().optional(),
+});
+
+export const providerIdentitiesUpdateSchema = providerIdentitiesInsertSchema.partial();
+export type ProviderIdentitiesRow = z.infer<typeof providerIdentitiesRowSchema>;
+export type ProviderIdentitiesInsert = z.infer<typeof providerIdentitiesInsertSchema>;
+export type ProviderIdentitiesUpdate = z.infer<typeof providerIdentitiesUpdateSchema>;
+
+export const localCredentials = sharedAuthSchema.table(
+  "local_credentials",
+  {
+    sharedUserId: uuid("shared_user_id").primaryKey(),
+    passwordHash: text("password_hash").notNull(),
+    passwordChangedAt: timestamp("password_changed_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    failedAttempts: integer("failed_attempts").default(sql`0`).notNull(),
+    lockedUntil: timestamp("locked_until", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    sharedAuthLocalCredentialsHashSizeChk: check("shared_auth_local_credentials_hash_size_chk", sql.raw("octet_length(password_hash) between 40 and 512")),
+    sharedAuthLocalCredentialsFailedAttemptsChk: check("shared_auth_local_credentials_failed_attempts_chk", sql.raw("failed_attempts >= 0")),
+  }),
+);
+
+export const localCredentialsRowSchema = z.object({
+  sharedUserId: z.string().uuid(),
+  passwordHash: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  passwordChangedAt: z.string().datetime(),
+  failedAttempts: z.number().int().min(0),
+  lockedUntil: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const localCredentialsInsertSchema = z.object({
+  sharedUserId: z.string().uuid(),
+  passwordHash: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  passwordChangedAt: z.string().datetime().optional(),
+  failedAttempts: z.number().int().min(0).optional().default(0),
+  lockedUntil: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const localCredentialsUpdateSchema = localCredentialsInsertSchema.partial();
+export type LocalCredentialsRow = z.infer<typeof localCredentialsRowSchema>;
+export type LocalCredentialsInsert = z.infer<typeof localCredentialsInsertSchema>;
+export type LocalCredentialsUpdate = z.infer<typeof localCredentialsUpdateSchema>;
+
+export const sessions = sharedAuthSchema.table(
+  "sessions",
+  {
+    sessionId: uuid("session_id").default(sql`gen_random_uuid()`).primaryKey(),
+    sharedUserId: uuid("shared_user_id").notNull(),
+    refreshTokenHash: text("refresh_token_hash").notNull(),
+    provider: text("provider").notNull(),
+    providerTenant: text("provider_tenant").default(sql`'default'`).notNull(),
+    providerSubject: text("provider_subject").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true, mode: "string" }),
+    rotatedFrom: uuid("rotated_from"),
+  },
+  (table) => ({
+    sharedAuthSessionsRefreshHashSizeChk: check("shared_auth_sessions_refresh_hash_size_chk", sql.raw("octet_length(refresh_token_hash) = 43")),
+    sharedAuthSessionsProviderSizeChk: check("shared_auth_sessions_provider_size_chk", sql.raw("octet_length(provider) between 1 and 64")),
+    sharedAuthSessionsTenantSizeChk: check("shared_auth_sessions_tenant_size_chk", sql.raw("octet_length(provider_tenant) between 1 and 255")),
+    sharedAuthSessionsSubjectSizeChk: check("shared_auth_sessions_subject_size_chk", sql.raw("octet_length(provider_subject) between 1 and 512")),
+    sharedAuthSessionsExpiryChk: check("shared_auth_sessions_expiry_chk", sql.raw("expires_at > created_at")),
+    sharedAuthSessionsUserIdx: index("shared_auth_sessions_user_idx").on(table.sharedUserId),
+    sharedAuthSessionsActiveExpiryIdx: index("shared_auth_sessions_active_expiry_idx").on(table.expiresAt).where(sql.raw("revoked_at is null")),
+  }),
+);
+
+export const sessionsRowSchema = z.object({
+  sessionId: z.string().uuid(),
+  sharedUserId: z.string().uuid(),
+  refreshTokenHash: z.string(),
+  provider: z.string().refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes"),
+  providerTenant: z.string().refine((value) => byteLength(value) <= 255, "Must be at most 255 bytes"),
+  providerSubject: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSeenAt: z.string().datetime(),
+  expiresAt: z.string().datetime(),
+  revokedAt: z.string().datetime().nullable(),
+  rotatedFrom: z.string().uuid().nullable(),
+});
+
+export const sessionsInsertSchema = z.object({
+  sessionId: z.string().uuid().optional(),
+  sharedUserId: z.string().uuid(),
+  refreshTokenHash: z.string(),
+  provider: z.string().refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes"),
+  providerTenant: z.string().refine((value) => byteLength(value) <= 255, "Must be at most 255 bytes").optional().default("default"),
+  providerSubject: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  lastSeenAt: z.string().datetime().optional(),
+  expiresAt: z.string().datetime(),
+  revokedAt: z.string().datetime().nullable().optional(),
+  rotatedFrom: z.string().uuid().nullable().optional(),
+});
+
+export const sessionsUpdateSchema = sessionsInsertSchema.partial();
+export type SessionsRow = z.infer<typeof sessionsRowSchema>;
+export type SessionsInsert = z.infer<typeof sessionsInsertSchema>;
+export type SessionsUpdate = z.infer<typeof sessionsUpdateSchema>;
+
+export const roles = sharedAuthSchema.table(
+  "roles",
+  {
+    roleId: uuid("role_id").default(sql`gen_random_uuid()`).primaryKey(),
+    sharedUserId: uuid("shared_user_id").notNull(),
+    roleName: text("role_name").notNull(),
+    grantedAt: timestamp("granted_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    grantedBy: uuid("granted_by"),
+  },
+  (table) => ({
+    sharedAuthRolesNameChk: check("shared_auth_roles_name_chk", sql.raw("role_name ~ '^[a-z][a-z0-9:_-]{0,63}$'")),
+    sharedAuthRolesUserIdx: index("shared_auth_roles_user_idx").on(table.sharedUserId),
+  }),
+);
+
+export const rolesRowSchema = z.object({
+  roleId: z.string().uuid(),
+  sharedUserId: z.string().uuid(),
+  roleName: z.string().regex(new RegExp("^[a-z][a-z0-9:_-]{0,63}$")),
+  grantedAt: z.string().datetime(),
+  grantedBy: z.string().uuid().nullable(),
+});
+
+export const rolesInsertSchema = z.object({
+  roleId: z.string().uuid().optional(),
+  sharedUserId: z.string().uuid(),
+  roleName: z.string().regex(new RegExp("^[a-z][a-z0-9:_-]{0,63}$")),
+  grantedAt: z.string().datetime().optional(),
+  grantedBy: z.string().uuid().nullable().optional(),
+});
+
+export const rolesUpdateSchema = rolesInsertSchema.partial();
+export type RolesRow = z.infer<typeof rolesRowSchema>;
+export type RolesInsert = z.infer<typeof rolesInsertSchema>;
+export type RolesUpdate = z.infer<typeof rolesUpdateSchema>;
+
+export const webhookEvents = sharedAuthSchema.table(
+  "webhook_events",
+  {
+    eventId: uuid("event_id").primaryKey(),
+    provider: text("provider").notNull(),
+    eventType: text("event_type").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    payloadSha256: text("payload_sha256").notNull(),
+  },
+  (table) => ({
+    sharedAuthWebhookEventsProviderSizeChk: check("shared_auth_webhook_events_provider_size_chk", sql.raw("octet_length(provider) between 1 and 64")),
+    sharedAuthWebhookEventsTypeSizeChk: check("shared_auth_webhook_events_type_size_chk", sql.raw("octet_length(event_type) between 1 and 128")),
+    sharedAuthWebhookEventsPayloadHashSizeChk: check("shared_auth_webhook_events_payload_hash_size_chk", sql.raw("octet_length(payload_sha256) = 43")),
+    sharedAuthWebhookEventsReceivedIdx: index("shared_auth_webhook_events_received_idx").on(table.receivedAt),
+  }),
+);
+
+export const webhookEventsRowSchema = z.object({
+  eventId: z.string().uuid(),
+  provider: z.string().refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes"),
+  eventType: z.string().refine((value) => byteLength(value) <= 128, "Must be at most 128 bytes"),
+  receivedAt: z.string().datetime(),
+  payloadSha256: z.string(),
+});
+
+export const webhookEventsInsertSchema = z.object({
+  eventId: z.string().uuid(),
+  provider: z.string().refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes"),
+  eventType: z.string().refine((value) => byteLength(value) <= 128, "Must be at most 128 bytes"),
+  receivedAt: z.string().datetime().optional(),
+  payloadSha256: z.string(),
+});
+
+export const webhookEventsUpdateSchema = webhookEventsInsertSchema.partial();
+export type WebhookEventsRow = z.infer<typeof webhookEventsRowSchema>;
+export type WebhookEventsInsert = z.infer<typeof webhookEventsInsertSchema>;
+export type WebhookEventsUpdate = z.infer<typeof webhookEventsUpdateSchema>;

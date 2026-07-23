@@ -11107,3 +11107,164 @@ data WebSessionsRow = WebSessionsRow
 
 instance FromRow WebSessionsRow where
   fromRow = WebSessionsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+principalsTable :: Text
+principalsTable = "shared_auth.principals"
+
+principalsColumns :: [Text]
+principalsColumns = ["shared_user_id", "email", "email_verified", "phone", "display_name", "status", "profile", "created_at", "updated_at", "last_seen_at"]
+
+principalsSelectSql :: Text
+principalsSelectSql = "select\n      shared_user_id::text as shared_user_id,\n      email,\n      email_verified,\n      phone,\n      display_name,\n      status,\n      profile::text as profile_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.principals"
+
+data PrincipalsStatus = PrincipalsStatusActive | PrincipalsStatusDisabled | PrincipalsStatusDeleted
+  deriving (Eq, Show)
+
+principalsStatusToText :: PrincipalsStatus -> Text
+principalsStatusToText value = case value of
+  PrincipalsStatusActive -> "active"
+  PrincipalsStatusDisabled -> "disabled"
+  PrincipalsStatusDeleted -> "deleted"
+
+parsePrincipalsStatus :: Text -> Either Text PrincipalsStatus
+parsePrincipalsStatus value = case value of
+  "active" -> Right PrincipalsStatusActive
+  "disabled" -> Right PrincipalsStatusDisabled
+  "deleted" -> Right PrincipalsStatusDeleted
+  _ -> Left (T.append "unsupported principals.status: " value)
+
+data PrincipalsRow = PrincipalsRow
+  { principalsSharedUserId :: Text
+  , principalsEmail :: (Maybe Text)
+  , principalsEmailVerified :: Bool
+  , principalsPhone :: (Maybe Text)
+  , principalsDisplayName :: (Maybe Text)
+  , principalsStatus :: Text
+  , principalsProfile :: Text
+  , principalsCreatedAt :: Text
+  , principalsUpdatedAt :: Text
+  , principalsLastSeenAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow PrincipalsRow where
+  fromRow = PrincipalsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+providerIdentitiesTable :: Text
+providerIdentitiesTable = "shared_auth.provider_identities"
+
+providerIdentitiesColumns :: [Text]
+providerIdentitiesColumns = ["provider_identity_id", "shared_user_id", "provider", "provider_tenant", "provider_subject", "email", "email_verified", "metadata", "created_at", "updated_at", "last_seen_at"]
+
+providerIdentitiesSelectSql :: Text
+providerIdentitiesSelectSql = "select\n      provider_identity_id::text as provider_identity_id,\n      shared_user_id::text as shared_user_id,\n      provider,\n      provider_tenant,\n      provider_subject,\n      email,\n      email_verified,\n      metadata::text as metadata_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.provider_identities"
+
+data ProviderIdentitiesRow = ProviderIdentitiesRow
+  { providerIdentitiesProviderIdentityId :: Text
+  , providerIdentitiesSharedUserId :: Text
+  , providerIdentitiesProvider :: Text
+  , providerIdentitiesProviderTenant :: Text
+  , providerIdentitiesProviderSubject :: Text
+  , providerIdentitiesEmail :: (Maybe Text)
+  , providerIdentitiesEmailVerified :: Bool
+  , providerIdentitiesMetadata :: Text
+  , providerIdentitiesCreatedAt :: Text
+  , providerIdentitiesUpdatedAt :: Text
+  , providerIdentitiesLastSeenAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow ProviderIdentitiesRow where
+  fromRow = ProviderIdentitiesRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+localCredentialsTable :: Text
+localCredentialsTable = "shared_auth.local_credentials"
+
+localCredentialsColumns :: [Text]
+localCredentialsColumns = ["shared_user_id", "password_hash", "password_changed_at", "failed_attempts", "locked_until", "created_at", "updated_at"]
+
+localCredentialsSelectSql :: Text
+localCredentialsSelectSql = "select\n      shared_user_id::text as shared_user_id,\n      password_hash,\n      to_char(password_changed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as password_changed_at,\n      failed_attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from shared_auth.local_credentials"
+
+data LocalCredentialsRow = LocalCredentialsRow
+  { localCredentialsSharedUserId :: Text
+  , localCredentialsPasswordHash :: Text
+  , localCredentialsPasswordChangedAt :: Text
+  , localCredentialsFailedAttempts :: Int
+  , localCredentialsLockedUntil :: (Maybe Text)
+  , localCredentialsCreatedAt :: Text
+  , localCredentialsUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow LocalCredentialsRow where
+  fromRow = LocalCredentialsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateLocalCredentialsFailedAttempts :: Int -> Either Text Int
+validateLocalCredentialsFailedAttempts value
+  | value < 0 = Left "local_credentials.failed_attempts is below the minimum"
+  | otherwise = Right value
+
+sessionsTable :: Text
+sessionsTable = "shared_auth.sessions"
+
+sessionsColumns :: [Text]
+sessionsColumns = ["session_id", "shared_user_id", "refresh_token_hash", "provider", "provider_tenant", "provider_subject", "created_at", "updated_at", "last_seen_at", "expires_at", "revoked_at", "rotated_from"]
+
+sessionsSelectSql :: Text
+sessionsSelectSql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+
+data SessionsRow = SessionsRow
+  { sessionsSessionId :: Text
+  , sessionsSharedUserId :: Text
+  , sessionsRefreshTokenHash :: Text
+  , sessionsProvider :: Text
+  , sessionsProviderTenant :: Text
+  , sessionsProviderSubject :: Text
+  , sessionsCreatedAt :: Text
+  , sessionsUpdatedAt :: Text
+  , sessionsLastSeenAt :: Text
+  , sessionsExpiresAt :: Text
+  , sessionsRevokedAt :: (Maybe Text)
+  , sessionsRotatedFrom :: (Maybe Text)
+  } deriving (Eq, Show)
+
+instance FromRow SessionsRow where
+  fromRow = SessionsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+rolesTable :: Text
+rolesTable = "shared_auth.roles"
+
+rolesColumns :: [Text]
+rolesColumns = ["role_id", "shared_user_id", "role_name", "granted_at", "granted_by"]
+
+rolesSelectSql :: Text
+rolesSelectSql = "select\n      role_id::text as role_id,\n      shared_user_id::text as shared_user_id,\n      role_name,\n      to_char(granted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as granted_at,\n      granted_by::text as granted_by\n    from shared_auth.roles"
+
+data RolesRow = RolesRow
+  { rolesRoleId :: Text
+  , rolesSharedUserId :: Text
+  , rolesRoleName :: Text
+  , rolesGrantedAt :: Text
+  , rolesGrantedBy :: (Maybe Text)
+  } deriving (Eq, Show)
+
+instance FromRow RolesRow where
+  fromRow = RolesRow <$> field <*> field <*> field <*> field <*> field
+
+webhookEventsTable :: Text
+webhookEventsTable = "shared_auth.webhook_events"
+
+webhookEventsColumns :: [Text]
+webhookEventsColumns = ["event_id", "provider", "event_type", "received_at", "payload_sha256"]
+
+webhookEventsSelectSql :: Text
+webhookEventsSelectSql = "select\n      event_id::text as event_id,\n      provider,\n      event_type,\n      to_char(received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as received_at,\n      payload_sha256\n    from shared_auth.webhook_events"
+
+data WebhookEventsRow = WebhookEventsRow
+  { webhookEventsEventId :: Text
+  , webhookEventsProvider :: Text
+  , webhookEventsEventType :: Text
+  , webhookEventsReceivedAt :: Text
+  , webhookEventsPayloadSha256 :: Text
+  } deriving (Eq, Show)
+
+instance FromRow WebhookEventsRow where
+  fromRow = WebhookEventsRow <$> field <*> field <*> field <*> field <*> field

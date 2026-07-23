@@ -114,6 +114,7 @@ var paymentMethodsLast4Pattern = regexp.MustCompile(`^[0-9]{4}$`)
 var invoicesCurrencyPattern = regexp.MustCompile(`^[a-z]{3}$`)
 var paymentsCurrencyPattern = regexp.MustCompile(`^[a-z]{3}$`)
 var billingWebhookEventsPayloadSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var rolesRoleNamePattern = regexp.MustCompile(`^[a-z][a-z0-9:_-]{0,63}$`)
 
 const AccountsTable = "threefa.accounts"
 const AccountsSelectSQL = `select
@@ -8003,6 +8004,223 @@ func (WebSessionsGorm) TableName() string { return WebSessionsTable }
 func (value WebSessionsGorm) Validate() error {
 	if len([]byte(value.OwnerEmail)) > 320 { return errors.New("web_sessions.owner_email exceeds 320 bytes") }
 	if len([]byte(value.OwnerEmail)) < 3 { return errors.New("web_sessions.owner_email is below 3 bytes") }
+	return nil
+}
+
+const PrincipalsTable = "shared_auth.principals"
+const PrincipalsSelectSQL = `select
+      shared_user_id::text as shared_user_id,
+      email,
+      email_verified,
+      phone,
+      display_name,
+      status,
+      profile,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at
+    from shared_auth.principals`
+
+var PrincipalsStatusValues = []string{"active", "disabled", "deleted"}
+
+type PrincipalsGorm struct {
+	SharedUserId uuid.UUID `gorm:"column:shared_user_id;type:uuid;primaryKey;default:gen_random_uuid()" json:"sharedUserId"`
+	Email *string `gorm:"column:email;type:text" json:"email,omitempty"`
+	EmailVerified bool `gorm:"column:email_verified;type:boolean;default:false;not null" json:"emailVerified"`
+	Phone *string `gorm:"column:phone;type:text" json:"phone,omitempty"`
+	DisplayName *string `gorm:"column:display_name;type:text" json:"displayName,omitempty"`
+	Status string `gorm:"column:status;type:text;default:'active';not null" json:"status"`
+	Profile datatypes.JSON `gorm:"column:profile;type:jsonb;default:'{}'::jsonb;not null" json:"profile"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	LastSeenAt time.Time `gorm:"column:last_seen_at;type:timestamptz;default:now();not null" json:"lastSeenAt"`
+}
+
+func (PrincipalsGorm) TableName() string { return PrincipalsTable }
+
+func (value PrincipalsGorm) Validate() error {
+	if value.Email != nil {
+		if len([]byte(*value.Email)) > 320 { return errors.New("principals.email exceeds 320 bytes") }
+		if len([]byte(*value.Email)) < 3 { return errors.New("principals.email is below 3 bytes") }
+	}
+	if value.Phone != nil {
+		if len([]byte(*value.Phone)) > 64 { return errors.New("principals.phone exceeds 64 bytes") }
+	}
+	if value.DisplayName != nil {
+		if len([]byte(*value.DisplayName)) > 160 { return errors.New("principals.display_name exceeds 160 bytes") }
+	}
+	if !containsString(PrincipalsStatusValues, value.Status) { return errors.New("unsupported principals.status") }
+	if !validateJSONString(value.Profile) { return errors.New("principals.profile must be valid JSON") }
+	return nil
+}
+
+const ProviderIdentitiesTable = "shared_auth.provider_identities"
+const ProviderIdentitiesSelectSQL = `select
+      provider_identity_id::text as provider_identity_id,
+      shared_user_id::text as shared_user_id,
+      provider,
+      provider_tenant,
+      provider_subject,
+      email,
+      email_verified,
+      metadata,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at
+    from shared_auth.provider_identities`
+
+type ProviderIdentitiesGorm struct {
+	ProviderIdentityId uuid.UUID `gorm:"column:provider_identity_id;type:uuid;primaryKey;default:gen_random_uuid()" json:"providerIdentityId"`
+	SharedUserId uuid.UUID `gorm:"column:shared_user_id;type:uuid;not null" json:"sharedUserId"`
+	Provider string `gorm:"column:provider;type:text;not null" json:"provider"`
+	ProviderTenant string `gorm:"column:provider_tenant;type:text;default:'default';not null" json:"providerTenant"`
+	ProviderSubject string `gorm:"column:provider_subject;type:text;not null" json:"providerSubject"`
+	Email *string `gorm:"column:email;type:text" json:"email,omitempty"`
+	EmailVerified bool `gorm:"column:email_verified;type:boolean;default:false;not null" json:"emailVerified"`
+	Metadata datatypes.JSON `gorm:"column:metadata;type:jsonb;default:'{}'::jsonb;not null" json:"metadata"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	LastSeenAt time.Time `gorm:"column:last_seen_at;type:timestamptz;default:now();not null" json:"lastSeenAt"`
+}
+
+func (ProviderIdentitiesGorm) TableName() string { return ProviderIdentitiesTable }
+
+func (value ProviderIdentitiesGorm) Validate() error {
+	if len([]byte(value.Provider)) > 64 { return errors.New("provider_identities.provider exceeds 64 bytes") }
+	if len([]byte(value.Provider)) < 1 { return errors.New("provider_identities.provider is below 1 bytes") }
+	if len([]byte(value.ProviderTenant)) > 255 { return errors.New("provider_identities.provider_tenant exceeds 255 bytes") }
+	if len([]byte(value.ProviderTenant)) < 1 { return errors.New("provider_identities.provider_tenant is below 1 bytes") }
+	if len([]byte(value.ProviderSubject)) > 512 { return errors.New("provider_identities.provider_subject exceeds 512 bytes") }
+	if len([]byte(value.ProviderSubject)) < 1 { return errors.New("provider_identities.provider_subject is below 1 bytes") }
+	if value.Email != nil {
+		if len([]byte(*value.Email)) > 320 { return errors.New("provider_identities.email exceeds 320 bytes") }
+		if len([]byte(*value.Email)) < 3 { return errors.New("provider_identities.email is below 3 bytes") }
+	}
+	if !validateJSONString(value.Metadata) { return errors.New("provider_identities.metadata must be valid JSON") }
+	return nil
+}
+
+const LocalCredentialsTable = "shared_auth.local_credentials"
+const LocalCredentialsSelectSQL = `select
+      shared_user_id::text as shared_user_id,
+      password_hash,
+      to_char(password_changed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as password_changed_at,
+      failed_attempts,
+      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as locked_until,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from shared_auth.local_credentials`
+
+type LocalCredentialsGorm struct {
+	SharedUserId uuid.UUID `gorm:"column:shared_user_id;type:uuid;primaryKey" json:"sharedUserId"`
+	PasswordHash string `gorm:"column:password_hash;type:text;not null" json:"passwordHash"`
+	PasswordChangedAt time.Time `gorm:"column:password_changed_at;type:timestamptz;default:now();not null" json:"passwordChangedAt"`
+	FailedAttempts int32 `gorm:"column:failed_attempts;type:integer;default:0;not null" json:"failedAttempts"`
+	LockedUntil *time.Time `gorm:"column:locked_until;type:timestamptz" json:"lockedUntil,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (LocalCredentialsGorm) TableName() string { return LocalCredentialsTable }
+
+func (value LocalCredentialsGorm) Validate() error {
+	if len([]byte(value.PasswordHash)) > 512 { return errors.New("local_credentials.password_hash exceeds 512 bytes") }
+	if len([]byte(value.PasswordHash)) < 40 { return errors.New("local_credentials.password_hash is below 40 bytes") }
+	if value.FailedAttempts < 0 { return errors.New("local_credentials.failed_attempts is below the minimum") }
+	return nil
+}
+
+const SessionsTable = "shared_auth.sessions"
+const SessionsSelectSQL = `select
+      session_id::text as session_id,
+      shared_user_id::text as shared_user_id,
+      refresh_token_hash,
+      provider,
+      provider_tenant,
+      provider_subject,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revoked_at,
+      rotated_from::text as rotated_from
+    from shared_auth.sessions`
+
+type SessionsGorm struct {
+	SessionId uuid.UUID `gorm:"column:session_id;type:uuid;primaryKey;default:gen_random_uuid()" json:"sessionId"`
+	SharedUserId uuid.UUID `gorm:"column:shared_user_id;type:uuid;not null" json:"sharedUserId"`
+	RefreshTokenHash string `gorm:"column:refresh_token_hash;type:text;not null" json:"refreshTokenHash"`
+	Provider string `gorm:"column:provider;type:text;not null" json:"provider"`
+	ProviderTenant string `gorm:"column:provider_tenant;type:text;default:'default';not null" json:"providerTenant"`
+	ProviderSubject string `gorm:"column:provider_subject;type:text;not null" json:"providerSubject"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	LastSeenAt time.Time `gorm:"column:last_seen_at;type:timestamptz;default:now();not null" json:"lastSeenAt"`
+	ExpiresAt time.Time `gorm:"column:expires_at;type:timestamptz;not null" json:"expiresAt"`
+	RevokedAt *time.Time `gorm:"column:revoked_at;type:timestamptz" json:"revokedAt,omitempty"`
+	RotatedFrom *uuid.UUID `gorm:"column:rotated_from;type:uuid" json:"rotatedFrom,omitempty"`
+}
+
+func (SessionsGorm) TableName() string { return SessionsTable }
+
+func (value SessionsGorm) Validate() error {
+	if len([]byte(value.Provider)) > 64 { return errors.New("sessions.provider exceeds 64 bytes") }
+	if len([]byte(value.Provider)) < 1 { return errors.New("sessions.provider is below 1 bytes") }
+	if len([]byte(value.ProviderTenant)) > 255 { return errors.New("sessions.provider_tenant exceeds 255 bytes") }
+	if len([]byte(value.ProviderTenant)) < 1 { return errors.New("sessions.provider_tenant is below 1 bytes") }
+	if len([]byte(value.ProviderSubject)) > 512 { return errors.New("sessions.provider_subject exceeds 512 bytes") }
+	if len([]byte(value.ProviderSubject)) < 1 { return errors.New("sessions.provider_subject is below 1 bytes") }
+	return nil
+}
+
+const RolesTable = "shared_auth.roles"
+const RolesSelectSQL = `select
+      role_id::text as role_id,
+      shared_user_id::text as shared_user_id,
+      role_name,
+      to_char(granted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as granted_at,
+      granted_by::text as granted_by
+    from shared_auth.roles`
+
+type RolesGorm struct {
+	RoleId uuid.UUID `gorm:"column:role_id;type:uuid;primaryKey;default:gen_random_uuid()" json:"roleId"`
+	SharedUserId uuid.UUID `gorm:"column:shared_user_id;type:uuid;not null" json:"sharedUserId"`
+	RoleName string `gorm:"column:role_name;type:text;not null" json:"roleName"`
+	GrantedAt time.Time `gorm:"column:granted_at;type:timestamptz;default:now();not null" json:"grantedAt"`
+	GrantedBy *uuid.UUID `gorm:"column:granted_by;type:uuid" json:"grantedBy,omitempty"`
+}
+
+func (RolesGorm) TableName() string { return RolesTable }
+
+func (value RolesGorm) Validate() error {
+	if !rolesRoleNamePattern.MatchString(value.RoleName) { return errors.New("roles.role_name does not match the required pattern") }
+	return nil
+}
+
+const WebhookEventsTable = "shared_auth.webhook_events"
+const WebhookEventsSelectSQL = `select
+      event_id::text as event_id,
+      provider,
+      event_type,
+      to_char(received_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as received_at,
+      payload_sha256
+    from shared_auth.webhook_events`
+
+type WebhookEventsGorm struct {
+	EventId uuid.UUID `gorm:"column:event_id;type:uuid;primaryKey" json:"eventId"`
+	Provider string `gorm:"column:provider;type:text;not null" json:"provider"`
+	EventType string `gorm:"column:event_type;type:text;not null" json:"eventType"`
+	ReceivedAt time.Time `gorm:"column:received_at;type:timestamptz;default:now();not null" json:"receivedAt"`
+	PayloadSha256 string `gorm:"column:payload_sha256;type:text;not null" json:"payloadSha256"`
+}
+
+func (WebhookEventsGorm) TableName() string { return WebhookEventsTable }
+
+func (value WebhookEventsGorm) Validate() error {
+	if len([]byte(value.Provider)) > 64 { return errors.New("webhook_events.provider exceeds 64 bytes") }
+	if len([]byte(value.Provider)) < 1 { return errors.New("webhook_events.provider is below 1 bytes") }
+	if len([]byte(value.EventType)) > 128 { return errors.New("webhook_events.event_type exceeds 128 bytes") }
+	if len([]byte(value.EventType)) < 1 { return errors.New("webhook_events.event_type is below 1 bytes") }
 	return nil
 }
 
