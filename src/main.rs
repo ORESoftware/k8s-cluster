@@ -937,6 +937,20 @@ fn worker_stale_after() -> Duration {
     Duration::from_secs(env_u64("MIP_SOLVER_WORKER_STALE_SECONDS", 100).max(1))
 }
 
+fn retain_current_workers(workers: &mut HashMap<String, WorkerNodeStatus>, observed_at_ms: u128) {
+    let stale_after_ms = worker_stale_after().as_millis();
+    workers
+        .retain(|_, worker| observed_at_ms.saturating_sub(worker.last_seen_ms) <= stale_after_ms);
+}
+
+fn current_worker_snapshot(state: &AppState) -> Vec<WorkerNodeStatus> {
+    let mut workers = state.workers.lock().expect("workers mutex poisoned");
+    retain_current_workers(&mut workers, now_ms());
+    let mut snapshot = workers.values().cloned().collect::<Vec<_>>();
+    snapshot.sort_by(|left, right| left.node_id.cmp(&right.node_id));
+    snapshot
+}
+
 fn gpu_mode() -> String {
     env_value("MIP_SOLVER_GPU_MODE", "auto").to_ascii_lowercase()
 }
@@ -5235,6 +5249,7 @@ fn record_worker_control_frame(state: &AppState, frame: &Value) -> Result<(), St
         .unwrap_or_else(now_ms);
 
     let mut workers = state.workers.lock().expect("workers mutex poisoned");
+    retain_current_workers(&mut workers, seen_at);
     let worker = workers
         .entry(node_id.clone())
         .or_insert_with(|| WorkerNodeStatus {
@@ -6569,13 +6584,7 @@ fn version_document(state: &AppState) -> Value {
 
 fn nats_status_document(state: &AppState) -> Value {
     let connected = state.nats.is_some();
-    let workers: Vec<WorkerNodeStatus> = state
-        .workers
-        .lock()
-        .expect("workers mutex poisoned")
-        .values()
-        .cloned()
-        .collect();
+    let workers = current_worker_snapshot(state);
     json!({
         "ok": connected,
         "service": SERVICE_NAME,
@@ -6726,7 +6735,7 @@ async fn home(State(state): State<AppState>) -> Html<String> {
                 "MIP_SOLVER_NATS_CONSUMER",
                 MIP_SOLVER_WORKERS_QUEUE_GROUP,
             )),
-            workers = state.workers.lock().expect("workers mutex poisoned").len(),
+            workers = current_worker_snapshot(&state).len(),
             solves = state.solves.lock().expect("solves mutex poisoned").len(),
         ),
     )
@@ -6807,6 +6816,7 @@ async fn nats_status(State(state): State<AppState>) -> impl IntoResponse {
 
 async fn root(State(state): State<AppState>) -> impl IntoResponse {
     let tasks = runtime_task_entries(&state);
+    let workers_known = current_worker_snapshot(&state).len();
     let active_tasks = tasks
         .iter()
         .filter(|task| task.finished_at_ms.is_none())
@@ -6821,7 +6831,7 @@ async fn root(State(state): State<AppState>) -> impl IntoResponse {
         "subjects": subjects_document(&state),
         "stream": DD_REMOTE_MIP_SOLVER_STREAM_NAME,
         "queueGroup": MIP_SOLVER_WORKERS_QUEUE_GROUP,
-        "workersKnown": state.workers.lock().expect("workers mutex poisoned").len(),
+        "workersKnown": workers_known,
         "tasksTracked": tasks.len(),
         "activeTasks": active_tasks,
         "solvesTracked": state.solves.lock().expect("solves mutex poisoned").len(),
@@ -6948,7 +6958,7 @@ async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
         in_flight,
         m.subproblem_jobs_redelegated_total.load(Ordering::Relaxed),
         m.subproblem_jobs_split_total.load(Ordering::Relaxed),
-        state.workers.lock().expect("workers mutex poisoned").len(),
+        current_worker_snapshot(&state).len(),
         m.worker_control_messages_total.load(Ordering::Relaxed),
         solves_tracked,
         active_solves,
@@ -7386,14 +7396,7 @@ async fn get_session(
 }
 
 async fn workers(State(state): State<AppState>) -> Response {
-    let mut workers: Vec<WorkerNodeStatus> = state
-        .workers
-        .lock()
-        .expect("workers mutex poisoned")
-        .values()
-        .cloned()
-        .collect();
-    workers.sort_by(|left, right| left.node_id.cmp(&right.node_id));
+    let workers = current_worker_snapshot(&state);
     response_json(
         StatusCode::OK,
         json!({
@@ -9530,6 +9533,7 @@ mod tests {
     #[tokio::test]
     async fn nats_status_route_reports_master_slave_wiring() {
         let state = test_state(NodeRole::Master);
+        let seen_at = now_ms();
         record_worker_control_frame(
             &state,
             &json!({
@@ -9543,7 +9547,7 @@ mod tests {
                     "jobsSubject": MIP_SOLVER_JOBS_SUBJECT,
                     "resultsSubject": MIP_SOLVER_RESULTS_SUBJECT
                 },
-                "timeMs": 1000
+                "timeMs": seen_at
             }),
         )
         .unwrap();
@@ -10680,7 +10684,7 @@ mod tests {
                 WorkerNodeStatus {
                     node_id: "worker-a".to_string(),
                     last_command: "worker-ready".to_string(),
-                    last_seen_ms: 1000,
+                    last_seen_ms: now_ms(),
                     ..WorkerNodeStatus::default()
                 },
             );
@@ -10722,6 +10726,7 @@ mod tests {
     #[tokio::test]
     async fn mip_solver_cluster_workers_endpoint_reports_master_observed_slaves() {
         let state = test_state(NodeRole::Master);
+        let seen_at = now_ms();
         record_worker_control_frame(
             &state,
             &json!({
@@ -10735,7 +10740,7 @@ mod tests {
                     "jobsSubject": MIP_SOLVER_JOBS_SUBJECT,
                     "resultsSubject": MIP_SOLVER_RESULTS_SUBJECT
                 },
-                "timeMs": 2000
+                "timeMs": seen_at
             }),
         )
         .unwrap();
@@ -10754,6 +10759,57 @@ mod tests {
             body.pointer("/workers/0/consumer"),
             Some(&json!("dd-in-house-mip-solver-node-workers"))
         );
+    }
+
+    #[tokio::test]
+    async fn worker_rotation_prunes_stale_registry_entries() {
+        let state = test_state(NodeRole::Master);
+        let seen_at = now_ms();
+        let stale_at = seen_at.saturating_sub(worker_stale_after().as_millis() + 1);
+        state
+            .workers
+            .lock()
+            .expect("workers mutex poisoned")
+            .insert(
+                "worker-old".to_string(),
+                WorkerNodeStatus {
+                    node_id: "worker-old".to_string(),
+                    last_command: "worker-ready".to_string(),
+                    last_seen_ms: stale_at,
+                    ..WorkerNodeStatus::default()
+                },
+            );
+
+        record_worker_control_frame(
+            &state,
+            &json!({
+                "schema":"dd.mip-solver.control.v1",
+                "service": SERVICE_NAME,
+                "nodeId":"worker-new",
+                "role":"slave",
+                "commandName":"worker-ready",
+                "payload":{
+                    "consumer":"dd-in-house-mip-solver-node-workers",
+                    "jobsSubject": MIP_SOLVER_JOBS_SUBJECT,
+                    "resultsSubject": MIP_SOLVER_RESULTS_SUBJECT
+                },
+                "timeMs": seen_at
+            }),
+        )
+        .unwrap();
+
+        let app = app_router(state.clone());
+        let (status, body) = get_json(app, "/workers").await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body.get("count"), Some(&json!(1)));
+        assert_eq!(
+            body.pointer("/workers/0/nodeId"),
+            Some(&json!("worker-new"))
+        );
+        let workers = state.workers.lock().expect("workers mutex poisoned");
+        assert!(!workers.contains_key("worker-old"));
+        assert!(workers.contains_key("worker-new"));
     }
 
     #[tokio::test]
