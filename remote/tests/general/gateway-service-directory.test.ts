@@ -649,7 +649,8 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
   assert.match(buildServerNetworkPolicy, /app:\s*dd-build-server/);
   assert.match(buildServerNetworkPolicy, /app:\s*dd-remote-gateway/);
   assert.match(lambdaDeployment, /name:\s*dd-gleam-lambda-runner/);
-  assert.match(lambdaDeployment, /remote\/deployments\/scintilla-run-monorepo\/apps\/gleam-lambda-runner/);
+  assert.match(lambdaDeployment, /image:\s*ghcr\.io\/scintilla-run\/scintilla-runner:development/);
+  assert.doesNotMatch(lambdaDeployment, /hostPath:[\s\S]*\/home\/ec2-user\/codes\/dd/);
   assert.match(lambdaDeployment, /containerPort:\s*8083/);
   assert.match(lambdaService, /name:\s*dd-gleam-lambda-runner/);
   assert.match(lambdaService, /port:\s*8083/);
@@ -680,8 +681,8 @@ test('gateway exposes public task pages and protects ops/data paths behind tempo
   assert.doesNotMatch(authPinEnvBlock, /\n\s*value:\s*/);
   assert.doesNotMatch(authCookieValueEnvBlock, /\n\s*value:\s*/);
   assert.match(authDeployment, /name:\s*http[\s\S]*containerPort:\s*8083/);
-  assert.match(authDeployment, /requests:[\s\S]*cpu:\s*50m[\s\S]*memory:\s*96Mi/);
-  assert.match(authDeployment, /limits:[\s\S]*cpu:\s*['"]?1['"]?[\s\S]*memory:\s*1Gi/);
+  assert.match(authDeployment, /requests:[\s\S]*cpu:\s*25m[\s\S]*memory:\s*256Mi/);
+  assert.match(authDeployment, /limits:[\s\S]*cpu:\s*['"]?2['"]?[\s\S]*memory:\s*4Gi/);
   assert.match(authDeployment, /startupProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
   assert.match(authDeployment, /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
   assert.match(authDeployment, /livenessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
