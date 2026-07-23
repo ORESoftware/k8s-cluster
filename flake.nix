@@ -1,5 +1,5 @@
 {
-  description = "Scintilla-run monorepo dev shell";
+  description = "scintilla-run monorepo integration shell";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";

@@ -1,0 +1,19 @@
+[help]
+url = "https://github.com/ORESoftware/flags-2-env"
+
+[parse]
+allow_unknown = false
+
+[flags.environment]
+env = "SCINTILLA_ENVIRONMENT"
+aliases = ["environment"]
+short = "e"
+type = "string"
+default = "ec2"
+
+[flags.output]
+env = "SCINTILLA_GITOPS_OUTPUT"
+aliases = ["output"]
+short = "o"
+type = "string"
+default = "gitops/ec2"

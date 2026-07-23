@@ -1,0 +1,61 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Validate GitHub Actions
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: ./.github/workflows/ci.yml
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - run: npm test
+      - run: make -C tools/flags-2-env all
+      - run: tools/flags-2-env/build/flags2env audit .cli-flags.toml
+  fleet-audit:
+    if: github.event_name != 'pull_request'
+    needs: contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check for private-submodule read token
+        id: token
+        env:
+          ORG_SUBMODULE_TOKEN: ${{ secrets.ORG_SUBMODULE_TOKEN }}
+        run: |
+          if [ -n "$ORG_SUBMODULE_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::ORG_SUBMODULE_TOKEN not configured; private fleet audit skipped"
+          fi
+      - name: Use HTTPS for submodule fetch
+        if: steps.token.outputs.present == 'true'
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        if: steps.token.outputs.present == 'true'
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          token: ${{ secrets.ORG_SUBMODULE_TOKEN }}
+          persist-credentials: false
+      - name: Every pinned submodule commit is fetchable and checked out
+        if: steps.token.outputs.present == 'true'
+        run: git submodule status --recursive

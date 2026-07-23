@@ -1,5 +1,5 @@
 {
-  "name": "scintilla-monorepo",
+  "name": "scintilla-run-monorepo",
   "private": true,
   "type": "module",
   "scripts": {

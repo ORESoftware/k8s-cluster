@@ -1,15 +1,15 @@
 {
   "org": "scintilla-run",
-  "monorepo": "scintilla-monorepo",
+  "monorepo": "scintilla-run-monorepo",
   "apps": [
+    "gleam-lambda-runner",
     "scintilla-backend.rs",
     "scintilla-app-rs",
-    "scintilla-infra",
+    "scintilla-run-infra",
     "scintilla-clients",
     "scintilla-interfaces",
     "scintilla-ui.dart",
     "scintilla-mcp-server.rs",
-    "scintilla-sync",
-    "scintilla-run.github.io"
+    "scintilla-sync"
   ]
 }

@@ -1,0 +1,140 @@
+# Manual production promotion: Git is the only deployment write surface.
+# This workflow has no kubeconfig, cloud credential, kubectl apply, or Argo token.
+name: deploy
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+  packages: write
+concurrency:
+  group: deploy-ec2
+  cancel-in-progress: false
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: production
+    steps:
+      - name: Require private-submodule token and public web configuration
+        env:
+          ORG_SUBMODULE_TOKEN: ${{ secrets.ORG_SUBMODULE_TOKEN }}
+          SCINTILLA_PUBLIC_BACKEND_URL: ${{ vars.SCINTILLA_PUBLIC_BACKEND_URL }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+        run: |
+          test -n "$ORG_SUBMODULE_TOKEN"
+          test -n "$SCINTILLA_PUBLIC_BACKEND_URL"
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_ANON_KEY"
+      - name: Use HTTPS for private submodules
+        run: git config --global url."https://github.com/".insteadOf "git@github.com:"
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          token: ${{ secrets.ORG_SUBMODULE_TOKEN }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with: { node-version: "22.22.1", cache: npm }
+      - uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+        with: { version: v1.34.1 }
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+      - uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - name: Verify protected main and exact submodule pins
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" = "$GITHUB_SHA"
+          if git submodule status --recursive | grep -Eq '^[+U-]'; then
+            echo "submodule checkout differs from reviewed pins" >&2
+            exit 1
+          fi
+      - name: Build and publish exact pinned images
+        id: images
+        env:
+          SCINTILLA_PUBLIC_BACKEND_URL: ${{ vars.SCINTILLA_PUBLIC_BACKEND_URL }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          build_image() {
+            local output="$1" image="$2" repo="$3" dockerfile="$4"
+            local commit metadata digest
+            commit="$(git -C "apps/$repo" rev-parse HEAD)"
+            metadata="$(mktemp)"
+            docker buildx build --push --provenance=true \
+              --file "apps/$repo/$dockerfile" \
+              --tag "$image:$commit" \
+              --metadata-file "$metadata" \
+              "apps/$repo"
+            digest="$(jq -r '."containerimage.digest"' "$metadata")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            printf '%s=%s@%s\n' "$output" "$image" "$digest" >> "$GITHUB_OUTPUT"
+          }
+          build_image backend ghcr.io/scintilla-run/scintilla-backend scintilla-backend.rs Dockerfile
+          build_image app ghcr.io/scintilla-run/scintilla-app scintilla-app-rs Dockerfile
+          build_image sync ghcr.io/scintilla-run/scintilla-sync scintilla-sync Dockerfile
+
+          ui_commit="$(git -C apps/scintilla-ui.dart rev-parse HEAD)"
+          ui_metadata="$(mktemp)"
+          docker buildx build --push --provenance=true \
+            --file apps/scintilla-ui.dart/Dockerfile \
+            --build-context scintilla-clients=apps/scintilla-clients \
+            --build-arg "SCINTILLA_BACKEND_URL=$SCINTILLA_PUBLIC_BACKEND_URL" \
+            --build-arg "SUPABASE_URL=$SUPABASE_URL" \
+            --build-arg "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY" \
+            --tag "ghcr.io/scintilla-run/scintilla-ui:$ui_commit" \
+            --metadata-file "$ui_metadata" \
+            apps/scintilla-ui.dart
+          ui_digest="$(jq -r '."containerimage.digest"' "$ui_metadata")"
+          [[ "$ui_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "ui=ghcr.io/scintilla-run/scintilla-ui@$ui_digest" >> "$GITHUB_OUTPUT"
+
+          runner_digest="$(docker buildx imagetools inspect ghcr.io/gleam-lang/gleam:v1.16.0-erlang-alpine | awk '$1 == "Digest:" { print $2; exit }')"
+          [[ "$runner_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "runner=ghcr.io/gleam-lang/gleam@$runner_digest" >> "$GITHUB_OUTPUT"
+      - name: Render immutable app-of-apps desired state
+        env:
+          SCINTILLA_MONOREPO_ROOT: ${{ github.workspace }}
+          SCINTILLA_ENVIRONMENT: ec2
+          SCINTILLA_GITOPS_OUTPUT: gitops/ec2
+          SCINTILLA_BACKEND_IMAGE: ${{ steps.images.outputs.backend }}
+          SCINTILLA_APP_IMAGE: ${{ steps.images.outputs.app }}
+          SCINTILLA_UI_IMAGE: ${{ steps.images.outputs.ui }}
+          SCINTILLA_SYNC_IMAGE: ${{ steps.images.outputs.sync }}
+          SCINTILLA_RUNNER_IMAGE: ${{ steps.images.outputs.runner }}
+        run: |
+          node apps/scintilla-run-infra/scripts/render-gitops.mjs
+          git diff --check -- gitops/ec2
+          test -f gitops/ec2/bootstrap/application-set.yaml
+          test -f gitops/ec2/control-plane/manifest.yaml
+          test -f gitops/ec2/runner/manifest.yaml
+          if grep -REn 'image: .*:(development|latest)' gitops/ec2; then exit 1; fi
+      - name: Commit approved desired state
+        id: commit
+        run: |
+          set -euo pipefail
+          git add gitops/ec2
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git diff --cached --check
+            git config user.name "scintilla-gitops[bot]"
+            git config user.email "scintilla-gitops[bot]@users.noreply.github.com"
+            git commit -m "deploy(gitops): promote ${GITHUB_SHA:0:12}"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Push desired state for Argo CD
+        if: steps.commit.outputs.changed == 'true'
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          gh auth setup-git
+          git push origin HEAD:main
