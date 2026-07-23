@@ -44,7 +44,7 @@ jobs:
       ATHLETO_APP_URL: ${{ github.event.inputs.app_url || 'https://app.athleto.store' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6

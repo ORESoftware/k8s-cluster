@@ -31,7 +31,7 @@ jobs:
         run: test -n "$K8S_SUBMODULE_TOKEN"
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Initialize required contract submodule
         env:
@@ -131,7 +131,7 @@ jobs:
         run: test -n "$K8S_SUBMODULE_TOKEN"
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Initialize pinned libraries and backend repositories
         env:
@@ -169,7 +169,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Initialize required public overlay submodule
         run: |

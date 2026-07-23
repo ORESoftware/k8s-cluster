@@ -45,7 +45,7 @@ jobs:
         engine: [puppeteer, playwright]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # The service worker under test lives in the remote/libs submodule
       # (ORESoftware/k8s-libs-and-shared-defs). Only that submodule is needed;
