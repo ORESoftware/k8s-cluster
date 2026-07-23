@@ -14968,6 +14968,155 @@ class WebhookEventsRow {
   }
 }
 
+const fabJobsTable = "daedalus.fab_jobs";
+const fabJobsSelectSql = "select\n      job_id,\n      request_id,\n      kind,\n      status,\n      ok,\n      severity,\n      summary,\n      artifact_count,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_jobs";
+
+class FabJobsRow {
+  const FabJobsRow({
+    required this.jobId,
+    required this.requestId,
+    required this.kind,
+    required this.status,
+    required this.ok,
+    required this.severity,
+    required this.summary,
+    required this.artifactCount,
+    required this.payload,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String jobId;
+  final String requestId;
+  final String kind;
+  final String status;
+  final bool ok;
+  final String severity;
+  final String summary;
+  final int artifactCount;
+  final Map<String, Object?> payload;
+  final String createdAt;
+  final String updatedAt;
+
+  factory FabJobsRow.fromJson(Map<String, Object?> json) {
+    return FabJobsRow(
+      jobId: _readRequiredString(json, "jobId"),
+      requestId: _readRequiredString(json, "requestId"),
+      kind: _readRequiredString(json, "kind"),
+      status: _readRequiredString(json, "status"),
+      ok: _readRequiredBool(json, "ok"),
+      severity: _readRequiredString(json, "severity"),
+      summary: _readRequiredString(json, "summary"),
+      artifactCount: _readRequiredInt(json, "artifactCount"),
+      payload: _readRequiredObject(json, "payload"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "jobId": jobId,
+    "requestId": requestId,
+    "kind": kind,
+    "status": status,
+    "ok": ok,
+    "severity": severity,
+    "summary": summary,
+    "artifactCount": artifactCount,
+    "payload": payload,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(jobId).length > 200) {
+      errors.add("fab_jobs.job_id exceeds 200 bytes");
+    }
+    if (utf8.encode(jobId).length < 1) {
+      errors.add("fab_jobs.job_id is below 1 bytes");
+    }
+    if (utf8.encode(requestId).length > 200) {
+      errors.add("fab_jobs.request_id exceeds 200 bytes");
+    }
+    if (utf8.encode(summary).length > 20000) {
+      errors.add("fab_jobs.summary exceeds 20000 bytes");
+    }
+    if (artifactCount < 0) {
+      errors.add("fab_jobs.artifact_count is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const fabLearningOutcomesTable = "daedalus.fab_learning_outcomes";
+const fabLearningOutcomesSelectSql = "select\n      outcome_id,\n      request_id,\n      job_id,\n      objective,\n      machine_kind,\n      assembly_strategy,\n      success,\n      reward,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_learning_outcomes";
+
+class FabLearningOutcomesRow {
+  const FabLearningOutcomesRow({
+    required this.outcomeId,
+    required this.requestId,
+    this.jobId,
+    this.objective,
+    this.machineKind,
+    this.assemblyStrategy,
+    required this.success,
+    required this.reward,
+    required this.payload,
+    required this.createdAt,
+  });
+
+  final String outcomeId;
+  final String requestId;
+  final String? jobId;
+  final String? objective;
+  final String? machineKind;
+  final String? assemblyStrategy;
+  final bool success;
+  final double reward;
+  final Map<String, Object?> payload;
+  final String createdAt;
+
+  factory FabLearningOutcomesRow.fromJson(Map<String, Object?> json) {
+    return FabLearningOutcomesRow(
+      outcomeId: _readRequiredString(json, "outcomeId"),
+      requestId: _readRequiredString(json, "requestId"),
+      jobId: _readOptionalString(json, "jobId"),
+      objective: _readOptionalString(json, "objective"),
+      machineKind: _readOptionalString(json, "machineKind"),
+      assemblyStrategy: _readOptionalString(json, "assemblyStrategy"),
+      success: _readRequiredBool(json, "success"),
+      reward: _readRequiredDouble(json, "reward"),
+      payload: _readRequiredObject(json, "payload"),
+      createdAt: _readRequiredString(json, "createdAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "outcomeId": outcomeId,
+    "requestId": requestId,
+    "jobId": jobId,
+    "objective": objective,
+    "machineKind": machineKind,
+    "assemblyStrategy": assemblyStrategy,
+    "success": success,
+    "reward": reward,
+    "payload": payload,
+    "createdAt": createdAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(outcomeId).length > 200) {
+      errors.add("fab_learning_outcomes.outcome_id exceeds 200 bytes");
+    }
+    if (utf8.encode(outcomeId).length < 1) {
+      errors.add("fab_learning_outcomes.outcome_id is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
 String _readRequiredString(Map<String, Object?> json, String key) {
   final value = json[key];
   if (value is String) return value;

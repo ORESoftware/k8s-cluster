@@ -6699,3 +6699,71 @@ impl ActiveModelBehavior for ActiveModel {}
 
 pub use webhook_events::Entity as WebhookEventsEntity;
 pub use webhook_events::Model as WebhookEventsModel;
+
+pub mod fab_jobs {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "daedalus", table_name = "fab_jobs")]
+pub struct Model {
+    #[sea_orm(primary_key, column_name = "job_id")]
+    pub job_id: String,
+    #[sea_orm(column_name = "request_id")]
+    pub request_id: String,
+    pub kind: String,
+    pub status: String,
+    pub ok: bool,
+    pub severity: String,
+    pub summary: String,
+    #[sea_orm(column_name = "artifact_count")]
+    pub artifact_count: i32,
+    pub payload: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use fab_jobs::Entity as FabJobsEntity;
+pub use fab_jobs::Model as FabJobsModel;
+
+pub mod fab_learning_outcomes {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "daedalus", table_name = "fab_learning_outcomes")]
+pub struct Model {
+    #[sea_orm(primary_key, column_name = "outcome_id")]
+    pub outcome_id: String,
+    #[sea_orm(column_name = "request_id")]
+    pub request_id: String,
+    #[sea_orm(column_name = "job_id")]
+    pub job_id: Option<String>,
+    pub objective: Option<String>,
+    #[sea_orm(column_name = "machine_kind")]
+    pub machine_kind: Option<String>,
+    #[sea_orm(column_name = "assembly_strategy")]
+    pub assembly_strategy: Option<String>,
+    pub success: bool,
+    pub reward: f64,
+    pub payload: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use fab_learning_outcomes::Entity as FabLearningOutcomesEntity;
+pub use fab_learning_outcomes::Model as FabLearningOutcomesModel;

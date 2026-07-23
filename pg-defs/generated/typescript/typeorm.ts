@@ -7416,3 +7416,79 @@ export class WebhookEventsEntity {
   payloadSha256!: string;
 
 }
+
+// fab_jobs_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Index("fab_jobs_request_idx", ["requestId"])
+@Index("fab_jobs_kind_idx", ["kind"])
+@Entity({ schema: "daedalus", name: "fab_jobs" })
+export class FabJobsEntity {
+  @PrimaryColumn({ name: "job_id", type: "text" })
+  jobId!: string;
+
+  @Column({ name: "request_id", type: "text" })
+  requestId!: string;
+
+  @Column({ name: "kind", type: "text" })
+  kind!: string;
+
+  @Column({ name: "status", type: "text" })
+  status!: string;
+
+  @Column({ name: "ok", type: "boolean" })
+  ok!: boolean;
+
+  @Column({ name: "severity", type: "text", default: () => "'info'" })
+  severity!: string;
+
+  @Column({ name: "summary", type: "text", default: () => "''" })
+  summary!: string;
+
+  @Column({ name: "artifact_count", type: "integer", default: () => "0" })
+  artifactCount!: number;
+
+  @Column({ name: "payload", type: "jsonb", default: () => "'{}'::jsonb" })
+  payload!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+// fab_learning_outcomes_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Index("fab_learning_outcomes_job_idx", ["jobId"])
+@Entity({ schema: "daedalus", name: "fab_learning_outcomes" })
+export class FabLearningOutcomesEntity {
+  @PrimaryColumn({ name: "outcome_id", type: "text" })
+  outcomeId!: string;
+
+  @Column({ name: "request_id", type: "text", default: () => "''" })
+  requestId!: string;
+
+  @Column({ name: "job_id", type: "text", nullable: true })
+  jobId!: string | null;
+
+  @Column({ name: "objective", type: "text", nullable: true })
+  objective!: string | null;
+
+  @Column({ name: "machine_kind", type: "text", nullable: true })
+  machineKind!: string | null;
+
+  @Column({ name: "assembly_strategy", type: "text", nullable: true })
+  assemblyStrategy!: string | null;
+
+  @Column({ name: "success", type: "boolean" })
+  success!: boolean;
+
+  @Column({ name: "reward", type: "double precision", default: () => "0" })
+  reward!: number;
+
+  @Column({ name: "payload", type: "jsonb", default: () => "'{}'::jsonb" })
+  payload!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+}

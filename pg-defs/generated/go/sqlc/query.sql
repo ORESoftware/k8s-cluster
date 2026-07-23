@@ -2415,3 +2415,33 @@ update shared_auth.webhook_events set provider = $2, event_type = $3, received_a
 
 -- name: DeleteWebhookEvents :exec
 delete from shared_auth.webhook_events where event_id = $1;
+
+-- name: ListFabJobs :many
+select job_id, request_id, kind, status, ok, severity, summary, artifact_count, payload, created_at, updated_at from daedalus.fab_jobs;
+
+-- name: GetFabJobs :one
+select job_id, request_id, kind, status, ok, severity, summary, artifact_count, payload, created_at, updated_at from daedalus.fab_jobs where job_id = $1 limit 1;
+
+-- name: CreateFabJobs :one
+insert into daedalus.fab_jobs (job_id, request_id, kind, status, ok, severity, summary, artifact_count, payload, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning job_id, request_id, kind, status, ok, severity, summary, artifact_count, payload, created_at, updated_at;
+
+-- name: UpdateFabJobs :one
+update daedalus.fab_jobs set request_id = $2, kind = $3, status = $4, ok = $5, severity = $6, summary = $7, artifact_count = $8, payload = $9, updated_at = $10 where job_id = $1 returning job_id, request_id, kind, status, ok, severity, summary, artifact_count, payload, created_at, updated_at;
+
+-- name: DeleteFabJobs :exec
+delete from daedalus.fab_jobs where job_id = $1;
+
+-- name: ListFabLearningOutcomes :many
+select outcome_id, request_id, job_id, objective, machine_kind, assembly_strategy, success, reward, payload, created_at from daedalus.fab_learning_outcomes;
+
+-- name: GetFabLearningOutcomes :one
+select outcome_id, request_id, job_id, objective, machine_kind, assembly_strategy, success, reward, payload, created_at from daedalus.fab_learning_outcomes where outcome_id = $1 limit 1;
+
+-- name: CreateFabLearningOutcomes :one
+insert into daedalus.fab_learning_outcomes (outcome_id, request_id, job_id, objective, machine_kind, assembly_strategy, success, reward, payload, created_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning outcome_id, request_id, job_id, objective, machine_kind, assembly_strategy, success, reward, payload, created_at;
+
+-- name: UpdateFabLearningOutcomes :one
+update daedalus.fab_learning_outcomes set request_id = $2, job_id = $3, objective = $4, machine_kind = $5, assembly_strategy = $6, success = $7, reward = $8, payload = $9 where outcome_id = $1 returning outcome_id, request_id, job_id, objective, machine_kind, assembly_strategy, success, reward, payload, created_at;
+
+-- name: DeleteFabLearningOutcomes :exec
+delete from daedalus.fab_learning_outcomes where outcome_id = $1;

@@ -13556,3 +13556,163 @@ class WebhookEventsInsert(BaseModel):
         if value is not None and len(value.encode("utf-8")) > 128:
             raise ValueError("webhook_events.event_type exceeds 128 bytes")
         return value
+
+class FabJobs(Base):
+    __tablename__ = "fab_jobs"
+    __table_args__ = (
+        CheckConstraint("octet_length(job_id) between 1 and 200", name="fab_jobs_job_id_size_chk"),
+        CheckConstraint("octet_length(request_id) between 0 and 200", name="fab_jobs_request_id_size_chk"),
+        CheckConstraint("octet_length(summary) <= 20000", name="fab_jobs_summary_size_chk"),
+        CheckConstraint("artifact_count >= 0", name="fab_jobs_artifact_count_chk"),
+        Index("fab_jobs_created_idx", text("created_at desc")),
+        Index("fab_jobs_request_idx", "request_id"),
+        Index("fab_jobs_kind_idx", "kind"),
+        {"schema": "daedalus"},
+    )
+
+    job_id: Mapped[str] = mapped_column(Text(), primary_key=True)
+    request_id: Mapped[str] = mapped_column(Text(), nullable=False)
+    kind: Mapped[str] = mapped_column(Text(), nullable=False)
+    status: Mapped[str] = mapped_column(Text(), nullable=False)
+    ok: Mapped[bool] = mapped_column(Boolean(), nullable=False)
+    severity: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'info'"))
+    summary: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    artifact_count: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class FabJobsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    jobId: str
+    requestId: str
+    kind: str
+    status: str
+    ok: bool
+    severity: str
+    summary: str
+    artifactCount: int = Field(..., ge=0)
+    payload: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("jobId")
+    @classmethod
+    def validate_job_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("fab_jobs.job_id exceeds 200 bytes")
+        return value
+
+    @field_validator("requestId")
+    @classmethod
+    def validate_request_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("fab_jobs.request_id exceeds 200 bytes")
+        return value
+
+    @field_validator("summary")
+    @classmethod
+    def validate_summary(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 20000:
+            raise ValueError("fab_jobs.summary exceeds 20000 bytes")
+        return value
+
+class FabJobsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    jobId: str
+    requestId: str
+    kind: str
+    status: str
+    ok: bool
+    severity: str | None = "info"
+    summary: str | None = ""
+    artifactCount: int | None = Field(0, ge=0)
+    payload: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("jobId")
+    @classmethod
+    def validate_job_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("fab_jobs.job_id exceeds 200 bytes")
+        return value
+
+    @field_validator("requestId")
+    @classmethod
+    def validate_request_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("fab_jobs.request_id exceeds 200 bytes")
+        return value
+
+    @field_validator("summary")
+    @classmethod
+    def validate_summary(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 20000:
+            raise ValueError("fab_jobs.summary exceeds 20000 bytes")
+        return value
+
+class FabLearningOutcomes(Base):
+    __tablename__ = "fab_learning_outcomes"
+    __table_args__ = (
+        CheckConstraint("octet_length(outcome_id) between 1 and 200", name="fab_learning_outcomes_id_size_chk"),
+        CheckConstraint("reward <> 'NaN'::double precision\n           and reward <> 'Infinity'::double precision\n           and reward <> '-Infinity'::double precision", name="fab_learning_outcomes_reward_finite_chk"),
+        Index("fab_learning_outcomes_created_idx", text("created_at desc")),
+        Index("fab_learning_outcomes_job_idx", "job_id"),
+        {"schema": "daedalus"},
+    )
+
+    outcome_id: Mapped[str] = mapped_column(Text(), primary_key=True)
+    request_id: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    job_id: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    objective: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    machine_kind: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    assembly_strategy: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean(), nullable=False)
+    reward: Mapped[float] = mapped_column(DOUBLE_PRECISION(), nullable=False, server_default=text("0"))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class FabLearningOutcomesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    outcomeId: str
+    requestId: str
+    jobId: str | None = None
+    objective: str | None = None
+    machineKind: str | None = None
+    assemblyStrategy: str | None = None
+    success: bool
+    reward: float
+    payload: dict[str, Any]
+    createdAt: datetime
+
+    @field_validator("outcomeId")
+    @classmethod
+    def validate_outcome_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("fab_learning_outcomes.outcome_id exceeds 200 bytes")
+        return value
+
+class FabLearningOutcomesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    outcomeId: str
+    requestId: str | None = ""
+    jobId: str | None = None
+    objective: str | None = None
+    machineKind: str | None = None
+    assemblyStrategy: str | None = None
+    success: bool
+    reward: float | None = 0
+    payload: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+
+    @field_validator("outcomeId")
+    @classmethod
+    def validate_outcome_id(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("fab_learning_outcomes.outcome_id exceeds 200 bytes")
+        return value

@@ -11548,3 +11548,115 @@ export const webhookEventsUpdateSchema = webhookEventsInsertSchema.partial();
 export type WebhookEventsRow = z.infer<typeof webhookEventsRowSchema>;
 export type WebhookEventsInsert = z.infer<typeof webhookEventsInsertSchema>;
 export type WebhookEventsUpdate = z.infer<typeof webhookEventsUpdateSchema>;
+
+export const fabJobs = daedalusSchema.table(
+  "fab_jobs",
+  {
+    jobId: text("job_id").primaryKey(),
+    requestId: text("request_id").notNull(),
+    kind: text("kind").notNull(),
+    status: text("status").notNull(),
+    ok: boolean("ok").notNull(),
+    severity: text("severity").default(sql`'info'`).notNull(),
+    summary: text("summary").default(sql`''`).notNull(),
+    artifactCount: integer("artifact_count").default(sql`0`).notNull(),
+    payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fabJobsJobIdSizeChk: check("fab_jobs_job_id_size_chk", sql.raw("octet_length(job_id) between 1 and 200")),
+    fabJobsRequestIdSizeChk: check("fab_jobs_request_id_size_chk", sql.raw("octet_length(request_id) between 0 and 200")),
+    fabJobsSummarySizeChk: check("fab_jobs_summary_size_chk", sql.raw("octet_length(summary) <= 20000")),
+    fabJobsArtifactCountChk: check("fab_jobs_artifact_count_chk", sql.raw("artifact_count >= 0")),
+    fabJobsCreatedIdx: index("fab_jobs_created_idx").on(table.createdAt.desc()),
+    fabJobsRequestIdx: index("fab_jobs_request_idx").on(table.requestId),
+    fabJobsKindIdx: index("fab_jobs_kind_idx").on(table.kind),
+  }),
+);
+
+export const fabJobsRowSchema = z.object({
+  jobId: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  requestId: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  kind: z.string(),
+  status: z.string(),
+  ok: z.boolean(),
+  severity: z.string(),
+  summary: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes"),
+  artifactCount: z.number().int().min(0),
+  payload: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const fabJobsInsertSchema = z.object({
+  jobId: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  requestId: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  kind: z.string(),
+  status: z.string(),
+  ok: z.boolean(),
+  severity: z.string().optional().default("info"),
+  summary: z.string().refine((value) => byteLength(value) <= 20000, "Must be at most 20000 bytes").optional().default(""),
+  artifactCount: z.number().int().min(0).optional().default(0),
+  payload: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const fabJobsUpdateSchema = fabJobsInsertSchema.partial();
+export type FabJobsRow = z.infer<typeof fabJobsRowSchema>;
+export type FabJobsInsert = z.infer<typeof fabJobsInsertSchema>;
+export type FabJobsUpdate = z.infer<typeof fabJobsUpdateSchema>;
+
+export const fabLearningOutcomes = daedalusSchema.table(
+  "fab_learning_outcomes",
+  {
+    outcomeId: text("outcome_id").primaryKey(),
+    requestId: text("request_id").default(sql`''`).notNull(),
+    jobId: text("job_id"),
+    objective: text("objective"),
+    machineKind: text("machine_kind"),
+    assemblyStrategy: text("assembly_strategy"),
+    success: boolean("success").notNull(),
+    reward: doublePrecision("reward").default(sql`0`).notNull(),
+    payload: jsonb("payload").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    fabLearningOutcomesIdSizeChk: check("fab_learning_outcomes_id_size_chk", sql.raw("octet_length(outcome_id) between 1 and 200")),
+    fabLearningOutcomesRewardFiniteChk: check("fab_learning_outcomes_reward_finite_chk", sql.raw("reward <> 'NaN'::double precision\n           and reward <> 'Infinity'::double precision\n           and reward <> '-Infinity'::double precision")),
+    fabLearningOutcomesCreatedIdx: index("fab_learning_outcomes_created_idx").on(table.createdAt.desc()),
+    fabLearningOutcomesJobIdx: index("fab_learning_outcomes_job_idx").on(table.jobId),
+  }),
+);
+
+export const fabLearningOutcomesRowSchema = z.object({
+  outcomeId: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  requestId: z.string(),
+  jobId: z.string().nullable(),
+  objective: z.string().nullable(),
+  machineKind: z.string().nullable(),
+  assemblyStrategy: z.string().nullable(),
+  success: z.boolean(),
+  reward: z.number(),
+  payload: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+});
+
+export const fabLearningOutcomesInsertSchema = z.object({
+  outcomeId: z.string().refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes"),
+  requestId: z.string().optional().default(""),
+  jobId: z.string().nullable().optional(),
+  objective: z.string().nullable().optional(),
+  machineKind: z.string().nullable().optional(),
+  assemblyStrategy: z.string().nullable().optional(),
+  success: z.boolean(),
+  reward: z.number().optional().default(0),
+  payload: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+});
+
+export const fabLearningOutcomesUpdateSchema = fabLearningOutcomesInsertSchema.partial();
+export type FabLearningOutcomesRow = z.infer<typeof fabLearningOutcomesRowSchema>;
+export type FabLearningOutcomesInsert = z.infer<typeof fabLearningOutcomesInsertSchema>;
+export type FabLearningOutcomesUpdate = z.infer<typeof fabLearningOutcomesUpdateSchema>;

@@ -2951,6 +2951,37 @@ object WebhookEvents : Table("shared_auth.webhook_events") {
     override val primaryKey = PrimaryKey(eventId)
 }
 
+object FabJobs : Table("daedalus.fab_jobs") {
+    val jobId = text("job_id")
+    val requestId = text("request_id")
+    val kind = text("kind")
+    val status = text("status")
+    val ok = bool("ok")
+    val severity = text("severity")
+    val summary = text("summary")
+    val artifactCount = integer("artifact_count")
+    val payload = jsonb<String>("payload", { it }, { it })
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(jobId)
+}
+
+object FabLearningOutcomes : Table("daedalus.fab_learning_outcomes") {
+    val outcomeId = text("outcome_id")
+    val requestId = text("request_id")
+    val jobId = text("job_id").nullable()
+    val objective = text("objective").nullable()
+    val machineKind = text("machine_kind").nullable()
+    val assemblyStrategy = text("assembly_strategy").nullable()
+    val success = bool("success")
+    val reward = double("reward")
+    val payload = jsonb<String>("payload", { it }, { it })
+    val createdAt = timestampWithTimeZone("created_at")
+
+    override val primaryKey = PrimaryKey(outcomeId)
+}
+
 data class AccountsRow(
     val id: UUID,
     val username: String,
@@ -8169,4 +8200,58 @@ fun toWebhookEventsRow(row: ResultRow): WebhookEventsRow = WebhookEventsRow(
     row[WebhookEvents.eventType],
     row[WebhookEvents.receivedAt],
     row[WebhookEvents.payloadSha256],
+)
+
+data class FabJobsRow(
+    val jobId: String,
+    val requestId: String,
+    val kind: String,
+    val status: String,
+    val ok: Boolean,
+    val severity: String,
+    val summary: String,
+    val artifactCount: Int,
+    val payload: String,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toFabJobsRow(row: ResultRow): FabJobsRow = FabJobsRow(
+    row[FabJobs.jobId],
+    row[FabJobs.requestId],
+    row[FabJobs.kind],
+    row[FabJobs.status],
+    row[FabJobs.ok],
+    row[FabJobs.severity],
+    row[FabJobs.summary],
+    row[FabJobs.artifactCount],
+    row[FabJobs.payload],
+    row[FabJobs.createdAt],
+    row[FabJobs.updatedAt],
+)
+
+data class FabLearningOutcomesRow(
+    val outcomeId: String,
+    val requestId: String,
+    val jobId: String?,
+    val objective: String?,
+    val machineKind: String?,
+    val assemblyStrategy: String?,
+    val success: Boolean,
+    val reward: Double,
+    val payload: String,
+    val createdAt: OffsetDateTime,
+)
+
+fun toFabLearningOutcomesRow(row: ResultRow): FabLearningOutcomesRow = FabLearningOutcomesRow(
+    row[FabLearningOutcomes.outcomeId],
+    row[FabLearningOutcomes.requestId],
+    row[FabLearningOutcomes.jobId],
+    row[FabLearningOutcomes.objective],
+    row[FabLearningOutcomes.machineKind],
+    row[FabLearningOutcomes.assemblyStrategy],
+    row[FabLearningOutcomes.success],
+    row[FabLearningOutcomes.reward],
+    row[FabLearningOutcomes.payload],
+    row[FabLearningOutcomes.createdAt],
 )

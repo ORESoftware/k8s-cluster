@@ -13088,3 +13088,69 @@ let webhookEventsRowOfRow (get: int -> string) (isNullAt: int -> bool) : Webhook
       WebhookEventsReceivedAt = get 3
       WebhookEventsPayloadSha256 = get 4
     }
+
+let fabJobsTable = "daedalus.fab_jobs"
+let fabJobsColumns = [ "job_id"; "request_id"; "kind"; "status"; "ok"; "severity"; "summary"; "artifact_count"; "payload"; "created_at"; "updated_at" ]
+let fabJobsSelectSql = "select\n      job_id,\n      request_id,\n      kind,\n      status,\n      ok,\n      severity,\n      summary,\n      artifact_count,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_jobs"
+
+type FabJobsRow =
+    { FabJobsJobId: string
+      FabJobsRequestId: string
+      FabJobsKind: string
+      FabJobsStatus: string
+      FabJobsOk: bool
+      FabJobsSeverity: string
+      FabJobsSummary: string
+      FabJobsArtifactCount: int
+      FabJobsPayload: string
+      FabJobsCreatedAt: string
+      FabJobsUpdatedAt: string
+    }
+
+let fabJobsRowOfRow (get: int -> string) (isNullAt: int -> bool) : FabJobsRow =
+    { FabJobsJobId = get 0
+      FabJobsRequestId = get 1
+      FabJobsKind = get 2
+      FabJobsStatus = get 3
+      FabJobsOk = (get 4 = "t")
+      FabJobsSeverity = get 5
+      FabJobsSummary = get 6
+      FabJobsArtifactCount = int (get 7)
+      FabJobsPayload = get 8
+      FabJobsCreatedAt = get 9
+      FabJobsUpdatedAt = get 10
+    }
+
+let validateFabJobsArtifactCount (value: int) : Result<int, string> =
+    if value < 0 then Error "fab_jobs.artifact_count is below the minimum"
+    else Ok value
+
+let fabLearningOutcomesTable = "daedalus.fab_learning_outcomes"
+let fabLearningOutcomesColumns = [ "outcome_id"; "request_id"; "job_id"; "objective"; "machine_kind"; "assembly_strategy"; "success"; "reward"; "payload"; "created_at" ]
+let fabLearningOutcomesSelectSql = "select\n      outcome_id,\n      request_id,\n      job_id,\n      objective,\n      machine_kind,\n      assembly_strategy,\n      success,\n      reward,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_learning_outcomes"
+
+type FabLearningOutcomesRow =
+    { FabLearningOutcomesOutcomeId: string
+      FabLearningOutcomesRequestId: string
+      FabLearningOutcomesJobId: string option
+      FabLearningOutcomesObjective: string option
+      FabLearningOutcomesMachineKind: string option
+      FabLearningOutcomesAssemblyStrategy: string option
+      FabLearningOutcomesSuccess: bool
+      FabLearningOutcomesReward: float
+      FabLearningOutcomesPayload: string
+      FabLearningOutcomesCreatedAt: string
+    }
+
+let fabLearningOutcomesRowOfRow (get: int -> string) (isNullAt: int -> bool) : FabLearningOutcomesRow =
+    { FabLearningOutcomesOutcomeId = get 0
+      FabLearningOutcomesRequestId = get 1
+      FabLearningOutcomesJobId = (if isNullAt 2 then None else Some (get 2))
+      FabLearningOutcomesObjective = (if isNullAt 3 then None else Some (get 3))
+      FabLearningOutcomesMachineKind = (if isNullAt 4 then None else Some (get 4))
+      FabLearningOutcomesAssemblyStrategy = (if isNullAt 5 then None else Some (get 5))
+      FabLearningOutcomesSuccess = (get 6 = "t")
+      FabLearningOutcomesReward = float (get 7)
+      FabLearningOutcomesPayload = get 8
+      FabLearningOutcomesCreatedAt = get 9
+    }

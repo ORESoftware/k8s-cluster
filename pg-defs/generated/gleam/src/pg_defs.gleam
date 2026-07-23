@@ -11834,6 +11834,59 @@ pub fn validate_webhook_events_slug(value: String) -> Result(String, String) {
   }
 }
 
+pub const fab_jobs_table = "daedalus.fab_jobs"
+pub const fab_jobs_select_sql = "select\n      job_id,\n      request_id,\n      kind,\n      status,\n      ok,\n      severity,\n      summary,\n      artifact_count,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_jobs"
+
+pub type FabJobsRow {
+  FabJobsRow(
+    job_id: String,
+    request_id: String,
+    kind: String,
+    status: String,
+    ok: Bool,
+    severity: String,
+    summary: String,
+    artifact_count: Int,
+    payload_json: String,
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_fab_jobs_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("fab_jobs.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const fab_learning_outcomes_table = "daedalus.fab_learning_outcomes"
+pub const fab_learning_outcomes_select_sql = "select\n      outcome_id,\n      request_id,\n      job_id,\n      objective,\n      machine_kind,\n      assembly_strategy,\n      success,\n      reward,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_learning_outcomes"
+
+pub type FabLearningOutcomesRow {
+  FabLearningOutcomesRow(
+    outcome_id: String,
+    request_id: String,
+    job_id: Option(String),
+    objective: Option(String),
+    machine_kind: Option(String),
+    assembly_strategy: Option(String),
+    success: Bool,
+    reward: Float,
+    payload_json: String,
+    created_at: String,
+  )
+}
+
+pub fn validate_fab_learning_outcomes_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("fab_learning_outcomes.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
 fn is_slug_text(value: String) -> Bool {
   let chars = string.to_graphemes(value)
   case chars {

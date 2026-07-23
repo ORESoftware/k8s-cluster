@@ -2440,4 +2440,23 @@ module DdPgDefs
     validates :event_type, presence: true
     validates :payload_sha256, presence: true
   end
+
+  class FabJobs < ActiveRecord::Base
+    self.table_name = "daedalus.fab_jobs"
+    self.primary_key = "job_id"
+
+    validates :request_id, presence: true
+    validates :kind, presence: true
+    validates :status, presence: true
+    validates :ok, presence: true
+    validates :artifact_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  end
+
+  class FabLearningOutcomes < ActiveRecord::Base
+    self.table_name = "daedalus.fab_learning_outcomes"
+    self.primary_key = "outcome_id"
+
+    validates :success, presence: true
+    validates :reward, numericality: true
+  end
 end

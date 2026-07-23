@@ -14274,3 +14274,74 @@ pub const WebhookEventsRow = struct {
         };
     }
 };
+
+pub const fab_jobs_table: []const u8 = "daedalus.fab_jobs";
+pub const fab_jobs_columns = [_][]const u8{ "job_id", "request_id", "kind", "status", "ok", "severity", "summary", "artifact_count", "payload", "created_at", "updated_at" };
+pub const fab_jobs_select_sql: []const u8 = "select\n      job_id,\n      request_id,\n      kind,\n      status,\n      ok,\n      severity,\n      summary,\n      artifact_count,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_jobs";
+
+pub const FabJobsRow = struct {
+    job_id: []const u8,
+    request_id: []const u8,
+    kind: []const u8,
+    status: []const u8,
+    ok: bool,
+    severity: []const u8,
+    summary: []const u8,
+    artifact_count: i32,
+    payload: []const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) FabJobsRow {
+        return FabJobsRow{
+            .job_id = reader.text(0),
+            .request_id = reader.text(1),
+            .kind = reader.text(2),
+            .status = reader.text(3),
+            .ok = reader.boolean(4),
+            .severity = reader.text(5),
+            .summary = reader.text(6),
+            .artifact_count = @as(i32, @intCast(reader.int(7))),
+            .payload = reader.text(8),
+            .created_at = reader.text(9),
+            .updated_at = reader.text(10),
+        };
+    }
+};
+
+pub fn validateFabJobsArtifactCount(value: i32) ?[]const u8 {
+    if (value < 0) return "fab_jobs.artifact_count is below the minimum";
+    return null;
+}
+
+pub const fab_learning_outcomes_table: []const u8 = "daedalus.fab_learning_outcomes";
+pub const fab_learning_outcomes_columns = [_][]const u8{ "outcome_id", "request_id", "job_id", "objective", "machine_kind", "assembly_strategy", "success", "reward", "payload", "created_at" };
+pub const fab_learning_outcomes_select_sql: []const u8 = "select\n      outcome_id,\n      request_id,\n      job_id,\n      objective,\n      machine_kind,\n      assembly_strategy,\n      success,\n      reward,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at\n    from daedalus.fab_learning_outcomes";
+
+pub const FabLearningOutcomesRow = struct {
+    outcome_id: []const u8,
+    request_id: []const u8,
+    job_id: ?[]const u8,
+    objective: ?[]const u8,
+    machine_kind: ?[]const u8,
+    assembly_strategy: ?[]const u8,
+    success: bool,
+    reward: f64,
+    payload: []const u8,
+    created_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) FabLearningOutcomesRow {
+        return FabLearningOutcomesRow{
+            .outcome_id = reader.text(0),
+            .request_id = reader.text(1),
+            .job_id = if (reader.is_null(2)) null else reader.text(2),
+            .objective = if (reader.is_null(3)) null else reader.text(3),
+            .machine_kind = if (reader.is_null(4)) null else reader.text(4),
+            .assembly_strategy = if (reader.is_null(5)) null else reader.text(5),
+            .success = reader.boolean(6),
+            .reward = reader.float(7),
+            .payload = reader.text(8),
+            .created_at = reader.text(9),
+        };
+    }
+};

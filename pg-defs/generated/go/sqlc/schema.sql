@@ -7306,3 +7306,106 @@ create table if not exists shared_auth.webhook_events (
 
 create index if not exists shared_auth_webhook_events_received_idx
   on shared_auth.webhook_events (received_at);
+
+-- Fabrication jobs and their artifacts, as produced by fabrication-server.
+--
+-- WHY THIS EXISTS: this was an in-process `FabricationJobStore` (a BTreeMap
+-- behind an RwLock, capped at 128 entries). That made the service unscalable —
+-- `/jobs/{id}`, the artifact routes and the release-bundle route are served by
+-- whichever replica the Service happens to pick, so a job produced on one pod
+-- 404'd on another, and the effective retention was 128 *per replica*. It is not
+-- a locking problem: no lease fixes a 404. It needed shared storage, and this is
+-- it. fabrication-server is pinned to one replica until it reads from here.
+--
+-- SHAPE: the columns are exactly the fields the store queries, filters or orders
+-- by; everything else — the plan, the analysis, the learning response and the
+-- artifact bodies — lives in `payload` as jsonb. Promoting all of it would mean
+-- ~20 tables mirroring a deeply nested domain type that changes with the planner,
+-- and the service only ever reads a whole job back. The jsonb is the record; the
+-- columns are the index.
+create table if not exists daedalus.fab_jobs (
+  -- `safe_job_id(kind, request_id, generated_at_ms)`, not a uuid: it is the id
+  -- the planner already mints and the one the HTTP routes are addressed by.
+  -- Deterministic, so a NATS redelivery of one request produces the same id —
+  -- which is exactly why this is a primary key rather than a bare insert. A
+  -- redelivery now upserts instead of silently destroying the previous row.
+  job_id text primary key,
+  request_id text not null,
+  kind text not null,
+  status text not null,
+  ok boolean not null,
+  severity text not null default 'info',
+  summary text not null default '',
+  artifact_count integer not null default 0,
+  -- The whole StoredFabricationJob: plan, analysis, learning, artifacts.
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint fab_jobs_job_id_size_chk
+    check (octet_length(job_id) between 1 and 200),
+  constraint fab_jobs_request_id_size_chk
+    check (octet_length(request_id) between 0 and 200),
+  constraint fab_jobs_summary_size_chk
+    check (octet_length(summary) <= 20000),
+  constraint fab_jobs_artifact_count_chk
+    check (artifact_count >= 0)
+);
+
+-- The list route orders by recency; retention sweeps the same way.
+create index if not exists fab_jobs_created_idx
+  on daedalus.fab_jobs (created_at desc);
+
+create index if not exists fab_jobs_request_idx
+  on daedalus.fab_jobs (request_id);
+
+create index if not exists fab_jobs_kind_idx
+  on daedalus.fab_jobs (kind);
+
+-- Learning outcomes that steer planning.
+--
+-- WHY THIS EXISTS: this was an in-process `LearningMemory` (a 512-entry VecDeque)
+-- whose aggregate is fed into plan_fabrication_with_policy. JetStream splits
+-- deliveries across replicas, so every replica accumulated a *disjoint* half of
+-- the outcome stream and their aggregates diverged permanently — the same plan
+-- request returned different plans depending on which pod answered, with nothing
+-- in the API or the logs revealing it. That is the single strongest reason this
+-- service could not run more than one replica.
+--
+-- `outcome_id` is the primary key so a redelivered outcome upserts rather than
+-- being counted twice; the in-memory version had no dedupe at all, so
+-- `max_deliver: 5` could inflate a reward sum fivefold.
+create table if not exists daedalus.fab_learning_outcomes (
+  outcome_id text primary key,
+  request_id text not null default '',
+  job_id text,
+  objective text,
+  machine_kind text,
+  assembly_strategy text,
+  success boolean not null,
+  -- Advisory scalar reward. double precision matches the in-memory f64; the
+  -- aggregate is a mean, so exactness is not required and numeric would only
+  -- add cost.
+  reward double precision not null default 0,
+  -- The whole LearningOutcomeRecord: material, methods, operation sequence,
+  -- observations, notes.
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz default now() not null,
+  constraint fab_learning_outcomes_id_size_chk
+    check (octet_length(outcome_id) between 1 and 200),
+  -- Reward feeds a mean that steers planning, so a non-finite value would
+  -- poison every aggregate it appears in. Note the idiom: the usual IEEE trick
+  -- `reward = reward` does NOT catch NaN here, because Postgres deliberately
+  -- defines NaN as equal to itself (so it can be indexed and sorted). It must
+  -- be compared against 'NaN' explicitly.
+  constraint fab_learning_outcomes_reward_finite_chk
+    check (reward <> 'NaN'::double precision
+           and reward <> 'Infinity'::double precision
+           and reward <> '-Infinity'::double precision)
+);
+
+-- The snapshot reads the most recent N outcomes.
+create index if not exists fab_learning_outcomes_created_idx
+  on daedalus.fab_learning_outcomes (created_at desc);
+
+create index if not exists fab_learning_outcomes_job_idx
+  on daedalus.fab_learning_outcomes (job_id);

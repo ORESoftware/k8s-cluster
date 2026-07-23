@@ -172,6 +172,8 @@ defmodule DdPgDefs do
     DdPgDefs.Sessions,
     DdPgDefs.Roles,
     DdPgDefs.WebhookEvents,
+    DdPgDefs.FabJobs,
+    DdPgDefs.FabLearningOutcomes,
   ]
 
   @spec tables() :: [module()]
