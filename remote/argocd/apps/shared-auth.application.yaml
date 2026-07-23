@@ -9,12 +9,17 @@
 #   1. apply remote/argocd/projects/shared-auth.tenant.yaml     (Namespace + quota + default-deny)
 #   2. apply remote/argocd/projects/shared-auth.appproject.yaml (the enforced boundary)
 #   3. seed the ClusterSecretStore keys the ExternalSecret reads:
-#        dd/shared-auth/supabase-projects  (JSON array of { name, project_ref })
-#        dd/shared-auth/signing-key-pem     (PKCS#8 EC P-256 private key)
-#        dd/shared-auth/database-url        (RDS DSN, search_path=shared_auth)
-#   4. apply db/schema.sql to RDS via dpm (shared_auth schema)
-#   5. publish image ghcr.io/shared-auth/shared-auth-server:main (CI builds it) +
-#      an imagePullSecret if the package is private
+#        dd/shared-auth/supabase-projects    (metadata + provider credential env names)
+#        dd/shared-auth/provider-credentials (object whose properties become secret env vars)
+#        dd/shared-auth/signing-key-pem       (PKCS#8 EC P-256 private key)
+#        dd/shared-auth/database-url          (RDS DSN, search_path=shared_auth)
+#        dd/shared-auth/redis-url             (private VPC Redis/Valkey URL)
+#        dd/shared-auth/webhook-secret        (32+ byte provider-sync HMAC key)
+#      Fiducia manages these values behind the ClusterSecretStore. Provider API
+#      keys never belong in project JSON, ConfigMaps, images, or git.
+#   4. apply the canonical remote/libs/pg-defs schema to RDS via dpm
+#   5. let the server release workflow publish GHCR and commit its immutable
+#      digest into deploy/k8s; add an imagePullSecret if the package is private
 #   6. ArgoCD needs a repo cred for git@github.com:shared-auth/shared-auth-server.rs.git
 #
 # The gateway route /shared-auth/ is already wired in
