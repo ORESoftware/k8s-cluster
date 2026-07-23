@@ -169,3 +169,11 @@
 	path = remote/submodules/shared-auth-server.rs
 	url = git@github.com:shared-auth/shared-auth-server.rs.git
 	branch = main
+[submodule "remote/deployments/shared-auth-monorepo"]
+	path = remote/deployments/shared-auth-monorepo
+	url = git@github.com:shared-auth/shared-auth-monorepo.git
+	branch = main
+[submodule "remote/deployments/drone-mngr-monorepo"]
+	path = remote/deployments/drone-mngr-monorepo
+	url = https://github.com/drone-mngr/drone-mngr-monorepo.git
+	branch = main

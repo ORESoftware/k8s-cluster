@@ -52,6 +52,9 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/deployments/usacc-rest-api-backend-rs` | [usa-acc/rest-api-backend.rs](https://github.com/usa-acc/rest-api-backend.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/3fa-web-server-rs` | [3FA-app/3fa-web-server.rs](https://github.com/3FA-app/3fa-web-server.rs) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/sonus-auris-monorepo` | [sonus-auris/sonus-auris-monorepo](https://github.com/sonus-auris/sonus-auris-monorepo) | `main` | `~/codes/sonus-auris/sonus-auris-monorepo` |
+| `remote/deployments/shared-auth-monorepo` | [shared-auth/shared-auth-monorepo](https://github.com/shared-auth/shared-auth-monorepo) | `main` | `~/codes/shared-auth/shared-auth-monorepo` |
+| `remote/submodules/shared-auth-server.rs` | [shared-auth/shared-auth-server.rs](https://github.com/shared-auth/shared-auth-server.rs) | `main` | `~/codes/shared-auth/shared-auth-server.rs` |
+| `remote/deployments/drone-mngr-monorepo` | [drone-mngr/drone-mngr-monorepo](https://github.com/drone-mngr/drone-mngr-monorepo) | `main` | — _(submodule checkout only)_ |
 
 ---
 
