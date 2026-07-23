@@ -427,6 +427,11 @@ async function introspectDatabase(databaseUrl, schemas = ["public"]) {
           join pg_namespace nsp on nsp.oid = proc.pronamespace
           join pg_language lang on lang.oid = proc.prolang
           where nsp.nspname = 'public'
+            -- Aggregates (for example avg) share pg_proc but cannot be
+            -- rendered with pg_get_function_identity_arguments. The contract
+            -- only owns ordinary SQL functions, so exclude aggregates and
+            -- window functions from the routine catalog comparison.
+            and proc.prokind = 'f'
         ) r
       ), '[]'::json),
       'triggers', coalesce((
