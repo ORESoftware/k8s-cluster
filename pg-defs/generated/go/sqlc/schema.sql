@@ -6721,8 +6721,8 @@ create table if not exists fiducia.invoices (
 );
 create unique index if not exists fiducia_invoices_provider_id_uq
   on fiducia.invoices (provider, provider_invoice_id);
-create index if not exists invoices_org_idx on invoices (org_id);
-create index if not exists invoices_subscription_idx on invoices (subscription_id);
+create index if not exists invoices_org_idx on fiducia.invoices (org_id);
+create index if not exists invoices_subscription_idx on fiducia.invoices (subscription_id);
 
 -- A charge/capture. One invoice can have several (retries, partial captures).
 create table if not exists fiducia.payments (
@@ -6745,8 +6745,8 @@ create table if not exists fiducia.payments (
 );
 create unique index if not exists fiducia_payments_provider_id_uq
   on fiducia.payments (provider, provider_payment_id);
-create index if not exists payments_org_idx on payments (org_id);
-create index if not exists payments_invoice_idx on payments (invoice_id);
+create index if not exists payments_org_idx on fiducia.payments (org_id);
+create index if not exists payments_invoice_idx on fiducia.payments (invoice_id);
 
 -- Webhook ledger: the exactly-once + signature-verification control surface for
 -- inbound provider events. The unique (provider, provider_event_id) lets the
@@ -7161,6 +7161,151 @@ create index if not exists web_sessions_user_idx
 -- Supports the retention sweep that removes expired/revoked rows.
 create index if not exists web_sessions_absolute_expiry_idx
   on daedalus.web_sessions (absolute_expires_at);
+
+-- Provider-neutral shared authentication. Postgres is authoritative for users,
+-- credentials, sessions, and roles; external providers are identity adapters.
+create schema if not exists shared_auth;
+
+create table if not exists shared_auth.principals (
+  shared_user_id uuid primary key default gen_random_uuid(),
+  email text,
+  email_verified boolean default false not null,
+  phone text,
+  display_name text,
+  status text default 'active' not null,
+  profile jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  last_seen_at timestamptz default now() not null,
+  constraint shared_auth_users_email_size_chk
+    check (email is null or octet_length(email) between 3 and 320),
+  constraint shared_auth_users_phone_size_chk
+    check (phone is null or octet_length(phone) <= 64),
+  constraint shared_auth_users_display_name_size_chk
+    check (display_name is null or octet_length(display_name) <= 160),
+  constraint shared_auth_users_status_chk
+    check (status in ('active', 'disabled', 'deleted')),
+  constraint shared_auth_users_profile_object_chk
+    check (jsonb_typeof(profile) = 'object')
+);
+
+create unique index if not exists shared_auth_users_email_uq
+  on shared_auth.principals (lower(email))
+  where email is not null and status <> 'deleted';
+
+create index if not exists shared_auth_users_status_idx
+  on shared_auth.principals (status);
+
+create table if not exists shared_auth.provider_identities (
+  provider_identity_id uuid primary key default gen_random_uuid(),
+  shared_user_id uuid not null references shared_auth.principals(shared_user_id) on delete cascade,
+  provider text not null,
+  provider_tenant text default 'default' not null,
+  provider_subject text not null,
+  email text,
+  email_verified boolean default false not null,
+  metadata jsonb default '{}'::jsonb not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  last_seen_at timestamptz default now() not null,
+  constraint shared_auth_provider_identities_identity_uq
+    unique (provider, provider_tenant, provider_subject),
+  constraint shared_auth_provider_identities_provider_size_chk
+    check (octet_length(provider) between 1 and 64),
+  constraint shared_auth_provider_identities_tenant_size_chk
+    check (octet_length(provider_tenant) between 1 and 255),
+  constraint shared_auth_provider_identities_subject_size_chk
+    check (octet_length(provider_subject) between 1 and 512),
+  constraint shared_auth_provider_identities_email_size_chk
+    check (email is null or octet_length(email) between 3 and 320),
+  constraint shared_auth_provider_identities_metadata_object_chk
+    check (jsonb_typeof(metadata) = 'object')
+);
+
+create index if not exists shared_auth_provider_identities_user_idx
+  on shared_auth.provider_identities (shared_user_id);
+
+create table if not exists shared_auth.local_credentials (
+  shared_user_id uuid primary key references shared_auth.principals(shared_user_id) on delete cascade,
+  -- Argon2id PHC string only; plaintext and reversible password material are forbidden.
+  password_hash text not null,
+  password_changed_at timestamptz default now() not null,
+  failed_attempts integer default 0 not null,
+  locked_until timestamptz,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint shared_auth_local_credentials_hash_size_chk
+    check (octet_length(password_hash) between 40 and 512),
+  constraint shared_auth_local_credentials_failed_attempts_chk
+    check (failed_attempts >= 0)
+);
+
+create table if not exists shared_auth.sessions (
+  session_id uuid primary key default gen_random_uuid(),
+  shared_user_id uuid not null references shared_auth.principals(shared_user_id) on delete cascade,
+  -- SHA-256 base64url digest of the opaque refresh token, never the token itself.
+  refresh_token_hash text not null,
+  provider text not null,
+  provider_tenant text default 'default' not null,
+  provider_subject text not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  last_seen_at timestamptz default now() not null,
+  expires_at timestamptz not null,
+  revoked_at timestamptz,
+  rotated_from uuid references shared_auth.sessions(session_id) on delete set null,
+  constraint shared_auth_sessions_refresh_hash_uq unique (refresh_token_hash),
+  constraint shared_auth_sessions_refresh_hash_size_chk
+    check (octet_length(refresh_token_hash) = 43),
+  constraint shared_auth_sessions_provider_size_chk
+    check (octet_length(provider) between 1 and 64),
+  constraint shared_auth_sessions_tenant_size_chk
+    check (octet_length(provider_tenant) between 1 and 255),
+  constraint shared_auth_sessions_subject_size_chk
+    check (octet_length(provider_subject) between 1 and 512),
+  constraint shared_auth_sessions_expiry_chk
+    check (expires_at > created_at)
+);
+
+create index if not exists shared_auth_sessions_user_idx
+  on shared_auth.sessions (shared_user_id);
+
+create index if not exists shared_auth_sessions_active_expiry_idx
+  on shared_auth.sessions (expires_at)
+  where revoked_at is null;
+
+create table if not exists shared_auth.roles (
+  role_id uuid primary key default gen_random_uuid(),
+  shared_user_id uuid not null references shared_auth.principals(shared_user_id) on delete cascade,
+  role_name text not null,
+  granted_at timestamptz default now() not null,
+  granted_by uuid references shared_auth.principals(shared_user_id) on delete set null,
+  constraint shared_auth_roles_user_role_uq unique (shared_user_id, role_name),
+  constraint shared_auth_roles_name_chk
+    check (role_name ~ '^[a-z][a-z0-9:_-]{0,63}$')
+);
+
+create index if not exists shared_auth_roles_user_idx
+  on shared_auth.roles (shared_user_id);
+
+-- Provider webhooks are HMAC-authenticated before insertion. The event ID makes
+-- delivery retries idempotent across replicas.
+create table if not exists shared_auth.webhook_events (
+  event_id uuid primary key,
+  provider text not null,
+  event_type text not null,
+  received_at timestamptz default now() not null,
+  payload_sha256 text not null,
+  constraint shared_auth_webhook_events_provider_size_chk
+    check (octet_length(provider) between 1 and 64),
+  constraint shared_auth_webhook_events_type_size_chk
+    check (octet_length(event_type) between 1 and 128),
+  constraint shared_auth_webhook_events_payload_hash_size_chk
+    check (octet_length(payload_sha256) = 43)
+);
+
+create index if not exists shared_auth_webhook_events_received_idx
+  on shared_auth.webhook_events (received_at);
 
 -- Fabrication jobs and their artifacts, as produced by fabrication-server.
 --

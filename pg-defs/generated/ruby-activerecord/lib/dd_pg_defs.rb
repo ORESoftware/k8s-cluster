@@ -2388,6 +2388,59 @@ module DdPgDefs
     validates :absolute_expires_at, presence: true
   end
 
+  class Principals < ActiveRecord::Base
+    self.table_name = "shared_auth.principals"
+    self.primary_key = "shared_user_id"
+
+    validates :status, inclusion: { in: ["active", "disabled", "deleted"] }
+  end
+
+  class ProviderIdentities < ActiveRecord::Base
+    self.table_name = "shared_auth.provider_identities"
+    self.primary_key = "provider_identity_id"
+
+    validates :shared_user_id, presence: true
+    validates :provider, presence: true
+    validates :provider_subject, presence: true
+  end
+
+  class LocalCredentials < ActiveRecord::Base
+    self.table_name = "shared_auth.local_credentials"
+    self.primary_key = "shared_user_id"
+
+    validates :password_hash, presence: true
+    validates :failed_attempts, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  end
+
+  class Sessions < ActiveRecord::Base
+    self.table_name = "shared_auth.sessions"
+    self.primary_key = "session_id"
+
+    validates :shared_user_id, presence: true
+    validates :refresh_token_hash, presence: true
+    validates :provider, presence: true
+    validates :provider_subject, presence: true
+    validates :expires_at, presence: true
+  end
+
+  class Roles < ActiveRecord::Base
+    self.table_name = "shared_auth.roles"
+    self.primary_key = "role_id"
+
+    validates :shared_user_id, presence: true
+    validates :role_name, presence: true
+    validates :role_name, format: { with: Regexp.new("\\A[a-z][a-z0-9:_-]{0,63}\\z") }
+  end
+
+  class WebhookEvents < ActiveRecord::Base
+    self.table_name = "shared_auth.webhook_events"
+    self.primary_key = "event_id"
+
+    validates :provider, presence: true
+    validates :event_type, presence: true
+    validates :payload_sha256, presence: true
+  end
+
   class FabJobs < ActiveRecord::Base
     self.table_name = "daedalus.fab_jobs"
     self.primary_key = "job_id"

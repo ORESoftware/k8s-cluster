@@ -22552,6 +22552,409 @@ pub fn validate_web_sessions_insert(value: &WebSessionsInsert) -> Result<(), Str
     Ok(())
 }
 
+pub const PRINCIPALS_TABLE: &str = "shared_auth.principals";
+pub const PRINCIPALS_COLUMNS: &[&str] = &["shared_user_id", "email", "email_verified", "phone", "display_name", "status", "profile", "created_at", "updated_at", "last_seen_at"];
+pub const PRINCIPALS_SELECT_SQL: &str = r###"select
+      shared_user_id::text as shared_user_id,
+      email,
+      email_verified,
+      phone,
+      display_name,
+      status,
+      profile,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at
+    from shared_auth.principals"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PrincipalsStatus {
+    Active,
+    Disabled,
+    Deleted,
+}
+
+impl PrincipalsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "disabled", "deleted"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Disabled => "disabled",
+            Self::Deleted => "deleted",
+        }
+    }
+}
+
+impl TryFrom<&str> for PrincipalsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "disabled" => Ok(Self::Disabled),
+            "deleted" => Ok(Self::Deleted),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct PrincipalsRow {
+    pub shared_user_id: String,
+    pub email: Option<String>,
+    pub email_verified: bool,
+    pub phone: Option<String>,
+    pub display_name: Option<String>,
+    pub status: String,
+    pub profile: Value,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_seen_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrincipalsInsert {
+    pub shared_user_id: Option<String>,
+    pub email: Option<String>,
+    pub email_verified: Option<bool>,
+    pub phone: Option<String>,
+    pub display_name: Option<String>,
+    pub status: Option<String>,
+    pub profile: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub last_seen_at: Option<String>,
+}
+
+pub fn validate_principals_row(value: &PrincipalsRow) -> Result<(), String> {
+    if let Some(value) = &value.email {
+        if (value).as_bytes().len() > 320 { return Err("principals.email exceeds 320 bytes".to_string()); }
+    }
+    if let Some(value) = &value.phone {
+        if (value).as_bytes().len() > 64 { return Err("principals.phone exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.display_name {
+        if (value).as_bytes().len() > 160 { return Err("principals.display_name exceeds 160 bytes".to_string()); }
+    }
+    if !["active", "disabled", "deleted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported principals.status: {}", &value.status)); }
+    if !(&value.profile).is_object() { return Err("principals.profile must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_principals_insert(value: &PrincipalsInsert) -> Result<(), String> {
+    if let Some(value) = &value.email {
+        if (value).as_bytes().len() > 320 { return Err("principals.email exceeds 320 bytes".to_string()); }
+    }
+    if let Some(value) = &value.phone {
+        if (value).as_bytes().len() > 64 { return Err("principals.phone exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.display_name {
+        if (value).as_bytes().len() > 160 { return Err("principals.display_name exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["active", "disabled", "deleted"].contains(&(value).as_str()) { return Err(format!("unsupported principals.status: {}", value)); }
+    }
+    if let Some(value) = &value.profile {
+        if !(value).is_object() { return Err("principals.profile must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const PROVIDER_IDENTITIES_TABLE: &str = "shared_auth.provider_identities";
+pub const PROVIDER_IDENTITIES_COLUMNS: &[&str] = &["provider_identity_id", "shared_user_id", "provider", "provider_tenant", "provider_subject", "email", "email_verified", "metadata", "created_at", "updated_at", "last_seen_at"];
+pub const PROVIDER_IDENTITIES_SELECT_SQL: &str = r###"select
+      provider_identity_id::text as provider_identity_id,
+      shared_user_id::text as shared_user_id,
+      provider,
+      provider_tenant,
+      provider_subject,
+      email,
+      email_verified,
+      metadata,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at
+    from shared_auth.provider_identities"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderIdentitiesRow {
+    pub provider_identity_id: String,
+    pub shared_user_id: String,
+    pub provider: String,
+    pub provider_tenant: String,
+    pub provider_subject: String,
+    pub email: Option<String>,
+    pub email_verified: bool,
+    pub metadata: Value,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_seen_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderIdentitiesInsert {
+    pub provider_identity_id: Option<String>,
+    pub shared_user_id: Option<String>,
+    pub provider: Option<String>,
+    pub provider_tenant: Option<String>,
+    pub provider_subject: Option<String>,
+    pub email: Option<String>,
+    pub email_verified: Option<bool>,
+    pub metadata: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub last_seen_at: Option<String>,
+}
+
+pub fn validate_provider_identities_row(value: &ProviderIdentitiesRow) -> Result<(), String> {
+    if (&value.provider).as_bytes().len() > 64 { return Err("provider_identities.provider exceeds 64 bytes".to_string()); }
+    if (&value.provider_tenant).as_bytes().len() > 255 { return Err("provider_identities.provider_tenant exceeds 255 bytes".to_string()); }
+    if (&value.provider_subject).as_bytes().len() > 512 { return Err("provider_identities.provider_subject exceeds 512 bytes".to_string()); }
+    if let Some(value) = &value.email {
+        if (value).as_bytes().len() > 320 { return Err("provider_identities.email exceeds 320 bytes".to_string()); }
+    }
+    if !(&value.metadata).is_object() { return Err("provider_identities.metadata must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_provider_identities_insert(value: &ProviderIdentitiesInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if (value).as_bytes().len() > 64 { return Err("provider_identities.provider exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_tenant {
+        if (value).as_bytes().len() > 255 { return Err("provider_identities.provider_tenant exceeds 255 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_subject {
+        if (value).as_bytes().len() > 512 { return Err("provider_identities.provider_subject exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.email {
+        if (value).as_bytes().len() > 320 { return Err("provider_identities.email exceeds 320 bytes".to_string()); }
+    }
+    if let Some(value) = &value.metadata {
+        if !(value).is_object() { return Err("provider_identities.metadata must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const LOCAL_CREDENTIALS_TABLE: &str = "shared_auth.local_credentials";
+pub const LOCAL_CREDENTIALS_COLUMNS: &[&str] = &["shared_user_id", "password_hash", "password_changed_at", "failed_attempts", "locked_until", "created_at", "updated_at"];
+pub const LOCAL_CREDENTIALS_SELECT_SQL: &str = r###"select
+      shared_user_id::text as shared_user_id,
+      password_hash,
+      to_char(password_changed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as password_changed_at,
+      failed_attempts,
+      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as locked_until,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from shared_auth.local_credentials"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalCredentialsRow {
+    pub shared_user_id: String,
+    pub password_hash: String,
+    pub password_changed_at: String,
+    pub failed_attempts: i32,
+    pub locked_until: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalCredentialsInsert {
+    pub shared_user_id: Option<String>,
+    pub password_hash: Option<String>,
+    pub password_changed_at: Option<String>,
+    pub failed_attempts: Option<i32>,
+    pub locked_until: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_local_credentials_row(value: &LocalCredentialsRow) -> Result<(), String> {
+    if (&value.password_hash).as_bytes().len() > 512 { return Err("local_credentials.password_hash exceeds 512 bytes".to_string()); }
+    if *(&value.failed_attempts) < 0 { return Err("local_credentials.failed_attempts is below the minimum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_local_credentials_insert(value: &LocalCredentialsInsert) -> Result<(), String> {
+    if let Some(value) = &value.password_hash {
+        if (value).as_bytes().len() > 512 { return Err("local_credentials.password_hash exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.failed_attempts {
+        if *(value) < 0 { return Err("local_credentials.failed_attempts is below the minimum".to_string()); }
+    }
+    Ok(())
+}
+
+pub const SESSIONS_TABLE: &str = "shared_auth.sessions";
+pub const SESSIONS_COLUMNS: &[&str] = &["session_id", "shared_user_id", "refresh_token_hash", "provider", "provider_tenant", "provider_subject", "created_at", "updated_at", "last_seen_at", "expires_at", "revoked_at", "rotated_from"];
+pub const SESSIONS_SELECT_SQL: &str = r###"select
+      session_id::text as session_id,
+      shared_user_id::text as shared_user_id,
+      refresh_token_hash,
+      provider,
+      provider_tenant,
+      provider_subject,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revoked_at,
+      rotated_from::text as rotated_from
+    from shared_auth.sessions"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SessionsRow {
+    pub session_id: String,
+    pub shared_user_id: String,
+    pub refresh_token_hash: String,
+    pub provider: String,
+    pub provider_tenant: String,
+    pub provider_subject: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_seen_at: String,
+    pub expires_at: String,
+    pub revoked_at: Option<String>,
+    pub rotated_from: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionsInsert {
+    pub session_id: Option<String>,
+    pub shared_user_id: Option<String>,
+    pub refresh_token_hash: Option<String>,
+    pub provider: Option<String>,
+    pub provider_tenant: Option<String>,
+    pub provider_subject: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub last_seen_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub revoked_at: Option<String>,
+    pub rotated_from: Option<String>,
+}
+
+pub fn validate_sessions_row(value: &SessionsRow) -> Result<(), String> {
+    if (&value.provider).as_bytes().len() > 64 { return Err("sessions.provider exceeds 64 bytes".to_string()); }
+    if (&value.provider_tenant).as_bytes().len() > 255 { return Err("sessions.provider_tenant exceeds 255 bytes".to_string()); }
+    if (&value.provider_subject).as_bytes().len() > 512 { return Err("sessions.provider_subject exceeds 512 bytes".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sessions_insert(value: &SessionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if (value).as_bytes().len() > 64 { return Err("sessions.provider exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_tenant {
+        if (value).as_bytes().len() > 255 { return Err("sessions.provider_tenant exceeds 255 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_subject {
+        if (value).as_bytes().len() > 512 { return Err("sessions.provider_subject exceeds 512 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub const ROLES_TABLE: &str = "shared_auth.roles";
+pub const ROLES_COLUMNS: &[&str] = &["role_id", "shared_user_id", "role_name", "granted_at", "granted_by"];
+pub const ROLES_SELECT_SQL: &str = r###"select
+      role_id::text as role_id,
+      shared_user_id::text as shared_user_id,
+      role_name,
+      to_char(granted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as granted_at,
+      granted_by::text as granted_by
+    from shared_auth.roles"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct RolesRow {
+    pub role_id: String,
+    pub shared_user_id: String,
+    pub role_name: String,
+    pub granted_at: String,
+    pub granted_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RolesInsert {
+    pub role_id: Option<String>,
+    pub shared_user_id: Option<String>,
+    pub role_name: Option<String>,
+    pub granted_at: Option<String>,
+    pub granted_by: Option<String>,
+}
+
+pub fn validate_roles_row(_value: &RolesRow) -> Result<(), String> {
+    Ok(())
+}
+
+pub fn validate_roles_insert(_value: &RolesInsert) -> Result<(), String> {
+    Ok(())
+}
+
+pub const WEBHOOK_EVENTS_TABLE: &str = "shared_auth.webhook_events";
+pub const WEBHOOK_EVENTS_COLUMNS: &[&str] = &["event_id", "provider", "event_type", "received_at", "payload_sha256"];
+pub const WEBHOOK_EVENTS_SELECT_SQL: &str = r###"select
+      event_id::text as event_id,
+      provider,
+      event_type,
+      to_char(received_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as received_at,
+      payload_sha256
+    from shared_auth.webhook_events"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct WebhookEventsRow {
+    pub event_id: String,
+    pub provider: String,
+    pub event_type: String,
+    pub received_at: String,
+    pub payload_sha256: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebhookEventsInsert {
+    pub event_id: Option<String>,
+    pub provider: Option<String>,
+    pub event_type: Option<String>,
+    pub received_at: Option<String>,
+    pub payload_sha256: Option<String>,
+}
+
+pub fn validate_webhook_events_row(value: &WebhookEventsRow) -> Result<(), String> {
+    if (&value.provider).as_bytes().len() > 64 { return Err("webhook_events.provider exceeds 64 bytes".to_string()); }
+    if (&value.event_type).as_bytes().len() > 128 { return Err("webhook_events.event_type exceeds 128 bytes".to_string()); }
+    Ok(())
+}
+
+pub fn validate_webhook_events_insert(value: &WebhookEventsInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if (value).as_bytes().len() > 64 { return Err("webhook_events.provider exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.event_type {
+        if (value).as_bytes().len() > 128 { return Err("webhook_events.event_type exceeds 128 bytes".to_string()); }
+    }
+    Ok(())
+}
+
 pub const FAB_JOBS_TABLE: &str = "daedalus.fab_jobs";
 pub const FAB_JOBS_COLUMNS: &[&str] = &["job_id", "request_id", "kind", "status", "ok", "severity", "summary", "artifact_count", "payload", "created_at", "updated_at"];
 pub const FAB_JOBS_SELECT_SQL: &str = r###"select

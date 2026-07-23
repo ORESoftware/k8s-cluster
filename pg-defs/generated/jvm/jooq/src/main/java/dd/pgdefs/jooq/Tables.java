@@ -2566,6 +2566,74 @@ public final class Tables {
     public static final Field<OffsetDateTime> WEB_SESSIONS_ABSOLUTE_EXPIRES_AT = DSL.field(DSL.name("daedalus", "web_sessions", "absolute_expires_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<OffsetDateTime> WEB_SESSIONS_REVOKED_AT = DSL.field(DSL.name("daedalus", "web_sessions", "revoked_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
 
+    public static final Name PRINCIPALS_NAME = DSL.name("shared_auth", "principals");
+    public static final Table<org.jooq.Record> PRINCIPALS = DSL.table(PRINCIPALS_NAME);
+    public static final Field<UUID> PRINCIPALS_SHARED_USER_ID = DSL.field(DSL.name("shared_auth", "principals", "shared_user_id"), SQLDataType.UUID);
+    public static final Field<String> PRINCIPALS_EMAIL = DSL.field(DSL.name("shared_auth", "principals", "email"), SQLDataType.CLOB);
+    public static final Field<Boolean> PRINCIPALS_EMAIL_VERIFIED = DSL.field(DSL.name("shared_auth", "principals", "email_verified"), SQLDataType.BOOLEAN);
+    public static final Field<String> PRINCIPALS_PHONE = DSL.field(DSL.name("shared_auth", "principals", "phone"), SQLDataType.CLOB);
+    public static final Field<String> PRINCIPALS_DISPLAY_NAME = DSL.field(DSL.name("shared_auth", "principals", "display_name"), SQLDataType.CLOB);
+    public static final Field<String> PRINCIPALS_STATUS = DSL.field(DSL.name("shared_auth", "principals", "status"), SQLDataType.CLOB);
+    public static final Field<JSONB> PRINCIPALS_PROFILE = DSL.field(DSL.name("shared_auth", "principals", "profile"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> PRINCIPALS_CREATED_AT = DSL.field(DSL.name("shared_auth", "principals", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> PRINCIPALS_UPDATED_AT = DSL.field(DSL.name("shared_auth", "principals", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> PRINCIPALS_LAST_SEEN_AT = DSL.field(DSL.name("shared_auth", "principals", "last_seen_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name PROVIDER_IDENTITIES_NAME = DSL.name("shared_auth", "provider_identities");
+    public static final Table<org.jooq.Record> PROVIDER_IDENTITIES = DSL.table(PROVIDER_IDENTITIES_NAME);
+    public static final Field<UUID> PROVIDER_IDENTITIES_PROVIDER_IDENTITY_ID = DSL.field(DSL.name("shared_auth", "provider_identities", "provider_identity_id"), SQLDataType.UUID);
+    public static final Field<UUID> PROVIDER_IDENTITIES_SHARED_USER_ID = DSL.field(DSL.name("shared_auth", "provider_identities", "shared_user_id"), SQLDataType.UUID);
+    public static final Field<String> PROVIDER_IDENTITIES_PROVIDER = DSL.field(DSL.name("shared_auth", "provider_identities", "provider"), SQLDataType.CLOB);
+    public static final Field<String> PROVIDER_IDENTITIES_PROVIDER_TENANT = DSL.field(DSL.name("shared_auth", "provider_identities", "provider_tenant"), SQLDataType.CLOB);
+    public static final Field<String> PROVIDER_IDENTITIES_PROVIDER_SUBJECT = DSL.field(DSL.name("shared_auth", "provider_identities", "provider_subject"), SQLDataType.CLOB);
+    public static final Field<String> PROVIDER_IDENTITIES_EMAIL = DSL.field(DSL.name("shared_auth", "provider_identities", "email"), SQLDataType.CLOB);
+    public static final Field<Boolean> PROVIDER_IDENTITIES_EMAIL_VERIFIED = DSL.field(DSL.name("shared_auth", "provider_identities", "email_verified"), SQLDataType.BOOLEAN);
+    public static final Field<JSONB> PROVIDER_IDENTITIES_METADATA = DSL.field(DSL.name("shared_auth", "provider_identities", "metadata"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> PROVIDER_IDENTITIES_CREATED_AT = DSL.field(DSL.name("shared_auth", "provider_identities", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> PROVIDER_IDENTITIES_UPDATED_AT = DSL.field(DSL.name("shared_auth", "provider_identities", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> PROVIDER_IDENTITIES_LAST_SEEN_AT = DSL.field(DSL.name("shared_auth", "provider_identities", "last_seen_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name LOCAL_CREDENTIALS_NAME = DSL.name("shared_auth", "local_credentials");
+    public static final Table<org.jooq.Record> LOCAL_CREDENTIALS = DSL.table(LOCAL_CREDENTIALS_NAME);
+    public static final Field<UUID> LOCAL_CREDENTIALS_SHARED_USER_ID = DSL.field(DSL.name("shared_auth", "local_credentials", "shared_user_id"), SQLDataType.UUID);
+    public static final Field<String> LOCAL_CREDENTIALS_PASSWORD_HASH = DSL.field(DSL.name("shared_auth", "local_credentials", "password_hash"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> LOCAL_CREDENTIALS_PASSWORD_CHANGED_AT = DSL.field(DSL.name("shared_auth", "local_credentials", "password_changed_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<Integer> LOCAL_CREDENTIALS_FAILED_ATTEMPTS = DSL.field(DSL.name("shared_auth", "local_credentials", "failed_attempts"), SQLDataType.INTEGER);
+    public static final Field<OffsetDateTime> LOCAL_CREDENTIALS_LOCKED_UNTIL = DSL.field(DSL.name("shared_auth", "local_credentials", "locked_until"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> LOCAL_CREDENTIALS_CREATED_AT = DSL.field(DSL.name("shared_auth", "local_credentials", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> LOCAL_CREDENTIALS_UPDATED_AT = DSL.field(DSL.name("shared_auth", "local_credentials", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name SESSIONS_NAME = DSL.name("shared_auth", "sessions");
+    public static final Table<org.jooq.Record> SESSIONS = DSL.table(SESSIONS_NAME);
+    public static final Field<UUID> SESSIONS_SESSION_ID = DSL.field(DSL.name("shared_auth", "sessions", "session_id"), SQLDataType.UUID);
+    public static final Field<UUID> SESSIONS_SHARED_USER_ID = DSL.field(DSL.name("shared_auth", "sessions", "shared_user_id"), SQLDataType.UUID);
+    public static final Field<String> SESSIONS_REFRESH_TOKEN_HASH = DSL.field(DSL.name("shared_auth", "sessions", "refresh_token_hash"), SQLDataType.CLOB);
+    public static final Field<String> SESSIONS_PROVIDER = DSL.field(DSL.name("shared_auth", "sessions", "provider"), SQLDataType.CLOB);
+    public static final Field<String> SESSIONS_PROVIDER_TENANT = DSL.field(DSL.name("shared_auth", "sessions", "provider_tenant"), SQLDataType.CLOB);
+    public static final Field<String> SESSIONS_PROVIDER_SUBJECT = DSL.field(DSL.name("shared_auth", "sessions", "provider_subject"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> SESSIONS_CREATED_AT = DSL.field(DSL.name("shared_auth", "sessions", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> SESSIONS_UPDATED_AT = DSL.field(DSL.name("shared_auth", "sessions", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> SESSIONS_LAST_SEEN_AT = DSL.field(DSL.name("shared_auth", "sessions", "last_seen_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> SESSIONS_EXPIRES_AT = DSL.field(DSL.name("shared_auth", "sessions", "expires_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> SESSIONS_REVOKED_AT = DSL.field(DSL.name("shared_auth", "sessions", "revoked_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<UUID> SESSIONS_ROTATED_FROM = DSL.field(DSL.name("shared_auth", "sessions", "rotated_from"), SQLDataType.UUID);
+
+    public static final Name ROLES_NAME = DSL.name("shared_auth", "roles");
+    public static final Table<org.jooq.Record> ROLES = DSL.table(ROLES_NAME);
+    public static final Field<UUID> ROLES_ROLE_ID = DSL.field(DSL.name("shared_auth", "roles", "role_id"), SQLDataType.UUID);
+    public static final Field<UUID> ROLES_SHARED_USER_ID = DSL.field(DSL.name("shared_auth", "roles", "shared_user_id"), SQLDataType.UUID);
+    public static final Field<String> ROLES_ROLE_NAME = DSL.field(DSL.name("shared_auth", "roles", "role_name"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> ROLES_GRANTED_AT = DSL.field(DSL.name("shared_auth", "roles", "granted_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<UUID> ROLES_GRANTED_BY = DSL.field(DSL.name("shared_auth", "roles", "granted_by"), SQLDataType.UUID);
+
+    public static final Name WEBHOOK_EVENTS_NAME = DSL.name("shared_auth", "webhook_events");
+    public static final Table<org.jooq.Record> WEBHOOK_EVENTS = DSL.table(WEBHOOK_EVENTS_NAME);
+    public static final Field<UUID> WEBHOOK_EVENTS_EVENT_ID = DSL.field(DSL.name("shared_auth", "webhook_events", "event_id"), SQLDataType.UUID);
+    public static final Field<String> WEBHOOK_EVENTS_PROVIDER = DSL.field(DSL.name("shared_auth", "webhook_events", "provider"), SQLDataType.CLOB);
+    public static final Field<String> WEBHOOK_EVENTS_EVENT_TYPE = DSL.field(DSL.name("shared_auth", "webhook_events", "event_type"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> WEBHOOK_EVENTS_RECEIVED_AT = DSL.field(DSL.name("shared_auth", "webhook_events", "received_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<String> WEBHOOK_EVENTS_PAYLOAD_SHA256 = DSL.field(DSL.name("shared_auth", "webhook_events", "payload_sha256"), SQLDataType.CLOB);
+
     public static final Name FAB_JOBS_NAME = DSL.name("daedalus", "fab_jobs");
     public static final Table<org.jooq.Record> FAB_JOBS = DSL.table(FAB_JOBS_NAME);
     public static final Field<String> FAB_JOBS_JOB_ID = DSL.field(DSL.name("daedalus", "fab_jobs", "job_id"), SQLDataType.CLOB);

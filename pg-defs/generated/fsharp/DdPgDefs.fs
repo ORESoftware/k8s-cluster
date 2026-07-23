@@ -12902,6 +12902,193 @@ let webSessionsRowOfRow (get: int -> string) (isNullAt: int -> bool) : WebSessio
       WebSessionsRevokedAt = (if isNullAt 12 then None else Some (get 12))
     }
 
+let principalsTable = "shared_auth.principals"
+let principalsColumns = [ "shared_user_id"; "email"; "email_verified"; "phone"; "display_name"; "status"; "profile"; "created_at"; "updated_at"; "last_seen_at" ]
+let principalsSelectSql = "select\n      shared_user_id::text as shared_user_id,\n      email,\n      email_verified,\n      phone,\n      display_name,\n      status,\n      profile::text as profile_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.principals"
+
+[<RequireQualifiedAccess>]
+type PrincipalsStatus =
+    | Active
+    | Disabled
+    | Deleted
+
+let principalsStatusToString (value: PrincipalsStatus) : string =
+    match value with
+    | PrincipalsStatus.Active -> "active"
+    | PrincipalsStatus.Disabled -> "disabled"
+    | PrincipalsStatus.Deleted -> "deleted"
+
+let parsePrincipalsStatus (value: string) : Result<PrincipalsStatus, string> =
+    match value with
+    | "active" -> Ok PrincipalsStatus.Active
+    | "disabled" -> Ok PrincipalsStatus.Disabled
+    | "deleted" -> Ok PrincipalsStatus.Deleted
+    | _ -> Error ("unsupported principals.status: " + value)
+
+type PrincipalsRow =
+    { PrincipalsSharedUserId: string
+      PrincipalsEmail: string option
+      PrincipalsEmailVerified: bool
+      PrincipalsPhone: string option
+      PrincipalsDisplayName: string option
+      PrincipalsStatus: string
+      PrincipalsProfile: string
+      PrincipalsCreatedAt: string
+      PrincipalsUpdatedAt: string
+      PrincipalsLastSeenAt: string
+    }
+
+let principalsRowOfRow (get: int -> string) (isNullAt: int -> bool) : PrincipalsRow =
+    { PrincipalsSharedUserId = get 0
+      PrincipalsEmail = (if isNullAt 1 then None else Some (get 1))
+      PrincipalsEmailVerified = (get 2 = "t")
+      PrincipalsPhone = (if isNullAt 3 then None else Some (get 3))
+      PrincipalsDisplayName = (if isNullAt 4 then None else Some (get 4))
+      PrincipalsStatus = get 5
+      PrincipalsProfile = get 6
+      PrincipalsCreatedAt = get 7
+      PrincipalsUpdatedAt = get 8
+      PrincipalsLastSeenAt = get 9
+    }
+
+let providerIdentitiesTable = "shared_auth.provider_identities"
+let providerIdentitiesColumns = [ "provider_identity_id"; "shared_user_id"; "provider"; "provider_tenant"; "provider_subject"; "email"; "email_verified"; "metadata"; "created_at"; "updated_at"; "last_seen_at" ]
+let providerIdentitiesSelectSql = "select\n      provider_identity_id::text as provider_identity_id,\n      shared_user_id::text as shared_user_id,\n      provider,\n      provider_tenant,\n      provider_subject,\n      email,\n      email_verified,\n      metadata::text as metadata_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.provider_identities"
+
+type ProviderIdentitiesRow =
+    { ProviderIdentitiesProviderIdentityId: string
+      ProviderIdentitiesSharedUserId: string
+      ProviderIdentitiesProvider: string
+      ProviderIdentitiesProviderTenant: string
+      ProviderIdentitiesProviderSubject: string
+      ProviderIdentitiesEmail: string option
+      ProviderIdentitiesEmailVerified: bool
+      ProviderIdentitiesMetadata: string
+      ProviderIdentitiesCreatedAt: string
+      ProviderIdentitiesUpdatedAt: string
+      ProviderIdentitiesLastSeenAt: string
+    }
+
+let providerIdentitiesRowOfRow (get: int -> string) (isNullAt: int -> bool) : ProviderIdentitiesRow =
+    { ProviderIdentitiesProviderIdentityId = get 0
+      ProviderIdentitiesSharedUserId = get 1
+      ProviderIdentitiesProvider = get 2
+      ProviderIdentitiesProviderTenant = get 3
+      ProviderIdentitiesProviderSubject = get 4
+      ProviderIdentitiesEmail = (if isNullAt 5 then None else Some (get 5))
+      ProviderIdentitiesEmailVerified = (get 6 = "t")
+      ProviderIdentitiesMetadata = get 7
+      ProviderIdentitiesCreatedAt = get 8
+      ProviderIdentitiesUpdatedAt = get 9
+      ProviderIdentitiesLastSeenAt = get 10
+    }
+
+let localCredentialsTable = "shared_auth.local_credentials"
+let localCredentialsColumns = [ "shared_user_id"; "password_hash"; "password_changed_at"; "failed_attempts"; "locked_until"; "created_at"; "updated_at" ]
+let localCredentialsSelectSql = "select\n      shared_user_id::text as shared_user_id,\n      password_hash,\n      to_char(password_changed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as password_changed_at,\n      failed_attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from shared_auth.local_credentials"
+
+type LocalCredentialsRow =
+    { LocalCredentialsSharedUserId: string
+      LocalCredentialsPasswordHash: string
+      LocalCredentialsPasswordChangedAt: string
+      LocalCredentialsFailedAttempts: int
+      LocalCredentialsLockedUntil: string option
+      LocalCredentialsCreatedAt: string
+      LocalCredentialsUpdatedAt: string
+    }
+
+let localCredentialsRowOfRow (get: int -> string) (isNullAt: int -> bool) : LocalCredentialsRow =
+    { LocalCredentialsSharedUserId = get 0
+      LocalCredentialsPasswordHash = get 1
+      LocalCredentialsPasswordChangedAt = get 2
+      LocalCredentialsFailedAttempts = int (get 3)
+      LocalCredentialsLockedUntil = (if isNullAt 4 then None else Some (get 4))
+      LocalCredentialsCreatedAt = get 5
+      LocalCredentialsUpdatedAt = get 6
+    }
+
+let validateLocalCredentialsFailedAttempts (value: int) : Result<int, string> =
+    if value < 0 then Error "local_credentials.failed_attempts is below the minimum"
+    else Ok value
+
+let sessionsTable = "shared_auth.sessions"
+let sessionsColumns = [ "session_id"; "shared_user_id"; "refresh_token_hash"; "provider"; "provider_tenant"; "provider_subject"; "created_at"; "updated_at"; "last_seen_at"; "expires_at"; "revoked_at"; "rotated_from" ]
+let sessionsSelectSql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+
+type SessionsRow =
+    { SessionsSessionId: string
+      SessionsSharedUserId: string
+      SessionsRefreshTokenHash: string
+      SessionsProvider: string
+      SessionsProviderTenant: string
+      SessionsProviderSubject: string
+      SessionsCreatedAt: string
+      SessionsUpdatedAt: string
+      SessionsLastSeenAt: string
+      SessionsExpiresAt: string
+      SessionsRevokedAt: string option
+      SessionsRotatedFrom: string option
+    }
+
+let sessionsRowOfRow (get: int -> string) (isNullAt: int -> bool) : SessionsRow =
+    { SessionsSessionId = get 0
+      SessionsSharedUserId = get 1
+      SessionsRefreshTokenHash = get 2
+      SessionsProvider = get 3
+      SessionsProviderTenant = get 4
+      SessionsProviderSubject = get 5
+      SessionsCreatedAt = get 6
+      SessionsUpdatedAt = get 7
+      SessionsLastSeenAt = get 8
+      SessionsExpiresAt = get 9
+      SessionsRevokedAt = (if isNullAt 10 then None else Some (get 10))
+      SessionsRotatedFrom = (if isNullAt 11 then None else Some (get 11))
+    }
+
+let rolesTable = "shared_auth.roles"
+let rolesColumns = [ "role_id"; "shared_user_id"; "role_name"; "granted_at"; "granted_by" ]
+let rolesSelectSql = "select\n      role_id::text as role_id,\n      shared_user_id::text as shared_user_id,\n      role_name,\n      to_char(granted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as granted_at,\n      granted_by::text as granted_by\n    from shared_auth.roles"
+
+type RolesRow =
+    { RolesRoleId: string
+      RolesSharedUserId: string
+      RolesRoleName: string
+      RolesGrantedAt: string
+      RolesGrantedBy: string option
+    }
+
+let rolesRowOfRow (get: int -> string) (isNullAt: int -> bool) : RolesRow =
+    { RolesRoleId = get 0
+      RolesSharedUserId = get 1
+      RolesRoleName = get 2
+      RolesGrantedAt = get 3
+      RolesGrantedBy = (if isNullAt 4 then None else Some (get 4))
+    }
+
+let validateRolesRoleName (value: string) : Result<string, string> =
+    if not (Regex.IsMatch(value, @"^[a-z][a-z0-9:_-]{0,63}$")) then Error "roles.role_name does not match the required pattern"
+    else Ok value
+
+let webhookEventsTable = "shared_auth.webhook_events"
+let webhookEventsColumns = [ "event_id"; "provider"; "event_type"; "received_at"; "payload_sha256" ]
+let webhookEventsSelectSql = "select\n      event_id::text as event_id,\n      provider,\n      event_type,\n      to_char(received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as received_at,\n      payload_sha256\n    from shared_auth.webhook_events"
+
+type WebhookEventsRow =
+    { WebhookEventsEventId: string
+      WebhookEventsProvider: string
+      WebhookEventsEventType: string
+      WebhookEventsReceivedAt: string
+      WebhookEventsPayloadSha256: string
+    }
+
+let webhookEventsRowOfRow (get: int -> string) (isNullAt: int -> bool) : WebhookEventsRow =
+    { WebhookEventsEventId = get 0
+      WebhookEventsProvider = get 1
+      WebhookEventsEventType = get 2
+      WebhookEventsReceivedAt = get 3
+      WebhookEventsPayloadSha256 = get 4
+    }
+
 let fabJobsTable = "daedalus.fab_jobs"
 let fabJobsColumns = [ "job_id"; "request_id"; "kind"; "status"; "ok"; "severity"; "summary"; "artifact_count"; "payload"; "created_at"; "updated_at" ]
 let fabJobsSelectSql = "select\n      job_id,\n      request_id,\n      kind,\n      status,\n      ok,\n      severity,\n      summary,\n      artifact_count,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_jobs"

@@ -14553,6 +14553,421 @@ class WebSessionsRow {
   }
 }
 
+const principalsTable = "shared_auth.principals";
+const principalsSelectSql = "select\n      shared_user_id::text as shared_user_id,\n      email,\n      email_verified,\n      phone,\n      display_name,\n      status,\n      profile::text as profile_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.principals";
+
+const principalsStatusValues = <String>["active", "disabled", "deleted"];
+
+class PrincipalsRow {
+  const PrincipalsRow({
+    required this.sharedUserId,
+    this.email,
+    required this.emailVerified,
+    this.phone,
+    this.displayName,
+    required this.status,
+    required this.profile,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.lastSeenAt,
+  });
+
+  final String sharedUserId;
+  final String? email;
+  final bool emailVerified;
+  final String? phone;
+  final String? displayName;
+  final String status;
+  final Map<String, Object?> profile;
+  final String createdAt;
+  final String updatedAt;
+  final String lastSeenAt;
+
+  factory PrincipalsRow.fromJson(Map<String, Object?> json) {
+    return PrincipalsRow(
+      sharedUserId: _readRequiredString(json, "sharedUserId"),
+      email: _readOptionalString(json, "email"),
+      emailVerified: _readRequiredBool(json, "emailVerified"),
+      phone: _readOptionalString(json, "phone"),
+      displayName: _readOptionalString(json, "displayName"),
+      status: _readRequiredString(json, "status"),
+      profile: _readRequiredObject(json, "profile"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      lastSeenAt: _readRequiredString(json, "lastSeenAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "sharedUserId": sharedUserId,
+    "email": email,
+    "emailVerified": emailVerified,
+    "phone": phone,
+    "displayName": displayName,
+    "status": status,
+    "profile": profile,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "lastSeenAt": lastSeenAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (email != null && utf8.encode(email!).length > 320) {
+      errors.add("principals.email exceeds 320 bytes");
+    }
+    if (email != null && utf8.encode(email!).length < 3) {
+      errors.add("principals.email is below 3 bytes");
+    }
+    if (phone != null && utf8.encode(phone!).length > 64) {
+      errors.add("principals.phone exceeds 64 bytes");
+    }
+    if (displayName != null && utf8.encode(displayName!).length > 160) {
+      errors.add("principals.display_name exceeds 160 bytes");
+    }
+    if (!principalsStatusValues.contains(status)) {
+      errors.add("unsupported principals.status");
+    }
+    return errors;
+  }
+}
+
+const providerIdentitiesTable = "shared_auth.provider_identities";
+const providerIdentitiesSelectSql = "select\n      provider_identity_id::text as provider_identity_id,\n      shared_user_id::text as shared_user_id,\n      provider,\n      provider_tenant,\n      provider_subject,\n      email,\n      email_verified,\n      metadata::text as metadata_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.provider_identities";
+
+class ProviderIdentitiesRow {
+  const ProviderIdentitiesRow({
+    required this.providerIdentityId,
+    required this.sharedUserId,
+    required this.provider,
+    required this.providerTenant,
+    required this.providerSubject,
+    this.email,
+    required this.emailVerified,
+    required this.metadata,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.lastSeenAt,
+  });
+
+  final String providerIdentityId;
+  final String sharedUserId;
+  final String provider;
+  final String providerTenant;
+  final String providerSubject;
+  final String? email;
+  final bool emailVerified;
+  final Map<String, Object?> metadata;
+  final String createdAt;
+  final String updatedAt;
+  final String lastSeenAt;
+
+  factory ProviderIdentitiesRow.fromJson(Map<String, Object?> json) {
+    return ProviderIdentitiesRow(
+      providerIdentityId: _readRequiredString(json, "providerIdentityId"),
+      sharedUserId: _readRequiredString(json, "sharedUserId"),
+      provider: _readRequiredString(json, "provider"),
+      providerTenant: _readRequiredString(json, "providerTenant"),
+      providerSubject: _readRequiredString(json, "providerSubject"),
+      email: _readOptionalString(json, "email"),
+      emailVerified: _readRequiredBool(json, "emailVerified"),
+      metadata: _readRequiredObject(json, "metadata"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      lastSeenAt: _readRequiredString(json, "lastSeenAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "providerIdentityId": providerIdentityId,
+    "sharedUserId": sharedUserId,
+    "provider": provider,
+    "providerTenant": providerTenant,
+    "providerSubject": providerSubject,
+    "email": email,
+    "emailVerified": emailVerified,
+    "metadata": metadata,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "lastSeenAt": lastSeenAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(provider).length > 64) {
+      errors.add("provider_identities.provider exceeds 64 bytes");
+    }
+    if (utf8.encode(provider).length < 1) {
+      errors.add("provider_identities.provider is below 1 bytes");
+    }
+    if (utf8.encode(providerTenant).length > 255) {
+      errors.add("provider_identities.provider_tenant exceeds 255 bytes");
+    }
+    if (utf8.encode(providerTenant).length < 1) {
+      errors.add("provider_identities.provider_tenant is below 1 bytes");
+    }
+    if (utf8.encode(providerSubject).length > 512) {
+      errors.add("provider_identities.provider_subject exceeds 512 bytes");
+    }
+    if (utf8.encode(providerSubject).length < 1) {
+      errors.add("provider_identities.provider_subject is below 1 bytes");
+    }
+    if (email != null && utf8.encode(email!).length > 320) {
+      errors.add("provider_identities.email exceeds 320 bytes");
+    }
+    if (email != null && utf8.encode(email!).length < 3) {
+      errors.add("provider_identities.email is below 3 bytes");
+    }
+    return errors;
+  }
+}
+
+const localCredentialsTable = "shared_auth.local_credentials";
+const localCredentialsSelectSql = "select\n      shared_user_id::text as shared_user_id,\n      password_hash,\n      to_char(password_changed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as password_changed_at,\n      failed_attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from shared_auth.local_credentials";
+
+class LocalCredentialsRow {
+  const LocalCredentialsRow({
+    required this.sharedUserId,
+    required this.passwordHash,
+    required this.passwordChangedAt,
+    required this.failedAttempts,
+    this.lockedUntil,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String sharedUserId;
+  final String passwordHash;
+  final String passwordChangedAt;
+  final int failedAttempts;
+  final String? lockedUntil;
+  final String createdAt;
+  final String updatedAt;
+
+  factory LocalCredentialsRow.fromJson(Map<String, Object?> json) {
+    return LocalCredentialsRow(
+      sharedUserId: _readRequiredString(json, "sharedUserId"),
+      passwordHash: _readRequiredString(json, "passwordHash"),
+      passwordChangedAt: _readRequiredString(json, "passwordChangedAt"),
+      failedAttempts: _readRequiredInt(json, "failedAttempts"),
+      lockedUntil: _readOptionalString(json, "lockedUntil"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "sharedUserId": sharedUserId,
+    "passwordHash": passwordHash,
+    "passwordChangedAt": passwordChangedAt,
+    "failedAttempts": failedAttempts,
+    "lockedUntil": lockedUntil,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(passwordHash).length > 512) {
+      errors.add("local_credentials.password_hash exceeds 512 bytes");
+    }
+    if (utf8.encode(passwordHash).length < 40) {
+      errors.add("local_credentials.password_hash is below 40 bytes");
+    }
+    if (failedAttempts < 0) {
+      errors.add("local_credentials.failed_attempts is below the minimum");
+    }
+    return errors;
+  }
+}
+
+const sessionsTable = "shared_auth.sessions";
+const sessionsSelectSql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions";
+
+class SessionsRow {
+  const SessionsRow({
+    required this.sessionId,
+    required this.sharedUserId,
+    required this.refreshTokenHash,
+    required this.provider,
+    required this.providerTenant,
+    required this.providerSubject,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.lastSeenAt,
+    required this.expiresAt,
+    this.revokedAt,
+    this.rotatedFrom,
+  });
+
+  final String sessionId;
+  final String sharedUserId;
+  final String refreshTokenHash;
+  final String provider;
+  final String providerTenant;
+  final String providerSubject;
+  final String createdAt;
+  final String updatedAt;
+  final String lastSeenAt;
+  final String expiresAt;
+  final String? revokedAt;
+  final String? rotatedFrom;
+
+  factory SessionsRow.fromJson(Map<String, Object?> json) {
+    return SessionsRow(
+      sessionId: _readRequiredString(json, "sessionId"),
+      sharedUserId: _readRequiredString(json, "sharedUserId"),
+      refreshTokenHash: _readRequiredString(json, "refreshTokenHash"),
+      provider: _readRequiredString(json, "provider"),
+      providerTenant: _readRequiredString(json, "providerTenant"),
+      providerSubject: _readRequiredString(json, "providerSubject"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      lastSeenAt: _readRequiredString(json, "lastSeenAt"),
+      expiresAt: _readRequiredString(json, "expiresAt"),
+      revokedAt: _readOptionalString(json, "revokedAt"),
+      rotatedFrom: _readOptionalString(json, "rotatedFrom"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "sessionId": sessionId,
+    "sharedUserId": sharedUserId,
+    "refreshTokenHash": refreshTokenHash,
+    "provider": provider,
+    "providerTenant": providerTenant,
+    "providerSubject": providerSubject,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "lastSeenAt": lastSeenAt,
+    "expiresAt": expiresAt,
+    "revokedAt": revokedAt,
+    "rotatedFrom": rotatedFrom,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(provider).length > 64) {
+      errors.add("sessions.provider exceeds 64 bytes");
+    }
+    if (utf8.encode(provider).length < 1) {
+      errors.add("sessions.provider is below 1 bytes");
+    }
+    if (utf8.encode(providerTenant).length > 255) {
+      errors.add("sessions.provider_tenant exceeds 255 bytes");
+    }
+    if (utf8.encode(providerTenant).length < 1) {
+      errors.add("sessions.provider_tenant is below 1 bytes");
+    }
+    if (utf8.encode(providerSubject).length > 512) {
+      errors.add("sessions.provider_subject exceeds 512 bytes");
+    }
+    if (utf8.encode(providerSubject).length < 1) {
+      errors.add("sessions.provider_subject is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
+const rolesTable = "shared_auth.roles";
+const rolesSelectSql = "select\n      role_id::text as role_id,\n      shared_user_id::text as shared_user_id,\n      role_name,\n      to_char(granted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as granted_at,\n      granted_by::text as granted_by\n    from shared_auth.roles";
+
+class RolesRow {
+  const RolesRow({
+    required this.roleId,
+    required this.sharedUserId,
+    required this.roleName,
+    required this.grantedAt,
+    this.grantedBy,
+  });
+
+  final String roleId;
+  final String sharedUserId;
+  final String roleName;
+  final String grantedAt;
+  final String? grantedBy;
+
+  factory RolesRow.fromJson(Map<String, Object?> json) {
+    return RolesRow(
+      roleId: _readRequiredString(json, "roleId"),
+      sharedUserId: _readRequiredString(json, "sharedUserId"),
+      roleName: _readRequiredString(json, "roleName"),
+      grantedAt: _readRequiredString(json, "grantedAt"),
+      grantedBy: _readOptionalString(json, "grantedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "roleId": roleId,
+    "sharedUserId": sharedUserId,
+    "roleName": roleName,
+    "grantedAt": grantedAt,
+    "grantedBy": grantedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[a-z][a-z0-9:_-]{0,63}$').hasMatch(roleName)) {
+      errors.add("roles.role_name does not match the required pattern");
+    }
+    return errors;
+  }
+}
+
+const webhookEventsTable = "shared_auth.webhook_events";
+const webhookEventsSelectSql = "select\n      event_id::text as event_id,\n      provider,\n      event_type,\n      to_char(received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as received_at,\n      payload_sha256\n    from shared_auth.webhook_events";
+
+class WebhookEventsRow {
+  const WebhookEventsRow({
+    required this.eventId,
+    required this.provider,
+    required this.eventType,
+    required this.receivedAt,
+    required this.payloadSha256,
+  });
+
+  final String eventId;
+  final String provider;
+  final String eventType;
+  final String receivedAt;
+  final String payloadSha256;
+
+  factory WebhookEventsRow.fromJson(Map<String, Object?> json) {
+    return WebhookEventsRow(
+      eventId: _readRequiredString(json, "eventId"),
+      provider: _readRequiredString(json, "provider"),
+      eventType: _readRequiredString(json, "eventType"),
+      receivedAt: _readRequiredString(json, "receivedAt"),
+      payloadSha256: _readRequiredString(json, "payloadSha256"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "eventId": eventId,
+    "provider": provider,
+    "eventType": eventType,
+    "receivedAt": receivedAt,
+    "payloadSha256": payloadSha256,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (utf8.encode(provider).length > 64) {
+      errors.add("webhook_events.provider exceeds 64 bytes");
+    }
+    if (utf8.encode(provider).length < 1) {
+      errors.add("webhook_events.provider is below 1 bytes");
+    }
+    if (utf8.encode(eventType).length > 128) {
+      errors.add("webhook_events.event_type exceeds 128 bytes");
+    }
+    if (utf8.encode(eventType).length < 1) {
+      errors.add("webhook_events.event_type is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
 const fabJobsTable = "daedalus.fab_jobs";
 const fabJobsSelectSql = "select\n      job_id,\n      request_id,\n      kind,\n      status,\n      ok,\n      severity,\n      summary,\n      artifact_count,\n      payload::text as payload_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from daedalus.fab_jobs";
 

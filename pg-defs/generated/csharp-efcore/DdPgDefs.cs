@@ -8863,6 +8863,210 @@ public class WebSessions
     public DateTimeOffset? RevokedAt { get; set; }
 }
 
+[Table("principals", Schema = "shared_auth")]
+public class Principals
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("shared_user_id")]
+    public Guid SharedUserId { get; set; }
+
+    [Column("email")]
+    public string? Email { get; set; }
+
+    [Column("email_verified")]
+    public bool EmailVerified { get; set; }
+
+    [Column("phone")]
+    public string? Phone { get; set; }
+
+    [Column("display_name")]
+    public string? DisplayName { get; set; }
+
+    [Required]
+    [Column("status")]
+    [RegularExpression(@"^(active|disabled|deleted)$")]
+    public string Status { get; set; } = null!;
+
+    [Required]
+    [Column("profile", TypeName = "jsonb")]
+    public string Profile { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [Column("last_seen_at")]
+    public DateTimeOffset LastSeenAt { get; set; }
+}
+
+[Table("provider_identities", Schema = "shared_auth")]
+public class ProviderIdentities
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("provider_identity_id")]
+    public Guid ProviderIdentityId { get; set; }
+
+    [Column("shared_user_id")]
+    public Guid SharedUserId { get; set; }
+
+    [Required]
+    [Column("provider")]
+    public string Provider { get; set; } = null!;
+
+    [Required]
+    [Column("provider_tenant")]
+    public string ProviderTenant { get; set; } = null!;
+
+    [Required]
+    [Column("provider_subject")]
+    public string ProviderSubject { get; set; } = null!;
+
+    [Column("email")]
+    public string? Email { get; set; }
+
+    [Column("email_verified")]
+    public bool EmailVerified { get; set; }
+
+    [Required]
+    [Column("metadata", TypeName = "jsonb")]
+    public string Metadata { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [Column("last_seen_at")]
+    public DateTimeOffset LastSeenAt { get; set; }
+}
+
+[Table("local_credentials", Schema = "shared_auth")]
+public class LocalCredentials
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("shared_user_id")]
+    public Guid SharedUserId { get; set; }
+
+    [Required]
+    [Column("password_hash")]
+    public string PasswordHash { get; set; } = null!;
+
+    [Column("password_changed_at")]
+    public DateTimeOffset PasswordChangedAt { get; set; }
+
+    [Column("failed_attempts")]
+    [Range(0, 2147483647)]
+    public int FailedAttempts { get; set; }
+
+    [Column("locked_until")]
+    public DateTimeOffset? LockedUntil { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+[Table("sessions", Schema = "shared_auth")]
+public class Sessions
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("session_id")]
+    public Guid SessionId { get; set; }
+
+    [Column("shared_user_id")]
+    public Guid SharedUserId { get; set; }
+
+    [Required]
+    [Column("refresh_token_hash")]
+    public string RefreshTokenHash { get; set; } = null!;
+
+    [Required]
+    [Column("provider")]
+    public string Provider { get; set; } = null!;
+
+    [Required]
+    [Column("provider_tenant")]
+    public string ProviderTenant { get; set; } = null!;
+
+    [Required]
+    [Column("provider_subject")]
+    public string ProviderSubject { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [Column("last_seen_at")]
+    public DateTimeOffset LastSeenAt { get; set; }
+
+    [Column("expires_at")]
+    public DateTimeOffset ExpiresAt { get; set; }
+
+    [Column("revoked_at")]
+    public DateTimeOffset? RevokedAt { get; set; }
+
+    [Column("rotated_from")]
+    public Guid? RotatedFrom { get; set; }
+}
+
+[Table("roles", Schema = "shared_auth")]
+public class Roles
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("role_id")]
+    public Guid RoleId { get; set; }
+
+    [Column("shared_user_id")]
+    public Guid SharedUserId { get; set; }
+
+    [Required]
+    [Column("role_name")]
+    [RegularExpression(@"^[a-z][a-z0-9:_-]{0,63}$")]
+    public string RoleName { get; set; } = null!;
+
+    [Column("granted_at")]
+    public DateTimeOffset GrantedAt { get; set; }
+
+    [Column("granted_by")]
+    public Guid? GrantedBy { get; set; }
+}
+
+[Table("webhook_events", Schema = "shared_auth")]
+public class WebhookEvents
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("event_id")]
+    public Guid EventId { get; set; }
+
+    [Required]
+    [Column("provider")]
+    public string Provider { get; set; } = null!;
+
+    [Required]
+    [Column("event_type")]
+    public string EventType { get; set; } = null!;
+
+    [Column("received_at")]
+    public DateTimeOffset ReceivedAt { get; set; }
+
+    [Required]
+    [Column("payload_sha256")]
+    public string PayloadSha256 { get; set; } = null!;
+}
+
 [Table("fab_jobs", Schema = "daedalus")]
 public class FabJobs
 {
@@ -9262,6 +9466,18 @@ public class DdPgDefsContext : DbContext
     public DbSet<FabRuns> FabRunsSet => Set<FabRuns>();
 
     public DbSet<WebSessions> WebSessionsSet => Set<WebSessions>();
+
+    public DbSet<Principals> PrincipalsSet => Set<Principals>();
+
+    public DbSet<ProviderIdentities> ProviderIdentitiesSet => Set<ProviderIdentities>();
+
+    public DbSet<LocalCredentials> LocalCredentialsSet => Set<LocalCredentials>();
+
+    public DbSet<Sessions> SessionsSet => Set<Sessions>();
+
+    public DbSet<Roles> RolesSet => Set<Roles>();
+
+    public DbSet<WebhookEvents> WebhookEventsSet => Set<WebhookEvents>();
 
     public DbSet<FabJobs> FabJobsSet => Set<FabJobs>();
 

@@ -3335,6 +3335,104 @@ class WebSessions(models.Model):
         db_table = "daedalus\".\"web_sessions"
 
 
+class Principals(models.Model):
+    shared_user_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    email = models.TextField(null=True, blank=True)
+    email_verified = models.BooleanField(default=False)
+    phone = models.TextField(null=True, blank=True)
+    display_name = models.TextField(null=True, blank=True)
+    status = models.TextField(choices=[("active", "active"), ("disabled", "disabled"), ("deleted", "deleted")], default="active")
+    profile = models.JSONField(default=dict)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+    last_seen_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "shared_auth\".\"principals"
+
+
+class ProviderIdentities(models.Model):
+    provider_identity_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    shared_user_id = models.UUIDField()
+    provider = models.TextField()
+    provider_tenant = models.TextField(default="default")
+    provider_subject = models.TextField()
+    email = models.TextField(null=True, blank=True)
+    email_verified = models.BooleanField(default=False)
+    metadata = models.JSONField(default=dict)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+    last_seen_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "shared_auth\".\"provider_identities"
+
+
+class LocalCredentials(models.Model):
+    shared_user_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    password_hash = models.TextField()
+    password_changed_at = models.DateTimeField()
+    failed_attempts = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    locked_until = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "shared_auth\".\"local_credentials"
+
+
+class Sessions(models.Model):
+    session_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    shared_user_id = models.UUIDField()
+    refresh_token_hash = models.TextField()
+    provider = models.TextField()
+    provider_tenant = models.TextField(default="default")
+    provider_subject = models.TextField()
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+    last_seen_at = models.DateTimeField()
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    rotated_from = models.UUIDField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "shared_auth\".\"sessions"
+
+
+class Roles(models.Model):
+    role_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    shared_user_id = models.UUIDField()
+    role_name = models.TextField(validators=[RegexValidator(regex="^[a-z][a-z0-9:_-]{0,63}$")])
+    granted_at = models.DateTimeField()
+    granted_by = models.UUIDField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "shared_auth\".\"roles"
+
+
+class WebhookEvents(models.Model):
+    event_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.TextField()
+    event_type = models.TextField()
+    received_at = models.DateTimeField()
+    payload_sha256 = models.TextField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "shared_auth\".\"webhook_events"
+
+
 class FabJobs(models.Model):
     job_id = models.TextField(primary_key=True)
     request_id = models.TextField()
