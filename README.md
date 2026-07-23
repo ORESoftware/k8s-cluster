@@ -31,9 +31,9 @@ git submodule update --init --recursive
 
 The checked-in gitlinks are the deployment inputs. The optional `branch = main`
 metadata only guides an intentional remote update; normal clones remain pinned
-to the exact reviewed commits. The initial server and interface pins correspond
-to their open hardening pull requests and can be advanced after those changes
-merge.
+to the exact reviewed commits. All component pointers track reviewed `main`
+revisions. The server pointer includes the release workflow's immutable GHCR
+digest pin rather than an unreviewed floating image tag.
 
 ## Operations
 
