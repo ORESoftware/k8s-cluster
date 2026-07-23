@@ -1,0 +1,29 @@
+name: inventory
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  gitlinks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify repository inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git config -f .gitmodules --get submodule.drone-mngr-ctrl-server.path)" = "apps/drone-mngr-ctrl-server.rs"
+          test "$(git config -f .gitmodules --get submodule.drone-mngr-web-server.path)" = "apps/drone-mngr-web-server.rs"
+          test "$(git config -f .gitmodules --get submodule.drone-mngr-infra.path)" = "apps/drone-mngr-infra"
+          test "$(git config -f .gitmodules --get submodule.tools/flags-2-env.path)" = "tools/flags-2-env"
+          test "$(git ls-tree HEAD apps/drone-mngr-ctrl-server.rs | awk '{print $1}')" = "160000"
+          test "$(git ls-tree HEAD apps/drone-mngr-web-server.rs | awk '{print $1}')" = "160000"
+          test "$(git ls-tree HEAD apps/drone-mngr-infra | awk '{print $1}')" = "160000"
+          test "$(git ls-tree HEAD tools/flags-2-env | awk '{print $1}')" = "160000"

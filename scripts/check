@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+cd "$repo_root"
+
+submodule_status="$(git submodule status --recursive)"
+if grep -Eq '^[+-U]' <<<"$submodule_status"; then
+  printf '%s\n' "$submodule_status" >&2
+  printf '%s\n' 'Submodules are missing, conflicted, or differ from the recorded inventory.' >&2
+  exit 1
+fi
+
+scripts/with-flags audit
+
+for app in apps/drone-mngr-ctrl-server.rs apps/drone-mngr-web-server.rs; do
+  (
+    cd "$app"
+    scripts/with-flags audit
+    cargo fmt --all -- --check
+    cargo clippy --locked --all-targets -- -D warnings
+    cargo test --locked
+    kubectl kustomize deploy/k8s >/dev/null
+  )
+done
+
+(
+  cd apps/drone-mngr-infra
+  scripts/with-flags audit
+  npm ci
+  npm test
+  npm audit --audit-level=high
+  npm run check:worker
+  kubectl kustomize argocd >/dev/null
+  tofu fmt -check -recursive terraform
+  tofu -chdir=terraform init -backend=false -input=false >/dev/null
+  tofu -chdir=terraform validate
+)
+
+printf '%s\n' 'drone-mngr monorepo checks passed'

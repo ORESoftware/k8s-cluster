@@ -1,0 +1,16 @@
+[submodule "tools/flags-2-env"]
+	path = tools/flags-2-env
+	url = https://github.com/ORESoftware/flags-2-env.git
+	branch = main
+[submodule "drone-mngr-ctrl-server"]
+	path = apps/drone-mngr-ctrl-server.rs
+	url = https://github.com/drone-mngr/drone-mngr-ctrl-server.rs.git
+	branch = main
+[submodule "drone-mngr-web-server"]
+	path = apps/drone-mngr-web-server.rs
+	url = https://github.com/drone-mngr/drone-mngr-web-server.rs.git
+	branch = main
+[submodule "drone-mngr-infra"]
+	path = apps/drone-mngr-infra
+	url = https://github.com/drone-mngr/drone-mngr-infra.git
+	branch = main

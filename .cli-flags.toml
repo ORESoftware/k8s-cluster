@@ -1,0 +1,41 @@
+[help]
+url = "https://github.com/drone-mngr/drone-mngr-monorepo"
+columns = ["options", "env", "type", "description"]
+
+[parse]
+require_equals = true
+stop_at_first_positional = false
+unknown_options_env = "FLAGS2ENV_UNKNOWN_OPTIONS"
+errors_env = "FLAGS2ENV_PARSE_ERRORS"
+allow_unknown = false
+
+[env]
+ignore = []
+
+[flags.environment]
+env = "DRONE_MNGR_ENVIRONMENT"
+aliases = ["environment", "env"]
+short = "e"
+type = "string"
+default = "dev"
+help = "Integration and deployment environment name."
+
+[flags.parallelism]
+env = "DRONE_MNGR_CHECK_PARALLELISM"
+aliases = ["parallelism", "jobs"]
+short = "j"
+type = "integer"
+default = 2
+help = "Maximum number of app checks to run in parallel."
+
+[flags.otel_exporter_otlp_endpoint]
+env = "OTEL_EXPORTER_OTLP_ENDPOINT"
+aliases = ["otel-endpoint"]
+type = "string"
+help = "OTLP endpoint used by integration automation."
+
+[flags.otel_resource_attributes]
+env = "OTEL_RESOURCE_ATTRIBUTES"
+aliases = ["otel-resource-attributes"]
+type = "string"
+help = "Non-secret OpenTelemetry resource attributes."
