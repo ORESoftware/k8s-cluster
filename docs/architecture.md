@@ -6,12 +6,16 @@ The web server owns browser interaction, encrypted database-backed sessions, and
 
 The control server is the authorization and domain boundary. It verifies shared-auth or Supabase bearer tokens, resolves tenant-scoped roles, persists the fleet model in Postgres, evaluates flight policies, and dispatches accepted commands through a drone adapter.
 
+The MCP server is a thin protocol gateway. Kubernetes clients use stateless Streamable HTTP and local clients may use stdio. It forwards each caller's bearer token to the control server, exposes fleet/job/policy reads, and keeps mutations disabled by default. It does not duplicate auth, tenancy, or flight-policy decisions.
+
 Drone adapters isolate make- and model-specific transport. The domain uses capability declarations and normalized commands, so MAVLink, vendor HTTP APIs, SDK bridges, and a simulator can coexist without leaking vendor concepts into jobs or safety policy.
 
 ```mermaid
 flowchart LR
     Operator["Operator browser"] -->|"HTMX + HTML"| Web["MASH web server"]
+    Agent["MCP client or agent"] -->|"Authenticated MCP"| MCP["MCP server"]
     Web -->|"Bearer token + trace context"| Ctrl["Control server"]
+    MCP -->|"Caller bearer token"| Ctrl
     Web --> Shared["shared-auth"]
     Web --> Supabase["Supabase Auth"]
     Ctrl --> Shared
@@ -22,6 +26,7 @@ flowchart LR
     Policy --> Adapter["Vendor-neutral adapter boundary"]
     Adapter --> Drone["Drone or simulator"]
     Web -.->|"OTLP"| Collector["OpenTelemetry collector"]
+    MCP -.->|"OTLP"| Collector
     Ctrl -.->|"OTLP"| Collector
 ```
 

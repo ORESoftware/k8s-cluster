@@ -5,6 +5,7 @@ This repository is the release inventory for the drone-mngr platform. The Rust a
 | Path | Responsibility |
 | --- | --- |
 | `apps/drone-mngr-ctrl-server.rs` | Vendor-neutral drone, flight-policy, job, command, telemetry, and authorization API |
+| `apps/drone-mngr-mcp-server.rs` | Authenticated MCP gateway for fleet, job, policy, and guarded flight-command tools |
 | `apps/drone-mngr-web-server.rs` | MASH operator console: Maud, Axum, Supabase, SeaORM/Postgres, and HTMX |
 | `apps/drone-mngr-infra` | Argo CD app-of-apps, Kubernetes integration, Cloudflare Worker, and OpenTofu |
 | `tools/flags-2-env` | Pinned native CLI-to-environment parser used by every repository |

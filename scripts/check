@@ -13,7 +13,7 @@ fi
 
 scripts/with-flags audit
 
-for app in apps/drone-mngr-ctrl-server.rs apps/drone-mngr-web-server.rs; do
+for app in apps/drone-mngr-ctrl-server.rs apps/drone-mngr-mcp-server.rs apps/drone-mngr-web-server.rs; do
   (
     cd "$app"
     scripts/with-flags audit

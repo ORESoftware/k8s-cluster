@@ -20,10 +20,12 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git config -f .gitmodules --get submodule.drone-mngr-ctrl-server.path)" = "apps/drone-mngr-ctrl-server.rs"
+          test "$(git config -f .gitmodules --get submodule.drone-mngr-mcp-server.path)" = "apps/drone-mngr-mcp-server.rs"
           test "$(git config -f .gitmodules --get submodule.drone-mngr-web-server.path)" = "apps/drone-mngr-web-server.rs"
           test "$(git config -f .gitmodules --get submodule.drone-mngr-infra.path)" = "apps/drone-mngr-infra"
           test "$(git config -f .gitmodules --get submodule.tools/flags-2-env.path)" = "tools/flags-2-env"
           test "$(git ls-tree HEAD apps/drone-mngr-ctrl-server.rs | awk '{print $1}')" = "160000"
+          test "$(git ls-tree HEAD apps/drone-mngr-mcp-server.rs | awk '{print $1}')" = "160000"
           test "$(git ls-tree HEAD apps/drone-mngr-web-server.rs | awk '{print $1}')" = "160000"
           test "$(git ls-tree HEAD apps/drone-mngr-infra | awk '{print $1}')" = "160000"
           test "$(git ls-tree HEAD tools/flags-2-env | awk '{print $1}')" = "160000"
