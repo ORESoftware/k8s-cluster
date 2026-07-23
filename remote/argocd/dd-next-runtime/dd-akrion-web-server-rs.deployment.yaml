@@ -20,7 +20,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/akrion-web-server-revision: 'c0f80615b6e612cc961265fee9a018610cda9af6'
+        dd.dev/akrion-web-server-revision: '999739f71af622b0cdb8932155983b2e0589ef4d'
       labels:
         app: dd-akrion-web-server-rs
     spec:
