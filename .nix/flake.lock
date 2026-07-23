@@ -1,0 +1,44 @@
+{
+  "nodes": {
+    "flags2env-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784501126,
+        "narHash": "sha256-nDtuw+9CcHWkkb7d3OZIYYOUHgGgeb0wY7BdT74EXgo=",
+        "owner": "oresoftware",
+        "repo": "flags-2-env",
+        "rev": "f9ed1bc338049db8ac8c16e554066571fd175900",
+        "type": "github"
+      },
+      "original": {
+        "owner": "oresoftware",
+        "repo": "flags-2-env",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1784497964,
+        "narHash": "sha256-vlHUuqAcbcH2RKmHbPiuQzbv1pnzzavXnI62RD0bqCU=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "241313f4e8e508cb9b13278c2b0fa25b9ca27163",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "flags2env-src": "flags2env-src",
+        "nixpkgs": "nixpkgs"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

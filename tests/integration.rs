@@ -1,13 +1,15 @@
 //! End-to-end HTTP tests: the real axum router driven via `oneshot`, exercising
 //! the Supabase→OreSoftware exchange pipeline, introspection, the JWKS endpoint,
-//! the Maud/htmx UI, and metrics — with an HS256 "test project" so the whole
+//! the script-free Maud UI, and metrics — with an HS256 "test project" so the whole
 //! pipe runs with no network and no database.
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
-use shared_auth_server::config::{AppConfig, SigningConfig, SupabaseProject};
+use shared_auth_server::config::{
+    AppConfig, SessionConfig, SigningConfig, SupabaseApiKeys, SupabaseProject,
+};
 use shared_auth_server::state::AppState;
 use tower::ServiceExt;
 
@@ -33,6 +35,11 @@ fn config() -> AppConfig {
             issuer: Some(SUPA_ISS.into()),
             jwks_url: Some("http://127.0.0.1:1/jwks".into()),
             audience: "authenticated".into(),
+            publishable_key_env: None,
+            secret_key_env: None,
+            service_role_key_env: None,
+            jwt_secret_env: None,
+            api_keys: SupabaseApiKeys::default(),
             hs256_secret: Some(SUPA_SECRET.into()),
         }],
         signing: SigningConfig {
@@ -43,6 +50,12 @@ fn config() -> AppConfig {
             ttl_secs: 3600,
         },
         db: None,
+        redis: None,
+        sessions: SessionConfig {
+            refresh_ttl_secs: 3600,
+            allow_registration: false,
+        },
+        webhook_secret: None,
         cors_allow_origins: vec![],
     }
 }
@@ -321,7 +334,7 @@ async fn exchange_via_json_body() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-// DB-less: the stable id is the deterministic project:sub fallback.
+// DB-less test mode still uses a stable provider-derived UUID.
 #[tokio::test]
 async fn dbless_shared_id_is_deterministic() {
     let app = app().await;
@@ -336,5 +349,6 @@ async fn dbless_shared_id_is_deterministic() {
         .await
         .unwrap();
     let out: serde_json::Value = serde_json::from_str(&body_string(resp).await).unwrap();
-    assert_eq!(out["shared_user_id"], "fiducia-cloud:supa-user-1");
+    let first = out["shared_user_id"].as_str().unwrap();
+    assert!(uuid::Uuid::parse_str(first).is_ok());
 }

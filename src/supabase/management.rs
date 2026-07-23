@@ -1,7 +1,6 @@
 //! Supabase Management API — used ONLY by the offline `discover` subcommand.
 //!
-//! This is the one place the account-level credential
-//! (alexander.d.mills@gmail.com's Personal Access Token, `sbp_…`) is used. It
+//! This is the one place the account-level Personal Access Token (`sbp_…`) is used. It
 //! can read and *delete* projects, so it must never touch the request path — it
 //! only enumerates the account's orgs/projects and prints a ready-to-paste
 //! `AUTH_SUPABASE_PROJECTS` value for the server config.
@@ -65,10 +64,14 @@ pub async fn discover() -> anyhow::Result<()> {
                 .find(|o| o.id == p.organization_id)
                 .map(|o| o.name.as_str())
                 .unwrap_or(&p.name);
+            let name = slugify(org_name);
+            let env_prefix = name.to_ascii_uppercase().replace('-', "_");
             serde_json::json!({
-                "name": slugify(org_name),
+                "name": name,
                 "project_ref": p.project_ref,
                 "audience": "authenticated",
+                "publishable_key_env": format!("AUTH_SUPABASE_{env_prefix}_PUBLISHABLE_KEY"),
+                "secret_key_env": format!("AUTH_SUPABASE_{env_prefix}_SECRET_KEY"),
                 "_region": p.region,
             })
         })
@@ -77,7 +80,8 @@ pub async fn discover() -> anyhow::Result<()> {
     println!("{}", serde_json::to_string_pretty(&entries)?);
     eprintln!(
         "\n# Paste the above as AUTH_SUPABASE_PROJECTS (drop the _region hint fields).\n\
-         # issuer/jwks_url are derived from project_ref automatically."
+         # issuer/jwks_url are derived from project_ref automatically. Store each
+         # referenced API key as a separate Fiducia-managed environment secret."
     );
     Ok(())
 }

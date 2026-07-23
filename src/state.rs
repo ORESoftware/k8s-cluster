@@ -6,8 +6,9 @@ use std::time::Duration;
 
 use anyhow::Context;
 
+use crate::cache::Cache;
 use crate::config::AppConfig;
-use crate::db::UserStore;
+use crate::db::DbStore;
 use crate::metrics::Metrics;
 use crate::supabase::ProjectRegistry;
 use crate::token::TokenMinter;
@@ -19,8 +20,10 @@ pub struct AppState {
     pub supabase: Arc<ProjectRegistry>,
     /// Mints and exposes our own unified OreSoftware JWTs.
     pub minter: Arc<TokenMinter>,
-    /// Optional RDS identity mirror.
-    pub db: Option<UserStore>,
+    /// Postgres identity/session authority (optional only in explicit DB-less development).
+    pub db: Option<DbStore>,
+    /// Optional, non-authoritative Redis/Valkey acceleration.
+    pub cache: Option<Cache>,
     /// Outbound client for JWKS fetches (kept warm; connection-pooled).
     pub http: reqwest::Client,
     /// Prometheus counters.
@@ -32,6 +35,7 @@ impl AppState {
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(5))
             .connect_timeout(Duration::from_secs(3))
+            .redirect(reqwest::redirect::Policy::none())
             .user_agent("shared-auth-server/0.1")
             .build()
             .context("building http client")?;
@@ -43,14 +47,25 @@ impl AppState {
 
         let db = match &config.db {
             Some(db_cfg) => Some(
-                UserStore::connect(db_cfg)
+                DbStore::connect(db_cfg)
                     .await
                     .context("connecting to RDS")?,
             ),
             None => {
-                tracing::warn!("AUTH_DATABASE_URL unset — identity mirroring disabled");
+                tracing::warn!("AUTH_DATABASE_URL unset — explicit DB-less development mode");
                 None
             }
+        };
+
+        let cache = match &config.redis {
+            Some(redis_config) => match Cache::connect(redis_config).await {
+                Ok(cache) => Some(cache),
+                Err(error) => {
+                    tracing::warn!(%error, "Redis unavailable; continuing with Postgres as authority");
+                    None
+                }
+            },
+            None => None,
         };
 
         Ok(Self {
@@ -58,6 +73,7 @@ impl AppState {
             supabase: Arc::new(supabase),
             minter: Arc::new(minter),
             db,
+            cache,
             http,
             metrics: Metrics::new(),
         })

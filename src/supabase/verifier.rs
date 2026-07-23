@@ -95,6 +95,11 @@ impl SupabaseVerifier {
             .map_err(|_| AuthError::Unauthorized)?
             .claims
         } else {
+            // Never let an attacker choose the verification primitive from an
+            // untrusted JWT header. Supabase asymmetric keys are EC or RSA.
+            if !matches!(header.alg, Algorithm::ES256 | Algorithm::RS256) {
+                return Err(AuthError::Unauthorized);
+            }
             let kid = header.kid.ok_or(AuthError::Unauthorized)?;
             let key = self.decoding_key_for(http, &kid).await?;
             let validation = self.validation(header.alg);
@@ -109,6 +114,10 @@ impl SupabaseVerifier {
             .map(str::trim)
             .filter(|e| !e.is_empty() && e.len() <= 320)
             .map(String::from);
+
+        if claims.sub.is_empty() || claims.sub.len() > 512 {
+            return Err(AuthError::Unauthorized);
+        }
 
         Ok(VerifiedIdentity {
             project: self.project.clone(),
@@ -211,7 +220,17 @@ impl SupabaseVerifier {
         if !resp.status().is_success() {
             return Err(AuthError::Upstream);
         }
-        resp.json::<JwkSet>().await.map_err(|_| AuthError::Upstream)
+        if resp
+            .content_length()
+            .is_some_and(|length| length > 1024 * 1024)
+        {
+            return Err(AuthError::Upstream);
+        }
+        let bytes = resp.bytes().await.map_err(|_| AuthError::Upstream)?;
+        if bytes.len() > 1024 * 1024 {
+            return Err(AuthError::Upstream);
+        }
+        serde_json::from_slice::<JwkSet>(&bytes).map_err(|_| AuthError::Upstream)
     }
 
     /// Test-only: seed the JWKS cache as though a fetch just happened, so the
@@ -231,6 +250,7 @@ impl SupabaseVerifier {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::SupabaseApiKeys;
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     use p256::pkcs8::{DecodePrivateKey, EncodePrivateKey, LineEnding};
 
@@ -252,6 +272,11 @@ mod tests {
             issuer: Some("https://testref.supabase.co/auth/v1".to_string()),
             jwks_url: Some("http://127.0.0.1:1/jwks".to_string()),
             audience: "authenticated".to_string(),
+            publishable_key_env: None,
+            secret_key_env: None,
+            service_role_key_env: None,
+            jwt_secret_env: None,
+            api_keys: SupabaseApiKeys::default(),
             hs256_secret: Some("super-secret-test-key".to_string()),
         }
     }
@@ -264,6 +289,11 @@ mod tests {
             // Dead address: any real fetch fails, forcing the grace path.
             jwks_url: Some("http://127.0.0.1:1/jwks".to_string()),
             audience: "authenticated".to_string(),
+            publishable_key_env: None,
+            secret_key_env: None,
+            service_role_key_env: None,
+            jwt_secret_env: None,
+            api_keys: SupabaseApiKeys::default(),
             hs256_secret: None,
         }
     }

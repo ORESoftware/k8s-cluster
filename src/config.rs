@@ -1,6 +1,6 @@
 //! Environment-driven configuration.
 //!
-//! Everything sensitive (project list, DB URL, signing key, Management PAT) is
+//! Everything sensitive (provider API keys, DB URL, signing key, Management PAT) is
 //! injected via the environment — in the cluster from an `ExternalSecret`
 //! pointing at the shared `ClusterSecretStore` (`deploy/k8s/externalsecret.yaml`).
 //! Nothing here reads from disk except the PEM signing key, which may be given
@@ -15,7 +15,8 @@ use crate::error::ConfigError;
 /// One Supabase project this server accepts tokens from. Each org in the
 /// account (3fa-app, athlet-o-store, fiducia-cloud, sonus-auris, …) maps to one
 /// project with its own issuer and JWKS.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SupabaseProject {
     /// Stable slug used in logs, metrics, and the `supabase_project` mirror
     /// column, e.g. `"fiducia-cloud"`.
@@ -33,11 +34,36 @@ pub struct SupabaseProject {
     /// Expected audience. Supabase stamps `authenticated` on end-user tokens.
     #[serde(default = "default_audience")]
     pub audience: String,
-    /// Legacy HS256 projects only: the project JWT secret. Prefer asymmetric
-    /// (JWKS) verification; set this only for a project still on shared-secret
-    /// signing. Never log it.
+    /// Name of the environment variable holding the publishable/legacy anon key.
+    /// The key itself must never appear in `AUTH_SUPABASE_PROJECTS`.
     #[serde(default)]
+    pub publishable_key_env: Option<String>,
+    /// Name of the environment variable holding a modern server-side secret key.
+    #[serde(default)]
+    pub secret_key_env: Option<String>,
+    /// Name of the environment variable holding a legacy service-role key.
+    #[serde(default)]
+    pub service_role_key_env: Option<String>,
+    /// Legacy HS256 only: name of the environment variable holding the JWT secret.
+    /// Prefer asymmetric JWKS verification and omit this for modern projects.
+    #[serde(default)]
+    pub jwt_secret_env: Option<String>,
+    /// Resolved runtime credentials. Serde always skips these fields so secret
+    /// values cannot be embedded in the provider metadata JSON by mistake.
+    #[serde(skip)]
+    pub api_keys: SupabaseApiKeys,
+    #[serde(skip)]
     pub hs256_secret: Option<String>,
+}
+
+/// Runtime-only Supabase credentials resolved from environment-variable names in
+/// `SupabaseProject`. This type deliberately does not implement `Debug` or
+/// `Serialize`, which keeps accidental config logging from exposing key values.
+#[derive(Clone, Default)]
+pub struct SupabaseApiKeys {
+    pub publishable_key: Option<String>,
+    pub secret_key: Option<String>,
+    pub service_role_key: Option<String>,
 }
 
 fn default_audience() -> String {
@@ -61,7 +87,7 @@ impl SupabaseProject {
 }
 
 /// How this server signs the unified OreSoftware JWTs it mints.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SigningConfig {
     /// PKCS#8 PEM of an EC P-256 private key (ES256). Held in memory only.
     pub ec_private_pem: String,
@@ -79,15 +105,29 @@ pub struct SigningConfig {
 }
 
 /// AWS RDS identity-mirror connection.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct DbConfig {
     /// `postgres://…` DSN. `search_path` should include `shared_auth`.
     pub url: String,
     pub max_connections: u32,
 }
 
+/// Optional Redis/Valkey cache in the private network. It is never the source
+/// of truth; losing it only removes acceleration and distributed rate limits.
+#[derive(Clone)]
+pub struct RedisConfig {
+    pub url: String,
+    pub key_prefix: String,
+}
+
+#[derive(Clone)]
+pub struct SessionConfig {
+    pub refresh_ttl_secs: u64,
+    pub allow_registration: bool,
+}
+
 /// Fully-resolved configuration.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct AppConfig {
     pub bind_addr: SocketAddr,
     pub projects: Vec<SupabaseProject>,
@@ -95,6 +135,11 @@ pub struct AppConfig {
     /// Optional: without a DB the server still verifies + mints, it just skips
     /// mirroring identities.
     pub db: Option<DbConfig>,
+    pub redis: Option<RedisConfig>,
+    pub sessions: SessionConfig,
+    /// HMAC secret for `/internal/webhook/sync`. When absent the endpoint is
+    /// disabled (404), rather than exposed without authentication.
+    pub webhook_secret: Option<String>,
     /// Optional CORS allow-list for browser callers.
     pub cors_allow_origins: Vec<String>,
 }
@@ -105,14 +150,14 @@ impl AppConfig {
             .parse()
             .map_err(|_| ConfigError::Invalid("AUTH_BIND_ADDR"))?;
 
-        // AUTH_SUPABASE_PROJECTS is a JSON array of SupabaseProject.
-        let projects_json = require("AUTH_SUPABASE_PROJECTS")
-            .map_err(|_| ConfigError::Missing("AUTH_SUPABASE_PROJECTS"))?;
-        let projects: Vec<SupabaseProject> = serde_json::from_str(&projects_json)
+        // Supabase is a secondary authority. An empty registry is valid for a
+        // local-only deployment and lets future provider adapters be introduced
+        // without making Supabase a hard startup dependency.
+        let projects_json = env_or("AUTH_SUPABASE_PROJECTS", "[]");
+        let mut projects: Vec<SupabaseProject> = serde_json::from_str(&projects_json)
             .map_err(|_| ConfigError::Invalid("AUTH_SUPABASE_PROJECTS (expected JSON array)"))?;
-        if projects.is_empty() {
-            return Err(ConfigError::Invalid("AUTH_SUPABASE_PROJECTS is empty"));
-        }
+        resolve_provider_secrets(&mut projects)?;
+        validate_projects(&projects)?;
 
         let ec_private_pem = load_signing_pem()?;
         let signing = SigningConfig {
@@ -120,10 +165,15 @@ impl AppConfig {
             key_id: env_or("AUTH_SIGNING_KID", "shared-auth-v1"),
             issuer: env_or("AUTH_ISSUER", "https://auth.oresoftware.dev"),
             audience: env_or("AUTH_AUDIENCE", "oresoftware"),
-            ttl_secs: env_or("AUTH_TOKEN_TTL_SECS", "3600")
+            ttl_secs: env_or("AUTH_ACCESS_TOKEN_TTL_SECS", "900")
                 .parse()
-                .map_err(|_| ConfigError::Invalid("AUTH_TOKEN_TTL_SECS"))?,
+                .map_err(|_| ConfigError::Invalid("AUTH_ACCESS_TOKEN_TTL_SECS"))?,
         };
+        if !(60..=86_400).contains(&signing.ttl_secs) {
+            return Err(ConfigError::Invalid(
+                "AUTH_ACCESS_TOKEN_TTL_SECS must be between 60 and 86400",
+            ));
+        }
 
         let db = match std::env::var("AUTH_DATABASE_URL")
             .ok()
@@ -135,8 +185,42 @@ impl AppConfig {
                     .parse()
                     .map_err(|_| ConfigError::Invalid("AUTH_DB_MAX_CONNECTIONS"))?,
             }),
-            None => None,
+            None if parse_bool("AUTH_ALLOW_DBLESS", false)? => None,
+            None => return Err(ConfigError::Missing("AUTH_DATABASE_URL")),
         };
+
+        let redis = std::env::var("AUTH_REDIS_URL")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .map(|url| RedisConfig {
+                url,
+                key_prefix: env_or("AUTH_REDIS_KEY_PREFIX", "shared-auth:v1"),
+            });
+
+        let refresh_ttl_secs = env_or("AUTH_REFRESH_TOKEN_TTL_SECS", "2592000")
+            .parse()
+            .map_err(|_| ConfigError::Invalid("AUTH_REFRESH_TOKEN_TTL_SECS"))?;
+        if !(300..=31_536_000).contains(&refresh_ttl_secs) {
+            return Err(ConfigError::Invalid(
+                "AUTH_REFRESH_TOKEN_TTL_SECS must be between 300 and 31536000",
+            ));
+        }
+        let sessions = SessionConfig {
+            refresh_ttl_secs,
+            allow_registration: parse_bool("AUTH_ALLOW_REGISTRATION", false)?,
+        };
+
+        let webhook_secret = std::env::var("AUTH_WEBHOOK_SECRET")
+            .ok()
+            .filter(|value| !value.is_empty());
+        if webhook_secret
+            .as_ref()
+            .is_some_and(|secret| secret.len() < 32)
+        {
+            return Err(ConfigError::Invalid(
+                "AUTH_WEBHOOK_SECRET must contain at least 32 bytes",
+            ));
+        }
 
         let cors_allow_origins = env_or("AUTH_CORS_ALLOW_ORIGINS", "")
             .split(',')
@@ -150,8 +234,88 @@ impl AppConfig {
             projects,
             signing,
             db,
+            redis,
+            sessions,
+            webhook_secret,
             cors_allow_origins,
         })
+    }
+}
+
+fn validate_projects(projects: &[SupabaseProject]) -> Result<(), ConfigError> {
+    let mut names = std::collections::HashSet::new();
+    let mut issuers = std::collections::HashSet::new();
+    for project in projects {
+        if project.name.is_empty()
+            || project.name.len() > 64
+            || !project
+                .name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        {
+            return Err(ConfigError::Invalid("invalid Supabase project name"));
+        }
+        if !names.insert(project.name.clone()) || !issuers.insert(project.issuer()) {
+            return Err(ConfigError::Invalid("duplicate Supabase project or issuer"));
+        }
+        if project
+            .hs256_secret
+            .as_ref()
+            .is_some_and(|secret| secret.len() < 32)
+        {
+            return Err(ConfigError::Invalid(
+                "Supabase HS256 secrets must contain at least 32 bytes",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn resolve_provider_secrets(projects: &mut [SupabaseProject]) -> Result<(), ConfigError> {
+    for project in projects {
+        project.api_keys = SupabaseApiKeys {
+            publishable_key: read_referenced_secret(&project.publishable_key_env)?,
+            secret_key: read_referenced_secret(&project.secret_key_env)?,
+            service_role_key: read_referenced_secret(&project.service_role_key_env)?,
+        };
+        project.hs256_secret = read_referenced_secret(&project.jwt_secret_env)?;
+    }
+    Ok(())
+}
+
+fn read_referenced_secret(env_name: &Option<String>) -> Result<Option<String>, ConfigError> {
+    let Some(env_name) = env_name.as_deref() else {
+        return Ok(None);
+    };
+    if env_name.is_empty()
+        || env_name.len() > 128
+        || !env_name.bytes().enumerate().all(|(index, byte)| {
+            byte.is_ascii_uppercase() || byte == b'_' || (index > 0 && byte.is_ascii_digit())
+        })
+    {
+        return Err(ConfigError::Invalid(
+            "Supabase credential env names must use uppercase A-Z, digits, and underscores",
+        ));
+    }
+    std::env::var(env_name)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .map(Some)
+        .ok_or(ConfigError::Invalid(
+            "referenced Supabase credential env var is missing or empty",
+        ))
+}
+
+fn parse_bool(key: &'static str, default: bool) -> Result<bool, ConfigError> {
+    match std::env::var(key)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .as_deref()
+    {
+        None => Ok(default),
+        Some("1" | "true" | "TRUE" | "yes" | "YES") => Ok(true),
+        Some("0" | "false" | "FALSE" | "no" | "NO") => Ok(false),
+        Some(_) => Err(ConfigError::Invalid(key)),
     }
 }
 
@@ -170,13 +334,6 @@ fn load_signing_pem() -> Result<String, ConfigError> {
     Err(ConfigError::Missing(
         "AUTH_SIGNING_KEY_PEM or AUTH_SIGNING_KEY_FILE",
     ))
-}
-
-fn require(key: &'static str) -> Result<String, ConfigError> {
-    std::env::var(key)
-        .ok()
-        .filter(|v| !v.is_empty())
-        .ok_or(ConfigError::Missing(key))
 }
 
 fn env_or(key: &str, default: &str) -> String {
@@ -198,6 +355,11 @@ mod tests {
             issuer: None,
             jwks_url: None,
             audience: "authenticated".into(),
+            publishable_key_env: None,
+            secret_key_env: None,
+            service_role_key_env: None,
+            jwt_secret_env: None,
+            api_keys: SupabaseApiKeys::default(),
             hs256_secret: None,
         };
         assert_eq!(p.issuer(), "https://abcref.supabase.co/auth/v1");
@@ -215,6 +377,11 @@ mod tests {
             issuer: Some("https://custom.example/iss".into()),
             jwks_url: Some("https://custom.example/keys".into()),
             audience: "authenticated".into(),
+            publishable_key_env: None,
+            secret_key_env: None,
+            service_role_key_env: None,
+            jwt_secret_env: None,
+            api_keys: SupabaseApiKeys::default(),
             hs256_secret: None,
         };
         assert_eq!(p.issuer(), "https://custom.example/iss");
@@ -225,13 +392,31 @@ mod tests {
     fn projects_json_parses_with_defaults() {
         let v: Vec<SupabaseProject> = serde_json::from_str(
             r#"[{"name":"3fa-app","project_ref":"ref1"},
-                {"name":"sonus-auris","project_ref":"ref2","audience":"custom","hs256_secret":"s"}]"#,
+                {"name":"sonus-auris","project_ref":"ref2","audience":"custom",
+                 "publishable_key_env":"AUTH_SUPABASE_SONUS_PUBLISHABLE_KEY",
+                 "jwt_secret_env":"AUTH_SUPABASE_SONUS_JWT_SECRET"}]"#,
         )
         .unwrap();
         assert_eq!(v.len(), 2);
         assert_eq!(v[0].audience, "authenticated"); // default
         assert!(v[0].hs256_secret.is_none());
         assert_eq!(v[1].audience, "custom");
-        assert_eq!(v[1].hs256_secret.as_deref(), Some("s"));
+        assert_eq!(
+            v[1].publishable_key_env.as_deref(),
+            Some("AUTH_SUPABASE_SONUS_PUBLISHABLE_KEY")
+        );
+        assert_eq!(
+            v[1].jwt_secret_env.as_deref(),
+            Some("AUTH_SUPABASE_SONUS_JWT_SECRET")
+        );
+        assert!(v[1].hs256_secret.is_none());
+    }
+
+    #[test]
+    fn inline_provider_secrets_are_rejected() {
+        let result = serde_json::from_str::<SupabaseProject>(
+            r#"{"name":"x","project_ref":"ref","hs256_secret":"must-not-be-inline"}"#,
+        );
+        assert!(result.is_err());
     }
 }

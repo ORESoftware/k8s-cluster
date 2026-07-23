@@ -1,20 +1,15 @@
-//! `POST /auth/exchange` — the core of the parallel/shortcut auth system.
-//!
-//! In: a Supabase access token (from any configured project), via the
-//! `Authorization: Bearer …` header or a `{ "access_token": "…" }` body.
-//! Steps: verify against the issuing project's JWKS → mirror the identity into
-//! `shared_auth.users` (if the DB is configured) → mint a unified OreSoftware
-//! JWT whose `sub` is the stable `shared_user_id`.
-//! Out: the minted token.
+//! Exchange a verified external-provider token for a shared-auth session.
 
 use axum::{extract::State, http::HeaderMap, Json};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
+use crate::db::AuthenticatedIdentity;
 use crate::error::AuthError;
 use crate::state::AppState;
-use crate::token::MintedToken;
 
 use super::bearer;
+use super::session_tokens;
 
 #[derive(Debug, Deserialize)]
 pub struct ExchangeRequest {
@@ -23,55 +18,79 @@ pub struct ExchangeRequest {
 
 #[derive(Debug, Serialize)]
 pub struct ExchangeResponse {
-    access_token: String,
-    token_type: &'static str,
-    expires_at: u64,
-    shared_user_id: String,
-    project: String,
+    pub access_token: String,
+    pub token_type: &'static str,
+    pub expires_at: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_expires_at: Option<u64>,
+    pub shared_user_id: String,
+    pub provider: &'static str,
+    pub provider_tenant: String,
+    pub provider_subject: String,
+    pub roles: Vec<String>,
+    /// Compatibility alias for existing Supabase consumers.
+    pub project: String,
 }
 
-/// The exchange pipeline shared by the JSON API and the htmx UI: verify the
-/// Supabase token, mirror the identity into RDS (if configured), mint our token.
-/// Returns the minted token plus the identity's project and stable id.
 pub(crate) async fn perform_exchange(
     state: &AppState,
     token: &str,
-) -> Result<(MintedToken, String, String), AuthError> {
-    let identity = match state.supabase.verify(&state.http, token).await {
-        Ok(id) => id,
-        Err(err) => {
+) -> Result<ExchangeResponse, AuthError> {
+    let verified = match state.supabase.verify(&state.http, token).await {
+        Ok(identity) => identity,
+        Err(error) => {
             state.metrics.verify_failures.inc();
-            return Err(err);
+            return Err(error);
         }
     };
 
-    // Mirror into RDS if configured; else a deterministic stable id so the
-    // server still works DB-less.
-    let shared_user_id = match &state.db {
-        Some(db) => db
-            .upsert_identity(&identity)
-            .await?
-            .shared_user_id
-            .to_string(),
-        None => format!("{}:{}", identity.project, identity.supabase_user_id),
+    let identity = match &state.db {
+        Some(db) => db.upsert_supabase_identity(&verified).await?,
+        None => AuthenticatedIdentity {
+            shared_user_id: Uuid::new_v5(
+                &Uuid::NAMESPACE_URL,
+                format!(
+                    "supabase:{}:{}",
+                    verified.project, verified.supabase_user_id
+                )
+                .as_bytes(),
+            ),
+            provider: "supabase".into(),
+            provider_tenant: verified.project.clone(),
+            provider_subject: verified.supabase_user_id.clone(),
+            email: verified.email.clone(),
+            email_verified: verified.email_verified,
+            roles: verified.role.clone().into_iter().collect(),
+        },
     };
-
-    let minted = state.minter.mint(
-        &shared_user_id,
-        &identity.project,
-        &identity.supabase_user_id,
-        identity.email.clone(),
-        identity.email_verified,
-    )?;
+    let shared_user_id = identity.shared_user_id.to_string();
+    let project = identity.provider_tenant.clone();
+    let provider_subject = identity.provider_subject.clone();
+    let roles = identity.roles.clone();
+    let issued = session_tokens::issue(state, identity).await?;
 
     state
         .metrics
         .exchanges
-        .with_label_values(&[&identity.project, "ok"])
+        .with_label_values(&[&project, "ok"])
         .inc();
-    tracing::info!(project = %identity.project, %shared_user_id, "issued unified token");
+    tracing::info!(provider = "supabase", provider_tenant = %project, %shared_user_id, "issued shared-auth session");
 
-    Ok((minted, identity.project, shared_user_id))
+    Ok(ExchangeResponse {
+        access_token: issued.access.token,
+        token_type: "Bearer",
+        expires_at: issued.access.expires_at,
+        refresh_token: issued.refresh_token,
+        refresh_expires_at: issued.refresh_expires_at,
+        shared_user_id,
+        provider: "supabase",
+        provider_tenant: project.clone(),
+        provider_subject,
+        roles,
+        project,
+    })
 }
 
 pub async fn exchange(
@@ -80,17 +99,11 @@ pub async fn exchange(
     body: Option<Json<ExchangeRequest>>,
 ) -> Result<Json<ExchangeResponse>, AuthError> {
     let token = bearer(&headers)
-        .map(str::to_string)
-        .or_else(|| body.and_then(|b| b.0.access_token))
-        .ok_or(AuthError::BadRequest("missing Supabase access token"))?;
-
-    let (minted, project, shared_user_id) = perform_exchange(&state, &token).await?;
-
-    Ok(Json(ExchangeResponse {
-        access_token: minted.token,
-        token_type: "Bearer",
-        expires_at: minted.expires_at,
-        shared_user_id,
-        project,
-    }))
+        .map(str::to_owned)
+        .or_else(|| body.and_then(|body| body.0.access_token))
+        .filter(|token| token.len() <= 16 * 1024)
+        .ok_or(AuthError::BadRequest(
+            "missing or oversized provider access token",
+        ))?;
+    Ok(Json(perform_exchange(&state, &token).await?))
 }

@@ -36,9 +36,25 @@ spec:
       ports:
         - { protocol: UDP, port: 53 }
         - { protocol: TCP, port: 53 }
-    # Supabase JWKS (public internet, HTTPS) + RDS (Postgres).
+    # Supabase/provider APIs over public HTTPS.
     - to:
         - ipBlock: { cidr: 0.0.0.0/0 }
       ports:
         - { protocol: TCP, port: 443 }
+    # AWS default VPC: RDS Postgres + Redis/Valkey stay on private addresses.
+    # Tighten this to the database/cache subnet CIDRs when those are finalized.
+    - to:
+        - ipBlock: { cidr: 172.31.0.0/16 }
+      ports:
         - { protocol: TCP, port: 5432 }
+        - { protocol: TCP, port: 6379 }
+    # Explicit trace export to the in-cluster OTel collector.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app: dd-otel-collector
+      ports:
+        - { protocol: TCP, port: 4318 }

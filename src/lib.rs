@@ -14,18 +14,21 @@
 //! ## Module map
 //! - [`config`]  — environment-driven configuration
 //! - [`supabase`] — per-project JWKS verification, issuer routing, Management API
-//! - [`db`]      — the RDS identity mirror (`shared_auth.users`)
+//! - [`db`]      — the RDS identity store (`shared_auth.principals`)
 //! - [`token`]   — minting unified OreSoftware JWTs and publishing our JWKS
 //! - [`http`]    — the axum surface
 //! - [`state`]   — shared application state
 //! - [`error`], [`telemetry`]
 
+pub mod cache;
 pub mod config;
 pub mod db;
 pub mod error;
 pub mod flags;
 pub mod http;
 pub mod metrics;
+pub mod password;
+pub mod session;
 pub mod state;
 pub mod supabase;
 pub mod telemetry;

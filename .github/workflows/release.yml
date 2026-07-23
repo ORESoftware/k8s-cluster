@@ -52,7 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           img="ghcr.io/shared-auth/shared-auth-server@${DIGEST}"
-          sed -i -E "s#image: ghcr\.io/oresoftware/shared-auth-server.*#image: ${img}#" deploy/k8s/deployment.yaml
+          sed -i -E "s#image: ghcr\.io/shared-auth/shared-auth-server.*#image: ${img}#" deploy/k8s/deployment.yaml
           if git diff --quiet; then echo "digest unchanged"; exit 0; fi
           git config user.name "ore-gitops-bot"
           git config user.email "bot@oresoftware.dev"
@@ -63,10 +63,15 @@ jobs:
       # Does NOT redeploy (ArgoCD tracks this repo, not the submodule path).
       # Requires an org PAT secret with contents:write on k8s-cluster.
       - name: Refresh k8s-cluster submodule pin (inventory)
-        if: ${{ secrets.ORG_GITOPS_TOKEN != '' }}
+        env:
+          ORG_GITOPS_TOKEN: ${{ secrets.ORG_GITOPS_TOKEN }}
         run: |
+          if [ -z "${ORG_GITOPS_TOKEN}" ]; then
+            echo "ORG_GITOPS_TOKEN unset; skipping inventory refresh"
+            exit 0
+          fi
           curl -sf -X POST \
-            -H "Authorization: Bearer ${{ secrets.ORG_GITOPS_TOKEN }}" \
+            -H "Authorization: Bearer ${ORG_GITOPS_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/repos/ORESoftware/k8s-cluster/dispatches \
             -d '{"event_type":"shared-auth-bump"}'
