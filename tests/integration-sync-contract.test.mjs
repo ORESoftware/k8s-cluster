@@ -1,15 +1,9 @@
 // Cross-submodule contract test for the local-first sync path.
 //
-// The sync contract is defined in THREE repos that must agree:
-//   - apps/fiducia-interfaces/sql/customer.sql  -- the Postgres source of truth
-//     (`version`/`updated_at` columns + the `bump_row_version` trigger) and the
-//     documented transport-neutral shape `{table, op, id, version, row}`.
-//   - apps/fiducia-sync/src/lib.rs              -- the Rust reconcile core that
-//     defines the `ChangeEvent` envelope, including the optional backend-only
-//     `write_key` echo discriminator, and the lowercase `ChangeOp` enum.
-//   - apps/fiducia-sync/sdk/src/transports/decode.mjs -- the TS/JS transport
-//     decoders that turn Supabase-realtime / backend-WS frames into that same
-//     ChangeEvent shape.
+// The contract is defined by fiducia-interfaces and consumed by fiducia-sync
+// plus the generated TypeScript, Dart, and Rust fiducia-clients. This protects
+// the complete local-first path: Postgres/Supabase journal -> pull/realtime
+// envelope -> durable browser/mobile store -> canonical client write/ack.
 //
 // A drift between them (a renamed field, a dropped column, a changed op value)
 // silently breaks sync, so this asserts they stay coherent. Pure `node --test`:
@@ -27,18 +21,37 @@ import test from "node:test";
 const root = path.resolve(import.meta.dirname, "..");
 
 const CUSTOMER_SQL = "apps/fiducia-interfaces/sql/customer.sql";
+const SYNC_SCHEMA = "apps/fiducia-interfaces/schema/sync.schema.json";
 const SYNC_README = "apps/fiducia-sync/README.md";
 const SYNC_LIB = "apps/fiducia-sync/src/lib.rs";
 const SYNC_DECODE = "apps/fiducia-sync/sdk/src/transports/decode.mjs";
+const SYNC_TYPES = "apps/fiducia-sync/sdk/src/index.d.ts";
+const SYNC_DART_MODELS = "apps/fiducia-sync/dart/lib/src/models.dart";
+const SYNC_DART_JSON = "apps/fiducia-sync/dart/lib/src/json_transport.dart";
+const SYNC_POSTGRES = "apps/fiducia-sync/sql/postgres/001_fiducia_sync.sql";
+const CLIENT_TS = "apps/fiducia-clients/clients/ts/fiducia.ts";
+const CLIENT_DART = "apps/fiducia-clients/clients/dart/fiducia.dart";
+const CLIENT_RUST = "apps/fiducia-clients/clients/rust/src/lib.rs";
 
 // Every transport carries these fields. The backend may additionally echo the
 // client-minted write identity; Supabase CDC cannot synthesize that identity.
 const REQUIRED_CHANGE_EVENT_FIELDS = ["at_ms", "id", "op", "row", "table", "version"];
 const RUST_CHANGE_EVENT_FIELDS = [...REQUIRED_CHANGE_EVENT_FIELDS, "write_key"].sort();
 
-const missing = [CUSTOMER_SQL, SYNC_README, SYNC_LIB, SYNC_DECODE].filter(
-  (rel) => !existsSync(path.join(root, rel)),
-);
+const missing = [
+  CUSTOMER_SQL,
+  SYNC_SCHEMA,
+  SYNC_README,
+  SYNC_LIB,
+  SYNC_DECODE,
+  SYNC_TYPES,
+  SYNC_DART_MODELS,
+  SYNC_DART_JSON,
+  SYNC_POSTGRES,
+  CLIENT_TS,
+  CLIENT_DART,
+  CLIENT_RUST,
+].filter((rel) => !existsSync(path.join(root, rel)));
 const skip = missing.length
   ? `app submodules not checked out (missing: ${missing.join(", ")}); ` +
     `run: git submodule update --init --recursive`
@@ -66,6 +79,40 @@ test("interfaces customer.sql declares the version/updated_at sync contract", { 
     /\{\s*table\s*,\s*op\s*,\s*id\s*,\s*version\s*,\s*row\s*\}/,
     "customer.sql must document the {table, op, id, version, row} change-event shape",
   );
+});
+
+test("fiducia-interfaces defines strict canonical change, write, ack, and pull envelopes", { skip }, () => {
+  const schema = JSON.parse(read(SYNC_SCHEMA));
+  const defs = schema.$defs;
+
+  assert.deepEqual(
+    defs.SyncChangeEvent.required,
+    ["table", "op", "id", "version", "row", "at_ms"],
+  );
+  assert.deepEqual(
+    Object.keys(defs.SyncChangeEvent.properties).sort(),
+    ["at_ms", "id", "op", "row", "sync_sequence", "table", "version", "write_key"],
+  );
+  assert.deepEqual(
+    defs.SyncQueuedWrite.required,
+    ["id", "table", "op", "payload", "base_version", "key"],
+  );
+  assert.deepEqual(
+    defs.SyncWriteAcknowledgement.required,
+    ["id", "committed_version"],
+  );
+  assert.deepEqual(
+    defs.SyncPullPage.required,
+    ["changes", "next_cursor", "has_more"],
+  );
+  for (const name of [
+    "SyncChangeEvent",
+    "SyncQueuedWrite",
+    "SyncWriteAcknowledgement",
+    "SyncPullPage",
+  ]) {
+    assert.equal(defs[name].additionalProperties, false, `${name} must reject wire drift`);
+  }
 });
 
 test("fiducia-sync Rust core defines the ChangeEvent envelope and lowercase ChangeOp", { skip }, () => {
@@ -143,6 +190,47 @@ test("decode.mjs exports the transport decoders that speak the ChangeEvent shape
   assert.equal(upsert.op, "upsert");
   const del = mod.decodeSupabaseChange("api_keys", { eventType: "DELETE", old: { id: "k1", version: 8 } });
   assert.equal(del.op, "delete");
+});
+
+test("browser, Flutter, and Postgres adapters expose one cursor and write contract", { skip }, () => {
+  const types = read(SYNC_TYPES);
+  assert.match(types, /sync_sequence\?:\s*number/, "browser events must accept the canonical cursor");
+  assert.match(types, /interface PullPage[\s\S]*next_cursor:\s*number[\s\S]*has_more:\s*boolean/);
+  assert.match(types, /pullFetch\?:\s*\(cursor:\s*number,\s*limit:\s*number\)/);
+
+  const dartModels = read(SYNC_DART_MODELS);
+  assert.match(dartModels, /syncSequence:\s*_optionalInt\(json\['sync_sequence'\]/);
+  assert.match(dartModels, /JsonMap toWireJson\(\)[\s\S]*'base_version':\s*baseVersion[\s\S]*'key':/);
+  assert.match(read(SYNC_DART_JSON), /send\(write\.toWireJson\(\)\)/);
+
+  const postgres = read(SYNC_POSTGRES);
+  assert.match(postgres, /create table if not exists fiducia_sync\.changes/);
+  assert.match(postgres, /enable row level security/);
+  assert.match(postgres, /create or replace function public\.fiducia_sync_pull/);
+  assert.match(postgres, /revoke all on function public\.fiducia_sync_pull/);
+  assert.match(postgres, /order by c\.sync_sequence asc/);
+});
+
+test("fiducia-clients adapters emit and consume the canonical interface types", { skip }, () => {
+  const ts = read(CLIENT_TS);
+  assert.match(ts, /const wireWrite:\s*SyncQueuedWrite\s*=/);
+  assert.match(ts, /Promise<SyncWriteAcknowledgement>/);
+  assert.match(ts, /Promise<SyncPullPage>/);
+  assert.match(ts, /sync_sequence:\s*Number\.isSafeInteger\(change\.sync_sequence\)/);
+
+  const dart = read(CLIENT_DART);
+  assert.match(dart, /final wireWrite = <String, Object\?>\{/);
+  for (const field of ["id", "table", "op", "payload", "base_version", "key"]) {
+    assert.match(dart, new RegExp(`'${field}':`), `Dart wire writes must include ${field}`);
+  }
+  assert.match(dart, /change\['sync_sequence'\]\s*=\s*change\['sequence'\]/);
+  assert.match(dart, /change\.remove\('sequence'\)/);
+
+  const rust = read(CLIENT_RUST);
+  assert.match(rust, /write:\s*&types::SyncQueuedWrite/);
+  assert.match(rust, /Result<types::SyncWriteAcknowledgement,\s*Error>/);
+  assert.match(rust, /Result<types::SyncPullPage,\s*Error>/);
+  assert.match(rust, /change\.insert\("sync_sequence"\.to_string\(\),\s*sequence\)/);
 });
 
 test("the ChangeEvent field set agrees across the Rust core, the JS decoder, and the SQL doc", { skip }, async () => {
