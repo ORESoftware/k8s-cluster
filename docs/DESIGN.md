@@ -82,3 +82,11 @@ The application repo owns only namespace-scoped workload resources. The cluster
 repo owns the namespace, quota, default deny, AppProject, and direct ArgoCD
 registration. The shared-auth monorepo and k8s-cluster submodules are inventory
 pins, never Argo render sources.
+
+Provider metadata and credentials are deliberately separate. The project registry
+contains only issuer/audience information and environment-variable names. Fiducia
+projects the named Supabase publishable, secret/service-role, or legacy JWT keys
+through the cluster `ExternalSecret`; the server resolves them at startup without
+serializing or logging their values. Future Clerk or Cognito adapters must use the
+same reference-by-environment pattern instead of adding credentials to provider
+JSON, command-line flags, images, Workers, or traces.

@@ -250,6 +250,7 @@ impl SupabaseVerifier {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::SupabaseApiKeys;
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
     use p256::pkcs8::{DecodePrivateKey, EncodePrivateKey, LineEnding};
 
@@ -271,6 +272,11 @@ mod tests {
             issuer: Some("https://testref.supabase.co/auth/v1".to_string()),
             jwks_url: Some("http://127.0.0.1:1/jwks".to_string()),
             audience: "authenticated".to_string(),
+            publishable_key_env: None,
+            secret_key_env: None,
+            service_role_key_env: None,
+            jwt_secret_env: None,
+            api_keys: SupabaseApiKeys::default(),
             hs256_secret: Some("super-secret-test-key".to_string()),
         }
     }
@@ -283,6 +289,11 @@ mod tests {
             // Dead address: any real fetch fails, forcing the grace path.
             jwks_url: Some("http://127.0.0.1:1/jwks".to_string()),
             audience: "authenticated".to_string(),
+            publishable_key_env: None,
+            secret_key_env: None,
+            service_role_key_env: None,
+            jwt_secret_env: None,
+            api_keys: SupabaseApiKeys::default(),
             hs256_secret: None,
         }
     }

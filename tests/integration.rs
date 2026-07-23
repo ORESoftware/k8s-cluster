@@ -7,7 +7,9 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
-use shared_auth_server::config::{AppConfig, SessionConfig, SigningConfig, SupabaseProject};
+use shared_auth_server::config::{
+    AppConfig, SessionConfig, SigningConfig, SupabaseApiKeys, SupabaseProject,
+};
 use shared_auth_server::state::AppState;
 use tower::ServiceExt;
 
@@ -33,6 +35,11 @@ fn config() -> AppConfig {
             issuer: Some(SUPA_ISS.into()),
             jwks_url: Some("http://127.0.0.1:1/jwks".into()),
             audience: "authenticated".into(),
+            publishable_key_env: None,
+            secret_key_env: None,
+            service_role_key_env: None,
+            jwt_secret_env: None,
+            api_keys: SupabaseApiKeys::default(),
             hs256_secret: Some(SUPA_SECRET.into()),
         }],
         signing: SigningConfig {

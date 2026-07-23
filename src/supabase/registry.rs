@@ -78,7 +78,7 @@ fn base64_url_decode(input: &str) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::SupabaseProject;
+    use crate::config::{SupabaseApiKeys, SupabaseProject};
     use jsonwebtoken::{Algorithm, EncodingKey, Header};
 
     fn hs_project(name: &str, reff: &str, secret: &str) -> SupabaseProject {
@@ -88,6 +88,11 @@ mod tests {
             issuer: Some(format!("https://{reff}.supabase.co/auth/v1")),
             jwks_url: Some("http://127.0.0.1:1/jwks".into()),
             audience: "authenticated".into(),
+            publishable_key_env: None,
+            secret_key_env: None,
+            service_role_key_env: None,
+            jwt_secret_env: None,
+            api_keys: SupabaseApiKeys::default(),
             hs256_secret: Some(secret.into()),
         }
     }

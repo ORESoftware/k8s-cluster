@@ -80,8 +80,8 @@ spec:
               valueFrom: { fieldRef: { fieldPath: metadata.name } }
             - name: POD_NAMESPACE
               valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
-          # Secrets (project list, signing key, RDS DSN) come from the shared
-          # ClusterSecretStore via the ExternalSecret in this dir.
+          # Secrets (provider API keys, signing key, RDS DSN, Redis, webhook HMAC)
+          # come from the Fiducia-backed ClusterSecretStore via ExternalSecret.
           envFrom:
             - secretRef:
                 name: dd-shared-auth-secrets

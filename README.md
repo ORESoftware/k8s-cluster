@@ -72,7 +72,8 @@ tokens to application services.
 |---|---:|---|
 | `AUTH_DATABASE_URL` | yes | RDS Postgres DSN; schema is `shared_auth` |
 | `AUTH_SIGNING_KEY_PEM` or `AUTH_SIGNING_KEY_FILE` | yes | PKCS#8 P-256 private key |
-| `AUTH_SUPABASE_PROJECTS` | no | JSON array of Supabase projects; default `[]` |
+| `AUTH_SUPABASE_PROJECTS` | no | JSON provider metadata and names of credential env vars; default `[]` |
+| provider credential env vars | per project | Publishable, secret/service-role, or legacy JWT keys referenced by name from project metadata |
 | `AUTH_REDIS_URL` | no | Private Redis/Valkey URL |
 | `AUTH_WEBHOOK_SECRET` | no | 32+ byte HMAC secret; unset disables sync |
 | `AUTH_ALLOW_REGISTRATION` | no | Public local registration; default `false` |
@@ -86,14 +87,28 @@ Example provider registry:
 
 ```json
 [
-  { "name": "fiducia-cloud", "project_ref": "abcdefghijklmnopqrst" },
-  { "name": "threefa", "project_ref": "uvwxyz0123456789abcd" }
+  {
+    "name": "fiducia-cloud",
+    "project_ref": "abcdefghijklmnopqrst",
+    "publishable_key_env": "AUTH_SUPABASE_FIDUCIA_PUBLISHABLE_KEY",
+    "secret_key_env": "AUTH_SUPABASE_FIDUCIA_SECRET_KEY"
+  },
+  {
+    "name": "threefa",
+    "project_ref": "uvwxyz0123456789abcd",
+    "service_role_key_env": "AUTH_SUPABASE_THREEFA_SERVICE_ROLE_KEY",
+    "jwt_secret_env": "AUTH_SUPABASE_THREEFA_JWT_SECRET"
+  }
 ]
 ```
 
-Use `shared-auth-server discover` with `SUPABASE_ACCESS_TOKEN` only from an
-operator workstation to generate this list. The Supabase account token is never
-used by the serving process.
+Every `*_env` value names a separate process environment variable; the parser
+rejects inline key material and fails startup if a referenced variable is absent.
+Modern asymmetric JWT verification needs no API key, so omit unused references
+and grant each configured key the narrowest Supabase scope available. Use
+`shared-auth-server discover` with `SUPABASE_ACCESS_TOKEN` only from an operator
+workstation or a short-lived Fiducia-injected job. The account token is never
+injected into or used by the serving Deployment.
 
 ## Database and deployment
 
@@ -102,7 +117,10 @@ RDS contract is also kept in the cluster's `pg-defs` repository and migrations
 must be generated/reviewed with `dpm`; the application never executes DDL.
 
 Kubernetes resources under `deploy/k8s/` are namespace-scoped and consume RDS,
-Redis, signing, provider, and webhook values through External Secrets. Logs are
+Redis, signing, provider, and webhook values through External Secrets. The
+`dd/shared-auth/provider-credentials` secret object is extracted into environment
+variables whose names match the provider registry; Fiducia can manage and rotate
+that object without committing values or rebuilding an image. Logs are
 structured JSON to stdout for Promtail/Loki, traces use OTLP/HTTP to the cluster
 collector, and `/metrics` is scraped by Prometheus for Grafana.
 
