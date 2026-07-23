@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
 const config = JSON.parse(readFileSync('monorepo.config.json', 'utf8'));
@@ -43,8 +43,13 @@ test('pinned gitlink SHAs are well-formed', () => {
   }
 });
 
-test('pinned fabrication service preserves modular Rust boundaries', () => {
-  const root = 'apps/fabrication-server.rs';
+const fabricationRoot = 'apps/fabrication-server.rs';
+const fabricationAvailable = existsSync(`${fabricationRoot}/src/main.rs`);
+
+test('pinned fabrication service preserves modular Rust boundaries', {
+  skip: fabricationAvailable ? false : 'private fleet submodules are not initialized',
+}, () => {
+  const root = fabricationRoot;
   const main = readFileSync(`${root}/src/main.rs`, 'utf8');
   const library = readFileSync(`${root}/src/lib.rs`, 'utf8');
   const manifest = readFileSync(`${root}/Cargo.toml`, 'utf8');
