@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import test from "node:test";
 
 const workflow = readFileSync(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
@@ -35,6 +35,55 @@ test("CI executes the auditable policy and locked MCP build", () => {
     /cargo test --locked --manifest-path canonical-mcp-server\.rs\/Cargo\.toml/,
   );
   assert.ok((statSync(new URL("../scripts/audit-umbrella.sh", import.meta.url)).mode & 0o111) !== 0);
+});
+
+test("CI exercises both modularized Rust service workspaces", () => {
+  assert.match(
+    workflow,
+    /cargo test --locked --manifest-path canonical-web-server\.rs\/Cargo\.toml --workspace --all-targets/,
+  );
+  assert.match(
+    workflow,
+    /cargo test --locked --manifest-path canonical-mcp-server\.rs\/Cargo\.toml --all-targets/,
+  );
+
+  const webManifest = readFileSync(
+    new URL("../canonical-web-server.rs/Cargo.toml", import.meta.url),
+    "utf8",
+  );
+  for (const member of [
+    "crates/canonical-auth",
+    "crates/canonical-config",
+    "crates/canonical-session",
+    "crates/canonical-store",
+    "services/canonical-session-revoker",
+  ]) {
+    assert.match(webManifest, new RegExp(`^\\s*"${member}",?$`, "m"));
+    assert.ok(
+      existsSync(new URL(`../canonical-web-server.rs/${member}/Cargo.toml`, import.meta.url)),
+      `missing extracted workspace member ${member}`,
+    );
+  }
+  assert.doesNotMatch(webManifest, /^sqlx\s*=/m);
+  assert.match(webManifest, /^sea-orm\s*=/m);
+
+  const revokerManifest = readFileSync(
+    new URL(
+      "../canonical-web-server.rs/services/canonical-session-revoker/Cargo.toml",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  for (const dependency of [
+    "canonical-auth",
+    "canonical-config",
+    "canonical-session",
+    "canonical-store",
+    "sea-orm",
+  ]) {
+    assert.match(revokerManifest, new RegExp(`^${dependency}\\s*=`, "m"));
+  }
+  assert.doesNotMatch(revokerManifest, /^(?:sqlx|axum|axum-extra|maud|tower-http)\s*=/m);
 });
 
 test("umbrella audit covers boundaries, conflicts, secrets, and the remote MCP pin", () => {

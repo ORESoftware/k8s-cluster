@@ -35,5 +35,7 @@ jobs:
       - name: Test CI policy
         run: node --test tests/*.test.mjs
 
-      - name: Build and test the read-only MCP server
-        run: cargo test --locked --manifest-path canonical-mcp-server.rs/Cargo.toml
+      - name: Build and test both modularized Rust services
+        run: |
+          cargo test --locked --manifest-path canonical-web-server.rs/Cargo.toml --workspace --all-targets
+          cargo test --locked --manifest-path canonical-mcp-server.rs/Cargo.toml --all-targets

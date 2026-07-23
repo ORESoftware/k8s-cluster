@@ -84,7 +84,7 @@ jobs:
         run: >-
           cargo test --locked
           --manifest-path apps/canonical-web-server.rs/Cargo.toml
-          --test architecture --test modularization
+          --workspace --all-targets
       - name: Build the pinned stack
         run: ./build.sh
       # Boot the freshly built server with both built asset trees and prove the
