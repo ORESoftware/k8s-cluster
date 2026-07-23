@@ -41,3 +41,23 @@ Argo CD reconciles the committed app-of-apps release.
 
 The monorepo is itself pinned by `ORESoftware/k8s-cluster` at
 `remote/deployments/scintilla-run-monorepo` on that repository's `dev` branch.
+
+### Production prerequisites
+
+Configure these before the first manual `deploy` run:
+
+- GitHub secret `ORG_SUBMODULE_TOKEN`: a read-only token with Contents access to
+  every private `scintilla-run` repository. Share the same secret with
+  `scintilla-ui.dart` so its standalone test workflow can read
+  `scintilla-clients`.
+- GitHub variables `SCINTILLA_PUBLIC_BACKEND_URL`, `SUPABASE_URL`, and
+  `SUPABASE_ANON_KEY`. The canonical backend URL is
+  `https://api.scintilla.run`.
+- AWS Secrets Manager object `dd/remote-dev/scintilla-runtime` in `us-east-1`,
+  containing `DATABASE_URL`, `SCINTILLA_BACKEND_AUTH_TOKEN`,
+  `LAMBDA_SERVER_AUTH_SECRET`, `SUPABASE_URL`, and
+  `SUPABASE_PUBLISHABLE_KEY`.
+
+The first successful promotion creates `gitops/ec2` with immutable image
+digests. Until that commit exists, the cluster's root Argo CD application is
+intentionally pending rather than deploying mutable or placeholder images.
