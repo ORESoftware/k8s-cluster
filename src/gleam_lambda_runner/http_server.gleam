@@ -225,8 +225,7 @@ fn workflow_list(
     Error(_) -> 100
   }
   case workflow.list_runs(definition, limit) {
-    Ok(runs) ->
-      json_response(200, "{\"ok\":true,\"runs\":" <> runs <> "}")
+    Ok(runs) -> json_response(200, "{\"ok\":true,\"runs\":" <> runs <> "}")
     Error(error) -> workflow_error_response(error)
   }
 }
@@ -238,10 +237,7 @@ fn workflow_result_response(
 ) -> response.Response(mist.ResponseData) {
   case result {
     Ok(body) ->
-      json_response(
-        ok_status,
-        "{\"ok\":true,\"" <> key <> "\":" <> body <> "}",
-      )
+      json_response(ok_status, "{\"ok\":true,\"" <> key <> "\":" <> body <> "}")
     Error(error) -> workflow_error_response(error)
   }
 }

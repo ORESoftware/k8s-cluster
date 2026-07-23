@@ -1,0 +1,4 @@
+[submodule "tools/flags-2-env"]
+	path = tools/flags-2-env
+	url = https://github.com/ORESoftware/flags-2-env.git
+	branch = main

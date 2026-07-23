@@ -20,15 +20,16 @@ Never run, script, or suggest any of the following here:
 
 - History is append-only. Fix mistakes with a new commit or `git revert` — never by rewriting.
 - Changes land on `main` via feature branches; keep commits small and reviewable.
-- **This repository is the source of truth.** The copy vendored into
-  `ORESoftware/k8s-cluster` (under `remote/deployments/`) is a *secondary* submodule
-  checkout — after merging here, bump the submodule pointer there. Do not edit the
-  vendored copy directly.
+- **This repository is the source of truth.** It is pinned by
+  `scintilla-run-monorepo` under `apps/`; that monorepo is then pinned by
+  `ORESoftware/k8s-cluster` under `remote/deployments/`. Update those pointers
+  after merging here. Do not edit either vendored checkout directly.
 
 ## Build context
 
-Path dependencies (`../../libs`, `../../submodules`) resolve only when this repo is
-checked out at its `remote/deployments/` path inside the `k8s-cluster` superproject.
+Path dependencies (`../../../../libs`) resolve only when this repo is checked out
+at `remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner` inside the
+`k8s-cluster` superproject.
 Full builds happen there; standalone CI is limited to hygiene and format checks by design.
 
 ## Syncing with the remote

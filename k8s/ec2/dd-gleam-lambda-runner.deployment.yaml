@@ -48,7 +48,7 @@ spec:
                 --exclude='*/build' \
                 -C /opt/dd-next-1 \
                 -cf - \
-                remote/deployments/gleam-lambda-runner \
+                remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner \
                 remote/libs/nats/subject-defs/generated/gleam \
                 remote/libs/nats/subject-defs/generated/javascript \
                 remote/libs/cli-config-client-gleam \
@@ -56,7 +56,7 @@ spec:
                 remote/libs/pg-defs/generated/gleam \
                 remote/libs/runtime-config-client-gleam \
                 | tar -C "$clean_root" -xf -
-              cd "$clean_root/remote/deployments/gleam-lambda-runner"
+              cd "$clean_root/remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner"
               gleam deps download || { sleep 10; gleam deps download; } || { sleep 10; gleam deps download; }
               gleam build
               if [ -d build/dev/erlang/hpack/src ] && [ ! -f build/dev/erlang/hpack/ebin/hpack.app ]; then
@@ -110,7 +110,7 @@ spec:
                 cat /tmp/dd-lambda-runner-apk.log
                 exit 1
               fi
-              cd /work/dd-next-1/remote/deployments/gleam-lambda-runner
+              cd /work/dd-next-1/remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner
               if [ ! -f build/dev/erlang/gleam_lambda_runner/ebin/gleam_lambda_runner@@main.beam ]; then
                 echo "boot: missing Gleam BEAM artifacts from build init container"
                 exit 1

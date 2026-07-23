@@ -13,14 +13,17 @@ RUN apk add --no-cache \
   bash \
   postgresql-client
 WORKDIR /app
-COPY remote/deployments/gleam-lambda-runner/gleam.toml ./remote/deployments/gleam-lambda-runner/gleam.toml
-COPY remote/deployments/gleam-lambda-runner/manifest.toml ./remote/deployments/gleam-lambda-runner/manifest.toml
-COPY remote/deployments/gleam-lambda-runner/src ./remote/deployments/gleam-lambda-runner/src
-COPY remote/deployments/gleam-lambda-runner/child-runtimes ./remote/deployments/gleam-lambda-runner/child-runtimes
-COPY remote/deployments/gleam-lambda-runner/runtime-images ./remote/deployments/gleam-lambda-runner/runtime-images
+COPY remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/gleam.toml ./remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/gleam.toml
+COPY remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/manifest.toml ./remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/manifest.toml
+COPY remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/src ./remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/src
+COPY remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/child-runtimes ./remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/child-runtimes
+COPY remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/runtime-images ./remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/runtime-images
+COPY remote/libs/nats/subject-defs/generated/gleam ./remote/libs/nats/subject-defs/generated/gleam
+COPY remote/libs/cli-config-client-gleam ./remote/libs/cli-config-client-gleam
 COPY remote/libs/pg-defs/generated/gleam ./remote/libs/pg-defs/generated/gleam
 COPY remote/libs/otel-client-gleam ./remote/libs/otel-client-gleam
-WORKDIR /app/remote/deployments/gleam-lambda-runner
+COPY remote/libs/runtime-config-client-gleam ./remote/libs/runtime-config-client-gleam
+WORKDIR /app/remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner
 
 EXPOSE 8083
 CMD ["gleam", "run"]

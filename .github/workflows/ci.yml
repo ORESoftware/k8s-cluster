@@ -9,7 +9,8 @@ jobs:
   hygiene:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with: { submodules: recursive }
       - name: No build artifacts or env files tracked
         run: |
           bad=$(git ls-files | grep -E '(^|/)(build/|\.direnv/|\.env$|node_modules/|erl_crash\.dump$)' || true)
@@ -19,9 +20,16 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
         with:
           otp-version: "27"
           gleam-version: "1.17.0"
       - run: gleam format --check src test
+  flags:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with: { submodules: recursive }
+      - run: make -C tools/flags-2-env all
+      - run: tools/flags-2-env/build/flags2env audit .cli-flags.toml

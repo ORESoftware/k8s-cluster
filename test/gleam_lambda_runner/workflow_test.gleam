@@ -60,8 +60,7 @@ pub fn start_run_rejects_invalid_json_test() {
 
 pub fn signal_requires_name_test() {
   without_database()
-  let result =
-    workflow.signal_run("11111111-1111-1111-1111-111111111111", "{}")
+  let result = workflow.signal_run("11111111-1111-1111-1111-111111111111", "{}")
   should.be_error(result)
   case result {
     Error(message) ->

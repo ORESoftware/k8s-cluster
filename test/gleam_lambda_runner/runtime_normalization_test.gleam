@@ -19,7 +19,9 @@ fn host_definition(runtime: String, extra: String) -> String {
   <> "\"id\":\"00000000-0000-0000-0000-0000000000aa\","
   <> "\"slug\":\"norm-check\","
   <> "\"functionBody\":\"return { status: 200 };\","
-  <> "\"runtime\":\"" <> runtime <> "\","
+  <> "\"runtime\":\""
+  <> runtime
+  <> "\","
   <> "\"status\":\"active\","
   <> "\"containerized\":false"
   <> extra
@@ -173,7 +175,10 @@ pub fn pool_language_token_is_validated_test() {
   child_process.invoke_definition(
     "",
     "norm-check",
-    host_definition("nodejs", ",\"poolBacked\":true,\"poolLanguage\":\"bad lang!\""),
+    host_definition(
+      "nodejs",
+      ",\"poolBacked\":true,\"poolLanguage\":\"bad lang!\"",
+    ),
     "{}",
     1000,
     1000,

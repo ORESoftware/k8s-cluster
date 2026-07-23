@@ -2,11 +2,11 @@
 
 **[scintilla-run](https://github.com/scintilla-run)** · site: [scintilla-run.github.io](https://scintilla-run.github.io)
 
-> Extracted with full history from `ORESoftware/k8s-cluster`
-> (`remote/deployments/gleam-lambda-runner`) on 2026-07-17. **This repo is the
-> source of truth**; k8s-cluster vendors it back as a submodule at the same path.
-> Path deps (`../../libs`) resolve inside that superproject checkout — full
-> builds happen there. See [AGENTS.md](AGENTS.md) for repo rules.
+> Extracted with full history from `ORESoftware/k8s-cluster` on 2026-07-17.
+> **This repo is the source of truth**; `scintilla-run-monorepo` pins it at
+> `apps/gleam-lambda-runner`, and k8s-cluster pins that monorepo at
+> `remote/deployments/scintilla-run-monorepo`. Path dependencies resolve in the
+> complete k8s-cluster checkout. See [AGENTS.md](AGENTS.md) for repo rules.
 
 Gleam HTTP service for running user-defined lambda functions in reusable child processes and
 optional non-root containers.
@@ -240,16 +240,17 @@ builds or acquire ownership of build outputs.
 Build the reusable container pool images from the repository root:
 
 ```sh
-nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/nodejs.Dockerfile -t docker.io/library/dd-lambda-nodejs-runtime:dev remote
-nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/python3.Dockerfile -t docker.io/library/dd-lambda-python3-runtime:dev remote/deployments/gleam-lambda-runner
-nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/ruby.Dockerfile -t docker.io/library/dd-lambda-ruby-runtime:dev remote/deployments/gleam-lambda-runner
-nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/bash.Dockerfile -t docker.io/library/dd-lambda-bash-runtime:dev remote/deployments/gleam-lambda-runner
-nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/golang.Dockerfile -t docker.io/library/dd-lambda-golang-runtime:dev remote/deployments/gleam-lambda-runner
-nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/dart.Dockerfile -t docker.io/library/dd-lambda-dart-runtime:dev remote/deployments/gleam-lambda-runner
-nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/erlang.Dockerfile -t docker.io/library/dd-lambda-erlang-runtime:dev remote/deployments/gleam-lambda-runner
-nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/elixir.Dockerfile -t docker.io/library/dd-lambda-elixir-runtime:dev remote/deployments/gleam-lambda-runner
-nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/java.Dockerfile -t docker.io/library/dd-lambda-java-runtime:dev remote/deployments/gleam-lambda-runner
-nerdctl -n dd-lambda build -f remote/deployments/gleam-lambda-runner/runtime-images/browser.Dockerfile -t docker.io/library/dd-lambda-browser-runtime:dev remote/deployments/gleam-lambda-runner
+runner=remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner
+nerdctl -n dd-lambda build -f "$runner/runtime-images/nodejs.Dockerfile" -t docker.io/library/dd-lambda-nodejs-runtime:dev remote
+nerdctl -n dd-lambda build -f "$runner/runtime-images/python3.Dockerfile" -t docker.io/library/dd-lambda-python3-runtime:dev "$runner"
+nerdctl -n dd-lambda build -f "$runner/runtime-images/ruby.Dockerfile" -t docker.io/library/dd-lambda-ruby-runtime:dev "$runner"
+nerdctl -n dd-lambda build -f "$runner/runtime-images/bash.Dockerfile" -t docker.io/library/dd-lambda-bash-runtime:dev "$runner"
+nerdctl -n dd-lambda build -f "$runner/runtime-images/golang.Dockerfile" -t docker.io/library/dd-lambda-golang-runtime:dev "$runner"
+nerdctl -n dd-lambda build -f "$runner/runtime-images/dart.Dockerfile" -t docker.io/library/dd-lambda-dart-runtime:dev "$runner"
+nerdctl -n dd-lambda build -f "$runner/runtime-images/erlang.Dockerfile" -t docker.io/library/dd-lambda-erlang-runtime:dev "$runner"
+nerdctl -n dd-lambda build -f "$runner/runtime-images/elixir.Dockerfile" -t docker.io/library/dd-lambda-elixir-runtime:dev "$runner"
+nerdctl -n dd-lambda build -f "$runner/runtime-images/java.Dockerfile" -t docker.io/library/dd-lambda-java-runtime:dev "$runner"
+nerdctl -n dd-lambda build -f "$runner/runtime-images/browser.Dockerfile" -t docker.io/library/dd-lambda-browser-runtime:dev "$runner"
 ```
 
 When the REST API has `LAMBDA_IMAGE_BUILD_ENABLED=true`, saving a containerized function also writes
@@ -262,7 +263,7 @@ If `gleam` or `erlc` are not installed on the host, use the repo machine's Nix t
 installing global packages:
 
 ```sh
-nix shell nixpkgs#gleam nixpkgs#erlang nixpkgs#rebar3 nixpkgs#nodejs_25 nixpkgs#postgresql -c sh -c 'cd remote/deployments/gleam-lambda-runner && gleam build'
+nix shell nixpkgs#gleam nixpkgs#erlang nixpkgs#rebar3 nixpkgs#nodejs_22 nixpkgs#postgresql -c sh -c 'cd remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner && gleam build'
 ```
 
 `rebar3` is required because one of the resolved dependencies builds with Rebar. `manifest.toml` is
@@ -272,7 +273,7 @@ Build the standalone image from the repository root so Docker can include the si
 package:
 
 ```sh
-docker build -f remote/deployments/gleam-lambda-runner/Dockerfile -t dd-gleam-lambda-runner:dev .
+docker build -f remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/Dockerfile -t dd-gleam-lambda-runner:dev .
 ```
 
 ## Workflow execution engine
