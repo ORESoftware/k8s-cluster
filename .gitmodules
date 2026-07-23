@@ -30,3 +30,7 @@
 	path = apps/daedalus-fab-mcp-server.rs
 	url = git@github.com:daedalus-fab/daedalus-fab-mcp-server.rs.git
 	branch = main
+[submodule "apps/daedalus-sync"]
+	path = apps/daedalus-sync
+	url = git@github.com:daedalus-fab/daedalus-sync.git
+	branch = main
