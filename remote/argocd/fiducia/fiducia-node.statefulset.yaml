@@ -99,6 +99,23 @@ spec:
             - name: FIDUCIA_INTERNAL_SECRET
               valueFrom:
                 secretKeyRef: { name: fiducia-cluster-secrets, key: internal-secret, optional: true }
+            # Secrets stored in Fiducia must be sealed before they enter Raft.
+            # The versioned keyring is bootstrapped from the existing cloud
+            # SecretStore; old key IDs stay present during rotation so snapshots
+            # and live values remain readable. Missing either key fails the pod
+            # closed instead of silently persisting new KV values in plaintext.
+            - name: FIDUCIA_KV_ENCRYPTION_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: fiducia-kv-protection
+                  key: encryption-keys
+                  optional: false
+            - name: FIDUCIA_KV_ENCRYPTION_ACTIVE_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: fiducia-kv-protection
+                  key: active-key-id
+                  optional: false
             # Export OTLP traces to the shared collector (stdout-only when unset).
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: http://dd-otel-collector.observability.svc.cluster.local:4317

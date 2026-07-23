@@ -22,6 +22,7 @@ spec:
     #   - dd-remote-gateway (namespace `default`) — public api.fiducia.cloud
     #     vhost proxies here; the LB enforces API-key auth via fiducia-auth
     #     introspect, so the gateway hop adds no trust by itself.
+    #   - External Secrets Operator — read-only Fiducia KV webhook provider.
     #   - observability scrapers.
     - from:
         - podSelector:
@@ -49,6 +50,12 @@ spec:
           podSelector:
             matchLabels:
               dd.dev/fiducia-client: 'true'
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: external-secrets
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: external-secrets
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability
