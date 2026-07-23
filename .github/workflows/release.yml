@@ -63,10 +63,15 @@ jobs:
       # Does NOT redeploy (ArgoCD tracks this repo, not the submodule path).
       # Requires an org PAT secret with contents:write on k8s-cluster.
       - name: Refresh k8s-cluster submodule pin (inventory)
-        if: ${{ secrets.ORG_GITOPS_TOKEN != '' }}
+        env:
+          ORG_GITOPS_TOKEN: ${{ secrets.ORG_GITOPS_TOKEN }}
         run: |
+          if [ -z "${ORG_GITOPS_TOKEN}" ]; then
+            echo "ORG_GITOPS_TOKEN unset; skipping inventory refresh"
+            exit 0
+          fi
           curl -sf -X POST \
-            -H "Authorization: Bearer ${{ secrets.ORG_GITOPS_TOKEN }}" \
+            -H "Authorization: Bearer ${ORG_GITOPS_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/repos/ORESoftware/k8s-cluster/dispatches \
             -d '{"event_type":"shared-auth-bump"}'
