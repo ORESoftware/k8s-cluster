@@ -27,3 +27,5 @@ jobs:
             test "$(git ls-files --stage -- "$path" | awk '{print $1}')" = 160000
           done
           test -z "$(git config -f .gitmodules --get-regexp '^submodule\..*\.url$' | awk '$2 !~ /^git@github\.com:shared-auth\// {print}')"
+          test "$(git config -f .gitmodules --get-regexp '^submodule\..*\.branch$' | wc -l | tr -d ' ')" -eq 7
+          test -z "$(git config -f .gitmodules --get-regexp '^submodule\..*\.branch$' | awk '$2 != "main" {print}')"
