@@ -145,7 +145,7 @@ test("full-stack build includes both browser clients before all locked Rust work
 
   const ci = read(".github/workflows/ci.yml");
   assert.match(ci, /cargo test --locked/);
-  assert.match(ci, /--test architecture --test modularization/);
+  assert.match(ci, /--workspace --all-targets/);
 });
 
 test("architecture docs keep migration, RLS, process, WebSocket, and backplane boundaries explicit", () => {
@@ -218,6 +218,88 @@ test("pinned Rust service keeps bootstrap and runtime concerns modular", () => {
   assert.match(telemetry, /resource_attribute_pairs/);
 });
 
+test("pinned Rust workspace preserves the extracted crate dependency graph", () => {
+  const service = "apps/canonical-web-server.rs";
+  const workspaceManifest = read(`${service}/Cargo.toml`);
+  const manifests = new Map([
+    ["canonical-web-server", workspaceManifest],
+    ["canonical-auth", read(`${service}/crates/canonical-auth/Cargo.toml`)],
+    ["canonical-config", read(`${service}/crates/canonical-config/Cargo.toml`)],
+    ["canonical-session", read(`${service}/crates/canonical-session/Cargo.toml`)],
+    ["canonical-store", read(`${service}/crates/canonical-store/Cargo.toml`)],
+    [
+      "canonical-session-revoker",
+      read(`${service}/services/canonical-session-revoker/Cargo.toml`),
+    ],
+  ]);
+  const dependencyNames = (manifest) => {
+    const dependencies = manifest.match(/\[dependencies\]\s*\n([\s\S]*?)(?=\n\[|$)/)?.[1] ?? "";
+    return new Set(
+      [...dependencies.matchAll(/^([A-Za-z0-9_-]+)\s*=/gm)].map((match) => match[1]),
+    );
+  };
+  const expectedInternalEdges = new Map([
+    ["canonical-web-server", ["canonical-auth", "canonical-config", "canonical-session", "canonical-store"]],
+    ["canonical-auth", []],
+    ["canonical-config", []],
+    ["canonical-session", ["canonical-auth", "canonical-store"]],
+    ["canonical-store", []],
+    [
+      "canonical-session-revoker",
+      ["canonical-auth", "canonical-config", "canonical-session", "canonical-store"],
+    ],
+  ]);
+
+  for (const member of [
+    ".",
+    "crates/canonical-auth",
+    "crates/canonical-config",
+    "crates/canonical-session",
+    "crates/canonical-store",
+    "services/canonical-session-revoker",
+  ]) {
+    assert.match(workspaceManifest, new RegExp(`^\\s*"${member.replace(".", "\\.")}",?$`, "m"));
+  }
+
+  for (const [packageName, manifest] of manifests) {
+    const dependencies = dependencyNames(manifest);
+    const internalDependencies = [...dependencies]
+      .filter((dependency) => manifests.has(dependency))
+      .sort();
+    assert.deepEqual(
+      internalDependencies,
+      [...expectedInternalEdges.get(packageName)].sort(),
+      `${packageName} crossed an extracted crate boundary`,
+    );
+    assert.ok(!dependencies.has("sqlx"), `${packageName} must use SeaORM, not direct sqlx`);
+
+    if (packageName !== "canonical-web-server") {
+      for (const webDependency of ["axum", "axum-extra", "maud", "tower-http"]) {
+        assert.ok(
+          !dependencies.has(webDependency),
+          `${packageName} leaked web dependency ${webDependency}`,
+        );
+      }
+    }
+  }
+
+  for (const packageName of [
+    "canonical-web-server",
+    "canonical-session",
+    "canonical-store",
+    "canonical-session-revoker",
+  ]) {
+    assert.ok(
+      dependencyNames(manifests.get(packageName)).has("sea-orm"),
+      `${packageName} lost its SeaORM boundary`,
+    );
+  }
+  assert.ok(
+    existsSync(path.join(root, service, "services/canonical-session-revoker/src/main.rs")),
+    "the independently deployed session revoker binary is missing",
+  );
+});
+
 test("monorepo scripts keep destructive actions manual and include dry-run/audit guardrails", () => {
   const scripts = readdirSync(path.join(root, "scripts"))
     .filter((file) => file.endsWith(".sh"))
@@ -270,15 +352,15 @@ test("submodule pin verification fails closed when origin cannot be fetched", ()
   );
 });
 
-test("every app agents.md blacklists rm and whitelists git rm / git mv", () => {
+test("every app AGENTS.md blacklists rm and whitelists git rm / git mv", () => {
   for (const module of parseGitmodules()) {
-    const agents = read(path.join(module.path, "agents.md"));
-    assert.match(agents, /Command safety/, `${module.path}/agents.md needs a Command safety section`);
-    assert.match(agents, /git rm/, `${module.path}/agents.md must whitelist git rm`);
-    assert.match(agents, /git mv/, `${module.path}/agents.md must whitelist git mv`);
+    const agents = read(path.join(module.path, "AGENTS.md"));
+    assert.match(agents, /Command safety/, `${module.path}/AGENTS.md needs a Command safety section`);
+    assert.match(agents, /git rm/, `${module.path}/AGENTS.md must whitelist git rm`);
+    assert.match(agents, /git mv/, `${module.path}/AGENTS.md must whitelist git mv`);
   }
 
-  const own = read("agents.md");
+  const own = read("AGENTS.md");
   assert.match(own, /Command safety/);
   assert.match(own, /git rm/);
 });

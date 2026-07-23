@@ -23,8 +23,7 @@ use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{
     metrics::{PeriodicReader, SdkMeterProvider},
     propagation::TraceContextPropagator,
-    runtime,
-    trace::{Tracer, TracerProvider},
+    trace::{SdkTracerProvider, Tracer},
     Resource,
 };
 use tower_http::trace::{MakeSpan, OnResponse, TraceLayer};
@@ -36,7 +35,7 @@ const EXPORT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Owns SDK providers so their final batches are flushed during shutdown.
 pub struct TelemetryGuard {
-    tracer_provider: Option<TracerProvider>,
+    tracer_provider: Option<SdkTracerProvider>,
     meter_provider: Option<SdkMeterProvider>,
 }
 
@@ -114,15 +113,15 @@ pub fn init(service_name: &'static str, service_namespace: &'static str) -> Tele
 fn build_tracer_provider(
     endpoint: &str,
     resource: Resource,
-) -> Result<(TracerProvider, Tracer), ()> {
+) -> Result<(SdkTracerProvider, Tracer), ()> {
     let exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
         .with_endpoint(endpoint)
         .with_timeout(EXPORT_TIMEOUT)
         .build()
         .map_err(|_| ())?;
-    let provider = TracerProvider::builder()
-        .with_batch_exporter(exporter, runtime::Tokio)
+    let provider = SdkTracerProvider::builder()
+        .with_batch_exporter(exporter)
         .with_resource(resource)
         .build();
     use opentelemetry::trace::TracerProvider as _;
@@ -137,7 +136,7 @@ fn build_meter_provider(endpoint: &str, resource: Resource) -> Result<SdkMeterPr
         .with_timeout(EXPORT_TIMEOUT)
         .build()
         .map_err(|_| ())?;
-    let reader = PeriodicReader::builder(exporter, runtime::Tokio).build();
+    let reader = PeriodicReader::builder(exporter).build();
     Ok(SdkMeterProvider::builder()
         .with_reader(reader)
         .with_resource(resource)
@@ -191,7 +190,9 @@ fn resource(service_name: &str, service_namespace: &str) -> Resource {
         attributes
             .extend(resource_attribute_pairs(&raw).map(|(key, value)| KeyValue::new(key, value)));
     }
-    Resource::new(attributes)
+    Resource::builder_empty()
+        .with_attributes(attributes)
+        .build()
 }
 
 fn push_env_attribute(attributes: &mut Vec<KeyValue>, env_name: &str, key: &'static str) {
@@ -314,7 +315,7 @@ impl<B> MakeSpan<B> for HttpMakeSpan {
         let parent = global::get_text_map_propagator(|propagator| {
             propagator.extract(&HeaderExtractor(request.headers()))
         });
-        span.set_parent(parent);
+        let _ = span.set_parent(parent);
         record_trace_context(&span);
         span
     }

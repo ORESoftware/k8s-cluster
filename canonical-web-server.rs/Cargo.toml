@@ -29,10 +29,10 @@ canonical-store = { path = "crates/canonical-store" }
 chrono = { version = "0.4.42", features = ["serde"] }
 futures-util = "0.3.32"
 maud = { version = "0.27.0", features = ["axum"] }
-opentelemetry = "0.27"
-opentelemetry-http = "0.27"
-opentelemetry-otlp = { version = "0.27", features = ["grpc-tonic", "metrics", "trace"] }
-opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
+opentelemetry = "0.32"
+opentelemetry-http = "0.32"
+opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic", "metrics", "trace"] }
+opentelemetry_sdk = { version = "0.32.1", features = ["rt-tokio"] }
 rand = "0.10.2"
 reqwest = { version = "0.13.4", default-features = false, features = ["json", "rustls"] }
 sea-orm = { version = "1.1.20", default-features = false, features = ["macros", "runtime-tokio-rustls", "sqlx-postgres", "sqlx-sqlite", "with-chrono", "with-json", "with-uuid"] }
@@ -45,7 +45,7 @@ time = "0.3.53"
 tokio = { version = "1.52.3", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tower-http = { version = "0.7.0", features = ["compression-gzip", "fs", "request-id", "sensitive-headers", "set-header", "timeout", "trace"] }
 tracing = "0.1.44"
-tracing-opentelemetry = "0.28"
+tracing-opentelemetry = "0.33"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt", "json"] }
 uuid = { version = "1.23.0", features = ["serde", "v4"] }
 
