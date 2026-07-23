@@ -14,3 +14,7 @@
 	path = apps/drone-mngr-infra
 	url = https://github.com/drone-mngr/drone-mngr-infra.git
 	branch = main
+[submodule "drone-mngr-mcp-server"]
+	path = apps/drone-mngr-mcp-server.rs
+	url = https://github.com/drone-mngr/drone-mngr-mcp-server.rs.git
+	branch = main
