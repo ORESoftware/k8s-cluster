@@ -328,10 +328,10 @@
     {
       "service": "fiducia-customer.rs",
       "language": "rust",
-      "routeCount": 58,
+      "routeCount": 59,
       "routeTypeCounts": {
         "service": 5,
-        "user-generated": 53
+        "user-generated": 54
       },
       "generated": [
         "remote/deployments/fiducia-customer.rs/generated/api-docs.json",

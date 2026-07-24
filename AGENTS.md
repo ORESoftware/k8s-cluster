@@ -328,19 +328,22 @@ similarity and capped at **32 members** (the 33rd is bounced). It runs as the
 
 ## Syncing with the remote
 
-"Sync with the remote" (or just "sync") is **bidirectional and always contacts
-the remote** — it pulls *and* pushes. It is never push-only, and a clean local
-working tree does **not** by itself mean "synced": a sync is not finished until
-local and the remote have exchanged commits in both directions.
+"Sync with the remote" (or just "sync") is a **two-way** exchange — pull the
+remote's commits down **and** push yours up. It is never push-only, and a clean
+local tree does not by itself mean "synced": you are done only once local and
+the remote hold the same commits.
 
-The steps for a sync:
+To sync:
 
-1. `git fetch --all --prune` — see what the remote has.
-2. `git pull` (which merges) — or `git merge` the upstream tracking branch —
-   to integrate the remote's commits into your local branch **first**.
-3. `git add` / `git commit` any local work.
-4. `git push` — publish your commits.
+1. **Commit your work first** (`git add` + `git commit`) so the tree is clean —
+   pull/merge only into a clean tree. `git pull` / `git merge` aborts when an
+   incoming change touches a file you have edited, and even when it doesn't it
+   buries the merge in your uncommitted work. (Can't commit yet? `git stash`,
+   then `git stash pop` after step 3.)
+2. `git fetch --all --prune` — safe any time; it only updates tracking refs.
+3. `git pull` (fetch + merge) — or `git merge` the upstream branch — to
+   integrate the remote's commits.
+4. `git push` to publish yours.
 
-Always integrate with **`git merge`** (and plain `git pull`, which merges).
-**Do not `git rebase`** to sync — rebasing rewrites history and breaks shared
-branches; keep the merge history instead.
+Integrate with **`git merge` / `git pull`**. **Never `git rebase` to sync** — it
+rewrites history and breaks shared branches.

@@ -66,7 +66,7 @@ Three Applications are already broken this way — their `path` resolves to zero
 |---|---|---|
 | `dd-billing-server` | `remote/deployments/billing-server-rs/k8s/ec2` | point `repoURL` at `quaestor-ledger/quaestor-monorepo`, `path: apps/billing-server.rs/k8s` |
 | `dd-dart-server` | `remote/deployments/dart-server/k8s/ec2` | point `repoURL` at its own repo |
-| `dd-gleam-lambda-runner` | `remote/deployments/gleam-lambda-runner/k8s/ec2` | point `repoURL` at its own repo |
+| `scintilla-run-root` | `gitops/ec2/bootstrap` in `scintilla-run-monorepo` | app-of-apps root; monorepo CI promotes digest-pinned children |
 
 ### The org structure is two levels of submodule
 
@@ -115,9 +115,12 @@ need `CreateNamespace=true`.
 
 ## Secrets
 
-Platform owns ESO + `ClusterSecretStore/dd-cluster-secrets`. Apps only ever commit an
-`ExternalSecret` pointing at a store path scoped to their org (e.g. AWS Secrets Manager
-`dd/remote-dev/<app>-secrets`). See `remote/deployments/3fa-backend/deploy/k8s/externalsecret.yaml`.
+Platform owns ESO plus `ClusterSecretStore/dd-cluster-secrets` and
+`ClusterSecretStore/dd-fiducia-kv`. Apps only ever commit an `ExternalSecret` pointing at a store
+path scoped to their org (for example AWS Secrets Manager `dd/remote-dev/<app>-secrets`, or Fiducia
+`k8s/<namespace>/<workload>/<ENV_VAR>`). See
+`remote/deployments/3fa-backend/deploy/k8s/externalsecret.yaml` and
+[`fiducia-secret-delivery.md`](fiducia-secret-delivery.md).
 
 ## Cloud resources (DNS, DBs, buckets)
 

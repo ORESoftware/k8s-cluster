@@ -75,7 +75,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # remote/libs is a submodule (ORESoftware/k8s-libs-and-shared-defs,
       # pinned to main) holding pg-defs/nats/interfaces. Without it the
@@ -94,7 +94,7 @@ jobs:
           version: 10.33.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: pnpm
@@ -146,7 +146,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # remote/libs is a submodule (ORESoftware/k8s-libs-and-shared-defs,
       # pinned to main) holding pg-defs/nats/interfaces; the wiring steps
@@ -163,7 +163,7 @@ jobs:
           version: 10.33.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: pnpm
@@ -198,7 +198,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # remote/libs is a submodule (ORESoftware/k8s-libs-and-shared-defs,
       # pinned to main) holding pg-defs/nats/interfaces; the wiring steps
@@ -215,7 +215,7 @@ jobs:
           version: 10.33.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: pnpm

@@ -167,5 +167,20 @@
 	branch = main
 [submodule "remote/submodules/shared-auth-server.rs"]
 	path = remote/submodules/shared-auth-server.rs
-	url = git@github.com:ORESoftware/shared-auth-server.rs.git
+	url = git@github.com:shared-auth/shared-auth-server.rs.git
 	branch = main
+[submodule "remote/deployments/shared-auth-monorepo"]
+	path = remote/deployments/shared-auth-monorepo
+	url = git@github.com:shared-auth/shared-auth-monorepo.git
+	branch = main
+[submodule "remote/deployments/drone-mngr-monorepo"]
+	path = remote/deployments/drone-mngr-monorepo
+	url = https://github.com/drone-mngr/drone-mngr-monorepo.git
+	branch = main
+[submodule "remote/deployments/scintilla-run-monorepo"]
+	path = remote/deployments/scintilla-run-monorepo
+	url = git@github.com:scintilla-run/scintilla-run-monorepo.git
+	branch = main
+[submodule "remote/deployments/zed-monorepo"]
+	path = remote/deployments/zed-monorepo
+	url = https://github.com/zed-pkg/zed-monorepo.git

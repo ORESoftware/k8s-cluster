@@ -718,23 +718,23 @@ test("grafana exposes a dedicated fabrication planner dashboard", async () => {
   assert.match(prometheus, /dd_fabrication_server_validation_findings_total\[10m\]/);
   assert.match(
     prometheus,
-    /dd_k8s_pod_container_waiting\{namespace="default",app="dd-fabrication-server",container="fabrication-server"\}/,
+    /dd_k8s_pod_container_waiting\{namespace="daedalus",app="dd-fabrication-server",container="fabrication-server"\}/,
   );
   assert.match(
     prometheus,
-    /dd_k8s_deployment_updated_replicas\{namespace="default",deployment="dd-fabrication-server",app="dd-fabrication-server"\}/,
+    /dd_k8s_deployment_updated_replicas\{namespace="daedalus",deployment="dd-fabrication-server",app="dd-fabrication-server"\}/,
   );
   assert.match(
     prometheus,
-    /sum\(up\{job="dd-fabrication-server-pods"\} == bool 1\) < max\(dd_k8s_deployment_desired_replicas\{namespace="default",deployment="dd-fabrication-server",app="dd-fabrication-server"\}\)/,
+    /sum\(up\{job="dd-fabrication-server-pods"\} == bool 1\) < max\(dd_k8s_deployment_desired_replicas\{namespace="daedalus",deployment="dd-fabrication-server",app="dd-fabrication-server"\}\)/,
   );
   assert.match(
     prometheus,
-    /dd_k8s_pod_container_cpu_usage_cores\{namespace="default",app="dd-fabrication-server",container="fabrication-server"\}/,
+    /dd_k8s_pod_container_cpu_usage_cores\{namespace="daedalus",app="dd-fabrication-server",container="fabrication-server"\}/,
   );
   assert.match(
     prometheus,
-    /dd_k8s_pod_container_memory_usage_bytes\{namespace="default",app="dd-fabrication-server",container="fabrication-server"\}/,
+    /dd_k8s_pod_container_memory_usage_bytes\{namespace="daedalus",app="dd-fabrication-server",container="fabrication-server"\}/,
   );
   assert.match(dashboardText, /Fabrication Gateway/);
   assert.match(dashboardText, /\/fabrication\//);

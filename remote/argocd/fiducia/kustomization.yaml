@@ -20,6 +20,7 @@ namespace: fiducia
 resources:
   - namespace.yaml
   - availability-pdbs.yaml
+  - fiducia-kv-protection.externalsecret.yaml
   - fiducia-node.statefulset.yaml
   - fiducia-node.service.yaml
   - fiducia-node.networkpolicy.yaml

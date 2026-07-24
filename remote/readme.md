@@ -118,7 +118,9 @@ broker that serves VPN/cluster profiles plus a read-only kubeconfig over the VPN
 
 The cluster secret-management layer lives in [`argocd/secrets/`](./argocd/secrets/) and is managed
 by the `dd-secrets` ArgoCD Application after `external-secrets-operator` is installed. GitHub
-stores only SecretStore/ExternalSecret manifests; AWS Secrets Manager stores the real values.
+stores only SecretStore/ExternalSecret manifests. The selected cloud secret manager remains the
+bootstrap root; applications can also retrieve encrypted values from Fiducia KV through the
+[`dd-fiducia-kv` delivery pathway](../docs/fiducia-secret-delivery.md).
 
 ## Why a separate `remote/` at all
 
@@ -257,6 +259,13 @@ flow is:
    inherit model-provider keys through `dd-agent-secrets`. `dd-build-server` also reads optional
    `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_SESSION_TOKEN` keys from
    `dd-agent-secrets` when it needs to push images to ECR.
+
+Application values may alternatively live in Fiducia KV. ESO's
+`ClusterSecretStore/dd-fiducia-kv` authenticates with a cloud-bootstrapped, read-only Fiducia API
+key and creates the same Kubernetes Secret shape, so workload manifests do not change. Fiducia's
+Raft KV encryption keyring is also cloud-bootstrapped to avoid a cold-start dependency cycle. See
+[`docs/fiducia-secret-delivery.md`](../docs/fiducia-secret-delivery.md) for provisioning, examples,
+rotation, and failure behavior.
 
 For now, updates can be done from AWS Console or CLI by editing the AWS Secrets Manager JSON. A
 good admin UI would be a small authenticated page that calls a server-side AWS SDK endpoint to

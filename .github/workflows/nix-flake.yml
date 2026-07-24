@@ -28,13 +28,13 @@ jobs:
       # flake.nix only references files in the repo root and .nix/, so no
       # submodules are needed.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v22
 
       - name: Set up Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@v9
+        uses: DeterminateSystems/magic-nix-cache-action@v14
 
       - name: nix flake check
         run: nix flake check
