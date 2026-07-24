@@ -45,7 +45,7 @@ data:
         "dd-redis-cache,dd-remote-auth,dd-remote-gateway,dd-remote-queue-consumer,"
         "dd-remote-rest-api,dd-remote-web-home,dd-runtime-config,dd-rust-network-mutex,dd-rust-network-mutex-mills,"
         "dd-rust-network-mutex-raft,"
-        "dd-rust-vapi-phone,dd-rust-wss-server,dd-selenium-server,dd-shared-auth,dd-sound-recorder-rs,dd-spark-pipeline-server,"
+        "dd-rust-vapi-phone,dd-rust-wss-server,dd-selenium-server,dd-shared-auth,dd-shared-auth-nats-bridge,dd-sound-recorder-rs,dd-spark-pipeline-server,"
         "dd-t2v-api,dd-t2v-web,dd-tempo,dd-threefa-web-server,dd-thread-fleet-exporter,"
         "dd-thread-operator,dd-trading-server,dd-vpn,"
         "dd-web-scraper,dd-webrtc-media,dd-webrtc-signaling,dd-ws-loadtest-rs,"
