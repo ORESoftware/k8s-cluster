@@ -545,6 +545,91 @@ mod tests {
         }
     }
 
+    fn creality_k1_request() -> PrintPreflightRequest {
+        PrintPreflightRequest::Fdm {
+            request_id: Some("creality-k1".to_string()),
+            part: part(),
+            machine: FdmMachine {
+                build_volume: dimensions(220.0, 220.0, 250.0),
+                nozzle_diameter_mm: 0.4,
+                max_volumetric_flow_mm3_s: 32.0,
+                enclosed: true,
+                max_materials: 1,
+            },
+            material: FdmMaterial {
+                name: "PETG".to_string(),
+                nozzle_temp_min_c: 225.0,
+                nozzle_temp_max_c: 260.0,
+                bed_temp_min_c: 70.0,
+                bed_temp_max_c: 90.0,
+                drying_required: true,
+                enclosure_required: false,
+            },
+            profile: FdmProfile {
+                layer_height_mm: 0.2,
+                first_layer_height_mm: 0.24,
+                line_width_mm: 0.42,
+                print_speed_mm_s: 300.0,
+                nozzle_temp_c: 250.0,
+                bed_temp_c: 80.0,
+                supports_enabled: true,
+                material_count: 1,
+                tool_changes: 0,
+                purge_volume_per_change_mm3: 0.0,
+                dried_hours: Some(6.0),
+            },
+        }
+    }
+
+    fn creality_k2_request() -> PrintPreflightRequest {
+        PrintPreflightRequest::Fdm {
+            request_id: Some("creality-k2".to_string()),
+            part: part(),
+            machine: FdmMachine {
+                build_volume: dimensions(260.0, 260.0, 260.0),
+                nozzle_diameter_mm: 0.4,
+                max_volumetric_flow_mm3_s: 32.0,
+                enclosed: true,
+                max_materials: 16,
+            },
+            material: FdmMaterial {
+                name: "PLA".to_string(),
+                nozzle_temp_min_c: 190.0,
+                nozzle_temp_max_c: 230.0,
+                bed_temp_min_c: 50.0,
+                bed_temp_max_c: 65.0,
+                drying_required: false,
+                enclosure_required: false,
+            },
+            profile: FdmProfile {
+                layer_height_mm: 0.2,
+                first_layer_height_mm: 0.24,
+                line_width_mm: 0.42,
+                print_speed_mm_s: 300.0,
+                nozzle_temp_c: 220.0,
+                bed_temp_c: 60.0,
+                supports_enabled: true,
+                material_count: 4,
+                tool_changes: 24,
+                purge_volume_per_change_mm3: 45.0,
+                dried_hours: None,
+            },
+        }
+    }
+
+    #[test]
+    fn creality_k1_high_speed_profile_is_release_ready() {
+        let response = analyze(creality_k1_request()).expect("FDM analysis");
+        assert!(response.release_ready, "findings: {:?}", response.findings);
+        assert_eq!(response.derived["volumetricFlowMm3S"], 25.2);
+    }
+
+    #[test]
+    fn creality_k2_cfs_multi_material_profile_is_release_ready() {
+        let response = analyze(creality_k2_request()).expect("FDM analysis");
+        assert!(response.release_ready, "findings: {:?}", response.findings);
+    }
+
     #[test]
     fn safe_fdm_profile_remains_release_ready() {
         let response = analyze(fdm_request()).expect("FDM analysis");

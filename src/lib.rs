@@ -118,6 +118,7 @@ mod nesting_catalog_content;
 mod objective_coverage_content;
 mod observability;
 mod persistence;
+mod printer_model_catalog;
 mod process_capability_catalog_content;
 mod process_recipe_catalog_content;
 mod provenance_catalog_content;
@@ -10022,6 +10023,9 @@ fn is_swiss_turning_kind(kind: &str) -> bool {
 
 fn machine_class(kind: &str) -> MachineClass {
     let token = normalize_token(kind);
+    if let Some(model) = printer_model_catalog::fdm_printer_model_for_token(&token) {
+        return machine_class(model.machine_kind);
+    }
     if is_composite_layup_kind(&token)
         || is_hot_wire_foam_cutter_kind(&token)
         || is_gear_cutting_kind(&token)
@@ -10079,7 +10083,7 @@ fn machine_class(kind: &str) -> MachineClass {
 }
 
 fn default_machines() -> Vec<MachineProfile> {
-    vec![
+    let mut machines = vec![
         MachineProfile {
             id: "fdm-printer-1".to_string(),
             kind: "fdm-printer".to_string(),
@@ -11573,7 +11577,38 @@ fn default_machines() -> Vec<MachineProfile> {
             ]),
             profile_evidence: None,
         },
-    ]
+    ];
+    machines.extend(printer_model_fleet_machines());
+    machines
+}
+
+/// Fleet entries for the named printer models in `printer_model_catalog`, so
+/// the machine/printer catalogs and default planning fleet carry them without
+/// duplicating their specs.
+fn printer_model_fleet_machines() -> Vec<MachineProfile> {
+    printer_model_catalog::FDM_PRINTER_MODEL_SPECS
+        .iter()
+        .map(|spec| MachineProfile {
+            id: format!("{}-1", spec.model),
+            kind: spec.machine_kind.to_string(),
+            controller: Some(spec.controller.to_string()),
+            materials: Some(
+                spec.materials
+                    .iter()
+                    .map(|material| (*material).to_string())
+                    .collect(),
+            ),
+            work_envelope_mm: Some(spec.work_envelope_mm.to_vec()),
+            axes: Some(3),
+            operations: Some(
+                spec.operations
+                    .iter()
+                    .map(|operation| (*operation).to_string())
+                    .collect(),
+            ),
+            profile_evidence: None,
+        })
+        .collect()
 }
 
 fn validate_machines(input: Option<Vec<MachineProfile>>) -> Result<Vec<MachineProfile>, String> {
@@ -107166,7 +107201,27 @@ async fn instruction_improvement_preflight_catalog_http() -> impl IntoResponse {
     Json(instruction_improvement_preflight_catalog_response())
 }
 
+fn firmware_gcode_dialect(controller: Option<&str>) -> Option<&'static str> {
+    match normalize_token(controller?).as_str() {
+        "klipper" => Some("klipper-gcode"),
+        "marlin" => Some("marlin-gcode"),
+        "reprap" => Some("reprap-gcode"),
+        _ => None,
+    }
+}
+
 fn machine_catalog_instruction_languages(machine: &MachineProfile) -> Vec<String> {
+    let resolved_model_profile: MachineProfile;
+    let machine = match printer_model_catalog::fdm_printer_model_for_token(&machine.kind) {
+        Some(model) => {
+            resolved_model_profile = MachineProfile {
+                kind: model.machine_kind.to_string(),
+                ..machine.clone()
+            };
+            &resolved_model_profile
+        }
+        None => machine,
+    };
     let mut languages = BTreeSet::new();
     if let Some(controller) = machine.controller.as_ref() {
         languages.insert(controller.clone());
@@ -107191,6 +107246,9 @@ fn machine_catalog_instruction_languages(machine: &MachineProfile) -> Vec<String
                 languages.insert("multi-material-fdm-job".to_string());
                 languages.insert("ams-mmu-job".to_string());
                 languages.insert("idex-toolchanger-job".to_string());
+                if let Some(dialect) = firmware_gcode_dialect(machine.controller.as_deref()) {
+                    languages.insert(dialect.to_string());
+                }
             } else if is_paste_extrusion_printer_kind(&machine.kind) {
                 languages.insert("paste-extrusion-job".to_string());
                 languages.insert("clay-print-job".to_string());
@@ -107218,7 +107276,11 @@ fn machine_catalog_instruction_languages(machine: &MachineProfile) -> Vec<String
                 languages.insert("powder-job".to_string());
                 languages.insert("powder-bed-job".to_string());
             } else {
-                languages.insert("marlin-gcode".to_string());
+                languages.insert(
+                    firmware_gcode_dialect(machine.controller.as_deref())
+                        .unwrap_or("marlin-gcode")
+                        .to_string(),
+                );
             }
         }
         MachineClass::Mill => {
@@ -108050,6 +108112,8 @@ fn fdm_printer_catalog_response() -> Value {
         ],
         "fdmPrinterCount": fdm_printers.len(),
         "fdmPrinterKinds": printer_kinds,
+        "supportedPrinterModelCount": printer_model_catalog::FDM_PRINTER_MODEL_SPECS.len(),
+        "supportedPrinterModels": printer_model_catalog::fdm_printer_models_json(),
         "materials": materials,
         "operations": operations,
         "setupEvidence": [
@@ -151537,6 +151601,107 @@ mod tests {
             .is_some_and(|policy| policy.iter().any(|item| item
                 .as_str()
                 .is_some_and(|item| item.contains("not an archive of record")))));
+    }
+
+    #[test]
+    fn creality_k1_and_k2_models_resolve_and_join_the_default_fleet() {
+        for reference in [
+            "creality-k1",
+            "Creality K1",
+            "k1",
+            "creality-k2",
+            "Creality K2",
+            "k2",
+        ] {
+            assert_eq!(
+                machine_class(reference),
+                MachineClass::Additive,
+                "{reference} should classify as an additive printer"
+            );
+        }
+
+        let machines = default_machines();
+        let k1 = machines
+            .iter()
+            .find(|machine| machine.id == "creality-k1-1")
+            .expect("default fleet should include the Creality K1");
+        assert_eq!(k1.kind, "fdm-printer");
+        assert_eq!(k1.controller.as_deref(), Some("klipper"));
+        assert_eq!(k1.work_envelope_mm, Some(vec![220.0, 220.0, 250.0]));
+        let k1_languages = machine_catalog_instruction_languages(k1);
+        assert!(k1_languages
+            .iter()
+            .any(|language| language == "klipper-gcode"));
+        assert!(!k1_languages
+            .iter()
+            .any(|language| language == "marlin-gcode"));
+
+        let k2 = machines
+            .iter()
+            .find(|machine| machine.id == "creality-k2-1")
+            .expect("default fleet should include the Creality K2");
+        assert_eq!(k2.kind, "multi-material-fdm-printer");
+        assert_eq!(k2.controller.as_deref(), Some("klipper"));
+        assert_eq!(k2.work_envelope_mm, Some(vec![260.0, 260.0, 260.0]));
+        let k2_languages = machine_catalog_instruction_languages(k2);
+        assert!(k2_languages
+            .iter()
+            .any(|language| language == "ams-mmu-job"));
+        assert!(k2_languages
+            .iter()
+            .any(|language| language == "klipper-gcode"));
+    }
+
+    #[test]
+    fn fdm_printer_catalog_advertises_creality_k1_and_k2_models() {
+        let payload = fdm_printer_catalog_response();
+        let models = payload
+            .get("supportedPrinterModels")
+            .and_then(Value::as_array)
+            .expect("supported printer models should be present");
+        for expected in ["creality-k1", "creality-k2"] {
+            assert!(
+                models
+                    .iter()
+                    .any(|model| model.get("model").and_then(Value::as_str) == Some(expected)),
+                "missing supported printer model {expected}"
+            );
+        }
+        let k2_model = models
+            .iter()
+            .find(|model| model.get("model").and_then(Value::as_str) == Some("creality-k2"))
+            .expect("creality-k2 model entry");
+        assert_eq!(
+            k2_model.get("machineKind").and_then(Value::as_str),
+            Some("multi-material-fdm-printer")
+        );
+        assert_eq!(
+            k2_model.get("maxMaterials").and_then(Value::as_u64),
+            Some(16)
+        );
+
+        let printers = payload
+            .get("fdmPrinters")
+            .and_then(Value::as_array)
+            .expect("fdm printers should be present");
+        for expected in ["creality-k1-1", "creality-k2-1"] {
+            assert!(
+                printers
+                    .iter()
+                    .any(|printer| printer.get("id").and_then(Value::as_str) == Some(expected)),
+                "missing fleet printer {expected}"
+            );
+        }
+        let k1_printer = printers
+            .iter()
+            .find(|printer| printer.get("id").and_then(Value::as_str) == Some("creality-k1-1"))
+            .expect("creality-k1-1 fleet entry");
+        assert!(k1_printer
+            .get("acceptedInstructionLanguages")
+            .and_then(Value::as_array)
+            .is_some_and(|languages| languages
+                .iter()
+                .any(|language| language.as_str() == Some("klipper-gcode"))));
     }
 
     #[test]
