@@ -25,3 +25,6 @@
 [submodule "apps/zed-pkg.github.io"]
 	path = apps/zed-pkg.github.io
 	url = https://github.com/zed-pkg/zed-pkg.github.io.git
+[submodule "apps/zed-e2e"]
+	path = apps/zed-e2e
+	url = https://github.com/zed-pkg/zed-e2e.git

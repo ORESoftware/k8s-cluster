@@ -14,6 +14,7 @@ apps/
   zed-sync/             offline-first sync engine
   zed-infra/            terraform + k8s app-of-apps
   zed-docs/             architecture docs
+  zed-e2e/              cross-stack e2e suites (playwright/puppeteer/selenium)
   zed-pkg.github.io/    marketing site (Astro)
 ```
 
