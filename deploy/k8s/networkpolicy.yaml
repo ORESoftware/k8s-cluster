@@ -1,0 +1,54 @@
+# App-owned allow-list; pairs with the shared-auth tenant default-deny.
+# Ingress: shared-auth peers (the server, the sync flusher) hit /publish;
+# observability scrapes /metrics. Egress: DNS, NATS (messaging:4222), and
+# webhook fan-out back into the shared-auth namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-shared-auth-nats-bridge
+  namespace: shared-auth
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-shared-auth-nats-bridge
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: shared-auth
+      ports:
+        - { protocol: TCP, port: 8121 }
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - { protocol: TCP, port: 8121 }
+  egress:
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: messaging
+      ports:
+        - { protocol: TCP, port: 4222 }
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: shared-auth
+      ports:
+        - { protocol: TCP, port: 8120 }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - { protocol: TCP, port: 4318 }
