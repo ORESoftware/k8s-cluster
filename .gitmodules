@@ -184,3 +184,4 @@
 [submodule "remote/deployments/zed-monorepo"]
 	path = remote/deployments/zed-monorepo
 	url = https://github.com/zed-pkg/zed-monorepo.git
+	branch = main
