@@ -58,10 +58,14 @@ spec:
               # The backend code lives in its own private repo, sonus-auris/sonus-auris-backend.rs,
               # wired into this superproject as a git submodule at
               # remote/deployments/dd-sound-recorder-rs. Its generated Rust
-              # contract is the sibling remote/deployments/sonus-auris-interfaces
-              # submodule. Prefer mounted source when the node has both; otherwise
-              # clone the superproject and initialize only these two submodules so
-              # unrelated private submodules cannot block Sonus Auris startup. GH_PAT
+              # contract comes from the sonus-auris-monorepo's nested
+              # apps/sonus-auris-interfaces submodule (single pin path); the
+              # superproject keeps a symlink at the legacy sibling location
+              # remote/deployments/sonus-auris-interfaces so the backend's
+              # relative-path Cargo dependency still resolves. Prefer mounted
+              # source when the node has both; otherwise clone the superproject
+              # and initialize only the needed submodules so unrelated private
+              # submodules cannot block Sonus Auris startup. GH_PAT
               # (dd-agent-secrets) authenticates the private fetch via an HTTP
               # header instead of a URL, so auth failures cannot print a token.
               git_auth_args=()
@@ -77,21 +81,25 @@ spec:
                 echo "[dd-sound-recorder-rs] source: using mounted backend and interfaces at ${source_root}"
               elif [ -n "${SOUND_RECORDER_GIT_URL:-}" ]; then
                 clone_root="$(mktemp -d /tmp/dd-sound-recorder-rs-source.XXXXXX)"
+                monorepo_dir="$clone_root/remote/deployments/sonus-auris-monorepo"
                 if git clone --depth 1 \
                      --branch "${SOUND_RECORDER_GIT_REF:-dev}" "${SOUND_RECORDER_GIT_URL}" "$clone_root" &&
                    git -C "$clone_root" submodule init \
                      remote/deployments/dd-sound-recorder-rs \
-                     remote/deployments/sonus-auris-interfaces &&
+                     remote/deployments/sonus-auris-monorepo &&
                    git -C "$clone_root" config "submodule.remote/deployments/dd-sound-recorder-rs.url" "https://github.com/sonus-auris/sonus-auris-backend.rs.git" &&
-                   git -C "$clone_root" config "submodule.remote/deployments/sonus-auris-interfaces.url" "https://github.com/sonus-auris/sonus-auris-interfaces.git" &&
+                   git -C "$clone_root" config "submodule.remote/deployments/sonus-auris-monorepo.url" "https://github.com/sonus-auris/sonus-auris-monorepo.git" &&
                    git -C "$clone_root" "${git_auth_args[@]}" submodule update --depth 1 \
                      remote/deployments/dd-sound-recorder-rs \
-                     remote/deployments/sonus-auris-interfaces; then
+                     remote/deployments/sonus-auris-monorepo &&
+                   git -C "$monorepo_dir" submodule init apps/sonus-auris-interfaces &&
+                   git -C "$monorepo_dir" config "submodule.apps/sonus-auris-interfaces.url" "https://github.com/sonus-auris/sonus-auris-interfaces.git" &&
+                   git -C "$monorepo_dir" "${git_auth_args[@]}" submodule update --depth 1 apps/sonus-auris-interfaces; then
                   source_root="$clone_root"
                   app_dir="$source_root/remote/deployments/dd-sound-recorder-rs"
                   interfaces_dir="$source_root/remote/deployments/sonus-auris-interfaces/generated/rust"
                   sub_sha="$(git -C "$clone_root/remote/deployments/dd-sound-recorder-rs" rev-parse --short HEAD 2>/dev/null || echo '?')"
-                  interfaces_sha="$(git -C "$clone_root/remote/deployments/sonus-auris-interfaces" rev-parse --short HEAD 2>/dev/null || echo '?')"
+                  interfaces_sha="$(git -C "$monorepo_dir/apps/sonus-auris-interfaces" rev-parse --short HEAD 2>/dev/null || echo '?')"
                   echo "[dd-sound-recorder-rs] source: cloned ${SOUND_RECORDER_GIT_URL}@${SOUND_RECORDER_GIT_REF:-dev} ($(git -C "$clone_root" rev-parse --short HEAD)); backend ${sub_sha}; interfaces ${interfaces_sha}"
                 else
                   echo "[dd-sound-recorder-rs] source clone failed; using mounted source at ${source_root}" >&2
@@ -102,7 +110,7 @@ spec:
               # confusing cargo "could not find Cargo.toml" error.
               if [ ! -f "$app_dir/Cargo.toml" ] || [ ! -f "$interfaces_dir/Cargo.toml" ]; then
                 echo "[dd-sound-recorder-rs] FATAL: backend or interfaces submodule is not populated under $source_root/remote/deployments." >&2
-                echo "[dd-sound-recorder-rs] If using mounted source, initialize remote/deployments/dd-sound-recorder-rs and remote/deployments/sonus-auris-interfaces on the host." >&2
+                echo "[dd-sound-recorder-rs] If using mounted source, initialize remote/deployments/dd-sound-recorder-rs plus remote/deployments/sonus-auris-monorepo and its nested apps/sonus-auris-interfaces submodule on the host (the legacy remote/deployments/sonus-auris-interfaces path is a symlink into the monorepo)." >&2
                 echo "[dd-sound-recorder-rs] If using the git clone path, ensure GH_PAT (private-repo read) is set." >&2
                 exit 1
               fi
