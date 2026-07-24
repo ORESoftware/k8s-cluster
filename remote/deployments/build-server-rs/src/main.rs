@@ -252,20 +252,22 @@ struct EcrImage {
     region: String,
 }
 
-#[derive(Debug)]
+// No `#[derive(Debug)]`: this holds a live AWS secret access key and session
+// token. A stray `{:?}`/`dbg!` must not be able to print it.
 struct AwsCredentials {
     access_key_id: String,
     secret_access_key: String,
     session_token: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct EcrAuthResponse {
     authorization_data: Vec<EcrAuthorizationData>,
 }
 
-#[derive(Debug, Deserialize)]
+// No `#[derive(Debug)]`: `authorization_token` is a usable ECR credential.
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct EcrAuthorizationData {
     authorization_token: String,
@@ -364,11 +366,15 @@ fn config_from_env() -> Config {
     })
     .unwrap_or_default();
 
+    let gh_sync_policy = gh_secrets::SyncPolicy {
+        allowed_owners: parse_csv(&env_value("BUILD_SERVER_GH_SYNC_ALLOWED_OWNERS", "")),
+        allowed_env: parse_csv(&env_value("BUILD_SERVER_GH_SYNC_ALLOWED_ENV", "")),
+    };
     let gh_sync_rules = env_or_file(
         "BUILD_SERVER_GH_SYNC_RULES",
         "BUILD_SERVER_GH_SYNC_RULES_PATH",
     )
-    .map(|raw| match gh_secrets::parse_rules(&raw) {
+    .map(|raw| match gh_secrets::parse_rules(&raw, &gh_sync_policy) {
         Ok(rules) => rules,
         Err(error) => {
             tracing::error!("ignoring gh secret sync rules: {error}");
@@ -561,7 +567,15 @@ fn ensure_allowed_prefix(
     prefixes: &[String],
     env_name: &str,
 ) -> Result<(), String> {
-    if prefixes.is_empty() || prefixes.iter().any(|prefix| value.starts_with(prefix)) {
+    // Fail closed: an empty allowlist denies everything rather than allowing
+    // any repo/image. A dropped or typo'd env var must never silently reopen
+    // the server to arbitrary clone/build targets.
+    if prefixes.is_empty() {
+        return Err(format!(
+            "{name} is rejected because {env_name} is empty; configure an explicit allowlist"
+        ));
+    }
+    if prefixes.iter().any(|prefix| value.starts_with(prefix)) {
         Ok(())
     } else {
         Err(format!("{name} is not allowed by {env_name}"))
@@ -638,6 +652,11 @@ fn ecr_image(image: &str) -> Option<EcrImage> {
 
 fn validate_image(config: &Config, image: &str, push: bool) -> Result<Option<EcrImage>, String> {
     validate_no_whitespace("image", image, 512)?;
+    // A leading dash would be parsed by nerdctl as a flag in the `-t <image>`
+    // and `push <image>` positions; reject it before it reaches argv.
+    if image.trim_start().starts_with('-') {
+        return Err("image must not start with '-'".to_string());
+    }
     if !has_explicit_image_version(image) {
         return Err("image must include an explicit tag or digest".to_string());
     }
@@ -672,7 +691,21 @@ fn validate_relative_path(name: &str, value: &str) -> Result<PathBuf, String> {
     let mut clean = PathBuf::new();
     for component in path.components() {
         match component {
-            Component::Normal(value) => clean.push(value),
+            Component::Normal(value) => {
+                let part = value
+                    .to_str()
+                    .ok_or_else(|| format!("{name} must be valid UTF-8"))?;
+                // Reject characters that are structural in a nerdctl `--mount`
+                // spec (`,` `=` `:`) or otherwise unsafe, so a path component
+                // can never inject an extra mount field (e.g. a second `src=`).
+                if part
+                    .chars()
+                    .any(|ch| matches!(ch, ',' | '=' | ':' | '\0') || ch.is_control())
+                {
+                    return Err(format!("{name} contains unsupported characters"));
+                }
+                clean.push(value);
+            }
             Component::CurDir => {}
             Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
                 return Err(format!("{name} must stay inside the repository root"));
@@ -739,11 +772,35 @@ fn validate_rollout_resource(value: &str) -> Result<String, String> {
     if value.contains("..") {
         return Err("deploy.rollout must not contain '..'".to_string());
     }
-    if value.contains('/') {
-        Ok(value.to_string())
-    } else {
-        Ok(format!("deployment/{value}"))
+    // A leading dash would be parsed by kubectl as a flag (--kubeconfig=…,
+    // --server=…) rather than a positional resource. Reject before shaping.
+    if value.starts_with('-') {
+        return Err("deploy.rollout must not start with '-'".to_string());
     }
+    let resource = if value.contains('/') {
+        value.to_string()
+    } else {
+        format!("deployment/{value}")
+    };
+    // Accept only a single `TYPE/NAME` positional with conservative charsets.
+    // Flags, hosts, kubeconfig paths, and extra slashes must never reach the
+    // kubectl argv here.
+    let (kind, name) = resource
+        .split_once('/')
+        .ok_or_else(|| "deploy.rollout must be TYPE/NAME".to_string())?;
+    let kind_ok = !kind.is_empty()
+        && kind
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || matches!(ch, '.' | '-'));
+    let name_ok = !name.is_empty()
+        && name.len() <= 253
+        && name
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-'));
+    if !kind_ok || !name_ok {
+        return Err("deploy.rollout must be a valid TYPE/NAME resource".to_string());
+    }
+    Ok(resource)
 }
 
 fn validate_deploy(config: &Config, deploy: &Option<DeployRequest>) -> Result<(), String> {
@@ -1345,9 +1402,25 @@ async fn prune_jobs(state: &AppState) {
     }
 }
 
-fn resolve_repo_path(repo_dir: &Path, name: &str, value: &str) -> Result<PathBuf, String> {
+async fn resolve_repo_path(repo_dir: &Path, name: &str, value: &str) -> Result<PathBuf, String> {
     let clean = validate_relative_path(name, value)?;
-    Ok(repo_dir.join(clean))
+    let candidate = repo_dir.join(clean);
+    // Canonicalize both sides and require the resolved target to stay under the
+    // cloned repo. This defeats an in-repo symlink (e.g. `ctx -> /`) that would
+    // otherwise redirect the build context, Dockerfile, or deploy manifest to a
+    // host path outside the workspace — critical because the pod mounts the
+    // host containerd/buildkit sockets. The clone always runs first, so these
+    // paths exist by the time we resolve them.
+    let repo_root = tokio::fs::canonicalize(repo_dir)
+        .await
+        .map_err(|error| format!("failed to resolve repository root: {error}"))?;
+    let resolved = tokio::fs::canonicalize(&candidate).await.map_err(|error| {
+        format!("{name} {value:?} could not be resolved inside the repository: {error}")
+    })?;
+    if !resolved.starts_with(&repo_root) {
+        return Err(format!("{name} must stay inside the repository root"));
+    }
+    Ok(resolved)
 }
 
 async fn clone_repository(
@@ -1408,7 +1481,8 @@ async fn execute_profile(state: &AppState, job: &BuildJobRecord) -> Result<(), S
         &repo_dir,
         "contextDir",
         request.context_dir.as_deref().unwrap_or("."),
-    )?;
+    )
+    .await?;
     for step in profile.steps {
         let step_cwd = validate_relative_path("profile step subdirectory", step.subdirectory)?;
         let container_cwd = if step_cwd == Path::new(".") {
@@ -1515,12 +1589,14 @@ async fn execute_build(state: &AppState, job: &BuildJobRecord) -> Result<(), Str
         &repo_dir,
         "contextDir",
         request.context_dir.as_deref().unwrap_or("."),
-    )?;
+    )
+    .await?;
     let dockerfile_path = resolve_repo_path(
         &repo_dir,
         "dockerfile",
         request.dockerfile.as_deref().unwrap_or("Dockerfile"),
-    )?;
+    )
+    .await?;
 
     let mut build_args = vec![
         "-n".to_string(),
@@ -1585,7 +1661,7 @@ async fn execute_build(state: &AppState, job: &BuildJobRecord) -> Result<(), Str
     if let Some(deploy) = &request.deploy {
         if deploy.kind != "none" {
             let namespace = deploy.namespace.as_deref().unwrap_or("default");
-            let deploy_path = resolve_repo_path(&repo_dir, "deploy.path", &deploy.path)?;
+            let deploy_path = resolve_repo_path(&repo_dir, "deploy.path", &deploy.path).await?;
             let mut apply_args = vec!["-n".to_string(), namespace.to_string(), "apply".to_string()];
             match deploy.kind.as_str() {
                 "kustomize" => {
@@ -2369,7 +2445,17 @@ async fn main() {
                 db::fail_interrupted_jobs(&connection).await;
                 Some(connection)
             }
-            Err(error) => panic!("BUILD_SERVER_DATABASE_URL was set but connect failed: {error}"),
+            Err(error) => {
+                // Never interpolate the error (`{error}` / `{error:?}`):
+                // sea-orm/sqlx inline the full connection string, including the
+                // password, on a parse failure — which would land the DSN in
+                // pod logs. Discard it and emit only a fixed message. Bind to
+                // `_` so the value is explicitly dropped unprinted.
+                let _ = error;
+                panic!(
+                    "BUILD_SERVER_DATABASE_URL was set but connect failed (message suppressed to avoid leaking the DSN)"
+                );
+            }
         },
         None => {
             tracing::info!(

@@ -6,7 +6,9 @@ metadata:
   labels:
     app: dd-web-scraper
 spec:
-  replicas: 0
+  # Brought online to serve the persistent browser-agent (/agent/*) sessions
+  # driven by dd-browser-mcp-rs, in addition to the stateless /scrape surface.
+  replicas: 1
   minReadySeconds: 5
   progressDeadlineSeconds: 1800
   strategy:
@@ -159,6 +161,35 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
+            # Persistent browser-agent session surface (/agent/*), consumed by
+            # dd-browser-mcp-rs. Reuses SERVER_AUTH_SECRET for the auth gate.
+            - name: BROWSER_AGENT_ENABLED
+              value: 'true'
+            - name: BROWSER_AGENT_MAX_SESSIONS_TOTAL
+              value: '12'
+            - name: BROWSER_AGENT_MAX_SESSIONS_PER_OWNER
+              value: '3'
+            - name: BROWSER_AGENT_IDLE_TTL_MS
+              value: '1800000'
+            - name: BROWSER_AGENT_ABSOLUTE_TTL_MS
+              value: '14400000'
+            - name: BROWSER_AGENT_ALLOW_PRIVATE_NETWORKS
+              value: 'false'
+            - name: BROWSER_AGENT_ACCEPT_DOWNLOADS
+              value: 'false'
+            # Server-side navigation allowlist. Empty = any public https host.
+            # The MCP gateway (BROWSER_MCP_ALLOWED_DOMAINS) can also inject one
+            # per call; the tighter of the two wins.
+            - name: BROWSER_AGENT_ALLOWED_DOMAINS
+              value: ''
+            # Optional JSON secret store for secret_ref resolution (never logged
+            # or returned). Absent by default -> secret refs are rejected.
+            - name: BROWSER_AGENT_SECRETS_FILE
+              value: ''
+            # One-shot Selenium bridge target (dd-selenium-server). Set to enable
+            # /agent/selenium-run. Empty -> bridge returns "not configured".
+            - name: BROWSER_AGENT_SELENIUM_URL
+              value: http://dd-selenium-server.default.svc.cluster.local:8105
             - name: BROWSERLESS_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -170,11 +201,13 @@ spec:
               containerPort: 8097
           resources:
             requests:
-              cpu: 25m
-              memory: 512Mi
+              cpu: 50m
+              memory: 640Mi
             limits:
               cpu: '2'
-              memory: 2Gi
+              # Raised from 2Gi: persistent browser-agent sessions hold multiple
+              # long-lived BrowserContexts in addition to one-shot scrapes.
+              memory: 3Gi
           startupProbe:
             httpGet:
               path: /healthz
