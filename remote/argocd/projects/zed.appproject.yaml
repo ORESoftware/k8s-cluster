@@ -1,0 +1,30 @@
+# AppProject for the zed-pkg org — STRICT. The app repos were authored against the
+# contract (no Namespace/ClusterRole/CRD in k8s/), so this enforces
+# clusterResourceWhitelist: [] from day one. If anyone later commits a
+# cluster-scoped resource, the sync fails loudly. That is the intent.
+#
+# sourceRepos are the PER-APP repos, not zed-monorepo. zed-monorepo/apps/* are
+# gitlinks (the monorepo tracks zero manifest files) and repo-server has submodule
+# checkout disabled — a monorepo-sourced Application renders EMPTY. The monorepo
+# remains the inventory/pin vehicle. See docs/app-deploy-contract.md
+# "Submodules are inventory, NOT a render source".
+#
+#   kubectl apply -f remote/argocd/projects/zed.tenant.yaml
+#   kubectl apply -f remote/argocd/projects/zed.appproject.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: zed
+  namespace: argocd
+spec:
+  description: "Tenant project for zed-pkg — namespace `zed`, no cluster resources."
+  sourceRepos:
+    - "https://github.com/zed-pkg/zed-api-server.rs.git"
+    - "https://github.com/zed-pkg/zed-web-server.rs.git"
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: zed
+  clusterResourceWhitelist: []
+  namespaceResourceBlacklist:
+    - { group: "", kind: ResourceQuota }
+    - { group: "", kind: LimitRange }
