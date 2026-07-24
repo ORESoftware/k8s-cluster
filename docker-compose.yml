@@ -1,0 +1,67 @@
+# Full local zed-pkg stack from the monorepo: Postgres + MinIO (R2 stand-in) +
+# the API server + the web UI, all built from the sibling submodules under
+# apps/ (build context is apps/ so the ../zed-interfaces path dep resolves).
+#
+#   git submodule update --init --recursive
+#   docker compose up --build
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: zed
+      POSTGRES_PASSWORD: zed
+      POSTGRES_DB: zed
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zed"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: zed-minio
+      MINIO_ROOT_PASSWORD: zed-minio-secret
+    ports: ["9000:9000", "9001:9001"]
+
+  createbucket:
+    image: minio/mc
+    depends_on: [minio]
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 zed-minio zed-minio-secret; do sleep 1; done;
+      mc mb --ignore-existing local/zed-pkg-artifacts;
+      "
+
+  api:
+    build:
+      context: apps
+      dockerfile: zed-api-server.rs/Dockerfile
+    depends_on:
+      postgres: { condition: service_healthy }
+      createbucket: { condition: service_completed_successfully }
+    environment:
+      DATABASE_URL: postgres://zed:zed@postgres:5432/zed
+      STORAGE_BACKEND: s3
+      S3_BUCKET: zed-pkg-artifacts
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_REGION: auto
+      S3_FORCE_PATH_STYLE: "true"
+      AWS_ACCESS_KEY_ID: zed-minio
+      AWS_SECRET_ACCESS_KEY: zed-minio-secret
+      PUBLIC_BASE_URL: http://localhost:8080
+      ZED_VERIFY_TAGS: "off"
+    ports: ["8080:8080"]
+
+  web:
+    build:
+      context: apps
+      dockerfile: zed-web-server.rs/Dockerfile
+    depends_on:
+      postgres: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://zed:zed@postgres:5432/zed
+      PUBLIC_REGISTRY_URL: http://localhost:8080
+    ports: ["8081:8081"]
