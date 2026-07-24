@@ -886,7 +886,7 @@ class LambdaFunction extends Model
             'slug' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$/'],
             'display_name' => ['required', 'string', 'min:1', 'max:200'],
             'description' => ['nullable', 'string'],
-            'runtime' => ['nullable', 'string', 'in:nodejs,javascript,typescript,python3,python,ruby,bash,shell,golang,go,dart,erlang,erl,elixir,ex,java,jvm'],
+            'runtime' => ['nullable', 'string', 'in:nodejs,javascript,typescript,python3,python,ruby,bash,shell,golang,go,dart,erlang,erl,elixir,ex,java,jvm,gleam,gleamlang,rust,rs,browser'],
             'entry_command' => ['nullable', 'string'],
             'function_body' => ['required', 'string', 'min:1'],
             'reuse_key' => ['nullable', 'string', 'max:200'],
@@ -4450,6 +4450,150 @@ class WebSessions extends Model
             'idle_expires_at' => ['required', 'date'],
             'absolute_expires_at' => ['required', 'date'],
             'revoked_at' => ['nullable', 'date'],
+        ];
+    }
+}
+
+class Principals extends Model
+{
+    protected $table = 'shared_auth.principals';
+    protected $primaryKey = 'shared_user_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['email', 'email_verified', 'phone', 'display_name', 'status', 'profile', 'created_at', 'updated_at', 'last_seen_at'];
+    protected $casts = ['email_verified' => 'boolean', 'profile' => 'array', 'created_at' => 'datetime', 'updated_at' => 'datetime', 'last_seen_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'email' => ['nullable', 'string'],
+            'email_verified' => ['nullable', 'boolean'],
+            'phone' => ['nullable', 'string'],
+            'display_name' => ['nullable', 'string'],
+            'status' => ['nullable', 'string', 'in:active,disabled,deleted'],
+            'profile' => ['nullable', 'array'],
+            'last_seen_at' => ['nullable', 'date'],
+        ];
+    }
+}
+
+class ProviderIdentities extends Model
+{
+    protected $table = 'shared_auth.provider_identities';
+    protected $primaryKey = 'provider_identity_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['shared_user_id', 'provider', 'provider_tenant', 'provider_subject', 'email', 'email_verified', 'metadata', 'created_at', 'updated_at', 'last_seen_at'];
+    protected $casts = ['email_verified' => 'boolean', 'metadata' => 'array', 'created_at' => 'datetime', 'updated_at' => 'datetime', 'last_seen_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'shared_user_id' => ['required', 'uuid'],
+            'provider' => ['required', 'string'],
+            'provider_tenant' => ['nullable', 'string'],
+            'provider_subject' => ['required', 'string'],
+            'email' => ['nullable', 'string'],
+            'email_verified' => ['nullable', 'boolean'],
+            'metadata' => ['nullable', 'array'],
+            'last_seen_at' => ['nullable', 'date'],
+        ];
+    }
+}
+
+class LocalCredentials extends Model
+{
+    protected $table = 'shared_auth.local_credentials';
+    protected $primaryKey = 'shared_user_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['password_hash', 'password_changed_at', 'failed_attempts', 'locked_until', 'created_at', 'updated_at'];
+    protected $casts = ['password_changed_at' => 'datetime', 'failed_attempts' => 'integer', 'locked_until' => 'datetime', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'password_hash' => ['required', 'string'],
+            'password_changed_at' => ['nullable', 'date'],
+            'failed_attempts' => ['nullable', 'integer', 'min:0'],
+            'locked_until' => ['nullable', 'date'],
+        ];
+    }
+}
+
+class Sessions extends Model
+{
+    protected $table = 'shared_auth.sessions';
+    protected $primaryKey = 'session_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['shared_user_id', 'refresh_token_hash', 'provider', 'provider_tenant', 'provider_subject', 'created_at', 'updated_at', 'last_seen_at', 'expires_at', 'revoked_at', 'rotated_from'];
+    protected $casts = ['created_at' => 'datetime', 'updated_at' => 'datetime', 'last_seen_at' => 'datetime', 'expires_at' => 'datetime', 'revoked_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'shared_user_id' => ['required', 'uuid'],
+            'refresh_token_hash' => ['required', 'string'],
+            'provider' => ['required', 'string'],
+            'provider_tenant' => ['nullable', 'string'],
+            'provider_subject' => ['required', 'string'],
+            'last_seen_at' => ['nullable', 'date'],
+            'expires_at' => ['required', 'date'],
+            'revoked_at' => ['nullable', 'date'],
+            'rotated_from' => ['nullable', 'uuid'],
+        ];
+    }
+}
+
+class Roles extends Model
+{
+    protected $table = 'shared_auth.roles';
+    protected $primaryKey = 'role_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['shared_user_id', 'role_name', 'granted_at', 'granted_by'];
+    protected $casts = ['granted_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'shared_user_id' => ['required', 'uuid'],
+            'role_name' => ['required', 'string', 'regex:/^[a-z][a-z0-9:_-]{0,63}$/'],
+            'granted_at' => ['nullable', 'date'],
+            'granted_by' => ['nullable', 'uuid'],
+        ];
+    }
+}
+
+class WebhookEvents extends Model
+{
+    protected $table = 'shared_auth.webhook_events';
+    protected $primaryKey = 'event_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['provider', 'event_type', 'received_at', 'payload_sha256'];
+    protected $casts = ['received_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'provider' => ['required', 'string'],
+            'event_type' => ['required', 'string'],
+            'received_at' => ['nullable', 'date'],
+            'payload_sha256' => ['required', 'string'],
         ];
     }
 }

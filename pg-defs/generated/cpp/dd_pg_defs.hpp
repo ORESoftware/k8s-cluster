@@ -2815,7 +2815,7 @@ inline const char* lambda_functions_select_sql = R"SQL(select
       updated_by::text as updated_by
     from lambda_functions)SQL";
 
-enum class LambdaFunctionRuntime { Nodejs, Javascript, Typescript, Python3, Python, Ruby, Bash, Shell, Golang, Go, Dart, Erlang, Erl, Elixir, Ex, Java, Jvm };
+enum class LambdaFunctionRuntime { Nodejs, Javascript, Typescript, Python3, Python, Ruby, Bash, Shell, Golang, Go, Dart, Erlang, Erl, Elixir, Ex, Java, Jvm, Gleam, Gleamlang, Rust, Rs, Browser };
 inline std::string lambda_functions_runtime_to_string(LambdaFunctionRuntime value) {
     switch (value) {
         case LambdaFunctionRuntime::Nodejs: return "nodejs";
@@ -2835,6 +2835,11 @@ inline std::string lambda_functions_runtime_to_string(LambdaFunctionRuntime valu
         case LambdaFunctionRuntime::Ex: return "ex";
         case LambdaFunctionRuntime::Java: return "java";
         case LambdaFunctionRuntime::Jvm: return "jvm";
+        case LambdaFunctionRuntime::Gleam: return "gleam";
+        case LambdaFunctionRuntime::Gleamlang: return "gleamlang";
+        case LambdaFunctionRuntime::Rust: return "rust";
+        case LambdaFunctionRuntime::Rs: return "rs";
+        case LambdaFunctionRuntime::Browser: return "browser";
     }
     return "";
 }
@@ -2856,6 +2861,11 @@ inline std::optional<LambdaFunctionRuntime> parse_lambda_functions_runtime(const
     if (value == "ex") return LambdaFunctionRuntime::Ex;
     if (value == "java") return LambdaFunctionRuntime::Java;
     if (value == "jvm") return LambdaFunctionRuntime::Jvm;
+    if (value == "gleam") return LambdaFunctionRuntime::Gleam;
+    if (value == "gleamlang") return LambdaFunctionRuntime::Gleamlang;
+    if (value == "rust") return LambdaFunctionRuntime::Rust;
+    if (value == "rs") return LambdaFunctionRuntime::Rs;
+    if (value == "browser") return LambdaFunctionRuntime::Browser;
     return std::nullopt;
 }
 
@@ -14674,6 +14684,264 @@ inline WebSessionsRow web_sessions_row_of_row(const std::function<std::string(in
     row.idle_expires_at = get(10);
     row.absolute_expires_at = get(11);
     row.revoked_at = is_null(12) ? std::nullopt : std::optional<std::string>(get(12));
+    return row;
+}
+
+inline const char* principals_table = "shared_auth.principals";
+inline const std::vector<std::string> principals_columns = { "shared_user_id", "email", "email_verified", "phone", "display_name", "status", "profile", "created_at", "updated_at", "last_seen_at" };
+inline const char* principals_select_sql = R"SQL(select
+      shared_user_id::text as shared_user_id,
+      email,
+      email_verified,
+      phone,
+      display_name,
+      status,
+      profile::text as profile_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at
+    from shared_auth.principals)SQL";
+
+enum class PrincipalsStatus { Active, Disabled, Deleted };
+inline std::string principals_status_to_string(PrincipalsStatus value) {
+    switch (value) {
+        case PrincipalsStatus::Active: return "active";
+        case PrincipalsStatus::Disabled: return "disabled";
+        case PrincipalsStatus::Deleted: return "deleted";
+    }
+    return "";
+}
+inline std::optional<PrincipalsStatus> parse_principals_status(const std::string& value) {
+    if (value == "active") return PrincipalsStatus::Active;
+    if (value == "disabled") return PrincipalsStatus::Disabled;
+    if (value == "deleted") return PrincipalsStatus::Deleted;
+    return std::nullopt;
+}
+
+struct PrincipalsRow {
+    std::string shared_user_id;
+    std::optional<std::string> email;
+    bool email_verified;
+    std::optional<std::string> phone;
+    std::optional<std::string> display_name;
+    std::string status;
+    std::string profile;
+    std::string created_at;
+    std::string updated_at;
+    std::string last_seen_at;
+};
+
+inline PrincipalsRow principals_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    PrincipalsRow row;
+    (void)is_null;
+    row.shared_user_id = get(0);
+    row.email = is_null(1) ? std::nullopt : std::optional<std::string>(get(1));
+    row.email_verified = (get(2) == "t");
+    row.phone = is_null(3) ? std::nullopt : std::optional<std::string>(get(3));
+    row.display_name = is_null(4) ? std::nullopt : std::optional<std::string>(get(4));
+    row.status = get(5);
+    row.profile = get(6);
+    row.created_at = get(7);
+    row.updated_at = get(8);
+    row.last_seen_at = get(9);
+    return row;
+}
+
+inline const char* provider_identities_table = "shared_auth.provider_identities";
+inline const std::vector<std::string> provider_identities_columns = { "provider_identity_id", "shared_user_id", "provider", "provider_tenant", "provider_subject", "email", "email_verified", "metadata", "created_at", "updated_at", "last_seen_at" };
+inline const char* provider_identities_select_sql = R"SQL(select
+      provider_identity_id::text as provider_identity_id,
+      shared_user_id::text as shared_user_id,
+      provider,
+      provider_tenant,
+      provider_subject,
+      email,
+      email_verified,
+      metadata::text as metadata_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at
+    from shared_auth.provider_identities)SQL";
+
+struct ProviderIdentitiesRow {
+    std::string provider_identity_id;
+    std::string shared_user_id;
+    std::string provider;
+    std::string provider_tenant;
+    std::string provider_subject;
+    std::optional<std::string> email;
+    bool email_verified;
+    std::string metadata;
+    std::string created_at;
+    std::string updated_at;
+    std::string last_seen_at;
+};
+
+inline ProviderIdentitiesRow provider_identities_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    ProviderIdentitiesRow row;
+    (void)is_null;
+    row.provider_identity_id = get(0);
+    row.shared_user_id = get(1);
+    row.provider = get(2);
+    row.provider_tenant = get(3);
+    row.provider_subject = get(4);
+    row.email = is_null(5) ? std::nullopt : std::optional<std::string>(get(5));
+    row.email_verified = (get(6) == "t");
+    row.metadata = get(7);
+    row.created_at = get(8);
+    row.updated_at = get(9);
+    row.last_seen_at = get(10);
+    return row;
+}
+
+inline const char* local_credentials_table = "shared_auth.local_credentials";
+inline const std::vector<std::string> local_credentials_columns = { "shared_user_id", "password_hash", "password_changed_at", "failed_attempts", "locked_until", "created_at", "updated_at" };
+inline const char* local_credentials_select_sql = R"SQL(select
+      shared_user_id::text as shared_user_id,
+      password_hash,
+      to_char(password_changed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as password_changed_at,
+      failed_attempts,
+      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as locked_until,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from shared_auth.local_credentials)SQL";
+
+struct LocalCredentialsRow {
+    std::string shared_user_id;
+    std::string password_hash;
+    std::string password_changed_at;
+    int32_t failed_attempts;
+    std::optional<std::string> locked_until;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline LocalCredentialsRow local_credentials_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    LocalCredentialsRow row;
+    (void)is_null;
+    row.shared_user_id = get(0);
+    row.password_hash = get(1);
+    row.password_changed_at = get(2);
+    row.failed_attempts = std::stoi(get(3));
+    row.locked_until = is_null(4) ? std::nullopt : std::optional<std::string>(get(4));
+    row.created_at = get(5);
+    row.updated_at = get(6);
+    return row;
+}
+inline std::optional<std::string> validate_local_credentials_failed_attempts(int32_t value) {
+    if (value < 0) return std::string("local_credentials.failed_attempts is below the minimum");
+    return std::nullopt;
+}
+
+inline const char* sessions_table = "shared_auth.sessions";
+inline const std::vector<std::string> sessions_columns = { "session_id", "shared_user_id", "refresh_token_hash", "provider", "provider_tenant", "provider_subject", "created_at", "updated_at", "last_seen_at", "expires_at", "revoked_at", "rotated_from" };
+inline const char* sessions_select_sql = R"SQL(select
+      session_id::text as session_id,
+      shared_user_id::text as shared_user_id,
+      refresh_token_hash,
+      provider,
+      provider_tenant,
+      provider_subject,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revoked_at,
+      rotated_from::text as rotated_from
+    from shared_auth.sessions)SQL";
+
+struct SessionsRow {
+    std::string session_id;
+    std::string shared_user_id;
+    std::string refresh_token_hash;
+    std::string provider;
+    std::string provider_tenant;
+    std::string provider_subject;
+    std::string created_at;
+    std::string updated_at;
+    std::string last_seen_at;
+    std::string expires_at;
+    std::optional<std::string> revoked_at;
+    std::optional<std::string> rotated_from;
+};
+
+inline SessionsRow sessions_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    SessionsRow row;
+    (void)is_null;
+    row.session_id = get(0);
+    row.shared_user_id = get(1);
+    row.refresh_token_hash = get(2);
+    row.provider = get(3);
+    row.provider_tenant = get(4);
+    row.provider_subject = get(5);
+    row.created_at = get(6);
+    row.updated_at = get(7);
+    row.last_seen_at = get(8);
+    row.expires_at = get(9);
+    row.revoked_at = is_null(10) ? std::nullopt : std::optional<std::string>(get(10));
+    row.rotated_from = is_null(11) ? std::nullopt : std::optional<std::string>(get(11));
+    return row;
+}
+
+inline const char* roles_table = "shared_auth.roles";
+inline const std::vector<std::string> roles_columns = { "role_id", "shared_user_id", "role_name", "granted_at", "granted_by" };
+inline const char* roles_select_sql = R"SQL(select
+      role_id::text as role_id,
+      shared_user_id::text as shared_user_id,
+      role_name,
+      to_char(granted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as granted_at,
+      granted_by::text as granted_by
+    from shared_auth.roles)SQL";
+
+struct RolesRow {
+    std::string role_id;
+    std::string shared_user_id;
+    std::string role_name;
+    std::string granted_at;
+    std::optional<std::string> granted_by;
+};
+
+inline RolesRow roles_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    RolesRow row;
+    (void)is_null;
+    row.role_id = get(0);
+    row.shared_user_id = get(1);
+    row.role_name = get(2);
+    row.granted_at = get(3);
+    row.granted_by = is_null(4) ? std::nullopt : std::optional<std::string>(get(4));
+    return row;
+}
+inline std::optional<std::string> validate_roles_role_name(const std::string& value) {
+    if (!std::regex_match(value, std::regex(R"RX(^[a-z][a-z0-9:_-]{0,63}$)RX"))) return std::string("roles.role_name does not match the required pattern");
+    return std::nullopt;
+}
+
+inline const char* webhook_events_table = "shared_auth.webhook_events";
+inline const std::vector<std::string> webhook_events_columns = { "event_id", "provider", "event_type", "received_at", "payload_sha256" };
+inline const char* webhook_events_select_sql = R"SQL(select
+      event_id::text as event_id,
+      provider,
+      event_type,
+      to_char(received_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as received_at,
+      payload_sha256
+    from shared_auth.webhook_events)SQL";
+
+struct WebhookEventsRow {
+    std::string event_id;
+    std::string provider;
+    std::string event_type;
+    std::string received_at;
+    std::string payload_sha256;
+};
+
+inline WebhookEventsRow webhook_events_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    WebhookEventsRow row;
+    (void)is_null;
+    row.event_id = get(0);
+    row.provider = get(1);
+    row.event_type = get(2);
+    row.received_at = get(3);
+    row.payload_sha256 = get(4);
     return row;
 }
 

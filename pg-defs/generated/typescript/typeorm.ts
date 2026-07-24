@@ -1423,7 +1423,7 @@ export class LambdaFunctionEntity {
   @Column({ name: "runtime", type: "varchar", length: 40, default: () => "'nodejs'" })
   runtime!: string;
 
-  @Column({ name: "entry_command", type: "text", default: () => "'env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs'" })
+  @Column({ name: "entry_command", type: "text", default: () => "''" })
   entryCommand!: string;
 
   @Column({ name: "function_body", type: "text" })
@@ -7233,6 +7233,187 @@ export class WebSessionsEntity {
 
   @Column({ name: "revoked_at", type: "timestamptz", nullable: true })
   revokedAt!: Date | null;
+
+}
+
+@Index("shared_auth_users_email_uq", ["lower(email)"], { unique: true, where: "email is not null and status <> 'deleted'" })
+@Index("shared_auth_users_status_idx", ["status"])
+@Entity({ schema: "shared_auth", name: "principals" })
+export class PrincipalsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "shared_user_id" })
+  sharedUserId!: string;
+
+  @Column({ name: "email", type: "text", nullable: true })
+  email!: string | null;
+
+  @Column({ name: "email_verified", type: "boolean", default: () => "false" })
+  emailVerified!: boolean;
+
+  @Column({ name: "phone", type: "text", nullable: true })
+  phone!: string | null;
+
+  @Column({ name: "display_name", type: "text", nullable: true })
+  displayName!: string | null;
+
+  @Column({ name: "status", type: "text", default: () => "'active'" })
+  status!: string;
+
+  @Column({ name: "profile", type: "jsonb", default: () => "'{}'::jsonb" })
+  profile!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "last_seen_at", type: "timestamptz", default: () => "now()" })
+  lastSeenAt!: Date;
+
+}
+
+@Index("shared_auth_provider_identities_user_idx", ["sharedUserId"])
+@Entity({ schema: "shared_auth", name: "provider_identities" })
+export class ProviderIdentitiesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "provider_identity_id" })
+  providerIdentityId!: string;
+
+  @Column({ name: "shared_user_id", type: "uuid" })
+  sharedUserId!: string;
+
+  @Column({ name: "provider", type: "text" })
+  provider!: string;
+
+  @Column({ name: "provider_tenant", type: "text", default: () => "'default'" })
+  providerTenant!: string;
+
+  @Column({ name: "provider_subject", type: "text" })
+  providerSubject!: string;
+
+  @Column({ name: "email", type: "text", nullable: true })
+  email!: string | null;
+
+  @Column({ name: "email_verified", type: "boolean", default: () => "false" })
+  emailVerified!: boolean;
+
+  @Column({ name: "metadata", type: "jsonb", default: () => "'{}'::jsonb" })
+  metadata!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "last_seen_at", type: "timestamptz", default: () => "now()" })
+  lastSeenAt!: Date;
+
+}
+
+@Entity({ schema: "shared_auth", name: "local_credentials" })
+export class LocalCredentialsEntity {
+  @PrimaryColumn({ name: "shared_user_id", type: "uuid" })
+  sharedUserId!: string;
+
+  @Column({ name: "password_hash", type: "text" })
+  passwordHash!: string;
+
+  @Column({ name: "password_changed_at", type: "timestamptz", default: () => "now()" })
+  passwordChangedAt!: Date;
+
+  @Column({ name: "failed_attempts", type: "integer", default: () => "0" })
+  failedAttempts!: number;
+
+  @Column({ name: "locked_until", type: "timestamptz", nullable: true })
+  lockedUntil!: Date | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("shared_auth_sessions_user_idx", ["sharedUserId"])
+@Index("shared_auth_sessions_active_expiry_idx", ["expiresAt"], { where: "revoked_at is null" })
+@Entity({ schema: "shared_auth", name: "sessions" })
+export class SessionsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "session_id" })
+  sessionId!: string;
+
+  @Column({ name: "shared_user_id", type: "uuid" })
+  sharedUserId!: string;
+
+  @Column({ name: "refresh_token_hash", type: "text" })
+  refreshTokenHash!: string;
+
+  @Column({ name: "provider", type: "text" })
+  provider!: string;
+
+  @Column({ name: "provider_tenant", type: "text", default: () => "'default'" })
+  providerTenant!: string;
+
+  @Column({ name: "provider_subject", type: "text" })
+  providerSubject!: string;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "last_seen_at", type: "timestamptz", default: () => "now()" })
+  lastSeenAt!: Date;
+
+  @Column({ name: "expires_at", type: "timestamptz" })
+  expiresAt!: Date;
+
+  @Column({ name: "revoked_at", type: "timestamptz", nullable: true })
+  revokedAt!: Date | null;
+
+  @Column({ name: "rotated_from", type: "uuid", nullable: true })
+  rotatedFrom!: string | null;
+
+}
+
+@Index("shared_auth_roles_user_idx", ["sharedUserId"])
+@Entity({ schema: "shared_auth", name: "roles" })
+export class RolesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "role_id" })
+  roleId!: string;
+
+  @Column({ name: "shared_user_id", type: "uuid" })
+  sharedUserId!: string;
+
+  @Column({ name: "role_name", type: "text" })
+  roleName!: string;
+
+  @Column({ name: "granted_at", type: "timestamptz", default: () => "now()" })
+  grantedAt!: Date;
+
+  @Column({ name: "granted_by", type: "uuid", nullable: true })
+  grantedBy!: string | null;
+
+}
+
+@Index("shared_auth_webhook_events_received_idx", ["receivedAt"])
+@Entity({ schema: "shared_auth", name: "webhook_events" })
+export class WebhookEventsEntity {
+  @PrimaryColumn({ name: "event_id", type: "uuid" })
+  eventId!: string;
+
+  @Column({ name: "provider", type: "text" })
+  provider!: string;
+
+  @Column({ name: "event_type", type: "text" })
+  eventType!: string;
+
+  @Column({ name: "received_at", type: "timestamptz", default: () => "now()" })
+  receivedAt!: Date;
+
+  @Column({ name: "payload_sha256", type: "text" })
+  payloadSha256!: string;
 
 }
 

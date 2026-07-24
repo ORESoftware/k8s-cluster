@@ -1903,6 +1903,11 @@ pub type LambdaFunctionRuntime {
   LambdaFunctionRuntimeEx
   LambdaFunctionRuntimeJava
   LambdaFunctionRuntimeJvm
+  LambdaFunctionRuntimeGleam
+  LambdaFunctionRuntimeGleamlang
+  LambdaFunctionRuntimeRust
+  LambdaFunctionRuntimeRs
+  LambdaFunctionRuntimeBrowser
 }
 
 pub fn lambda_functions_runtime_to_string(value: LambdaFunctionRuntime) -> String {
@@ -1924,6 +1929,11 @@ pub fn lambda_functions_runtime_to_string(value: LambdaFunctionRuntime) -> Strin
     LambdaFunctionRuntimeEx -> "ex"
     LambdaFunctionRuntimeJava -> "java"
     LambdaFunctionRuntimeJvm -> "jvm"
+    LambdaFunctionRuntimeGleam -> "gleam"
+    LambdaFunctionRuntimeGleamlang -> "gleamlang"
+    LambdaFunctionRuntimeRust -> "rust"
+    LambdaFunctionRuntimeRs -> "rs"
+    LambdaFunctionRuntimeBrowser -> "browser"
   }
 }
 
@@ -1946,6 +1956,11 @@ pub fn parse_lambda_functions_runtime(value: String) -> Result(LambdaFunctionRun
     "ex" -> Ok(LambdaFunctionRuntimeEx)
     "java" -> Ok(LambdaFunctionRuntimeJava)
     "jvm" -> Ok(LambdaFunctionRuntimeJvm)
+    "gleam" -> Ok(LambdaFunctionRuntimeGleam)
+    "gleamlang" -> Ok(LambdaFunctionRuntimeGleamlang)
+    "rust" -> Ok(LambdaFunctionRuntimeRust)
+    "rs" -> Ok(LambdaFunctionRuntimeRs)
+    "browser" -> Ok(LambdaFunctionRuntimeBrowser)
     _ -> Error("unsupported lambda_functions.runtime: " <> value)
   }
 }
@@ -2047,7 +2062,7 @@ pub fn validate_lambda_functions_slug(value: String) -> Result(String, String) {
 }
 
 pub fn validate_lambda_functions_runtime(value: String) -> Result(String, String) {
-  case list.contains(["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"], value) {
+  case list.contains(["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"], value) {
     True -> Ok(value)
     False -> Error("unsupported lambda_functions.runtime: " <> value)
   }
@@ -11655,6 +11670,182 @@ pub fn validate_web_sessions_slug(value: String) -> Result(String, String) {
   case length >= 3 && length <= 120 && is_slug_text(value) {
     True -> Ok(value)
     False -> Error("web_sessions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const principals_table = "shared_auth.principals"
+pub const principals_select_sql = "select\n      shared_user_id::text as shared_user_id,\n      email,\n      email_verified,\n      phone,\n      display_name,\n      status,\n      profile::text as profile_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.principals"
+
+pub type PrincipalsStatus {
+  PrincipalsStatusActive
+  PrincipalsStatusDisabled
+  PrincipalsStatusDeleted
+}
+
+pub fn principals_status_to_string(value: PrincipalsStatus) -> String {
+  case value {
+    PrincipalsStatusActive -> "active"
+    PrincipalsStatusDisabled -> "disabled"
+    PrincipalsStatusDeleted -> "deleted"
+  }
+}
+
+pub fn parse_principals_status(value: String) -> Result(PrincipalsStatus, String) {
+  case value {
+    "active" -> Ok(PrincipalsStatusActive)
+    "disabled" -> Ok(PrincipalsStatusDisabled)
+    "deleted" -> Ok(PrincipalsStatusDeleted)
+    _ -> Error("unsupported principals.status: " <> value)
+  }
+}
+
+pub type PrincipalsRow {
+  PrincipalsRow(
+    shared_user_id: String,
+    email: Option(String),
+    email_verified: Bool,
+    phone: Option(String),
+    display_name: Option(String),
+    status: String,
+    profile_json: String,
+    created_at: String,
+    updated_at: String,
+    last_seen_at: String,
+  )
+}
+
+pub fn validate_principals_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("principals.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_principals_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "disabled", "deleted"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported principals.status: " <> value)
+  }
+}
+
+pub const provider_identities_table = "shared_auth.provider_identities"
+pub const provider_identities_select_sql = "select\n      provider_identity_id::text as provider_identity_id,\n      shared_user_id::text as shared_user_id,\n      provider,\n      provider_tenant,\n      provider_subject,\n      email,\n      email_verified,\n      metadata::text as metadata_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.provider_identities"
+
+pub type ProviderIdentitiesRow {
+  ProviderIdentitiesRow(
+    provider_identity_id: String,
+    shared_user_id: String,
+    provider: String,
+    provider_tenant: String,
+    provider_subject: String,
+    email: Option(String),
+    email_verified: Bool,
+    metadata_json: String,
+    created_at: String,
+    updated_at: String,
+    last_seen_at: String,
+  )
+}
+
+pub fn validate_provider_identities_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("provider_identities.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const local_credentials_table = "shared_auth.local_credentials"
+pub const local_credentials_select_sql = "select\n      shared_user_id::text as shared_user_id,\n      password_hash,\n      to_char(password_changed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as password_changed_at,\n      failed_attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from shared_auth.local_credentials"
+
+pub type LocalCredentialsRow {
+  LocalCredentialsRow(
+    shared_user_id: String,
+    password_hash: String,
+    password_changed_at: String,
+    failed_attempts: Int,
+    locked_until: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_local_credentials_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("local_credentials.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const sessions_table = "shared_auth.sessions"
+pub const sessions_select_sql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+
+pub type SessionsRow {
+  SessionsRow(
+    session_id: String,
+    shared_user_id: String,
+    refresh_token_hash: String,
+    provider: String,
+    provider_tenant: String,
+    provider_subject: String,
+    created_at: String,
+    updated_at: String,
+    last_seen_at: String,
+    expires_at: String,
+    revoked_at: Option(String),
+    rotated_from: Option(String),
+  )
+}
+
+pub fn validate_sessions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("sessions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const roles_table = "shared_auth.roles"
+pub const roles_select_sql = "select\n      role_id::text as role_id,\n      shared_user_id::text as shared_user_id,\n      role_name,\n      to_char(granted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as granted_at,\n      granted_by::text as granted_by\n    from shared_auth.roles"
+
+pub type RolesRow {
+  RolesRow(
+    role_id: String,
+    shared_user_id: String,
+    role_name: String,
+    granted_at: String,
+    granted_by: Option(String),
+  )
+}
+
+pub fn validate_roles_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("roles.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const webhook_events_table = "shared_auth.webhook_events"
+pub const webhook_events_select_sql = "select\n      event_id::text as event_id,\n      provider,\n      event_type,\n      to_char(received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as received_at,\n      payload_sha256\n    from shared_auth.webhook_events"
+
+pub type WebhookEventsRow {
+  WebhookEventsRow(
+    event_id: String,
+    provider: String,
+    event_type: String,
+    received_at: String,
+    payload_sha256: String,
+  )
+}
+
+pub fn validate_webhook_events_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("webhook_events.slug must be a lowercase slug 3-120 characters long")
   }
 }
 

@@ -114,6 +114,7 @@ var paymentMethodsLast4Pattern = regexp.MustCompile(`^[0-9]{4}$`)
 var invoicesCurrencyPattern = regexp.MustCompile(`^[a-z]{3}$`)
 var paymentsCurrencyPattern = regexp.MustCompile(`^[a-z]{3}$`)
 var billingWebhookEventsPayloadSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var rolesRoleNamePattern = regexp.MustCompile(`^[a-z][a-z0-9:_-]{0,63}$`)
 
 const AccountsTable = "threefa.accounts"
 const AccountsSelectSQL = `select
@@ -1694,7 +1695,7 @@ const LambdaFunctionSelectSQL = `select
       updated_by::text as updated_by
     from lambda_functions`
 
-var LambdaFunctionRuntimeValues = []string{"nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"}
+var LambdaFunctionRuntimeValues = []string{"nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"}
 var LambdaFunctionContainerBuildStatusValues = []string{"not_requested", "pending", "building", "built", "failed", "skipped"}
 var LambdaFunctionStatusValues = []string{"draft", "active", "paused", "archived"}
 
@@ -1705,7 +1706,7 @@ type LambdaFunctionBun struct {
 	DisplayName string `bun:"display_name,type:varchar(200)" json:"displayName"`
 	Description string `bun:"description,type:text,default:''" json:"description"`
 	Runtime string `bun:"runtime,type:varchar(40),default:'nodejs'" json:"runtime"`
-	EntryCommand string `bun:"entry_command,type:text,default:'env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs'" json:"entryCommand"`
+	EntryCommand string `bun:"entry_command,type:text,default:''" json:"entryCommand"`
 	FunctionBody string `bun:"function_body,type:text" json:"functionBody"`
 	ReuseKey *string `bun:"reuse_key,type:varchar(200),nullzero" json:"reuseKey,omitempty"`
 	IdleTimeoutSeconds int32 `bun:"idle_timeout_seconds,type:integer,default:300" json:"idleTimeoutSeconds"`
@@ -1731,7 +1732,6 @@ func (value LambdaFunctionBun) Validate() error {
 	if !lambdaFunctionSlugPattern.MatchString(value.Slug) { return errors.New("lambda_functions.slug does not match the required pattern") }
 	if !containsString(LambdaFunctionRuntimeValues, value.Runtime) { return errors.New("unsupported lambda_functions.runtime") }
 	if len([]byte(value.EntryCommand)) > 512 { return errors.New("lambda_functions.entry_command exceeds 512 bytes") }
-	if len([]byte(value.EntryCommand)) < 1 { return errors.New("lambda_functions.entry_command is below 1 bytes") }
 	if len([]byte(value.FunctionBody)) > 262144 { return errors.New("lambda_functions.function_body exceeds 262144 bytes") }
 	if value.IdleTimeoutSeconds < 1 { return errors.New("lambda_functions.idle_timeout_seconds is below the minimum") }
 	if value.IdleTimeoutSeconds > 3600 { return errors.New("lambda_functions.idle_timeout_seconds is above the maximum") }
@@ -7848,6 +7848,217 @@ type WebSessionsBun struct {
 func (value WebSessionsBun) Validate() error {
 	if len([]byte(value.OwnerEmail)) > 320 { return errors.New("web_sessions.owner_email exceeds 320 bytes") }
 	if len([]byte(value.OwnerEmail)) < 3 { return errors.New("web_sessions.owner_email is below 3 bytes") }
+	return nil
+}
+
+const PrincipalsTable = "shared_auth.principals"
+const PrincipalsSelectSQL = `select
+      shared_user_id::text as shared_user_id,
+      email,
+      email_verified,
+      phone,
+      display_name,
+      status,
+      profile,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at
+    from shared_auth.principals`
+
+var PrincipalsStatusValues = []string{"active", "disabled", "deleted"}
+
+type PrincipalsBun struct {
+	bun.BaseModel `bun:"table:shared_auth.principals"`
+	SharedUserId uuid.UUID `bun:"shared_user_id,type:uuid,pk,default:gen_random_uuid()" json:"sharedUserId"`
+	Email *string `bun:"email,type:text,nullzero" json:"email,omitempty"`
+	EmailVerified bool `bun:"email_verified,type:boolean,default:false" json:"emailVerified"`
+	Phone *string `bun:"phone,type:text,nullzero" json:"phone,omitempty"`
+	DisplayName *string `bun:"display_name,type:text,nullzero" json:"displayName,omitempty"`
+	Status string `bun:"status,type:text,default:'active'" json:"status"`
+	Profile json.RawMessage `bun:"profile,type:jsonb,default:'{}'::jsonb" json:"profile"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	LastSeenAt time.Time `bun:"last_seen_at,type:timestamptz,default:now()" json:"lastSeenAt"`
+}
+
+func (value PrincipalsBun) Validate() error {
+	if value.Email != nil {
+		if len([]byte(*value.Email)) > 320 { return errors.New("principals.email exceeds 320 bytes") }
+		if len([]byte(*value.Email)) < 3 { return errors.New("principals.email is below 3 bytes") }
+	}
+	if value.Phone != nil {
+		if len([]byte(*value.Phone)) > 64 { return errors.New("principals.phone exceeds 64 bytes") }
+	}
+	if value.DisplayName != nil {
+		if len([]byte(*value.DisplayName)) > 160 { return errors.New("principals.display_name exceeds 160 bytes") }
+	}
+	if !containsString(PrincipalsStatusValues, value.Status) { return errors.New("unsupported principals.status") }
+	if !validateRawJSON(value.Profile) { return errors.New("principals.profile must be valid JSON") }
+	return nil
+}
+
+const ProviderIdentitiesTable = "shared_auth.provider_identities"
+const ProviderIdentitiesSelectSQL = `select
+      provider_identity_id::text as provider_identity_id,
+      shared_user_id::text as shared_user_id,
+      provider,
+      provider_tenant,
+      provider_subject,
+      email,
+      email_verified,
+      metadata,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at
+    from shared_auth.provider_identities`
+
+type ProviderIdentitiesBun struct {
+	bun.BaseModel `bun:"table:shared_auth.provider_identities"`
+	ProviderIdentityId uuid.UUID `bun:"provider_identity_id,type:uuid,pk,default:gen_random_uuid()" json:"providerIdentityId"`
+	SharedUserId uuid.UUID `bun:"shared_user_id,type:uuid" json:"sharedUserId"`
+	Provider string `bun:"provider,type:text" json:"provider"`
+	ProviderTenant string `bun:"provider_tenant,type:text,default:'default'" json:"providerTenant"`
+	ProviderSubject string `bun:"provider_subject,type:text" json:"providerSubject"`
+	Email *string `bun:"email,type:text,nullzero" json:"email,omitempty"`
+	EmailVerified bool `bun:"email_verified,type:boolean,default:false" json:"emailVerified"`
+	Metadata json.RawMessage `bun:"metadata,type:jsonb,default:'{}'::jsonb" json:"metadata"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	LastSeenAt time.Time `bun:"last_seen_at,type:timestamptz,default:now()" json:"lastSeenAt"`
+}
+
+func (value ProviderIdentitiesBun) Validate() error {
+	if len([]byte(value.Provider)) > 64 { return errors.New("provider_identities.provider exceeds 64 bytes") }
+	if len([]byte(value.Provider)) < 1 { return errors.New("provider_identities.provider is below 1 bytes") }
+	if len([]byte(value.ProviderTenant)) > 255 { return errors.New("provider_identities.provider_tenant exceeds 255 bytes") }
+	if len([]byte(value.ProviderTenant)) < 1 { return errors.New("provider_identities.provider_tenant is below 1 bytes") }
+	if len([]byte(value.ProviderSubject)) > 512 { return errors.New("provider_identities.provider_subject exceeds 512 bytes") }
+	if len([]byte(value.ProviderSubject)) < 1 { return errors.New("provider_identities.provider_subject is below 1 bytes") }
+	if value.Email != nil {
+		if len([]byte(*value.Email)) > 320 { return errors.New("provider_identities.email exceeds 320 bytes") }
+		if len([]byte(*value.Email)) < 3 { return errors.New("provider_identities.email is below 3 bytes") }
+	}
+	if !validateRawJSON(value.Metadata) { return errors.New("provider_identities.metadata must be valid JSON") }
+	return nil
+}
+
+const LocalCredentialsTable = "shared_auth.local_credentials"
+const LocalCredentialsSelectSQL = `select
+      shared_user_id::text as shared_user_id,
+      password_hash,
+      to_char(password_changed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as password_changed_at,
+      failed_attempts,
+      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as locked_until,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from shared_auth.local_credentials`
+
+type LocalCredentialsBun struct {
+	bun.BaseModel `bun:"table:shared_auth.local_credentials"`
+	SharedUserId uuid.UUID `bun:"shared_user_id,type:uuid,pk" json:"sharedUserId"`
+	PasswordHash string `bun:"password_hash,type:text" json:"passwordHash"`
+	PasswordChangedAt time.Time `bun:"password_changed_at,type:timestamptz,default:now()" json:"passwordChangedAt"`
+	FailedAttempts int32 `bun:"failed_attempts,type:integer,default:0" json:"failedAttempts"`
+	LockedUntil *time.Time `bun:"locked_until,type:timestamptz,nullzero" json:"lockedUntil,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value LocalCredentialsBun) Validate() error {
+	if len([]byte(value.PasswordHash)) > 512 { return errors.New("local_credentials.password_hash exceeds 512 bytes") }
+	if len([]byte(value.PasswordHash)) < 40 { return errors.New("local_credentials.password_hash is below 40 bytes") }
+	if value.FailedAttempts < 0 { return errors.New("local_credentials.failed_attempts is below the minimum") }
+	return nil
+}
+
+const SessionsTable = "shared_auth.sessions"
+const SessionsSelectSQL = `select
+      session_id::text as session_id,
+      shared_user_id::text as shared_user_id,
+      refresh_token_hash,
+      provider,
+      provider_tenant,
+      provider_subject,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revoked_at,
+      rotated_from::text as rotated_from
+    from shared_auth.sessions`
+
+type SessionsBun struct {
+	bun.BaseModel `bun:"table:shared_auth.sessions"`
+	SessionId uuid.UUID `bun:"session_id,type:uuid,pk,default:gen_random_uuid()" json:"sessionId"`
+	SharedUserId uuid.UUID `bun:"shared_user_id,type:uuid" json:"sharedUserId"`
+	RefreshTokenHash string `bun:"refresh_token_hash,type:text" json:"refreshTokenHash"`
+	Provider string `bun:"provider,type:text" json:"provider"`
+	ProviderTenant string `bun:"provider_tenant,type:text,default:'default'" json:"providerTenant"`
+	ProviderSubject string `bun:"provider_subject,type:text" json:"providerSubject"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	LastSeenAt time.Time `bun:"last_seen_at,type:timestamptz,default:now()" json:"lastSeenAt"`
+	ExpiresAt time.Time `bun:"expires_at,type:timestamptz" json:"expiresAt"`
+	RevokedAt *time.Time `bun:"revoked_at,type:timestamptz,nullzero" json:"revokedAt,omitempty"`
+	RotatedFrom *uuid.UUID `bun:"rotated_from,type:uuid,nullzero" json:"rotatedFrom,omitempty"`
+}
+
+func (value SessionsBun) Validate() error {
+	if len([]byte(value.Provider)) > 64 { return errors.New("sessions.provider exceeds 64 bytes") }
+	if len([]byte(value.Provider)) < 1 { return errors.New("sessions.provider is below 1 bytes") }
+	if len([]byte(value.ProviderTenant)) > 255 { return errors.New("sessions.provider_tenant exceeds 255 bytes") }
+	if len([]byte(value.ProviderTenant)) < 1 { return errors.New("sessions.provider_tenant is below 1 bytes") }
+	if len([]byte(value.ProviderSubject)) > 512 { return errors.New("sessions.provider_subject exceeds 512 bytes") }
+	if len([]byte(value.ProviderSubject)) < 1 { return errors.New("sessions.provider_subject is below 1 bytes") }
+	return nil
+}
+
+const RolesTable = "shared_auth.roles"
+const RolesSelectSQL = `select
+      role_id::text as role_id,
+      shared_user_id::text as shared_user_id,
+      role_name,
+      to_char(granted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as granted_at,
+      granted_by::text as granted_by
+    from shared_auth.roles`
+
+type RolesBun struct {
+	bun.BaseModel `bun:"table:shared_auth.roles"`
+	RoleId uuid.UUID `bun:"role_id,type:uuid,pk,default:gen_random_uuid()" json:"roleId"`
+	SharedUserId uuid.UUID `bun:"shared_user_id,type:uuid" json:"sharedUserId"`
+	RoleName string `bun:"role_name,type:text" json:"roleName"`
+	GrantedAt time.Time `bun:"granted_at,type:timestamptz,default:now()" json:"grantedAt"`
+	GrantedBy *uuid.UUID `bun:"granted_by,type:uuid,nullzero" json:"grantedBy,omitempty"`
+}
+
+func (value RolesBun) Validate() error {
+	if !rolesRoleNamePattern.MatchString(value.RoleName) { return errors.New("roles.role_name does not match the required pattern") }
+	return nil
+}
+
+const WebhookEventsTable = "shared_auth.webhook_events"
+const WebhookEventsSelectSQL = `select
+      event_id::text as event_id,
+      provider,
+      event_type,
+      to_char(received_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as received_at,
+      payload_sha256
+    from shared_auth.webhook_events`
+
+type WebhookEventsBun struct {
+	bun.BaseModel `bun:"table:shared_auth.webhook_events"`
+	EventId uuid.UUID `bun:"event_id,type:uuid,pk" json:"eventId"`
+	Provider string `bun:"provider,type:text" json:"provider"`
+	EventType string `bun:"event_type,type:text" json:"eventType"`
+	ReceivedAt time.Time `bun:"received_at,type:timestamptz,default:now()" json:"receivedAt"`
+	PayloadSha256 string `bun:"payload_sha256,type:text" json:"payloadSha256"`
+}
+
+func (value WebhookEventsBun) Validate() error {
+	if len([]byte(value.Provider)) > 64 { return errors.New("webhook_events.provider exceeds 64 bytes") }
+	if len([]byte(value.Provider)) < 1 { return errors.New("webhook_events.provider is below 1 bytes") }
+	if len([]byte(value.EventType)) > 128 { return errors.New("webhook_events.event_type exceeds 128 bytes") }
+	if len([]byte(value.EventType)) < 1 { return errors.New("webhook_events.event_type is below 1 bytes") }
 	return nil
 }
 
