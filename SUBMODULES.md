@@ -56,6 +56,7 @@ always lives at `~/codes/ores/k8s-cluster/<submodule path>`.
 | `remote/submodules/shared-auth-server.rs` | [shared-auth/shared-auth-server.rs](https://github.com/shared-auth/shared-auth-server.rs) | `main` | `~/codes/shared-auth/shared-auth-server.rs` |
 | `remote/deployments/drone-mngr-monorepo` | [drone-mngr/drone-mngr-monorepo](https://github.com/drone-mngr/drone-mngr-monorepo) | `main` | — _(submodule checkout only)_ |
 | `remote/deployments/scintilla-run-monorepo` | [scintilla-run/scintilla-run-monorepo](https://github.com/scintilla-run/scintilla-run-monorepo) | `main` | — _(submodule checkout only)_ |
+| `remote/deployments/zed-monorepo` | [zed-pkg/zed-monorepo](https://github.com/zed-pkg/zed-monorepo) | `main` | `~/codes/zed-pkg/zed-monorepo` |
 
 ---
 
