@@ -1130,24 +1130,12 @@ mod tests {
 
     #[test]
     fn safe_return_to_backslash_bypass_is_not_sanitized_security_finding() {
-        // SECURITY FINDING (open redirect): the guard only rejects a leading
-        // `//`. `/\evil.com` is a single leading slash followed by a backslash,
-        // so it PASSES the check and is reflected verbatim into the redirect
-        // Location / meta-refresh URL. Browsers fold `\` -> `/`, so the URL
-        // resolves to `//evil.com` -> https://evil.com. A freshly-authenticated
-        // operator can be bounced to an attacker origin (phishing / cookie or
-        // token theft against the very gateway they just unlocked).
-        //
-        // This asserts the CURRENT (vulnerable) behavior so that any future fix
-        // deliberately trips this test and updates the finding.
-        assert_eq!(
-            safe_return_to(Some("/\\evil.com".to_string())),
-            "/\\evil.com"
-        );
-        assert_eq!(
-            safe_return_to(Some("/\\/evil.com".to_string())),
-            "/\\/evil.com"
-        );
+        // Regression (open redirect): a backslash right after the leading slash
+        // is folded to `/` by browsers, so `/\evil.com` would resolve to
+        // https://evil.com. The guard now rejects `/\...` and falls back to the
+        // safe default.
+        assert_eq!(safe_return_to(Some("/\\evil.com".to_string())), "/home");
+        assert_eq!(safe_return_to(Some("/\\/evil.com".to_string())), "/home");
     }
 
     // ==================================================================
