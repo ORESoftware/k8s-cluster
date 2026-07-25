@@ -128,6 +128,13 @@ spec:
               fi
               exec java $JAVA_OPTS -jar target/dd-selenium-server.jar
           env:
+            # Clone the source rather than depending on the EC2 hostPath, so
+            # this deployment also runs on Hetzner (which syncs this same
+            # dd-next-runtime path).
+            - name: SELENIUM_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: SELENIUM_GIT_REF
+              value: dev
             - name: HTTP_HOST
               value: 0.0.0.0
             - name: HTTP_PORT
