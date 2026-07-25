@@ -270,8 +270,11 @@ async fn publish_jetstream(
     Ok(())
 }
 
+/// async-nats surfaces "subject not bound to a stream" as either
+/// "no responders" (JS API request layer) or "no stream found for given
+/// subject" (publish ack), depending on the path.
 fn classify_js_error(msg: &str) -> PublishError {
-    if msg.contains("no responders") {
+    if msg.contains("no responders") || msg.contains("no stream found") {
         PublishError::NoStream
     } else {
         PublishError::Other(msg.to_string())
