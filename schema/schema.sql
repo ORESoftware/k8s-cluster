@@ -264,10 +264,13 @@ create unique index if not exists postings_tenant_source_event_direction_account
 create or replace function postings_immutable()
 returns trigger
 language plpgsql
+-- Body text is kept byte-identical to the migration that created it. Postgres
+-- stores `prosrc` verbatim, so re-styling the body would read as schema drift to
+-- dpm and provoke a CREATE OR REPLACE on every diff.
 as $$
-begin
-  raise exception 'postings are append-only; UPDATE/DELETE forbidden';
-end;
+BEGIN
+    RAISE EXCEPTION 'postings are append-only; UPDATE/DELETE forbidden';
+END;
 $$;
 
 drop trigger if exists postings_no_update on postings;
@@ -282,24 +285,26 @@ create trigger postings_no_delete before delete on postings
 create or replace function transactions_must_balance()
 returns trigger
 language plpgsql
+-- Body text is kept byte-identical to the migration that created it (see the
+-- note on postings_immutable above).
 as $$
-declare
-  bad record;
-begin
-  for bad in
-    select t.id, p.currency,
-           sum(case when p.direction = 'debit' then p.amount_minor else -p.amount_minor end) as net
-    from transactions t
-    join postings p on p.transaction_id = t.id
-    where t.id = new.id
-    group by t.id, p.currency
-    having sum(case when p.direction = 'debit' then p.amount_minor else -p.amount_minor end) <> 0
-  loop
-    raise exception 'transaction % is not balanced in currency %: net=%',
-                    bad.id, bad.currency, bad.net;
-  end loop;
-  return new;
-end;
+DECLARE
+    bad RECORD;
+BEGIN
+    FOR bad IN
+        SELECT t.id, p.currency,
+               SUM(CASE WHEN p.direction = 'debit' THEN p.amount_minor ELSE -p.amount_minor END) AS net
+        FROM transactions t
+        JOIN postings p ON p.transaction_id = t.id
+        WHERE t.id = NEW.id
+        GROUP BY t.id, p.currency
+        HAVING SUM(CASE WHEN p.direction = 'debit' THEN p.amount_minor ELSE -p.amount_minor END) <> 0
+    LOOP
+        RAISE EXCEPTION 'transaction % is not balanced in currency %: net=%',
+                        bad.id, bad.currency, bad.net;
+    END LOOP;
+    RETURN NEW;
+END;
 $$;
 
 drop trigger if exists transactions_balance_check on transactions;
