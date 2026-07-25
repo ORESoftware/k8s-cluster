@@ -134,6 +134,15 @@ data:
         static_configs:
           - targets:
               - dd-escrow-rs.default.svc.cluster.local:8115
+      # Public browser-automation MCP server. Worth alerting on: this is the one
+      # service reachable anonymously from the internet (no bearer since the
+      # ChatGPT connector cannot present one), so rpc_errors_total and
+      # tool_calls_total are the signal that someone is driving it.
+      - job_name: dd-browser-mcp-rs
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-browser-mcp-rs.default.svc.cluster.local:8092
       - job_name: dd-rust-vapi-phone
         metrics_path: /metrics
         static_configs:
