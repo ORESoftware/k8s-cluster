@@ -9,12 +9,12 @@
 use crate::auth::AuthedDevice;
 use crate::entity::{account, vault_blob};
 use crate::error::ApiError;
+use crate::json::JsonBody;
 use crate::protocol::{
     PullResponse, PushRequest, PushResponse, SealedBlob, VersionEntry, VersionVector,
 };
 use crate::state::AppState;
 use axum::extract::State;
-use axum::http::HeaderMap;
 use axum::Json;
 use base64::Engine;
 use sea_orm::sea_query::LockType;
