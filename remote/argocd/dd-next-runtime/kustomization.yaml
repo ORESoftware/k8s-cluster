@@ -210,6 +210,10 @@ resources:
   # scenarios to dd-browser-test-server under Playwright + Puppeteer.
   - dd-athleto-e2e-scenarios.configmap.yaml
   - dd-athleto-e2e-browser-suite.cronjob.yaml
+  # Opt-in AntiCapTrad lane that proves dd-browser-test-server can still drive
+  # all three drivers (Playwright/Puppeteer/Selenium) and keeps `evaluate`
+  # refused. Light: no builds, no local browser.
+  - dd-anticaptrad-e2e-browser-suite.cronjob.yaml
   # Nightly soccer learning tournament. AWS and Hetzner both schedule it, while
   # the runner's Postgres advisory lock lets only one cluster run matches.
   - dd-soccer-tournament-nightly.cronjob.yaml
