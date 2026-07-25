@@ -1,0 +1,73 @@
+# cert-manager, as GitOps instead of as a shell script.
+#
+# TODAY cert-manager is installed IMPERATIVELY by remote/hetzner/ingress-tls.sh, which
+# `kubectl apply --server-side`s the upstream release manifest and then applies the three
+# ClusterIssuers inline. That means the controller securing every public hostname is the
+# one component in the stack that Git does not describe and ArgoCD does not reconcile —
+# it drifts silently, and rebuilding a cluster means re-running a script by hand.
+#
+# These two Applications put it under the same control plane as everything else. Adopting
+# them is a TAKEOVER of running objects, not a fresh install — read the README in
+# remote/argocd/cert-manager/ before applying. Nothing references this file yet (nothing
+# points at remote/argocd/apps/), so it is inert until someone applies it deliberately.
+#
+# Pinned to v1.16.2 — the exact version ingress-tls.sh already installs. Adopt at the same
+# version, confirm green, THEN bump in a separate commit. cert-manager's release manifest
+# is its Helm chart rendered with default values, so same-version Helm output matches the
+# live objects closely; a version bump during takeover would hide real diffs in noise.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    targetRevision: v1.16.2
+    helm:
+      values: |
+        crds:
+          enabled: true
+          # Leave CRDs behind if the release is ever removed. Deleting cert-manager CRDs
+          # cascades to every Certificate in the cluster and drops all TLS at once.
+          keep: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      # DELIBERATELY not `prune: true`, unlike the rest of the stack. Pruning a chart that
+      # owns CRDs turns any render failure into cluster-wide certificate deletion. Removing
+      # cert-manager should be a decision someone makes, not a sync outcome.
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+# ClusterIssuers, split from the chart above so the CRDs exist before the CRs that need
+# them. Synced as one Application they race on a fresh cluster: the ClusterIssuer applies
+# before the CRD is established and the first sync fails.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cert-manager-issuers
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/cert-manager
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
