@@ -173,3 +173,7 @@
 	path = remote/deployments/zed-monorepo
 	url = https://github.com/zed-pkg/zed-monorepo.git
 	branch = main
+[submodule "remote/submodules/shared-auth-nats-bridge.rs"]
+	path = remote/submodules/shared-auth-nats-bridge.rs
+	url = git@github.com:shared-auth/shared-auth-nats-bridge.rs.git
+	branch = main

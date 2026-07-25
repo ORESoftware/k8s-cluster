@@ -1,0 +1,35 @@
+# dd-shared-auth-nats-bridge — the shared-auth event plane (HTTP<->NATS).
+#
+# repoURL is the app repo directly (path deploy/k8s), never a submodule path
+# (repo-server has submodule checkout disabled). Same shared-auth AppProject +
+# namespace as dd-shared-auth.
+#
+# PREREQS before applying (inert until then, per the tenant precedent):
+#   1. shared-auth tenant + AppProject applied (already true for dd-shared-auth)
+#   2. seed ClusterSecretStore key: dd/shared-auth/bridge-internal-token (≥16 chars)
+#   3. publish image ghcr.io/shared-auth/shared-auth-nats-bridge:main
+#   4. ArgoCD repo cred for git@github.com:shared-auth/shared-auth-nats-bridge.rs.git
+#
+# BRIDGE_DELIVERIES (NATS→webhook fan-out) ships empty; add routes as consumers
+# appear (e.g. session-revocation fan-out to dd-shared-auth once it exposes an
+# internal commands endpoint).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-shared-auth-nats-bridge
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: shared-auth
+  source:
+    repoURL: git@github.com:shared-auth/shared-auth-nats-bridge.rs.git
+    targetRevision: main
+    path: deploy/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: shared-auth
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - ServerSideApply=true
