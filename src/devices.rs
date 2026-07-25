@@ -1,12 +1,12 @@
 //! Device registration and revocation. A device is the unit that holds a sync
 //! token; revoking one invalidates its token without touching the account.
 
-use crate::auth;
+use crate::auth::{self, AuthedDevice};
 use crate::entity::device;
 use crate::error::ApiError;
+use crate::json::JsonBody;
 use crate::state::AppState;
 use axum::extract::State;
-use axum::http::HeaderMap;
 use axum::Json;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
