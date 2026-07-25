@@ -2502,7 +2502,29 @@ async fn main() {
         tokio::spawn(gh_secrets::run_periodic_sync(state.clone()));
     }
 
-    let app = Router::new()
+    let app = build_router(state);
+
+    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
+
+    let address: SocketAddr = format!("{host}:{port}")
+        .parse()
+        .expect("failed to parse bind address");
+    tracing::info!("{SERVICE_NAME} listening on http://{address}");
+
+    let listener = tokio::net::TcpListener::bind(address)
+        .await
+        .expect("failed to bind tcp listener");
+    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .expect("axum server crashed");
+}
+
+/// Build the HTTP router with all routes and the request state baked in.
+/// Extracted so integration tests can drive the exact production route table
+/// in-process via `tower::ServiceExt::oneshot`.
+fn build_router(state: AppState) -> Router {
+    Router::new()
         .route("/", get(descriptor))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
@@ -2519,22 +2541,7 @@ async fn main() {
         .route("/secrets/sync", post(sync_secrets))
         .route("/secrets/sync/status", get(sync_secrets_status))
         .with_state(state)
-        .merge(dd_runtime_config_client::router());
-
-    tokio::spawn(dd_runtime_config_client::register_with_control_plane());
-
-    let address: SocketAddr = format!("{host}:{port}")
-        .parse()
-        .expect("failed to parse bind address");
-    tracing::info!("{SERVICE_NAME} listening on http://{address}");
-
-    let listener = tokio::net::TcpListener::bind(address)
-        .await
-        .expect("failed to bind tcp listener");
-    axum::serve(listener, app.layer(dd_telemetry::http_trace_layer()))
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .expect("axum server crashed");
+        .merge(dd_runtime_config_client::router())
 }
 
 async fn shutdown_signal() {
@@ -2629,5 +2636,483 @@ mod tests {
             assert!(names.contains(expected));
         }
         assert!(profiles::find("sh -c evil").is_none());
+    }
+}
+
+/// End-to-end HTTP tests that drive the production `build_router` in-process via
+/// `tower::ServiceExt::oneshot`. No network, DB, NATS, or fiducia is required:
+/// db/nats are `None` and coordination is disabled, so these exercise the real
+/// auth middleware, request validation, webhook verification, and read handlers
+/// exactly as deployed. They deliberately use payloads that are rejected BEFORE
+/// a job is enqueued, so no real `git`/`nerdctl` subprocess is ever spawned.
+#[cfg(test)]
+mod e2e {
+    use super::*;
+    use axum::body::{to_bytes, Body};
+    use axum::http::Request;
+    use hmac::{Hmac, Mac};
+    use tower::ServiceExt;
+
+    const AUTH: &str = "test-server-auth-secret";
+    const GH_HOOK: &str = "test-github-webhook-secret";
+    const REG_HOOK: &str = "test-registry-webhook-secret";
+
+    fn test_config() -> Config {
+        let unique = uuid::Uuid::new_v4();
+        Config {
+            work_root: std::env::temp_dir().join(format!("dd-bs-e2e-{unique}")),
+            git_bin: "git".to_string(),
+            git_http_auth_header: None,
+            nerdctl_bin: "nerdctl".to_string(),
+            kubectl_bin: "kubectl".to_string(),
+            tar_bin: "tar".to_string(),
+            containerd_namespace: "dd-build-test".to_string(),
+            allowed_repo_prefixes: vec!["https://github.com/ORESoftware/".to_string()],
+            allowed_image_prefixes: vec![
+                "710156900967.dkr.ecr.us-east-1.amazonaws.com/".to_string(),
+            ],
+            allowed_namespaces: HashSet::from(["default".to_string()]),
+            allowed_profiles: HashSet::from(["playwright".to_string()]),
+            allowed_profile_repo_prefixes: vec!["https://github.com/ORESoftware/".to_string()],
+            profile_cpus: "2".to_string(),
+            profile_memory: "2g".to_string(),
+            profile_pids_limit: "512".to_string(),
+            deploy_enabled: true,
+            push_enabled: false,
+            ecr_login_enabled: false,
+            aws_region: "us-east-1".to_string(),
+            job_timeout: Duration::from_secs(60),
+            job_deadline: Duration::from_secs(120),
+            max_log_bytes: 1_000_000,
+            max_jobs: 100,
+            max_queued: 16,
+            keep_workdirs: false,
+            server_auth_secret: Some(AUTH.to_string()),
+            database_url: None,
+            fiducia_url: "http://127.0.0.1:1/unused".to_string(),
+            fiducia_api_key: None,
+            coordination_enabled: false,
+            coordination_required: false,
+            lock_ttl: Duration::from_secs(60),
+            lock_wait_budget: Duration::from_secs(1),
+            lock_retry_interval: Duration::from_millis(10),
+            idempotency_lease: Duration::from_secs(60),
+            idempotency_retention: Duration::from_secs(60),
+            nats_url: "nats://127.0.0.1:4222".to_string(),
+            nats_enabled: false,
+            nats_intake_enabled: false,
+            nats_event_subject: "dd.remote.build_server.events".to_string(),
+            nats_result_subject: "dd.remote.build_server.results".to_string(),
+            nats_image_subject: "dd.remote.build_server.images".to_string(),
+            nats_request_subject: "dd.remote.build_server.requests".to_string(),
+            nats_critical_subject: "dd.remote.events.critical".to_string(),
+            github_webhook_secret: Some(GH_HOOK.to_string()),
+            registry_webhook_secret: Some(REG_HOOK.to_string()),
+            webhook_rules: Vec::new(),
+            gh_sync_enabled: false,
+            gh_sync_token: None,
+            gh_sync_rules: Vec::new(),
+            gh_sync_interval: Duration::ZERO,
+            lambda_executor_enabled: false,
+            lambda_url: "http://127.0.0.1:1/unused".to_string(),
+            lambda_function_id: None,
+            lambda_auth_secret: None,
+        }
+    }
+
+    fn state_from(config: Config) -> AppState {
+        let max_concurrent = 1;
+        AppState {
+            config: Arc::new(config),
+            http: reqwest::Client::new(),
+            jobs: Arc::new(RwLock::new(HashMap::new())),
+            semaphore: Arc::new(Semaphore::new(max_concurrent)),
+            counters: Arc::new(Counters::default()),
+            db: None,
+            nats: None,
+            holder: "dd-build-server/e2e-test".to_string(),
+            recent_request_ids: Arc::new(RwLock::new(HashSet::new())),
+        }
+    }
+
+    fn app(config: Config) -> Router {
+        build_router(state_from(config))
+    }
+
+    async fn send(router: Router, request: Request<Body>) -> (StatusCode, String) {
+        let response = router.oneshot(request).await.expect("router handled request");
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), 4 * 1024 * 1024)
+            .await
+            .expect("body");
+        (status, String::from_utf8_lossy(&bytes).to_string())
+    }
+
+    fn get(uri: &str) -> Request<Body> {
+        Request::builder()
+            .uri(uri)
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    fn post_json(uri: &str, auth: Option<&str>, body: &serde_json::Value) -> Request<Body> {
+        let mut builder = Request::builder()
+            .method("POST")
+            .uri(uri)
+            .header("content-type", "application/json");
+        if let Some(secret) = auth {
+            builder = builder.header("x-server-auth", secret);
+        }
+        builder.body(Body::from(body.to_string())).unwrap()
+    }
+
+    fn github_sig(secret: &str, body: &str) -> String {
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
+        mac.update(body.as_bytes());
+        format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
+    }
+
+    // ---- health / observability: unauthenticated, no secret leakage ----
+
+    #[tokio::test]
+    async fn health_ready_metrics_are_public_and_ok() {
+        for path in ["/healthz", "/readyz", "/metrics"] {
+            let (status, _) = send(app(test_config()), get(path)).await;
+            assert!(
+                status == StatusCode::OK || status == StatusCode::SERVICE_UNAVAILABLE,
+                "{path} returned {status}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn healthz_does_not_leak_the_auth_secret() {
+        let (_, body) = send(app(test_config()), get("/healthz")).await;
+        assert!(!body.contains(AUTH), "healthz body leaked the auth secret");
+    }
+
+    // ---- auth enforcement on mutating routes ----
+
+    #[tokio::test]
+    async fn submit_without_auth_is_rejected_before_any_work() {
+        let body = json!({ "repoUrl": "https://github.com/ORESoftware/x.git", "image": "710156900967.dkr.ecr.us-east-1.amazonaws.com/x:tag" });
+        let (status, _) = send(app(test_config()), post_json("/builds", None, &body)).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn submit_with_wrong_secret_is_unauthorized() {
+        let body = json!({ "repoUrl": "https://github.com/ORESoftware/x.git" });
+        let (status, _) = send(app(test_config()), post_json("/builds", Some("wrong"), &body)).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn wrong_secret_of_different_length_still_unauthorized_no_length_leak() {
+        // The digest compare must not behave differently for a short vs long
+        // wrong secret; both are simply unauthorized.
+        for wrong in ["x", "a-much-longer-wrong-secret-value-than-the-real-one"] {
+            let body = json!({ "repoUrl": "https://github.com/ORESoftware/x.git" });
+            let (status, _) =
+                send(app(test_config()), post_json("/builds", Some(wrong), &body)).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "wrong secret {wrong:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn alternate_auth_headers_are_accepted() {
+        for header in ["x-server-auth", "x-build-server-auth", "x-agent-auth"] {
+            // Authenticated but repo not allowed → 400 (proves auth passed, then
+            // validation ran). A 401 would mean the header was not honored.
+            let body = json!({ "repoUrl": "https://github.com/attacker/x.git" });
+            let request = Request::builder()
+                .method("POST")
+                .uri("/builds")
+                .header("content-type", "application/json")
+                .header(header, AUTH)
+                .body(Body::from(body.to_string()))
+                .unwrap();
+            let (status, _) = send(app(test_config()), request).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "header {header}");
+        }
+    }
+
+    #[tokio::test]
+    async fn secrets_sync_requires_auth_then_reports_disabled() {
+        let (status, _) = send(app(test_config()), post_json("/secrets/sync", None, &json!({}))).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        let (status, body) =
+            send(app(test_config()), post_json("/secrets/sync", Some(AUTH), &json!({}))).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(body.contains("disabled"));
+    }
+
+    // ---- submission validation: the injection guards, end to end over HTTP ----
+
+    async fn assert_submit_rejected(body: serde_json::Value) {
+        let (status, _) = send(app(test_config()), post_json("/builds", Some(AUTH), &body)).await;
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "expected 400 for payload {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn submit_rejects_repo_outside_allowlist() {
+        assert_submit_rejected(json!({
+            "repoUrl": "https://github.com/attacker/evil.git",
+            "image": "710156900967.dkr.ecr.us-east-1.amazonaws.com/x:tag"
+        }))
+        .await;
+    }
+
+    #[tokio::test]
+    async fn submit_rejects_mount_injection_in_context_dir() {
+        assert_submit_rejected(json!({
+            "repoUrl": "https://github.com/ORESoftware/x.git",
+            "image": "710156900967.dkr.ecr.us-east-1.amazonaws.com/x:tag",
+            "contextDir": "x,src=/home/ec2-user"
+        }))
+        .await;
+    }
+
+    #[tokio::test]
+    async fn submit_rejects_dockerfile_traversal() {
+        assert_submit_rejected(json!({
+            "repoUrl": "https://github.com/ORESoftware/x.git",
+            "image": "710156900967.dkr.ecr.us-east-1.amazonaws.com/x:tag",
+            "dockerfile": "../../etc/passwd"
+        }))
+        .await;
+    }
+
+    #[tokio::test]
+    async fn submit_rejects_leading_dash_image() {
+        assert_submit_rejected(json!({
+            "repoUrl": "https://github.com/ORESoftware/x.git",
+            "image": "-t:latest"
+        }))
+        .await;
+    }
+
+    #[tokio::test]
+    async fn submit_rejects_rollout_flag_injection() {
+        assert_submit_rejected(json!({
+            "repoUrl": "https://github.com/ORESoftware/x.git",
+            "image": "710156900967.dkr.ecr.us-east-1.amazonaws.com/x:tag",
+            "deploy": { "kind": "manifest", "path": "k8s/app.yaml", "rollout": "--server=http://evil/" }
+        }))
+        .await;
+    }
+
+    #[tokio::test]
+    async fn submit_rejects_file_transport_repo_url() {
+        assert_submit_rejected(json!({
+            "repoUrl": "file:///etc/passwd",
+            "image": "710156900967.dkr.ecr.us-east-1.amazonaws.com/x:tag"
+        }))
+        .await;
+    }
+
+    #[tokio::test]
+    async fn submit_rejects_disallowed_profile() {
+        assert_submit_rejected(json!({
+            "jobKind": "run-profile",
+            "repoUrl": "https://github.com/ORESoftware/x.git",
+            "profile": "sh -c evil"
+        }))
+        .await;
+    }
+
+    #[tokio::test]
+    async fn submit_with_empty_allowlist_fails_closed() {
+        let mut config = test_config();
+        config.allowed_repo_prefixes = Vec::new();
+        let body = json!({
+            "repoUrl": "https://github.com/ORESoftware/x.git",
+            "image": "710156900967.dkr.ecr.us-east-1.amazonaws.com/x:tag"
+        });
+        let (status, _) = send(app(config), post_json("/builds", Some(AUTH), &body)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    // ---- GitHub webhook: HMAC gate, fails closed, no panic on bad sha ----
+
+    #[tokio::test]
+    async fn github_webhook_missing_signature_is_unauthorized() {
+        let body = json!({ "ref": "refs/heads/dev" }).to_string();
+        let request = Request::builder()
+            .method("POST")
+            .uri("/webhooks/github")
+            .header("content-type", "application/json")
+            .header("x-github-event", "push")
+            .header("x-github-delivery", "d1")
+            .body(Body::from(body))
+            .unwrap();
+        let (status, _) = send(app(test_config()), request).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn github_webhook_bad_signature_is_unauthorized() {
+        let body = json!({ "ref": "refs/heads/dev" }).to_string();
+        let request = Request::builder()
+            .method("POST")
+            .uri("/webhooks/github")
+            .header("content-type", "application/json")
+            .header("x-github-event", "push")
+            .header("x-github-delivery", "d1")
+            .header("x-hub-signature-256", "sha256=deadbeef")
+            .body(Body::from(body))
+            .unwrap();
+        let (status, _) = send(app(test_config()), request).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn github_webhook_valid_signature_non_actionable_is_ignored() {
+        let body = json!({ "ref": "refs/heads/dev", "deleted": true,
+            "repository": { "full_name": "ORESoftware/x" } })
+        .to_string();
+        let sig = github_sig(GH_HOOK, &body);
+        let request = Request::builder()
+            .method("POST")
+            .uri("/webhooks/github")
+            .header("content-type", "application/json")
+            .header("x-github-event", "push")
+            .header("x-github-delivery", "d-actionable")
+            .header("x-hub-signature-256", sig)
+            .body(Body::from(body))
+            .unwrap();
+        let (status, body) = send(app(test_config()), request).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains("ignored"));
+    }
+
+    #[tokio::test]
+    async fn github_webhook_malformed_sha_does_not_panic_and_is_ignored() {
+        // A non-ASCII/short `after` used to panic via a byte-slice; now it is
+        // gated by valid_commit_sha and ignored. A real matching rule exists so
+        // the only thing stopping a build is the sha check.
+        let mut config = test_config();
+        config.webhook_rules = vec![webhooks::WebhookRule {
+            repo: "ORESoftware/x".to_string(),
+            branch: Some("dev".to_string()),
+            tags: false,
+            events: Some(vec!["push".to_string()]),
+            image: Some("710156900967.dkr.ecr.us-east-1.amazonaws.com/x:dev-{shortSha}".to_string()),
+            profile: None,
+            context_dir: None,
+            dockerfile: None,
+            push: false,
+            executor: None,
+            deploy: None,
+        }];
+        let body = json!({ "ref": "refs/heads/dev", "after": "zzz\u{e9}",
+            "repository": { "full_name": "ORESoftware/x" } })
+        .to_string();
+        let sig = github_sig(GH_HOOK, &body);
+        let request = Request::builder()
+            .method("POST")
+            .uri("/webhooks/github")
+            .header("content-type", "application/json")
+            .header("x-github-event", "push")
+            .header("x-github-delivery", "d-badsha")
+            .header("x-hub-signature-256", sig)
+            .body(Body::from(body))
+            .unwrap();
+        let (status, body) = send(app(config), request).await;
+        assert_eq!(status, StatusCode::OK, "must not 500/panic");
+        assert!(body.contains("ignored"));
+    }
+
+    // ---- registry webhook: secret gate + delivery-id dedupe guard ----
+
+    #[tokio::test]
+    async fn registry_webhook_wrong_secret_is_unauthorized() {
+        let request = Request::builder()
+            .method("POST")
+            .uri("/webhooks/registry")
+            .header("content-type", "application/json")
+            .header("x-registry-webhook-secret", "wrong")
+            .header("x-delivery-id", "r1")
+            .body(Body::from(json!({ "events": [] }).to_string()))
+            .unwrap();
+        let (status, _) = send(app(test_config()), request).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn registry_webhook_missing_delivery_id_is_rejected() {
+        let request = Request::builder()
+            .method("POST")
+            .uri("/webhooks/registry")
+            .header("content-type", "application/json")
+            .header("x-registry-webhook-secret", REG_HOOK)
+            .body(Body::from(json!({ "events": [] }).to_string()))
+            .unwrap();
+        let (status, body) = send(app(test_config()), request).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body.to_lowercase().contains("delivery"));
+    }
+
+    #[tokio::test]
+    async fn registry_webhook_valid_is_accepted() {
+        let request = Request::builder()
+            .method("POST")
+            .uri("/webhooks/registry")
+            .header("content-type", "application/json")
+            .header("x-registry-webhook-secret", REG_HOOK)
+            .header("x-delivery-id", "r-ok")
+            .body(Body::from(
+                json!({ "events": [{ "action": "push",
+                    "target": { "repository": "dd/x", "tag": "t", "digest": "sha256:abc" } }] })
+                .to_string(),
+            ))
+            .unwrap();
+        let (status, _) = send(app(test_config()), request).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    // ---- path-traversal safety on the job read endpoints ----
+
+    fn authed_get(uri: &str) -> Request<Body> {
+        Request::builder()
+            .uri(uri)
+            .header("x-server-auth", AUTH)
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn job_read_endpoints_require_auth() {
+        // Unauthenticated reads are rejected before any filesystem/map access.
+        for uri in ["/builds/anything/logs", "/builds/anything/artifacts"] {
+            let (status, _) = send(app(test_config()), get(uri)).await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED, "{uri}");
+        }
+    }
+
+    #[tokio::test]
+    async fn job_logs_traversal_and_unknown_id_are_not_found() {
+        // Even WITH valid auth, a traversal or unknown job id resolves through
+        // the in-memory job map (miss → 404), never a raw filesystem path, so
+        // `../../etc/passwd` cannot read an arbitrary file.
+        for uri in [
+            "/builds/..%2f..%2f..%2fetc%2fpasswd/logs",
+            "/builds/does-not-exist/logs",
+            "/builds/does-not-exist/artifacts",
+        ] {
+            let (status, body) = send(app(test_config()), authed_get(uri)).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{uri}");
+            assert!(!body.contains("root:"), "{uri} appears to have read /etc/passwd");
+        }
+    }
+
+    #[tokio::test]
+    async fn list_builds_requires_auth() {
+        let (status, _) = send(app(test_config()), get("/builds")).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
 }
