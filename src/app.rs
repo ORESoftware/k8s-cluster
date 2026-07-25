@@ -19,6 +19,7 @@
 
 use crate::state::AppState;
 use crate::{devices, health, metrics, supabase_auth, telemetry, vault_blob};
+use axum::extract::DefaultBodyLimit;
 use axum::http::{header, HeaderName, HeaderValue, StatusCode};
 use axum::middleware;
 use axum::routing::{get, post};
@@ -117,11 +118,18 @@ pub fn router(state: AppState) -> Router {
     // The one route that legitimately carries a large body. Kept in its own
     // sub-router so the larger cap cannot leak onto anything else; the GET on
     // the same path is bodyless and unaffected by the limit it inherits.
+    //
+    // BOTH caps have to be raised. `RequestBodyLimitLayer` bounds the transport;
+    // `DefaultBodyLimit` is axum's own extractor-side limit, which defaults to
+    // 2 MB — just under the ~2.01 MiB a worst-case conforming push needs, so
+    // leaving it alone would have kept `MAX_CIPHERTEXT_LEN` unreachable with a
+    // 413 raised from the `Bytes` extractor instead of the layer.
     let vault_routes = Router::new()
         .route(
             "/v1/vault",
             get(vault_blob::pull_handler).post(vault_blob::push_handler),
         )
+        .route_layer(DefaultBodyLimit::max(VAULT_BODY_LIMIT))
         .route_layer(RequestBodyLimitLayer::new(VAULT_BODY_LIMIT))
         .route_layer(GovernorLayer {
             config: authed_governor,
@@ -421,26 +429,48 @@ mod tests {
             body.len()
         );
 
-        let response = router(test_state())
+        // Authenticate for real, so the body is actually read and deserialized.
+        // A test that stops at 401 would pass even with the body cap still too
+        // low, because the credential check now runs first — that is exactly how
+        // the first version of this test missed the axum `DefaultBodyLimit`.
+        let token = "a-test-sync-token";
+        let device = crate::entity::device::Model {
+            id: uuid::Uuid::new_v4(),
+            account_id: uuid::Uuid::new_v4(),
+            device_name: "body limit probe".to_owned(),
+            sync_token_hash: crate::auth::token_hash(token),
+            revoked: false,
+            created_at: time::OffsetDateTime::now_utc(),
+            last_seen_at: None,
+        };
+        let database = MockDatabase::new(DatabaseBackend::Postgres)
+            .append_query_results([vec![device.clone()]])
+            .append_exec_results([MockExecResult::default()])
+            .into_connection();
+        let state = AppState::new(database).expect("test state");
+
+        let response = router(state)
             .oneshot(
                 Request::builder()
                     .method("POST")
                     .uri("/v1/vault")
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::CONTENT_LENGTH, body.len())
+                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
                     .header("x-forwarded-for", "203.0.113.9")
                     .body(Body::from(body))
                     .unwrap(),
             )
             .await
             .unwrap();
-        // 401 because no credential was presented — the point is that the
-        // request reached the authentication step instead of being cut off at
-        // the transport with 413, which is what used to happen.
+        // The mock has no rows left for `store()`, so the handler ends in a 500.
+        // That is the assertion: the request got past the body cap (413), past
+        // authentication (401) and past deserialization + envelope validation
+        // (400) — the full-size ciphertext was accepted as conforming.
         assert_eq!(
             response.status(),
-            StatusCode::UNAUTHORIZED,
-            "a full-size conforming vault push must not be refused by the body cap"
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "a full-size conforming vault push must reach the handler, not a 413/401/400"
         );
     }
 
