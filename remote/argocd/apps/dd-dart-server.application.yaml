@@ -1,3 +1,10 @@
+# Sourced from the dart-server app repo directly — NOT the k8s-cluster submodule
+# path, which rendered EMPTY (repo-server submodule checkout is disabled), so the
+# app deployed nothing. Manifests live at sagitta-stack/dart-server `k8s/ec2`
+# (verified to render). See docs/app-deploy-contract.md.
+#
+# PREREQ: ArgoCD needs a read cred for git@github.com:sagitta-stack/dart-server.git
+# on the AWS cluster before this can sync.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -6,9 +13,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:ORESoftware/k8s-cluster.git
-    targetRevision: dev
-    path: remote/deployments/dart-server/k8s/ec2
+    repoURL: git@github.com:sagitta-stack/dart-server.git
+    targetRevision: main
+    path: k8s/ec2
   destination:
     server: https://kubernetes.default.svc
     namespace: default
