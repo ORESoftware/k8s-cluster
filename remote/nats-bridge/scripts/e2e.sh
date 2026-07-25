@@ -262,13 +262,11 @@ if wait_for 90 bash -c "curl -s '${BRIDGE_URL}/publish/vxl.events.recovered' \
 else
   bad "bridge publishes after reconnect" "publish still failing"
 fi
-# The worker's supervised loop must re-establish its consumer on its own.
-before="$(grep -c 'vapi nats worker started' "${WORK_DIR}/vapi.log" || true)"
-if wait_for 120 bash -c "[ \"\$(grep -c 'vapi nats worker started' '${WORK_DIR}/vapi.log')\" -gt ${before} ]"; then
-  ok "worker reconnect loop re-established its consumer"
-else
-  bad "worker reconnects" "no restart logged (was ${before})"
-fi
+# Recovery is asserted by BEHAVIOUR, not mechanism. Two layers can deliver it:
+# async-nats reconnects the client transparently (preferred — no consumer
+# re-provisioning), and failing that the worker's supervised loop rebuilds the
+# consumer. Either is a pass; the log line below just records which happened.
+restarts_before="$(grep -c 'vapi nats worker started' "${WORK_DIR}/vapi.log" || true)"
 if wait_for 60 bash -c "publish() { curl -s -X POST '${BRIDGE_URL}/publish/dd.vapi.tasks.call' \
   -H 'authorization: Bearer ${BRIDGE_TOKEN_VALUE}' -H 'content-type: application/json' -d \"\$1\"; }; \
   publish '{\"type\":\"reboot-cluster\"}' >/dev/null; \
