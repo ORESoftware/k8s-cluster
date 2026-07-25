@@ -1258,6 +1258,7 @@ mod tests {
     #[test]
     fn config_invalid_port_errors() {
         let err = config_with(&[("WAL_GATEWAY_DATABASE_URL", "db"), ("PORT", "not-a-port")])
+            .map(|_| ())
             .expect_err("bad PORT must error");
         assert!(err.contains("invalid PORT"), "unexpected error: {err}");
     }
