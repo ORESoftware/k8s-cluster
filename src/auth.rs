@@ -63,10 +63,26 @@ pub fn token_hash(token: &str) -> String {
 }
 
 /// Extract the raw bearer token from an `Authorization: Bearer <token>` header.
+///
+/// A request carrying the header more than once is refused outright.
+/// `Authorization` is a singleton field (RFC 9110 §11.6.2), and RFC 9110 §5.3
+/// says a recipient of repeated field lines for a singleton field must either
+/// combine them — meaningless for a credential — or treat the message as
+/// malformed. `HeaderMap::get` would silently return the FIRST of them, which is
+/// the dangerous third option: an intermediary that inspects or authorizes on
+/// the LAST line (proxies and WAFs differ) would be reasoning about a different
+/// credential than the one this service acts on, which is a standard
+/// request-smuggling / authorization-bypass primitive. Ambiguous credential,
+/// no credential: 401.
 pub fn bearer(headers: &HeaderMap) -> Result<&str, ApiError> {
-    headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
+    let mut values = headers.get_all(axum::http::header::AUTHORIZATION).iter();
+    let value = values.next().ok_or(ApiError::Unauthorized)?;
+    if values.next().is_some() {
+        return Err(ApiError::Unauthorized);
+    }
+    value
+        .to_str()
+        .ok()
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or(ApiError::Unauthorized)
 }
