@@ -48,3 +48,25 @@ The runtime queue path uses JetStream stream `DD_REMOTE_TASKS` for
 `dd.remote.thread.*.tasks`. `dd-remote-queue-consumer` binds durable pull
 consumer `dd-remote-thread-preparer`, and KEDA reads the NATS monitoring endpoint
 on `:8222` to scale that deployment by consumer lag.
+
+## Hardening delivered so far (2026-07-24)
+
+- `nats.networkpolicy.yaml`: `:4222` ingress is now scoped to the known client
+  namespaces (`default`, `shared-auth`, `voxletra`, `messaging`), `:8222` to
+  `keda` + `observability`, `:7777` to `observability`. This is the network
+  half of the backlog above; account/nkey auth remains the deliberate rollout.
+- `dd-nats-bridge` (this namespace, from `remote/nats-bridge`): hardened
+  HTTP→NATS chokepoint for callers that shouldn't get raw bus access
+  (e.g. the voxletra tenant). Bearer-token auth (fail-closed), subject
+  allowlist (`dd.vapi.tasks.`, `vxl.` — never `$SYS`/`$JS`/wildcards), JSON-only
+  bodies capped at 256KB, JetStream acked publishes. Token comes from
+  ClusterSecretStore key `dd/messaging/nats-bridge-secrets`.
+
+## Vapi work queue + autoscaling
+
+JetStream stream `DD_VAPI_TASKS` (`dd.vapi.tasks.>`, work-queue retention) is
+provisioned by `dd-rust-vapi-phone` at startup (`VAPI_NATS_URL`), which binds
+durable pull consumer `dd-vapi-phone-worker`. Producers publish through
+`dd-nats-bridge`; KEDA (`dd-rust-vapi-phone.scaledobject.yaml` in
+dd-next-runtime) scales the vapi deployment 1→6 replicas by consumer lag. Task
+shapes are documented in `remote/deployments/rust-vapi-phone-rs/src/nats_worker.rs`.

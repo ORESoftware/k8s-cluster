@@ -122,3 +122,9 @@ remote/deployments/spark-pipeline-server/?/
 
 # Generated soccer-live policy snapshots (large runtime artifacts, regenerated at runtime)
 remote/deployments/soccer-rs/out/
+
+# Local dev checkouts of daedalus per-app repos. Deliberately NOT submodules:
+# the daedalus-monorepo pin covers them (see SUBMODULES.md consolidation) —
+# an embedded gitlink here would be unclonable (no .gitmodules entry).
+/remote/deployments/daedalus-api-server-rs/
+/remote/deployments/daedalus-web-server-rs/
