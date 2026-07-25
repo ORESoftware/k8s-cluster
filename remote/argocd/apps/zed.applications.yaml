@@ -20,7 +20,7 @@
 #   3. apply remote/argocd/projects/zed.bootstrap-postgres.yaml
 #   4. commit + push each app repo's k8s/ dir to its main
 #   5. publish images ghcr.io/zed-pkg/zed-{api,web}-server:main
-#   6. copy/provision the read-only `benefactor-ghcr` pull secret in namespace zed
+#   6. provision a read-only `zed-ghcr` pull secret in namespace zed
 #
 # Before production, replace the bootstrap database with durable Postgres,
 # restore the ExternalSecrets, enable auth/rate limiting, and use object storage.
