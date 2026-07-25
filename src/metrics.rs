@@ -105,7 +105,7 @@ pub async fn record_http_metrics(
     request: Request,
     next: Next,
 ) -> Response<Body> {
-    let method = request.method().as_str().to_owned();
+    let method = metric_method(request.method());
     let route = metric_route(request.uri().path());
     let started = Instant::now();
     metrics.requests_in_flight.inc();
