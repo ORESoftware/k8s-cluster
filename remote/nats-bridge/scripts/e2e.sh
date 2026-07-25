@@ -160,8 +160,10 @@ assert_code "oversize body -> 413" 413 \
   -X POST "${BRIDGE_URL}/publish/dd.vapi.tasks.call" \
   -H "authorization: Bearer ${BRIDGE_TOKEN_VALUE}" -H 'content-type: application/json' \
   -d "@${WORK_DIR}/big.json"
+# 7, not 8: the oversize body is refused by axum's DefaultBodyLimit layer
+# before the handler runs, so it never reaches the handler's reject counter.
 assert_json "rejections counted, none published" \
-  "d['published_total']==0 and d['rejected_total']==8" "${BRIDGE_URL}/healthz"
+  "d['published_total']==0 and d['rejected_total']==7" "${BRIDGE_URL}/healthz"
 
 step "2. Core-NATS fallback for a subject with no stream bound"
 assert_json "allowed subject -> 200 durable:false" \
