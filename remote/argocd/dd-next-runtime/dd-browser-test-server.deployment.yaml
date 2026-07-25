@@ -44,10 +44,18 @@ spec:
           args:
             - |
               set -euo pipefail
-              if [ ! -e /opt/dd-next-1/remote/deployments/browser-test-server/package.json ]; then
+              # Runs as uid 1000; without these, `git submodule update` aborts with
+              # "detected dubious ownership" and silently leaves remote/libs empty
+              # (breaking the @dd/telemetry file: dep). HOME must be writable for
+              # `git config --global`.
+              export HOME=/tmp
+              git config --global --add safe.directory '*'
+              if [ ! -e /opt/dd-next-1/remote/libs/telemetry-node/package.json ]; then
                 git clone --depth 1 --branch dev https://github.com/ORESoftware/k8s-cluster.git /opt/dd-next-1
                 git -C /opt/dd-next-1 submodule update --init --depth 1 remote/libs
               fi
+              # Fail loudly here rather than as a confusing pnpm ENOENT later.
+              test -e /opt/dd-next-1/remote/libs/telemetry-node/package.json
           securityContext:
             allowPrivilegeEscalation: false
             runAsNonRoot: true
