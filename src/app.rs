@@ -34,11 +34,29 @@ const REQUEST_TIMEOUT_SECS: u64 = 15;
 pub fn router(state: AppState) -> Router {
     // GCRA: replenish ~1 request/s with a small burst. SmartIpKeyExtractor uses
     // trusted ingress forwarding headers and falls back to the socket peer.
+    //
+    // Trust assumption (load-bearing): SmartIpKeyExtractor keys on
+    // X-Forwarded-For, which any client could spoof to dodge the limiter — it
+    // is trustworthy here ONLY because deploy/k8s/networkpolicy.yaml admits
+    // ingress traffic from ingress-nginx alone, which overwrites the header.
+    // Loosening that NetworkPolicy silently breaks rate limiting.
     let governor = Arc::new(
         GovernorConfigBuilder::default()
             .key_extractor(SmartIpKeyExtractor)
             .per_second(1)
             .burst_size(8)
+            .finish()
+            .expect("valid rate-limit config"),
+    );
+
+    // Authed routes get a more generous per-IP budget: normal sync traffic is
+    // bursty (pull + push + device list in quick succession) but a stolen sync
+    // token still can't hammer the vault or enumerate devices unthrottled.
+    let authed_governor = Arc::new(
+        GovernorConfigBuilder::default()
+            .key_extractor(SmartIpKeyExtractor)
+            .per_second(1)
+            .burst_size(30)
             .finish()
             .expect("valid rate-limit config"),
     );
@@ -49,19 +67,26 @@ pub fn router(state: AppState) -> Router {
         // Route-only layering preserves the outer router's normal 404 fallback.
         .route_layer(GovernorLayer { config: governor });
 
-    Router::new()
-        // Liveness must not depend on the DB; readiness does.
-        .route("/livez", get(health::live))
-        .route("/healthz", get(health::live))
-        .route("/readyz", get(health::ready))
-        .route("/metrics", get(health::prometheus))
-        .merge(auth_routes)
+    let authed_routes = Router::new()
         .route("/v1/devices", get(devices::list_handler))
         .route("/v1/devices/revoke", post(devices::revoke_handler))
         .route(
             "/v1/vault",
             get(vault_blob::pull_handler).post(vault_blob::push_handler),
         )
+        .route_layer(GovernorLayer {
+            config: authed_governor,
+        });
+
+    Router::new()
+        // Liveness must not depend on the DB; readiness does. These stay
+        // unthrottled: kubelet probes and Prometheus scrapes share a node IP.
+        .route("/livez", get(health::live))
+        .route("/healthz", get(health::live))
+        .route("/readyz", get(health::ready))
+        .route("/metrics", get(health::prometheus))
+        .merge(auth_routes)
+        .merge(authed_routes)
         .layer(telemetry::http_trace_layer())
         .layer(middleware::from_fn_with_state(
             state.metrics.clone(),
@@ -165,6 +190,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn authed_routes_are_rate_limited_but_probes_are_not() {
+        let app = router(test_state());
+
+        // Drive one client IP past the authed burst budget: the governor must
+        // start rejecting with 429 before the handler runs.
+        let mut throttled = false;
+        for _ in 0..40 {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri("/v1/vault")
+                        .header("x-forwarded-for", "203.0.113.7")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            if response.status() == StatusCode::TOO_MANY_REQUESTS {
+                throttled = true;
+                break;
+            }
+        }
+        assert!(throttled, "/v1/vault must carry the per-IP governor");
+
+        // Probe routes share the kubelet's node IP and must stay unthrottled.
+        for _ in 0..40 {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri("/livez")
+                        .header("x-forwarded-for", "203.0.113.7")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+    }
+
+    #[tokio::test]
     async fn router_middleware_records_requests_and_sets_security_headers() {
         let app = router(test_state());
         let response = app
@@ -227,5 +295,20 @@ mod tests {
                 "network policy missing {required}"
             );
         }
+
+        // The ExternalSecret must target the cluster's real store and the GA
+        // API version, or the DSN never materializes.
+        let external_secret = include_str!("../deploy/k8s/externalsecret.yaml");
+        for required in [
+            "apiVersion: external-secrets.io/v1",
+            "name: dd-cluster-secrets",
+            "kind: ClusterSecretStore",
+        ] {
+            assert!(
+                external_secret.contains(required),
+                "external secret missing {required}"
+            );
+        }
+        assert!(!external_secret.contains("external-secrets.io/v1beta1"));
     }
 }
