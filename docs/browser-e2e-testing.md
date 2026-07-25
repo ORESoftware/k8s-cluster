@@ -106,44 +106,71 @@ container on `:8105`:
 | Selenium | https://canonical.cloud | ❌ `ERR_NAME_NOT_RESOLVED` (DNS — domain not live) | — |
 | Playwright | in-cluster `dd-remote-web-home:8080` | ⚠️ blocked (see NetworkPolicy finding) | — |
 
-All four driver paths are healthy on AWS. The two DNS failures are real signals
-about those properties (they don't resolve; `fiducia.cloud` does), and the
-error-handling path is correct (distinct `ERR_NAME_NOT_RESOLVED` vs timeout vs
-`ERR_ACCESS_DENIED`).
+**Web-server UI matrix — each driver against a real product UI:**
 
-### Hetzner — browser-test-server is **down** (crash loop)
+| Driver | Web UI | Result |
+| --- | --- | --- |
+| Playwright | https://app.fiducia.cloud | ✅ "Fiducia Customer Portal" (38 KB shot), 1358 ms |
+| Puppeteer | https://app.athleto.store | ✅ "AthletO \| performance gelatin protein" (48 KB shot), 1171 ms |
+| Selenium | https://admin.fiducia.cloud | ✅ "Sign in · Fiducia Admin" (→ /login, 30 KB shot), 1459 ms |
 
-`dd-browser-test-server`: **0/2 available**, ~92 `Evicted` tombstones plus live
-pods in `CrashLoopBackOff` with restart counts up to **6373** over 23 days.
+All driver paths are healthy on AWS, including all three against real product web
+UIs. The two DNS failures are real signals about those properties (they don't
+resolve; `fiducia.cloud` does), and the error-handling path is correct (distinct
+`ERR_NAME_NOT_RESOLVED` vs timeout vs `ERR_ACCESS_DENIED`).
 
-Two distinct causes:
+### Hetzner — was down; `dd-selenium-server` now FIXED and deployed
 
-1. **Application crash on startup (root cause).** Last-crash log:
-   ```
-   /bin/bash: line 5: cd: /opt/dd-next-1/remote/deployments/browser-test-server: No such file or directory
-   ```
-   The Hetzner deployment runs the service from a **host source path**
-   (`/opt/dd-next-1/…`) that is not present on the Hetzner nodes, so it `cd`s
-   into a missing directory and exits 1 — forever. It runs on AWS only because
-   that path happens to exist there. This is the **same runtime-source
-   anti-pattern** called out for dd-build-server (audit **F13**, see
-   [`build-server-hardening.md`](build-server-hardening.md)): the workload
-   depends on cluster-host state instead of a self-contained image.
-2. **Historical `DiskPressure`.** Nodes currently report all pressures `False`,
-   but past `DiskPressure` evicted pods en masse ("Pod was rejected: The node
-   had condition: [DiskPressure]"), leaving ~92 `Failed` tombstones.
+Both browser services were crash-looping on Hetzner (`dd-selenium-server` and
+`dd-browser-test-server` at **0/2**, restart counts **6000+** over 23 days).
+Three root causes were found and fixed — the first two masked on AWS because its
+pods/jars were built ~27 days ago against then-valid host state and deps:
 
-A `kubectl rollout restart` does **not** fix it (the new pod hits the same
-missing path); the evicted-pod cleanup is safe hygiene but insufficient.
+1. **Source via hostPath.** Both deployments `cd /opt/dd-next-1/…`, mounted from
+   `hostPath: /home/ec2-user/codes/dd/dd-next-1`, which exists **only on the AWS
+   EC2 node**. On Hetzner every pod exited 1 (`cd: … No such file or directory`).
+   This is the **runtime-source anti-pattern** from dd-build-server audit **F13**
+   (see [`build-server-hardening.md`](build-server-hardening.md)). **Fix:** a
+   per-pod `initContainer` shallow-clones the **public** superproject into an
+   `emptyDir` at `/opt/dd-next-1` — self-contained on any node/cluster.
+   browser-test additionally needs the **private** `remote/libs` submodule (for
+   `@dd/telemetry`) and so needs a GH token (see below); selenium's Maven build is
+   standalone (public clone only).
+2. **semconv `NoClassDefFoundError` (selenium).** `selenium-server/pom.xml`
+   force-pinned `opentelemetry-semconv:1.30.0`, which dropped the monolithic
+   `io.opentelemetry.semconv.SemanticAttributes` that selenium-java 4.27 uses at
+   its first WebDriver session — so a **fresh** build threw
+   `NoClassDefFoundError`. Verified with `jar tf`; pinned to `1.25.0-alpha`
+   (selenium 4.27's own declared version), which ships **both**
+   `SemanticAttributes` (selenium) and `ServiceAttributes` (Telemetry.java).
+3. **initContainer git hardening.** Getting the clone to work as a non-root
+   container surfaced three more: git `safe.directory` (dubious-ownership on the
+   fsGroup emptyDir), an SSH→HTTPS submodule URL rewrite, and idempotency across
+   init restarts (the `emptyDir` persists). All handled in the initContainer.
+
+**Result — validated in production (2026-07-25):** `dd-selenium-server` on
+Hetzner went from `0/2` to **`2/2` available** after the fix deployed via ArgoCD
+(PR #34 → `dev`); a `selenium /run` against the real service returns `ok:true`
+driving example.com and `app.fiducia.cloud` ("Fiducia Customer Portal").
+
+**Still blocked — `dd-browser-test-server` on Hetzner (PR #35, do not merge yet):**
+it needs the private `remote/libs` submodule, but the Hetzner
+`dd-agent-secrets/GH_PAT` secret is **empty** (verified: base64 length 0), so the
+authenticated submodule clone fails. Populate that token first, then validate a
+throwaway before merging (merging also switches AWS's currently-working
+browser-test-server to the clone path, so confirm AWS's GH_PAT too).
+
+Historical `DiskPressure` also left ~92 `Evicted` tombstones per service; nodes
+now report all pressures `False`. Evicted-pod cleanup is safe hygiene.
 
 ## Findings & recommendations
 
-1. **[HIGH] Hetzner browser-test-server must ship as a self-contained image.**
-   Build the `remote/deployments/browser-test-server` image in CI, push to a
-   registry, and run it by digest — dropping the `/opt/dd-next-1` host-source
-   `cd`. This is the browser-test analogue of build-server hardening patch 01.
-   Until then, `dd-browser-test-server` and its nightly suites are inoperative on
-   Hetzner, and the ~92 evicted pods will keep accumulating.
+1. **[DONE for selenium] Self-contained source via initContainer clone.**
+   Shipped for `dd-selenium-server` (PR #34, live on Hetzner). The same change is
+   ready for `dd-browser-test-server` (PR #35) but **blocked on the empty Hetzner
+   `GH_PAT`** — populate `dd-agent-secrets/GH_PAT` on Hetzner, then merge #35.
+   A future hardening is to bake a proper CI image (build-server patch 01 style)
+   so no runtime clone/build is needed at all.
 2. **[MED] Evicted-pod hygiene.** Add a reaper (or
    `kubectl delete pod --field-selector status.phase=Failed`) so historical
    `DiskPressure` doesn't leave hundreds of `Failed` tombstones; investigate the
