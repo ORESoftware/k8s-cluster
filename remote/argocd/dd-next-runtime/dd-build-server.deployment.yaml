@@ -250,9 +250,17 @@ spec:
             requests:
               cpu: 100m
               memory: 512Mi
+              # Git clones + CARGO_TARGET_DIR live in the tmp emptyDir; reserve
+              # for it so the scheduler accounts for build scratch.
+              ephemeral-storage: 4Gi
             limits:
               cpu: '4'
               memory: 4Gi
+              # Cap pod-local scratch so a runaway build cannot fill the node
+              # disk and trigger DiskPressure eviction of neighbours. Image
+              # layers land in the node containerd store (not counted here);
+              # that is bounded separately by image GC.
+              ephemeral-storage: 24Gi
           startupProbe:
             httpGet:
               path: /healthz
@@ -311,7 +319,11 @@ spec:
             path: /var/lib/dd-build-server
             type: DirectoryOrCreate
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            # Bound pod-local scratch (git clones + CARGO_TARGET_DIR) so it is
+            # evicted at the limit rather than filling the node disk. Kept in
+            # step with the container's ephemeral-storage limit above.
+            sizeLimit: 24Gi
         - name: containerd-sock
           hostPath:
             path: /run/containerd/containerd.sock

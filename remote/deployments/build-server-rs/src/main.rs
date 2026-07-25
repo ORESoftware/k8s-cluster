@@ -2573,6 +2573,24 @@ mod tests {
         assert!(validate_relative_path("contextDir", "services/api").is_ok());
         assert!(validate_relative_path("contextDir", "../../etc").is_err());
         assert!(validate_relative_path("contextDir", "/etc").is_err());
+        // Mount-spec injection: a component with `,`/`=`/`:` could add a second
+        // `src=` field to the nerdctl --mount string.
+        assert!(validate_relative_path("contextDir", "x,src=/home/ec2-user").is_err());
+        assert!(validate_relative_path("contextDir", "a=b").is_err());
+        assert!(validate_relative_path("contextDir", "c:d").is_err());
+
+        // Rollout resource must be a clean TYPE/NAME positional, never a flag.
+        assert_eq!(
+            validate_rollout_resource("api").unwrap(),
+            "deployment/api"
+        );
+        assert_eq!(
+            validate_rollout_resource("deployment.apps/api").unwrap(),
+            "deployment.apps/api"
+        );
+        assert!(validate_rollout_resource("--kubeconfig=/tmp/x/y").is_err());
+        assert!(validate_rollout_resource("--server=http://evil/").is_err());
+        assert!(validate_rollout_resource("deployment/a/b").is_err());
     }
 
     #[test]
