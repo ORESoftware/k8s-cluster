@@ -1,0 +1,131 @@
+# dd-nats-bridge — hardened HTTP→NATS publish chokepoint (remote/nats-bridge).
+#
+# Fleet run-from-source convention (same as dd-rust-vapi-phone / dd-t2v-api):
+# rust toolchain image clones this repo at BRIDGE_GIT_REF and `cargo run`s the
+# crate. The bridge fails closed at startup without BRIDGE_TOKEN and
+# BRIDGE_SUBJECT_PREFIXES — seed ClusterSecretStore key
+# dd/messaging/nats-bridge-secrets (BRIDGE_TOKEN ≥16 chars) before syncing.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-nats-bridge
+  namespace: messaging
+  labels:
+    app: dd-nats-bridge
+spec:
+  replicas: 1
+  minReadySeconds: 5
+  progressDeadlineSeconds: 1800
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: dd-nats-bridge
+  template:
+    metadata:
+      labels:
+        app: dd-nats-bridge
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: nats-bridge
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export CARGO_HOME=/var/cache/dd-nats-bridge/cargo
+              export CARGO_TARGET_DIR=/var/cache/dd-nats-bridge/target
+              export HOME=/tmp
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
+              clone_root="$(mktemp -d /tmp/dd-nats-bridge-source.XXXXXX)"
+              git clone --depth 1 --branch "${BRIDGE_GIT_REF:-dev}" "${BRIDGE_GIT_URL}" "$clone_root"
+              echo "[dd-nats-bridge] source: ${BRIDGE_GIT_URL}@${BRIDGE_GIT_REF:-dev} ($(git -C "$clone_root" rev-parse --short HEAD))"
+              cd "$clone_root/remote/nats-bridge"
+              exec /usr/local/cargo/bin/cargo run --release --locked
+          env:
+            - name: HOME
+              value: /tmp
+            - name: BRIDGE_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: BRIDGE_GIT_REF
+              value: dev
+            - name: PORT
+              value: '3004'
+            - name: NATS_URL
+              value: nats://dd-nats.messaging.svc.cluster.local:4222
+            # Only vapi work-queue tasks and voxletra platform events may transit
+            # the bridge. Widen deliberately, per subject family, never to "dd.".
+            - name: BRIDGE_SUBJECT_PREFIXES
+              value: 'dd.vapi.tasks.,vxl.'
+            - name: BRIDGE_MAX_BODY_BYTES
+              value: '262144'
+            - name: BRIDGE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-nats-bridge-secrets
+                  key: BRIDGE_TOKEN
+                  optional: false
+          ports:
+            - name: http
+              containerPort: 3004
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: build-cache
+              mountPath: /var/cache/dd-nats-bridge
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: build-cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

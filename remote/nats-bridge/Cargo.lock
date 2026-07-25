@@ -952,6 +952,7 @@ version = "0.1.0"
 dependencies = [
  "async-nats",
  "axum 0.7.9",
+ "bytes",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
