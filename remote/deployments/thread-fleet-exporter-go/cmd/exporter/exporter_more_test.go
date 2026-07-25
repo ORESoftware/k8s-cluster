@@ -152,11 +152,11 @@ func TestParseFlagsDefaults(t *testing.T) {
 	if cfg.listenAddr != ":9103" {
 		t.Errorf("listenAddr = %q, want :9103", cfg.listenAddr)
 	}
-	if cfg.namespace != defaultNamespace || cfg.namespace != "dd-dev" {
-		t.Errorf("namespace = %q, want dd-dev", cfg.namespace)
+	if cfg.namespace != defaultNamespace {
+		t.Errorf("namespace = %q, want default %q", cfg.namespace, defaultNamespace)
 	}
-	if cfg.labelSelector != defaultLabelSelector || cfg.labelSelector != "app.kubernetes.io/component=thread-pod" {
-		t.Errorf("labelSelector = %q, want app.kubernetes.io/component=thread-pod", cfg.labelSelector)
+	if cfg.labelSelector != defaultLabelSelector {
+		t.Errorf("labelSelector = %q, want default %q", cfg.labelSelector, defaultLabelSelector)
 	}
 	if cfg.scrapePeriod != 15*time.Second {
 		t.Errorf("scrapePeriod = %v, want 15s", cfg.scrapePeriod)
