@@ -14861,10 +14861,7 @@ fn instruction_generation_result_review_response(
 ) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "instruction-generation-result");
     let generated_at_ms = now_ms();
-    let generation_result_job_id = safe_job_id(
-        "instruction-generation-result",
-        &request_id,
-    );
+    let generation_result_job_id = safe_job_id("instruction-generation-result", &request_id);
     let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
     let job_id = validate_optional_label(request.job_id, "jobId")?;
     let worker_id = validate_label(&request.worker_id, "workerId")?;
@@ -15083,10 +15080,7 @@ fn stored_instruction_generation_result_job(response: &Value) -> StoredFabricati
     let job_id = response_str_field(
         response,
         "generationResultJobId",
-        &safe_job_id(
-            "instruction-generation-result",
-            &request_id,
-        ),
+        &safe_job_id("instruction-generation-result", &request_id),
     );
     let review_status =
         response_str_field(response, "reviewStatus", "instruction-generation-result");
@@ -15613,8 +15607,7 @@ fn machine_code_result_review_response(
 ) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "machine-code-result");
     let generated_at_ms = now_ms();
-    let machine_code_result_job_id =
-        safe_job_id("machine-code-result", &request_id);
+    let machine_code_result_job_id = safe_job_id("machine-code-result", &request_id);
     let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
     let job_id = validate_optional_label(request.job_id, "jobId")?;
     let worker_id = validate_label(&request.worker_id, "workerId")?;
@@ -16491,8 +16484,7 @@ fn instruction_review_result_review_response(
 ) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "instruction-review-result");
     let generated_at_ms = now_ms();
-    let review_result_job_id =
-        safe_job_id("instruction-review-result", &request_id);
+    let review_result_job_id = safe_job_id("instruction-review-result", &request_id);
     let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
     let job_id = validate_optional_label(request.job_id, "jobId")?;
     let worker_id = validate_label(&request.worker_id, "workerId")?;
@@ -17240,10 +17232,7 @@ fn instruction_validation_result_review_response(
 ) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "instruction-validation-result");
     let generated_at_ms = now_ms();
-    let validation_result_job_id = safe_job_id(
-        "instruction-validation-result",
-        &request_id,
-    );
+    let validation_result_job_id = safe_job_id("instruction-validation-result", &request_id);
     let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
     let job_id = validate_optional_label(request.job_id, "jobId")?;
     let worker_id = validate_label(&request.worker_id, "workerId")?;
@@ -17675,10 +17664,7 @@ fn stored_instruction_validation_result_job(response: &Value) -> StoredFabricati
     let job_id = response_str_field(
         response,
         "validationResultJobId",
-        &safe_job_id(
-            "instruction-validation-result",
-            &request_id,
-        ),
+        &safe_job_id("instruction-validation-result", &request_id),
     );
     let review_status =
         response_str_field(response, "reviewStatus", "instruction-validation-result");
@@ -17965,10 +17951,7 @@ fn instruction_improvement_result_review_response(
         "instruction-improvement-result",
     );
     let generated_at_ms = now_ms();
-    let improvement_result_job_id = safe_job_id(
-        "instruction-improvement-result",
-        &request_id,
-    );
+    let improvement_result_job_id = safe_job_id("instruction-improvement-result", &request_id);
     let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
     let job_id = validate_optional_label(request.job_id, "jobId")?;
     let worker_id = validate_label(&request.worker_id, "workerId")?;
@@ -18201,10 +18184,7 @@ fn stored_instruction_improvement_result_job(response: &Value) -> StoredFabricat
     let job_id = response_str_field(
         response,
         "improvementResultJobId",
-        &safe_job_id(
-            "instruction-improvement-result",
-            &request_id,
-        ),
+        &safe_job_id("instruction-improvement-result", &request_id),
     );
     let review_status =
         response_str_field(response, "reviewStatus", "instruction-improvement-result");
@@ -18628,8 +18608,7 @@ fn boundary_remediation_result_review_response(
 ) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "boundary-remediation-result");
     let generated_at_ms = now_ms();
-    let remediation_result_job_id =
-        safe_job_id("boundary-remediation-result", &request_id);
+    let remediation_result_job_id = safe_job_id("boundary-remediation-result", &request_id);
     let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
     let analysis_job_id = validate_optional_label(request.analysis_job_id, "analysisJobId")?;
     let remediation_plan_id =
@@ -19492,8 +19471,7 @@ fn boundary_analysis_result_review_response(
 ) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "boundary-analysis-result");
     let generated_at_ms = now_ms();
-    let boundary_result_job_id =
-        safe_job_id("boundary-analysis-result", &request_id);
+    let boundary_result_job_id = safe_job_id("boundary-analysis-result", &request_id);
     let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
     let analysis_job_id = validate_optional_label(request.analysis_job_id, "analysisJobId")?;
     let job_id = validate_optional_label(request.job_id, "jobId")?;
@@ -21135,8 +21113,7 @@ fn release_readiness_result_review_response(
 ) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "release-readiness-result");
     let generated_at_ms = now_ms();
-    let release_result_job_id =
-        safe_job_id("release-readiness-result", &request_id);
+    let release_result_job_id = safe_job_id("release-readiness-result", &request_id);
     let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
     let job_id = validate_optional_label(request.job_id, "jobId")?;
     let worker_id = validate_label(&request.worker_id, "workerId")?;
@@ -21917,8 +21894,7 @@ fn assembly_planning_result_review_response(
 ) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "assembly-planning-result");
     let generated_at_ms = now_ms();
-    let assembly_result_job_id =
-        safe_job_id("assembly-planning-result", &request_id);
+    let assembly_result_job_id = safe_job_id("assembly-planning-result", &request_id);
     let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
     let job_id = validate_optional_label(request.job_id, "jobId")?;
     let worker_id = validate_label(&request.worker_id, "workerId")?;
@@ -65692,8 +65668,7 @@ fn decomposition_result_review_response(
 ) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "decomposition-result");
     let generated_at_ms = now_ms();
-    let decomposition_result_job_id =
-        safe_job_id("decomposition-result", &request_id);
+    let decomposition_result_job_id = safe_job_id("decomposition-result", &request_id);
     let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
     let job_id = validate_optional_label(request.job_id, "jobId")?;
     let worker_id = validate_label(&request.worker_id, "workerId")?;
@@ -74357,8 +74332,7 @@ fn availability_result_review_response(
 ) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "availability-result");
     let generated_at_ms = now_ms();
-    let availability_result_job_id =
-        safe_job_id("availability-result", &request_id);
+    let availability_result_job_id = safe_job_id("availability-result", &request_id);
     let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
     let job_id = validate_optional_label(request.job_id, "jobId")?;
     let worker_id = validate_label(&request.worker_id, "workerId")?;
@@ -80783,8 +80757,7 @@ fn intervention_result_review_response(
 ) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "intervention-result");
     let generated_at_ms = now_ms();
-    let intervention_result_job_id =
-        safe_job_id("intervention-result", &request_id);
+    let intervention_result_job_id = safe_job_id("intervention-result", &request_id);
     let worker_id = validate_label(&request.worker_id, "workerId")?;
     let reviewer = validate_optional_label(request.reviewer, "reviewer")?;
     let reviewer_version =
@@ -85971,8 +85944,7 @@ fn support_strategy_result_review_response(
 ) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "support-strategy-result");
     let generated_at_ms = now_ms();
-    let support_strategy_result_job_id =
-        safe_job_id("support-strategy-result", &request_id);
+    let support_strategy_result_job_id = safe_job_id("support-strategy-result", &request_id);
     let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
     let job_id = validate_optional_label(request.job_id, "jobId")?;
     let worker_id = validate_label(&request.worker_id, "workerId")?;
@@ -86815,8 +86787,7 @@ fn process_recipe_result_review_response(
 ) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "process-recipe-result");
     let generated_at_ms = now_ms();
-    let process_recipe_result_job_id =
-        safe_job_id("process-recipe-result", &request_id);
+    let process_recipe_result_job_id = safe_job_id("process-recipe-result", &request_id);
     let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
     let job_id = validate_optional_label(request.job_id, "jobId")?;
     let worker_id = validate_label(&request.worker_id, "workerId")?;
@@ -89688,8 +89659,7 @@ fn process_capability_result_review_response(
 ) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "process-capability-result");
     let generated_at_ms = now_ms();
-    let process_capability_result_job_id =
-        safe_job_id("process-capability-result", &request_id);
+    let process_capability_result_job_id = safe_job_id("process-capability-result", &request_id);
     let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
     let job_id = validate_optional_label(request.job_id, "jobId")?;
     let worker_id = validate_label(&request.worker_id, "workerId")?;
@@ -90745,8 +90715,7 @@ fn manufacturability_result_review_response(
 ) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "manufacturability-result");
     let generated_at_ms = now_ms();
-    let manufacturability_result_job_id =
-        safe_job_id("manufacturability-result", &request_id);
+    let manufacturability_result_job_id = safe_job_id("manufacturability-result", &request_id);
     let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
     let job_id = validate_optional_label(request.job_id, "jobId")?;
     let worker_id = validate_label(&request.worker_id, "workerId")?;
@@ -91969,8 +91938,7 @@ fn failure_mode_result_review_response(
 ) -> Result<Value, String> {
     let request_id = request_id(request.request_id.as_ref(), "failure-mode-result");
     let generated_at_ms = now_ms();
-    let failure_mode_result_job_id =
-        safe_job_id("failure-mode-result", &request_id);
+    let failure_mode_result_job_id = safe_job_id("failure-mode-result", &request_id);
     let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
     let job_id = validate_optional_label(request.job_id, "jobId")?;
     let worker_id = validate_label(&request.worker_id, "workerId")?;
@@ -100652,10 +100620,8 @@ fn controller_postprocessor_result_review_response(
         "controller-postprocessor-result",
     );
     let generated_at_ms = now_ms();
-    let controller_postprocessor_result_job_id = safe_job_id(
-        "controller-postprocessor-result",
-        &request_id,
-    );
+    let controller_postprocessor_result_job_id =
+        safe_job_id("controller-postprocessor-result", &request_id);
     let plan_request_id = validate_optional_label(request.plan_request_id, "planRequestId")?;
     let job_id = validate_optional_label(request.job_id, "jobId")?;
     let worker_id = validate_label(&request.worker_id, "workerId")?;
@@ -100974,10 +100940,7 @@ fn stored_controller_postprocessor_result_job(response: &Value) -> StoredFabrica
     let job_id = response_str_field(
         response,
         "controllerPostprocessorResultJobId",
-        &safe_job_id(
-            "controller-postprocessor-result",
-            &request_id,
-        ),
+        &safe_job_id("controller-postprocessor-result", &request_id),
     );
     let review_status =
         response_str_field(response, "reviewStatus", "controller-postprocessor-result");
@@ -115264,8 +115227,7 @@ fn learning_optimizer_result_review_response(
 ) -> Result<Value, String> {
     let generated_at_ms = now_ms();
     let request_id = request_id(request.request_id.as_ref(), "learning-optimizer-result");
-    let optimizer_result_job_id =
-        safe_job_id("learning-optimizer-result", &request_id);
+    let optimizer_result_job_id = safe_job_id("learning-optimizer-result", &request_id);
     let optimizer_id = validate_label(&request.optimizer_id, "optimizerId")?;
     let optimizer_family = validate_label(&request.optimizer_family, "optimizerFamily")?;
     let worker_id = validate_label(&request.worker_id, "workerId")?;

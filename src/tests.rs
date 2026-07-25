@@ -6689,7 +6689,7 @@ fn instruction_validation_result_endpoint_reviews_findings_boundaries_and_learni
         .and_then(Value::as_str)
         .expect("validation result should expose a retained job id");
     assert!(validation_result_job_id
-        .starts_with("instruction-validation-result-unit-instruction-validation-result-"));
+        .starts_with("instruction-validation-result-unit-instruction-validation-result"));
     let job = stored_instruction_validation_result_job(&payload);
     assert_eq!(job.record.job_id, validation_result_job_id);
     assert_eq!(job.record.kind, "instruction-validation-result");
@@ -7623,7 +7623,7 @@ fn machine_code_result_endpoint_reviews_controller_checks_and_learning() {
         .get("machineCodeResultJobId")
         .and_then(Value::as_str)
         .expect("machine-code result should expose a retained job id");
-    assert!(machine_code_result_job_id.starts_with("machine-code-result-unit-machine-code-result-"));
+    assert!(machine_code_result_job_id.starts_with("machine-code-result-unit-machine-code-result"));
     let job = stored_machine_code_result_job(&payload);
     assert_eq!(job.record.job_id, machine_code_result_job_id);
     assert_eq!(job.record.kind, "machine-code-result");
@@ -8028,7 +8028,7 @@ fn toolpath_result_endpoint_reviews_simulation_checks_artifacts_and_learning() {
     assert!(job
         .record
         .job_id
-        .starts_with("toolpath-result-unit-toolpath-result-"));
+        .starts_with("toolpath-result-unit-toolpath-result"));
     assert_eq!(job.record.kind, "toolpath-result");
     assert_eq!(
         job.record.status,
@@ -9782,7 +9782,7 @@ fn material_result_endpoint_reviews_lots_conditioning_artifacts_and_learning() {
     assert!(job
         .record
         .job_id
-        .starts_with("material-result-unit-material-result-"));
+        .starts_with("material-result-unit-material-result"));
     assert_eq!(job.record.kind, "material-result");
     assert_eq!(job.record.status, "material-result-lots-release-blocked");
     assert!(!job.record.ok);
@@ -11302,7 +11302,7 @@ fn decomposition_result_endpoint_reviews_split_combine_interfaces_and_learning()
         .and_then(Value::as_str)
         .expect("decomposition result should expose a retained job id");
     assert!(
-        decomposition_result_job_id.starts_with("decomposition-result-unit-decomposition-result-")
+        decomposition_result_job_id.starts_with("decomposition-result-unit-decomposition-result")
     );
     let job = stored_decomposition_result_job(&payload);
     assert_eq!(job.record.job_id, decomposition_result_job_id);
@@ -11865,7 +11865,7 @@ fn assembly_planning_result_endpoint_reviews_split_combine_interfaces_and_learni
         .get("assemblyResultJobId")
         .and_then(Value::as_str)
         .expect("assembly result should expose a retained job id");
-    assert!(assembly_result_job_id.starts_with("assembly-planning-result-unit-assembly-result-"));
+    assert!(assembly_result_job_id.starts_with("assembly-planning-result-unit-assembly-result"));
     let job = stored_assembly_planning_result_job(&payload);
     assert_eq!(job.record.job_id, assembly_result_job_id);
     assert_eq!(job.record.kind, "assembly-planning-result");
@@ -12101,7 +12101,7 @@ fn interface_result_endpoint_reviews_fit_join_decisions_and_learning() {
         .get("interfaceResultJobId")
         .and_then(Value::as_str)
         .expect("interface result should expose a retained job id");
-    assert!(interface_result_job_id.starts_with("interface-result-unit-interface-result-"));
+    assert!(interface_result_job_id.starts_with("interface-result-unit-interface-result"));
     let job = stored_interface_result_job(&payload);
     assert_eq!(job.record.job_id, interface_result_job_id);
     assert_eq!(job.record.kind, "interface-result");
@@ -13534,7 +13534,7 @@ fn execution_result_endpoint_reviews_machine_stops_interventions_and_learning() 
         .get("executionResultJobId")
         .and_then(Value::as_str)
         .expect("execution result should expose a retained job id");
-    assert!(execution_result_job_id.starts_with("execution-result-unit-execution-result-"));
+    assert!(execution_result_job_id.starts_with("execution-result-unit-execution-result"));
     let job = stored_execution_result_job(&payload);
     assert_eq!(job.record.job_id, execution_result_job_id);
     assert_eq!(job.record.kind, "execution-result");
@@ -14612,7 +14612,7 @@ fn schedule_result_endpoint_reviews_lanes_holds_des_and_learning() {
     assert!(job
         .record
         .job_id
-        .starts_with("schedule-result-unit-schedule-result-"));
+        .starts_with("schedule-result-unit-schedule-result"));
     assert_eq!(job.record.kind, "schedule-result");
     assert_eq!(job.record.status, "schedule-result-holds-release-blocked");
     assert!(!job.record.ok);
@@ -15185,7 +15185,7 @@ async fn instruction_simulation_result_endpoint_reviews_boundaries_artifacts_and
         .and_then(Value::as_str)
         .expect("simulation result should expose a retained job id");
     assert!(simulation_result_job_id
-        .starts_with("simulation-result-unit-instruction-simulation-result-"));
+        .starts_with("simulation-result-unit-instruction-simulation-result"));
     assert!(payload
         .get("generatedAtMs")
         .and_then(Value::as_u64)
@@ -17732,7 +17732,7 @@ fn quality_result_endpoint_reviews_metrology_findings_gates_and_learning() {
     assert!(job
         .record
         .job_id
-        .starts_with("quality-result-unit-quality-result-"));
+        .starts_with("quality-result-unit-quality-result"));
     assert_eq!(job.record.kind, "quality-result");
     assert_eq!(
         job.record.status,
@@ -18193,7 +18193,7 @@ fn calibration_result_endpoint_reviews_offsets_probes_artifacts_and_learning() {
     assert!(job
         .record
         .job_id
-        .starts_with("calibration-result-unit-calibration-result-"));
+        .starts_with("calibration-result-unit-calibration-result"));
     assert_eq!(job.record.kind, "calibration-result");
     assert_eq!(
         job.record.status,
@@ -18958,7 +18958,7 @@ fn tooling_result_endpoint_reviews_tool_offset_life_support_and_learning() {
     assert!(stored
         .record
         .job_id
-        .starts_with("tooling-result-tooling-result-001-"));
+        .starts_with("tooling-result-tooling-result-001"));
     assert_eq!(stored.record.kind, "tooling-result");
     assert_eq!(stored.record.status, "tooling-result-tool-release-blocked");
     assert!(!stored.record.ok);
@@ -24567,7 +24567,7 @@ fn setup_result_endpoint_reviews_workholding_datum_monitoring_and_learning() {
     assert!(job
         .record
         .job_id
-        .starts_with("setup-result-unit-setup-result-"));
+        .starts_with("setup-result-unit-setup-result"));
     assert_eq!(job.record.kind, "setup-result");
     assert_eq!(job.record.status, "setup-result-checks-release-blocked");
     assert!(!job.record.ok);
@@ -25049,7 +25049,7 @@ fn monitoring_result_endpoint_reviews_alerts_recovery_interventions_and_learning
     assert!(job
         .record
         .job_id
-        .starts_with("monitoring-result-unit-monitoring-result-"));
+        .starts_with("monitoring-result-unit-monitoring-result"));
     assert_eq!(job.record.kind, "monitoring-result");
     assert_eq!(
         job.record.status,
@@ -25514,7 +25514,7 @@ fn postprocess_result_endpoint_reviews_traveler_signoff_artifacts_and_learning()
     assert!(job
         .record
         .job_id
-        .starts_with("postprocess-result-unit-postprocess-result-"));
+        .starts_with("postprocess-result-unit-postprocess-result"));
     assert_eq!(job.record.kind, "postprocess-result");
     assert_eq!(
         job.record.status,
@@ -54552,7 +54552,7 @@ async fn plan_job_store_records_design_program_and_learning_artifacts() {
     })
     .expect("plan should succeed");
 
-    assert!(response.job_id.starts_with("plan-unit-artifact-plan-"));
+    assert!(response.job_id.starts_with("plan-unit-artifact-plan"));
     let job = stored_plan_job(&response);
     assert_eq!(job.record.job_id, response.job_id);
     assert!(job.artifacts.contains_key("design-summary"));

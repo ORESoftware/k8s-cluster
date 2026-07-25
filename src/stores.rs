@@ -123,10 +123,14 @@ fn backend<E: std::fmt::Display>(error: E) -> StoreError {
 ///
 /// `displaced` is true when a row of the same id already existed — an upsert
 /// that *updated* rather than *inserted*. Job ids are deterministic in
-/// `(kind, request_id, generated_at_ms)`, so this is the expected shape of a
-/// NATS redelivery replaying the same request within the same millisecond; it
-/// is data loss if two genuinely different jobs collided. The store cannot tell
-/// those apart, so it reports the event and the caller counts it.
+/// `(kind, request_id)` alone, so this is the expected shape of a NATS
+/// redelivery replaying the same request — at any later time, not only within
+/// the same millisecond, which is the point of having dropped the timestamp
+/// from the id. Two genuinely different requests cannot land here by accident:
+/// a caller that supplies no request id is given a distinct `{prefix}-{uuid}`
+/// one. It is still data loss if two genuinely different jobs collided (two
+/// callers reusing one request id). The store cannot tell those apart, so it
+/// reports the event and the caller counts it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct InsertOutcome {
     pub(crate) displaced: bool,
@@ -895,7 +899,10 @@ mod tests {
     fn non_finite_floats_become_null_before_a_value_can_be_inspected() {
         assert_eq!(serde_json::to_value(f64::NAN).unwrap(), Value::Null);
         assert_eq!(serde_json::to_value(f64::INFINITY).unwrap(), Value::Null);
-        assert_eq!(serde_json::to_value(f64::NEG_INFINITY).unwrap(), Value::Null);
+        assert_eq!(
+            serde_json::to_value(f64::NEG_INFINITY).unwrap(),
+            Value::Null
+        );
 
         // A `Value` cannot even hold a non-finite number.
         assert!(serde_json::Number::from_f64(f64::NAN).is_none());
@@ -919,7 +926,10 @@ mod tests {
         // Consequently the guard finds nothing to sanitize.
         let mut walked = encoded.clone();
         sanitize_finite(&mut walked);
-        assert_eq!(walked, encoded, "sanitize_finite is a no-op on serialized data");
+        assert_eq!(
+            walked, encoded,
+            "sanitize_finite is a no-op on serialized data"
+        );
     }
 
     fn job(job_id: &str, request_id: &str, created_at_ms: u128) -> StoredFabricationJob {
