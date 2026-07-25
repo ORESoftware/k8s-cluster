@@ -37,8 +37,12 @@ test('readyz responds with a well-formed readiness body', async () => {
 
 test('the operator surface denies anonymous browsers', async () => {
   const response = await page.goto(`${baseUrl}/`);
+  // Fail-closed either way: 401/403 when shared-auth is configured and the
+  // browser has no bearer token, 503 when shared-auth is absent (the server
+  // refuses to serve authenticated routes rather than serving them open).
+  // What must never happen is a 2xx — that would be operator content leaking.
   assert.ok(
-    [401, 403].includes(response.status()),
-    `anonymous "/" must be rejected with 401/403, got ${response.status()}`,
+    [401, 403, 503].includes(response.status()),
+    `anonymous "/" must be rejected with 401/403/503, got ${response.status()}`,
   );
 });

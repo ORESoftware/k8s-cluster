@@ -6,6 +6,7 @@ import { Browser, Builder } from 'selenium-webdriver';
 import chrome from 'selenium-webdriver/chrome.js';
 
 const baseUrl = (process.env.DD_FAB_E2E_BASE_URL ?? 'http://127.0.0.1:8115').replace(/\/+$/, '');
+const ANONYMOUS_REJECTION_STATUSES = [401, 403, 503];
 
 let driver;
 
@@ -50,8 +51,12 @@ test('readyz responds with a well-formed readiness body', async () => {
 test('the operator surface denies anonymous browsers', async () => {
   await driver.get(`${baseUrl}/healthz`);
   const { status, body } = await fetchStatusAndBody('/');
+  // Fail-closed either way: 401/403 when shared-auth is configured and the
+  // browser has no bearer token, 503 when shared-auth is absent (the server
+  // refuses to serve authenticated routes rather than serving them open).
+  // What must never happen is a 2xx — that would be operator content leaking.
   assert.ok(
-    [401, 403].includes(status),
-    `anonymous "/" must be rejected with 401/403, got ${status}: ${body}`,
+    ANONYMOUS_REJECTION_STATUSES.includes(status),
+    `anonymous "/" must be rejected with 401/403/503, got ${status}: ${body}`,
   );
 });

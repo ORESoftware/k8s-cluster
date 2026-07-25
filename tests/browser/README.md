@@ -26,9 +26,29 @@ frameworks identically:
    disabled, `503 {"ok":false}` when it is unavailable. The tests accept both
    statuses but require the body to be well-formed.
 3. `GET /` (the operator surface; redirects to `/mash`) **rejects anonymous
-   browsers** with `401`/`403`. The Rust server is the only authorization
-   boundary in this fleet — an anonymous browser receiving operator content is
-   an incident, so this assertion is load-bearing, not decorative.
+   browsers**, fail-closed, with `401`/`403`/`503`. The Rust server is the only
+   authorization boundary in this fleet — an anonymous browser receiving
+   operator content is an incident, so this assertion is load-bearing, not
+   decorative.
+
+   All three rejection statuses are correct, and which one you get depends on
+   the environment, not on the test:
+
+   - **`401`/`403`** — shared-auth *is* configured and the browser presented no
+     bearer token. This is what a deployed environment returns, and what the
+     Rust suite (`src/route_authorization_tests.rs`) asserts, because it builds
+     a `SharedAuthVerifier` from config.
+   - **`503`** — shared-auth is *not* configured (`AuthConfig::is_enabled()` is
+     false, so `state.verifier` is `None`). `authorize_bearer` then refuses with
+     "shared-auth is not configured; refusing to serve authenticated routes"
+     rather than serving the route open. **This is the common case for a local
+     `cargo run`**, since the auth config needs a shared-auth base, a Supabase
+     URL/tenant, and an email or role allow-list.
+
+   The suites accept all three and reject any `2xx`. The security property under
+   test is "anonymous never receives the operator surface", which holds in both
+   configurations; pinning the assertion to `401` alone would only prove which
+   env vars happened to be set.
 
 ## Running
 
