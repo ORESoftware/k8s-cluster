@@ -350,7 +350,7 @@ mod tests {
             "/auth/introspect",
             post(|| async {
                 std::future::pending::<()>().await;
-                unreachable!()
+                StatusCode::OK
             }),
         );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
