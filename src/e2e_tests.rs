@@ -207,6 +207,84 @@ async fn printer_catalog_lists_the_creality_fleet_over_http() {
 }
 
 #[tokio::test]
+async fn fdm_printer_catalog_advertises_post_2024_models_over_http() {
+    let app = authenticated_app();
+    let reply = get_auth(&app, "/fdm-printer/catalog").await;
+    assert!(reply.ok(), "status {}", reply.status);
+    let models = reply.body["supportedPrinterModels"]
+        .as_array()
+        .expect("supportedPrinterModels array");
+    for expected in [
+        "bambu-h2d",
+        "prusa-core-one",
+        "creality-k1c",
+        "elegoo-centauri-carbon",
+    ] {
+        assert!(
+            models.iter().any(|model| model["model"] == expected),
+            "over-the-wire catalog missing {expected}"
+        );
+    }
+    // The Prusa CORE One is Buddy/Marlin, so its fleet entry advertises the
+    // marlin dialect rather than klipper — verified end to end.
+    let printers = reply.body["fdmPrinters"]
+        .as_array()
+        .expect("fdmPrinters array");
+    let core_one = printers
+        .iter()
+        .find(|printer| printer["id"] == "prusa-core-one-1")
+        .expect("prusa-core-one-1 fleet entry");
+    assert!(core_one["acceptedInstructionLanguages"]
+        .as_array()
+        .is_some_and(|languages| languages.iter().any(|language| language == "marlin-gcode")));
+}
+
+#[tokio::test]
+async fn elegoo_centauri_carbon_fiber_job_passes_preflight_over_http() {
+    let app = authenticated_app();
+    // A carbon-fiber PA job on a Centauri-class machine (320 C nozzle, 110 C bed,
+    // ~25 mm3/s hotend) at a sane flow: release-ready end to end.
+    let payload = json!({
+        "process": "fdm",
+        "requestId": "e2e-centauri-cf",
+        "part": {
+            "dimensions": {"xMm": 80.0, "yMm": 60.0, "zMm": 40.0},
+            "minWallMm": 1.2,
+            "maxOverhangDegrees": 30.0
+        },
+        "machine": {
+            "buildVolume": {"xMm": 256.0, "yMm": 256.0, "zMm": 256.0},
+            "nozzleDiameterMm": 0.4,
+            "maxVolumetricFlowMm3S": 25.0,
+            "enclosed": true,
+            "maxMaterials": 1
+        },
+        "material": {
+            "name": "PA-CF",
+            "nozzleTempMinC": 280.0,
+            "nozzleTempMaxC": 320.0,
+            "bedTempMinC": 90.0,
+            "bedTempMaxC": 110.0,
+            "dryingRequired": true,
+            "enclosureRequired": true
+        },
+        "profile": {
+            "layerHeightMm": 0.2,
+            "firstLayerHeightMm": 0.24,
+            "lineWidthMm": 0.44,
+            "printSpeedMmS": 200.0,
+            "nozzleTempC": 300.0,
+            "bedTempC": 100.0,
+            "supportsEnabled": true,
+            "driedHours": 8.0
+        }
+    });
+    let reply = post_auth(&app, "/printing/preflight", payload).await;
+    assert!(reply.ok(), "status {} body {}", reply.status, reply.body);
+    assert_eq!(reply.body["releaseReady"], true, "body {}", reply.body);
+}
+
+#[tokio::test]
 async fn narrative_and_capability_surfaces_serve_to_an_operator() {
     let app = authenticated_app();
     for path in [

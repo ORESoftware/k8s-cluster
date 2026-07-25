@@ -26285,6 +26285,155 @@ fn fdm_printer_catalog_advertises_bambu_a1_and_corexy_models() {
 }
 
 #[test]
+fn post_2024_flagship_models_resolve_and_join_the_default_fleet() {
+    for reference in [
+        "bambu-h2d",
+        "Bambu Lab H2D",
+        "h2d",
+        "prusa-core-one",
+        "Prusa CORE One",
+        "core-one",
+        "creality-k1c",
+        "k1c",
+        "elegoo-centauri-carbon",
+        "centauri-carbon",
+        "centauri",
+    ] {
+        assert_eq!(
+            machine_class(reference),
+            MachineClass::Additive,
+            "{reference} should classify as an additive printer"
+        );
+    }
+
+    let machines = default_machines();
+
+    // Bambu H2D: dual-nozzle enclosed CoreXY flagship, Bambu firmware, multi-material.
+    let h2d = machines
+        .iter()
+        .find(|machine| machine.id == "bambu-h2d-1")
+        .expect("default fleet should include the Bambu Lab H2D");
+    assert_eq!(h2d.kind, "multi-material-fdm-printer");
+    assert_eq!(h2d.controller.as_deref(), Some("bambu"));
+    assert_eq!(h2d.work_envelope_mm, Some(vec![325.0, 320.0, 325.0]));
+    let h2d_languages = machine_catalog_instruction_languages(h2d);
+    assert!(h2d_languages
+        .iter()
+        .any(|language| language == "bambu-gcode"));
+    assert!(h2d_languages
+        .iter()
+        .any(|language| language == "ams-mmu-job"));
+
+    // Prusa CORE One: enclosed CoreXY, Buddy firmware -> Marlin dialect, NOT klipper.
+    let core_one = machines
+        .iter()
+        .find(|machine| machine.id == "prusa-core-one-1")
+        .expect("default fleet should include the Prusa CORE One");
+    assert_eq!(core_one.kind, "fdm-printer");
+    assert_eq!(core_one.controller.as_deref(), Some("marlin"));
+    assert_eq!(core_one.work_envelope_mm, Some(vec![250.0, 220.0, 270.0]));
+    let core_one_languages = machine_catalog_instruction_languages(core_one);
+    assert!(core_one_languages
+        .iter()
+        .any(|language| language == "marlin-gcode"));
+    assert!(!core_one_languages
+        .iter()
+        .any(|language| language == "klipper-gcode"));
+
+    // Creality K1C: carbon-capable K1, Klipper.
+    let k1c = machines
+        .iter()
+        .find(|machine| machine.id == "creality-k1c-1")
+        .expect("default fleet should include the Creality K1C");
+    assert_eq!(k1c.kind, "fdm-printer");
+    assert_eq!(k1c.controller.as_deref(), Some("klipper"));
+    assert!(k1c
+        .materials
+        .as_ref()
+        .is_some_and(|materials| materials.iter().any(|material| material == "carbon-fiber")));
+    let k1c_languages = machine_catalog_instruction_languages(k1c);
+    assert!(k1c_languages
+        .iter()
+        .any(|language| language == "klipper-gcode"));
+
+    // Elegoo Centauri Carbon: affordable enclosed CoreXY, Klipper fork.
+    let centauri = machines
+        .iter()
+        .find(|machine| machine.id == "elegoo-centauri-carbon-1")
+        .expect("default fleet should include the Elegoo Centauri Carbon");
+    assert_eq!(centauri.kind, "fdm-printer");
+    assert_eq!(centauri.controller.as_deref(), Some("klipper"));
+    assert_eq!(centauri.work_envelope_mm, Some(vec![256.0, 256.0, 256.0]));
+    let centauri_languages = machine_catalog_instruction_languages(centauri);
+    assert!(centauri_languages
+        .iter()
+        .any(|language| language == "klipper-gcode"));
+}
+
+#[test]
+fn fdm_printer_catalog_advertises_post_2024_flagship_models() {
+    let payload = fdm_printer_catalog_response();
+    let models = payload
+        .get("supportedPrinterModels")
+        .and_then(Value::as_array)
+        .expect("supported printer models should be present");
+    for expected in [
+        "bambu-h2d",
+        "prusa-core-one",
+        "creality-k1c",
+        "elegoo-centauri-carbon",
+    ] {
+        assert!(
+            models
+                .iter()
+                .any(|model| model.get("model").and_then(Value::as_str) == Some(expected)),
+            "missing supported printer model {expected}"
+        );
+    }
+
+    // The catalog now spans five vendors including the two newest additions.
+    let vendors = models
+        .iter()
+        .filter_map(|model| model.get("vendor").and_then(Value::as_str))
+        .collect::<std::collections::BTreeSet<_>>();
+    for vendor in ["Bambu Lab", "Creality", "Prusa Research", "Elegoo"] {
+        assert!(vendors.contains(vendor), "catalog missing vendor {vendor}");
+    }
+
+    // H2D advertises the highest hotend temperature in the catalog (350 °C).
+    let h2d = models
+        .iter()
+        .find(|model| model.get("model").and_then(Value::as_str) == Some("bambu-h2d"))
+        .expect("bambu-h2d entry");
+    assert_eq!(
+        h2d.get("maxNozzleTempC").and_then(Value::as_f64),
+        Some(350.0)
+    );
+    assert_eq!(
+        h2d.get("machineKind").and_then(Value::as_str),
+        Some("multi-material-fdm-printer")
+    );
+
+    let printers = payload
+        .get("fdmPrinters")
+        .and_then(Value::as_array)
+        .expect("fdm printers should be present");
+    for expected in [
+        "bambu-h2d-1",
+        "prusa-core-one-1",
+        "creality-k1c-1",
+        "elegoo-centauri-carbon-1",
+    ] {
+        assert!(
+            printers
+                .iter()
+                .any(|printer| printer.get("id").and_then(Value::as_str) == Some(expected)),
+            "missing fleet printer {expected}"
+        );
+    }
+}
+
+#[test]
 fn machine_catalog_endpoint_exposes_default_fleet_and_release_contract() {
     let payload = machine_catalog_response();
     assert_eq!(
