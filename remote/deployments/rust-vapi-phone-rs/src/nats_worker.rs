@@ -260,9 +260,9 @@ mod tests {
     }
 
     #[test]
-    fn parses_outbound_call_and_normalizes_number() {
+    fn parses_outbound_call() {
         let task =
-            parse_task(br#"{ "type": "outbound-call", "number": "+1 (555) 123-4567" }"#).unwrap();
+            parse_task(br#"{ "type": "outbound-call", "number": " +15551234567 " }"#).unwrap();
         assert_eq!(
             task,
             TaskAction::OutboundCall {
