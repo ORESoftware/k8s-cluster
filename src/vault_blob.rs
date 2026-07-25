@@ -164,10 +164,18 @@ pub async fn store(
     // device can't be made to allocate gigabytes on the next pull), and bound the
     // client-supplied device id (charset + length) so it can't inject junk into
     // the version vector. The server still never decrypts — this is pure shape.
+    //
+    // The last clause is the arithmetic one: `reconcile` lets a device advance
+    // its own counter freely, so a base at `u64::MAX` for the pushing device is
+    // dominant and causal — and has no representable successor. Refusing it here
+    // means the increment below can never overflow, so an authenticated device
+    // cannot panic the handler (debug) or persist a wrapped `counter: 0` that
+    // `version_vector_is_well_formed` would then reject forever (release).
     if !req.blob.is_well_formed()
         || !crate::protocol::device_id_is_valid(&req.device_id)
         || !crate::protocol::version_vector_is_well_formed(&req.base_version)
         || req.device_id != who.device_id.to_string()
+        || !base_version_is_advanceable(&req.base_version, &req.device_id)
     {
         return Err(ApiError::BadRequest);
     }
