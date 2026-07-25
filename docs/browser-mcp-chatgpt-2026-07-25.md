@@ -75,20 +75,121 @@ curl -s -X POST localhost:18092/mcp -H 'content-type: application/json' -d '{
   {"type":"goto","url":"https://example.com"}]}}}'
 ```
 
-## Deployment status (action needed)
+## Deployment status — SUPERSEDED (was: "not running, 0 replicas")
 
-`dd-browser-mcp-rs` is **not running** on the cluster (0 replicas). Its ArgoCD
-Application (`remote/argocd/apps/dd-browser-mcp-rs.application.yaml`, tracking
-`dev`, path `.../k8s/ec2`, `syncPolicy.automated`) exists in the repo but is not
-yet registered/synced in ArgoCD. To make the ChatGPT endpoint live:
+**That is no longer true.** Verified live against `dd-ec2-runtime`:
 
-1. Register the ArgoCD Application (add it to the app-of-apps / `kubectl apply`).
-2. Ensure prerequisites the manifests assume: the `dd-remote-gateway`
-   `= /browser-mcp` public location (streaming), the `dd-web-scraper` NetworkPolicy
-   allowing the `dd-browser-mcp-rs` pod, and — if `BROWSER_MCP_REQUIRE_AUTH=true`
-   — the `BROWSER_MCP_AUTH_SECRET` for the public bearer.
-3. Sync; confirm `readyz` is green (it checks the worker) and point ChatGPT at
-   `https://<gateway>/browser-mcp`.
+```
+dd-browser-mcp-rs    1/1   Running   0 restarts   (deployed, healthy)
+dd-browser-mcp-rs-secrets   Opaque   1   ExternalSecret Ready=True "secret synced"
+```
 
-The server code + transport are verified working; deployment/gateway/secret
-wiring is the remaining operator step.
+The Application is synced, the bearer secret is provisioned, the gateway
+`/browser-mcp` locations exist, and `dd-web-scraper.networkpolicy.yaml` already
+admits `app: dd-browser-mcp-rs`. **The end-to-end browser chain works in
+production.** Driven through the public gateway with the bearer:
+
+| Call | Result |
+|---|---|
+| `tools/list` | `browser_act`, `browser_observe` |
+| `browser_act` → `goto https://www.irs.gov/` | `isError:false`, title *"Internal Revenue Service \| An official website…"* |
+| `browser_act` → `goto https://example.com/` | `"host example.com is not on the allowlist"` (policy working) |
+
+So MCP → browser-mcp-rs → dd-web-scraper → Playwright → public web is **fully
+functional**. What remains are three ChatGPT-facing config problems.
+
+## The three blockers for ChatGPT (verified 2026-07-25)
+
+### 1. Auth model is incompatible — ChatGPT cannot present a static bearer
+
+`BROWSER_MCP_REQUIRE_AUTH=true` gates `/mcp` on a 64-char static bearer. Verified
+against the public endpoint:
+
+```
+POST /browser-mcp  initialize   (no Authorization)  -> 401 {"code":-32001,"unauthorized"}
+POST /browser-mcp  initialize   (Bearer <secret>)   -> 200 + capabilities
+```
+
+Per OpenAI's MCP docs, ChatGPT custom connectors authenticate with **OAuth 2.1**
+(public-client or `private_key_jwt` token exchange, CIMD or dynamic client
+registration) or **no auth**. A user-supplied static API key/bearer is *not*
+something the ChatGPT connector presents. So today ChatGPT gets a 401 on every
+call and can never complete `initialize`.
+
+Note the OpenAI **Responses API** `mcp` tool is different — it accepts arbitrary
+`headers`, so a static bearer works there. "ChatGPT agents" (the app) and the API
+are not the same integration surface.
+
+Options, in ascending order of work:
+- **(a)** `BROWSER_MCP_REQUIRE_AUTH=false` → a no-auth ChatGPT connector works
+  immediately. But `browser_act` is write-capable and the gateway `/browser-mcp`
+  location has no `$dd_mcp_auth_ok` gate, so this puts a public browser driver on
+  the internet. The allowlist becomes the *only* control.
+- **(b)** Implement OAuth 2.1 in `browser-mcp-rs` (the correct fix for a public
+  write-capable endpoint).
+- **(c)** Keep the bearer and drive it from the Responses API instead of the app.
+
+### 2. The running binary is STALE — the SSE fix is not live
+
+`d809bde6` made `GET /mcp` + `Accept: text/event-stream` return **405**. In
+production it still returns **200 + JSON descriptor**, the pre-fix behavior, both
+through the gateway and port-forwarded directly to the pod.
+
+Root cause: the pod does not run a built image. It runs
+`cargo run --release` over a **hostPath** mount of
+`/home/ec2-user/codes/dd/dd-next-1`, so the *manifest* comes from ArgoCD/git but
+the *source* comes from the node's checkout — and that checkout is at:
+
+```
+551ba7dc  Merge pull request #36 from ORESoftware/fix/hetzner-browser-test
+```
+
+which predates `d809bde6`, `ad8f6422`, and `dfd9089b`. This is why the env vars
+look current (ArgoCD synced them) while the behavior is old (the binary is not).
+
+**Decision: do NOT `git pull` that checkout.** Measured on the live cluster,
+**93 deployments** mount `/home/ec2-user/codes/dd/dd-next-1` — essentially the
+whole in-pod-build fleet (`dd-web-scraper`, `dd-remote-rest-api`, `dd-runtime-config`,
+every `dd-thread-*`, …). Pulling it stages new source for all 93, each of which
+silently rebuilds whatever is on disk at its *next* restart. That is an
+unbounded, delayed-action change to the entire runtime in order to fix one
+service's SSE negotiation. Not an acceptable trade.
+
+Two surgical alternatives, preferred order:
+
+1. **Give this one service a real image.** `browser-mcp-rs/Dockerfile` already
+   exists. Building and pinning an image removes it from the hostPath fleet
+   entirely, makes it independently deployable, and means its binary matches its
+   manifest — which is the actual root cause here (manifest from ArgoCD, binary
+   from a node checkout, no relationship between them). This is the durable fix.
+2. **Update only its subdirectory** on the node
+   (`remote/deployments/browser-mcp-rs`) and restart just that deployment. Fast,
+   but leaves the manifest/binary split in place to bite again.
+
+### 3. The allowlist permits only filing sites
+
+`BROWSER_MCP_ALLOWED_DOMAINS=sos.state.co.us,irs.gov,dnb.com` — verified live.
+This was deliberate (`dfd9089b` "filing sites only", Gmail explicitly dropped), so
+credit-program and conference-CFP sites are blocked by design. Widening it is a
+policy decision, not a bug. Widen deliberately, host by host.
+
+### Also worth knowing: required tools
+
+OpenAI's docs require read-only `search` and `fetch` tools (compatibility schema)
+for the **deep-research / company-knowledge** connector surface. This server
+exposes `browser_act`/`browser_observe`, which is fine for Developer-Mode/agent
+tool calling but will not satisfy the deep-research surface without adding them.
+
+## Reproduce the live verification
+
+```sh
+CTX=dd-ec2-runtime
+BEARER=$(kubectl --context $CTX -n default get secret dd-browser-mcp-rs-secrets \
+          -o jsonpath='{.data.BROWSER_MCP_AUTH_SECRET}' | base64 -d)
+curl -sk -X POST https://98.90.186.114/browser-mcp \
+  -H "Authorization: Bearer $BEARER" -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"browser_act",
+       "arguments":{"intent":"smoke","actions":[{"type":"start"},
+       {"type":"goto","url":"https://www.irs.gov/"}]}}}'
+```

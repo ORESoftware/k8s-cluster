@@ -16,6 +16,7 @@
     "test:cli:backend-architecture-contract": "pnpm exec tsx --test general/backend-architecture-contract.test.ts",
     "test:cli:bastion-config": "pnpm exec tsx --test general/bastion-config.test.ts",
     "test:cli:browser-job-runner-config": "pnpm exec tsx --test general/browser-job-runner-config.test.ts",
+    "test:cli:browser-mcp-exposure": "pnpm exec tsx --test general/browser-mcp-exposure.test.ts",
     "test:cli:browser-test-server-config": "pnpm exec tsx --test general/browser-test-server-config.test.ts",
     "test:cli:build-server-config": "pnpm exec tsx --test general/build-server-config.test.ts",
     "test:cli:canonical-cloud-gitops": "pnpm exec tsx --test general/canonical-cloud-gitops.test.ts",
