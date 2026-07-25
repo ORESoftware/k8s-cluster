@@ -295,5 +295,20 @@ mod tests {
                 "network policy missing {required}"
             );
         }
+
+        // The ExternalSecret must target the cluster's real store and the GA
+        // API version, or the DSN never materializes.
+        let external_secret = include_str!("../deploy/k8s/externalsecret.yaml");
+        for required in [
+            "apiVersion: external-secrets.io/v1",
+            "name: dd-cluster-secrets",
+            "kind: ClusterSecretStore",
+        ] {
+            assert!(
+                external_secret.contains(required),
+                "external secret missing {required}"
+            );
+        }
+        assert!(!external_secret.contains("external-secrets.io/v1beta1"));
     }
 }
