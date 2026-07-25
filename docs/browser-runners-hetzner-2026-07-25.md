@@ -74,12 +74,17 @@ The clone is idempotent across init restarts (`if [ ! -e /opt/dd-next-1/.git ]`)
 because the emptyDir outlives them, and `git config --global --add
 safe.directory '*'` avoids git's dubious-ownership abort.
 
-**This exact shape was already running on Hetzner and working — two pods, 2/2
-Ready, zero restarts — but it existed only in the live cluster, not in Git.**
-`dd-next-runtime` syncs with `selfHeal: true` and the app reported `OutOfSync`,
-so Argo CD was going to revert the working fix back to the crashlooping
-hostPath version. Codifying it here is what stops that regression; it is a
-no-op against what is already live.
+This landed on `dev` in
+[PR #34](https://github.com/ORESoftware/k8s-cluster/pull/34) (`f0565086`,
+"run on any cluster (self-contained clone) + fix semconv NoClassDefFound"), and
+Hetzner has been healthy since: two pods, 2/2 Ready, zero restarts.
+
+Worth recording how easy it was to misread the situation. `main` did not have
+the fix and the Argo app showed `OutOfSync`, which looks exactly like "the
+working fix exists only in the cluster and selfHeal is about to revert it".
+It wasn't — the fix was on `dev`, which is the branch Argo actually tracks, and
+`main` was simply behind. Comparing against the deployed branch rather than the
+checked-out one is what settles that question.
 
 ## `dd-browser-test-server` is a different, harder problem
 
@@ -110,17 +115,20 @@ to `/home/ec2-user/codes/dd/dd-next-1` on some Hetzner nodes. That directory is
 updated, exists on only some of the five nodes, and makes scheduling a lottery.
 It should not be relied on.
 
-**Deliberately not edited here**, because a concurrent session was actively
-iterating on that manifest in-cluster while this was written — a competing
-commit would fight it.
+**Deliberately not edited here.** The same fix was attempted on `dev`
+(`8fec84ee`, "self-heal source via per-pod clone") and **reverted**
+(`32f9f3a6`) — the private-submodule dependency above is why. A crashlooping
+`fetch-source`-equipped pod was still visible in-cluster during this work,
+which is that attempt. Re-landing the same change without solving the
+credential question would just reproduce the revert.
 
 ## Status
 
 | Change | State |
 |---|---|
-| `dd-selenium-server.deployment.yaml` — initContainer + emptyDir | committed; matches what is already live |
-| `dd-remote-gateway.configmap.yaml` — `/vxl/vapi/webhook` | committed; safe to ship before Voxletra exists (variable upstream) |
-| `dd-browser-test-server.deployment.yaml` | left alone — needs the private-submodule decision above |
+| `dd-selenium-server.deployment.yaml` | **no change needed** — already fixed on `dev` via PR #34 |
+| `dd-remote-gateway.configmap.yaml` — `/vxl/vapi/webhook` | the only new change here; safe to ship before Voxletra exists (variable upstream) |
+| `dd-browser-test-server.deployment.yaml` | left alone — the attempted fix was reverted on `dev`; needs the credential decision above |
 
 `kubectl kustomize remote/argocd/dd-next-runtime` builds clean, and the
 rendered selenium Deployment carries `initContainers: [fetch-source]` with both

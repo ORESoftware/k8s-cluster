@@ -28,24 +28,14 @@ spec:
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
-      # --- Source ----------------------------------------------------------------
-      # The API container builds from this repo's source. It used to arrive via a
-      # hostPath mount of /home/ec2-user/codes/dd/dd-next-1, which exists only on
-      # the EC2 node: on Hetzner — which syncs this same dd-next-runtime path —
-      # the API container could not find its source and crashlooped ~6,650 times
-      # over 23 days while the Grid beside it stayed healthy. The Service exposes
-      # only the API port, so the Service had zero endpoints that whole time.
-      #
-      # Cloning into an emptyDir makes the pod self-contained and identical on
-      # every cluster, with no node-level state to create or keep current.
+      # Source comes from a per-pod clone of the (public) repo into an emptyDir,
+      # NOT a host path. The previous `hostPath: /home/ec2-user/codes/dd/dd-next-1`
+      # only exists on the AWS EC2 node, so every Hetzner pod crash-looped `cd`-ing
+      # into a missing directory. Cloning makes the pod self-contained on any node
+      # in any cluster (build-server audit F13 pattern).
       initContainers:
         - name: fetch-source
           image: docker.io/library/maven:3.9.9-eclipse-temurin-17
-          imagePullPolicy: IfNotPresent
-          securityContext:
-            allowPrivilegeEscalation: false
-            seccompProfile:
-              type: RuntimeDefault
           command:
             - /bin/bash
             - -lc
@@ -63,6 +53,10 @@ spec:
                 git clone --depth 1 --branch dev https://github.com/ORESoftware/k8s-cluster.git /opt/dd-next-1
               fi
               test -e /opt/dd-next-1/remote/deployments/selenium-server/pom.xml
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
@@ -216,9 +210,9 @@ spec:
             - name: repo
               mountPath: /opt/dd-next-1
       volumes:
-        # Populated by the fetch-source initContainer above; sized for a shallow
-        # clone plus the Maven build output.
         - name: repo
+          # Was hostPath (AWS-node-only). Now a per-pod emptyDir populated by the
+          # fetch-source initContainer, so it works on every node/cluster.
           emptyDir:
             sizeLimit: 4Gi
         - name: dshm
