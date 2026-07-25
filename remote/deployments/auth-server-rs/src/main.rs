@@ -1696,7 +1696,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
         assert_eq!(
             response.headers().get(header::LOCATION).unwrap().to_str().unwrap(),
-            "/\\evil.com"
+            "/home"
         );
     }
 
