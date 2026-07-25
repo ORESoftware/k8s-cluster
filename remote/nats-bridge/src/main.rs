@@ -643,35 +643,45 @@ mod tests {
         }
     }
 
-    /// FINDING (latent, config-dependent): the allowlist is matched with
-    /// `str::starts_with`, which is NOT anchored to a subject-token boundary.
-    /// The shipped config is safe only because every configured prefix ends in
-    /// `.` (`dd.vapi.tasks.`, `vxl.`) — the trailing dot forces a token
-    /// boundary. Nothing in the code enforces or normalizes that trailing dot,
-    /// so a prefix configured WITHOUT one silently widens the allowlist to any
-    /// sibling subject sharing the textual prefix. This test pins both the safe
-    /// and the dangerous behaviors so a regression (or a bad
-    /// `BRIDGE_SUBJECT_PREFIXES`) is visible.
+    /// The allowlist match is anchored to a subject-token boundary
+    /// (`subject_in_prefix`), so it is safe whether or not a configured prefix
+    /// ends in `.`. A prefix without the trailing dot (`vxl`) still matches only
+    /// `vxl` and `vxl.*`, never the sibling `vxlmalicious.*`. (Previously the
+    /// match was a raw `str::starts_with`, which widened `vxl` to every textual
+    /// sibling — a latent, config-dependent allowlist bypass; now closed.)
     #[test]
-    fn allowlist_prefix_boundary_is_substring_not_token() {
-        // Safe: prefixes end in '.', so siblings are rejected at the boundary.
+    fn allowlist_prefix_boundary_is_token_anchored() {
+        // Prefixes ending in '.' behave exactly as before (shipped config).
         let safe = parse_prefixes("dd.vapi.tasks.,vxl.");
         assert!(validate_subject("vxl.events", &safe).is_ok());
         assert!(validate_subject("vxlmalicious.foo", &safe).is_err());
         assert!(validate_subject("dd.vapi.tasksX.y", &safe).is_err());
 
-        // Dangerous: a prefix missing its trailing '.' matches token-extensions.
-        // These `is_ok()` assertions document the bypass — they are NOT an
-        // endorsement; the fix is to require/normalize a trailing '.' on prefixes.
+        // Prefixes WITHOUT a trailing '.' are now anchored too: the exact subject
+        // and its children pass; textual siblings are denied.
         let no_dot = parse_prefixes("vxl,dd.vapi.tasks");
+        assert!(validate_subject("vxl", &no_dot).is_ok());
+        assert!(validate_subject("vxl.events", &no_dot).is_ok());
+        assert!(validate_subject("dd.vapi.tasks.call", &no_dot).is_ok());
         assert!(
-            validate_subject("vxlmalicious.foo", &no_dot).is_ok(),
-            "prefix 'vxl' (no trailing dot) widens to sibling 'vxlmalicious.*'"
+            validate_subject("vxlmalicious.foo", &no_dot).is_err(),
+            "prefix 'vxl' must NOT widen to sibling 'vxlmalicious.*'"
         );
         assert!(
-            validate_subject("dd.vapi.tasksX.y", &no_dot).is_ok(),
-            "prefix 'dd.vapi.tasks' (no trailing dot) widens to 'dd.vapi.tasksX.*'"
+            validate_subject("dd.vapi.tasksX.y", &no_dot).is_err(),
+            "prefix 'dd.vapi.tasks' must NOT widen to 'dd.vapi.tasksX.*'"
         );
+    }
+
+    /// Direct unit coverage of the boundary matcher.
+    #[test]
+    fn subject_in_prefix_anchors_at_token_boundary() {
+        assert!(subject_in_prefix("vxl", "vxl"));
+        assert!(subject_in_prefix("vxl.events", "vxl"));
+        assert!(subject_in_prefix("vxl.events", "vxl."));
+        assert!(!subject_in_prefix("vxlmalicious.foo", "vxl"));
+        assert!(!subject_in_prefix("vxlmalicious.foo", "vxl."));
+        assert!(!subject_in_prefix("vx", "vxl"));
     }
 
     /// Legitimate vapi/vxl traffic must still pass — the narrowing must not
