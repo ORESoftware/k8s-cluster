@@ -349,7 +349,8 @@ mod tests {
 
     #[tokio::test]
     async fn router_middleware_records_requests_and_sets_security_headers() {
-        let app = router(test_state());
+        let state = test_state();
+        let app = router(state.clone());
         let response = app
             .clone()
             .oneshot(
