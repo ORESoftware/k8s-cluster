@@ -103,15 +103,26 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/auth/shared", post(supabase_auth::enroll_shared))
         .route("/v1/auth/supabase", post(supabase_auth::enroll_provider))
         // Route-only layering preserves the outer router's normal 404 fallback.
+        .route_layer(RequestBodyLimitLayer::new(DEFAULT_BODY_LIMIT))
         .route_layer(GovernorLayer { config: governor });
 
-    let authed_routes = Router::new()
+    let device_routes = Router::new()
         .route("/v1/devices", get(devices::list_handler))
         .route("/v1/devices/revoke", post(devices::revoke_handler))
+        .route_layer(RequestBodyLimitLayer::new(DEFAULT_BODY_LIMIT))
+        .route_layer(GovernorLayer {
+            config: Arc::clone(&authed_governor),
+        });
+
+    // The one route that legitimately carries a large body. Kept in its own
+    // sub-router so the larger cap cannot leak onto anything else; the GET on
+    // the same path is bodyless and unaffected by the limit it inherits.
+    let vault_routes = Router::new()
         .route(
             "/v1/vault",
             get(vault_blob::pull_handler).post(vault_blob::push_handler),
         )
+        .route_layer(RequestBodyLimitLayer::new(VAULT_BODY_LIMIT))
         .route_layer(GovernorLayer {
             config: authed_governor,
         });
@@ -122,9 +133,9 @@ pub fn router(state: AppState) -> Router {
         .route("/livez", get(health::live))
         .route("/healthz", get(health::live))
         .route("/readyz", get(health::ready))
-        .route("/metrics", get(health::prometheus))
         .merge(auth_routes)
-        .merge(authed_routes)
+        .merge(device_routes)
+        .merge(vault_routes)
         .layer(telemetry::http_trace_layer())
         .layer(middleware::from_fn_with_state(
             state.metrics.clone(),
