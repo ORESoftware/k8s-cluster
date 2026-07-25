@@ -39,8 +39,15 @@ impl Drop for Guard {
 }
 
 pub fn init(service_name: &str) -> Guard {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,tower_http=info,hyper=warn,sea_orm=warn"));
+    // `sqlx::query` is where SeaORM's per-statement logging actually comes from
+    // (sqlx-core/src/logger.rs), which is why `sea_orm=warn` never silenced it:
+    // at INFO every statement the service issues was logged in full, drowning
+    // the level and publishing the schema. Keep both directives — `sea_orm=warn`
+    // still covers SeaORM's own chatter. Mirrored in deploy/k8s/deployment.yaml,
+    // which is what production actually runs with.
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new("info,tower_http=info,hyper=warn,sea_orm=warn,sqlx::query=warn")
+    });
     let fmt_layer = tracing_subscriber::fmt::layer()
         .json()
         .flatten_event(true)
