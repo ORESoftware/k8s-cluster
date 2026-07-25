@@ -46,10 +46,11 @@ spec:
               # this ever runs non-root; harmless as root.
               export HOME=/tmp
               git config --global --add safe.directory '*'
-              if [ ! -e /opt/dd-next-1/remote/deployments/selenium-server/pom.xml ]; then
+              # Idempotent across init restarts (the emptyDir persists).
+              if [ ! -e /opt/dd-next-1/.git ]; then
                 git clone --depth 1 --branch dev https://github.com/ORESoftware/k8s-cluster.git /opt/dd-next-1
-                git -C /opt/dd-next-1 submodule update --init --depth 1 remote/libs
               fi
+              git -C /opt/dd-next-1 submodule update --init --force --depth 1 remote/libs
           securityContext:
             allowPrivilegeEscalation: false
             seccompProfile:
