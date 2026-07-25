@@ -140,6 +140,12 @@ pub struct AppConfig {
     /// HMAC secret for `/internal/webhook/sync`. When absent the endpoint is
     /// disabled (404), rather than exposed without authentication.
     pub webhook_secret: Option<String>,
+    /// Shared service credential required to call `/auth/introspect`. When set,
+    /// callers must present `Authorization: Bearer <secret>` and unauthenticated
+    /// callers are rejected. When absent, introspection stays open for backward
+    /// compatibility and logs a one-time deprecation warning. Setting this is
+    /// strongly recommended, since introspection returns full token claims.
+    pub introspect_secret: Option<String>,
     /// Optional CORS allow-list for browser callers.
     pub cors_allow_origins: Vec<String>,
 }
@@ -222,6 +228,18 @@ impl AppConfig {
             ));
         }
 
+        let introspect_secret = std::env::var("AUTH_INTROSPECT_SECRET")
+            .ok()
+            .filter(|value| !value.is_empty());
+        if introspect_secret
+            .as_ref()
+            .is_some_and(|secret| secret.len() < 32)
+        {
+            return Err(ConfigError::Invalid(
+                "AUTH_INTROSPECT_SECRET must contain at least 32 bytes",
+            ));
+        }
+
         let cors_allow_origins = env_or("AUTH_CORS_ALLOW_ORIGINS", "")
             .split(',')
             .map(str::trim)
@@ -237,6 +255,7 @@ impl AppConfig {
             redis,
             sessions,
             webhook_secret,
+            introspect_secret,
             cors_allow_origins,
         })
     }
