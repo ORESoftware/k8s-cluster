@@ -2554,12 +2554,12 @@ mod logic_tests {
     }
 
     #[test]
-    fn validate_outbound_url_ipv4_mapped_ipv6_is_a_bypass() {
-        // FINDING: an IPv4-mapped IPv6 literal pointing at the cloud metadata
-        // service is NOT rejected by the private-host filter. The URL guard
-        // accepts it today; this test locks in the current (leaky) behavior so
-        // any future hardening trips here.
-        assert!(validate_outbound_url("http://[::ffff:169.254.169.254]/", false).is_ok());
+    fn validate_outbound_url_ipv4_mapped_ipv6_is_blocked() {
+        // Regression: an IPv4-mapped IPv6 literal pointing at the cloud metadata
+        // service (or loopback) is now judged by its embedded IPv4 and rejected,
+        // closing the SSRF bypass.
+        assert!(validate_outbound_url("http://[::ffff:169.254.169.254]/", false).is_err());
+        assert!(validate_outbound_url("http://[::ffff:127.0.0.1]/", false).is_err());
     }
 
     // ---- SSRF guard: blocked_host (ground-truth table) -----------------
