@@ -190,6 +190,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn authed_routes_are_rate_limited_but_probes_are_not() {
+        let app = router(test_state());
+
+        // Drive one client IP past the authed burst budget: the governor must
+        // start rejecting with 429 before the handler runs.
+        let mut throttled = false;
+        for _ in 0..40 {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri("/v1/vault")
+                        .header("x-forwarded-for", "203.0.113.7")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            if response.status() == StatusCode::TOO_MANY_REQUESTS {
+                throttled = true;
+                break;
+            }
+        }
+        assert!(throttled, "/v1/vault must carry the per-IP governor");
+
+        // Probe routes share the kubelet's node IP and must stay unthrottled.
+        for _ in 0..40 {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri("/livez")
+                        .header("x-forwarded-for", "203.0.113.7")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+    }
+
+    #[tokio::test]
     async fn router_middleware_records_requests_and_sets_security_headers() {
         let app = router(test_state());
         let response = app
