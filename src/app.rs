@@ -513,11 +513,21 @@ mod tests {
 
     #[test]
     fn kubernetes_manifest_matches_operational_and_telemetry_routes() {
+        // `/metrics` is not on the public router any more (see `metrics_router`
+        // and the route table above); the manifests must describe the same
+        // two-port arrangement or the pod ships unscrapeable, or worse, with
+        // telemetry reachable from the Ingress again.
         let manifest = include_str!("../deploy/k8s/deployment.yaml");
         for required in [
             "path: /livez",
             "path: /readyz",
             "prometheus.io/path: /metrics",
+            // The scrape must target the telemetry port, not the API port.
+            "prometheus.io/port: \"9091\"",
+            "name: metrics",
+            "containerPort: 9091",
+            "METRICS_BIND_ADDR",
+            "value: \"0.0.0.0:9091\"",
             "OTEL_EXPORTER_OTLP_ENDPOINT",
             "DEPLOYMENT_ENVIRONMENT",
             "SHARED_AUTH_BASE_URL",
@@ -525,16 +535,54 @@ mod tests {
         ] {
             assert!(manifest.contains(required), "manifest missing {required}");
         }
+        assert!(
+            !manifest.contains("prometheus.io/port: \"8080\""),
+            "the scrape annotation must not point at the public API port"
+        );
         assert!(!manifest.contains("sqlx=warn"));
         assert!(!manifest.contains("SUPABASE_JWT_LEGACY_SECRET"));
 
+        let service = include_str!("../deploy/k8s/service.yaml");
+        for required in ["name: metrics", "port: 9091", "targetPort: metrics"] {
+            assert!(service.contains(required), "service missing {required}");
+        }
+
         let network_policy = include_str!("../deploy/k8s/networkpolicy.yaml");
-        for required in ["app: dd-remote-gateway", "port: 80", "port: 4318"] {
+        for required in [
+            "app: dd-remote-gateway",
+            "port: 80",
+            "port: 4318",
+            "port: 9091",
+        ] {
             assert!(
                 network_policy.contains(required),
                 "network policy missing {required}"
             );
         }
+
+        // ingress-nginx must reach 8080 and ONLY 8080; the observability
+        // namespace must reach 9091 and ONLY 9091. Assert on each `from:` block
+        // separately so a merged or widened rule fails loudly.
+        let (ingress_rule, observability_rule) = network_policy
+            .split_once("kubernetes.io/metadata.name: observability")
+            .map(|(before, after)| (before, after))
+            .expect("networkpolicy names the observability namespace");
+        assert!(
+            ingress_rule.contains("kubernetes.io/metadata.name: ingress-nginx"),
+            "the first ingress rule must be the ingress-nginx one"
+        );
+        assert!(
+            ingress_rule.contains("port: 8080") && !ingress_rule.contains("port: 9091"),
+            "ingress-nginx must not be able to reach the telemetry port"
+        );
+        let observability_ports: &str = observability_rule
+            .split("egress:")
+            .next()
+            .expect("ingress section ends at egress");
+        assert!(
+            observability_ports.contains("port: 9091") && !observability_ports.contains("port: 8080"),
+            "the observability namespace must be admitted to 9091 only"
+        );
 
         // The ExternalSecret must target the cluster's real store and the GA
         // API version, or the DSN never materializes.
