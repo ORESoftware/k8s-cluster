@@ -36,6 +36,7 @@ import {
   type CaptchaType,
 } from './captcha.js';
 import { captchaAutoSolveAllowed } from './scrape-policy.js';
+import { registerBrowserAgentRoutes, closeAllSessions } from './browser-agent.js';
 
 const STRATEGIES = [
   'native-fetch',
@@ -518,6 +519,16 @@ fastify.get('/metrics', async (_request, reply) => {
 fastify.get('/scrape/metrics', async (_request, reply) => {
   reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
   return renderMetrics();
+});
+
+// Persistent-session declarative browser-automation surface (/agent/*),
+// driven by the dd-browser-mcp-rs gateway. Registered here so it shares the
+// fastify instance, telemetry, and SERVER_AUTH_SECRET gate.
+registerBrowserAgentRoutes(fastify, {
+  getBrowser: getAgentBrowser,
+  isPrivateIp,
+  isAuthorized,
+  log: fastify.log,
 });
 
 fastify.post('/scrape', async (request, reply) => {
@@ -1370,6 +1381,31 @@ function chromiumLaunchArgs(): string[] {
   return ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'];
 }
 
+// Multi-engine launcher for the persistent browser-agent sessions. Chromium
+// reuses the shared scraper singleton; firefox/webkit are launched lazily and
+// cached, so a browser process is only spawned for an engine actually used.
+const agentEngineBrowsers = new Map<'firefox' | 'webkit', PlaywrightBrowser>();
+async function getAgentBrowser(
+  engine: 'chromium' | 'firefox' | 'webkit',
+): Promise<PlaywrightBrowser> {
+  if (engine === 'chromium') {
+    return getPlaywrightBrowser();
+  }
+  const existing = agentEngineBrowsers.get(engine);
+  if (existing?.isConnected()) {
+    return existing;
+  }
+  const playwright = await import('playwright');
+  const browser = await playwright[engine].launch({ headless: config.browserHeadless });
+  browser.on('disconnected', () => {
+    if (agentEngineBrowsers.get(engine) === browser) {
+      agentEngineBrowsers.delete(engine);
+    }
+  });
+  agentEngineBrowsers.set(engine, browser);
+  return browser;
+}
+
 async function capturePlaywrightFailureScreenshot(
   page: PlaywrightPage,
   strategy: BrowserStrategyName,
@@ -2132,6 +2168,7 @@ function clampNumber(value: number, min: number, max: number): number {
 
 async function closeBrowsers(): Promise<void> {
   const closing: Promise<unknown>[] = [];
+  await closeAllSessions().catch(() => undefined);
   if (playwrightBrowser) {
     closing.push(playwrightBrowser.close().catch(() => undefined));
     playwrightBrowser = null;
@@ -2139,6 +2176,10 @@ async function closeBrowsers(): Promise<void> {
   if (puppeteerBrowser) {
     closing.push(puppeteerBrowser.close().catch(() => undefined));
     puppeteerBrowser = null;
+  }
+  for (const [engine, browser] of agentEngineBrowsers) {
+    closing.push(browser.close().catch(() => undefined));
+    agentEngineBrowsers.delete(engine);
   }
   await Promise.all(closing);
 }

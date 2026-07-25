@@ -1,0 +1,190 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-browser-mcp-rs
+  namespace: default
+  labels:
+    app: dd-browser-mcp-rs
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-browser-mcp-rs
+  template:
+    metadata:
+      annotations:
+        dd.dev/telemetry-revision: '2026-07-24-browser-mcp'
+      labels:
+        app: dd-browser-mcp-rs
+    spec:
+      # No Kubernetes API access is needed (this service only proxies to the
+      # in-cluster browser worker), so the SA token is not mounted.
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: browser-mcp-rs
+          image: docker.io/library/rust:1.90-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+              export HOME=/tmp
+              export CARGO_HOME=/tmp/cargo
+              export CARGO_TARGET_DIR=/tmp/dd-browser-mcp-rs-target
+              export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
+              export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
+              export CARGO_TERM_COLOR="${CARGO_TERM_COLOR:-never}"
+              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
+              cd /opt/dd-next-1/remote/deployments/browser-mcp-rs
+              exec /usr/local/cargo/bin/cargo run --release --locked
+          env:
+            - name: HOST
+              value: 0.0.0.0
+            - name: PORT
+              value: '8092'
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/dd-browser-mcp-rs-target
+            - name: CARGO_BUILD_JOBS
+              value: '1'
+            - name: CARGO_INCREMENTAL
+              value: '0'
+            - name: CARGO_TERM_COLOR
+              value: never
+            - name: CARGO_NET_RETRY
+              value: '5'
+            - name: CARGO_HTTP_TIMEOUT
+              value: '120'
+            - name: RUST_BACKTRACE
+              value: '1'
+            # Private browser worker (dd-web-scraper /agent/*).
+            - name: BROWSER_MCP_WORKER_URL
+              value: http://dd-web-scraper.default.svc.cluster.local:8097
+            - name: BROWSER_MCP_WORKER_TIMEOUT_MS
+              value: '65000'
+            # Shared secret used to authenticate to the worker (X-Server-Auth).
+            - name: SERVER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+            # In-pod bearer gate on POST /mcp. OFF for now: the service is
+            # deliberately public (auth is enforced later at the gateway). Flip
+            # to 'true' and set BROWSER_MCP_AUTH_SECRET to require a bearer.
+            - name: BROWSER_MCP_REQUIRE_AUTH
+              value: 'false'
+            - name: BROWSER_MCP_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-browser-mcp-rs-secrets
+                  key: BROWSER_MCP_AUTH_SECRET
+                  optional: true
+            # Server-side domain allowlist injected into every browser_act call
+            # so navigation policy is enforced centrally. Empty = any public
+            # https host (dev). Set to a concrete list in production.
+            - name: BROWSER_MCP_ALLOWED_DOMAINS
+              value: ''
+            - name: OTEL_SERVICE_NAME
+              value: dd-browser-mcp-rs
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_TRACES_ENABLED
+              value: 'true'
+            - name: OTEL_EXPORT_TIMEOUT_MS
+              value: '800'
+            - name: RUNTIME_CONFIG_SERVICE_NAME
+              value: dd-browser-mcp-rs
+            - name: RUNTIME_CONFIG_SCOPE
+              value: dd-browser-mcp-rs
+            - name: RUNTIME_CONFIG_ENV
+              value: stage
+            - name: RUNTIME_CONFIG_REGISTER_URL
+              value: http://dd-runtime-config.default.svc.cluster.local:8110/subscribers
+            - name: RUNTIME_CONFIG_APPLY_URL
+              value: http://dd-browser-mcp-rs.default.svc.cluster.local:8092/internal/update-runtime-config
+            - name: RUNTIME_CONFIG_SERVER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: true
+          ports:
+            - name: http
+              containerPort: 8092
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+              ephemeral-storage: 2Gi
+            limits:
+              cpu: '2'
+              memory: 2Gi
+              ephemeral-storage: 6Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: Directory
+        - name: tmp
+          emptyDir:
+            sizeLimit: 6Gi
