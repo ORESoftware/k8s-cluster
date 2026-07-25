@@ -259,13 +259,13 @@ func TestExportedMetricFamilyContract(t *testing.T) {
 	)
 
 	want := map[string]string{
-		"dd_thread_fleet_total":                   "GAUGE",
-		"dd_thread_fleet_replicas_desired_total":  "GAUGE",
-		"dd_thread_fleet_replicas_ready_total":    "GAUGE",
-		"dd_thread_fleet_pvcs_total":              "GAUGE",
-		"dd_thread_fleet_threads":                 "GAUGE",
-		"dd_thread_fleet_scrape_seconds":          "HISTOGRAM",
-		"dd_thread_fleet_scrape_errors_total":     "COUNTER",
+		"dd_thread_fleet_total":                  "GAUGE",
+		"dd_thread_fleet_replicas_desired_total": "GAUGE",
+		"dd_thread_fleet_replicas_ready_total":   "GAUGE",
+		"dd_thread_fleet_pvcs_total":             "GAUGE",
+		"dd_thread_fleet_threads":                "GAUGE",
+		"dd_thread_fleet_scrape_seconds":         "HISTOGRAM",
+		"dd_thread_fleet_scrape_errors_total":    "COUNTER",
 	}
 	got := map[string]string{}
 	for _, mf := range gatherFamilies(t, reg) {
@@ -400,9 +400,9 @@ func TestThreadInfoNoArbitraryLabelLeak(t *testing.T) {
 	m := newMetrics(reg)
 
 	d := dep("dd-thread-secret", "tid-1", 1, 1, map[string]string{
-		"dd/sessionToken":   "SUPER-SECRET-TOKEN-VALUE",
+		"dd/sessionToken":    "SUPER-SECRET-TOKEN-VALUE",
 		"internal/pii-email": "person@example.com",
-		"dd.dev/managed-by": "dd-thread-operator",
+		"dd.dev/managed-by":  "dd-thread-operator",
 	})
 	updateMetrics(m,
 		[]appsv1.Deployment{d},
@@ -467,7 +467,7 @@ func TestUpdateMetricsResetsThreadInfoBetweenScrapes(t *testing.T) {
 // CreationTimestamp) decides the phase, regardless of slice order.
 func TestUpdateMetricsNewestPodWins(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	older := podAt("dd-thread-1-old", "t1", "Running", true, 0, "", base)             // would be "active"
+	older := podAt("dd-thread-1-old", "t1", "Running", true, 0, "", base)                 // would be "active"
 	newer := podAt("dd-thread-1-new", "t1", "Pending", false, 0, "", base.Add(time.Hour)) // would be "starting"
 
 	for _, order := range []struct {
