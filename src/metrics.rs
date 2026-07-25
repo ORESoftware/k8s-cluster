@@ -204,6 +204,31 @@ mod tests {
     }
 
     #[test]
+    fn invented_methods_collapse_to_a_bounded_label() {
+        use axum::http::Method;
+        for method in [
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::HEAD,
+            Method::OPTIONS,
+            Method::PATCH,
+        ] {
+            assert_eq!(metric_method(&method), method.as_str());
+        }
+        // An anonymous caller must not be able to mint label values: hyper
+        // parses any token as a method, and this middleware runs outside the
+        // router, so it sees them all.
+        for invented in ["FROBNICATE", "QUUXIFY", "TRACE", "CONNECT"] {
+            assert_eq!(
+                metric_method(&Method::from_bytes(invented.as_bytes()).unwrap()),
+                "other"
+            );
+        }
+    }
+
+    #[test]
     fn registry_exposes_http_database_and_domain_families() {
         let metrics = Metrics::new().expect("metrics registry");
         metrics
