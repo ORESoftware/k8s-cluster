@@ -3,8 +3,17 @@ import { test } from 'node:test';
 
 import { __test } from '../src/browser-agent.js';
 
-const { ActRequestSchema, ObserveRequestSchema, domainAllowed, actionDigest, assertUrlAllowed, CONSEQUENTIAL_RE } =
-  __test;
+const {
+  ActRequestSchema,
+  ObserveRequestSchema,
+  domainAllowed,
+  requestUrlAllowedByDomain,
+  effectiveAllowedDomains,
+  validAllowedDomain,
+  actionDigest,
+  assertUrlAllowed,
+  CONSEQUENTIAL_RE,
+} = __test;
 
 const noPrivate = (_addr: string) => false;
 const isPrivate = (addr: string) => addr.startsWith('127.') || addr.startsWith('10.') || addr === '169.254.169.254';
@@ -72,10 +81,49 @@ test('domain allowlist matches host and subdomains only', () => {
   assert.equal(domainAllowed('anything.example', []), true);
 });
 
+test('requested domains cannot widen the process-level allowlist', () => {
+  assert.deepEqual(
+    effectiveAllowedDomains(['benefactor.cc', 'evil.example'], ['benefactor.cc']),
+    ['benefactor.cc'],
+  );
+  assert.deepEqual(
+    effectiveAllowedDomains(['www.benefactor.cc'], ['benefactor.cc']),
+    ['www.benefactor.cc'],
+  );
+  assert.deepEqual(
+    effectiveAllowedDomains(['benefactor.cc'], ['www.benefactor.cc']),
+    ['www.benefactor.cc'],
+  );
+  assert.deepEqual(effectiveAllowedDomains(['evil.example'], ['benefactor.cc']), []);
+  assert.equal(validAllowedDomain('benefactor.cc'), true);
+  assert.equal(validAllowedDomain('https://benefactor.cc'), false);
+  assert.equal(validAllowedDomain('benefactor.cc:443'), false);
+});
+
+test('all browser-created network requests remain inside the hostname ceiling', () => {
+  const allowlist = ['benefactor.cc'];
+  assert.equal(requestUrlAllowedByDomain('https://benefactor.cc/contact', allowlist), true);
+  assert.equal(requestUrlAllowedByDomain('https://www.benefactor.cc/app.js', allowlist), true);
+  assert.equal(requestUrlAllowedByDomain('wss://benefactor.cc/socket', allowlist), true);
+  assert.equal(requestUrlAllowedByDomain('https://example.com/', allowlist), false);
+  assert.equal(requestUrlAllowedByDomain('wss://example.com/socket', allowlist), false);
+  assert.equal(requestUrlAllowedByDomain('https://benefactor.cc:8443/', allowlist), false);
+  assert.equal(requestUrlAllowedByDomain('https://user:pass@benefactor.cc/', allowlist), false);
+  assert.equal(requestUrlAllowedByDomain('file:///etc/passwd', allowlist), false);
+});
+
 test('assertUrlAllowed blocks dangerous schemes and off-allowlist hosts', async () => {
   await assert.rejects(assertUrlAllowed('file:///etc/passwd', [], noPrivate), /scheme/);
   await assert.rejects(assertUrlAllowed('http://plain.example/', [], noPrivate), /https/);
   await assert.rejects(assertUrlAllowed('https://evil.com/', ['irs.gov'], noPrivate), /allowlist/);
+  await assert.rejects(
+    assertUrlAllowed('https://benefactor.cc:8443/', ['benefactor.cc'], noPrivate),
+    /explicit port/,
+  );
+  await assert.rejects(
+    assertUrlAllowed('https://user:pass@benefactor.cc/', ['benefactor.cc'], noPrivate),
+    /credentials/,
+  );
 });
 
 test('assertUrlAllowed blocks IP-literals in private ranges and the metadata IP', async () => {

@@ -1,5 +1,10 @@
 # browser-mcp-rs — ChatGPT MCP server verification, 2026-07-25
 
+> Historical verification record. The hostPath/auth/ArgoCD findings below
+> describe the pre-hardening deployment. The current image-based multi-cloud
+> design, anonymous-domain ceiling, rollout procedure, and residual risks are in
+> [`browser-mcp-production-hardening-2026-07-25.md`](browser-mcp-production-hardening-2026-07-25.md).
+
 `remote/deployments/browser-mcp-rs` is the public MCP server that lets **ChatGPT**
 (or Claude / any MCP client) drive a real browser through two model-callable
 tools — `browser_observe` (read-only) and `browser_act` (write-capable) — while
@@ -173,12 +178,13 @@ This was deliberate (`dfd9089b` "filing sites only", Gmail explicitly dropped), 
 credit-program and conference-CFP sites are blocked by design. Widening it is a
 policy decision, not a bug. Widen deliberately, host by host.
 
-### Also worth knowing: required tools
+### Also worth knowing: search/fetch are surface-specific
 
-OpenAI's docs require read-only `search` and `fetch` tools (compatibility schema)
-for the **deep-research / company-knowledge** connector surface. This server
-exposes `browser_act`/`browser_observe`, which is fine for Developer-Mode/agent
-tool calling but will not satisfy the deep-research surface without adding them.
+OpenAI's current docs no longer require every custom MCP app to expose `search`
+and `fetch`. This server's `browser_act`/`browser_observe` pair is sufficient
+for a Developer-Mode custom app. Company knowledge and deep research use only
+read/fetch capabilities, so this write-oriented app is not intended for those
+surfaces.
 
 ## Reproduce the live verification
 

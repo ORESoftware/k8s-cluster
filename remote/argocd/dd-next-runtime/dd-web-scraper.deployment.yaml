@@ -10,7 +10,8 @@ spec:
   # driven by dd-browser-mcp-rs, in addition to the stateless /scrape surface.
   replicas: 1
   minReadySeconds: 5
-  progressDeadlineSeconds: 1800
+  progressDeadlineSeconds: 600
+  revisionHistoryLimit: 3
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -22,18 +23,29 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-07-16-responsible-scraping'
+        dd.dev/telemetry-revision: '2026-07-25-containerized-browser-worker'
       labels:
         app: dd-web-scraper
     spec:
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: web-scraper
-          image: mcr.microsoft.com/playwright:v1.56.0-noble
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/oresoftware/dd-web-scraper:dev
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
             runAsNonRoot: true
             runAsUser: 1000
             runAsGroup: 1000
@@ -42,29 +54,11 @@ spec:
                 - ALL
             seccompProfile:
               type: RuntimeDefault
-          command:
-            - /bin/bash
-            - -lc
-          args:
-            - |
-              set -euo pipefail
-              export COREPACK_HOME=/tmp/corepack
-              export npm_config_cache=/tmp/.npm
-              mkdir -p "$PNPM_HOME" "$COREPACK_HOME" "$XDG_CACHE_HOME" "$npm_config_cache"
-              cd /opt/dd-next-1/remote/deployments/web-scraper-service
-              corepack prepare pnpm@9.15.4 --activate
-              corepack pnpm install --frozen-lockfile --ignore-workspace --prod=false
-              corepack pnpm run build
-              exec corepack pnpm run start
           env:
             - name: HOME
               value: /tmp
-            - name: PNPM_HOME
-              value: /tmp/pnpm
             - name: XDG_CACHE_HOME
               value: /tmp/.cache
-            - name: COREPACK_HOME
-              value: /tmp/corepack
             - name: HOST
               value: 0.0.0.0
             - name: PORT
@@ -177,11 +171,11 @@ spec:
               value: 'false'
             - name: BROWSER_AGENT_ACCEPT_DOWNLOADS
               value: 'false'
-            # Server-side navigation allowlist. Empty = any public https host.
-            # The MCP gateway (BROWSER_MCP_ALLOWED_DOMAINS) can also inject one
-            # per call; the tighter of the two wins.
+            # Process-level ceiling for persistent browser-agent navigation.
+            # Per-call scopes are intersected with this list and cannot widen
+            # it. Root hostnames include subdomains.
             - name: BROWSER_AGENT_ALLOWED_DOMAINS
-              value: ''
+              value: 'benefactor.cc'
             # Optional JSON secret store for secret_ref resolution (never logged
             # or returned). Absent by default -> secret refs are rejected.
             - name: BROWSER_AGENT_SECRETS_FILE
@@ -203,17 +197,20 @@ spec:
             requests:
               cpu: 50m
               memory: 640Mi
+              ephemeral-storage: 256Mi
             limits:
               cpu: '2'
               # Raised from 2Gi: persistent browser-agent sessions hold multiple
               # long-lived BrowserContexts in addition to one-shot scrapes.
               memory: 3Gi
+              ephemeral-storage: 2Gi
           startupProbe:
             httpGet:
               path: /healthz
               port: http
             periodSeconds: 5
-            failureThreshold: 60
+            timeoutSeconds: 3
+            failureThreshold: 24
           readinessProbe:
             httpGet:
               path: /healthz
@@ -229,14 +226,9 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 3
           volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
             - name: tmp
               mountPath: /tmp
       volumes:
-        - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 2Gi

@@ -80,6 +80,26 @@ export const agentConfig = {
   seleniumAuthSecret: process.env.SERVER_AUTH_SECRET ?? null,
 } as const;
 
+function validAllowedDomain(domain: string): boolean {
+  return (
+    domain.includes('.') &&
+    !domain.startsWith('.') &&
+    !domain.endsWith('.') &&
+    !domain.includes('..') &&
+    /^[a-z0-9.-]+$/.test(domain)
+  );
+}
+
+if (
+  process.env.NODE_ENV === 'production' &&
+  agentConfig.enabled &&
+  (agentConfig.allowedDomains.length === 0 || !agentConfig.allowedDomains.every(validAllowedDomain))
+) {
+  throw new Error(
+    'production browser agent requires BROWSER_AGENT_ALLOWED_DOMAINS hostnames without schemes or ports',
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Wire schemas (mirror of schemas/browser-*.schema.json)
 // ---------------------------------------------------------------------------
@@ -729,6 +749,49 @@ function domainAllowed(host: string, allowlist: string[]): boolean {
   return allowlist.some((d) => h === d || h.endsWith('.' + d));
 }
 
+function requestUrlAllowedByDomain(raw: string, allowlist: string[]): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol === 'data:' || url.protocol === 'blob:' || url.protocol === 'about:') {
+    return true;
+  }
+  if (url.username || url.password) return false;
+  const secureNetworkProtocol = url.protocol === 'https:' || url.protocol === 'wss:';
+  const allowedDevelopmentProtocol =
+    agentConfig.allowInsecureHttp && (url.protocol === 'http:' || url.protocol === 'ws:');
+  if (!secureNetworkProtocol && !allowedDevelopmentProtocol) return false;
+  const defaultPort =
+    url.port === '' ||
+    ((url.protocol === 'https:' || url.protocol === 'wss:') && url.port === '443') ||
+    ((url.protocol === 'http:' || url.protocol === 'ws:') && url.port === '80');
+  return defaultPort && domainAllowed(url.hostname, allowlist);
+}
+
+// Each entry authorizes that hostname and its subdomains. Intersect the
+// caller's requested scope with the process-level production ceiling by keeping
+// the more specific entry whenever the two suffix trees overlap.
+function effectiveAllowedDomains(requested: string[] | undefined, configured: string[]): string[] {
+  const requestDomains = (requested ?? []).map((domain) => domain.toLowerCase());
+  if (configured.length === 0) return requestDomains;
+  if (requestDomains.length === 0) return configured;
+
+  const effective = new Set<string>();
+  for (const requestDomain of requestDomains) {
+    for (const configuredDomain of configured) {
+      if (requestDomain === configuredDomain || requestDomain.endsWith('.' + configuredDomain)) {
+        effective.add(requestDomain);
+      } else if (configuredDomain.endsWith('.' + requestDomain)) {
+        effective.add(configuredDomain);
+      }
+    }
+  }
+  return [...effective];
+}
+
 async function assertUrlAllowed(
   raw: string,
   allowlist: string[],
@@ -746,8 +809,14 @@ async function assertUrlAllowed(
   if (url.protocol !== 'https:' && !(agentConfig.allowInsecureHttp && url.protocol === 'http:')) {
     throw new AgentError('domain_not_allowed', 'only https:// navigation is permitted');
   }
-  if (!domainAllowed(url.hostname, allowlist)) {
-    throw new AgentError('domain_not_allowed', `host ${url.hostname} is not on the allowlist`);
+  if (url.username || url.password) {
+    throw new AgentError('domain_not_allowed', 'URL credentials are not permitted');
+  }
+  if (!requestUrlAllowedByDomain(raw, allowlist)) {
+    throw new AgentError(
+      'domain_not_allowed',
+      `host ${url.hostname} or its explicit port is not on the allowlist`,
+    );
   }
   // SSRF: reject IP literals and DNS answers that resolve to private ranges.
   if (isIP(url.hostname)) {
@@ -986,6 +1055,9 @@ async function createSession(
     locale: start.locale,
     timezoneId: start.timezone,
     acceptDownloads: agentConfig.acceptDownloads,
+    // Service workers can handle requests outside Playwright's route handler.
+    // Block them so the context-wide hostname ceiling covers every request.
+    serviceWorkers: 'block',
   });
   const page = await context.newPage();
   const id = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
@@ -1015,6 +1087,51 @@ async function createSession(
     idempotency: new Map(),
     waiters: [],
   };
+
+  // Enforce the session ceiling below model actions: clicks, form redirects,
+  // iframes, scripts, images, fetch/XHR, and WebSockets cannot escape merely
+  // because page code initiated them rather than an explicit `goto`. DNS is
+  // checked once per origin; NetworkPolicy is the per-packet DNS-rebinding
+  // backstop for private and reserved ranges.
+  const approvedOrigins = new Map<string, Promise<void>>();
+  await context.route('**/*', async (route) => {
+    const raw = route.request().url();
+    let url: URL;
+    try {
+      url = new URL(raw);
+    } catch {
+      await route.abort('blockedbyclient');
+      return;
+    }
+    if (url.protocol === 'data:' || url.protocol === 'blob:' || url.protocol === 'about:') {
+      await route.continue();
+      return;
+    }
+    if (!requestUrlAllowedByDomain(raw, allowedDomains)) {
+      await route.abort('blockedbyclient');
+      return;
+    }
+    const origin = url.origin;
+    let approved = approvedOrigins.get(origin);
+    if (!approved) {
+      approved = assertUrlAllowed(raw, allowedDomains, deps.isPrivateIp).then(() => undefined);
+      approvedOrigins.set(origin, approved);
+    }
+    try {
+      await approved;
+      await route.continue();
+    } catch {
+      approvedOrigins.delete(origin);
+      await route.abort('blockedbyclient');
+    }
+  });
+  await context.routeWebSocket('**', async (webSocket) => {
+    if (requestUrlAllowedByDomain(webSocket.url(), allowedDomains)) {
+      webSocket.connectToServer();
+    } else {
+      await webSocket.close({ code: 1008, reason: 'domain not allowed' });
+    }
+  });
 
   page.on('dialog', (dialog: Dialog) => {
     session.dialogs.push({
@@ -1488,10 +1605,13 @@ export function registerBrowserAgentRoutes(
         if (!startAction) {
           throw new AgentError('invalid_request', 'a request without session_id must include a start action');
         }
-        const allow =
-          req.allowed_domains && req.allowed_domains.length
-            ? req.allowed_domains.map((d) => d.toLowerCase())
-            : agentConfig.allowedDomains;
+        const allow = effectiveAllowedDomains(req.allowed_domains, agentConfig.allowedDomains);
+        if (agentConfig.allowedDomains.length > 0 && allow.length === 0) {
+          throw new AgentError(
+            'domain_not_allowed',
+            'requested domains do not intersect the server allowlist',
+          );
+        }
         session = await createSession(deps, owner, startAction, allow);
         if (startAction.initial_url) {
           const url = await assertUrlAllowed(startAction.initial_url, session.allowedDomains, deps.isPrivateIp);
@@ -1661,6 +1781,9 @@ export const __test = {
   ActRequestSchema,
   ObserveRequestSchema,
   domainAllowed,
+  requestUrlAllowedByDomain,
+  effectiveAllowedDomains,
+  validAllowedDomain,
   actionDigest,
   assertUrlAllowed,
   CONSEQUENTIAL_RE,

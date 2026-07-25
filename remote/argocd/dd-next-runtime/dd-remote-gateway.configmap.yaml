@@ -97,6 +97,10 @@ data:
     # directly and are unaffected. 300r/m + burst 60 is far above interactive
     # IDE use but bounds a runaway to ~5 req/s sustained.
     limit_req_zone $binary_remote_addr zone=dd_mcp:10m rate=300r/m;
+    # The anonymous browser MCP is substantially more expensive and
+    # write-capable; give it a tighter budget than the read-only MCP endpoints.
+    limit_req_zone $binary_remote_addr zone=dd_browser_mcp:10m rate=60r/m;
+    limit_conn_zone $binary_remote_addr zone=dd_browser_mcp_conn:10m;
 
     # Redacted path-only access logs make gateway guardrails observable without
     # writing Auth headers, cookies, or query strings into Loki.
@@ -937,14 +941,14 @@ data:
       # later, add `if ($dd_mcp_auth_ok = 0) { return 401; }` (as the /mcp and
       # /cluster-mcp blocks do) and switch to `proxy_set_header Authorization "";`.
       #
-      # Unlike the read-only MCP servers, the client Authorization header IS
-      # forwarded: dd-browser-mcp-rs treats it as an opaque per-caller ownership
-      # key (to namespace sessions), not as a credential, while REQUIRE_AUTH=false.
-      # proxy_buffering is off so MCP-over-HTTP responses flush without gateway
-      # buffering, and gzip is disabled on this path for the same reason.
+      # Anonymous session ownership is derived from the last X-Forwarded-For
+      # address appended by this trusted gateway. Caller-supplied Authorization
+      # is ignored for ownership while REQUIRE_AUTH=false. proxy_buffering is
+      # off so MCP-over-HTTP responses flush without gateway buffering.
       location = /browser-mcp {
-        limit_req zone=dd_mcp burst=60 nodelay;
+        limit_req zone=dd_browser_mcp burst=15 nodelay;
         limit_req_status 429;
+        limit_conn dd_browser_mcp_conn 10;
         proxy_http_version 1.1;
         proxy_read_timeout 900;
         proxy_send_timeout 900;
@@ -952,6 +956,7 @@ data:
         proxy_cache off;
         gzip off;
         proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Prefix /browser-mcp;
@@ -960,8 +965,9 @@ data:
       }
 
       location /browser-mcp/ {
-        limit_req zone=dd_mcp burst=60 nodelay;
+        limit_req zone=dd_browser_mcp burst=15 nodelay;
         limit_req_status 429;
+        limit_conn dd_browser_mcp_conn 10;
         proxy_http_version 1.1;
         proxy_read_timeout 900;
         proxy_send_timeout 900;
@@ -969,6 +975,7 @@ data:
         proxy_cache off;
         gzip off;
         proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Prefix /browser-mcp;

@@ -141,12 +141,57 @@ fn config_from_env() -> Config {
         )
         .trim_end_matches('/')
         .to_string(),
-        worker_auth_secret: env::var("SERVER_AUTH_SECRET").ok().filter(|v| !v.is_empty()),
-        worker_timeout: Duration::from_millis(env_u64("BROWSER_MCP_WORKER_TIMEOUT_MS", 65_000, 120_000)),
+        worker_auth_secret: env::var("SERVER_AUTH_SECRET")
+            .ok()
+            .filter(|v| !v.is_empty()),
+        worker_timeout: Duration::from_millis(env_u64(
+            "BROWSER_MCP_WORKER_TIMEOUT_MS",
+            65_000,
+            120_000,
+        )),
         require_auth: env_bool("BROWSER_MCP_REQUIRE_AUTH", false),
-        auth_secret: env::var("BROWSER_MCP_AUTH_SECRET").ok().filter(|v| !v.is_empty()),
+        auth_secret: env::var("BROWSER_MCP_AUTH_SECRET")
+            .ok()
+            .filter(|v| !v.is_empty()),
         allowed_domains: env_list("BROWSER_MCP_ALLOWED_DOMAINS"),
     }
+}
+
+fn valid_allowed_domain(domain: &str) -> bool {
+    !domain.is_empty()
+        && domain.contains('.')
+        && !domain.starts_with('.')
+        && !domain.ends_with('.')
+        && !domain.contains("..")
+        && domain
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-')
+}
+
+fn validate_config(config: &Config) -> Result<(), &'static str> {
+    if config
+        .worker_auth_secret
+        .as_deref()
+        .is_none_or(str::is_empty)
+    {
+        return Err("SERVER_AUTH_SECRET is required for the private browser worker");
+    }
+    if config.require_auth && config.auth_secret.as_deref().is_none_or(str::is_empty) {
+        return Err("BROWSER_MCP_REQUIRE_AUTH=true requires BROWSER_MCP_AUTH_SECRET");
+    }
+    if !config.require_auth && config.allowed_domains.is_empty() {
+        return Err(
+            "anonymous browser MCP requires a non-empty BROWSER_MCP_ALLOWED_DOMAINS allowlist",
+        );
+    }
+    if !config
+        .allowed_domains
+        .iter()
+        .all(|domain| valid_allowed_domain(domain))
+    {
+        return Err("BROWSER_MCP_ALLOWED_DOMAINS must contain hostnames without schemes or ports");
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -173,27 +218,47 @@ fn request_authorized(config: &Config, headers: &HeaderMap) -> bool {
     bearer_ok || header_ok
 }
 
-// A stable per-caller owner id so sessions started by one bearer token are not
-// visible to another. When no bearer is presented (fully public mode) all
-// callers share the "public" owner; the high-entropy session_id remains the
-// capability that gates access to a specific session.
-fn caller_owner(headers: &HeaderMap) -> String {
-    let token = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .or_else(|| headers.get("x-server-auth").and_then(|v| v.to_str().ok()));
-    match token {
-        Some(t) if !t.is_empty() => {
-            let mut hasher = 1469598103934665603u64; // FNV-1a offset
-            for b in t.as_bytes() {
-                hasher ^= *b as u64;
-                hasher = hasher.wrapping_mul(1099511628211);
-            }
-            format!("tok:{hasher:016x}")
-        }
-        _ => "public".to_string(),
+fn hashed_owner(prefix: &str, value: &str) -> String {
+    let mut hasher = 1469598103934665603u64; // FNV-1a offset
+    for b in value.as_bytes() {
+        hasher ^= *b as u64;
+        hasher = hasher.wrapping_mul(1099511628211);
     }
+    format!("{prefix}:{hasher:016x}")
+}
+
+// A stable per-caller owner id so one caller cannot observe or advance another
+// caller's browser sessions. Authenticated mode derives it from the validated
+// bearer. Anonymous mode deliberately ignores caller-supplied Authorization
+// and uses the final X-Forwarded-For hop appended by the trusted gateway.
+fn caller_owner(headers: &HeaderMap, require_auth: bool) -> String {
+    if require_auth {
+        let token = headers
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .or_else(|| headers.get("x-server-auth").and_then(|v| v.to_str().ok()));
+        if let Some(token) = token.filter(|value| !value.is_empty()) {
+            return hashed_owner("tok", token);
+        }
+    }
+
+    let forwarded_for = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.rsplit(',').next())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .or_else(|| {
+            headers
+                .get("x-real-ip")
+                .and_then(|v| v.to_str().ok())
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+        });
+    forwarded_for
+        .map(|value| hashed_owner("ip", value))
+        .unwrap_or_else(|| "public".to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -231,7 +296,12 @@ fn negotiated_protocol_version(params: Option<&Value>) -> &'static str {
     params
         .and_then(|p| p.get("protocolVersion"))
         .and_then(Value::as_str)
-        .and_then(|requested| SUPPORTED_PROTOCOL_VERSIONS.iter().copied().find(|v| *v == requested))
+        .and_then(|requested| {
+            SUPPORTED_PROTOCOL_VERSIONS
+                .iter()
+                .copied()
+                .find(|v| *v == requested)
+        })
         .unwrap_or(PROTOCOL_VERSION)
 }
 
@@ -418,13 +488,20 @@ fn tool_error(id: Value, code: &str, message: &str) -> Value {
     )
 }
 
-async fn call_worker(state: &AppState, path: &str, body: Value) -> Result<(StatusCode, Value), String> {
+async fn call_worker(
+    state: &AppState,
+    path: &str,
+    body: Value,
+) -> Result<(StatusCode, Value), String> {
     let url = format!("{}{}", state.config.worker_base_url, path);
     let mut request = state.http.post(&url).json(&body);
     if let Some(secret) = state.config.worker_auth_secret.as_deref() {
         request = request.header("x-server-auth", secret);
     }
-    let response = request.send().await.map_err(|e| format!("worker request failed: {e}"))?;
+    let response = request
+        .send()
+        .await
+        .map_err(|e| format!("worker request failed: {e}"))?;
     let status = response.status();
     let bytes = response
         .bytes()
@@ -433,21 +510,29 @@ async fn call_worker(state: &AppState, path: &str, body: Value) -> Result<(Statu
     if bytes.len() > MAX_WORKER_BODY_BYTES {
         return Err("worker response exceeded size limit".to_string());
     }
-    let value: Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!({ "error": "unparseable worker response" }));
-    Ok((StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY), value))
+    let value: Value = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|_| json!({ "error": "unparseable worker response" }));
+    Ok((
+        StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY),
+        value,
+    ))
 }
 
 // Build the worker request body from the model's tool arguments: pass the
-// arguments through, then inject the server-controlled owner and (unless the
-// tool omitted it) the configured domain allowlist so policy is enforced
-// centrally regardless of what the caller sends.
-fn worker_body_from_args(args: Option<&Value>, owner: &str, allowlist: &[String], inject_allowlist: bool) -> Map<String, Value> {
+// arguments through, then overwrite the owner and configured domain allowlist
+// so caller-supplied policy fields can never widen the server's policy.
+fn worker_body_from_args(
+    args: Option<&Value>,
+    owner: &str,
+    allowlist: &[String],
+    inject_allowlist: bool,
+) -> Map<String, Value> {
     let mut map = match args {
         Some(Value::Object(m)) => m.clone(),
         _ => Map::new(),
     };
     map.insert("owner".to_string(), Value::String(owner.to_string()));
-    if inject_allowlist && !allowlist.is_empty() && !map.contains_key("allowed_domains") {
+    if inject_allowlist {
         map.insert(
             "allowed_domains".to_string(),
             Value::Array(allowlist.iter().map(|d| Value::String(d.clone())).collect()),
@@ -456,19 +541,31 @@ fn worker_body_from_args(args: Option<&Value>, owner: &str, allowlist: &[String]
     map
 }
 
-async fn tools_call_result(state: &AppState, id: Value, params: Option<&Value>, headers: &HeaderMap) -> Value {
+async fn tools_call_result(
+    state: &AppState,
+    id: Value,
+    params: Option<&Value>,
+    headers: &HeaderMap,
+) -> Value {
     let tool = params
         .and_then(|p| p.get("name"))
         .and_then(Value::as_str)
         .unwrap_or("unknown");
-    state.metrics.tool_calls_total.fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .tool_calls_total
+        .fetch_add(1, Ordering::Relaxed);
     let args = params.and_then(|p| p.get("arguments"));
-    let owner = caller_owner(headers);
+    let owner = caller_owner(headers, state.config.require_auth);
 
     let (path, body) = match tool {
         "browser_act" => {
             let mut map = worker_body_from_args(args, &owner, &state.config.allowed_domains, true);
-            if map.get("request_id").and_then(Value::as_str).is_none_or(|s| s.is_empty()) {
+            if map
+                .get("request_id")
+                .and_then(Value::as_str)
+                .is_none_or(|s| s.is_empty())
+            {
                 map.insert("request_id".to_string(), Value::String(random_request_id()));
             }
             ("/agent/act", Value::Object(map))
@@ -493,16 +590,36 @@ async fn tools_call_result(state: &AppState, id: Value, params: Option<&Value>, 
                 // model reads structuredContent and continues the loop.
                 tool_result(id, value, &summary, false)
             } else {
-                state.metrics.worker_errors_total.fetch_add(1, Ordering::Relaxed);
-                let code = value.get("error_code").and_then(Value::as_str).unwrap_or("worker_error");
-                let message = value.get("error").and_then(Value::as_str).unwrap_or("worker returned an error");
-                let safe_message = if message.len() > 300 { &message[..300] } else { message };
+                state
+                    .metrics
+                    .worker_errors_total
+                    .fetch_add(1, Ordering::Relaxed);
+                let code = value
+                    .get("error_code")
+                    .and_then(Value::as_str)
+                    .unwrap_or("worker_error");
+                let message = value
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .unwrap_or("worker returned an error");
+                let safe_message = if message.len() > 300 {
+                    &message[..300]
+                } else {
+                    message
+                };
                 tool_error(id, code, safe_message)
             }
         }
         Err(_transport) => {
-            state.metrics.worker_errors_total.fetch_add(1, Ordering::Relaxed);
-            tool_error(id, "worker_unavailable", "the browser worker is unavailable; retry shortly")
+            state
+                .metrics
+                .worker_errors_total
+                .fetch_add(1, Ordering::Relaxed);
+            tool_error(
+                id,
+                "worker_unavailable",
+                "the browser worker is unavailable; retry shortly",
+            )
         }
     }
 }
@@ -512,34 +629,65 @@ async fn tools_call_result(state: &AppState, id: Value, params: Option<&Value>, 
 // ---------------------------------------------------------------------------
 
 async fn rpc(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
-    state.metrics.http_requests_total.fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .http_requests_total
+        .fetch_add(1, Ordering::Relaxed);
 
     if state.config.require_auth && !request_authorized(&state.config, &headers) {
-        state.metrics.rpc_errors_total.fetch_add(1, Ordering::Relaxed);
-        let mut response = json_response(StatusCode::UNAUTHORIZED, rpc_error(Value::Null, -32001, "unauthorized"));
-        response
-            .headers_mut()
-            .insert(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer realm=\"dd-browser-mcp-rs\""));
+        state
+            .metrics
+            .rpc_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        let mut response = json_response(
+            StatusCode::UNAUTHORIZED,
+            rpc_error(Value::Null, -32001, "unauthorized"),
+        );
+        response.headers_mut().insert(
+            header::WWW_AUTHENTICATE,
+            HeaderValue::from_static("Bearer realm=\"dd-browser-mcp-rs\""),
+        );
         return response;
     }
     if body.len() > MAX_RPC_BODY_BYTES {
-        state.metrics.rpc_errors_total.fetch_add(1, Ordering::Relaxed);
-        return json_response(StatusCode::PAYLOAD_TOO_LARGE, rpc_error(Value::Null, -32600, "request body too large"));
+        state
+            .metrics
+            .rpc_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        return json_response(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            rpc_error(Value::Null, -32600, "request body too large"),
+        );
     }
 
     let request = match serde_json::from_slice::<JsonRpcRequest>(&body) {
         Ok(r) => r,
         Err(_) => {
-            state.metrics.rpc_errors_total.fetch_add(1, Ordering::Relaxed);
-            return json_response(StatusCode::BAD_REQUEST, rpc_error(Value::Null, -32700, "parse error"));
+            state
+                .metrics
+                .rpc_errors_total
+                .fetch_add(1, Ordering::Relaxed);
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                rpc_error(Value::Null, -32700, "parse error"),
+            );
         }
     };
     let id = id_value(&request);
     if request.jsonrpc.as_deref() != Some("2.0") || request.method.trim().is_empty() {
-        state.metrics.rpc_errors_total.fetch_add(1, Ordering::Relaxed);
-        return json_response(StatusCode::BAD_REQUEST, rpc_error(id, -32600, "invalid request"));
+        state
+            .metrics
+            .rpc_errors_total
+            .fetch_add(1, Ordering::Relaxed);
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            rpc_error(id, -32600, "invalid request"),
+        );
     }
-    state.metrics.rpc_requests_total.fetch_add(1, Ordering::Relaxed);
+    state
+        .metrics
+        .rpc_requests_total
+        .fetch_add(1, Ordering::Relaxed);
     let method = request.method.trim().to_string();
 
     if method == "notifications/initialized" {
@@ -551,7 +699,10 @@ async fn rpc(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> 
         "tools/list" => tools_list_result(id),
         "tools/call" => tools_call_result(&state, id, request.params.as_ref(), &headers).await,
         _ => {
-            state.metrics.rpc_errors_total.fetch_add(1, Ordering::Relaxed);
+            state
+                .metrics
+                .rpc_errors_total
+                .fetch_add(1, Ordering::Relaxed);
             rpc_error(id, -32601, "method not found")
         }
     };
@@ -596,26 +747,45 @@ async fn mcp_get(headers: HeaderMap) -> Response {
 }
 
 async fn root() -> Response {
-    json_response(StatusCode::OK, json!({ "service": SERVICE_NAME, "version": SERVICE_VERSION, "tools": TOOL_NAMES }))
+    json_response(
+        StatusCode::OK,
+        json!({ "service": SERVICE_NAME, "version": SERVICE_VERSION, "tools": TOOL_NAMES }),
+    )
 }
 
 async fn healthz() -> Response {
     json_response(StatusCode::OK, json!({ "ok": true }))
 }
 
+async fn worker_is_ready(state: &AppState) -> bool {
+    let url = format!("{}/agent/healthz", state.config.worker_base_url);
+    state
+        .http
+        .get(&url)
+        .send()
+        .await
+        .is_ok_and(|response| response.status().is_success())
+}
+
 async fn readyz(State(state): State<AppState>) -> Response {
     // Ready when the private worker's agent health endpoint answers.
-    let url = format!("{}/agent/healthz", state.config.worker_base_url);
-    match state.http.get(&url).send().await {
-        Ok(resp) if resp.status().is_success() => json_response(StatusCode::OK, json!({ "ok": true, "worker": "ok" })),
-        _ => json_response(StatusCode::SERVICE_UNAVAILABLE, json!({ "ok": false, "worker": "unreachable" })),
+    if worker_is_ready(&state).await {
+        json_response(StatusCode::OK, json!({ "ok": true, "worker": "ok" }))
+    } else {
+        json_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            json!({ "ok": false, "worker": "unreachable" }),
+        )
     }
 }
 
 async fn metrics(State(state): State<AppState>) -> Response {
     let m = &state.metrics;
+    let worker_ready = u8::from(worker_is_ready(&state).await);
     let text = format!(
-        "# HELP dd_browser_mcp_http_requests_total Total HTTP requests.\n# TYPE dd_browser_mcp_http_requests_total counter\ndd_browser_mcp_http_requests_total {}\n# HELP dd_browser_mcp_rpc_requests_total Total JSON-RPC requests.\n# TYPE dd_browser_mcp_rpc_requests_total counter\ndd_browser_mcp_rpc_requests_total {}\n# HELP dd_browser_mcp_rpc_errors_total Total JSON-RPC errors.\n# TYPE dd_browser_mcp_rpc_errors_total counter\ndd_browser_mcp_rpc_errors_total {}\n# HELP dd_browser_mcp_tool_calls_total Total tool calls.\n# TYPE dd_browser_mcp_tool_calls_total counter\ndd_browser_mcp_tool_calls_total {}\n# HELP dd_browser_mcp_worker_errors_total Worker proxy errors.\n# TYPE dd_browser_mcp_worker_errors_total counter\ndd_browser_mcp_worker_errors_total {}\n",
+        "# HELP dd_browser_mcp_info Browser MCP build and configuration information.\n# TYPE dd_browser_mcp_info gauge\ndd_browser_mcp_info{{version=\"{SERVICE_VERSION}\",anonymous=\"{}\"}} 1\n# HELP dd_browser_mcp_worker_ready Whether the private browser worker health endpoint is reachable.\n# TYPE dd_browser_mcp_worker_ready gauge\ndd_browser_mcp_worker_ready {}\n# HELP dd_browser_mcp_http_requests_total Total HTTP requests.\n# TYPE dd_browser_mcp_http_requests_total counter\ndd_browser_mcp_http_requests_total {}\n# HELP dd_browser_mcp_rpc_requests_total Total JSON-RPC requests.\n# TYPE dd_browser_mcp_rpc_requests_total counter\ndd_browser_mcp_rpc_requests_total {}\n# HELP dd_browser_mcp_rpc_errors_total Total JSON-RPC errors.\n# TYPE dd_browser_mcp_rpc_errors_total counter\ndd_browser_mcp_rpc_errors_total {}\n# HELP dd_browser_mcp_tool_calls_total Total tool calls.\n# TYPE dd_browser_mcp_tool_calls_total counter\ndd_browser_mcp_tool_calls_total {}\n# HELP dd_browser_mcp_worker_errors_total Worker proxy errors.\n# TYPE dd_browser_mcp_worker_errors_total counter\ndd_browser_mcp_worker_errors_total {}\n",
+        !state.config.require_auth,
+        worker_ready,
         m.http_requests_total.load(Ordering::Relaxed),
         m.rpc_requests_total.load(Ordering::Relaxed),
         m.rpc_errors_total.load(Ordering::Relaxed),
@@ -632,12 +802,13 @@ async fn metrics(State(state): State<AppState>) -> Response {
 #[tokio::main]
 async fn main() {
     let _otel = dd_telemetry::init(SERVICE_NAME);
-    rustls::crypto::ring::default_provider().install_default().ok();
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .ok();
 
-    let config = Arc::new(config_from_env());
-    if config.worker_auth_secret.is_none() {
-        tracing::warn!("SERVER_AUTH_SECRET is not set; calls to the browser worker will be unauthenticated");
-    }
+    let config = config_from_env();
+    validate_config(&config).expect("invalid browser MCP configuration");
+    let config = Arc::new(config);
     let state = AppState {
         http: build_worker_client(&config),
         metrics: Arc::new(Metrics::default()),
@@ -680,7 +851,9 @@ async fn shutdown_signal() {
     };
     #[cfg(unix)]
     let terminate = async {
-        if let Ok(mut sig) = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+        if let Ok(mut sig) =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
             sig.recv().await;
         }
     };
@@ -706,7 +879,9 @@ mod tests {
     fn wants_event_stream_detects_sse_accept() {
         // The GET handler returns 405 for these (no standalone SSE stream).
         assert!(wants_event_stream(&accept("text/event-stream")));
-        assert!(wants_event_stream(&accept("application/json, text/event-stream")));
+        assert!(wants_event_stream(&accept(
+            "application/json, text/event-stream"
+        )));
         // Plain discovery / browser GETs still get the JSON descriptor.
         assert!(!wants_event_stream(&accept("application/json")));
         assert!(!wants_event_stream(&accept("*/*")));
@@ -723,7 +898,9 @@ mod tests {
         // The prompt-injection + human-gate guidance must be present.
         assert!(instructions.contains("untrusted") || instructions.contains("CAPTCHA"));
         // Negotiated protocol version is one we support.
-        assert!(SUPPORTED_PROTOCOL_VERSIONS.contains(&r["result"]["protocolVersion"].as_str().unwrap()));
+        assert!(
+            SUPPORTED_PROTOCOL_VERSIONS.contains(&r["result"]["protocolVersion"].as_str().unwrap())
+        );
     }
 
     #[test]
@@ -745,7 +922,12 @@ mod tests {
     #[test]
     fn browser_act_schema_requires_intent_and_actions() {
         let schema = browser_act_schema();
-        let required: Vec<&str> = schema["required"].as_array().unwrap().iter().filter_map(|v| v.as_str()).collect();
+        let required: Vec<&str> = schema["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str())
+            .collect();
         assert!(required.contains(&"intent") && required.contains(&"actions"));
     }
 
@@ -756,5 +938,85 @@ mod tests {
         assert_eq!(e["id"], 7);
         assert_eq!(e["error"]["code"], -32601);
         assert_eq!(e["error"]["message"], "method not found");
+    }
+
+    fn test_config(
+        require_auth: bool,
+        auth_secret: Option<&str>,
+        allowed_domains: &[&str],
+    ) -> Config {
+        Config {
+            host: "127.0.0.1".to_string(),
+            port: DEFAULT_PORT,
+            worker_base_url: "http://worker".to_string(),
+            worker_auth_secret: Some("worker-secret".to_string()),
+            worker_timeout: Duration::from_secs(1),
+            require_auth,
+            auth_secret: auth_secret.map(str::to_string),
+            allowed_domains: allowed_domains
+                .iter()
+                .map(|value| value.to_string())
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn anonymous_mode_fails_closed_without_a_valid_allowlist() {
+        assert!(validate_config(&test_config(false, None, &[])).is_err());
+        assert!(validate_config(&test_config(false, None, &["https://benefactor.cc"])).is_err());
+        assert!(validate_config(&test_config(false, None, &["benefactor.cc:443"])).is_err());
+        assert!(validate_config(&test_config(false, None, &["benefactor.cc"])).is_ok());
+    }
+
+    #[test]
+    fn authenticated_mode_requires_a_secret() {
+        assert!(validate_config(&test_config(true, None, &["benefactor.cc"])).is_err());
+        assert!(validate_config(&test_config(true, Some("secret"), &[])).is_ok());
+    }
+
+    #[test]
+    fn private_worker_always_requires_a_secret() {
+        let mut config = test_config(false, None, &["benefactor.cc"]);
+        config.worker_auth_secret = None;
+        assert!(validate_config(&config).is_err());
+    }
+
+    #[test]
+    fn server_allowlist_overwrites_caller_supplied_domains() {
+        let args = json!({
+            "owner": "attacker",
+            "allowed_domains": ["example.com"],
+            "intent": "test",
+            "actions": []
+        });
+        let body = worker_body_from_args(
+            Some(&args),
+            "trusted-owner",
+            &["benefactor.cc".to_string()],
+            true,
+        );
+        assert_eq!(body["owner"], "trusted-owner");
+        assert_eq!(body["allowed_domains"], json!(["benefactor.cc"]));
+    }
+
+    #[test]
+    fn anonymous_owner_uses_gateway_appended_forwarded_address() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer caller-controlled"),
+        );
+        headers.insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("spoofed, 203.0.113.42"),
+        );
+        assert_eq!(
+            caller_owner(&headers, false),
+            hashed_owner("ip", "203.0.113.42")
+        );
+        assert_eq!(
+            caller_owner(&headers, true),
+            hashed_owner("tok", "caller-controlled")
+        );
     }
 }

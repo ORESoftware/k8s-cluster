@@ -29,7 +29,7 @@ two business tools above are model-visible; everything else is protocol plumbing
   ChatGPT / Claude / MCP client
             │  HTTPS, MCP-over-HTTP
             ▼
-  dd-remote-gateway (nginx, 98.90.186.114)      location = /browser-mcp   (public, streaming)
+  dd-remote-gateway (AWS or Hetzner edge)       location = /browser-mcp   (public, streaming)
             │  http, in-cluster
             ▼
   dd-browser-mcp-rs   :8092   (Rust / axum)     ← THIS SERVICE
@@ -115,7 +115,10 @@ Machine-readable error codes: `invalid_request`, `session_not_found`,
 | `/readyz`  | GET           | Ready when the private worker answers.            |
 | `/metrics` | GET           | Prometheus counters.                              |
 
-Public URL (current): `https://98.90.186.114/browser-mcp`
+Public URLs:
+
+- AWS: `https://98.90.186.114/browser-mcp`
+- Hetzner: `https://hello.95-217-171-250.sslip.io/browser-mcp`
 
 ## Configuration (env)
 
@@ -123,12 +126,14 @@ Public URL (current): `https://98.90.186.114/browser-mcp`
 | ------------------------------ | -------------------------------------------------------- | --------------------------------------------------- |
 | `PORT`                         | `8092`                                                   | Bind port.                                          |
 | `BROWSER_MCP_WORKER_URL`       | `http://dd-web-scraper.default.svc.cluster.local:8097`   | Private browser worker.                             |
-| `SERVER_AUTH_SECRET`           | —                                                        | Shared secret for `X-Server-Auth` to the worker.    |
-| `BROWSER_MCP_REQUIRE_AUTH`     | `false`                                                  | In-pod bearer gate on `/mcp` (kept off = public).   |
+| `SERVER_AUTH_SECRET`           | —                                                        | Required shared secret for worker authentication.  |
+| `BROWSER_MCP_REQUIRE_AUTH`     | `false`                                                  | In-pod bearer gate on `/mcp` (off = public).        |
 | `BROWSER_MCP_AUTH_SECRET`      | —                                                        | Bearer value when the gate is on.                   |
-| `BROWSER_MCP_ALLOWED_DOMAINS`  | `` (any public https host)                               | Server-side allowlist injected into every act call. |
+| `BROWSER_MCP_ALLOWED_DOMAINS`  | —                                                        | Required non-empty hostname ceiling in public mode. |
 
 Worker-side knobs live on `dd-web-scraper` (`BROWSER_AGENT_*`, see its deployment).
+Production currently sets both layers to `benefactor.cc`; caller-supplied
+domains are overwritten/intersected and cannot widen that ceiling.
 
 ## Run locally
 
@@ -141,8 +146,9 @@ SERVER_AUTH_SECRET=dev-secret BROWSER_AGENT_ALLOWED_DOMAINS='' \
 # 2) MCP gateway
 cd ../browser-mcp-rs
 HOST=127.0.0.1 PORT=8092 \
-  BROWSER_MCP_WORKER_URL=http://127.0.0.1:8097 \
-  SERVER_AUTH_SECRET=dev-secret \
+BROWSER_MCP_WORKER_URL=http://127.0.0.1:8097 \
+BROWSER_MCP_ALLOWED_DOMAINS=benefactor.cc \
+SERVER_AUTH_SECRET=dev-secret \
   cargo run --release --locked                                                  # :8092
 ```
 
@@ -168,9 +174,11 @@ before connecting a real client.
 
 ## Connect an MCP client
 
-**ChatGPT (Business/Enterprise/Edu, web).** Settings → Connectors → add a custom
-MCP server, URL `https://98.90.186.114/browser-mcp`. Personal Pro/mobile chats may
-not support custom MCP servers; use a Business workspace or an API client instead.
+**ChatGPT (Business/Enterprise/Edu, web).** Enable Developer mode, create a
+custom app, and scan one of the public URLs above with `No authentication`.
+Verify exactly `browser_act` and `browser_observe`, and keep write-action
+approvals enabled. Full write MCP is not available to Pro; mobile does not
+support these custom apps.
 
 **Claude / API clients.** Point the client's MCP/tool configuration at the same
 URL as a Streamable-HTTP MCP server. When the in-pod bearer gate is enabled later,
@@ -178,14 +186,19 @@ supply `Authorization: Bearer <token>` (never in a query string).
 
 ## Deploy
 
-GitOps via ArgoCD (standalone Application, same pattern as `dd-cluster-mcp-rs`):
+The AWS and Hetzner cluster profiles both declare the standalone ArgoCD
+Application. Merge to `dev` first so the image workflow publishes
+`ghcr.io/oresoftware/dd-browser-mcp-rs:dev`, then reconcile the appropriate
+cluster profile:
 
 ```bash
-kubectl apply -f remote/argocd/apps/dd-browser-mcp-rs.application.yaml
-# gateway route + worker changes ride the auto-synced dd-next-runtime app; the
-# gateway pod re-renders its template on rollout (config-revision bump):
-kubectl -n default rollout restart deployment/dd-remote-gateway
+kubectl apply -k remote/argocd/clusters/aws
+# or on the Hetzner control plane:
+kubectl apply -k remote/argocd/clusters/hetzner
 ```
+
+The MCP and worker run prebuilt images. Do not update the shared EC2 host
+checkout to deploy them.
 
 ## Example tool calls
 
@@ -193,8 +206,8 @@ Start at a URL:
 
 ```json
 { "name": "browser_act", "arguments": {
-  "intent": "open the Colorado SOS business search",
-  "actions": [{ "type": "start", "initial_url": "https://www.sos.state.co.us/biz/" }] } }
+  "intent": "open the Benefactor site",
+  "actions": [{ "type": "start", "initial_url": "https://benefactor.cc/" }] } }
 ```
 
 Observe, then fill using refs:
@@ -232,8 +245,10 @@ Close:
 
 ## Rotating credentials / revoking sessions
 
-* Flip `BROWSER_MCP_REQUIRE_AUTH=true` + set `BROWSER_MCP_AUTH_SECRET` (from
-  `dd-browser-mcp-rs-secrets`) and rollout-restart to require a bearer.
+* Flip `BROWSER_MCP_REQUIRE_AUTH=true`, provision
+  `BROWSER_MCP_AUTH_SECRET`, re-add the dormant ExternalSecret to the
+  kustomization, and reconcile to require a bearer. The process fails startup
+  rather than silently accepting a missing auth secret.
 * Rotate `SERVER_AUTH_SECRET` in `dd-agent-secrets` to cut the gateway→worker
   and MCP→worker trust; restart both deployments.
 * Sessions self-expire (idle/absolute TTL); `browser_act` with a `close` action
