@@ -667,6 +667,9 @@ interface Session {
 
 const sessions = new Map<string, Session>();
 
+// Cap concurrent long-poll waiters per session (DoS guard).
+const MAX_WAITERS_PER_SESSION = 24;
+
 function ownerCount(owner: string): number {
   let n = 0;
   for (const s of sessions.values()) if (s.owner === owner) n++;
@@ -774,23 +777,40 @@ async function assertUrlAllowed(
 // Secrets
 // ---------------------------------------------------------------------------
 
-let secretsCache: Record<string, string> | null = null;
-async function resolveSecret(ref: string): Promise<string> {
+// A secret entry is either a bare string (no domain binding) or an object with
+// an explicit `domains` allowlist. On a public endpoint, bind every secret to
+// specific domains: a bound secret is only ever typed into a matching origin, so
+// a caller cannot steer the browser to an attacker page and harvest it there.
+type SecretEntry = string | { value: string; domains?: string[] };
+let secretsCache: Record<string, SecretEntry> | null = null;
+
+async function resolveSecret(ref: string, currentHost: string): Promise<string> {
   if (!agentConfig.secretsFile) {
     throw new AgentError('secret_required', 'secret references are not configured on this worker');
   }
   if (!secretsCache) {
     try {
-      secretsCache = JSON.parse(await readFile(agentConfig.secretsFile, 'utf8')) as Record<string, string>;
+      secretsCache = JSON.parse(await readFile(agentConfig.secretsFile, 'utf8')) as Record<string, SecretEntry>;
     } catch {
       throw new AgentError('secret_required', 'secret store is unavailable');
     }
   }
-  const value = secretsCache[ref];
-  if (typeof value !== 'string') {
+  const entry = secretsCache[ref];
+  if (entry === undefined) {
     throw new AgentError('secret_required', 'no secret bound to that reference');
   }
-  return value;
+  if (typeof entry === 'string') return entry;
+  if (typeof entry.value !== 'string') {
+    throw new AgentError('secret_required', 'malformed secret entry');
+  }
+  if (entry.domains && entry.domains.length > 0) {
+    const host = currentHost.toLowerCase();
+    const permitted = entry.domains.some((d) => host === d.toLowerCase() || host.endsWith('.' + d.toLowerCase()));
+    if (!permitted) {
+      throw new AgentError('secret_required', 'secret is not permitted on the current page domain');
+    }
+  }
+  return entry.value;
 }
 
 // ---------------------------------------------------------------------------
@@ -840,7 +860,9 @@ async function resolveTarget(session: Session, target: Target): Promise<Locator>
   if (target.visible_text) candidates.push(scope.getByText(target.visible_text, { exact }));
   if (target.title) candidates.push(scope.getByTitle(target.title, { exact }));
   if (target.test_id) candidates.push(scope.getByTestId(target.test_id));
-  if (target.css_fallback) candidates.push(scope.locator(target.css_fallback));
+  // Force the CSS engine so a caller cannot smuggle another Playwright selector
+  // engine (e.g. `xpath=`, `text=`) through css_fallback — XPath is unsupported.
+  if (target.css_fallback) candidates.push(scope.locator(`css=${target.css_fallback}`));
 
   if (candidates.length === 0) {
     throw new AgentError('invalid_request', 'target must specify at least one selector strategy');
@@ -1020,6 +1042,34 @@ async function createSession(
     waiters: [],
   };
 
+  // Network-layer allowlist enforcement: gate EVERY top-level document
+  // navigation (clicks, form posts, 3xx redirects, JS/meta refresh), not just
+  // explicit `goto` actions. Only active when a domain allowlist is in force;
+  // with an empty allowlist (dev/public-any) the NetworkPolicy egress except-list
+  // remains the private/metadata backstop. Subresources are not gated so pages
+  // can still load CDN assets.
+  if (allowedDomains.length > 0) {
+    await context.route('**/*', async (route) => {
+      const request = route.request();
+      if (request.resourceType() === 'document' && request.isNavigationRequest()) {
+        let host = '';
+        try {
+          host = new URL(request.url()).hostname;
+        } catch {
+          return route.abort('blockedbyclient');
+        }
+        if (!domainAllowed(host, allowedDomains)) {
+          session.lastBlocker = {
+            type: 'domain_not_allowed',
+            message: `navigation to ${host} is outside the domain allowlist`,
+          };
+          return route.abort('blockedbyclient');
+        }
+      }
+      return route.continue();
+    });
+  }
+
   page.on('dialog', (dialog: Dialog) => {
     session.dialogs.push({
       type: dialog.type() as DialogRecord['type'],
@@ -1078,7 +1128,13 @@ interface ActionResult {
 
 async function fillValue(session: Session, value: z.infer<typeof ValueSchema>): Promise<string> {
   if ('literal' in value) return value.literal;
-  return resolveSecret(value.secret_ref);
+  let host = '';
+  try {
+    host = new URL(session.page.url()).hostname;
+  } catch {
+    host = '';
+  }
+  return resolveSecret(value.secret_ref, host);
 }
 
 // Returns true if the batch produced a state change.
@@ -1265,12 +1321,18 @@ async function runActions(
         return { status: 'completed', results, blocker: null, pending: null, changed };
       }
     } catch (e) {
-      if (e instanceof AgentError && (e.code === 'ambiguous_target' || e.code === 'target_not_found')) {
-        const blocker: { type: BlockerType; message: string } = {
-          type: e.code === 'ambiguous_target' ? 'ambiguous_target' : 'other',
-          message: e.message,
-        };
-        results.push({ index: i, type: action.type, status: 'failed', message: e.message });
+      if (
+        e instanceof AgentError &&
+        (e.code === 'ambiguous_target' || e.code === 'target_not_found' || e.code === 'domain_not_allowed')
+      ) {
+        const type: BlockerType =
+          e.code === 'ambiguous_target'
+            ? 'ambiguous_target'
+            : e.code === 'domain_not_allowed'
+              ? 'domain_not_allowed'
+              : 'other';
+        const blocker: { type: BlockerType; message: string } = { type, message: e.message };
+        results.push({ index: i, type: action.type, status: 'blocked', message: e.message });
         return { status: 'blocked', results, blocker, pending: null, changed };
       }
       const message = e instanceof Error ? e.message.slice(0, 200) : 'action failed';
@@ -1384,8 +1446,11 @@ function buildSummary(session: Session | null, outcome: Awaited<ReturnType<typeo
   if (outcome.status === 'needs_confirmation') return 'Consequential action requires explicit confirmation.';
   if (outcome.blocker) return `Blocked: ${outcome.blocker.message}`;
   const done = outcome.results.filter((r) => r.status === 'completed').length;
-  const title = session?.lastSnapshot?.title ?? '';
-  return `${done} action(s) completed${title ? ` on "${title.slice(0, 80)}"` : ''}.`;
+  // Page title is untrusted (attacker-controlled) and is surfaced via the MCP
+  // text content block, so it is deliberately NOT interpolated here. It remains
+  // available in the structured page.title field.
+  void session;
+  return `${done} action(s) completed.`;
 }
 
 function projectObserve(session: Session, req: ObserveRequest, timedOut: boolean, previousRevision?: number): Record<string, unknown> {
@@ -1518,7 +1583,9 @@ function summarizeSnapshot(snap: RawSnapshot, session: Session): string {
   const blocker = session.lastBlocker ? ` Blocker: ${session.lastBlocker.type}.` : '';
   const forms = snap.forms.length;
   const controls = snap.elements.length;
-  return `Page "${snap.title.slice(0, 80)}" with ${controls} interactive control(s) and ${forms} form(s).${blocker}`;
+  // Untrusted page title is NOT interpolated into this summary (it surfaces via
+  // the MCP text content block). It stays in the structured page.title field.
+  return `Page with ${controls} interactive control(s) and ${forms} form(s).${blocker}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1532,6 +1599,14 @@ export function registerBrowserAgentRoutes(
   if (!agentConfig.enabled) {
     deps.log.info('browser-agent routes disabled (BROWSER_AGENT_ENABLED=false)');
     return;
+  }
+  if (agentConfig.secretsFile) {
+    // Secrets typed into pages are only as safe as the domains they're bound to.
+    // Never provision a secrets file on a publicly reachable, unauthenticated
+    // worker unless every secret entry carries a `domains` binding.
+    deps.log.warn(
+      'browser-agent: BROWSER_AGENT_SECRETS_FILE is set; ensure every secret is domain-bound and the endpoint is authenticated',
+    );
   }
   startSweeper(deps.log);
 
@@ -1575,10 +1650,21 @@ export function registerBrowserAgentRoutes(
         if (!startAction) {
           throw new AgentError('invalid_request', 'a request without session_id must include a start action');
         }
-        const allow =
-          req.allowed_domains && req.allowed_domains.length
-            ? req.allowed_domains.map((d) => d.toLowerCase())
-            : agentConfig.allowedDomains;
+        // Effective allowlist. When the server has a policy, a caller may only
+        // NARROW within it, never widen it: caller-supplied allowed_domains that
+        // fall outside the server list are dropped. This closes the gateway
+        // override gap where a caller passes its own allowed_domains.
+        const server = agentConfig.allowedDomains;
+        const caller = (req.allowed_domains ?? []).map((d) => d.toLowerCase());
+        let allow: string[];
+        if (server.length === 0) {
+          allow = caller; // dev/public: any host (still SSRF-guarded + netpol backstop)
+        } else if (caller.length === 0) {
+          allow = server;
+        } else {
+          allow = caller.filter((d) => domainAllowed(d, server));
+          if (allow.length === 0) allow = server; // caller asked for nothing valid -> full server policy
+        }
         session = await createSession(deps, owner, startAction, allow);
         if (startAction.initial_url) {
           const url = await assertUrlAllowed(startAction.initial_url, session.allowedDomains, deps.isPrivateIp);
@@ -1650,6 +1736,11 @@ export function registerBrowserAgentRoutes(
         return finishObserve(session, req, false, previousRevision);
       }
 
+      // Bound concurrent long-polls per session so a caller cannot pin an
+      // unbounded number of waiters (and upstream connections) on one session.
+      if (session.waiters.length >= MAX_WAITERS_PER_SESSION) {
+        return finishObserve(session, req, true, previousRevision);
+      }
       // Long-poll: wait for a revision change or timeout. Never holds a browser
       // lock; a concurrent /agent/act can still run.
       const waitMs = Math.min(req.wait_ms, agentConfig.maxLongPollMs);

@@ -202,6 +202,51 @@ test(
   },
 );
 
+test(
+  'domain allowlist is enforced: navigation off the allowlist is blocked',
+  { skip: launchBrowser === null },
+  async () => {
+    const browser = launchBrowser!;
+    const fixture = await startFixture();
+    const app = Fastify();
+    registerBrowserAgentRoutes(app, {
+      getBrowser: async () => browser,
+      isPrivateIp: () => false,
+      isAuthorized: () => true,
+      log: app.log,
+    });
+    await app.ready();
+    const act = async (payload: unknown): Promise<Record<string, unknown>> =>
+      JSON.parse((await app.inject({ method: 'POST', url: '/agent/act', payload })).body) as Record<string, unknown>;
+    try {
+      // A caller-supplied allowlist that does not include the fixture host must
+      // block navigation to it (caller can only narrow, and goto is guarded).
+      const res = await act({
+        request_id: 'a1',
+        intent: 'start restricted to a different domain',
+        actions: [{ type: 'start', browser: 'chromium' }],
+        allowed_domains: ['example.invalid'],
+      });
+      const started = res.status === 'completed';
+      assert.ok(started, JSON.stringify(res));
+      const sessionId = res.session_id as string;
+      const blocked = await act({
+        request_id: 'a2',
+        session_id: sessionId,
+        intent: 'try to leave the allowlist',
+        actions: [{ type: 'goto', url: `${fixture.url}/step1` }],
+      });
+      // goto off the allowlist is surfaced as a domain_not_allowed blocker.
+      assert.equal(blocked.status, 'blocked', JSON.stringify(blocked));
+      assert.equal((blocked.blocker as { type: string }).type, 'domain_not_allowed');
+    } finally {
+      await closeAllSessions();
+      await app.close();
+      await fixture.close();
+    }
+  },
+);
+
 test('teardown: close shared browser', { skip: launchBrowser === null }, async () => {
   await launchBrowser!.close();
 });

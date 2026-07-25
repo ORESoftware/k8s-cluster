@@ -458,7 +458,11 @@ fn worker_body_from_args(args: Option<&Value>, owner: &str, allowlist: &[String]
         _ => Map::new(),
     };
     map.insert("owner".to_string(), Value::String(owner.to_string()));
-    if inject_allowlist && !allowlist.is_empty() && !map.contains_key("allowed_domains") {
+    // Authoritatively OVERWRITE (not just default) the allowlist with the
+    // server policy when one is configured, so a caller cannot widen navigation
+    // scope by supplying its own allowed_domains. When no server policy is set,
+    // a caller-supplied list is passed through (and the worker still clamps it).
+    if inject_allowlist && !allowlist.is_empty() {
         map.insert(
             "allowed_domains".to_string(),
             Value::Array(allowlist.iter().map(|d| Value::String(d.clone())).collect()),
