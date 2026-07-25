@@ -46,13 +46,13 @@ spec:
               # this ever runs non-root; harmless as root.
               export HOME=/tmp
               git config --global --add safe.directory '*'
-              # remote/libs uses an SSH URL; rewrite to HTTPS (public repos, no key).
-              git config --global url."https://github.com/".insteadOf "git@github.com:"
-              # Idempotent across init restarts (the emptyDir persists).
+              # Idempotent across init restarts (the emptyDir persists). The
+              # selenium-server Maven build is self-contained, so ONLY the public
+              # superproject is needed — no (private) remote/libs submodule.
               if [ ! -e /opt/dd-next-1/.git ]; then
                 git clone --depth 1 --branch dev https://github.com/ORESoftware/k8s-cluster.git /opt/dd-next-1
               fi
-              git -C /opt/dd-next-1 submodule update --init --force --depth 1 remote/libs
+              test -e /opt/dd-next-1/remote/deployments/selenium-server/pom.xml
           securityContext:
             allowPrivilegeEscalation: false
             seccompProfile:
