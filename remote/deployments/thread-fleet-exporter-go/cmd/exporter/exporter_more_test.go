@@ -16,15 +16,15 @@ package main
 //   - threadInfo reset-between-scrapes (deleted threads drop out)
 //   - "newest pod wins" pod-dedup logic
 //   - the /metrics HTTP handler exposition (httptest, no live cluster)
-//   - scrapeOnce end-to-end against an in-memory fake clientset, including
-//     the runtime read-only proof (only list verbs) and the error path
 //   - buildRESTConfig file/in-cluster branches
 //
-// Everything runs offline. The one k8s client we touch is the standard
-// in-memory fake (NOT a live cluster/scrape target).
+// Everything runs offline and adds NO new module dependencies (scrapeOnce is
+// thin glue over updateMetrics + three read-only List calls; unit-testing it
+// would require the k8s fake clientset, which would expand this deliberately
+// tiny module's dependency graph. Its read-only guarantee is already enforced
+// by the RBAC manifest + remote/tests/general/thread-fleet-exporter-go-config.test.ts).
 
 import (
-	"context"
 	"errors"
 	"flag"
 	"net/http"
@@ -41,10 +41,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
-	k8stesting "k8s.io/client-go/testing"
 )
 
 // ---- small local helpers (main_test.go already provides dep/pod/gaugeValue/gaugeVecValue) ----
