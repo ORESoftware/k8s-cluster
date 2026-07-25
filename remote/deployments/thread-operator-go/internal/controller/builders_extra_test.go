@@ -104,7 +104,7 @@ func TestShortIDTable(t *testing.T) {
 		// threadId >= 12: first8 + last4, dashes stripped.
 		{name: "canonical uuid first8+last4", short: "", full: "deadbeef-cafe-4001-8001-feedfacefeed", want: "deadbeeffeed"},
 		{name: "dashes inside first8 are stripped", short: "", full: "ab-cd-ef-gh-ijklmnop", want: "abcdefmnop"},
-		{name: "exactly 12 chars", short: "", full: "abcdefghijkl", want: "abcdijkl"}, // first8=abcdefgh, last4=ijkl
+		{name: "exactly 12 chars returns whole id", short: "", full: "abcdefghijkl", want: "abcdefghijkl"}, // first8(abcdefgh)+last4(ijkl) == whole string
 		// threadId < 12: sha256(full), first 6 bytes hex (12 chars).
 		{name: "short threadId hashed", short: "", full: "short", want: "f9b0078b5df5"},
 		{name: "two-char threadId hashed", short: "", full: "hi", want: "8f434346648f"},
