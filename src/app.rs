@@ -367,7 +367,10 @@ mod tests {
             "nosniff"
         );
 
-        let response = app
+        // The middleware records against the shared registry, so the request
+        // above is visible on the telemetry listener even though the two
+        // routers no longer share a socket.
+        let response = metrics_router(state)
             .oneshot(
                 Request::builder()
                     .uri("/metrics")
@@ -384,6 +387,127 @@ mod tests {
         let body = String::from_utf8(body.to_vec()).unwrap();
         assert!(body.contains("threefa_http_requests_total"));
         assert!(body.contains("route=\"/livez\""));
+    }
+
+    #[tokio::test]
+    async fn a_max_ciphertext_len_push_is_not_refused_by_the_body_limit() {
+        // The regression: `MAX_CIPHERTEXT_LEN` was unreachable over HTTP because
+        // the router capped every body at 1 MiB while a 512 KiB ciphertext
+        // serializes to ~2 MiB of JSON integer array. Worst case (`255` in every
+        // byte, 4 chars each) must reach the handler, not the limit layer.
+        let body = serde_json::to_vec(&crate::protocol::PushRequest {
+            device_id: "00000000-0000-4000-8000-000000000001".to_owned(),
+            blob: crate::protocol::SealedBlob {
+                ciphertext: vec![255u8; crate::protocol::MAX_CIPHERTEXT_LEN],
+                nonce: vec![255u8; crate::protocol::NONCE_LEN],
+                kdf_salt: vec![255u8; crate::protocol::MAX_KDF_SALT_LEN],
+                kdf_params: crate::protocol::KdfParams::default(),
+            },
+            base_version: Vec::new(),
+        })
+        .expect("serializable push request");
+        assert!(
+            body.len() > DEFAULT_BODY_LIMIT,
+            "fixture precondition: this payload used to be refused ({} bytes)",
+            body.len()
+        );
+        assert!(
+            body.len() < VAULT_BODY_LIMIT,
+            "the documented arithmetic must leave headroom: {} bytes vs {VAULT_BODY_LIMIT}",
+            body.len()
+        );
+
+        let response = router(test_state())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/vault")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::AUTHORIZATION, "Bearer not-a-real-token")
+                    .header("x-forwarded-for", "203.0.113.9")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // 401 because the mock database knows no such device — the point is that
+        // the request got as far as authentication instead of being cut off at
+        // the transport with 413.
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "a full-size conforming vault push must not be refused by the body cap"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_vault_body_cap_still_refuses_a_grossly_oversized_push() {
+        let body = vec![b'x'; VAULT_BODY_LIMIT + 1];
+        let response = router(test_state())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/vault")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header("x-forwarded-for", "203.0.113.10")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn non_vault_routes_keep_the_smaller_default_body_cap() {
+        let body = vec![b'x'; DEFAULT_BODY_LIMIT + 1];
+        for path in ["/v1/devices/revoke", "/v1/auth/shared"] {
+            let response = router(test_state())
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(path)
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .header("x-forwarded-for", "203.0.113.11")
+                        .body(Body::from(body.clone()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "the larger vault cap must not leak onto {path}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unauthenticated_post_with_a_malformed_body_is_401_not_a_body_error() {
+        // Credentials are checked before the body is parsed, so an anonymous
+        // caller cannot use rejection messages to enumerate the wire type.
+        for path in ["/v1/vault", "/v1/devices/revoke"] {
+            let response = router(test_state())
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(path)
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .header("x-forwarded-for", "203.0.113.12")
+                        .body(Body::from(r#"{"totally":"wrong"}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let body = String::from_utf8(body.to_vec()).unwrap();
+            assert_eq!(body, "unauthorized");
+            assert!(
+                !body.contains("missing field"),
+                "no schema detail may reach an unauthenticated caller: {body}"
+            );
+        }
     }
 
     #[test]
