@@ -271,9 +271,14 @@ if wait_for 60 bash -c "publish() { curl -s -X POST '${BRIDGE_URL}/publish/dd.va
   -H 'authorization: Bearer ${BRIDGE_TOKEN_VALUE}' -H 'content-type: application/json' -d \"\$1\"; }; \
   publish '{\"type\":\"reboot-cluster\"}' >/dev/null; \
   [ \"\$(grep -c \"unknown task type\" '${WORK_DIR}/vapi.log')\" -ge 2 ]"; then
-  ok "worker consumes new tasks after reconnect"
+  restarts_after="$(grep -c 'vapi nats worker started' "${WORK_DIR}/vapi.log" || true)"
+  if [ "$restarts_after" -gt "$restarts_before" ]; then
+    ok "worker resumed consuming after NATS restart (via supervisor rebuild)"
+  else
+    ok "worker resumed consuming after NATS restart (via transparent client reconnect)"
+  fi
 else
-  bad "worker consumes after reconnect" "no new task processed"
+  bad "worker resumes consuming after NATS restart" "no new task processed"
 fi
 
 step "6. Concurrent publish load"
