@@ -140,6 +140,12 @@ pub struct AppConfig {
     /// HMAC secret for `/internal/webhook/sync`. When absent the endpoint is
     /// disabled (404), rather than exposed without authentication.
     pub webhook_secret: Option<String>,
+    /// Shared service credential required to call `/auth/introspect`. When set,
+    /// callers must present `Authorization: Bearer <secret>` and unauthenticated
+    /// callers are rejected. When absent, introspection stays open for backward
+    /// compatibility and logs a one-time deprecation warning. Setting this is
+    /// strongly recommended, since introspection returns full token claims.
+    pub introspect_secret: Option<String>,
     /// Optional CORS allow-list for browser callers.
     pub cors_allow_origins: Vec<String>,
 }
