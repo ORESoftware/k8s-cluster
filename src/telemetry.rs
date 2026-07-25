@@ -11,7 +11,7 @@ use opentelemetry_http::HeaderExtractor;
 use opentelemetry_otlp::{Protocol, WithExportConfig};
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::Config, Resource};
 use opentelemetry_semantic_conventions::resource as semconv;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tower_http::classify::{ServerErrorsAsFailures, SharedClassifier};
 use tower_http::trace::{DefaultOnRequest, MakeSpan, OnResponse, TraceLayer};
 use tracing::Span;
