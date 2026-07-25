@@ -558,7 +558,31 @@ async fn rpc(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> 
     json_response(StatusCode::OK, response)
 }
 
-async fn mcp_get() -> Response {
+/// True if the client's `Accept` requests the SSE stream — i.e. it is opening the
+/// Streamable HTTP standalone server→client channel via `GET`.
+fn wants_event_stream(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|accept| accept.contains("text/event-stream"))
+}
+
+async fn mcp_get(headers: HeaderMap) -> Response {
+    // Streamable HTTP: a client opening the standalone server→client SSE stream
+    // issues `GET` with `Accept: text/event-stream`. This server sends no
+    // server-initiated notifications, so per the MCP spec it MUST answer that
+    // request with 405 (no SSE stream at this endpoint); the client then carries
+    // all traffic over `POST /mcp`. A plain `GET` (browser / discovery) still
+    // receives the JSON descriptor. Returning a non-SSE 200 to an event-stream
+    // request — as before — is the spec violation that could hang a strict
+    // client such as ChatGPT.
+    if wants_event_stream(&headers) {
+        return (
+            StatusCode::METHOD_NOT_ALLOWED,
+            [(header::ALLOW, HeaderValue::from_static("POST"))],
+        )
+            .into_response();
+    }
     json_response(
         StatusCode::OK,
         json!({
