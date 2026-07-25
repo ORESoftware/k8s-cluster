@@ -99,25 +99,27 @@ spec:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
                   optional: true
-            # In-pod bearer gate on POST /mcp — DISABLED so ChatGPT can connect.
+            # In-pod bearer gate on POST /mcp. REQUIRED — the gateway
+            # `/browser-mcp` location has no $dd_mcp_auth_ok gate of its own, so
+            # this bearer is the ONLY thing between the public internet and the
+            # write-capable `browser_act` tool.
             #
-            # WHY: ChatGPT custom connectors authenticate with OAuth 2.1 or not at
-            # all. They cannot present a user-supplied static bearer, so with this
-            # set to 'true' every ChatGPT call fails `initialize` with 401
-            # (verified against the live endpoint 2026-07-25). A static token —
-            # however simple — does not fix that; only OAuth or no-auth does.
+            # This was briefly set to 'false' on 2026-07-25 so a ChatGPT custom
+            # connector could attach (those do OAuth 2.1 or no-auth; they cannot
+            # present a static bearer). That was reverted, because:
+            #   1. ChatGPT write/modify MCP actions are gated to Business/Enterprise/
+            #      Edu. On Pro, `browser_act` will not be invocable even when the
+            #      connector attaches — so anonymity bought nothing.
+            #   2. The intended workloads (IRS EIN, Colorado SOS filings) put an
+            #      SSN in scope. An anonymous, publicly reachable browser driver
+            #      allowlisted to irs.gov is not an acceptable place for that.
             #
-            # CONSEQUENCE: the gateway `/browser-mcp` location has no
-            # $dd_mcp_auth_ok gate, so the write-capable `browser_act` tool is now
-            # reachable anonymously from the public internet. The domain allowlist
-            # below is the ONLY remaining control — see the note there.
-            #
-            # To re-gate later: set this back to 'true' AND implement OAuth 2.1
-            # (see docs/browser-mcp-chatgpt-2026-07-25.md). The secret and the
-            # ExternalSecret are intentionally left provisioned so that is a
-            # one-line revert.
+            # The supported way to drive this WITH write tools today is the OpenAI
+            # Responses API, which does accept arbitrary headers — see
+            # scripts/browser-mcp-responses-driver.mjs. Use OAuth here only if the
+            # ChatGPT-app surface becomes a real requirement on a Business plan.
             - name: BROWSER_MCP_REQUIRE_AUTH
-              value: 'false'
+              value: 'true'
             - name: BROWSER_MCP_AUTH_SECRET
               valueFrom:
                 secretKeyRef:
