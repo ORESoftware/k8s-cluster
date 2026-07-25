@@ -814,6 +814,18 @@ fn render_metrics(state: &AppState, in_flight: usize) -> String {
     format!("{}\n", lines.join("\n"))
 }
 
+/// Effective per-job timeout (ms): the requested value floored at 1s and capped
+/// by both the configured max timeout and the hard lifetime.
+///
+/// The floor is itself lowered to the ceiling when a (misconfigured) ceiling is
+/// below 1s, so this never panics — `u64::clamp` panics when `min > max`, which
+/// the previous inline `requested.clamp(1_000, max_timeout_ms)` did on every
+/// authorized request whenever `BROWSER_JOB_MAX_TIMEOUT_MS` was set below 1000.
+fn effective_max_ms(requested_ms: u64, max_timeout_ms: u64, max_lifetime_seconds: u64) -> u64 {
+    let ceiling = max_timeout_ms.min(max_lifetime_seconds.saturating_mul(1000));
+    requested_ms.clamp(1_000.min(ceiling), ceiling)
+}
+
 async fn handle_run(
     State(state): State<AppState>,
     headers: HeaderMap,
