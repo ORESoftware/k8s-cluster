@@ -2309,6 +2309,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         metrics: Arc::new(Metrics::default()),
     };
 
+    // JetStream work-queue worker (dd.vapi.tasks.>) — enabled by VAPI_NATS_URL.
+    // KEDA scales this deployment off the worker consumer's lag.
+    if let Some(nats_cfg) = nats_worker::NatsWorkerConfig::from_env() {
+        tokio::spawn(nats_worker::run(state.clone(), nats_cfg));
+    }
+
     let app = Router::new()
         .route("/", get(home))
         .route("/healthz", get(healthz))
