@@ -1929,10 +1929,10 @@ data:
       # one), POST only, and vxl-api-server verifies `x-vapi-secret` itself and
       # fails closed when VAPI_WEBHOOK_SECRET is unset.
       #
-      # Inert until vxl-api-server is deployed into the voxletra namespace —
-      # nginx resolves upstreams at startup, so this block must land in the
-      # same change as the Service, or the gateway crashloops on an
-      # unresolvable host.
+      # Safe to ship before Voxletra exists: the variable upstream below defers
+      # DNS to request time (same trick as the dd-shared-auth block), so an
+      # undeployed vxl-api-server is a 502 on this one path instead of an
+      # unresolvable host that stops the whole gateway from starting.
       location = /vxl/vapi/webhook {
         if ($request_method != POST) {
           return 405;
@@ -1946,7 +1946,12 @@ data:
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_pass http://vxl-api-server.voxletra.svc.cluster.local:8080/vapi/webhook;
+        set $dd_up_vxl_api vxl-api-server.voxletra.svc.cluster.local:8080;
+        # proxy_pass with a variable passes the request URI through unchanged,
+        # so rewrite to the service's own path first. The service serves this
+        # webhook at /vapi/webhook; only the public path differs.
+        rewrite ^ /vapi/webhook break;
+        proxy_pass http://$dd_up_vxl_api;
       }
 
       location = /vapi {

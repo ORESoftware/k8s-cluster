@@ -1,16 +1,18 @@
-# Browser automation runners: Hetzner is broken, AWS is healthy — 2026-07-25
+# Browser automation runners on the remote clusters — 2026-07-25
 
-Verification of `dd-browser-test-server` and `dd-selenium-server` on both
-remote clusters, the root cause of the Hetzner failure, and the fix.
+Root cause of the 23-day Hetzner outage, the fix, and what is still fragile.
 
 ## State
 
+Both clusters serve traffic as of this writing; an in-cluster probe of each
+Service returns 200 on Hetzner and on AWS.
+
 | Cluster | Workload | State |
 |---|---|---|
-| AWS EC2 | `dd-browser-test-server` | **Running** 1/1 |
-| AWS EC2 | `dd-selenium-server` | **Running** 2/2 |
-| Hetzner | `dd-browser-test-server` | **CrashLoopBackOff** 0/1, ~6 400 restarts over 23d |
-| Hetzner | `dd-selenium-server` | **CrashLoopBackOff** 1/2, ~6 650 restarts over 23d |
+| AWS EC2 | `dd-browser-test-server` | Running 1/1 |
+| AWS EC2 | `dd-selenium-server` | Running 2/2 |
+| Hetzner | `dd-selenium-server` | Running 2/2, 0 restarts — **fixed**, was 1/2 with ~6 650 restarts over 23 days |
+| Hetzner | `dd-browser-test-server` | Running 2/2 on a fragile node-local snapshot; a newer ReplicaSet is crashlooping — see below |
 
 AWS was verified live, not just by pod status: a bounded scenario was driven
 through the dedicated Selenium Grid against a cluster-internal URL and returned
@@ -24,9 +26,9 @@ fresh `RemoteWebDriver` session against the Grid sidecar per run.
 
 ## Root cause on Hetzner
 
-The `selenium` Grid sidecar is **healthy** and creating Chrome sessions
-normally. The failing container is `selenium-api`, and its last log line is the
-whole story:
+The `selenium` Grid sidecar was **healthy** throughout and creating Chrome
+sessions normally. The failing container was `selenium-api`, and its last log
+line was the whole story:
 
 ```
 /bin/bash: line 2: cd: /opt/dd-next-1/remote/deployments/selenium-server: No such file or directory
@@ -55,57 +57,102 @@ a ClusterIP — nothing notices until something actually needs the runner.
 
 `dd-rust-vapi-phone` does not have this problem, because it already solves it.
 
-## The fix
+## The fix — `dd-selenium-server`
 
-Give both browser deployments the same source-resolution shape
-`dd-rust-vapi-phone` uses: prefer a shallow git clone, fall back to the mount.
+An `initContainers: [fetch-source]` that shallow-clones the public superproject
+into an `emptyDir` mounted at `/opt/dd-next-1`, replacing the hostPath volume
+entirely. The application containers are untouched: they still `cd
+/opt/dd-next-1/...`, the path is simply populated by the pod itself now rather
+than by whatever happens to exist on the node.
 
-```bash
-source_root=/opt/dd-next-1
-if [ -n "${SELENIUM_GIT_URL:-}" ]; then
-  clone_root="$(mktemp -d /tmp/dd-selenium-source.XXXXXX)"
-  if git clone --depth 1 --branch "${SELENIUM_GIT_REF:-dev}" "${SELENIUM_GIT_URL}" "$clone_root"; then
-    source_root="$clone_root"
-  else
-    echo "[dd-selenium-server] source clone failed; using mounted source" >&2
-  fi
-fi
-cd "$source_root/remote/deployments/selenium-server"
+This is better than threading a clone into the app container's own startup
+script (the first approach tried here): the app args stay simple, an init
+failure shows up as a distinct pod phase instead of a crashloop, and the clone
+completes before the app starts rather than racing it.
+
+The clone is idempotent across init restarts (`if [ ! -e /opt/dd-next-1/.git ]`)
+because the emptyDir outlives them, and `git config --global --add
+safe.directory '*'` avoids git's dubious-ownership abort.
+
+This landed on `dev` in
+[PR #34](https://github.com/ORESoftware/k8s-cluster/pull/34) (`f0565086`,
+"run on any cluster (self-contained clone) + fix semconv NoClassDefFound"), and
+Hetzner has been healthy since: two pods, 2/2 Ready, zero restarts.
+
+Worth recording how easy it was to misread the situation. `main` did not have
+the fix and the Argo app showed `OutOfSync`, which looks exactly like "the
+working fix exists only in the cluster and selfHeal is about to revert it".
+It wasn't — the fix was on `dev`, which is the branch Argo actually tracks, and
+`main` was simply behind. Comparing against the deployed branch rather than the
+checked-out one is what settles that question.
+
+## `dd-browser-test-server` is a different, harder problem
+
+The same hostPath applies, but this service **cannot** be fixed by cloning the
+public superproject alone. Its `package.json` declares:
+
+```json
+"@dd/telemetry": "file:../../libs/telemetry-node"
 ```
 
-with `SELENIUM_GIT_URL` / `SELENIUM_GIT_REF` (and
-`BROWSER_TEST_GIT_URL` / `BROWSER_TEST_GIT_REF`) set on the deployment. The
-hostPath stays as the fallback, so EC2 behaviour is unchanged if the clone
-fails.
+and `remote/libs` is a **private submodule**
+(`git@github.com:ORESoftware/k8s-libs-and-shared-defs.git`). A public-only
+clone leaves that path empty, and the build dies with:
 
-Applied to:
+```
+ENOENT: no such file or directory, scandir '/opt/dd-next-1/remote/libs/telemetry-node'
+```
 
-- `remote/argocd/dd-next-runtime/dd-selenium-server.deployment.yaml`
-- `remote/argocd/dd-next-runtime/dd-browser-test-server.deployment.yaml`
+which is exactly what a `fetch-source`-equipped pod was observed doing during
+this work. So the fix needs credentials — `GH_PAT` or `GH_DEPLOY_KEY` from
+`dd-agent-secrets` — to fetch `remote/libs` as well. That is a real design
+decision (which credential, mounted how, and whether the init container should
+hold repo-write-capable creds at all), not a mechanical edit.
 
-`kubectl kustomize remote/argocd/dd-next-runtime` builds clean (235 documents)
-and both containers carry the new env vars.
+The two currently-Running replicas work only because someone copied a snapshot
+to `/home/ec2-user/codes/dd/dd-next-1` on some Hetzner nodes. That directory is
+**not a git checkout** (`fatal: not a git repository`), so it can never be
+updated, exists on only some of the five nodes, and makes scheduling a lottery.
+It should not be relied on.
 
-**Not applied to any cluster.** Syncing this is a deploy decision; on Hetzner
-it should replace a crashloop, and on AWS the clone path becomes primary, which
-is worth watching on the first rollout.
+**Deliberately not edited here.** The same fix was attempted on `dev`
+(`8fec84ee`, "self-heal source via per-pod clone") and **reverted**
+(`32f9f3a6`) — the private-submodule dependency above is why. A crashlooping
+`fetch-source`-equipped pod was still visible in-cluster during this work,
+which is that attempt. Re-landing the same change without solving the
+credential question would just reproduce the revert.
+
+## Status
+
+| Change | State |
+|---|---|
+| `dd-selenium-server.deployment.yaml` | **no change needed** — already fixed on `dev` via PR #34 |
+| `dd-remote-gateway.configmap.yaml` — `/vxl/vapi/webhook` | the only new change here; safe to ship before Voxletra exists (variable upstream) |
+| `dd-browser-test-server.deployment.yaml` | left alone — the attempted fix was reverted on `dev`; needs the credential decision above |
+
+`kubectl kustomize remote/argocd/dd-next-runtime` builds clean, and the
+rendered selenium Deployment carries `initContainers: [fetch-source]` with both
+volumes as `emptyDir`.
 
 ## Worth checking separately
 
 - Hetzner `dd-browser-job-runner` has a large backlog of `Evicted` pods, which
   points at node disk or memory pressure rather than this bug.
-- The Grid sidecar on Hetzner shows a new Chrome session roughly every minute
-  even with the API container dead, so something is still driving `:4444`
-  in-cluster. Worth identifying — sessions are being created and dropped
-  continuously.
+- The Grid sidecar on Hetzner was showing a new Chrome session roughly every
+  minute even while the API container was dead, so something else in-cluster
+  was driving `:4444` directly. Worth identifying.
+- Every other source-mounted service in `dd-next-runtime` shares this exposure.
+  The hostPath is an EC2 assumption baked into manifests that two clusters
+  sync; selenium is fixed, but it was not special.
 
 ## Regression coverage
 
 `voxletra-e2e` suite `110-remote-runners` now checks both clusters on every
 run: workload readiness on each, and on AWS a live Grid scenario plus the
-unauthenticated-`/run` refusal. It reports the Hetzner crashloop as a failure
-today, which is the point — the outage was invisible precisely because nothing
-was asserting on it.
+unauthenticated-`/run` refusal. It went red on the Hetzner crashloop and is
+green now that selenium is fixed — which is the point. The outage lasted 23
+days precisely because nothing was asserting on it: a crashlooping pod keeps
+its Service and its ClusterIP, so the failure is invisible from the outside.
 
 ```sh
 cd voxletra-e2e && bash run-all.sh 110
