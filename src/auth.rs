@@ -24,6 +24,28 @@ pub struct AuthedDevice {
     pub device_id: Uuid,
 }
 
+/// Authenticate from the request *head*, before any body is read.
+///
+/// This is the whole point of implementing [`FromRequestParts`] rather than
+/// calling [`authenticate`] inside a handler: axum runs every
+/// `FromRequestParts` extractor in declaration order and the single
+/// `FromRequest` extractor (the body) last. Naming `AuthedDevice` before
+/// `JsonBody<T>` in a handler signature therefore makes the credential check
+/// strictly precede JSON deserialization, so an unauthenticated caller gets a
+/// bare 401 instead of a body-shape error that enumerates the wire type — and
+/// cannot force a multi-megabyte JSON parse per anonymous request.
+#[axum::async_trait]
+impl FromRequestParts<AppState> for AuthedDevice {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        authenticate(state.database(), &parts.headers).await
+    }
+}
+
 /// Generate a fresh bearer token (returned to the client once) and its stored
 /// SHA-256 hex digest.
 pub fn issue_token() -> (String, String) {
