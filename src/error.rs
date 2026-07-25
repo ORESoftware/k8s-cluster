@@ -116,13 +116,48 @@ mod tests {
     }
 
     #[test]
-    fn database_errors_fold_to_opaque_internal() {
-        // Any DB error must surface as a leak-free 500, never a detailed body.
-        let err: ApiError = sea_orm::DbErr::RecordNotFound("missing".to_owned()).into();
-        assert!(matches!(err, ApiError::Internal));
-        assert_eq!(
-            err.into_response().status(),
-            StatusCode::INTERNAL_SERVER_ERROR
-        );
+    fn query_errors_fold_to_opaque_internal() {
+        // A genuine query/logic fault must surface as a leak-free 500, never a
+        // detailed body — and never a 503, which would tell a client to retry
+        // something that can only keep failing.
+        for error in [
+            sea_orm::DbErr::RecordNotFound("missing".to_owned()),
+            sea_orm::DbErr::Custom("boom".to_owned()),
+            sea_orm::DbErr::Json("bad column".to_owned()),
+            sea_orm::DbErr::Query(sea_orm::RuntimeErr::Internal("syntax error".to_owned())),
+        ] {
+            let err: ApiError = error.into();
+            assert!(matches!(err, ApiError::Internal));
+            assert_eq!(
+                err.into_response().status(),
+                StatusCode::INTERNAL_SERVER_ERROR
+            );
+        }
+    }
+
+    #[test]
+    fn connection_level_errors_become_503_service_unavailable() {
+        // PROTOCOL.md §8: "503 | Database unavailable". These are exactly the
+        // variants sea-orm produces when Postgres is unreachable or the pool
+        // cannot hand out a connection.
+        for error in [
+            sea_orm::DbErr::ConnectionAcquire(sea_orm::ConnAcquireErr::Timeout),
+            sea_orm::DbErr::ConnectionAcquire(sea_orm::ConnAcquireErr::ConnectionClosed),
+            sea_orm::DbErr::Conn(sea_orm::RuntimeErr::Internal("Disconnected".to_owned())),
+            sea_orm::DbErr::Conn(sea_orm::RuntimeErr::SqlxError(
+                sea_orm::SqlxError::PoolClosed,
+            )),
+            sea_orm::DbErr::Exec(sea_orm::RuntimeErr::SqlxError(sea_orm::SqlxError::Io(
+                std::io::Error::from(std::io::ErrorKind::ConnectionReset),
+            ))),
+            sea_orm::DbErr::Query(sea_orm::RuntimeErr::SqlxError(
+                sea_orm::SqlxError::PoolTimedOut,
+            )),
+        ] {
+            let err: ApiError = error.into();
+            assert!(matches!(err, ApiError::Unavailable));
+            let response = err.into_response();
+            assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        }
     }
 }
