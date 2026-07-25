@@ -108,6 +108,43 @@ pub fn http_trace_layer() -> TraceLayer<
         .on_response(OtelOnResponse)
 }
 
+/// Emit exactly one structured INFO event per completed response.
+///
+/// Without this the log stream held 5xx and nothing else. `OtelOnResponse`
+/// *records* the status onto the span (for OTLP) but emits no event;
+/// tower_http's `DefaultOnRequest` logs at DEBUG, which the shipped
+/// `RUST_LOG=info,…` drops; so the only surviving emitter was the default
+/// `on_failure`, and `ServerErrorsAsFailures` classifies only 5xx as a failure.
+/// A 401 storm (credential rotation gone wrong), a 404 storm (a client on the
+/// wrong base path) and a 429 storm (a device stuck retrying) — the three
+/// incidents most likely to be reported as "sync stopped working" — were
+/// therefore invisible in Loki, and `init()` above documents OTLP being
+/// unavailable as a supported degraded mode, in which nothing recorded them at
+/// all.
+///
+/// Layered *inside* [`http_trace_layer`] so the event inherits the request span
+/// and its trace/span ids, joining logs to traces.
+///
+/// What it deliberately does not carry: no header of any kind (the one on this
+/// API is a credential), no query string, no body, and the *bounded* route label
+/// rather than the raw URI, so a path that ever grows an id cannot smuggle one
+/// into a log line.
+pub async fn log_http_response(request: ExtractRequest, next: Next) -> Response<Body> {
+    let method = crate::metrics::metric_method(request.method());
+    let route = crate::metrics::metric_route(request.uri().path());
+    let started = Instant::now();
+    let response = next.run(request).await;
+    let latency = started.elapsed();
+    tracing::info!(
+        http.request.method = method,
+        http.route = route,
+        http.response.status_code = response.status().as_u16(),
+        http.server.request.duration_ms = latency.as_secs_f64() * 1_000.0,
+        "http request"
+    );
+    response
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct OtelMakeSpan;
 
