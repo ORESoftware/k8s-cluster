@@ -1,11 +1,16 @@
-# DUPLICATE / DRIFT HAZARD: this Application is ALSO declared inline in
-# clusters/aws/applications.yaml (the root app-of-apps) and generated a third time by
-# quaestor-ledger/quaestor-infra's render.mjs. All three are `kubectl apply`-ed at various
-# points, so last-writer-wins. This copy is kept BYTE-FOR-BYTE in sync with the canonical
-# clusters/aws inline (incl. ServerSideApply=true) so a re-apply is a no-op regardless of
-# order. Target end-state (see docs/gitops-boundary-audit.md): single source of truth via an
-# ApplicationSet entry pointing at the quaestor billing app repo — then delete this file and
-# have quaestor-infra emit a registration, not a hand-copied CR.
+# Sourced from the billing app repo directly — NOT from a k8s-cluster submodule
+# path (repo-server has submodule checkout disabled, so the old
+# `remote/deployments/billing-server-rs/k8s/ec2` path rendered EMPTY: the app
+# deployed nothing). The manifests live at quaestor-ledger/billing-server.rs
+# `k8s/ec2` (verified to render). See docs/app-deploy-contract.md.
+#
+# PREREQ: ArgoCD needs a read cred for git@github.com:quaestor-ledger/billing-server.rs.git
+# on the AWS cluster before this can sync (same as the threefa precedent).
+#
+# STILL A DUPLICATE: also declared inline in clusters/aws/applications.yaml; both
+# copies are kept byte-identical (repoURL/path/targetRevision) so last-writer-wins
+# is a no-op. End-state (docs/gitops-boundary-audit.md): a single ApplicationSet
+# entry, then delete this file and have quaestor-infra emit a registration.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -14,9 +19,9 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:ORESoftware/k8s-cluster.git
-    targetRevision: dev
-    path: remote/deployments/billing-server-rs/k8s/ec2
+    repoURL: git@github.com:quaestor-ledger/billing-server.rs.git
+    targetRevision: main
+    path: k8s/ec2
   destination:
     server: https://kubernetes.default.svc
     namespace: default
