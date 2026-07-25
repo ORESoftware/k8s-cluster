@@ -1082,7 +1082,11 @@ mod tests {
 
     #[test]
     fn config_missing_database_url_errors() {
-        let err = config_with(&[]).expect_err("no database url must error");
+        // (`Config` intentionally derives no Debug, so map Ok -> () before
+        //  expect_err rather than requiring Config: Debug.)
+        let err = config_with(&[])
+            .map(|_| ())
+            .expect_err("no database url must error");
         assert!(
             err.contains("WAL_GATEWAY_DATABASE_URL not set"),
             "unexpected error: {err}"
