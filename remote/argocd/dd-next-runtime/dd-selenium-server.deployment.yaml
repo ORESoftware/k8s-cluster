@@ -107,7 +107,16 @@ spec:
           args:
             - |
               set -euo pipefail
-              cd /opt/dd-next-1/remote/deployments/selenium-server
+              cd /opt/selenium-server
+              # Fail fast and legibly on an unprovisioned node. Without this a
+              # missing source tree surfaces only as a bare `cd: No such file`
+              # and an endless CrashLoopBackOff (this pod logged 6,600+ restarts
+              # over 23 days on Hetzner before anyone noticed). 78 = EX_CONFIG.
+              if [ ! -f pom.xml ]; then
+                echo "FATAL: /opt/selenium-server is mounted but contains no pom.xml." >&2
+                echo "Provision the node path /home/ec2-user/codes/dd/dd-next-1/remote/deployments/selenium-server (needs pom.xml and src/)." >&2
+                exit 78
+              fi
               if [ ! -f target/dd-selenium-server.jar ]; then
                 echo "Building dd-selenium-server with Maven..."
                 mvn -B -e -DskipTests package
@@ -175,12 +184,18 @@ spec:
               cpu: '1'
               memory: 1Gi
           volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
+            - name: selenium-server-src
+              mountPath: /opt/selenium-server
       volumes:
-        - name: repo
+        # Pinned at the module directory, not the repo root. `type: Directory`
+        # only asserts that the *mounted* path exists, so mounting the repo root
+        # let a node with an unprovisioned subtree mount cleanly and then
+        # crash-loop at runtime. Pinning the path the build actually needs makes
+        # the kubelet refuse to start the pod (FailedMount) instead — a distinct,
+        # alertable state rather than an app-looking restart loop.
+        - name: selenium-server-src
           hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
+            path: /home/ec2-user/codes/dd/dd-next-1/remote/deployments/selenium-server
             type: Directory
         - name: dshm
           emptyDir:

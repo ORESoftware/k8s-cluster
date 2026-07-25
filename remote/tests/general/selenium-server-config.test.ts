@@ -135,8 +135,19 @@ test('selenium-server deploys as a Grid + Java API pod through Argo and the gate
   // Two containers: the official Selenium Grid + the self-building maven API.
   assert.match(deployment, /name:\s*selenium\b[\s\S]*image:\s*selenium\/standalone-chromium/);
   assert.match(deployment, /name:\s*selenium-api[\s\S]*image:\s*docker\.io\/library\/maven:3\.9\.9-eclipse-temurin-17/);
-  assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/selenium-server/);
+  assert.match(deployment, /cd \/opt\/selenium-server/);
   assert.match(deployment, /mvn -B -e -DskipTests package/);
+
+  // The source mount is pinned at the module directory, not the repo root, so a
+  // node whose subtree was never provisioned fails the mount instead of starting
+  // and crash-looping forever (Hetzner: 6,600+ restarts over 23 days).
+  assert.match(
+    deployment,
+    /hostPath:\s*\n\s*path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1\/remote\/deployments\/selenium-server\s*\n\s*type:\s*Directory/,
+  );
+  // ...and the start-up command still says so out loud if the mount is empty.
+  assert.match(deployment, /if \[ ! -f pom\.xml \]/);
+  assert.match(deployment, /exit 78/);
 
   // Grid is pod-internal; API is the public port.
   assert.match(deployment, /containerPort:\s*4444/);

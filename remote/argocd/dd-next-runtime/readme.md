@@ -950,6 +950,19 @@ containers: the official `selenium/standalone-chromium` image (the actual Seleni
 `RemoteWebDriver` at `localhost:4444`. The Grid port is never published on the Service, so the only
 reachable entrypoint is the authenticated API on `:8105`.
 
+**Source mount is pinned at the module directory.** The API container builds from a `hostPath`
+mounted at `/opt/selenium-server`, pointed at
+`/home/ec2-user/codes/dd/dd-next-1/remote/deployments/selenium-server` — deliberately *not* the repo
+root. `type: Directory` only asserts that the mounted path itself exists, so mounting the repo root
+let a node whose subtree was never provisioned mount cleanly and then crash-loop at start-up: on
+Hetzner that went unnoticed for 23 days and 6,600+ restarts, with only a bare
+`cd: No such file or directory` in the logs while the Grid container stayed healthy (pod `1/2`).
+Pinning the path the build actually needs turns that into a `FailedMount` the kubelet reports before
+the container runs, and the start-up command additionally checks for `pom.xml` and exits `78`
+(`EX_CONFIG`) with the node path to provision. Note this only affects the API container — the Grid
+itself is imageful and unaffected, which is why `kubectl port-forward` to the pod's `:4444` keeps
+working even when the API is down.
+
 The API exposes `GET /healthz`, `GET /readyz`, `GET /metrics`, `GET /status`, `GET /tools`, and
 `POST /run`; the gateway mirrors those under `/selenium/...`. `POST /run` accepts the same bounded
 scenario DSL as `dd-browser-test-server` (`goto`, `click`, `fill`, `select`, `press`,
