@@ -154,6 +154,34 @@ mod tests {
     }
 
     #[test]
+    fn a_single_bearer_header_is_read_and_a_repeated_one_is_refused() {
+        use axum::http::header::AUTHORIZATION;
+        use axum::http::HeaderValue;
+
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer alpha"));
+        assert_eq!(bearer(&headers).unwrap(), "alpha");
+
+        // Two lines make the credential ambiguous: which one wins must not be
+        // decided by header order, so neither does.
+        headers.append(AUTHORIZATION, HeaderValue::from_static("Bearer beta"));
+        assert!(matches!(bearer(&headers), Err(ApiError::Unauthorized)));
+
+        // Including the case an intermediary is most likely to disagree on: a
+        // junk line in front of a good credential, and the reverse.
+        for pair in [["Bearer alpha", "garbage"], ["garbage", "Bearer alpha"]] {
+            let mut headers = HeaderMap::new();
+            for value in pair {
+                headers.append(AUTHORIZATION, HeaderValue::from_str(value).unwrap());
+            }
+            assert!(matches!(bearer(&headers), Err(ApiError::Unauthorized)));
+        }
+
+        // No header at all is the same answer, so the two are not distinguishable.
+        assert!(matches!(bearer(&HeaderMap::new()), Err(ApiError::Unauthorized)));
+    }
+
+    #[test]
     fn issued_token_is_urlsafe_base64_of_32_bytes() {
         let (tok, hash) = issue_token();
         let raw = base64::engine::general_purpose::URL_SAFE_NO_PAD
