@@ -6,6 +6,9 @@
 
 use crate::entity::device;
 use crate::error::ApiError;
+use crate::state::AppState;
+use axum::extract::FromRequestParts;
+use axum::http::request::Parts;
 use axum::http::HeaderMap;
 use base64::Engine;
 use rand::RngCore;
