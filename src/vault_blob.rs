@@ -351,6 +351,50 @@ mod tests {
         assert_eq!(response.version, version);
     }
 
+    fn max_size_push(ciphertext_len: usize, who: AuthedDevice) -> PushRequest {
+        PushRequest {
+            device_id: who.device_id.to_string(),
+            blob: SealedBlob {
+                ciphertext: vec![255u8; ciphertext_len],
+                nonce: vec![1u8; crate::protocol::NONCE_LEN],
+                kdf_salt: vec![2u8; 16],
+                kdf_params: crate::protocol::KdfParams::default(),
+            },
+            base_version: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn max_ciphertext_len_is_the_protocol_validator_s_boundary_not_the_transport_s() {
+        // Companion to `app::a_max_ciphertext_len_push_is_not_refused_by_the_body_limit`:
+        // now that a full-size blob actually reaches the handler, the published
+        // constant must be the thing that decides — enforced before any query.
+        let who = AuthedDevice {
+            account_id: Uuid::new_v4(),
+            device_id: Uuid::new_v4(),
+        };
+
+        let database = MockDatabase::new(DatabaseBackend::Postgres).into_connection();
+        let over = max_size_push(crate::protocol::MAX_CIPHERTEXT_LEN + 1, who);
+        assert!(
+            matches!(store(&database, who, &over).await, Err(ApiError::BadRequest)),
+            "one byte past MAX_CIPHERTEXT_LEN must be a 400 from the envelope check"
+        );
+
+        // Exactly at the maximum passes validation and proceeds to the database
+        // (which this mock has no canned rows for — the point is that it got
+        // past `is_well_formed`, not that the write succeeds).
+        let database = MockDatabase::new(DatabaseBackend::Postgres).into_connection();
+        let at_max = max_size_push(crate::protocol::MAX_CIPHERTEXT_LEN, who);
+        assert!(
+            !matches!(
+                store(&database, who, &at_max).await,
+                Err(ApiError::BadRequest)
+            ),
+            "a ciphertext of exactly MAX_CIPHERTEXT_LEN must be accepted by the validator"
+        );
+    }
+
     #[test]
     fn concurrent_vectors_dominate_neither_way() {
         // Each side has an event the other has not observed: true concurrency.
