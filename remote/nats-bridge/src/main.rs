@@ -377,6 +377,22 @@ mod tests {
     }
 
     #[test]
+    fn classifies_no_stream_errors_for_core_fallback() {
+        assert!(matches!(
+            classify_js_error("no stream found for given subject"),
+            PublishError::NoStream
+        ));
+        assert!(matches!(
+            classify_js_error("503 no responders available"),
+            PublishError::NoStream
+        ));
+        assert!(matches!(
+            classify_js_error("timed out"),
+            PublishError::Other(_)
+        ));
+    }
+
+    #[test]
     fn token_comparison_is_exact() {
         assert!(constant_time_eq("secret-token-1234", "secret-token-1234"));
         assert!(!constant_time_eq("secret-token-1234", "secret-token-1235"));
