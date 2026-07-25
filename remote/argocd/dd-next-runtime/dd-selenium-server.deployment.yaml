@@ -28,6 +28,44 @@ spec:
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
+      # --- Source ----------------------------------------------------------------
+      # The API container builds from this repo's source. It used to arrive via a
+      # hostPath mount of /home/ec2-user/codes/dd/dd-next-1, which exists only on
+      # the EC2 node: on Hetzner — which syncs this same dd-next-runtime path —
+      # the API container could not find its source and crashlooped ~6,650 times
+      # over 23 days while the Grid beside it stayed healthy. The Service exposes
+      # only the API port, so the Service had zero endpoints that whole time.
+      #
+      # Cloning into an emptyDir makes the pod self-contained and identical on
+      # every cluster, with no node-level state to create or keep current.
+      initContainers:
+        - name: fetch-source
+          image: docker.io/library/maven:3.9.9-eclipse-temurin-17
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              # safe.directory guards against git's "dubious ownership" abort if
+              # this ever runs non-root; harmless as root.
+              export HOME=/tmp
+              git config --global --add safe.directory '*'
+              # Idempotent across init restarts (the emptyDir persists). The
+              # selenium-server Maven build is self-contained, so ONLY the public
+              # superproject is needed — no (private) remote/libs submodule.
+              if [ ! -e /opt/dd-next-1/.git ]; then
+                git clone --depth 1 --branch dev https://github.com/ORESoftware/k8s-cluster.git /opt/dd-next-1
+              fi
+              test -e /opt/dd-next-1/remote/deployments/selenium-server/pom.xml
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
       containers:
         # --- Selenium Grid (the actual long-lived Selenium server) ------------------
         # The official standalone image bundles Chromium + chromedriver + a Selenium
@@ -178,10 +216,11 @@ spec:
             - name: repo
               mountPath: /opt/dd-next-1
       volumes:
+        # Populated by the fetch-source initContainer above; sized for a shallow
+        # clone plus the Maven build output.
         - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
+          emptyDir:
+            sizeLimit: 4Gi
         - name: dshm
           emptyDir:
             medium: Memory

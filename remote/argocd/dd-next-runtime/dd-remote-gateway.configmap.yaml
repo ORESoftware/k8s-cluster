@@ -1917,6 +1917,43 @@ data:
         proxy_pass http://dd-rust-vapi-phone.default.svc.cluster.local:8113/webhook;
       }
 
+      # /vxl/vapi/webhook — the Voxletra platform's own Vapi webhook.
+      #
+      # Deliberately NOT /vapi/webhook: that exact path is the phone screener
+      # above, and the two services answer different assistants (a call
+      # screener vs. a live translator). One Vapi webhook URL can only route to
+      # one service, so each gets its own path and each is configured as the
+      # `server.url` of its own assistant.
+      #
+      # Same posture as the screener: no operator cookie (Vapi cannot send
+      # one), POST only, and vxl-api-server verifies `x-vapi-secret` itself and
+      # fails closed when VAPI_WEBHOOK_SECRET is unset.
+      #
+      # Safe to ship before Voxletra exists: the variable upstream below defers
+      # DNS to request time (same trick as the dd-shared-auth block), so an
+      # undeployed vxl-api-server is a 502 on this one path instead of an
+      # unresolvable host that stops the whole gateway from starting.
+      location = /vxl/vapi/webhook {
+        if ($request_method != POST) {
+          return 405;
+        }
+        client_max_body_size 1m;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_connect_timeout 10;
+        proxy_read_timeout 30;
+        proxy_send_timeout 30;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        set $dd_up_vxl_api vxl-api-server.voxletra.svc.cluster.local:8080;
+        # proxy_pass with a variable passes the request URI through unchanged,
+        # so rewrite to the service's own path first. The service serves this
+        # webhook at /vapi/webhook; only the public path differs.
+        rewrite ^ /vapi/webhook break;
+        proxy_pass http://$dd_up_vxl_api;
+      }
+
       location = /vapi {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
