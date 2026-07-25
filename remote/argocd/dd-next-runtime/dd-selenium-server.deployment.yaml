@@ -28,6 +28,31 @@ spec:
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
+      # Source comes from a per-pod clone of the (public) repo into an emptyDir,
+      # NOT a host path. The previous `hostPath: /home/ec2-user/codes/dd/dd-next-1`
+      # only exists on the AWS EC2 node, so every Hetzner pod crash-looped `cd`-ing
+      # into a missing directory. Cloning makes the pod self-contained on any node
+      # in any cluster (build-server audit F13 pattern).
+      initContainers:
+        - name: fetch-source
+          image: docker.io/library/maven:3.9.9-eclipse-temurin-17
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              if [ ! -e /opt/dd-next-1/remote/deployments/selenium-server/pom.xml ]; then
+                git clone --depth 1 --branch dev https://github.com/ORESoftware/k8s-cluster.git /opt/dd-next-1
+                git -C /opt/dd-next-1 submodule update --init --depth 1 remote/libs
+              fi
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
       containers:
         # --- Selenium Grid (the actual long-lived Selenium server) ------------------
         # The official standalone image bundles Chromium + chromedriver + a Selenium
@@ -179,9 +204,10 @@ spec:
               mountPath: /opt/dd-next-1
       volumes:
         - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
+          # Was hostPath (AWS-node-only). Now a per-pod emptyDir populated by the
+          # fetch-source initContainer, so it works on every node/cluster.
+          emptyDir:
+            sizeLimit: 4Gi
         - name: dshm
           emptyDir:
             medium: Memory
