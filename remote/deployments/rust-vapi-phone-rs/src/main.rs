@@ -48,6 +48,8 @@ use redis::AsyncCommands;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+mod nats_worker;
+
 const MAX_HTTP_BODY_BYTES: usize = 1024 * 1024;
 const SERVER_AUTH_HEADER: &str = "x-server-auth";
 const VAPI_SECRET_HEADER: &str = "x-vapi-secret";
