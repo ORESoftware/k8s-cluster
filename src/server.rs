@@ -13,26 +13,54 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let shared_auth = config.shared_auth.clone().map(SharedAuthClient::new);
     let shared_auth_enabled = shared_auth.is_some();
     let state = AppState::new(database)?.with_shared_auth(shared_auth);
-    let router = app::router(state);
+    let router = app::router(state.clone());
+    let metrics_router = app::metrics_router(state);
 
     tracing::info!(
         server.address = %config.bind_addr,
+        server.metrics_address = %config.metrics_bind_addr,
         auth.shared.enabled = shared_auth_enabled,
         protocol.version = crate::protocol::PROTOCOL_VERSION,
         "3FA sync server listening"
     );
 
     let listener = tokio::net::TcpListener::bind(config.bind_addr).await?;
+    // Telemetry gets its own socket so the public port has no /metrics route at
+    // all; see `app::metrics_router`. Bound before serving either, so a port
+    // clash is a startup failure rather than a silently unscrapeable pod.
+    let metrics_listener = tokio::net::TcpListener::bind(config.metrics_bind_addr).await?;
+
+    // One signal, both listeners: the pod must drain as a unit, or the kubelet
+    // sees a process that is still "up" long after it stopped serving traffic.
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    tokio::spawn(async move {
+        shutdown_signal().await;
+        let _ = shutdown_tx.send(true);
+    });
+
     // Socket peer information is the rate limiter's fallback when a trusted
     // ingress forwarding header is absent.
-    axum::serve(
+    let public = axum::serve(
         listener,
         router.into_make_service_with_connect_info::<SocketAddr>(),
     )
-    .with_graceful_shutdown(shutdown_signal())
-    .await?;
+    .with_graceful_shutdown(shutdown_requested(shutdown_rx.clone()));
+    let metrics = axum::serve(metrics_listener, metrics_router.into_make_service())
+        .with_graceful_shutdown(shutdown_requested(shutdown_rx));
+
+    // `try_join!` drops (and therefore cancels) the other future if either one
+    // fails, so a dead telemetry listener cannot leave a half-serving process.
+    tokio::try_join!(public, metrics)?;
     tracing::info!("3FA sync server stopped");
     Ok(())
+}
+
+async fn shutdown_requested(mut shutdown: tokio::sync::watch::Receiver<bool>) {
+    while !*shutdown.borrow_and_update() {
+        if shutdown.changed().await.is_err() {
+            break;
+        }
+    }
 }
 
 #[cfg(unix)]
