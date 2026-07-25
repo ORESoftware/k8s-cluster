@@ -1,0 +1,30 @@
+# Ingress-only policy: the bridge accepts HTTP from the dd fleet and the
+# voxletra tenant. Egress stays open because the pod clones its source from
+# GitHub at startup (fleet run-from-source convention) and dials dd-nats.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dd-nats-bridge
+  namespace: messaging
+  labels:
+    app: dd-nats-bridge
+spec:
+  podSelector:
+    matchLabels:
+      app: dd-nats-bridge
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: voxletra
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 3004
