@@ -28,6 +28,44 @@ spec:
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
+      # --- Source ----------------------------------------------------------------
+      # The API container builds from this repo's source. It used to arrive via a
+      # hostPath mount of /home/ec2-user/codes/dd/dd-next-1, which exists only on
+      # the EC2 node: on Hetzner — which syncs this same dd-next-runtime path —
+      # the API container could not find its source and crashlooped ~6,650 times
+      # over 23 days while the Grid beside it stayed healthy. The Service exposes
+      # only the API port, so the Service had zero endpoints that whole time.
+      #
+      # Cloning into an emptyDir makes the pod self-contained and identical on
+      # every cluster, with no node-level state to create or keep current.
+      initContainers:
+        - name: fetch-source
+          image: docker.io/library/maven:3.9.9-eclipse-temurin-17
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              # safe.directory guards against git's "dubious ownership" abort if
+              # this ever runs non-root; harmless as root.
+              export HOME=/tmp
+              git config --global --add safe.directory '*'
+              # Idempotent across init restarts (the emptyDir persists). The
+              # selenium-server Maven build is self-contained, so ONLY the public
+              # superproject is needed — no (private) remote/libs submodule.
+              if [ ! -e /opt/dd-next-1/.git ]; then
+                git clone --depth 1 --branch dev https://github.com/ORESoftware/k8s-cluster.git /opt/dd-next-1
+              fi
+              test -e /opt/dd-next-1/remote/deployments/selenium-server/pom.xml
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
       containers:
         # --- Selenium Grid (the actual long-lived Selenium server) ------------------
         # The official standalone image bundles Chromium + chromedriver + a Selenium
@@ -107,34 +145,13 @@ spec:
           args:
             - |
               set -euo pipefail
-              # Source resolution, same shape as dd-rust-vapi-phone: prefer a
-              # git clone so this runs on any cluster, and fall back to the
-              # hostPath mount. The mount path only exists on the EC2 node, so
-              # without the clone this crashloops everywhere else.
-              source_root=/opt/dd-next-1
-              if [ -n "${SELENIUM_GIT_URL:-}" ]; then
-                clone_root="$(mktemp -d /tmp/dd-selenium-source.XXXXXX)"
-                if git clone --depth 1 --branch "${SELENIUM_GIT_REF:-dev}" "${SELENIUM_GIT_URL}" "$clone_root"; then
-                  source_root="$clone_root"
-                  echo "[dd-selenium-server] source: cloned ${SELENIUM_GIT_URL}@${SELENIUM_GIT_REF:-dev} ($(git -C "$clone_root" rev-parse --short HEAD))"
-                else
-                  echo "[dd-selenium-server] source clone failed; using mounted source at ${source_root}" >&2
-                fi
-              fi
-              cd "$source_root/remote/deployments/selenium-server"
+              cd /opt/dd-next-1/remote/deployments/selenium-server
               if [ ! -f target/dd-selenium-server.jar ]; then
                 echo "Building dd-selenium-server with Maven..."
                 mvn -B -e -DskipTests package
               fi
               exec java $JAVA_OPTS -jar target/dd-selenium-server.jar
           env:
-            # Clone the source rather than depending on the EC2 hostPath, so
-            # this deployment also runs on Hetzner (which syncs this same
-            # dd-next-runtime path).
-            - name: SELENIUM_GIT_URL
-              value: https://github.com/ORESoftware/k8s-cluster.git
-            - name: SELENIUM_GIT_REF
-              value: dev
             - name: HTTP_HOST
               value: 0.0.0.0
             - name: HTTP_PORT
@@ -199,10 +216,11 @@ spec:
             - name: repo
               mountPath: /opt/dd-next-1
       volumes:
+        # Populated by the fetch-source initContainer above; sized for a shallow
+        # clone plus the Maven build output.
         - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
+          emptyDir:
+            sizeLimit: 4Gi
         - name: dshm
           emptyDir:
             medium: Memory
