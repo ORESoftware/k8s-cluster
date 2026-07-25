@@ -14,6 +14,17 @@ use uuid::Uuid;
 const MAX_AUTH_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_ACCESS_TOKEN_BYTES: usize = 16 * 1024;
 
+/// Bounds on the outbound identity call. Without them the only limit is the
+/// router-wide 15s `TimeoutLayer`, so an upstream that accepts a connection and
+/// then never answers pins a request slot (and a socket) for the full 15s per
+/// attempt — a slow identity provider becomes resource exhaustion here instead
+/// of a fast, honest degradation. Introspection is a single in-cluster hop, so
+/// seconds are generous; a timeout maps to `SharedAuthError::Unavailable` and
+/// therefore to 503 — enrollment is degraded, not broken, and the credential is
+/// not evidence-of-invalid.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(4);
+
 #[derive(Clone)]
 pub struct SharedAuthClient {
     base_url: String,
