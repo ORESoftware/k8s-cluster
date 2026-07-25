@@ -950,6 +950,20 @@ containers: the official `selenium/standalone-chromium` image (the actual Seleni
 `RemoteWebDriver` at `localhost:4444`. The Grid port is never published on the Service, so the only
 reachable entrypoint is the authenticated API on `:8105`.
 
+**Source comes from a per-pod clone, not the host.** The API container builds from an `emptyDir`
+mounted at `/opt/dd-next-1` and populated by the `fetch-source` initContainer, so it works on every
+node and cluster. It previously used a `hostPath` into `/home/ec2-user/codes/dd/dd-next-1`, which
+only existed on provisioned AWS nodes: `type: Directory` asserts only that the *mounted* path
+exists, so a node whose subtree was never provisioned mounted cleanly and then crash-looped at
+start-up. On Hetzner that went unnoticed for 23 days and 6,600+ restarts, with only a bare
+`cd: No such file or directory` in the logs while the Grid container stayed healthy (pod `1/2`).
+Cloning per pod removes the host dependency, so that failure mode cannot recur. The start-up command
+still guards the remaining case — mount present but unpopulated, e.g. a partial clone — by checking
+for `pom.xml` and exiting `78` (`EX_CONFIG`) rather than failing deep inside Maven where it reads as
+an application crash-loop. Note this only affects the API container — the Grid itself is imageful
+and unaffected, which is why `kubectl port-forward` to the pod's `:4444` keeps working even when the
+API is down.
+
 The API exposes `GET /healthz`, `GET /readyz`, `GET /metrics`, `GET /status`, `GET /tools`, and
 `POST /run`; the gateway mirrors those under `/selenium/...`. `POST /run` accepts the same bounded
 scenario DSL as `dd-browser-test-server` (`goto`, `click`, `fill`, `select`, `press`,

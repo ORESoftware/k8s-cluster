@@ -138,6 +138,18 @@ test('selenium-server deploys as a Grid + Java API pod through Argo and the gate
   assert.match(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/selenium-server/);
   assert.match(deployment, /mvn -B -e -DskipTests package/);
 
+  // Source is a per-pod emptyDir populated by the fetch-source initContainer, not
+  // a hostPath: the old hostPath only existed on provisioned AWS nodes, so any
+  // other node started and then crash-looped forever (Hetzner: 6,600+ restarts
+  // over 23 days). No host dependency means that failure mode cannot recur.
+  assert.match(deployment, /initContainers:[\s\S]*name:\s*fetch-source/);
+  assert.match(deployment, /- name:\s*repo\s*\n\s*(#[^\n]*\n\s*)*emptyDir:/);
+  assert.doesNotMatch(deployment, /^\s*hostPath:/m);
+  // ...and the start-up command still fails fast, and distinctly, if that mount
+  // is present but unpopulated (partial clone) rather than dying inside Maven.
+  assert.match(deployment, /if \[ ! -f pom\.xml \]/);
+  assert.match(deployment, /exit 78/);
+
   // Grid is pod-internal; API is the public port.
   assert.match(deployment, /containerPort:\s*4444/);
   assert.match(deployment, /containerPort:\s*8105/);

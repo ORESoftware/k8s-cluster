@@ -921,6 +921,10 @@ function detectBlocker(snap: RawSnapshot): { type: BlockerType; message: string 
 }
 
 async function takeSnapshot(session: Session, maxElements: number, maxText: number): Promise<RawSnapshot> {
+  // esbuild/tsx (dev + tests) instruments named functions with a `__name` helper
+  // that is not defined once EXTRACT_FN is serialized into the page. Shim it as
+  // identity before evaluating; harmless under tsc production builds (no __name).
+  await session.page.evaluate('globalThis.__name = globalThis.__name || function (f) { return f; };');
   const snap = (await session.page.evaluate(EXTRACT_FN, {
     maxElements,
     maxTextChars: maxText,
