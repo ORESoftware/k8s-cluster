@@ -158,7 +158,34 @@ pub fn router(state: AppState) -> Router {
             HeaderName::from_static("x-frame-options"),
             HeaderValue::from_static("DENY"),
         ))
-        .layer(RequestBodyLimitLayer::new(1024 * 1024))
+        // Outermost hard ceiling, so an unmatched path cannot be used to stream
+        // an unbounded body at the process. Every *matched* route tightens this
+        // with its own `route_layer` above (1 MiB, or `VAULT_BODY_LIMIT` for the
+        // vault), and the inner limit is the one that fires.
+        .layer(RequestBodyLimitLayer::new(VAULT_BODY_LIMIT))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(REQUEST_TIMEOUT_SECS),
+        ))
+        .with_state(state)
+}
+
+/// The telemetry listener: `/metrics` and nothing else.
+///
+/// `/metrics` used to sit on the public router, on the same port the Ingress
+/// fronts, with no credential and outside both governors — so whether request
+/// volumes, error rates, database latency, and `threefa_vault_conflicts_total`
+/// (a side channel on how often accounts sync) were world-readable depended
+/// entirely on an Ingress path rule in a *different* repository. Serving it from
+/// a second socket makes that a property of the service: port 8080 has no
+/// `/metrics` route to expose, and `deploy/k8s/networkpolicy.yaml` admits only
+/// the observability namespace to 9091.
+///
+/// Deliberately not wrapped in the HTTP metrics middleware: a scrape should not
+/// be a data point in the series it is scraping.
+pub fn metrics_router(state: AppState) -> Router {
+    Router::new()
+        .route("/metrics", get(health::prometheus))
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(REQUEST_TIMEOUT_SECS),
