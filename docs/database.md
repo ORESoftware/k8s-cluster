@@ -116,12 +116,18 @@ column type — which is what makes double application safe.
 
 ## Behaviours that are easy to break
 
-**The push path takes a row lock.** `POST /v1/vault` selects the account's blob
-`FOR UPDATE` inside a transaction, so concurrent pushes from the same account
-serialise instead of interleaving. This is what makes the version-vector
-conflict check sound: without it, two devices could both read the same base
-version and both believe they won. It also means a slow push blocks that
-account's other pushes — one reason the authenticated routes are rate limited.
+**The push path locks the `accounts` row, not the blob row.** `POST /v1/vault`
+opens a transaction and takes `LockType::Update` on `accounts` before reading
+`vault_blobs`. Locking the account rather than the blob is deliberate and easy
+to "simplify" wrongly: on an account's *first* push there is no `vault_blobs`
+row to lock, so two concurrent first pushes would both see nothing, both
+insert, and one would lose. The account row always exists, so it is the only
+thing that can serialise that case.
+
+This lock is what makes the version-vector conflict check sound at all —
+without it two devices could read the same base version and both believe they
+won. It also means a slow push blocks that account's other pushes, which is one
+reason the authenticated routes carry their own rate limit.
 
 **The connection pool is 10.** `src/db.rs` caps `max_connections(10)` with a
 5-second acquire timeout and `test_before_acquire(true)`. Under contention the
