@@ -558,7 +558,31 @@ async fn rpc(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> 
     json_response(StatusCode::OK, response)
 }
 
-async fn mcp_get() -> Response {
+/// True if the client's `Accept` requests the SSE stream — i.e. it is opening the
+/// Streamable HTTP standalone server→client channel via `GET`.
+fn wants_event_stream(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|accept| accept.contains("text/event-stream"))
+}
+
+async fn mcp_get(headers: HeaderMap) -> Response {
+    // Streamable HTTP: a client opening the standalone server→client SSE stream
+    // issues `GET` with `Accept: text/event-stream`. This server sends no
+    // server-initiated notifications, so per the MCP spec it MUST answer that
+    // request with 405 (no SSE stream at this endpoint); the client then carries
+    // all traffic over `POST /mcp`. A plain `GET` (browser / discovery) still
+    // receives the JSON descriptor. Returning a non-SSE 200 to an event-stream
+    // request — as before — is the spec violation that could hang a strict
+    // client such as ChatGPT.
+    if wants_event_stream(&headers) {
+        return (
+            StatusCode::METHOD_NOT_ALLOWED,
+            [(header::ALLOW, HeaderValue::from_static("POST"))],
+        )
+            .into_response();
+    }
     json_response(
         StatusCode::OK,
         json!({
@@ -665,5 +689,72 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn accept(value: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(header::ACCEPT, HeaderValue::from_str(value).unwrap());
+        h
+    }
+
+    #[test]
+    fn wants_event_stream_detects_sse_accept() {
+        // The GET handler returns 405 for these (no standalone SSE stream).
+        assert!(wants_event_stream(&accept("text/event-stream")));
+        assert!(wants_event_stream(&accept("application/json, text/event-stream")));
+        // Plain discovery / browser GETs still get the JSON descriptor.
+        assert!(!wants_event_stream(&accept("application/json")));
+        assert!(!wants_event_stream(&accept("*/*")));
+        assert!(!wants_event_stream(&HeaderMap::new()));
+    }
+
+    #[test]
+    fn initialize_advertises_tools_and_safety_instructions() {
+        let r = initialize_result(json!(1), None);
+        assert_eq!(r["jsonrpc"], "2.0");
+        assert!(r["result"]["capabilities"]["tools"].is_object());
+        let instructions = r["result"]["instructions"].as_str().unwrap();
+        assert!(instructions.contains("browser_observe") && instructions.contains("browser_act"));
+        // The prompt-injection + human-gate guidance must be present.
+        assert!(instructions.contains("untrusted") || instructions.contains("CAPTCHA"));
+        // Negotiated protocol version is one we support.
+        assert!(SUPPORTED_PROTOCOL_VERSIONS.contains(&r["result"]["protocolVersion"].as_str().unwrap()));
+    }
+
+    #[test]
+    fn initialize_echoes_supported_client_protocol_version() {
+        let params = json!({ "protocolVersion": "2025-06-18" });
+        let r = initialize_result(json!(1), Some(&params));
+        assert_eq!(r["result"]["protocolVersion"], "2025-06-18");
+    }
+
+    #[test]
+    fn tools_list_exposes_exactly_the_two_browser_tools() {
+        let r = tools_list_result(json!(2));
+        let tools = r["result"]["tools"].as_array().unwrap();
+        let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
+        assert_eq!(names.len(), 2);
+        assert!(names.contains(&"browser_act") && names.contains(&"browser_observe"));
+    }
+
+    #[test]
+    fn browser_act_schema_requires_intent_and_actions() {
+        let schema = browser_act_schema();
+        let required: Vec<&str> = schema["required"].as_array().unwrap().iter().filter_map(|v| v.as_str()).collect();
+        assert!(required.contains(&"intent") && required.contains(&"actions"));
+    }
+
+    #[test]
+    fn rpc_error_has_jsonrpc_envelope_and_code() {
+        let e = rpc_error(json!(7), -32601, "method not found");
+        assert_eq!(e["jsonrpc"], "2.0");
+        assert_eq!(e["id"], 7);
+        assert_eq!(e["error"]["code"], -32601);
+        assert_eq!(e["error"]["message"], "method not found");
     }
 }
