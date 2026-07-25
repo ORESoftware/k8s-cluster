@@ -39,7 +39,6 @@ spec:
       # (build-server audit F13 pattern).
       initContainers:
         - name: fetch-source
-<<<<<<< HEAD
           # alpine/git bundles git AND openssh (ssh-keyscan/ssh), which the
           # Playwright runtime image lacks. Runs as root so it can chown the cloned
           # tree to the non-root (uid 1000) runtime user afterwards.
@@ -54,9 +53,16 @@ spec:
               # The superproject is PUBLIC (plain HTTPS, no creds). remote/libs
               # (k8s-libs-and-shared-defs) is PRIVATE with a git@github.com: SSH
               # URL, so authenticate the submodule clone with the GH_DEPLOY_KEY SSH
-              # deploy key (GH_PAT is not provisioned; the deploy key is). Native
-              # SSH URL is kept — no insteadOf. ssh-keyscan + StrictHostKeyChecking
-              # =yes (never weakened to no/dev-null) preserves MitM protection.
+              # deploy key. Native SSH URL is kept — no insteadOf. ssh-keyscan +
+              # StrictHostKeyChecking=yes (never weakened to no/dev-null) preserves
+              # MitM protection.
+              #
+              # DO NOT revert to the `url.insteadOf https://x-access-token:${GH_PAT}@`
+              # rewrite that fix/hetzner-browser-selenium used. GH_PAT is NOT a key in
+              # dd-agent-secrets (verified 2026-07-25: GH_DEPLOY_KEY present, GH_PAT
+              # absent), so that expands to an empty token, the submodule clone fails,
+              # remote/libs is left empty, and it surfaces much later as a confusing
+              # pnpm ENOENT on the @dd/telemetry file: dep.
               mkdir -p /root/.ssh
               printf '%s\n' "$GH_DEPLOY_KEY" > /root/.ssh/id_ed25519
               chmod 600 /root/.ssh/id_ed25519
@@ -64,28 +70,6 @@ spec:
               export GIT_SSH_COMMAND="ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/root/.ssh/known_hosts"
               # Idempotent across init restarts (the emptyDir persists): clone only
               # if absent, always (re-)sync the submodule so a partial attempt heals.
-=======
-          image: mcr.microsoft.com/playwright:v1.56.0-noble
-          command:
-            - /bin/bash
-            - -lc
-          args:
-            - |
-              set -euo pipefail
-              # Runs as uid 1000; without these, `git submodule update` aborts with
-              # "detected dubious ownership" and silently leaves remote/libs empty
-              # (breaking the @dd/telemetry file: dep). HOME must be writable for
-              # `git config --global`.
-              export HOME=/tmp
-              git config --global --add safe.directory '*'
-              # The superproject is public, but remote/libs (k8s-libs-and-shared-defs)
-              # is PRIVATE and registered with an SSH URL. Rewrite git@github.com:
-              # to a token-authenticated HTTPS URL so the submodule clones.
-              git config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "git@github.com:"
-              # Idempotent across init restarts: the emptyDir persists, so clone
-              # only when there is no repo yet, but always (re-)sync the submodule
-              # so a partial first attempt self-heals on retry.
->>>>>>> origin/fix/hetzner-browser-selenium
               if [ ! -e /opt/dd-next-1/.git ]; then
                 git clone --depth 1 --branch dev https://github.com/ORESoftware/k8s-cluster.git /opt/dd-next-1
               fi
