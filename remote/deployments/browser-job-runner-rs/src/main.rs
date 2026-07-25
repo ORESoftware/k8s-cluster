@@ -842,10 +842,11 @@ async fn handle_run(
         }
     };
 
-    let max_ms = {
-        let requested = request.timeout_ms.unwrap_or(state.config.default_timeout_ms);
-        requested.clamp(1_000, state.config.max_timeout_ms).min(state.config.max_lifetime_seconds * 1000)
-    };
+    let max_ms = effective_max_ms(
+        request.timeout_ms.unwrap_or(state.config.default_timeout_ms),
+        state.config.max_timeout_ms,
+        state.config.max_lifetime_seconds,
+    );
 
     let job_id = {
         let seq = state.job_counter.fetch_add(1, Ordering::Relaxed);
