@@ -2,7 +2,7 @@
 
 use crate::metrics::Metrics;
 use crate::shared_auth::SharedAuthClient;
-use sea_orm::DatabaseConnection;
+use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -33,6 +33,28 @@ impl AppState {
 
     pub fn database(&self) -> &DatabaseConnection {
         self.db.as_ref()
+    }
+
+    /// Readiness check against the database.
+    ///
+    /// Deliberately *not* `DatabaseConnection::ping()`: sea-orm's `ping()`
+    /// acquires a pooled connection and pings it directly, bypassing the
+    /// `set_metric_callback` hook above (only `execute`/`query_*` are wrapped in
+    /// `sea_orm::metric::metric!`). Readiness is by far the most frequent
+    /// database operation in a running deployment — one per pod per probe
+    /// interval — so leaving it uninstrumented meant a merely *slow* database
+    /// stayed invisible in `threefa_database_queries_total` and its latency
+    /// histogram until a probe finally timed out. A trivial `SELECT 1` through
+    /// the ordinary query path exercises the same acquire-and-round-trip and is
+    /// counted like everything else.
+    pub async fn ping_database(&self) -> Result<(), DbErr> {
+        self.database()
+            .execute(Statement::from_string(
+                DatabaseBackend::Postgres,
+                "SELECT 1",
+            ))
+            .await
+            .map(|_| ())
     }
 
     pub fn shared_auth(&self) -> Option<&SharedAuthClient> {

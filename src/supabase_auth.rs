@@ -7,6 +7,7 @@
 use crate::accounts::{self, TokenResponse};
 use crate::entity::account;
 use crate::error::ApiError;
+use crate::json::JsonBody;
 use crate::shared_auth::{SharedAuthError, VerifiedIdentity};
 use crate::state::AppState;
 use crate::{auth, devices};
@@ -33,7 +34,7 @@ pub(crate) struct EnrollRequest {
 pub(crate) async fn enroll_shared(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<EnrollRequest>,
+    JsonBody(request): JsonBody<EnrollRequest>,
 ) -> Result<Json<TokenResponse>, ApiError> {
     let verifier = state.shared_auth().ok_or(ApiError::NotImplemented)?;
     let identity = verifier
@@ -51,7 +52,7 @@ pub(crate) async fn enroll_shared(
 pub(crate) async fn enroll_provider(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(request): Json<EnrollRequest>,
+    JsonBody(request): JsonBody<EnrollRequest>,
 ) -> Result<Json<TokenResponse>, ApiError> {
     let verifier = state.shared_auth().ok_or(ApiError::NotImplemented)?;
     let identity = verifier

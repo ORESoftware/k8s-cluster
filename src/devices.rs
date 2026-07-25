@@ -1,12 +1,12 @@
 //! Device registration and revocation. A device is the unit that holds a sync
 //! token; revoking one invalidates its token without touching the account.
 
-use crate::auth;
+use crate::auth::{self, AuthedDevice};
 use crate::entity::device;
 use crate::error::ApiError;
+use crate::json::JsonBody;
 use crate::state::AppState;
 use axum::extract::State;
-use axum::http::HeaderMap;
 use axum::Json;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
@@ -37,9 +37,8 @@ pub struct DeviceInfo {
 
 pub(crate) async fn list_handler(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    who: AuthedDevice,
 ) -> Result<Json<Vec<DeviceInfo>>, ApiError> {
-    let who = auth::authenticate(state.database(), &headers).await?;
     Ok(Json(list(state.database(), who.account_id).await?))
 }
 
@@ -48,12 +47,12 @@ pub(crate) struct RevokeRequest {
     device_id: Uuid,
 }
 
+// Credential first, body second — see `vault_blob::push_handler`.
 pub(crate) async fn revoke_handler(
     State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(request): Json<RevokeRequest>,
+    who: AuthedDevice,
+    JsonBody(request): JsonBody<RevokeRequest>,
 ) -> Result<(), ApiError> {
-    let who = auth::authenticate(state.database(), &headers).await?;
     revoke(state.database(), who.account_id, request.device_id).await
 }
 

@@ -159,6 +159,9 @@ fn metric_route(path: &str) -> &'static str {
         "/livez" => "/livez",
         "/healthz" => "/healthz",
         "/readyz" => "/readyz",
+        // Served by the separate telemetry listener now, which is not wrapped in
+        // this middleware. Kept so a stale scraper still hitting the public port
+        // shows up as a labelled 404 instead of disappearing into "unmatched".
         "/metrics" => "/metrics",
         _ => "unmatched",
     }

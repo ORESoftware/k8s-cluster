@@ -8,11 +8,23 @@ use crate::config::SharedAuthConfig;
 use opentelemetry::global;
 use opentelemetry_http::HeaderInjector;
 use serde::Deserialize;
+use std::time::Duration;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use uuid::Uuid;
 
 const MAX_AUTH_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_ACCESS_TOKEN_BYTES: usize = 16 * 1024;
+
+/// Bounds on the outbound identity call. Without them the only limit is the
+/// router-wide 15s `TimeoutLayer`, so an upstream that accepts a connection and
+/// then never answers pins a request slot (and a socket) for the full 15s per
+/// attempt — a slow identity provider becomes resource exhaustion here instead
+/// of a fast, honest degradation. Introspection is a single in-cluster hop, so
+/// seconds are generous; a timeout maps to `SharedAuthError::Unavailable` and
+/// therefore to 503 — enrollment is degraded, not broken, and the credential is
+/// not evidence-of-invalid.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(4);
 
 #[derive(Clone)]
 pub struct SharedAuthClient {
@@ -57,10 +69,21 @@ struct IntrospectResponse {
 }
 
 impl SharedAuthClient {
+    /// Build the client **once**, at startup. `reqwest::Client` owns the
+    /// connection pool, so it is cloned (cheaply, it is an `Arc` inside) rather
+    /// than rebuilt per request; `SharedAuthClient` lives in `AppState`.
     pub fn new(config: SharedAuthConfig) -> Self {
+        let http = reqwest::Client::builder()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(REQUEST_TIMEOUT)
+            .build()
+            // Only fails if the TLS backend cannot be initialized. Falling back
+            // to an untimed client would silently reintroduce the hang this
+            // guards against, so surface it instead.
+            .expect("shared-auth HTTP client must build");
         Self {
             base_url: config.base_url,
-            http: reqwest::Client::new(),
+            http,
         }
     }
 
@@ -313,6 +336,41 @@ mod tests {
         assert_eq!(
             client.exchange_provider_token("provider-token").await,
             Err(SharedAuthError::Unavailable)
+        );
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn an_upstream_that_never_answers_degrades_within_the_client_timeout() {
+        // The regression this pins: with a bare `reqwest::Client::new()` the
+        // only bound was the router's 15s timeout, so every hung enrollment held
+        // a request slot for 15s. It must now fail fast, and as *unavailable* —
+        // an unanswering authority is not evidence a credential is bad.
+        let app = Router::new().route(
+            "/auth/introspect",
+            post(|| async {
+                std::future::pending::<()>().await;
+                StatusCode::OK
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = SharedAuthClient::new(SharedAuthConfig {
+            base_url: format!("http://{address}"),
+        });
+
+        let started = std::time::Instant::now();
+        assert_eq!(
+            client.introspect_access_token("shared-token").await,
+            Err(SharedAuthError::Unavailable)
+        );
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < REQUEST_TIMEOUT * 2,
+            "the client's own timeout must end the call, took {elapsed:?}"
         );
         task.abort();
     }

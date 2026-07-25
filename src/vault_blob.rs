@@ -9,12 +9,12 @@
 use crate::auth::AuthedDevice;
 use crate::entity::{account, vault_blob};
 use crate::error::ApiError;
+use crate::json::JsonBody;
 use crate::protocol::{
     PullResponse, PushRequest, PushResponse, SealedBlob, VersionEntry, VersionVector,
 };
 use crate::state::AppState;
 use axum::extract::State;
-use axum::http::HeaderMap;
 use axum::Json;
 use base64::Engine;
 use sea_orm::sea_query::LockType;
@@ -27,18 +27,19 @@ use uuid::Uuid;
 
 pub(crate) async fn pull_handler(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    who: AuthedDevice,
 ) -> Result<Json<PullResponse>, ApiError> {
-    let who = crate::auth::authenticate(state.database(), &headers).await?;
     Ok(Json(load(state.database(), who.account_id).await?))
 }
 
+// `who` is declared BEFORE the body: axum resolves `FromRequestParts`
+// extractors in order and the body last, so the sync token is verified before a
+// single byte of JSON is deserialized. See `auth::AuthedDevice`'s extractor.
 pub(crate) async fn push_handler(
     State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(request): Json<PushRequest>,
+    who: AuthedDevice,
+    JsonBody(request): JsonBody<PushRequest>,
 ) -> Result<Json<PushResponse>, ApiError> {
-    let who = crate::auth::authenticate(state.database(), &headers).await?;
     let response = store(state.database(), who, &request).await?;
     if matches!(&response, PushResponse::Conflict { .. }) {
         state.metrics.vault_conflicts.inc();
@@ -348,6 +349,53 @@ mod tests {
         assert_eq!(blob.kdf_salt, vec![5; 16]);
         assert_eq!(blob.kdf_params, params);
         assert_eq!(response.version, version);
+    }
+
+    fn max_size_push(ciphertext_len: usize, who: AuthedDevice) -> PushRequest {
+        PushRequest {
+            device_id: who.device_id.to_string(),
+            blob: SealedBlob {
+                ciphertext: vec![255u8; ciphertext_len],
+                nonce: vec![1u8; crate::protocol::NONCE_LEN],
+                kdf_salt: vec![2u8; 16],
+                kdf_params: crate::protocol::KdfParams::default(),
+            },
+            base_version: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn max_ciphertext_len_is_the_protocol_validator_s_boundary_not_the_transport_s() {
+        // Companion to `app::a_max_ciphertext_len_push_is_not_refused_by_the_body_limit`:
+        // now that a full-size blob actually reaches the handler, the published
+        // constant must be the thing that decides — enforced before any query.
+        let who = AuthedDevice {
+            account_id: Uuid::new_v4(),
+            device_id: Uuid::new_v4(),
+        };
+
+        let database = MockDatabase::new(DatabaseBackend::Postgres).into_connection();
+        let over = max_size_push(crate::protocol::MAX_CIPHERTEXT_LEN + 1, who);
+        assert!(
+            matches!(
+                store(&database, who, &over).await,
+                Err(ApiError::BadRequest)
+            ),
+            "one byte past MAX_CIPHERTEXT_LEN must be a 400 from the envelope check"
+        );
+
+        // Exactly at the maximum passes validation and proceeds to the database
+        // (which this mock has no canned rows for — the point is that it got
+        // past `is_well_formed`, not that the write succeeds).
+        let database = MockDatabase::new(DatabaseBackend::Postgres).into_connection();
+        let at_max = max_size_push(crate::protocol::MAX_CIPHERTEXT_LEN, who);
+        assert!(
+            !matches!(
+                store(&database, who, &at_max).await,
+                Err(ApiError::BadRequest)
+            ),
+            "a ciphertext of exactly MAX_CIPHERTEXT_LEN must be accepted by the validator"
+        );
     }
 
     #[test]
