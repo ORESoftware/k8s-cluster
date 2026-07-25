@@ -124,7 +124,9 @@ step "Building binaries"
 
 step "Starting NATS (JetStream) in docker"
 docker rm -f "$NATS_CONTAINER" >/dev/null 2>&1 || true
-docker run -d --rm --name "$NATS_CONTAINER" \
+# No --rm: step 5 stops and restarts this container to test reconnect.
+# The EXIT trap removes it.
+docker run -d --name "$NATS_CONTAINER" \
   -p "${NATS_PORT}:4222" -p "${MON_PORT}:8222" \
   nats:2.11.17-alpine -js -m 8222 >/dev/null
 wait_for 30 curl -sf "${MON_URL}/healthz" || { echo "NATS never became healthy"; exit 1; }
