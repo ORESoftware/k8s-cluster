@@ -922,6 +922,77 @@ async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // ── env-var test scaffolding ──────────────────────────────────────────
+    //
+    // `Config::from_env` and the `env_*` helpers read process-global state,
+    // which the test harness exercises across threads. Every env-touching test
+    // serializes on one lock and fully restores the prior environment before
+    // returning, so the tests are hermetic and order-independent. Assertions
+    // are always made on the value RETURNED from `with_env` (outside the lock),
+    // never inside the closure, so a failed assert can never leak a mutated
+    // environment into another test.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Every env var `Config::from_env` consults. `config_with` clears all of
+    /// them before applying overrides so the developer's shell (HOSTNAME,
+    /// DATABASE_URL, …) can't perturb a defaults-oriented assertion.
+    const ALL_CONFIG_KEYS: &[&str] = &[
+        "WAL_GATEWAY_DATABASE_URL",
+        "CDC_DATABASE_URL",
+        "RDS_DATABASE_URL",
+        "DATABASE_URL",
+        "WAL_GATEWAY_NATS_URL",
+        "NATS_URL",
+        "WAL_GATEWAY_SLOT_NAME",
+        "WAL_GATEWAY_PLUGIN",
+        "WAL_GATEWAY_STREAM_NAME",
+        "WAL_GATEWAY_SUBJECT_PREFIX",
+        "WAL_GATEWAY_POLL_MS",
+        "WAL_GATEWAY_PUBLISH_TIMEOUT_S",
+        "WAL_GATEWAY_MAX_BATCH",
+        "WAL_GATEWAY_POD_NAME",
+        "HOSTNAME",
+        "PORT",
+    ];
+
+    /// Run `f` with a controlled environment, restoring the prior values of
+    /// exactly the touched keys afterwards. `Some(v)` sets a key, `None` clears
+    /// it. All mutation is serialized on `ENV_LOCK` and reverted before return.
+    fn with_env<R>(vars: &[(&str, Option<&str>)], f: impl FnOnce() -> R) -> R {
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let saved: Vec<(String, Option<String>)> = vars
+            .iter()
+            .map(|(key, _)| ((*key).to_string(), env::var(key).ok()))
+            .collect();
+        for (key, value) in vars {
+            match value {
+                Some(v) => env::set_var(key, v),
+                None => env::remove_var(key),
+            }
+        }
+        let out = f();
+        for (key, prior) in saved {
+            match prior {
+                Some(v) => env::set_var(&key, v),
+                None => env::remove_var(&key),
+            }
+        }
+        out
+    }
+
+    /// Clear every config key, apply `overrides`, then run `Config::from_env`.
+    fn config_with(overrides: &[(&str, &str)]) -> Result<Config, String> {
+        let mut vars: Vec<(&str, Option<&str>)> =
+            ALL_CONFIG_KEYS.iter().map(|key| (*key, None)).collect();
+        for (key, value) in overrides {
+            vars.push((key, Some(value)));
+        }
+        with_env(&vars, Config::from_env)
+    }
 
     #[test]
     fn parses_wal2json_insert() {
