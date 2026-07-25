@@ -407,8 +407,19 @@ mod tests {
         // the router capped every body at 1 MiB while a 512 KiB ciphertext
         // serializes to ~2 MiB of JSON integer array. Worst case (`255` in every
         // byte, 4 chars each) must reach the handler, not the limit layer.
+        let token = "a-test-sync-token";
+        let device = crate::entity::device::Model {
+            id: uuid::Uuid::new_v4(),
+            account_id: uuid::Uuid::new_v4(),
+            device_name: "body limit probe".to_owned(),
+            sync_token_hash: crate::auth::token_hash(token),
+            revoked: false,
+            created_at: time::OffsetDateTime::now_utc(),
+            last_seen_at: None,
+        };
+
         let body = serde_json::to_vec(&crate::protocol::PushRequest {
-            device_id: "00000000-0000-4000-8000-000000000001".to_owned(),
+            device_id: device.id.to_string(),
             blob: crate::protocol::SealedBlob {
                 ciphertext: vec![255u8; crate::protocol::MAX_CIPHERTEXT_LEN],
                 nonce: vec![255u8; crate::protocol::NONCE_LEN],
