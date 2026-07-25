@@ -1,0 +1,53 @@
+# DNS-01 issuer — the solver that works on clusters with NO ingress controller.
+#
+# WHY THIS EXISTS: the AWS cluster is a single node where the dd-remote-gateway pod binds
+# hostPort 80/443 directly and terminates TLS itself. There is no `nginx` IngressClass, so
+# the HTTP-01 issuers in ../clusterissuers.yaml cannot solve there — cert-manager's HTTP-01
+# solver needs to own port 80 at the challenged name, and the gateway already has it (and
+# 308-redirects :80 -> :443, which would break the challenge even if it could bind).
+#
+# DNS-01 sidesteps the port entirely: cert-manager proves control by writing a TXT record
+# via the Cloudflare API. Nothing needs to be reachable on :80, and no ingress controller
+# is required. This is what lets cert-manager replace the certbot + systemd-timer +
+# `kubectl create secret` glue in remote/ec2/ (renew-letsencrypt-gateway-cert.sh and
+# dd-letsencrypt-renew.{service,timer}).
+#
+# PREREQS — this issuer stays NotReady, harmlessly, until both are true:
+#   1. A Cloudflare API token with Zone:DNS:Edit on the fiducia.cloud zone is seeded into
+#      AWS Secrets Manager at dd/remote-dev/cloudflare under key CLOUDFLARE_DNS_API_TOKEN,
+#      so the ExternalSecret beside this file can materialize it. Scope the token to DNS
+#      edit on that one zone — it is NOT the R2/Terraform token, which is broader.
+#   2. Cloudflare is authoritative for the zone being solved. It is, for fiducia.cloud.
+#      NOTE: the gateway ingress comment claims these records are "DNS-only" — that is
+#      STALE. Verified 2026-07-25, app/api/admin.fiducia.cloud resolve to Cloudflare
+#      proxy IPs (172.67.156.46, 104.21.48.204), i.e. they are proxied/orange-clouded.
+#      This does not affect DNS-01 (the TXT challenge is unaffected by proxying), but it
+#      does mean the "origin must present a publicly trusted cert" rationale in that
+#      comment no longer holds.
+#
+# The dnsZones selector is a guard, not decoration: without it this issuer would attempt a
+# Cloudflare DNS-01 challenge for ANY name, including the sslip.io diagnostic hosts, which
+# Cloudflare does not serve and which would fail after a slow propagation timeout.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod-dns01
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: alexander.d.mills@gmail.com
+    # Distinct from letsencrypt-prod-key: a separate ACME account key per issuer keeps
+    # a rate-limit or key problem on one solver from taking out the other.
+    privateKeySecretRef:
+      name: letsencrypt-prod-dns01-key
+    solvers:
+      - selector:
+          dnsZones:
+            - fiducia.cloud
+        dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              # Must live in the cert-manager namespace: a ClusterIssuer resolves secret
+              # refs in the controller's own namespace, not the Certificate's.
+              name: cloudflare-dns-api-token
+              key: api-token
