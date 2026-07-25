@@ -38,6 +38,22 @@ impl Drop for Guard {
     }
 }
 
+/// The filter used when `RUST_LOG` is unset. Kept in sync with the `RUST_LOG`
+/// the Deployment ships (`deploy/k8s/deployment.yaml`), which `app.rs`'s
+/// manifest test asserts.
+///
+/// `sqlx::query=warn` is the directive that actually silences per-statement SQL:
+/// SeaORM's statement logging is emitted by its sqlx backend under the target
+/// `sqlx::query` (sqlx-core/src/logger.rs), which `sea_orm=warn` does not match,
+/// so at INFO every statement the service issues was logged in full — the
+/// majority of the log stream, the complete schema published to anyone with log
+/// access, and the level rendered useless for anything else. Parameters stay
+/// bound (`$1`, `$2`), so this was volume, cost, and disclosure rather than a
+/// secret leak. `sea_orm=warn` stays: it still covers SeaORM's own logging.
+pub fn default_log_filter() -> &'static str {
+    "info,tower_http=info,hyper=warn,sea_orm=warn,sqlx::query=warn"
+}
+
 pub fn init(service_name: &str) -> Guard {
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_log_filter()));
