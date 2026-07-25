@@ -1,13 +1,18 @@
 //! Access-token introspection and gateway verification.
 
+use std::sync::Once;
+
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     Json,
 };
+use hmac::{Hmac, KeyInit, Mac};
+use rand::{rngs::SysRng, TryRng};
 use serde::Deserialize;
 use serde_json::json;
+use sha2::Sha256;
 use uuid::Uuid;
 
 use crate::error::AuthError;
@@ -21,10 +26,57 @@ pub struct IntrospectRequest {
     token: String,
 }
 
+/// Enforce caller authentication before introspection reveals full token claims.
+///
+/// Backward-compatible by design: when `introspect_secret` is unset the endpoint
+/// stays open (its historical behaviour) and logs a one-time deprecation warning.
+/// When the secret is configured, callers must present it as a bearer credential;
+/// unauthenticated callers are rejected with `401` before any claims are returned.
+fn authorize_caller(state: &AppState, headers: &HeaderMap) -> Result<(), AuthError> {
+    let Some(expected) = state.config.introspect_secret.as_deref() else {
+        static WARN_ONCE: Once = Once::new();
+        WARN_ONCE.call_once(|| {
+            tracing::warn!(
+                "/auth/introspect is unauthenticated and returns full token claims to any \
+                 caller; set AUTH_INTROSPECT_SECRET to require a service credential. This \
+                 open behaviour is deprecated."
+            );
+        });
+        return Ok(());
+    };
+    let presented = bearer(headers).ok_or(AuthError::Unauthorized)?;
+    if credentials_match(expected, presented) {
+        Ok(())
+    } else {
+        Err(AuthError::Unauthorized)
+    }
+}
+
+/// Constant-time credential comparison via double-HMAC under a per-call random
+/// key, so the final byte comparison leaks nothing about the secret in timing.
+/// Reuses the `hmac`/`sha2`/`rand` deps already used by the webhook signer.
+fn credentials_match(expected: &str, presented: &str) -> bool {
+    let mut key = [0u8; 32];
+    if SysRng.try_fill_bytes(&mut key).is_err() {
+        return false;
+    }
+    let tag = |data: &[u8]| {
+        let mut mac =
+            <Hmac<Sha256> as KeyInit>::new_from_slice(&key).expect("HMAC accepts any key length");
+        mac.update(data);
+        mac.finalize().into_bytes()
+    };
+    tag(expected.as_bytes()) == tag(presented.as_bytes())
+}
+
 pub async fn introspect(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(request): Json<IntrospectRequest>,
-) -> Json<serde_json::Value> {
+) -> Response {
+    if let Err(error) = authorize_caller(&state, &headers) {
+        return error.into_response();
+    }
     let verified = if request.token.len() <= 16 * 1024 {
         active_claims(&state, &request.token).await
     } else {
