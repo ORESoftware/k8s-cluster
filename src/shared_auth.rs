@@ -341,6 +341,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_upstream_that_never_answers_degrades_within_the_client_timeout() {
+        // The regression this pins: with a bare `reqwest::Client::new()` the
+        // only bound was the router's 15s timeout, so every hung enrollment held
+        // a request slot for 15s. It must now fail fast, and as *unavailable* —
+        // an unanswering authority is not evidence a credential is bad.
+        let app = Router::new().route(
+            "/auth/introspect",
+            post(|| async {
+                std::future::pending::<()>().await;
+                unreachable!()
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = SharedAuthClient::new(SharedAuthConfig {
+            base_url: format!("http://{address}"),
+        });
+
+        let started = std::time::Instant::now();
+        assert_eq!(
+            client.introspect_access_token("shared-token").await,
+            Err(SharedAuthError::Unavailable)
+        );
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < REQUEST_TIMEOUT * 2,
+            "the client's own timeout must end the call, took {elapsed:?}"
+        );
+        task.abort();
+    }
+
+    #[tokio::test]
     async fn exchange_rejects_oversized_responses_before_deserializing() {
         let app = Router::new().route(
             "/auth/exchange",
