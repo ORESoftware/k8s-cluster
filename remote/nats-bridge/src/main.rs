@@ -333,10 +333,26 @@ fn validate_subject(subject: &str, prefixes: &[String]) -> Result<(), String> {
             return Err(format!("subject token '{token}' has invalid characters"));
         }
     }
-    if !prefixes.iter().any(|p| subject.starts_with(p.as_str())) {
+    if !prefixes.iter().any(|p| subject_in_prefix(subject, p)) {
         return Err("subject is outside the bridge allowlist".into());
     }
     Ok(())
+}
+
+/// True if `subject` is within the namespace named by `prefix`, anchored to a
+/// subject-token boundary. Prefix `vxl` matches `vxl` and `vxl.events` but NOT
+/// the sibling `vxlmalicious.foo`; a prefix that already ends in `.` is matched
+/// verbatim. This makes the allowlist safe regardless of whether an operator
+/// remembered the trailing dot in `BRIDGE_SUBJECT_PREFIXES` — a plain
+/// `starts_with` would otherwise widen `vxl` to every `vxl*` sibling subject.
+fn subject_in_prefix(subject: &str, prefix: &str) -> bool {
+    if prefix.ends_with('.') {
+        return subject.starts_with(prefix);
+    }
+    match subject.strip_prefix(prefix) {
+        Some(rest) => rest.is_empty() || rest.starts_with('.'),
+        None => false,
+    }
 }
 
 #[cfg(test)]
