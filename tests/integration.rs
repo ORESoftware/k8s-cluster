@@ -323,6 +323,105 @@ async fn introspect_non_ore_token_is_inactive() {
     assert_eq!(intro["active"], false);
 }
 
+const INTROSPECT_SECRET: &str = "introspect-service-secret-at-least-32b";
+
+// With AUTH_INTROSPECT_SECRET set, an authorized caller (correct bearer) gets claims.
+#[tokio::test]
+async fn introspect_authorized_caller_succeeds() {
+    let app = app_with_introspect_secret(INTROSPECT_SECRET).await;
+    let ore = mint_ore_token(&app, "authz-user").await;
+    let resp = app
+        .oneshot(
+            Request::post("/auth/introspect")
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {INTROSPECT_SECRET}"))
+                .body(Body::from(serde_json::json!({ "token": ore }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let intro: serde_json::Value = serde_json::from_str(&body_string(resp).await).unwrap();
+    assert_eq!(intro["active"], true);
+    assert_eq!(intro["project"], "fiducia-cloud");
+}
+
+// With the secret set, an unauthenticated (or wrong-credential) caller is rejected
+// with 401 before any claims are returned.
+#[tokio::test]
+async fn introspect_rejects_unauthorized_caller() {
+    let app = app_with_introspect_secret(INTROSPECT_SECRET).await;
+    let ore = mint_ore_token(&app, "reject-user").await;
+
+    let no_cred = app
+        .clone()
+        .oneshot(
+            Request::post("/auth/introspect")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "token": ore }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(no_cred.status(), StatusCode::UNAUTHORIZED);
+    // The 401 body must not leak claims.
+    assert!(!body_string(no_cred).await.contains("fiducia-cloud"));
+
+    let wrong_cred = app
+        .oneshot(
+            Request::post("/auth/introspect")
+                .header("content-type", "application/json")
+                .header("authorization", "Bearer wrong-secret-value-still-32-chars!")
+                .body(Body::from(serde_json::json!({ "token": ore }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(wrong_cred.status(), StatusCode::UNAUTHORIZED);
+}
+
+// With the secret set, an authorized caller passing an invalid token still gets
+// the RFC-7662 `{active:false}` shape (200), not a 401.
+#[tokio::test]
+async fn introspect_authorized_caller_invalid_token_is_inactive() {
+    let app = app_with_introspect_secret(INTROSPECT_SECRET).await;
+    let supa = supabase_token("not-an-ore-token", "x@example.com");
+    let resp = app
+        .oneshot(
+            Request::post("/auth/introspect")
+                .header("content-type", "application/json")
+                .header("authorization", format!("Bearer {INTROSPECT_SECRET}"))
+                .body(Body::from(serde_json::json!({ "token": supa }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let intro: serde_json::Value = serde_json::from_str(&body_string(resp).await).unwrap();
+    assert_eq!(intro["active"], false);
+}
+
+// Backward compatibility: with no secret configured, introspection stays open.
+#[tokio::test]
+async fn introspect_open_when_secret_unset() {
+    let app = app().await;
+    let ore = mint_ore_token(&app, "open-user").await;
+    let resp = app
+        .oneshot(
+            Request::post("/auth/introspect")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::json!({ "token": ore }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let intro: serde_json::Value = serde_json::from_str(&body_string(resp).await).unwrap();
+    assert_eq!(intro["active"], true);
+}
+
 // Exchange accepts the token in the JSON body too, not only the header.
 #[tokio::test]
 async fn exchange_via_json_body() {
