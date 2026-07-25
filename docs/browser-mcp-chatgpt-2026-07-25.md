@@ -147,10 +147,24 @@ the *source* comes from the node's checkout — and that checkout is at:
 which predates `d809bde6`, `ad8f6422`, and `dfd9089b`. This is why the env vars
 look current (ArgoCD synced them) while the behavior is old (the binary is not).
 
-Fix: update the node's checkout and restart the deployment. **Note the blast
-radius** — that hostPath is the build source for other in-pod-build services too,
-so pulling it changes what they compile on their next restart. Do it with eyes on,
-not as a side effect.
+**Decision: do NOT `git pull` that checkout.** Measured on the live cluster,
+**93 deployments** mount `/home/ec2-user/codes/dd/dd-next-1` — essentially the
+whole in-pod-build fleet (`dd-web-scraper`, `dd-remote-rest-api`, `dd-runtime-config`,
+every `dd-thread-*`, …). Pulling it stages new source for all 93, each of which
+silently rebuilds whatever is on disk at its *next* restart. That is an
+unbounded, delayed-action change to the entire runtime in order to fix one
+service's SSE negotiation. Not an acceptable trade.
+
+Two surgical alternatives, preferred order:
+
+1. **Give this one service a real image.** `browser-mcp-rs/Dockerfile` already
+   exists. Building and pinning an image removes it from the hostPath fleet
+   entirely, makes it independently deployable, and means its binary matches its
+   manifest — which is the actual root cause here (manifest from ArgoCD, binary
+   from a node checkout, no relationship between them). This is the durable fix.
+2. **Update only its subdirectory** on the node
+   (`remote/deployments/browser-mcp-rs`) and restart just that deployment. Fast,
+   but leaves the manifest/binary split in place to bite again.
 
 ### 3. The allowlist permits only filing sites
 
