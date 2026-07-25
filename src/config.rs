@@ -255,6 +255,7 @@ impl AppConfig {
             redis,
             sessions,
             webhook_secret,
+            introspect_secret,
             cors_allow_origins,
         })
     }
