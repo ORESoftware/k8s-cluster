@@ -61,17 +61,26 @@ pub fn dominates(a: &VersionVector, b: &VersionVector) -> bool {
     b.iter().all(|e| counter_for(a, &e.device_id) >= e.counter)
 }
 
-/// Return `base` with `device`'s counter incremented by one (added if absent).
-pub fn bump(base: &VersionVector, device: &str) -> VersionVector {
+/// Return `base` with `device`'s counter incremented by one (added if absent),
+/// or `None` if that counter is already at `u64::MAX` and cannot be advanced.
+///
+/// The `None` arm is not theoretical: [`reconcile`] deliberately lets a device
+/// advance its OWN counter freely (see [`is_causal`]), so an authenticated
+/// client can present `base_version: [{own_device_id, u64::MAX}]` — causally
+/// valid, dominant, accepted. An unchecked `+= 1` there panics the request task
+/// in debug and wraps to `counter: 0` in release, and a zero counter is a vector
+/// `protocol::version_vector_is_well_formed` itself rejects, so the account's
+/// own stored history would become un-echoable forever after.
+pub fn bump(base: &VersionVector, device: &str) -> Option<VersionVector> {
     let mut out = base.clone();
     match out.iter_mut().find(|e| e.device_id == device) {
-        Some(e) => e.counter += 1,
+        Some(e) => e.counter = e.counter.checked_add(1)?,
         None => out.push(VersionEntry {
             device_id: device.to_string(),
             counter: 1,
         }),
     }
-    out
+    Some(out)
 }
 
 /// True if `base_version` is *causally reachable* by `pushing_device`: it may
@@ -87,6 +96,16 @@ fn is_causal(stored: &VersionVector, base_version: &VersionVector, pushing_devic
     })
 }
 
+/// True if `pushing_device` still has a *next* version in `base_version`: its
+/// own counter is below `u64::MAX`, so the push it is asking for can actually be
+/// represented. A base at the maximum is causally valid but has no successor, so
+/// it is refused up front (400) rather than wrapped or panicked on — see
+/// [`bump`]. Every other entry is irrelevant: only the pushing device's own
+/// counter is ever incremented.
+pub fn base_version_is_advanceable(base_version: &VersionVector, pushing_device: &str) -> bool {
+    counter_for(base_version, pushing_device) < u64::MAX
+}
+
 /// Decide the outcome of a push given the currently-stored version.
 pub fn reconcile(
     stored: &VersionVector,
@@ -96,7 +115,12 @@ pub fn reconcile(
     // The client must have seen the server's latest before overwriting it, and
     // may only advance its own counter (not fabricate a sibling's).
     if dominates(base_version, stored) && is_causal(stored, base_version, pushing_device) {
-        Ok(bump(base_version, pushing_device))
+        // `bump` yields `None` only for a counter at `u64::MAX`, which `store`
+        // has already refused with 400 (`base_version_is_advanceable`). Folding
+        // it into a conflict keeps this function total — the caller can never
+        // observe a panic or a wrapped counter — instead of relying on that
+        // earlier check for memory safety of the arithmetic.
+        bump(base_version, pushing_device).ok_or_else(|| stored.clone())
     } else {
         Err(stored.clone())
     }
@@ -140,10 +164,18 @@ pub async fn store(
     // device can't be made to allocate gigabytes on the next pull), and bound the
     // client-supplied device id (charset + length) so it can't inject junk into
     // the version vector. The server still never decrypts — this is pure shape.
+    //
+    // The last clause is the arithmetic one: `reconcile` lets a device advance
+    // its own counter freely, so a base at `u64::MAX` for the pushing device is
+    // dominant and causal — and has no representable successor. Refusing it here
+    // means the increment below can never overflow, so an authenticated device
+    // cannot panic the handler (debug) or persist a wrapped `counter: 0` that
+    // `version_vector_is_well_formed` would then reject forever (release).
     if !req.blob.is_well_formed()
         || !crate::protocol::device_id_is_valid(&req.device_id)
         || !crate::protocol::version_vector_is_well_formed(&req.base_version)
         || req.device_id != who.device_id.to_string()
+        || !base_version_is_advanceable(&req.base_version, &req.device_id)
     {
         return Err(ApiError::BadRequest);
     }
@@ -398,6 +430,45 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn a_base_version_at_the_counter_maximum_is_a_400_before_any_query() {
+        // The hostile shape an authenticated device can send today: its OWN
+        // counter at u64::MAX. It dominates, it is causal, and it used to reach
+        // the increment. It must now be refused by the envelope check — on a
+        // mock connection with no canned rows, anything past that check would
+        // surface as a database error rather than `BadRequest`.
+        let who = AuthedDevice {
+            account_id: Uuid::new_v4(),
+            device_id: Uuid::new_v4(),
+        };
+        let mut request = max_size_push(64, who);
+        request.base_version = vec![VersionEntry {
+            device_id: who.device_id.to_string(),
+            counter: u64::MAX,
+        }];
+        let database = MockDatabase::new(DatabaseBackend::Postgres).into_connection();
+        assert!(
+            matches!(
+                store(&database, who, &request).await,
+                Err(ApiError::BadRequest)
+            ),
+            "a counter that cannot be incremented is not a usable causal history"
+        );
+
+        // One below is an ordinary large counter and must still be accepted by
+        // the validator (it gets as far as the database, which is the point).
+        let mut fine = request.clone();
+        fine.base_version[0].counter = u64::MAX - 1;
+        let database = MockDatabase::new(DatabaseBackend::Postgres).into_connection();
+        assert!(
+            !matches!(
+                store(&database, who, &fine).await,
+                Err(ApiError::BadRequest)
+            ),
+            "large-but-incrementable counters are legal and must not be swept up by the fix"
+        );
+    }
+
     #[test]
     fn concurrent_vectors_dominate_neither_way() {
         // Each side has an event the other has not observed: true concurrency.
@@ -421,14 +492,51 @@ mod tests {
     #[test]
     fn bump_adds_absent_device_and_preserves_others() {
         let base = vv(&[("a", 3)]);
-        let out = bump(&base, "b");
+        let out = bump(&base, "b").expect("an absent device starts at 1");
         assert_eq!(counter_for(&out, "a"), 3);
         assert_eq!(counter_for(&out, "b"), 1);
         assert_eq!(out.len(), 2);
         // Bumping an existing device increments only that entry.
-        let again = bump(&out, "b");
+        let again = bump(&out, "b").expect("a small counter advances");
         assert_eq!(counter_for(&again, "b"), 2);
         assert_eq!(counter_for(&again, "a"), 3);
+    }
+
+    #[test]
+    fn a_counter_at_the_maximum_has_no_successor() {
+        // `u64::MAX` is dominant and causal for its own device, so nothing else
+        // in `reconcile` refuses it — this is the only thing that does. The
+        // arithmetic must not panic (debug) or wrap to the invalid `counter: 0`
+        // (release); `store` turns the same predicate into a 400.
+        let at_max = vv(&[("devA", u64::MAX)]);
+        assert!(bump(&at_max, "devA").is_none());
+        assert!(!base_version_is_advanceable(&at_max, "devA"));
+
+        // One below the maximum still advances, and a device that is not the one
+        // sitting at the maximum is unaffected by it.
+        let below = vv(&[("devA", u64::MAX - 1)]);
+        assert!(base_version_is_advanceable(&below, "devA"));
+        assert_eq!(
+            counter_for(
+                &bump(&below, "devA").expect("u64::MAX is representable"),
+                "devA"
+            ),
+            u64::MAX
+        );
+        assert!(base_version_is_advanceable(&at_max, "devB"));
+        assert_eq!(
+            counter_for(&bump(&at_max, "devB").expect("devB is at 0"), "devB"),
+            1
+        );
+
+        // And `reconcile` stays total: no panic, no wrapped counter, and never
+        // an `Ok` carrying one.
+        let outcome = reconcile(&at_max, &at_max, "devA");
+        assert_eq!(
+            outcome,
+            Err(at_max),
+            "an unadvanceable base cannot be accepted"
+        );
     }
 
     #[test]

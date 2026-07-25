@@ -105,7 +105,7 @@ pub async fn record_http_metrics(
     request: Request,
     next: Next,
 ) -> Response<Body> {
-    let method = request.method().as_str().to_owned();
+    let method = metric_method(request.method());
     let route = metric_route(request.uri().path());
     let started = Instant::now();
     metrics.requests_in_flight.inc();
@@ -115,11 +115,11 @@ pub async fn record_http_metrics(
 
     metrics
         .requests
-        .with_label_values(&[&method, route, &status])
+        .with_label_values(&[method, route, &status])
         .inc();
     metrics
         .request_duration
-        .with_label_values(&[&method, route])
+        .with_label_values(&[method, route])
         .observe(started.elapsed().as_secs_f64());
     response
 }
@@ -149,7 +149,30 @@ pub fn response(metrics: &Metrics) -> Response<Body> {
     }
 }
 
-fn metric_route(path: &str) -> &'static str {
+/// Collapse the request method to the bounded set this API actually serves.
+///
+/// The twin of [`metric_route`], and for the same reason: every distinct label
+/// value is a permanent time series. HTTP allows any token as a method name, so
+/// `FROBNICATE /livez` — unauthenticated, on an unauthenticated route, answered
+/// 405 by the router but still counted here because this middleware sits
+/// *outside* it — used to mint a new series in three metric families per
+/// invented word. Anything outside the set collapses to `other`, exactly as an
+/// unknown path collapses to `unmatched`.
+pub(crate) fn metric_method(method: &axum::http::Method) -> &'static str {
+    use axum::http::Method;
+    match *method {
+        Method::GET => "GET",
+        Method::POST => "POST",
+        Method::PUT => "PUT",
+        Method::DELETE => "DELETE",
+        Method::HEAD => "HEAD",
+        Method::OPTIONS => "OPTIONS",
+        Method::PATCH => "PATCH",
+        _ => "other",
+    }
+}
+
+pub(crate) fn metric_route(path: &str) -> &'static str {
     match path {
         "/v1/auth/shared" => "/v1/auth/shared",
         "/v1/auth/supabase" => "/v1/auth/supabase",
@@ -178,6 +201,31 @@ mod tests {
         assert_eq!(metric_route("/v1/auth/supabase"), "/v1/auth/supabase");
         assert_eq!(metric_route("/users/alice/private"), "unmatched");
         assert_eq!(metric_route("/v1/vault/account-secret"), "unmatched");
+    }
+
+    #[test]
+    fn invented_methods_collapse_to_a_bounded_label() {
+        use axum::http::Method;
+        for method in [
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::HEAD,
+            Method::OPTIONS,
+            Method::PATCH,
+        ] {
+            assert_eq!(metric_method(&method), method.as_str());
+        }
+        // An anonymous caller must not be able to mint label values: hyper
+        // parses any token as a method, and this middleware runs outside the
+        // router, so it sees them all.
+        for invented in ["FROBNICATE", "QUUXIFY", "TRACE", "CONNECT"] {
+            assert_eq!(
+                metric_method(&Method::from_bytes(invented.as_bytes()).unwrap()),
+                "other"
+            );
+        }
     }
 
     #[test]

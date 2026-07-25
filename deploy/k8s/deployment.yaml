@@ -56,8 +56,12 @@ spec:
               value: "0.0.0.0:8080"
             - name: METRICS_BIND_ADDR
               value: "0.0.0.0:9091"
+            # `sqlx::query` is the target SeaORM's per-statement logging is
+            # emitted under (its sqlx backend owns it), so `sea_orm=warn` alone
+            # left every statement logged at INFO — most of the log stream, the
+            # full schema, and the level unusable for anything else. Keep both.
             - name: RUST_LOG
-              value: "info,tower_http=info,hyper=warn,sea_orm=warn"
+              value: "info,tower_http=info,hyper=warn,sea_orm=warn,sqlx::query=warn"
             - name: DEPLOYMENT_ENVIRONMENT
               value: production
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

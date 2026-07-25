@@ -1,6 +1,8 @@
 //! Explicit JSON logging and OTLP tracing. No runtime monkey-patching.
 
+use axum::body::Body;
 use axum::http::{Request, Response};
+use axum::middleware::Next;
 use opentelemetry::global;
 use opentelemetry::trace::{TraceContextExt, TracerProvider as _};
 use opentelemetry::KeyValue;
@@ -8,7 +10,7 @@ use opentelemetry_http::HeaderExtractor;
 use opentelemetry_otlp::{Protocol, WithExportConfig};
 use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::Config, Resource};
 use opentelemetry_semantic_conventions::resource as semconv;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tower_http::classify::{ServerErrorsAsFailures, SharedClassifier};
 use tower_http::trace::{DefaultOnRequest, MakeSpan, OnResponse, TraceLayer};
 use tracing::Span;
@@ -35,9 +37,25 @@ impl Drop for Guard {
     }
 }
 
+/// The filter used when `RUST_LOG` is unset. Kept in sync with the `RUST_LOG`
+/// the Deployment ships (`deploy/k8s/deployment.yaml`), which `app.rs`'s
+/// manifest test asserts.
+///
+/// `sqlx::query=warn` is the directive that actually silences per-statement SQL:
+/// SeaORM's statement logging is emitted by its sqlx backend under the target
+/// `sqlx::query` (sqlx-core/src/logger.rs), which `sea_orm=warn` does not match,
+/// so at INFO every statement the service issues was logged in full — the
+/// majority of the log stream, the complete schema published to anyone with log
+/// access, and the level rendered useless for anything else. Parameters stay
+/// bound (`$1`, `$2`), so this was volume, cost, and disclosure rather than a
+/// secret leak. `sea_orm=warn` stays: it still covers SeaORM's own logging.
+pub fn default_log_filter() -> &'static str {
+    "info,tower_http=info,hyper=warn,sea_orm=warn,sqlx::query=warn"
+}
+
 pub fn init(service_name: &str) -> Guard {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,tower_http=info,hyper=warn,sea_orm=warn"));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_log_filter()));
     let fmt_layer = tracing_subscriber::fmt::layer()
         .json()
         .flatten_event(true)
@@ -103,6 +121,43 @@ pub fn http_trace_layer() -> TraceLayer<
     TraceLayer::new_for_http()
         .make_span_with(OtelMakeSpan)
         .on_response(OtelOnResponse)
+}
+
+/// Emit exactly one structured INFO event per completed response.
+///
+/// Without this the log stream held 5xx and nothing else. `OtelOnResponse`
+/// *records* the status onto the span (for OTLP) but emits no event;
+/// tower_http's `DefaultOnRequest` logs at DEBUG, which the shipped
+/// `RUST_LOG=info,…` drops; so the only surviving emitter was the default
+/// `on_failure`, and `ServerErrorsAsFailures` classifies only 5xx as a failure.
+/// A 401 storm (credential rotation gone wrong), a 404 storm (a client on the
+/// wrong base path) and a 429 storm (a device stuck retrying) — the three
+/// incidents most likely to be reported as "sync stopped working" — were
+/// therefore invisible in Loki, and `init()` above documents OTLP being
+/// unavailable as a supported degraded mode, in which nothing recorded them at
+/// all.
+///
+/// Layered *inside* [`http_trace_layer`] so the event inherits the request span
+/// and its trace/span ids, joining logs to traces.
+///
+/// What it deliberately does not carry: no header of any kind (the one on this
+/// API is a credential), no query string, no body, and the *bounded* route label
+/// rather than the raw URI, so a path that ever grows an id cannot smuggle one
+/// into a log line.
+pub async fn log_http_response(request: Request<Body>, next: Next) -> Response<Body> {
+    let method = crate::metrics::metric_method(request.method());
+    let route = crate::metrics::metric_route(request.uri().path());
+    let started = Instant::now();
+    let response = next.run(request).await;
+    let latency = started.elapsed();
+    tracing::info!(
+        http.request.method = method,
+        http.route = route,
+        http.response.status_code = response.status().as_u16(),
+        http.server.request.duration_ms = latency.as_secs_f64() * 1_000.0,
+        "http request"
+    );
+    response
 }
 
 #[derive(Clone, Copy, Debug, Default)]

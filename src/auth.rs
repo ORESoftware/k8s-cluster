@@ -63,10 +63,26 @@ pub fn token_hash(token: &str) -> String {
 }
 
 /// Extract the raw bearer token from an `Authorization: Bearer <token>` header.
+///
+/// A request carrying the header more than once is refused outright.
+/// `Authorization` is a singleton field (RFC 9110 §11.6.2), and RFC 9110 §5.3
+/// says a recipient of repeated field lines for a singleton field must either
+/// combine them — meaningless for a credential — or treat the message as
+/// malformed. `HeaderMap::get` would silently return the FIRST of them, which is
+/// the dangerous third option: an intermediary that inspects or authorizes on
+/// the LAST line (proxies and WAFs differ) would be reasoning about a different
+/// credential than the one this service acts on, which is a standard
+/// request-smuggling / authorization-bypass primitive. Ambiguous credential,
+/// no credential: 401.
 pub fn bearer(headers: &HeaderMap) -> Result<&str, ApiError> {
-    headers
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
+    let mut values = headers.get_all(axum::http::header::AUTHORIZATION).iter();
+    let value = values.next().ok_or(ApiError::Unauthorized)?;
+    if values.next().is_some() {
+        return Err(ApiError::Unauthorized);
+    }
+    value
+        .to_str()
+        .ok()
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or(ApiError::Unauthorized)
 }
@@ -135,6 +151,37 @@ mod tests {
             token_hash("abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+    }
+
+    #[test]
+    fn a_single_bearer_header_is_read_and_a_repeated_one_is_refused() {
+        use axum::http::header::AUTHORIZATION;
+        use axum::http::HeaderValue;
+
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer alpha"));
+        assert_eq!(bearer(&headers).unwrap(), "alpha");
+
+        // Two lines make the credential ambiguous: which one wins must not be
+        // decided by header order, so neither does.
+        headers.append(AUTHORIZATION, HeaderValue::from_static("Bearer beta"));
+        assert!(matches!(bearer(&headers), Err(ApiError::Unauthorized)));
+
+        // Including the case an intermediary is most likely to disagree on: a
+        // junk line in front of a good credential, and the reverse.
+        for pair in [["Bearer alpha", "garbage"], ["garbage", "Bearer alpha"]] {
+            let mut headers = HeaderMap::new();
+            for value in pair {
+                headers.append(AUTHORIZATION, HeaderValue::from_str(value).unwrap());
+            }
+            assert!(matches!(bearer(&headers), Err(ApiError::Unauthorized)));
+        }
+
+        // No header at all is the same answer, so the two are not distinguishable.
+        assert!(matches!(
+            bearer(&HeaderMap::new()),
+            Err(ApiError::Unauthorized)
+        ));
     }
 
     #[test]
