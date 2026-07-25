@@ -1674,10 +1674,10 @@ mod tests {
 
     #[tokio::test]
     async fn auth_submit_open_redirect_backslash_reaches_location_security_finding() {
-        // SECURITY FINDING (open redirect, end-to-end): a valid login with
-        // return_to = `/\evil.com` emits `Location: /\evil.com`, which browsers
-        // resolve to https://evil.com. Documents the vulnerable behavior through
-        // the real handler (not just the helper).
+        // Regression (open redirect, end-to-end): a valid login with
+        // return_to = `/\evil.com` must NOT redirect off-site — the guard folds it
+        // to the safe default, so `Location` is `/home`, driven through the real
+        // handler (not just the helper).
         let _g = EnvGuard::new(&[
             ("DD_AUTH_PIN", Some("operator-pass")),
             ("DD_AUTH_COOKIE_NAME", Some("dd_auth")),
