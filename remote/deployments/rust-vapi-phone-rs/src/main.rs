@@ -2328,12 +2328,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
 
-    // JetStream work-queue worker (dd.vapi.tasks.>) — enabled by VAPI_NATS_URL.
-    // KEDA scales this deployment off the worker consumer's lag.
-    if let Some(nats_cfg) = nats_worker::NatsWorkerConfig::from_env() {
-        tokio::spawn(nats_worker::run(state.clone(), nats_cfg));
-    }
-
     let address: SocketAddr = format!("{host}:{port}").parse()?;
     let listener = tokio::net::TcpListener::bind(address).await?;
     tracing::info!("dd-rust-vapi-phone listening on http://{address}");
