@@ -1060,4 +1060,567 @@ mod tests {
         assert!(parse_wal2json_row(r#"{"action":"C"}"#).is_none());
         assert!(parse_wal2json_row("not even json").is_none());
     }
+
+    // ── Config: defaults, overrides, precedence, clamping ─────────────────
+
+    #[test]
+    fn config_defaults_are_deterministic() {
+        let cfg = config_with(&[("WAL_GATEWAY_DATABASE_URL", "postgres://u@h/db")])
+            .expect("config should build with only a database url");
+        assert_eq!(cfg.database_url, "postgres://u@h/db");
+        assert!(cfg.nats_url.is_none());
+        assert_eq!(cfg.slot_name, "cdc_gateway");
+        assert_eq!(cfg.plugin, "wal2json");
+        assert_eq!(cfg.stream_name, "CDC");
+        assert_eq!(cfg.subject_prefix, "cdc");
+        assert_eq!(cfg.poll_interval, Duration::from_millis(250));
+        assert_eq!(cfg.publish_timeout, Duration::from_secs(5));
+        assert_eq!(cfg.max_batch, 2000);
+        assert_eq!(cfg.pod_name, "wal-gateway-local");
+        assert_eq!(cfg.http_port, 8104);
+    }
+
+    #[test]
+    fn config_missing_database_url_errors() {
+        let err = config_with(&[]).expect_err("no database url must error");
+        assert!(
+            err.contains("WAL_GATEWAY_DATABASE_URL not set"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn config_database_url_precedence() {
+        // Lowest-precedence DATABASE_URL is used when it's the only one set.
+        assert_eq!(
+            config_with(&[("DATABASE_URL", "url-database")])
+                .unwrap()
+                .database_url,
+            "url-database"
+        );
+        // CDC_DATABASE_URL beats DATABASE_URL.
+        assert_eq!(
+            config_with(&[
+                ("CDC_DATABASE_URL", "url-cdc"),
+                ("DATABASE_URL", "url-database"),
+            ])
+            .unwrap()
+            .database_url,
+            "url-cdc"
+        );
+        // RDS_DATABASE_URL beats DATABASE_URL.
+        assert_eq!(
+            config_with(&[
+                ("RDS_DATABASE_URL", "url-rds"),
+                ("DATABASE_URL", "url-database"),
+            ])
+            .unwrap()
+            .database_url,
+            "url-rds"
+        );
+        // WAL_GATEWAY_DATABASE_URL wins over everything.
+        assert_eq!(
+            config_with(&[
+                ("WAL_GATEWAY_DATABASE_URL", "url-wal"),
+                ("CDC_DATABASE_URL", "url-cdc"),
+                ("RDS_DATABASE_URL", "url-rds"),
+                ("DATABASE_URL", "url-database"),
+            ])
+            .unwrap()
+            .database_url,
+            "url-wal"
+        );
+    }
+
+    #[test]
+    fn config_nats_url_is_optional_and_ordered() {
+        assert!(config_with(&[("WAL_GATEWAY_DATABASE_URL", "db")])
+            .unwrap()
+            .nats_url
+            .is_none());
+        assert_eq!(
+            config_with(&[
+                ("WAL_GATEWAY_DATABASE_URL", "db"),
+                ("NATS_URL", "nats://plain"),
+            ])
+            .unwrap()
+            .nats_url
+            .as_deref(),
+            Some("nats://plain")
+        );
+        // Service-specific override wins over the generic NATS_URL.
+        assert_eq!(
+            config_with(&[
+                ("WAL_GATEWAY_DATABASE_URL", "db"),
+                ("WAL_GATEWAY_NATS_URL", "nats://wal"),
+                ("NATS_URL", "nats://plain"),
+            ])
+            .unwrap()
+            .nats_url
+            .as_deref(),
+            Some("nats://wal")
+        );
+    }
+
+    #[test]
+    fn config_explicit_overrides_applied() {
+        let cfg = config_with(&[
+            ("WAL_GATEWAY_DATABASE_URL", "db"),
+            ("WAL_GATEWAY_SLOT_NAME", "my_slot"),
+            ("WAL_GATEWAY_PLUGIN", "test_decoding"),
+            ("WAL_GATEWAY_STREAM_NAME", "MYSTREAM"),
+            ("WAL_GATEWAY_SUBJECT_PREFIX", "myprefix"),
+            ("WAL_GATEWAY_POLL_MS", "1000"),
+            ("WAL_GATEWAY_PUBLISH_TIMEOUT_S", "30"),
+            ("WAL_GATEWAY_POD_NAME", "pod-7"),
+            ("PORT", "9090"),
+        ])
+        .unwrap();
+        assert_eq!(cfg.slot_name, "my_slot");
+        assert_eq!(cfg.plugin, "test_decoding");
+        assert_eq!(cfg.stream_name, "MYSTREAM");
+        assert_eq!(cfg.subject_prefix, "myprefix");
+        assert_eq!(cfg.poll_interval, Duration::from_millis(1000));
+        assert_eq!(cfg.publish_timeout, Duration::from_secs(30));
+        assert_eq!(cfg.pod_name, "pod-7");
+        assert_eq!(cfg.http_port, 9090);
+    }
+
+    #[test]
+    fn config_max_batch_is_clamped_and_zero_falls_back() {
+        let batch = |v: &str| {
+            config_with(&[("WAL_GATEWAY_DATABASE_URL", "db"), ("WAL_GATEWAY_MAX_BATCH", v)])
+                .unwrap()
+                .max_batch
+        };
+        assert_eq!(batch("5"), 5); // in-range passes through
+        assert_eq!(batch("50000"), 10_000); // above ceiling clamps down
+        // NOTE current behavior: env_u64 discards 0 (its `> 0` filter) BEFORE
+        // the clamp, so 0 becomes the 2000 default rather than clamping to 1.
+        assert_eq!(batch("0"), 2000);
+        assert_eq!(batch("banana"), 2000); // non-numeric -> default
+    }
+
+    #[test]
+    fn config_zero_or_invalid_durations_fall_back() {
+        // 0 is filtered by env_u64's `> 0` guard, so it maps to the default
+        // rather than a zero-length interval (which would hot-spin the pump).
+        assert_eq!(
+            config_with(&[("WAL_GATEWAY_DATABASE_URL", "db"), ("WAL_GATEWAY_POLL_MS", "0")])
+                .unwrap()
+                .poll_interval,
+            Duration::from_millis(250)
+        );
+        assert_eq!(
+            config_with(&[
+                ("WAL_GATEWAY_DATABASE_URL", "db"),
+                ("WAL_GATEWAY_PUBLISH_TIMEOUT_S", "soon"),
+            ])
+            .unwrap()
+            .publish_timeout,
+            Duration::from_secs(5)
+        );
+    }
+
+    #[test]
+    fn config_pod_name_fallback_chain() {
+        // HOSTNAME is used when the explicit pod name is unset.
+        assert_eq!(
+            config_with(&[("WAL_GATEWAY_DATABASE_URL", "db"), ("HOSTNAME", "host-9")])
+                .unwrap()
+                .pod_name,
+            "host-9"
+        );
+        // Explicit pod name beats HOSTNAME.
+        assert_eq!(
+            config_with(&[
+                ("WAL_GATEWAY_DATABASE_URL", "db"),
+                ("HOSTNAME", "host-9"),
+                ("WAL_GATEWAY_POD_NAME", "explicit"),
+            ])
+            .unwrap()
+            .pod_name,
+            "explicit"
+        );
+        // Neither present -> static default.
+        assert_eq!(
+            config_with(&[("WAL_GATEWAY_DATABASE_URL", "db")])
+                .unwrap()
+                .pod_name,
+            "wal-gateway-local"
+        );
+    }
+
+    #[test]
+    fn config_invalid_port_errors() {
+        let err = config_with(&[("WAL_GATEWAY_DATABASE_URL", "db"), ("PORT", "not-a-port")])
+            .expect_err("bad PORT must error");
+        assert!(err.contains("invalid PORT"), "unexpected error: {err}");
+    }
+
+    // ── env helpers ───────────────────────────────────────────────────────
+
+    #[test]
+    fn env_u64_filters_zero_negative_and_nonnumeric() {
+        let k = "WALGW_TEST_U64";
+        assert_eq!(with_env(&[(k, None)], || env_u64(k, 7)), 7); // unset -> fallback
+        assert_eq!(with_env(&[(k, Some("0"))], || env_u64(k, 7)), 7); // 0 filtered out
+        assert_eq!(with_env(&[(k, Some("  42 "))], || env_u64(k, 7)), 42); // trims whitespace
+        assert_eq!(with_env(&[(k, Some("-1"))], || env_u64(k, 7)), 7); // negative fails parse
+        assert_eq!(with_env(&[(k, Some("nope"))], || env_u64(k, 7)), 7); // non-numeric
+        assert_eq!(
+            with_env(&[(k, Some("99999999999999999999999999"))], || env_u64(k, 7)),
+            7 // overflows u64 -> fallback
+        );
+    }
+
+    #[test]
+    fn first_env_trims_skips_blank_and_is_ordered() {
+        let a = "WALGW_TEST_A";
+        let b = "WALGW_TEST_B";
+        assert_eq!(
+            with_env(&[(a, None), (b, Some("  hello "))], || first_env(&[a, b])),
+            Some("hello".to_string())
+        );
+        // A blank/whitespace-only value is treated as absent; fall through.
+        assert_eq!(
+            with_env(&[(a, Some("   ")), (b, Some("real"))], || first_env(&[a, b])),
+            Some("real".to_string())
+        );
+        // First present key wins.
+        assert_eq!(
+            with_env(&[(a, Some("x")), (b, Some("y"))], || first_env(&[a, b])),
+            Some("x".to_string())
+        );
+        assert_eq!(with_env(&[(a, None), (b, None)], || first_env(&[a, b])), None);
+    }
+
+    #[test]
+    fn env_value_falls_back_on_missing_or_blank() {
+        let k = "WALGW_TEST_VAL";
+        assert_eq!(with_env(&[(k, None)], || env_value(k, "fb")), "fb");
+        assert_eq!(with_env(&[(k, Some("   "))], || env_value(k, "fb")), "fb"); // blank -> fallback
+        assert_eq!(with_env(&[(k, Some("  v "))], || env_value(k, "fb")), "v"); // trimmed
+    }
+
+    // ── ChangeOp mapping ──────────────────────────────────────────────────
+
+    #[test]
+    fn change_op_action_mapping_is_exact() {
+        assert!(matches!(ChangeOp::from_action("I"), Some(ChangeOp::Insert)));
+        assert!(matches!(ChangeOp::from_action("U"), Some(ChangeOp::Update)));
+        assert!(matches!(ChangeOp::from_action("D"), Some(ChangeOp::Delete)));
+        for bad in ["B", "C", "T", "M", "i", "insert", "", "id"] {
+            assert!(
+                ChangeOp::from_action(bad).is_none(),
+                "expected None for action {bad:?}"
+            );
+        }
+        assert_eq!(ChangeOp::Insert.as_str(), "insert");
+        assert_eq!(ChangeOp::Update.as_str(), "update");
+        assert_eq!(ChangeOp::Delete.as_str(), "delete");
+        // `from_action` speaks wal2json codes, `as_str` speaks envelope words;
+        // they are deliberately NOT inverses.
+        for op in [ChangeOp::Insert, ChangeOp::Update, ChangeOp::Delete] {
+            assert!(ChangeOp::from_action(op.as_str()).is_none());
+        }
+    }
+
+    // ── Decode: parse_wal2json_row edge cases ─────────────────────────────
+
+    #[test]
+    fn parse_insert_has_empty_pk_and_no_previous_row() {
+        let line =
+            r#"{"action":"I","schema":"public","table":"t","columns":[{"name":"id","value":1}]}"#;
+        let parsed = parse_wal2json_row(line).expect("parsed");
+        assert!(parsed.pk_names.is_empty());
+        assert!(parsed.identity.is_empty());
+        let env = build_envelope(&parsed, "0/1");
+        assert!(env.previous_row.is_none());
+        assert!(env.primary_key.is_empty());
+        assert_eq!(env.row.get("id").unwrap(), 1);
+    }
+
+    #[test]
+    fn parse_rejects_control_and_unknown_actions() {
+        for action in ["B", "C", "T", "M", "X", "", "u"] {
+            let line = format!(r#"{{"action":"{action}","table":"t"}}"#);
+            assert!(
+                parse_wal2json_row(&line).is_none(),
+                "expected drop for action {action:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_recovers_from_malformed_truncated_and_non_object() {
+        assert!(parse_wal2json_row("").is_none());
+        assert!(parse_wal2json_row("not even json").is_none());
+        // A record truncated mid-token at the stream tail must yield None,
+        // never panic (the pump skips it and advances).
+        let truncated = r#"{"action":"I","table":"t","columns":[{"name":"a","valu"#;
+        assert!(parse_wal2json_row(truncated).is_none());
+        // Valid JSON that isn't a row object.
+        assert!(parse_wal2json_row("[1,2,3]").is_none());
+        assert!(parse_wal2json_row("42").is_none());
+        assert!(parse_wal2json_row("null").is_none());
+        assert!(parse_wal2json_row("\"just a string\"").is_none());
+        // Objects missing required fields.
+        assert!(parse_wal2json_row(r#"{"schema":"public"}"#).is_none()); // no action
+        assert!(parse_wal2json_row(r#"{"action":"I","schema":"public"}"#).is_none()); // no table
+    }
+
+    #[test]
+    fn parse_defaults_schema_to_public() {
+        let line = r#"{"action":"I","table":"t","columns":[{"name":"id","value":1}]}"#;
+        assert_eq!(parse_wal2json_row(line).unwrap().schema, "public");
+        // A non-string schema also falls back to "public".
+        let line2 = r#"{"action":"I","schema":123,"table":"t","columns":[{"name":"id","value":1}]}"#;
+        assert_eq!(parse_wal2json_row(line2).unwrap().schema, "public");
+    }
+
+    #[test]
+    fn parse_reads_xid_as_number_or_string() {
+        let num = r#"{"action":"I","table":"t","xid":12345,"columns":[{"name":"id","value":1}]}"#;
+        assert_eq!(parse_wal2json_row(num).unwrap().xid, Some(12345));
+        let string =
+            r#"{"action":"I","table":"t","xid":"67890","columns":[{"name":"id","value":1}]}"#;
+        assert_eq!(parse_wal2json_row(string).unwrap().xid, Some(67890));
+        let missing = r#"{"action":"I","table":"t","columns":[{"name":"id","value":1}]}"#;
+        assert_eq!(parse_wal2json_row(missing).unwrap().xid, None);
+        // A non-numeric xid string parses to None rather than erroring the row.
+        let bad = r#"{"action":"I","table":"t","xid":"abc","columns":[{"name":"id","value":1}]}"#;
+        assert_eq!(parse_wal2json_row(bad).unwrap().xid, None);
+    }
+
+    #[test]
+    fn parse_columns_skip_missing_value_but_keep_json_null() {
+        let line = r#"{"action":"I","table":"t","columns":[
+            {"name":"a","value":1},
+            {"name":"nokeyval"},
+            {"name":"c","value":null},
+            {"value":99}
+        ]}"#;
+        let parsed = parse_wal2json_row(line).expect("parsed");
+        assert_eq!(parsed.columns.get("a").unwrap(), 1);
+        // Missing "value" key -> the column is dropped entirely.
+        assert!(!parsed.columns.contains_key("nokeyval"));
+        // Explicit JSON null is preserved (distinct from a missing column).
+        assert_eq!(parsed.columns.get("c").unwrap(), &Value::Null);
+        // Entry with no "name" is dropped, so only "a" and "c" survive.
+        assert_eq!(parsed.columns.len(), 2);
+    }
+
+    #[test]
+    fn parse_duplicate_columns_last_write_wins() {
+        let line = r#"{"action":"I","table":"t","columns":[{"name":"k","value":1},{"name":"k","value":2}]}"#;
+        let parsed = parse_wal2json_row(line).expect("parsed");
+        assert_eq!(parsed.columns.len(), 1);
+        assert_eq!(parsed.columns.get("k").unwrap(), 2);
+    }
+
+    #[test]
+    fn parse_requires_string_table() {
+        assert!(parse_wal2json_row(r#"{"action":"I","table":123}"#).is_none());
+        assert!(parse_wal2json_row(r#"{"action":"I","table":null}"#).is_none());
+    }
+
+    // ── Encode: build_envelope + wire serialization ───────────────────────
+
+    #[test]
+    fn envelope_insert_shape() {
+        let line = r#"{"action":"I","schema":"public","table":"orders","xid":7,"timestamp":"2025-01-01 00:00:00+00","columns":[{"name":"id","value":10},{"name":"amt","value":99}]}"#;
+        let parsed = parse_wal2json_row(line).unwrap();
+        let env = build_envelope(&parsed, "0/ABC");
+        assert_eq!(env.schema_version, SCHEMA_VERSION);
+        assert_eq!(env.schema_version, "cdc.row.v1");
+        assert_eq!(env.schema, "public");
+        assert_eq!(env.table, "orders");
+        assert_eq!(env.op, "insert");
+        assert_eq!(env.lsn, "0/ABC");
+        assert_eq!(env.xid, Some(7));
+        assert_eq!(env.source_timestamp, Some("2025-01-01 00:00:00+00"));
+        assert_eq!(env.row.get("amt").unwrap(), 99);
+        assert!(env.previous_row.is_none());
+        assert!(env.primary_key.is_empty());
+    }
+
+    #[test]
+    fn envelope_update_row_is_new_and_previous_is_identity() {
+        let line = r#"{"action":"U","schema":"public","table":"t","columns":[{"name":"id","value":1},{"name":"v","value":"new"}],"identity":[{"name":"id","value":1}]}"#;
+        let parsed = parse_wal2json_row(line).unwrap();
+        let env = build_envelope(&parsed, "0/1");
+        // `row` carries the NEW tuple (has the changed column)...
+        assert_eq!(env.row.get("v").unwrap(), "new");
+        // ...while `previousRow` is only the identity/PK image and lacks it.
+        let prev = env.previous_row.as_ref().unwrap();
+        assert_eq!(prev.get("id").unwrap(), 1);
+        assert!(prev.get("v").is_none());
+        assert_eq!(env.primary_key.to_vec(), vec!["id".to_string()]);
+    }
+
+    #[test]
+    fn envelope_delete_row_and_previous_are_both_identity() {
+        let line = r#"{"action":"D","schema":"public","table":"t","identity":[{"name":"id","value":42}]}"#;
+        let parsed = parse_wal2json_row(line).unwrap();
+        let env = build_envelope(&parsed, "0/1");
+        assert_eq!(env.op, "delete");
+        assert_eq!(env.row.get("id").unwrap(), 42);
+        assert_eq!(env.previous_row.as_ref().unwrap().get("id").unwrap(), 42);
+        // For deletes, row and previousRow are the same identity image.
+        assert_eq!(env.row, env.previous_row.clone().unwrap());
+    }
+
+    #[test]
+    fn envelope_empty_columns_fall_back_to_identity() {
+        // Update with empty columns falls back to identity for `row`.
+        let line = r#"{"action":"U","schema":"public","table":"t","columns":[],"identity":[{"name":"id","value":5}]}"#;
+        let parsed = parse_wal2json_row(line).unwrap();
+        assert!(parsed.columns.is_empty());
+        assert_eq!(build_envelope(&parsed, "0/1").row.get("id").unwrap(), 5);
+        // Insert with empty columns AND no identity yields an empty row object
+        // (not null) and no previousRow.
+        let line2 = r#"{"action":"I","schema":"public","table":"t","columns":[]}"#;
+        let parsed2 = parse_wal2json_row(line2).unwrap();
+        let env2 = build_envelope(&parsed2, "0/1");
+        assert_eq!(env2.row, serde_json::json!({}));
+        assert!(env2.previous_row.is_none());
+    }
+
+    #[test]
+    fn envelope_json_roundtrips_camelcase_and_emits_null_fields() {
+        // Encode -> decode round-trip over the exact wire bytes the pump ships.
+        let line = r#"{"action":"U","schema":"public","table":"t","columns":[{"name":"id","value":1},{"name":"v","value":"x"}],"identity":[{"name":"id","value":1}]}"#;
+        let parsed = parse_wal2json_row(line).unwrap();
+        let env = build_envelope(&parsed, "0/DEADBEEF");
+        let bytes = serde_json::to_vec(&env).expect("encode");
+        let back: Value = serde_json::from_slice(&bytes).expect("decode");
+        assert_eq!(back.get("schemaVersion").unwrap(), "cdc.row.v1");
+        assert_eq!(back.get("op").unwrap(), "update");
+        assert_eq!(back.get("lsn").unwrap(), "0/DEADBEEF");
+        assert_eq!(back.get("primaryKey").unwrap(), &serde_json::json!(["id"]));
+        assert!(back.get("tsMs").unwrap().is_u64());
+        assert_eq!(back.get("row").unwrap().get("v").unwrap(), "x");
+        assert_eq!(back.get("previousRow").unwrap().get("id").unwrap(), 1);
+        // Absent source timestamp is still emitted as a null key on the wire.
+        assert_eq!(back.get("sourceTimestamp").unwrap(), &Value::Null);
+
+        // Insert: xid / sourceTimestamp / previousRow are all absent in the
+        // source and are serialized as explicit JSON null (no skip_serializing).
+        let ins =
+            parse_wal2json_row(r#"{"action":"I","table":"t","columns":[{"name":"id","value":1}]}"#)
+                .unwrap();
+        let ienv = build_envelope(&ins, "0/1");
+        let ib: Value = serde_json::from_slice(&serde_json::to_vec(&ienv).unwrap()).unwrap();
+        assert_eq!(ib.get("xid").unwrap(), &Value::Null);
+        assert_eq!(ib.get("sourceTimestamp").unwrap(), &Value::Null);
+        assert_eq!(ib.get("previousRow").unwrap(), &Value::Null);
+        assert!(ib.as_object().unwrap().contains_key("previousRow"));
+    }
+
+    // ── Integrity: corruption handling of an incoming record ──────────────
+
+    #[test]
+    fn corruption_that_breaks_json_framing_is_rejected() {
+        let valid =
+            r#"{"action":"I","schema":"public","table":"t","columns":[{"name":"id","value":1}]}"#;
+        assert!(parse_wal2json_row(valid).is_some());
+        // Flip the opening brace -> invalid JSON -> rejected, no panic.
+        let mut bytes = valid.as_bytes().to_vec();
+        bytes[0] = b'x';
+        let corrupted = String::from_utf8(bytes).unwrap();
+        assert!(parse_wal2json_row(&corrupted).is_none());
+        // Drop the closing braces (tail truncation) -> rejected, no panic.
+        assert!(parse_wal2json_row(&valid[..valid.len() - 3]).is_none());
+    }
+
+    #[test]
+    fn in_payload_corruption_is_silently_accepted() {
+        // FINDING / documented behavior: the gateway has NO per-record checksum.
+        // A single-byte flip that keeps the line valid JSON is NOT detected —
+        // the corrupted value is parsed and would be published verbatim. This
+        // test pins that current behavior; an integrity control added later
+        // should intentionally break it.
+        let original = r#"{"action":"I","schema":"public","table":"t","columns":[{"name":"amount","value":"100"}]}"#;
+        assert_eq!(
+            parse_wal2json_row(original)
+                .unwrap()
+                .columns
+                .get("amount")
+                .unwrap(),
+            "100"
+        );
+        let corrupted = original.replace("\"100\"", "\"900\"");
+        assert_eq!(
+            parse_wal2json_row(&corrupted)
+                .expect("still valid json, still parses")
+                .columns
+                .get("amount")
+                .unwrap(),
+            "900" // wrong value accepted with no error
+        );
+    }
+
+    // ── Subject construction & consumer round-trip ────────────────────────
+
+    #[test]
+    fn subject_format_per_op_and_custom_prefix() {
+        let ins = parse_wal2json_row(
+            r#"{"action":"I","schema":"public","table":"app_config","columns":[{"name":"id","value":1}]}"#,
+        )
+        .unwrap();
+        assert_eq!(ins.subject("cdc"), "cdc.public.app_config.insert");
+        assert_eq!(ins.subject("myprefix"), "myprefix.public.app_config.insert");
+
+        let upd = parse_wal2json_row(
+            r#"{"action":"U","schema":"billing","table":"invoices","columns":[{"name":"id","value":1}],"identity":[{"name":"id","value":1}]}"#,
+        )
+        .unwrap();
+        assert_eq!(upd.subject("cdc"), "cdc.billing.invoices.update");
+
+        let del = parse_wal2json_row(
+            r#"{"action":"D","schema":"public","table":"lambda_functions","identity":[{"name":"id","value":1}]}"#,
+        )
+        .unwrap();
+        assert_eq!(del.subject("cdc"), "cdc.public.lambda_functions.delete");
+    }
+
+    #[test]
+    fn subject_roundtrips_through_consumer_parser() {
+        use dd_nats_subject_defs::parse_cdc_row_change_subject;
+        let upd = parse_wal2json_row(
+            r#"{"action":"U","schema":"public","table":"orders","columns":[{"name":"id","value":1}],"identity":[{"name":"id","value":1}]}"#,
+        )
+        .unwrap();
+        let subject = upd.subject("cdc");
+        let parts = parse_cdc_row_change_subject(&subject).expect("consumer can parse the subject");
+        assert_eq!(parts.prefix, "cdc");
+        assert_eq!(parts.schema, "public");
+        assert_eq!(parts.table, "orders");
+        assert_eq!(parts.op, "update");
+    }
+
+    // ── Misc invariants ───────────────────────────────────────────────────
+
+    #[test]
+    fn leader_lock_key_is_stable() {
+        // Every replica must derive the SAME advisory-lock key or leader
+        // election silently breaks (two writers on one slot). Pin both the
+        // ASCII intent and the exact value so any drift is caught at test time.
+        assert_eq!(LEADER_LOCK_KEY, i64::from_be_bytes(*b"WALGATEW"));
+        assert_eq!(LEADER_LOCK_KEY, 6287390423708353879);
+    }
+
+    #[test]
+    fn default_stream_name_tracks_subject_defs_source_of_truth() {
+        assert_eq!(DEFAULT_STREAM_NAME, "CDC");
+        assert_eq!(DEFAULT_STREAM_NAME, CDC_STREAM_NAME);
+    }
+
+    #[test]
+    fn now_ms_returns_plausible_epoch_millis() {
+        // A fixed lower bound (2020-01-01T00:00:00Z in ms) proves now_ms emits
+        // epoch-milliseconds rather than 0 or seconds.
+        assert!(now_ms() > 1_577_836_800_000, "now_ms suspiciously small");
+    }
 }
