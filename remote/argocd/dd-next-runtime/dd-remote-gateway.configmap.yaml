@@ -973,7 +973,14 @@ data:
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Prefix /browser-mcp;
         set $dd_browser_mcp_upstream dd-browser-mcp-rs.default.svc.cluster.local:8092;
-        proxy_pass http://$dd_browser_mcp_upstream/;
+        # The variable upstream (used so nginx resolves the service lazily at
+        # request time instead of failing to start when it is absent) changes how
+        # nginx rewrites the URI: the location prefix was NOT being stripped, so
+        # every subpath silently landed on `/` and returned the root descriptor —
+        # `/browser-mcp/metrics` and `/browser-mcp/healthz` both did. Strip the
+        # prefix explicitly and pass proxy_pass with no URI part.
+        rewrite ^/browser-mcp/(.*)$ /$1 break;
+        proxy_pass http://$dd_browser_mcp_upstream;
       }
 
       location = /gcs {
