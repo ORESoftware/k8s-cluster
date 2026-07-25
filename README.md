@@ -52,6 +52,26 @@ Docker builds, whose context is `apps/`:
 docker build -f apps/zed-api-server.rs/Dockerfile -t ghcr.io/zed-pkg/zed-api-server:dev apps
 ```
 
+## Integration CI, and why contract changes go first
+
+Each repo's own CI checks out `zed-pkg/zed-interfaces` at its
+**default-branch tip**, which floats. That answers "does this commit work
+against the newest contract?" but has two consequences worth knowing:
+
+1. **Push order matters.** When a change spans the contract and a consumer,
+   push `zed-interfaces` **first**. Push the consumer first and its CI
+   compiles against a contract that lacks the new item, so the run fails for
+   a reason unrelated to the commit. (Re-running after the contract lands
+   turns it green — the code was never wrong.)
+2. **Nothing else verifies a *combination*.** Only this repo pins exact SHAs.
+
+So [`.github/workflows/integration.yml`](.github/workflows/integration.yml)
+builds and tests the pinned set here, where `apps/` already provides the
+sibling layout `../zed-interfaces` needs — no floating checkout anywhere. It
+also runs the cross-stack Playwright suite (Postgres + both servers + the
+CLI). It runs on push/PR, nightly, and on demand, since the change that
+invalidates a pin usually lands in a *different* repo.
+
 ## License
 
 MIT
