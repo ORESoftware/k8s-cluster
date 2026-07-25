@@ -370,37 +370,61 @@ fn build_job_spec(request: &JobRequest, engine: &str, job_id: &str, max_ms: u64)
     })
 }
 
+/// Build the `nerdctl` argument vector for a one-shot fallback worker.
+///
+/// `-d` (detached — required so the HTTP handler can return 202 immediately while
+/// the worker publishes its result to NATS) is used WITHOUT `--rm`: nerdctl
+/// rejects `-d --rm` together (unlike Docker — it fails with "flags -d and --rm
+/// cannot be specified together"). The container is removed by the tracker's
+/// `force_remove` on overrun/failure and by dd-idle-reaper as a backstop.
+fn nerdctl_run_args(config: &Config, job: &TrackedJob, spec_b64: &str, max_ms: u64) -> Vec<String> {
+    let mut a: Vec<String> = Vec::new();
+    let mut p = |s: String| a.push(s);
+    for s in ["-n", &config.containerd_namespace, "run", "-d", "--name", &job.container_name] {
+        p(s.to_string());
+    }
+    for kv in [
+        ("--label", "dd.browser-job.managed=true".to_string()),
+        ("--label", "dd.browser-job.service=dd-browser-job-runner".to_string()),
+        ("--label", format!("dd.browser-job.job-id={}", job.job_id)),
+        ("--label", format!("dd.browser-job.engine={}", job.engine)),
+        ("--label", format!("dd.browser-job.created-at-ms={}", job.started_ms)),
+        ("--label", format!("dd.browser-job.deadline-ms={}", job.deadline_ms)),
+        ("--network", config.network.clone()),
+        ("--cap-drop", "ALL".to_string()),
+        ("--security-opt", "no-new-privileges".to_string()),
+        ("--pids-limit", config.pids_limit.to_string()),
+        ("--ulimit", format!("nofile={}:{}", config.nofile_limit, config.nofile_limit)),
+        ("--memory", config.container_memory.clone()),
+        ("--cpus", config.container_cpus.clone()),
+        ("--shm-size", config.container_shm_size.clone()),
+    ] {
+        p(kv.0.to_string());
+        p(kv.1);
+    }
+    p(format!("--pull={}", config.pull_policy));
+    for env in [
+        format!("JOB_SPEC_B64={spec_b64}"),
+        format!("BROWSER_JOB_ID={}", job.job_id),
+        format!("NATS_URL={}", config.nats_url),
+        format!("BROWSER_JOB_RESULT_SUBJECT={}", job.result_subject),
+        format!("BROWSER_JOB_RESULT_FANOUT_SUBJECT={}", config.result_fanout_subject),
+        format!("BROWSER_JOB_EVENTS_SUBJECT={}", job.events_subject),
+        format!("BROWSER_JOB_MAX_MS={max_ms}"),
+        format!("BROWSER_JOB_HEADLESS={}", config.browser_headless),
+        format!("BROWSER_JOB_ALLOW_EVALUATE={}", config.allow_evaluate),
+        format!("BROWSER_JOB_MAX_SCREENSHOT_BYTES={}", config.max_screenshot_bytes),
+    ] {
+        p("--env".to_string());
+        p(env);
+    }
+    p(config.image.clone());
+    a
+}
+
 async fn spawn_job(config: &Config, job: &TrackedJob, spec_b64: &str, max_ms: u64) -> Result<(), String> {
-    let ns = &config.containerd_namespace;
     let mut command = Command::new(&config.nerdctl_bin);
-    command.args(["-n", ns, "run", "-d", "--rm"]);
-    command.args(["--name", &job.container_name]);
-    command.args(["--label", "dd.browser-job.managed=true"]);
-    command.args(["--label", "dd.browser-job.service=dd-browser-job-runner"]);
-    command.arg("--label").arg(format!("dd.browser-job.job-id={}", job.job_id));
-    command.arg("--label").arg(format!("dd.browser-job.engine={}", job.engine));
-    command.arg("--label").arg(format!("dd.browser-job.created-at-ms={}", job.started_ms));
-    command.arg("--label").arg(format!("dd.browser-job.deadline-ms={}", job.deadline_ms));
-    command.args(["--network", &config.network]);
-    command.args(["--cap-drop", "ALL"]);
-    command.args(["--security-opt", "no-new-privileges"]);
-    command.arg("--pids-limit").arg(config.pids_limit.to_string());
-    command.arg("--ulimit").arg(format!("nofile={}:{}", config.nofile_limit, config.nofile_limit));
-    command.args(["--memory", &config.container_memory]);
-    command.args(["--cpus", &config.container_cpus]);
-    command.args(["--shm-size", &config.container_shm_size]);
-    command.arg(format!("--pull={}", config.pull_policy));
-    command.arg("--env").arg(format!("JOB_SPEC_B64={spec_b64}"));
-    command.arg("--env").arg(format!("BROWSER_JOB_ID={}", job.job_id));
-    command.arg("--env").arg(format!("NATS_URL={}", config.nats_url));
-    command.arg("--env").arg(format!("BROWSER_JOB_RESULT_SUBJECT={}", job.result_subject));
-    command.arg("--env").arg(format!("BROWSER_JOB_RESULT_FANOUT_SUBJECT={}", config.result_fanout_subject));
-    command.arg("--env").arg(format!("BROWSER_JOB_EVENTS_SUBJECT={}", job.events_subject));
-    command.arg("--env").arg(format!("BROWSER_JOB_MAX_MS={max_ms}"));
-    command.arg("--env").arg(format!("BROWSER_JOB_HEADLESS={}", config.browser_headless));
-    command.arg("--env").arg(format!("BROWSER_JOB_ALLOW_EVALUATE={}", config.allow_evaluate));
-    command.arg("--env").arg(format!("BROWSER_JOB_MAX_SCREENSHOT_BYTES={}", config.max_screenshot_bytes));
-    command.arg(&config.image);
+    command.args(nerdctl_run_args(config, job, spec_b64, max_ms));
 
     let run = tokio::time::timeout(
         Duration::from_secs(config.nerdctl_run_timeout_seconds),
