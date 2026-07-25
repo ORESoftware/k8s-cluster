@@ -219,24 +219,32 @@ async fn run_once(
             }
         };
 
+        // Stream sequence identifies a task in logs without recording the
+        // caller's phone number (PII). It also makes duplicate delivery
+        // visible: under work-queue retention each seq must appear once.
+        let seq = message
+            .info()
+            .map(|info| info.stream_sequence)
+            .unwrap_or_default();
+
         match parse_task(&message.payload) {
             Err(reason) => {
-                tracing::warn!(subject = %message.subject, "dropping invalid vapi task: {reason}");
+                tracing::warn!(subject = %message.subject, seq, "dropping invalid vapi task: {reason}");
                 let _ = message.ack().await;
             }
             Ok(action) => match process_task(state, action).await {
                 Ok(result) => {
-                    tracing::info!(subject = %message.subject, %result, "vapi task done");
+                    tracing::info!(subject = %message.subject, seq, %result, "vapi task done");
                     let _ = message.ack().await;
                 }
                 Err(ProcessError::Permanent(reason)) => {
                     state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                    tracing::warn!(subject = %message.subject, "dropping unprocessable vapi task: {reason}");
+                    tracing::warn!(subject = %message.subject, seq, "dropping unprocessable vapi task: {reason}");
                     let _ = message.ack().await;
                 }
                 Err(ProcessError::Transient(reason)) => {
                     state.metrics.errors_total.fetch_add(1, Ordering::Relaxed);
-                    tracing::warn!(subject = %message.subject, "vapi task failed, nak for redelivery: {reason}");
+                    tracing::warn!(subject = %message.subject, seq, "vapi task failed, nak for redelivery: {reason}");
                     let _ = message
                         .ack_with(async_nats::jetstream::AckKind::Nak(Some(
                             Duration::from_secs(10),
