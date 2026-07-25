@@ -1,0 +1,102 @@
+# flags-2-env declaration for dd-browser-mcp-rs.
+# https://github.com/ORESoftware/flags-2-env
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# The service's configuration surface was previously implicit: eight `env::var`
+# calls scattered through `config_from_env()`, with the authoritative list of
+# names living only in the Kubernetes manifest. Nothing declared the types, the
+# defaults, or — critically — which values are credentials. This file makes the
+# contract explicit and gives the CLI the same surface as the env.
+#
+# DUMMY DEFAULTS, DELIBERATELY
+# ----------------------------
+# The two credential flags default to obvious placeholders rather than real
+# secrets, so the service is runnable locally without provisioning anything and
+# a leaked default is self-evidently fake. Real values come from the
+# ExternalSecret (dd-browser-mcp-rs-secrets / dd-agent-secrets) in-cluster.
+#
+# TWO DEFAULTS ARE INVERTED FROM THE RUST CODE, ON PURPOSE
+# --------------------------------------------------------
+# `config_from_env()` currently defaults `require_auth` to FALSE and
+# `allowed_domains` to EMPTY. Both fail OPEN:
+#   * require_auth=false leaves the write-capable browser_act tool ungated, and
+#     the gateway /browser-mcp location has no auth of its own.
+#   * an empty allowlist is not "no policy" — the server only injects
+#     allowed_domains into the worker call when the list is non-empty, so empty
+#     means the browser may navigate to ANY public https host.
+# origin/dev shipped exactly that pair on 2026-07-25 (an open browser relay,
+# live the moment anyone applied it). The declared defaults below fail CLOSED.
+# Until the Rust defaults are changed to match, treat these as the intended
+# contract and keep the manifest explicit; remote/tests/general/
+# browser-mcp-exposure.test.ts enforces it at commit time.
+
+[help]
+url = "https://github.com/ORESoftware/k8s-cluster/blob/main/docs/browser-mcp-chatgpt-2026-07-25.md"
+columns = ["options", "env", "type", "default", "description"]
+
+# ---- listener -------------------------------------------------------------
+
+[flags.host]
+env = "HOST"
+aliases = ["host", "bind", "bind-address"]
+short = "H"
+type = "string"
+default = "0.0.0.0"
+help = "Address to bind the MCP HTTP listener to."
+
+[flags.port]
+env = "PORT"
+aliases = ["port", "listen-port"]
+short = "p"
+type = "integer"
+default = 8092
+help = "TCP port for the MCP HTTP listener (JSON-RPC at /mcp)."
+
+# ---- private browser worker (dd-web-scraper /agent/*) ---------------------
+
+[flags.worker_url]
+env = "BROWSER_MCP_WORKER_URL"
+aliases = ["worker-url", "browser-worker-url"]
+type = "string"
+default = "http://dd-web-scraper.default.svc.cluster.local:8097"
+help = "Base URL of the private Playwright worker. Trailing slashes are stripped."
+
+[flags.worker_timeout_ms]
+env = "BROWSER_MCP_WORKER_TIMEOUT_MS"
+aliases = ["worker-timeout-ms", "worker-timeout"]
+type = "integer"
+default = 65000
+help = "Per-call worker timeout in ms. The server clamps this to 120000."
+
+[flags.worker_auth_secret]
+env = "SERVER_AUTH_SECRET"
+aliases = ["worker-auth-secret", "server-auth-secret"]
+type = "string"
+default = "dummy-server-auth-secret-not-a-real-credential"
+help = "Shared secret sent as X-Server-Auth to the worker. CREDENTIAL - the real value comes from dd-agent-secrets; this default is a placeholder so local runs start."
+
+# ---- public MCP surface gate ---------------------------------------------
+
+[flags.require_auth]
+env = "BROWSER_MCP_REQUIRE_AUTH"
+aliases = ["require-auth", "auth-required"]
+type = "bool"
+default = "true"
+help = "Require a bearer on POST /mcp. Declared default is TRUE (fail closed); note the Rust default is still false. The gateway does not authenticate this path, so turning it off exposes the write-capable browser_act tool to the internet."
+
+[flags.auth_secret]
+env = "BROWSER_MCP_AUTH_SECRET"
+aliases = ["auth-secret", "bearer", "bearer-token"]
+type = "string"
+default = "dummy-browser-mcp-bearer-not-a-real-credential"
+help = "Bearer that gates POST /mcp when require_auth is on. CREDENTIAL - the real value comes from dd-browser-mcp-rs-secrets; this default is a placeholder. Note the server treats an EMPTY secret as 'deny everything' when require_auth is on."
+
+# ---- navigation policy ----------------------------------------------------
+
+[flags.allowed_domains]
+env = "BROWSER_MCP_ALLOWED_DOMAINS"
+aliases = ["allowed-domains", "allowlist", "domain-allowlist"]
+type = "string"
+default = "sos.state.co.us,irs.gov,dnb.com"
+help = "Comma-separated host allowlist injected into every browser_act call, so policy is enforced server-side regardless of what the model sends. MUST NOT be empty - empty means any public https host. Widen one host at a time."
