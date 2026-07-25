@@ -12,7 +12,7 @@ pub(crate) async fn live() -> &'static str {
 }
 
 pub(crate) async fn ready(State(state): State<AppState>) -> Result<&'static str, ApiError> {
-    state.database().ping().await.map_err(ApiError::from)?;
+    state.ping_database().await?;
     Ok("ok")
 }
 
