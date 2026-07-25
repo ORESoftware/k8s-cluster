@@ -9,6 +9,7 @@ mod devices;
 mod entity;
 mod error;
 mod health;
+mod json;
 mod metrics;
 mod protocol;
 mod server;
