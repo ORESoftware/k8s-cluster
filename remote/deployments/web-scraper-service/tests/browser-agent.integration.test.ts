@@ -148,11 +148,34 @@ test(
       assert.equal(confirmed.status, 'completed', JSON.stringify(confirmed));
       assert.match((confirmed.page as { url: string }).url, /\/done/);
 
+      // 7b) screenshot is captured on demand.
+      const shot = await observe({ session_id: sessionId, include: ['summary', 'screenshot'] });
+      const s = shot.screenshot as { mime_type: string; data_base64: string } | undefined;
+      assert.ok(s && s.mime_type === 'image/jpeg' && s.data_base64.length > 100, 'screenshot returned');
+
+      // 7c) stop_when halts a batch early (navigation short-circuits the reload).
+      const stopped = await act({
+        request_id: 'r6b',
+        session_id: sessionId,
+        expected_revision: (shot as { revision: number }).revision,
+        intent: 'navigate then stop before the extra action',
+        actions: [
+          { type: 'goto', url: `${fixture.url}/step1` },
+          { type: 'reload' },
+        ],
+        stop_when: { url_matches: '/step1' },
+      });
+      assert.equal(stopped.status, 'completed', JSON.stringify(stopped));
+      const stoppedResults = stopped.action_results as Array<{ type: string; status: string }>;
+      const reload = stoppedResults.find((r) => r.type === 'reload');
+      assert.equal(reload?.status, 'skipped', 'reload skipped after stop_when satisfied');
+
       // 8) navigate to the CAPTCHA page -> blocker is detected and interaction is refused.
+      const obsBeforeNav = await observe({ session_id: sessionId, include: ['summary'] });
       const nav = await act({
         request_id: 'r7',
         session_id: sessionId,
-        expected_revision: confirmed.revision,
+        expected_revision: obsBeforeNav.revision,
         intent: 'go to the verify page',
         actions: [{ type: 'goto', url: `${fixture.url}/captcha` }],
       });
@@ -171,6 +194,51 @@ test(
       assert.equal(closed.status, 'completed');
       const gone = await observe({ session_id: sessionId });
       assert.equal((gone as { error_code?: string }).error_code, 'session_not_found');
+    } finally {
+      await closeAllSessions();
+      await app.close();
+      await fixture.close();
+    }
+  },
+);
+
+test(
+  'domain allowlist is enforced: navigation off the allowlist is blocked',
+  { skip: launchBrowser === null },
+  async () => {
+    const browser = launchBrowser!;
+    const fixture = await startFixture();
+    const app = Fastify();
+    registerBrowserAgentRoutes(app, {
+      getBrowser: async () => browser,
+      isPrivateIp: () => false,
+      isAuthorized: () => true,
+      log: app.log,
+    });
+    await app.ready();
+    const act = async (payload: unknown): Promise<Record<string, unknown>> =>
+      JSON.parse((await app.inject({ method: 'POST', url: '/agent/act', payload })).body) as Record<string, unknown>;
+    try {
+      // A caller-supplied allowlist that does not include the fixture host must
+      // block navigation to it (caller can only narrow, and goto is guarded).
+      const res = await act({
+        request_id: 'a1',
+        intent: 'start restricted to a different domain',
+        actions: [{ type: 'start', browser: 'chromium' }],
+        allowed_domains: ['example.invalid'],
+      });
+      const started = res.status === 'completed';
+      assert.ok(started, JSON.stringify(res));
+      const sessionId = res.session_id as string;
+      const blocked = await act({
+        request_id: 'a2',
+        session_id: sessionId,
+        intent: 'try to leave the allowlist',
+        actions: [{ type: 'goto', url: `${fixture.url}/step1` }],
+      });
+      // goto off the allowlist is surfaced as a domain_not_allowed blocker.
+      assert.equal(blocked.status, 'blocked', JSON.stringify(blocked));
+      assert.equal((blocked.blocker as { type: string }).type, 'domain_not_allowed');
     } finally {
       await closeAllSessions();
       await app.close();
