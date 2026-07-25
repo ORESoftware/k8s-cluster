@@ -21,7 +21,7 @@ spec:
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/path: /metrics
-        prometheus.io/port: "8080"
+        prometheus.io/port: "9091"
         prometheus.io/scheme: http
       labels:
         app.kubernetes.io/name: threefa-sync-server
@@ -45,9 +45,17 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+            # Telemetry is served from its own socket so the Ingress, which
+            # fronts `http` only, has no path to /metrics at all. The
+            # NetworkPolicy admits the observability namespace here and nothing
+            # else. 9091 is fixed by contract with 3fa-infra.
+            - name: metrics
+              containerPort: 9091
           env:
             - name: BIND_ADDR
               value: "0.0.0.0:8080"
+            - name: METRICS_BIND_ADDR
+              value: "0.0.0.0:9091"
             - name: RUST_LOG
               value: "info,tower_http=info,hyper=warn,sea_orm=warn"
             - name: DEPLOYMENT_ENVIRONMENT

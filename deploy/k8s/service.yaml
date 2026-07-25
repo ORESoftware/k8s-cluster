@@ -14,3 +14,9 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+    # Scrape target only. Prometheus discovers pods directly via the
+    # prometheus.io/* annotations, but the named Service port keeps a
+    # ServiceMonitor-style setup working without re-plumbing the Deployment.
+    - name: metrics
+      port: 9091
+      targetPort: metrics

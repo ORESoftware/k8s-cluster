@@ -19,14 +19,17 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
-    # Prometheus scrapes /metrics on the same HTTP port.
+    # Prometheus scrapes /metrics on the dedicated telemetry port. The public
+    # ingress rule above admits 8080 only, so ingress-nginx cannot reach 9091
+    # and the observability namespace cannot reach the API — /metrics is off the
+    # public surface by construction, not by an Ingress path rule.
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability
       ports:
         - protocol: TCP
-          port: 8080
+          port: 9091
   egress:
     # DNS
     - to:

@@ -199,11 +199,16 @@ mod tests {
     use axum::body::Body;
     use axum::http::{header, Request, StatusCode};
     use http_body_util::BodyExt;
-    use sea_orm::{DatabaseBackend, MockDatabase};
+    use sea_orm::{DatabaseBackend, MockDatabase, MockExecResult};
     use tower::ServiceExt;
 
     fn test_state() -> AppState {
-        let database = MockDatabase::new(DatabaseBackend::Postgres).into_connection();
+        let database = MockDatabase::new(DatabaseBackend::Postgres)
+            // `/readyz` runs its probe through the instrumented query path
+            // (`AppState::ping_database`), so the mock needs a canned result per
+            // probe a test issues.
+            .append_exec_results(vec![MockExecResult::default(); 8])
+            .into_connection();
         AppState::new(database).expect("test state")
     }
 
@@ -213,14 +218,48 @@ mod tests {
             ("/livez", StatusCode::OK),
             ("/healthz", StatusCode::OK),
             ("/readyz", StatusCode::OK),
-            ("/metrics", StatusCode::OK),
             ("/not-a-route", StatusCode::NOT_FOUND),
+            // Telemetry moved to its own listener; the public router must not
+            // serve it. This is the assertion that keeps it that way.
+            ("/metrics", StatusCode::NOT_FOUND),
         ] {
             let response = router(test_state())
                 .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
                 .await
                 .unwrap();
             assert_eq!(response.status(), expected, "status for {path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn metrics_are_served_only_by_the_separate_telemetry_router() {
+        let response = metrics_router(test_state())
+            .oneshot(
+                Request::builder()
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "text/plain; version=0.0.4"
+        );
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        assert!(String::from_utf8(body.to_vec())
+            .unwrap()
+            .contains("threefa_http_requests_total"));
+
+        // And it serves nothing else: no API surface leaks onto the port the
+        // observability namespace is allowed to reach.
+        for path in ["/livez", "/readyz", "/v1/vault", "/v1/devices"] {
+            let response = metrics_router(test_state())
+                .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
         }
     }
 
