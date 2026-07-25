@@ -15290,16 +15290,25 @@ async fn a_job_id_collision_is_reported_rather_than_silently_overwriting() {
 }
 
 #[test]
-fn safe_job_id_collides_on_the_same_request_and_millisecond() {
-    // Pinning the property the collision handling exists for: this is not a
-    // hypothetical, it is what a redelivery produces.
-    let a = safe_job_id("fabrication-plan", "req-1", 1_700_000_000_000);
-    let b = safe_job_id("fabrication-plan", "req-1", 1_700_000_000_000);
-    assert_eq!(a, b, "the id carries no randomness or node identity");
+fn safe_job_id_is_deterministic_in_the_request_id_alone() {
+    // The id no longer carries the generating millisecond, so a redelivery of
+    // the same request maps onto the same row and upserts instead of creating a
+    // duplicate. Two calls agreeing is the point of the design, not a hazard.
+    let a = safe_job_id("fabrication-plan", "req-1");
+    let b = safe_job_id("fabrication-plan", "req-1");
+    assert_eq!(a, b, "the id carries no randomness, clock or node identity");
 
-    // And it is bounded, which is a second, independent collision source:
-    // two long request ids sharing a prefix truncate to the same id.
-    let long_a = safe_job_id("k", &"x".repeat(400), 1);
+    // Distinct requests still stay distinct: `request_id()` yields
+    // `{prefix}-{uuid}` when a caller supplies no id, so determinism here does
+    // not collapse two unrelated id-less requests onto one row.
+    assert_ne!(
+        safe_job_id("fabrication-plan", "req-1"),
+        safe_job_id("fabrication-plan", "req-2"),
+    );
+
+    // It remains bounded, which is an independent collision source: two long
+    // request ids sharing a prefix truncate to the same id.
+    let long_a = safe_job_id("k", &"x".repeat(400));
     assert!(long_a.chars().count() <= 180);
 }
 
@@ -55721,7 +55730,7 @@ fn analysis_job_store_records_improved_instruction_artifacts() {
     let instruction_intent_map = instruction_intent_map(&programs, &analyzed);
     let response = InstructionAnalysisResponse {
         ok: validation.ok,
-        job_id: safe_job_id("analysis", "unit-analysis-artifacts", generated_at_ms),
+        job_id: safe_job_id("analysis", "unit-analysis-artifacts"),
         request_id: "unit-analysis-artifacts".to_string(),
         programs: analyzed,
         validation,
