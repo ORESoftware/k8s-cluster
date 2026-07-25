@@ -37,9 +37,8 @@ pub struct DeviceInfo {
 
 pub(crate) async fn list_handler(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    who: AuthedDevice,
 ) -> Result<Json<Vec<DeviceInfo>>, ApiError> {
-    let who = auth::authenticate(state.database(), &headers).await?;
     Ok(Json(list(state.database(), who.account_id).await?))
 }
 
@@ -48,12 +47,12 @@ pub(crate) struct RevokeRequest {
     device_id: Uuid,
 }
 
+// Credential first, body second — see `vault_blob::push_handler`.
 pub(crate) async fn revoke_handler(
     State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(request): Json<RevokeRequest>,
+    who: AuthedDevice,
+    JsonBody(request): JsonBody<RevokeRequest>,
 ) -> Result<(), ApiError> {
-    let who = auth::authenticate(state.database(), &headers).await?;
     revoke(state.database(), who.account_id, request.device_id).await
 }
 
