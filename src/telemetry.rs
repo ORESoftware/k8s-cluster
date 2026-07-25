@@ -144,7 +144,7 @@ pub fn http_trace_layer() -> TraceLayer<
 /// API is a credential), no query string, no body, and the *bounded* route label
 /// rather than the raw URI, so a path that ever grows an id cannot smuggle one
 /// into a log line.
-pub async fn log_http_response(request: ExtractRequest, next: Next) -> Response<Body> {
+pub async fn log_http_response(request: Request<Body>, next: Next) -> Response<Body> {
     let method = crate::metrics::metric_method(request.method());
     let route = crate::metrics::metric_route(request.uri().path());
     let started = Instant::now();
