@@ -3,9 +3,11 @@
 # account/nkey auth remains a deliberate cluster-wide rollout.
 #
 # Client inventory for :4222 — the dd fleet in `default`, the shared-auth
-# tenant, the voxletra tenant, and the bridge in this namespace. KEDA reads the
-# :8222 monitoring endpoint for nats-jetstream scalers; observability scrapes
-# :7777 (exporter) and :8222.
+# tenant, the voxletra tenant, the bridge in this namespace, the ai-ml pipeline
+# (dd-ai-ml-pipeline consumes dd-nats.messaging today), and the daedalus tenant
+# (dd-fabrication-server ships NATS_URL to this broker; its Applications are
+# inert but must not be pre-broken). KEDA reads the :8222 monitoring endpoint
+# for nats-jetstream scalers; observability scrapes :7777 (exporter) and :8222.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
