@@ -931,6 +931,51 @@ data:
         proxy_pass http://dd-gleam-mcp-server.default.svc.cluster.local:8090/;
       }
 
+      # Public browser-automation MCP server (dd-browser-mcp-rs). Exposes the
+      # browser_act / browser_observe tools to external MCP clients (ChatGPT,
+      # Claude). DELIBERATELY PUBLIC for now: no $dd_mcp_auth_ok gate. To gate it
+      # later, add `if ($dd_mcp_auth_ok = 0) { return 401; }` (as the /mcp and
+      # /cluster-mcp blocks do) and switch to `proxy_set_header Authorization "";`.
+      #
+      # Unlike the read-only MCP servers, the client Authorization header IS
+      # forwarded: dd-browser-mcp-rs treats it as an opaque per-caller ownership
+      # key (to namespace sessions), not as a credential, while REQUIRE_AUTH=false.
+      # proxy_buffering is off so MCP-over-HTTP responses flush without gateway
+      # buffering, and gzip is disabled on this path for the same reason.
+      location = /browser-mcp {
+        limit_req zone=dd_mcp burst=60 nodelay;
+        limit_req_status 429;
+        proxy_http_version 1.1;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_buffering off;
+        proxy_cache off;
+        gzip off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /browser-mcp;
+        set $dd_browser_mcp_upstream dd-browser-mcp-rs.default.svc.cluster.local:8092;
+        proxy_pass http://$dd_browser_mcp_upstream/mcp;
+      }
+
+      location /browser-mcp/ {
+        limit_req zone=dd_mcp burst=60 nodelay;
+        limit_req_status 429;
+        proxy_http_version 1.1;
+        proxy_read_timeout 900;
+        proxy_send_timeout 900;
+        proxy_buffering off;
+        proxy_cache off;
+        gzip off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /browser-mcp;
+        set $dd_browser_mcp_upstream dd-browser-mcp-rs.default.svc.cluster.local:8092;
+        proxy_pass http://$dd_browser_mcp_upstream/;
+      }
+
       location = /gcs {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
