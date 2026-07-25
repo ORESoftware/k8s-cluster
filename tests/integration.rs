@@ -56,12 +56,20 @@ fn config() -> AppConfig {
             allow_registration: false,
         },
         webhook_secret: None,
+        introspect_secret: None,
         cors_allow_origins: vec![],
     }
 }
 
 async fn app() -> axum::Router {
     let state = AppState::build(config()).await.unwrap();
+    shared_auth_server::http::router(state)
+}
+
+async fn app_with_introspect_secret(secret: &str) -> axum::Router {
+    let mut cfg = config();
+    cfg.introspect_secret = Some(secret.to_string());
+    let state = AppState::build(cfg).await.unwrap();
     shared_auth_server::http::router(state)
 }
 
