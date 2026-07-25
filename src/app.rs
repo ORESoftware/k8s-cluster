@@ -144,6 +144,10 @@ pub fn router(state: AppState) -> Router {
         .merge(auth_routes)
         .merge(device_routes)
         .merge(vault_routes)
+        // Inside the trace layer, so every access-log line inherits the request
+        // span's trace/span ids; outside the routes, so a 404, a 405, and a
+        // rate-limited 429 are logged like everything else.
+        .layer(middleware::from_fn(telemetry::log_http_response))
         .layer(telemetry::http_trace_layer())
         .layer(middleware::from_fn_with_state(
             state.metrics.clone(),
