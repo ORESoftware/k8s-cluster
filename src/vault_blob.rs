@@ -377,7 +377,10 @@ mod tests {
         let database = MockDatabase::new(DatabaseBackend::Postgres).into_connection();
         let over = max_size_push(crate::protocol::MAX_CIPHERTEXT_LEN + 1, who);
         assert!(
-            matches!(store(&database, who, &over).await, Err(ApiError::BadRequest)),
+            matches!(
+                store(&database, who, &over).await,
+                Err(ApiError::BadRequest)
+            ),
             "one byte past MAX_CIPHERTEXT_LEN must be a 400 from the envelope check"
         );
 

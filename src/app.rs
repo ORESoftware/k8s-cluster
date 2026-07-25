@@ -565,7 +565,6 @@ mod tests {
         // separately so a merged or widened rule fails loudly.
         let (ingress_rule, observability_rule) = network_policy
             .split_once("kubernetes.io/metadata.name: observability")
-            .map(|(before, after)| (before, after))
             .expect("networkpolicy names the observability namespace");
         assert!(
             ingress_rule.contains("kubernetes.io/metadata.name: ingress-nginx"),
@@ -580,7 +579,8 @@ mod tests {
             .next()
             .expect("ingress section ends at egress");
         assert!(
-            observability_ports.contains("port: 9091") && !observability_ports.contains("port: 8080"),
+            observability_ports.contains("port: 9091")
+                && !observability_ports.contains("port: 8080"),
             "the observability namespace must be admitted to 9091 only"
         );
 
