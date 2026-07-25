@@ -116,8 +116,11 @@ spec:
             # navigation policy is enforced centrally regardless of what the model
             # sends. Empty would permit ANY public https host; start narrow and
             # widen deliberately. Comma-separated hostnames.
+            # Initial exposure: filing/registration sites only. Gmail is
+            # deliberately excluded — email goes through the dedicated Gmail
+            # connector, not a public bearer-gated browser driver. Widen later.
             - name: BROWSER_MCP_ALLOWED_DOMAINS
-              value: 'sos.state.co.us,irs.gov,dnb.com,accounts.google.com,mail.google.com'
+              value: 'sos.state.co.us,irs.gov,dnb.com'
             - name: OTEL_SERVICE_NAME
               value: dd-browser-mcp-rs
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
