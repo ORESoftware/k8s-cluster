@@ -35,9 +35,13 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: git@github.com:ORESoftware/k8s-cluster.git
-    targetRevision: dev
-    path: remote/deployments/billing-server-rs/k8s/ec2
+    # App repo directly — the old k8s-cluster submodule path rendered empty
+    # (repo-server submodule checkout is disabled). Kept byte-identical to the
+    # apps/dd-billing-server.application.yaml copy. Needs an ArgoCD repo cred for
+    # quaestor-ledger/billing-server.rs before it can sync.
+    repoURL: git@github.com:quaestor-ledger/billing-server.rs.git
+    targetRevision: main
+    path: k8s/ec2
   destination:
     server: https://kubernetes.default.svc
     namespace: default
