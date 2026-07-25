@@ -27,18 +27,19 @@ use uuid::Uuid;
 
 pub(crate) async fn pull_handler(
     State(state): State<AppState>,
-    headers: HeaderMap,
+    who: AuthedDevice,
 ) -> Result<Json<PullResponse>, ApiError> {
-    let who = crate::auth::authenticate(state.database(), &headers).await?;
     Ok(Json(load(state.database(), who.account_id).await?))
 }
 
+// `who` is declared BEFORE the body: axum resolves `FromRequestParts`
+// extractors in order and the body last, so the sync token is verified before a
+// single byte of JSON is deserialized. See `auth::AuthedDevice`'s extractor.
 pub(crate) async fn push_handler(
     State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(request): Json<PushRequest>,
+    who: AuthedDevice,
+    JsonBody(request): JsonBody<PushRequest>,
 ) -> Result<Json<PushResponse>, ApiError> {
-    let who = crate::auth::authenticate(state.database(), &headers).await?;
     let response = store(state.database(), who, &request).await?;
     if matches!(&response, PushResponse::Conflict { .. }) {
         state.metrics.vault_conflicts.inc();
