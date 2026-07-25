@@ -8,6 +8,7 @@ use crate::config::SharedAuthConfig;
 use opentelemetry::global;
 use opentelemetry_http::HeaderInjector;
 use serde::Deserialize;
+use std::time::Duration;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 use uuid::Uuid;
 
