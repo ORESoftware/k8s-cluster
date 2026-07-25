@@ -902,20 +902,22 @@ mod tests {
         assert!(validate_subject("dd.vapi.tasks.call", &parse_prefixes("")).is_err());
     }
 
-    /// DANGER DEMONSTRATION (not reachable from config): a manually-constructed
-    /// empty-string prefix is permit-all — it would let a settlement subject
-    /// through the allowlist (only the `$`/wildcard/char guards remain). This
-    /// is exactly why `parse_prefixes` filters empties; this state cannot arise
-    /// from `BRIDGE_SUBJECT_PREFIXES`. The `is_ok()` below documents the hazard,
-    /// it does not endorse it.
+    /// Even a manually-constructed empty-string prefix is no longer permit-all:
+    /// the token-anchored matcher only treats a subject as inside `""` if the
+    /// remainder after stripping the (empty) prefix is empty or starts with `.`,
+    /// which a normal dotted subject never is. So an empty prefix denies real
+    /// subjects rather than waving them through. (`parse_prefixes` still filters
+    /// empties, and `main()` refuses an empty allowlist — this is the third,
+    /// independent layer.)
     #[test]
-    fn empty_string_prefix_would_be_permit_all() {
-        let permit_all = vec![String::new()];
-        // subject scoping is lost:
-        assert!(validate_subject("dd.remote.contracts.solana.settle", &permit_all).is_ok());
-        // but the independent `$`/wildcard guards still hold even then:
-        assert!(validate_subject("$JS.API.STREAM.DELETE.DD_VAPI_TASKS", &permit_all).is_err());
-        assert!(validate_subject("dd.vapi.tasks.>", &permit_all).is_err());
+    fn empty_string_prefix_is_not_permit_all() {
+        let empties = vec![String::new()];
+        // A settlement subject is denied even with an empty prefix present.
+        assert!(validate_subject("dd.remote.contracts.solana.settle", &empties).is_err());
+        assert!(validate_subject("dd.vapi.tasks.call", &empties).is_err());
+        // The independent `$`/wildcard guards also still hold.
+        assert!(validate_subject("$JS.API.STREAM.DELETE.DD_VAPI_TASKS", &empties).is_err());
+        assert!(validate_subject("dd.vapi.tasks.>", &empties).is_err());
     }
 
     // ---- publish-path fallback routing (durability, not authz) ------------
