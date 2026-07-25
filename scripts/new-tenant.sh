@@ -98,12 +98,21 @@ for spec in "${APPS[@]}"; do
   APP_REPOS+=("${repo}")
 done
 
-# The AppProject pins sourceRepos to exactly the repos this tenant may sync from.
-SOURCE_REPOS=""
-for repo in "${APP_REPOS[@]}"; do
-  SOURCE_REPOS+="    - \"${repo}\"
-"
-done
+# Drop a template's leading comment header (its "TEMPLATE — copy per app" preamble is
+# wrong on a generated file) while preserving every comment further down, which explains
+# the individual objects and is worth keeping.
+strip_header() {
+  local line started=0
+  while IFS= read -r line; do
+    if [ "${started}" -eq 0 ]; then
+      case "${line}" in
+        '#'*|'') continue ;;
+        *) started=1 ;;
+      esac
+    fi
+    printf '%s\n' "${line}"
+  done < "$1"
+}
 
 # ---- 1. tenant scaffold: Namespace + ResourceQuota + LimitRange + default-deny ----
 # The template carries a "TEMPLATE / copy per app" header that is wrong on a generated
