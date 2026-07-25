@@ -66,7 +66,13 @@ one layer later, in the container:
 ```
 
 Exit code 1, restart, repeat. One pod has accumulated **6371 restarts over 23
-days**. ### dd-selenium-server fails the same way — but only half of it
+days**.
+
+This is the important part: an empty-but-present hostPath is indistinguishable
+from a correct one at mount time, so the manifest is silently non-portable
+across the two clusters even though ArgoCD syncs it to both.
+
+### dd-selenium-server fails the same way — but only half of it
 
 `dd-selenium-server` is one pod with two containers, and they fail
 *independently*, which is worth stating plainly because the summary line
@@ -96,10 +102,6 @@ Zero endpoints for 43 days on both Services.
 For contrast, the same API on AWS drives a real Grid session end to end —
 `goto https://example.com` → `waitForSelector h1` → `extractText` →
 `extractAttribute`, 770ms, with a 16 KB PNG screenshot.
-
-This is the important part: an empty-but-present hostPath is indistinguishable
-from a correct one at mount time, so the manifest is silently non-portable
-across the two clusters even though ArgoCD syncs it to both.
 
 ## Secondary finding: evicted-pod accumulation
 
