@@ -517,16 +517,26 @@ mod tests {
         let below = vv(&[("devA", u64::MAX - 1)]);
         assert!(base_version_is_advanceable(&below, "devA"));
         assert_eq!(
-            counter_for(&bump(&below, "devA").expect("u64::MAX is representable"), "devA"),
+            counter_for(
+                &bump(&below, "devA").expect("u64::MAX is representable"),
+                "devA"
+            ),
             u64::MAX
         );
         assert!(base_version_is_advanceable(&at_max, "devB"));
-        assert_eq!(counter_for(&bump(&at_max, "devB").expect("devB is at 0"), "devB"), 1);
+        assert_eq!(
+            counter_for(&bump(&at_max, "devB").expect("devB is at 0"), "devB"),
+            1
+        );
 
         // And `reconcile` stays total: no panic, no wrapped counter, and never
         // an `Ok` carrying one.
         let outcome = reconcile(&at_max, &at_max, "devA");
-        assert_eq!(outcome, Err(at_max), "an unadvanceable base cannot be accepted");
+        assert_eq!(
+            outcome,
+            Err(at_max),
+            "an unadvanceable base cannot be accepted"
+        );
     }
 
     #[test]

@@ -178,7 +178,10 @@ mod tests {
         }
 
         // No header at all is the same answer, so the two are not distinguishable.
-        assert!(matches!(bearer(&HeaderMap::new()), Err(ApiError::Unauthorized)));
+        assert!(matches!(
+            bearer(&HeaderMap::new()),
+            Err(ApiError::Unauthorized)
+        ));
     }
 
     #[test]

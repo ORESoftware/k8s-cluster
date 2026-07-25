@@ -1,7 +1,6 @@
 //! Explicit JSON logging and OTLP tracing. No runtime monkey-patching.
 
 use axum::body::Body;
-use axum::extract::Request as ExtractRequest;
 use axum::http::{Request, Response};
 use axum::middleware::Next;
 use opentelemetry::global;
