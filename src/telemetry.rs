@@ -2,7 +2,7 @@
 
 use axum::http::{Request, Response};
 use opentelemetry::global;
-use opentelemetry::trace::TracerProvider as _;
+use opentelemetry::trace::{TraceContextExt, TracerProvider as _};
 use opentelemetry::KeyValue;
 use opentelemetry_http::HeaderExtractor;
 use opentelemetry_otlp::{Protocol, WithExportConfig};
@@ -37,12 +37,16 @@ impl Drop for Guard {
 
 pub fn init(service_name: &str) -> Guard {
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,tower_http=info,hyper=warn,sqlx=warn"));
+        .unwrap_or_else(|_| EnvFilter::new("info,tower_http=info,hyper=warn,sea_orm=warn"));
     let fmt_layer = tracing_subscriber::fmt::layer()
         .json()
         .flatten_event(true)
+        .with_ansi(false)
         .with_current_span(true)
-        .with_span_list(false);
+        // Loki records retain the parent HTTP span's trace_id/span_id even when
+        // an event is emitted from a nested shared-auth or database span.
+        .with_span_list(true)
+        .with_target(true);
 
     match build_provider(service_name) {
         Ok(provider) => {
@@ -58,8 +62,11 @@ pub fn init(service_name: &str) -> Guard {
                     global::set_text_map_propagator(TraceContextPropagator::new());
                     global::set_tracer_provider(provider.clone());
                     tracing::info!(
-                        service = service_name,
-                        endpoint = %traces_endpoint(),
+                        service.name = service_name,
+                        service.namespace = "3fa-app",
+                        otel.trace_exporter = true,
+                        log.sink = "stdout/loki",
+                        metrics.sink = "prometheus",
                         "telemetry initialized"
                     );
                     Guard {
@@ -106,17 +113,28 @@ impl<B> MakeSpan<B> for OtelMakeSpan {
         let method = request.method();
         let path = request.uri().path();
         let span = tracing::info_span!(
-            "http_request",
+            "http.server.request",
             otel.name = %format!("{method} {path}"),
             otel.kind = "server",
             http.request.method = %method,
             url.path = %path,
             http.response.status_code = tracing::field::Empty,
+            http.server.request.duration_ms = tracing::field::Empty,
+            otel.status_code = tracing::field::Empty,
+            trace_id = tracing::field::Empty,
+            span_id = tracing::field::Empty,
         );
         let parent = global::get_text_map_propagator(|propagator| {
             propagator.extract(&HeaderExtractor(request.headers()))
         });
         span.set_parent(parent);
+        let context = span.context();
+        let context_span = context.span();
+        let span_context = context_span.span_context();
+        if span_context.is_valid() {
+            span.record("trace_id", tracing::field::display(span_context.trace_id()));
+            span.record("span_id", tracing::field::display(span_context.span_id()));
+        }
         span
     }
 }
@@ -125,10 +143,22 @@ impl<B> MakeSpan<B> for OtelMakeSpan {
 pub struct OtelOnResponse;
 
 impl<B> OnResponse<B> for OtelOnResponse {
-    fn on_response(self, response: &Response<B>, _latency: Duration, span: &Span) {
+    fn on_response(self, response: &Response<B>, latency: Duration, span: &Span) {
         span.record(
             "http.response.status_code",
             response.status().as_u16() as u64,
+        );
+        span.record(
+            "http.server.request.duration_ms",
+            latency.as_secs_f64() * 1_000.0,
+        );
+        span.record(
+            "otel.status_code",
+            if response.status().is_server_error() {
+                "ERROR"
+            } else {
+                "OK"
+            },
         );
     }
 }
@@ -167,13 +197,139 @@ fn traces_endpoint() -> String {
 }
 
 fn resource(service_name: &str) -> Resource {
-    let service = std::env::var("OTEL_SERVICE_NAME").unwrap_or_else(|_| service_name.to_owned());
-    let mut attributes = vec![KeyValue::new(semconv::SERVICE_NAME, service)];
-    if let Ok(namespace) = std::env::var("POD_NAMESPACE") {
-        attributes.push(KeyValue::new(semconv::K8S_NAMESPACE_NAME, namespace));
-    }
-    if let Ok(pod) = std::env::var("POD_NAME") {
-        attributes.push(KeyValue::new(semconv::K8S_POD_NAME, pod));
+    let service = std::env::var("OTEL_SERVICE_NAME")
+        .ok()
+        .filter(|value| valid_attribute_value(value.trim()))
+        .unwrap_or_else(|| service_name.to_owned());
+    let mut attributes = vec![
+        KeyValue::new(semconv::SERVICE_NAME, service),
+        KeyValue::new(semconv::SERVICE_NAMESPACE, "3fa-app"),
+        KeyValue::new(semconv::SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
+    ];
+    push_env_attribute(
+        &mut attributes,
+        "DEPLOYMENT_ENVIRONMENT",
+        semconv::DEPLOYMENT_ENVIRONMENT,
+    );
+    push_env_attribute(
+        &mut attributes,
+        "POD_NAMESPACE",
+        semconv::K8S_NAMESPACE_NAME,
+    );
+    push_env_attribute(&mut attributes, "POD_NAME", semconv::K8S_POD_NAME);
+    push_env_attribute(&mut attributes, "NODE_NAME", semconv::K8S_NODE_NAME);
+    push_env_attribute(&mut attributes, "HOSTNAME", semconv::HOST_NAME);
+    if let Ok(raw) = std::env::var("OTEL_RESOURCE_ATTRIBUTES") {
+        attributes
+            .extend(resource_attribute_pairs(&raw).map(|(key, value)| KeyValue::new(key, value)));
     }
     Resource::default().merge(&mut Resource::new(attributes))
+}
+
+fn push_env_attribute(attributes: &mut Vec<KeyValue>, env_name: &str, key: &'static str) {
+    if let Ok(value) = std::env::var(env_name) {
+        let value = value.trim();
+        if valid_attribute_value(value) {
+            attributes.push(KeyValue::new(key, value.to_owned()));
+        }
+    }
+}
+
+fn resource_attribute_pairs(raw: &str) -> impl Iterator<Item = (String, String)> + '_ {
+    raw.split(',').filter_map(|pair| {
+        let (key, value) = pair.split_once('=')?;
+        let key = key.trim();
+        let value = value.trim();
+        if valid_attribute_key(key)
+            && valid_attribute_value(value)
+            && !sensitive_attribute_key(key)
+            && !matches!(
+                key,
+                "service.name" | "service.namespace" | "service.version"
+            )
+        {
+            Some((key.to_owned(), value.to_owned()))
+        } else {
+            None
+        }
+    })
+}
+
+fn valid_attribute_key(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
+fn valid_attribute_value(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 256 && !value.chars().any(char::is_control)
+}
+
+fn sensitive_attribute_key(key: &str) -> bool {
+    let normalized = key.to_ascii_lowercase().replace(['-', '.'], "_");
+    [
+        "api_key",
+        "apikey",
+        "authorization",
+        "bearer",
+        "cookie",
+        "credential",
+        "email",
+        "jwt",
+        "passphrase",
+        "passwd",
+        "password",
+        "private_key",
+        "pwd",
+        "secret",
+        "session",
+        "signing_key",
+        "token",
+    ]
+    .iter()
+    .any(|needle| normalized.contains(needle))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resource_attribute_pairs;
+
+    #[test]
+    fn resource_attributes_reject_secrets_and_identity_overrides() {
+        let attributes = resource_attribute_pairs(
+            "team=simulation,api.token=nope,service.name=spoof,cloud.region=us-east-1",
+        )
+        .collect::<Vec<_>>();
+        assert_eq!(
+            attributes,
+            vec![
+                ("team".to_owned(), "simulation".to_owned()),
+                ("cloud.region".to_owned(), "us-east-1".to_owned()),
+            ]
+        );
+    }
+
+    #[test]
+    fn resource_attributes_reject_controls_and_oversized_values() {
+        let long = "x".repeat(257);
+        let raw = format!("good=value,bad=line\nfeed,long={long}");
+        assert_eq!(
+            resource_attribute_pairs(&raw).collect::<Vec<_>>(),
+            vec![("good".to_owned(), "value".to_owned())]
+        );
+    }
+
+    #[test]
+    fn resource_attributes_reject_secret_key_variants() {
+        let attributes = resource_attribute_pairs(
+            "db.password=nope,session-id=nope,ApiKey=nope,cloud.zone=us-east-1a",
+        )
+        .collect::<Vec<_>>();
+        assert_eq!(
+            attributes,
+            vec![("cloud.zone".to_owned(), "us-east-1a".to_owned())]
+        );
+    }
 }

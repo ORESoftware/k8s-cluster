@@ -2,16 +2,25 @@
 //! token; revoking one invalidates its token without touching the account.
 
 use crate::auth;
+use crate::entity::device;
 use crate::error::ApiError;
-use serde::Serialize;
-use sqlx::{Executor, PgPool, Postgres};
+use crate::state::AppState;
+use axum::extract::State;
+use axum::http::HeaderMap;
+use axum::Json;
+use sea_orm::sea_query::Expr;
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, Set,
+};
+use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
 /// Per-account cap on live (non-revoked) devices. Bounds the token/attack-surface
 /// growth from repeated logins (each login enrolls a device). A user hitting this
 /// should revoke a stale device via `GET`/`POST /v1/devices`.
-pub const MAX_DEVICES_PER_ACCOUNT: i64 = 25;
+pub const MAX_DEVICES_PER_ACCOUNT: u64 = 25;
 
 /// A device as surfaced to its owner so they can recognize and revoke it. The
 /// sync-token hash is deliberately never exposed.
@@ -26,77 +35,99 @@ pub struct DeviceInfo {
     pub last_seen_at: Option<OffsetDateTime>,
 }
 
+pub(crate) async fn list_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<DeviceInfo>>, ApiError> {
+    let who = auth::authenticate(state.database(), &headers).await?;
+    Ok(Json(list(state.database(), who.account_id).await?))
+}
+
+#[derive(Deserialize)]
+pub(crate) struct RevokeRequest {
+    device_id: Uuid,
+}
+
+pub(crate) async fn revoke_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<RevokeRequest>,
+) -> Result<(), ApiError> {
+    let who = auth::authenticate(state.database(), &headers).await?;
+    revoke(state.database(), who.account_id, request.device_id).await
+}
+
 /// Insert a new device for an account and return `(device_id, raw_token)`.
 /// The raw token is shown to the client exactly once.
-pub async fn register<'e, E>(
-    executor: E,
+pub async fn register<C>(
+    db: &C,
     account_id: Uuid,
     device_name: &str,
 ) -> Result<(Uuid, String), ApiError>
 where
-    E: Executor<'e, Database = Postgres>,
+    C: ConnectionTrait,
 {
     let (token, token_hash) = auth::issue_token();
-    let device_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO threefa.devices (account_id, device_name, sync_token_hash) \
-         VALUES ($1, $2, $3) RETURNING id",
-    )
-    .bind(account_id)
-    .bind(device_name)
-    .bind(&token_hash)
-    .fetch_one(executor)
+    let model = device::ActiveModel {
+        id: Set(Uuid::new_v4()),
+        account_id: Set(account_id),
+        device_name: Set(device_name.to_owned()),
+        sync_token_hash: Set(token_hash),
+        ..Default::default()
+    }
+    .insert(db)
     .await?;
-    Ok((device_id, token))
+    Ok((model.id, token))
 }
 
 /// List every device (revoked and live) for an account, newest first, so the
 /// owner can audit enrollments and pick a `device_id` to revoke.
-pub async fn list(pool: &PgPool, account_id: Uuid) -> Result<Vec<DeviceInfo>, ApiError> {
-    let rows = sqlx::query_as::<_, (Uuid, String, bool, OffsetDateTime, Option<OffsetDateTime>)>(
-        "SELECT id, device_name, revoked, created_at, last_seen_at \
-         FROM threefa.devices WHERE account_id = $1 ORDER BY created_at DESC",
-    )
-    .bind(account_id)
-    .fetch_all(pool)
-    .await?;
-    Ok(rows
+pub async fn list<C>(db: &C, account_id: Uuid) -> Result<Vec<DeviceInfo>, ApiError>
+where
+    C: ConnectionTrait,
+{
+    let models = device::Entity::find()
+        .filter(device::Column::AccountId.eq(account_id))
+        .order_by_desc(device::Column::CreatedAt)
+        .all(db)
+        .await?;
+    Ok(models
         .into_iter()
-        .map(
-            |(device_id, device_name, revoked, created_at, last_seen_at)| DeviceInfo {
-                device_id,
-                device_name,
-                revoked,
-                created_at,
-                last_seen_at,
-            },
-        )
+        .map(|model| DeviceInfo {
+            device_id: model.id,
+            device_name: model.device_name,
+            revoked: model.revoked,
+            created_at: model.created_at,
+            last_seen_at: model.last_seen_at,
+        })
         .collect())
 }
 
 /// Count an account's live (non-revoked) devices, to enforce the per-account cap
 /// before enrolling another.
-pub async fn live_count<'e, E>(executor: E, account_id: Uuid) -> Result<i64, ApiError>
+pub async fn live_count<C>(db: &C, account_id: Uuid) -> Result<u64, ApiError>
 where
-    E: Executor<'e, Database = Postgres>,
+    C: ConnectionTrait,
 {
-    let count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM threefa.devices WHERE account_id = $1 AND revoked = FALSE",
-    )
-    .bind(account_id)
-    .fetch_one(executor)
-    .await?;
-    Ok(count)
+    Ok(device::Entity::find()
+        .filter(device::Column::AccountId.eq(account_id))
+        .filter(device::Column::Revoked.eq(false))
+        .count(db)
+        .await?)
 }
 
 /// Revoke a device (its sync token stops working immediately).
-pub async fn revoke(pool: &PgPool, account_id: Uuid, device_id: Uuid) -> Result<(), ApiError> {
-    let res =
-        sqlx::query("UPDATE threefa.devices SET revoked = TRUE WHERE id = $1 AND account_id = $2")
-            .bind(device_id)
-            .bind(account_id)
-            .execute(pool)
-            .await?;
-    if res.rows_affected() == 0 {
+pub async fn revoke<C>(db: &C, account_id: Uuid, device_id: Uuid) -> Result<(), ApiError>
+where
+    C: ConnectionTrait,
+{
+    let result = device::Entity::update_many()
+        .col_expr(device::Column::Revoked, Expr::value(true))
+        .filter(device::Column::Id.eq(device_id))
+        .filter(device::Column::AccountId.eq(account_id))
+        .exec(db)
+        .await?;
+    if result.rows_affected == 0 {
         return Err(ApiError::BadRequest);
     }
     Ok(())

@@ -5,7 +5,8 @@ use axum::extract::{Request, State};
 use axum::http::{header, Response, StatusCode};
 use axum::middleware::Next;
 use prometheus::{
-    Encoder, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, Opts, Registry, TextEncoder,
+    Encoder, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, Opts, Registry,
+    TextEncoder,
 };
 use std::sync::Arc;
 use std::time::Instant;
@@ -14,6 +15,9 @@ pub struct Metrics {
     registry: Registry,
     requests: IntCounterVec,
     request_duration: HistogramVec,
+    requests_in_flight: IntGauge,
+    database_queries: IntCounterVec,
+    database_query_duration: HistogramVec,
     pub vault_conflicts: IntCounter,
 }
 
@@ -37,6 +41,27 @@ impl Metrics {
             ]),
             &["method", "route"],
         )?;
+        let requests_in_flight = IntGauge::new(
+            "threefa_http_requests_in_flight",
+            "HTTP requests currently being handled by the 3FA sync server.",
+        )?;
+        let database_queries = IntCounterVec::new(
+            Opts::new(
+                "threefa_database_queries_total",
+                "SeaORM database operations completed by status.",
+            ),
+            &["status"],
+        )?;
+        let database_query_duration = HistogramVec::new(
+            HistogramOpts::new(
+                "threefa_database_query_duration_seconds",
+                "SeaORM database operation latency in seconds.",
+            )
+            .buckets(vec![
+                0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0,
+            ]),
+            &["status"],
+        )?;
         let vault_conflicts = IntCounter::new(
             "threefa_vault_conflicts_total",
             "Vault pushes rejected because the server version was newer.",
@@ -44,12 +69,18 @@ impl Metrics {
 
         registry.register(Box::new(requests.clone()))?;
         registry.register(Box::new(request_duration.clone()))?;
+        registry.register(Box::new(requests_in_flight.clone()))?;
+        registry.register(Box::new(database_queries.clone()))?;
+        registry.register(Box::new(database_query_duration.clone()))?;
         registry.register(Box::new(vault_conflicts.clone()))?;
 
         Ok(Self {
             registry,
             requests,
             request_duration,
+            requests_in_flight,
+            database_queries,
+            database_query_duration,
             vault_conflicts,
         })
     }
@@ -58,6 +89,14 @@ impl Metrics {
         let mut output = Vec::new();
         TextEncoder::new().encode(&self.registry.gather(), &mut output)?;
         Ok(output)
+    }
+
+    pub fn observe_database_query(&self, elapsed: std::time::Duration, failed: bool) {
+        let status = if failed { "error" } else { "ok" };
+        self.database_queries.with_label_values(&[status]).inc();
+        self.database_query_duration
+            .with_label_values(&[status])
+            .observe(elapsed.as_secs_f64());
     }
 }
 
@@ -69,6 +108,8 @@ pub async fn record_http_metrics(
     let method = request.method().as_str().to_owned();
     let route = metric_route(request.uri().path());
     let started = Instant::now();
+    metrics.requests_in_flight.inc();
+    let _in_flight = InFlightGuard(metrics.requests_in_flight.clone());
     let response = next.run(request).await;
     let status = response.status().as_u16().to_string();
 
@@ -81,6 +122,14 @@ pub async fn record_http_metrics(
         .with_label_values(&[&method, route])
         .observe(started.elapsed().as_secs_f64());
     response
+}
+
+struct InFlightGuard(IntGauge);
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        self.0.dec();
+    }
 }
 
 pub fn response(metrics: &Metrics) -> Response<Body> {
@@ -102,8 +151,9 @@ pub fn response(metrics: &Metrics) -> Response<Body> {
 
 fn metric_route(path: &str) -> &'static str {
     match path {
-        "/v1/register" => "/v1/register",
-        "/v1/login" => "/v1/login",
+        "/v1/auth/shared" => "/v1/auth/shared",
+        "/v1/auth/supabase" => "/v1/auth/supabase",
+        "/v1/devices" => "/v1/devices",
         "/v1/devices/revoke" => "/v1/devices/revoke",
         "/v1/vault" => "/v1/vault",
         "/livez" => "/livez",
@@ -111,5 +161,47 @@ fn metric_route(path: &str) -> &'static str {
         "/readyz" => "/readyz",
         "/metrics" => "/metrics",
         _ => "unmatched",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dynamic_paths_collapse_to_a_bounded_label() {
+        assert_eq!(metric_route("/v1/vault"), "/v1/vault");
+        assert_eq!(metric_route("/v1/auth/shared"), "/v1/auth/shared");
+        assert_eq!(metric_route("/v1/auth/supabase"), "/v1/auth/supabase");
+        assert_eq!(metric_route("/users/alice/private"), "unmatched");
+        assert_eq!(metric_route("/v1/vault/account-secret"), "unmatched");
+    }
+
+    #[test]
+    fn registry_exposes_http_database_and_domain_families() {
+        let metrics = Metrics::new().expect("metrics registry");
+        metrics
+            .requests
+            .with_label_values(&["GET", "/livez", "200"])
+            .inc();
+        metrics
+            .request_duration
+            .with_label_values(&["GET", "/livez"])
+            .observe(0.01);
+        metrics.observe_database_query(std::time::Duration::from_millis(3), false);
+        metrics.vault_conflicts.inc();
+
+        let rendered = String::from_utf8(metrics.render().unwrap()).unwrap();
+        for family in [
+            "threefa_http_requests_total",
+            "threefa_http_request_duration_seconds",
+            "threefa_http_requests_in_flight",
+            "threefa_database_queries_total",
+            "threefa_database_query_duration_seconds",
+            "threefa_vault_conflicts_total",
+        ] {
+            assert!(rendered.contains(family), "missing {family}");
+        }
+        assert!(!rendered.contains("account-secret"));
     }
 }

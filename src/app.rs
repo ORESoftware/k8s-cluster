@@ -1,9 +1,8 @@
-//! HTTP surface: router, shared state, and request handlers.
+//! HTTP surface: router composition and cross-cutting middleware.
 //!
 //! Routes:
-//!   POST /v1/register        -> create account + first device, returns token
-//!   POST /v1/login           -> verify account, register a device, returns token
-//!   POST /v1/auth/supabase   -> enroll a device via a Supabase access JWT
+//!   POST /v1/auth/shared     -> enroll a device via a shared-auth access token
+//!   POST /v1/auth/supabase   -> compatibility exchange of a Supabase access JWT
 //!   GET  /v1/devices         -> list this account's devices   (auth)
 //!   POST /v1/devices/revoke  -> revoke a device   (auth)
 //!   GET  /v1/vault           -> pull sealed blob   (auth)
@@ -11,103 +10,36 @@
 //!   GET  /livez              -> liveness (no DB)   (/healthz: back-compat alias)
 //!   GET  /readyz             -> readiness (DB ping)
 //!
-//! The unauthenticated `/v1/register` and `/v1/login` routes are per-client
-//! rate-limited; all routes are body-size capped and wrapped in a request
-//! timeout (see [`router`]).
+//! Unauthenticated identity routes are per-client rate-limited; all routes are
+//! body-size capped and wrapped in a request timeout (see [`router`]).
 
-use crate::error::ApiError;
-use crate::protocol::{PullResponse, PushRequest, PushResponse};
-use crate::supabase::SupabaseVerifier;
-use crate::{auth, db, devices, metrics, telemetry, vault_blob};
-use axum::body::Body;
-use axum::extract::State;
-use axum::http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode};
+use crate::state::AppState;
+use crate::{devices, health, metrics, supabase_auth, telemetry, vault_blob};
+use axum::http::{header, HeaderName, HeaderValue, StatusCode};
 use axum::middleware;
-use axum::response::Response;
 use axum::routing::{get, post};
-use axum::{Json, Router};
-use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
-use std::net::SocketAddr;
+use axum::Router;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Semaphore;
 use tower_governor::governor::GovernorConfigBuilder;
 use tower_governor::key_extractor::SmartIpKeyExtractor;
 use tower_governor::GovernorLayer;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
-use uuid::Uuid;
 
-/// Hard caps on attacker-controlled string inputs (bytes). The body limit is
-/// 1 MiB; these stop a single field from being absurdly large before it ever
-/// reaches Argon2 or the database.
-const MAX_USERNAME_LEN: usize = 256;
-const MAX_DEVICE_NAME_LEN: usize = 256;
-const MAX_PASSWORD_LEN: usize = 1024;
 /// Per-request wall-clock budget. Bounds slow/stuck handlers.
 const REQUEST_TIMEOUT_SECS: u64 = 15;
-const DEFAULT_AUTH_MAX_CONCURRENT: usize = 2;
-
-#[derive(Clone)]
-pub struct AppState {
-    pub pool: PgPool,
-    pub metrics: Arc<metrics::Metrics>,
-    auth_slots: Arc<Semaphore>,
-    /// `Some` when Supabase identity is configured; drives `/v1/auth/supabase`.
-    supabase: Option<SupabaseVerifier>,
-}
-
-pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let _telemetry = telemetry::init("threefa-sync-server");
-
-    let database_url = std::env::var("DATABASE_URL")
-        .map_err(|_| "DATABASE_URL must be set (Postgres connection string)")?;
-    let bind = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into());
-    let auth_max_concurrent = std::env::var("THREEFA_AUTH_MAX_CONCURRENT")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(DEFAULT_AUTH_MAX_CONCURRENT);
-
-    let pool = db::connect(&database_url).await?;
-    let supabase = SupabaseVerifier::from_env()?;
-    let state = AppState {
-        pool,
-        metrics: Arc::new(metrics::Metrics::new()?),
-        auth_slots: Arc::new(Semaphore::new(auth_max_concurrent)),
-        supabase: supabase.clone(),
-    };
-
-    let app = router(state);
-    let addr: SocketAddr = bind.parse()?;
-    tracing::info!(
-        %addr,
-        auth_max_concurrent,
-        supabase_auth = supabase.is_some(),
-        protocol_version = crate::protocol::PROTOCOL_VERSION,
-        "3FA sync server listening"
-    );
-
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    // `into_make_service_with_connect_info` exposes the socket peer address so the
-    // rate limiter has a fallback key when no trusted forwarding header is present.
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .with_graceful_shutdown(shutdown_signal())
-    .await?;
-    Ok(())
-}
 
 pub fn router(state: AppState) -> Router {
-    // Per-client rate limit for the *unauthenticated* credential endpoints, which
-    // are the online-brute-force / account-spam surface. GCRA: replenish ~1 req/s
-    // with a small burst. The key is the client IP taken from `X-Forwarded-For` /
-    // `X-Real-IP` (set by the trusted ingress) so all clients aren't collapsed to
-    // the ingress pod's source address; it falls back to the socket peer.
+    // GCRA: replenish ~1 request/s with a small burst. SmartIpKeyExtractor uses
+    // trusted ingress forwarding headers and falls back to the socket peer.
+    //
+    // Trust assumption (load-bearing): SmartIpKeyExtractor keys on
+    // X-Forwarded-For, which any client could spoof to dodge the limiter — it
+    // is trustworthy here ONLY because deploy/k8s/networkpolicy.yaml admits
+    // ingress traffic from ingress-nginx alone, which overwrites the header.
+    // Loosening that NetworkPolicy silently breaks rate limiting.
     let governor = Arc::new(
         GovernorConfigBuilder::default()
             .key_extractor(SmartIpKeyExtractor)
@@ -117,37 +49,50 @@ pub fn router(state: AppState) -> Router {
             .expect("valid rate-limit config"),
     );
 
-    // Unauthenticated, credential-bearing endpoints share the per-IP limiter.
-    // `/v1/auth/supabase` presents a Supabase JWT (not an account password) but is
-    // still an unauthenticated, account-minting surface, so it belongs here.
+    // Authed routes get a more generous per-IP budget: normal sync traffic is
+    // bursty (pull + push + device list in quick succession) but a stolen sync
+    // token still can't hammer the vault or enumerate devices unthrottled.
+    let authed_governor = Arc::new(
+        GovernorConfigBuilder::default()
+            .key_extractor(SmartIpKeyExtractor)
+            .per_second(1)
+            .burst_size(30)
+            .finish()
+            .expect("valid rate-limit config"),
+    );
+
     let auth_routes = Router::new()
-        .route("/v1/register", post(register))
-        .route("/v1/login", post(login))
-        .route("/v1/auth/supabase", post(auth_supabase))
-        .layer(GovernorLayer { config: governor });
+        .route("/v1/auth/shared", post(supabase_auth::enroll_shared))
+        .route("/v1/auth/supabase", post(supabase_auth::enroll_provider))
+        // Route-only layering preserves the outer router's normal 404 fallback.
+        .route_layer(GovernorLayer { config: governor });
+
+    let authed_routes = Router::new()
+        .route("/v1/devices", get(devices::list_handler))
+        .route("/v1/devices/revoke", post(devices::revoke_handler))
+        .route(
+            "/v1/vault",
+            get(vault_blob::pull_handler).post(vault_blob::push_handler),
+        )
+        .route_layer(GovernorLayer {
+            config: authed_governor,
+        });
 
     Router::new()
-        // Liveness: process is up. Must NOT depend on the DB, or a transient DB
-        // blip would get the pod killed instead of merely pulled from rotation.
-        .route("/livez", get(|| async { "ok" }))
-        // Back-compat alias for the old liveness path.
-        .route("/healthz", get(|| async { "ok" }))
-        // Readiness: only serve traffic if the DB pool is actually usable.
-        .route("/readyz", get(readyz))
-        .route("/metrics", get(metrics_http))
+        // Liveness must not depend on the DB; readiness does. These stay
+        // unthrottled: kubelet probes and Prometheus scrapes share a node IP.
+        .route("/livez", get(health::live))
+        .route("/healthz", get(health::live))
+        .route("/readyz", get(health::ready))
+        .route("/metrics", get(health::prometheus))
         .merge(auth_routes)
-        .route("/v1/devices", get(list_devices))
-        .route("/v1/devices/revoke", post(revoke_device))
-        .route("/v1/vault", get(pull_vault).post(push_vault))
-        // Outermost-to-innermost: request log, security headers, body cap, timeout.
+        .merge(authed_routes)
         .layer(telemetry::http_trace_layer())
         .layer(middleware::from_fn_with_state(
             state.metrics.clone(),
             metrics::record_http_metrics,
         ))
-        // Defense-in-depth response headers. This is a JSON API served behind a
-        // TLS-terminating ingress; these cost nothing and blunt sniffing/caching/
-        // framing of any error or token-bearing response.
+        // Defense-in-depth headers for a JSON API behind TLS ingress.
         .layer(SetResponseHeaderLayer::overriding(
             header::X_CONTENT_TYPE_OPTIONS,
             HeaderValue::from_static("nosniff"),
@@ -164,10 +109,7 @@ pub fn router(state: AppState) -> Router {
             HeaderName::from_static("x-frame-options"),
             HeaderValue::from_static("DENY"),
         ))
-        // Sealed blobs are small; cap bodies to 1 MiB to bound abuse.
         .layer(RequestBodyLimitLayer::new(1024 * 1024))
-        // Bound every request's lifetime so slow/hung clients can't pin the small
-        // connection pool (slowloris-style exhaustion).
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(REQUEST_TIMEOUT_SECS),
@@ -175,295 +117,140 @@ pub fn router(state: AppState) -> Router {
         .with_state(state)
 }
 
-async fn metrics_http(State(st): State<AppState>) -> Response<Body> {
-    metrics::response(&st.metrics)
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{header, Request, StatusCode};
+    use http_body_util::BodyExt;
+    use sea_orm::{DatabaseBackend, MockDatabase};
+    use tower::ServiceExt;
 
-/// Readiness probe: confirms the Postgres pool can serve a trivial query within a
-/// short budget. Returns 503 (via [`ApiError::Internal`]) when the DB is
-/// unreachable so Kubernetes stops routing traffic to a pod that would only 500.
-async fn readyz(State(st): State<AppState>) -> Result<&'static str, ApiError> {
-    sqlx::query_scalar::<_, i32>("SELECT 1")
-        .fetch_one(&st.pool)
-        .await
-        .map_err(|_| ApiError::Internal)?;
-    Ok("ok")
-}
-
-async fn shutdown_signal() {
-    let _ = tokio::signal::ctrl_c().await;
-    tracing::info!("shutting down");
-}
-
-// ---- DTOs ----
-
-#[derive(Deserialize)]
-struct CredsRequest {
-    username: String,
-    /// The account password. Used only to derive the Argon2id verifier (and, in
-    /// the OPAQUE upgrade, never sent at all). Never stored in plaintext.
-    password: String,
-    device_name: String,
-}
-
-#[derive(Serialize)]
-struct TokenResponse {
-    account_id: Uuid,
-    device_id: Uuid,
-    /// Bearer token — shown once. Lost tokens require re-login.
-    sync_token: String,
-}
-
-#[derive(Deserialize)]
-struct RevokeRequest {
-    device_id: Uuid,
-}
-
-/// Enroll a device against a Supabase-authenticated session. The access JWT is
-/// carried in the `Authorization: Bearer` header (not the body); the body only
-/// names the device.
-#[derive(Deserialize)]
-struct SupabaseEnrollRequest {
-    device_name: String,
-}
-
-// ---- handlers ----
-
-async fn register(
-    State(st): State<AppState>,
-    Json(req): Json<CredsRequest>,
-) -> Result<Json<TokenResponse>, ApiError> {
-    // Bound every attacker-controlled field before any DB or Argon2 work, so a
-    // single field can't carry an unbounded payload into the DB / version-vector
-    // space. Password also has a minimum length.
-    if req.username.trim().is_empty()
-        || req.username != req.username.trim()
-        || req.username.len() > MAX_USERNAME_LEN
-        || req.device_name.trim().is_empty()
-        || req.device_name != req.device_name.trim()
-        || req.device_name.len() > MAX_DEVICE_NAME_LEN
-        || !(8..=MAX_PASSWORD_LEN).contains(&req.password.len())
-    {
-        return Err(ApiError::BadRequest);
+    fn test_state() -> AppState {
+        let database = MockDatabase::new(DatabaseBackend::Postgres).into_connection();
+        AppState::new(database).expect("test state")
     }
-    let secret = hash_password_bounded(&st, req.password).await?;
 
-    // Account creation and first-device issuance are one transaction. Without
-    // this, a transient device insert failure leaves an unusable username that
-    // every registration retry sees as a duplicate.
-    let mut tx = st.pool.begin().await?;
-
-    // A duplicate username trips the UNIQUE constraint, which sqlx surfaces as a
-    // database error (NOT an empty row set). Map that to a coarse 409 instead of
-    // letting it bubble up as a 500 with an error-log entry on every retry.
-    let account_id: Uuid = match sqlx::query_scalar(
-        "INSERT INTO threefa.accounts (username, auth_secret) VALUES ($1, $2) RETURNING id",
-    )
-    .bind(&req.username)
-    .bind(&secret)
-    .fetch_one(&mut *tx)
-    .await
-    {
-        Ok(id) => id,
-        Err(sqlx::Error::Database(db)) if db.is_unique_violation() => {
-            return Err(ApiError::Conflict);
+    #[tokio::test]
+    async fn operational_routes_are_composed_into_the_router() {
+        for (path, expected) in [
+            ("/livez", StatusCode::OK),
+            ("/healthz", StatusCode::OK),
+            ("/readyz", StatusCode::OK),
+            ("/metrics", StatusCode::OK),
+            ("/not-a-route", StatusCode::NOT_FOUND),
+        ] {
+            let response = router(test_state())
+                .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected, "status for {path}");
         }
-        Err(e) => return Err(e.into()),
-    };
-
-    let (device_id, token) = devices::register(&mut *tx, account_id, &req.device_name).await?;
-    tx.commit().await?;
-    Ok(Json(TokenResponse {
-        account_id,
-        device_id,
-        sync_token: token,
-    }))
-}
-
-async fn login(
-    State(st): State<AppState>,
-    Json(req): Json<CredsRequest>,
-) -> Result<Json<TokenResponse>, ApiError> {
-    // Bound the inputs before any DB or Argon2 work. These checks are
-    // account-independent, so they add no username-enumeration signal.
-    if req.username.trim().is_empty()
-        || req.username != req.username.trim()
-        || req.username.len() > MAX_USERNAME_LEN
-        || req.device_name.trim().is_empty()
-        || req.device_name != req.device_name.trim()
-        || req.device_name.len() > MAX_DEVICE_NAME_LEN
-        || req.password.len() > MAX_PASSWORD_LEN
-    {
-        return Err(ApiError::BadRequest);
-    }
-    let row: Option<(Uuid, String)> =
-        sqlx::query_as("SELECT id, auth_secret FROM threefa.accounts WHERE username = $1")
-            .bind(&req.username)
-            .fetch_optional(&st.pool)
-            .await?;
-
-    // Always run exactly one Argon2 verify to avoid a username-enumeration
-    // timing oracle, whether or not the account exists.
-    let (account_id, secret) = match row {
-        Some((account_id, secret)) => (account_id, Some(secret)),
-        None => (Uuid::nil(), None),
-    };
-    let ok = verify_password_bounded(&st, req.password, secret).await?;
-    if !ok || account_id.is_nil() {
-        return Err(ApiError::Unauthorized);
     }
 
-    // Bound live devices per account so repeated logins can't accumulate an
-    // unbounded set of un-revocable tokens (each login enrolls a new device).
-    if devices::live_count(&st.pool, account_id).await? >= devices::MAX_DEVICES_PER_ACCOUNT {
-        return Err(ApiError::TooManyRequests);
+    #[tokio::test]
+    async fn router_exposes_only_shared_auth_identity_enrollment() {
+        let app = router(test_state());
+        for path in ["/v1/auth/shared", "/v1/auth/supabase"] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(path)
+                        .header(header::AUTHORIZATION, "Bearer test-token")
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .header("x-forwarded-for", "127.0.0.1")
+                        .body(Body::from(r#"{"device_name":"test desktop"}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::NOT_IMPLEMENTED,
+                "configured route for {path}"
+            );
+        }
+
+        for retired in ["/v1/register", "/v1/login"] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(retired)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{retired}");
+        }
     }
 
-    let (device_id, token) = devices::register(&st.pool, account_id, &req.device_name).await?;
-    Ok(Json(TokenResponse {
-        account_id,
-        device_id,
-        sync_token: token,
-    }))
-}
+    #[tokio::test]
+    async fn router_middleware_records_requests_and_sets_security_headers() {
+        let app = router(test_state());
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/livez")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        assert_eq!(
+            response.headers()[header::X_CONTENT_TYPE_OPTIONS],
+            "nosniff"
+        );
 
-/// Enroll a device using a Supabase-issued access token. Verifies the JWT
-/// (signature + `exp`/`aud`/`iss`), maps `sub` onto a local account (creating it
-/// on first sight), enforces the per-account device cap, and returns a sync
-/// token. Identity lives in Supabase; the server never receives a password.
-async fn auth_supabase(
-    State(st): State<AppState>,
-    headers: HeaderMap,
-    Json(req): Json<SupabaseEnrollRequest>,
-) -> Result<Json<TokenResponse>, ApiError> {
-    let verifier = st.supabase.as_ref().ok_or(ApiError::NotImplemented)?;
-
-    if req.device_name.trim().is_empty()
-        || req.device_name != req.device_name.trim()
-        || req.device_name.len() > MAX_DEVICE_NAME_LEN
-    {
-        return Err(ApiError::BadRequest);
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "text/plain; version=0.0.4"
+        );
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains("threefa_http_requests_total"));
+        assert!(body.contains("route=\"/livez\""));
     }
 
-    let token = auth::bearer(&headers)?;
-    let identity = verifier.verify(token).await?;
+    #[test]
+    fn kubernetes_manifest_matches_operational_and_telemetry_routes() {
+        let manifest = include_str!("../deploy/k8s/deployment.yaml");
+        for required in [
+            "path: /livez",
+            "path: /readyz",
+            "prometheus.io/path: /metrics",
+            "OTEL_EXPORTER_OTLP_ENDPOINT",
+            "DEPLOYMENT_ENVIRONMENT",
+            "SHARED_AUTH_BASE_URL",
+            "sea_orm=warn",
+        ] {
+            assert!(manifest.contains(required), "manifest missing {required}");
+        }
+        assert!(!manifest.contains("sqlx=warn"));
+        assert!(!manifest.contains("SUPABASE_JWT_LEGACY_SECRET"));
 
-    let mut tx = st.pool.begin().await?;
-
-    // Upsert the account keyed by the Supabase user id. On a returning user the
-    // stored email is refreshed; the row id is stable.
-    //
-    // The conflict target repeats the index predicate (`WHERE supabase_user_id IS
-    // NOT NULL`): `accounts_supabase_user_idx` is a *partial* unique index, and
-    // Postgres only infers a partial index when the ON CONFLICT clause restates
-    // its predicate — otherwise it errors with "no unique or exclusion constraint
-    // matching the ON CONFLICT specification".
-    let account_id: Uuid = sqlx::query_scalar(
-        "INSERT INTO threefa.accounts (supabase_user_id, email) VALUES ($1, $2) \
-         ON CONFLICT (supabase_user_id) WHERE supabase_user_id IS NOT NULL \
-         DO UPDATE SET email = EXCLUDED.email \
-         RETURNING id",
-    )
-    .bind(identity.user_id)
-    .bind(identity.email.as_deref())
-    .fetch_one(&mut *tx)
-    .await?;
-
-    if devices::live_count(&mut *tx, account_id).await? >= devices::MAX_DEVICES_PER_ACCOUNT {
-        tx.rollback().await?;
-        return Err(ApiError::TooManyRequests);
+        let network_policy = include_str!("../deploy/k8s/networkpolicy.yaml");
+        for required in ["app: dd-remote-gateway", "port: 80", "port: 4318"] {
+            assert!(
+                network_policy.contains(required),
+                "network policy missing {required}"
+            );
+        }
     }
-
-    let (device_id, sync_token) = devices::register(&mut *tx, account_id, &req.device_name).await?;
-    tx.commit().await?;
-    Ok(Json(TokenResponse {
-        account_id,
-        device_id,
-        sync_token,
-    }))
-}
-
-async fn list_devices(
-    State(st): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<Vec<devices::DeviceInfo>>, ApiError> {
-    let who = auth::authenticate(&st.pool, &headers).await?;
-    Ok(Json(devices::list(&st.pool, who.account_id).await?))
-}
-
-async fn revoke_device(
-    State(st): State<AppState>,
-    headers: HeaderMap,
-    Json(req): Json<RevokeRequest>,
-) -> Result<(), ApiError> {
-    let who = auth::authenticate(&st.pool, &headers).await?;
-    devices::revoke(&st.pool, who.account_id, req.device_id).await
-}
-
-async fn pull_vault(
-    State(st): State<AppState>,
-    headers: HeaderMap,
-) -> Result<Json<PullResponse>, ApiError> {
-    let who = auth::authenticate(&st.pool, &headers).await?;
-    Ok(Json(vault_blob::load(&st.pool, who.account_id).await?))
-}
-
-async fn push_vault(
-    State(st): State<AppState>,
-    headers: HeaderMap,
-    Json(req): Json<PushRequest>,
-) -> Result<Json<PushResponse>, ApiError> {
-    let who = auth::authenticate(&st.pool, &headers).await?;
-    let response = vault_blob::store(&st.pool, who, &req).await?;
-    if matches!(&response, PushResponse::Conflict { .. }) {
-        st.metrics.vault_conflicts.inc();
-    }
-    Ok(Json(response))
-}
-
-async fn hash_password_bounded(st: &AppState, password: String) -> Result<String, ApiError> {
-    let permit = st
-        .auth_slots
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| ApiError::TooManyRequests)?;
-    tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        auth::hash_password(password.as_bytes())
-    })
-    .await
-    .map_err(|error| {
-        tracing::error!(error = %error, "Argon2 registration worker failed");
-        ApiError::Internal
-    })?
-}
-
-async fn verify_password_bounded(
-    st: &AppState,
-    password: String,
-    secret: Option<String>,
-) -> Result<bool, ApiError> {
-    let permit = st
-        .auth_slots
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| ApiError::TooManyRequests)?;
-    tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        let secret = secret.unwrap_or_else(|| dummy_phc().to_string());
-        auth::verify_password(password.as_bytes(), &secret)
-    })
-    .await
-    .map_err(|error| {
-        tracing::error!(error = %error, "Argon2 login worker failed");
-        ApiError::Internal
-    })
-}
-
-/// A valid Argon2id PHC string, computed once, to verify against when the
-/// username is unknown — so login timing doesn't reveal account existence.
-fn dummy_phc() -> &'static str {
-    use std::sync::OnceLock;
-    static D: OnceLock<String> = OnceLock::new();
-    D.get_or_init(|| auth::hash_password(b"3fa-dummy-account-not-real").expect("dummy hash"))
 }

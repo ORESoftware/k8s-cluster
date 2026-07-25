@@ -7,14 +7,44 @@
 //! the stored one); otherwise the client must pull, merge locally, and retry.
 
 use crate::auth::AuthedDevice;
+use crate::entity::{account, vault_blob};
 use crate::error::ApiError;
 use crate::protocol::{
-    KdfParams, PullResponse, PushRequest, PushResponse, SealedBlob, VersionEntry, VersionVector,
+    PullResponse, PushRequest, PushResponse, SealedBlob, VersionEntry, VersionVector,
 };
+use crate::state::AppState;
+use axum::extract::State;
+use axum::http::HeaderMap;
+use axum::Json;
 use base64::Engine;
-use sqlx::types::Json;
-use sqlx::PgPool;
+use sea_orm::sea_query::LockType;
+use sea_orm::{
+    ActiveModelTrait, DatabaseConnection, EntityTrait, IntoActiveModel, QuerySelect, Set,
+    TransactionTrait,
+};
+use serde::de::DeserializeOwned;
 use uuid::Uuid;
+
+pub(crate) async fn pull_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<PullResponse>, ApiError> {
+    let who = crate::auth::authenticate(state.database(), &headers).await?;
+    Ok(Json(load(state.database(), who.account_id).await?))
+}
+
+pub(crate) async fn push_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<PushRequest>,
+) -> Result<Json<PushResponse>, ApiError> {
+    let who = crate::auth::authenticate(state.database(), &headers).await?;
+    let response = store(state.database(), who, &request).await?;
+    if matches!(&response, PushResponse::Conflict { .. }) {
+        state.metrics.vault_conflicts.inc();
+    }
+    Ok(Json(response))
+}
 
 // ---- pure version-vector logic (unit-tested without a DB) ----
 
@@ -73,32 +103,24 @@ pub fn reconcile(
 
 // ---- DB-backed handlers ----
 
-type BlobRow = (String, String, String, Json<KdfParams>, Json<VersionVector>);
-
-pub async fn load(pool: &PgPool, account_id: Uuid) -> Result<PullResponse, ApiError> {
-    let row: Option<BlobRow> = sqlx::query_as(
-        "SELECT ciphertext, nonce, kdf_salt, kdf_params, version \
-         FROM threefa.vault_blobs WHERE account_id = $1",
-    )
-    .bind(account_id)
-    .fetch_optional(pool)
-    .await?;
+pub async fn load(db: &DatabaseConnection, account_id: Uuid) -> Result<PullResponse, ApiError> {
+    let row = vault_blob::Entity::find_by_id(account_id).one(db).await?;
 
     Ok(match row {
-        Some((ciphertext, nonce, kdf_salt, params, version)) => PullResponse {
+        Some(blob) => PullResponse {
             blob: Some(SealedBlob {
                 ciphertext: base64::engine::general_purpose::STANDARD
-                    .decode(ciphertext)
+                    .decode(blob.ciphertext)
                     .map_err(|_| ApiError::Internal)?,
                 nonce: base64::engine::general_purpose::STANDARD
-                    .decode(nonce)
+                    .decode(blob.nonce)
                     .map_err(|_| ApiError::Internal)?,
                 kdf_salt: base64::engine::general_purpose::STANDARD
-                    .decode(kdf_salt)
+                    .decode(blob.kdf_salt)
                     .map_err(|_| ApiError::Internal)?,
-                kdf_params: params.0,
+                kdf_params: decode_json(blob.kdf_params, "kdf_params")?,
             }),
-            version: version.0,
+            version: decode_json(blob.version, "version")?,
         },
         None => PullResponse {
             blob: None,
@@ -108,7 +130,7 @@ pub async fn load(pool: &PgPool, account_id: Uuid) -> Result<PullResponse, ApiEr
 }
 
 pub async fn store(
-    pool: &PgPool,
+    db: &DatabaseConnection,
     who: AuthedDevice,
     req: &PushRequest,
 ) -> Result<PushResponse, ApiError> {
@@ -125,21 +147,27 @@ pub async fn store(
         return Err(ApiError::BadRequest);
     }
 
-    // Read current version (default empty), reconcile, then upsert atomically.
-    let mut tx = pool.begin().await?;
-
-    let current: Option<Json<VersionVector>> = sqlx::query_scalar(
-        "SELECT version FROM threefa.vault_blobs WHERE account_id = $1 FOR UPDATE",
-    )
-    .bind(who.account_id)
-    .fetch_optional(&mut *tx)
-    .await?;
-    let stored = current.map(|j| j.0).unwrap_or_default();
+    // Lock the always-present account row so concurrent first pushes serialize
+    // even before a vault row exists, then reconcile and write atomically.
+    let transaction = db.begin().await?;
+    account::Entity::find_by_id(who.account_id)
+        .lock(LockType::Update)
+        .one(&transaction)
+        .await?
+        .ok_or(ApiError::Internal)?;
+    let current = vault_blob::Entity::find_by_id(who.account_id)
+        .one(&transaction)
+        .await?;
+    let stored = current
+        .as_ref()
+        .map(|blob| decode_json(blob.version.clone(), "version"))
+        .transpose()?
+        .unwrap_or_default();
 
     let new_version = match reconcile(&stored, &req.base_version, &req.device_id) {
         Ok(v) => v,
         Err(server_version) => {
-            tx.rollback().await?;
+            transaction.rollback().await?;
             return Ok(PushResponse::Conflict { server_version });
         }
     };
@@ -147,7 +175,7 @@ pub async fn store(
     // Cap version-vector cardinality so a spoofed stream of distinct device ids
     // can't grow the stored JSON without bound (each push rewrites it under lock).
     if new_version.len() > crate::protocol::MAX_VERSION_ENTRIES {
-        tx.rollback().await?;
+        transaction.rollback().await?;
         return Err(ApiError::BadRequest);
     }
 
@@ -155,32 +183,64 @@ pub async fn store(
     let nonce = base64::engine::general_purpose::STANDARD.encode(&req.blob.nonce);
     let kdf_salt = base64::engine::general_purpose::STANDARD.encode(&req.blob.kdf_salt);
 
-    sqlx::query(
-        "INSERT INTO threefa.vault_blobs (account_id, ciphertext, nonce, kdf_salt, kdf_params, version, updated_at) \
-         VALUES ($1, $2, $3, $4, $5, $6, now()) \
-         ON CONFLICT (account_id) DO UPDATE SET \
-           ciphertext = EXCLUDED.ciphertext, nonce = EXCLUDED.nonce, \
-           kdf_salt = EXCLUDED.kdf_salt, kdf_params = EXCLUDED.kdf_params, \
-           version = EXCLUDED.version, updated_at = now()",
-    )
-    .bind(who.account_id)
-    .bind(ciphertext)
-    .bind(nonce)
-    .bind(kdf_salt)
-    .bind(Json(req.blob.kdf_params))
-    .bind(Json(&new_version))
-    .execute(&mut *tx)
-    .await?;
+    let kdf_params = encode_json(&req.blob.kdf_params, "kdf_params")?;
+    let version = encode_json(&new_version, "version")?;
+    match current {
+        Some(model) => {
+            let mut active = model.into_active_model();
+            active.ciphertext = Set(ciphertext);
+            active.nonce = Set(nonce);
+            active.kdf_salt = Set(kdf_salt);
+            active.kdf_params = Set(kdf_params);
+            active.version = Set(version);
+            active.updated_at = Set(time::OffsetDateTime::now_utc());
+            active.update(&transaction).await?;
+        }
+        None => {
+            vault_blob::ActiveModel {
+                account_id: Set(who.account_id),
+                ciphertext: Set(ciphertext),
+                nonce: Set(nonce),
+                kdf_salt: Set(kdf_salt),
+                kdf_params: Set(kdf_params),
+                version: Set(version),
+                ..Default::default()
+            }
+            .insert(&transaction)
+            .await?;
+        }
+    }
 
-    tx.commit().await?;
+    transaction.commit().await?;
     Ok(PushResponse::Ok {
         version: new_version,
+    })
+}
+
+fn decode_json<T: DeserializeOwned>(
+    value: serde_json::Value,
+    field: &'static str,
+) -> Result<T, ApiError> {
+    serde_json::from_value(value).map_err(|error| {
+        tracing::error!(error = %error, db.field = field, "invalid JSON in vault row");
+        ApiError::Internal
+    })
+}
+
+fn encode_json<T: serde::Serialize>(
+    value: &T,
+    field: &'static str,
+) -> Result<serde_json::Value, ApiError> {
+    serde_json::to_value(value).map_err(|error| {
+        tracing::error!(error = %error, db.field = field, "failed to encode vault JSON");
+        ApiError::Internal
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sea_orm::{DatabaseBackend, MockDatabase};
 
     fn vv(pairs: &[(&str, u64)]) -> VersionVector {
         pairs
@@ -252,5 +312,96 @@ mod tests {
         assert!(dominates(&vv(&[("a", 2)]), &vv(&[("a", 1)])));
         assert!(!dominates(&vv(&[("a", 1)]), &vv(&[("a", 2)])));
         assert!(dominates(&vv(&[("a", 1), ("b", 1)]), &vv(&[("a", 1)])));
+    }
+
+    #[tokio::test]
+    async fn load_maps_an_absent_seaorm_row_to_an_empty_vault() {
+        let database = MockDatabase::new(DatabaseBackend::Postgres)
+            .append_query_results([Vec::<crate::entity::vault_blob::Model>::new()])
+            .into_connection();
+        let response = load(&database, Uuid::new_v4()).await.unwrap();
+        assert_eq!(response.blob, None);
+        assert!(response.version.is_empty());
+    }
+
+    #[tokio::test]
+    async fn load_decodes_the_seaorm_entity_into_protocol_types() {
+        let params = crate::protocol::KdfParams::default();
+        let version = vv(&[("device-a", 4)]);
+        let model = crate::entity::vault_blob::Model {
+            account_id: Uuid::new_v4(),
+            ciphertext: base64::engine::general_purpose::STANDARD.encode([1, 2, 3]),
+            nonce: base64::engine::general_purpose::STANDARD.encode([4; 24]),
+            kdf_salt: base64::engine::general_purpose::STANDARD.encode([5; 16]),
+            kdf_params: serde_json::to_value(params).unwrap(),
+            version: serde_json::to_value(&version).unwrap(),
+            updated_at: time::OffsetDateTime::now_utc(),
+        };
+        let database = MockDatabase::new(DatabaseBackend::Postgres)
+            .append_query_results([vec![model.clone()]])
+            .into_connection();
+
+        let response = load(&database, model.account_id).await.unwrap();
+        let blob = response.blob.expect("stored blob");
+        assert_eq!(blob.ciphertext, vec![1, 2, 3]);
+        assert_eq!(blob.nonce, vec![4; 24]);
+        assert_eq!(blob.kdf_salt, vec![5; 16]);
+        assert_eq!(blob.kdf_params, params);
+        assert_eq!(response.version, version);
+    }
+
+    #[test]
+    fn concurrent_vectors_dominate_neither_way() {
+        // Each side has an event the other has not observed: true concurrency.
+        let left = vv(&[("a", 2), ("b", 1)]);
+        let right = vv(&[("a", 1), ("b", 2)]);
+        assert!(!dominates(&left, &right));
+        assert!(!dominates(&right, &left));
+    }
+
+    #[test]
+    fn empty_vector_dominance() {
+        let empty = vv(&[]);
+        let some = vv(&[("a", 1)]);
+        // Everything (including empty) dominates the empty history...
+        assert!(dominates(&empty, &empty));
+        assert!(dominates(&some, &empty));
+        // ...but the empty history dominates nothing non-empty.
+        assert!(!dominates(&empty, &some));
+    }
+
+    #[test]
+    fn bump_adds_absent_device_and_preserves_others() {
+        let base = vv(&[("a", 3)]);
+        let out = bump(&base, "b");
+        assert_eq!(counter_for(&out, "a"), 3);
+        assert_eq!(counter_for(&out, "b"), 1);
+        assert_eq!(out.len(), 2);
+        // Bumping an existing device increments only that entry.
+        let again = bump(&out, "b");
+        assert_eq!(counter_for(&again, "b"), 2);
+        assert_eq!(counter_for(&again, "a"), 3);
+    }
+
+    #[test]
+    fn concurrent_push_conflicts_even_if_client_advanced_itself() {
+        // Client advanced its own counter but never observed devB's write:
+        // its base does not dominate the stored vector, so it must pull+merge.
+        let stored = vv(&[("devA", 1), ("devB", 1)]);
+        let base = vv(&[("devA", 2)]);
+        let err = reconcile(&stored, &base, "devA").unwrap_err();
+        assert_eq!(err, stored);
+    }
+
+    #[test]
+    fn reconcile_accepts_superset_base_from_new_device() {
+        // A freshly-enrolled device pulled (observing devA/devB) and merged in
+        // history from a third source; its base strictly dominates the stored
+        // version, so the push lands and only its own counter is bumped.
+        let stored = vv(&[("devA", 1)]);
+        let base = vv(&[("devA", 1), ("devC", 5)]);
+        let out = reconcile(&stored, &base, "devC").unwrap();
+        assert_eq!(counter_for(&out, "devA"), 1);
+        assert_eq!(counter_for(&out, "devC"), 6);
     }
 }

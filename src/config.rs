@@ -1,0 +1,151 @@
+//! Process configuration loaded once at startup.
+
+use std::net::{AddrParseError, SocketAddr};
+
+const DEFAULT_BIND_ADDR: &str = "0.0.0.0:8080";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SharedAuthConfig {
+    pub base_url: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct Config {
+    pub database_url: String,
+    pub bind_addr: SocketAddr,
+    pub shared_auth: Option<SharedAuthConfig>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    #[error("DATABASE_URL must be set (Postgres connection string)")]
+    MissingDatabaseUrl,
+    #[error("BIND_ADDR must be a valid socket address")]
+    InvalidBindAddress(#[source] AddrParseError),
+    #[error("SHARED_AUTH_BASE_URL must use HTTPS, loopback HTTP, or trusted cluster HTTP")]
+    InvalidSharedAuthBaseUrl,
+}
+
+impl Config {
+    pub fn from_env() -> Result<Self, ConfigError> {
+        Self::from_values(
+            std::env::var("DATABASE_URL").ok(),
+            std::env::var("BIND_ADDR").ok(),
+            std::env::var("SHARED_AUTH_BASE_URL").ok(),
+        )
+    }
+
+    fn from_values(
+        database_url: Option<String>,
+        bind_addr: Option<String>,
+        shared_auth_base_url: Option<String>,
+    ) -> Result<Self, ConfigError> {
+        let database_url = database_url
+            .filter(|value| !value.trim().is_empty())
+            .ok_or(ConfigError::MissingDatabaseUrl)?;
+        let bind_addr = bind_addr
+            .unwrap_or_else(|| DEFAULT_BIND_ADDR.to_owned())
+            .parse()
+            .map_err(ConfigError::InvalidBindAddress)?;
+        let shared_auth = shared_auth_base_url
+            .map(|value| {
+                let base_url = value.trim().trim_end_matches('/').to_owned();
+                if valid_shared_auth_base_url(&base_url) {
+                    Ok(SharedAuthConfig { base_url })
+                } else {
+                    Err(ConfigError::InvalidSharedAuthBaseUrl)
+                }
+            })
+            .transpose()?;
+
+        Ok(Self {
+            database_url,
+            bind_addr,
+            shared_auth,
+        })
+    }
+}
+
+fn valid_shared_auth_base_url(value: &str) -> bool {
+    !value.is_empty()
+        && (value.starts_with("https://")
+            || value.starts_with("http://127.0.0.1:")
+            || value.starts_with("http://localhost:")
+            || value.starts_with("http://dd-shared-auth.")
+            || value.starts_with("http://dd-remote-gateway."))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn configured(bind: Option<&str>) -> Config {
+        Config::from_values(
+            Some("postgres://db/threefa".to_owned()),
+            bind.map(str::to_owned),
+            None,
+        )
+        .expect("valid test config")
+    }
+
+    #[test]
+    fn defaults_are_cluster_safe() {
+        let config = configured(None);
+        assert_eq!(config.bind_addr, "0.0.0.0:8080".parse().unwrap());
+    }
+
+    #[test]
+    fn explicit_values_are_parsed() {
+        let config = configured(Some("127.0.0.1:9000"));
+        assert_eq!(config.bind_addr, "127.0.0.1:9000".parse().unwrap());
+    }
+
+    #[test]
+    fn missing_or_blank_database_url_is_rejected() {
+        for database_url in [None, Some("   ".to_owned())] {
+            assert!(matches!(
+                Config::from_values(database_url, None, None),
+                Err(ConfigError::MissingDatabaseUrl)
+            ));
+        }
+    }
+
+    #[test]
+    fn invalid_bind_address_is_rejected() {
+        assert!(matches!(
+            Config::from_values(
+                Some("postgres://db/threefa".to_owned()),
+                Some("not-an-address".to_owned()),
+                None,
+            ),
+            Err(ConfigError::InvalidBindAddress(_))
+        ));
+    }
+
+    #[test]
+    fn shared_auth_url_is_bounded_to_tls_or_trusted_http_targets() {
+        for value in [
+            "https://auth.oresoftware.dev/shared-auth/",
+            "http://127.0.0.1:8120",
+            "http://dd-shared-auth.shared-auth.svc.cluster.local:8120",
+            "http://dd-remote-gateway.default.svc.cluster.local/shared-auth",
+        ] {
+            let config = Config::from_values(
+                Some("postgres://db/threefa".to_owned()),
+                None,
+                Some(value.to_owned()),
+            )
+            .expect("trusted shared-auth URL");
+            assert!(config.shared_auth.is_some());
+            assert!(!config.shared_auth.unwrap().base_url.ends_with('/'));
+        }
+        assert!(matches!(
+            Config::from_values(
+                Some("postgres://db/threefa".to_owned()),
+                None,
+                Some("http://auth.example.test".to_owned()),
+            ),
+            Err(ConfigError::InvalidSharedAuthBaseUrl)
+        ));
+    }
+}

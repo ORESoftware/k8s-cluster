@@ -1,7 +1,7 @@
 -- Isolate 3FA's tables from other services sharing the cluster Postgres.
 --
 -- This migration deliberately moves the existing tables instead of editing
--- 0001: sqlx records migration checksums, so changing an already-applied file
+-- 0001: migration runners record checksums, so changing an already-applied file
 -- would make safe, reviewed upgrades fail.
 CREATE SCHEMA IF NOT EXISTS threefa;
 

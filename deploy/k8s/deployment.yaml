@@ -22,6 +22,7 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/path: /metrics
         prometheus.io/port: "8080"
+        prometheus.io/scheme: http
       labels:
         app.kubernetes.io/name: threefa-sync-server
         app.kubernetes.io/part-of: threefa
@@ -48,9 +49,9 @@ spec:
             - name: BIND_ADDR
               value: "0.0.0.0:8080"
             - name: RUST_LOG
-              value: "info,sqlx=warn"
-            - name: THREEFA_AUTH_MAX_CONCURRENT
-              value: "2"
+              value: "info,tower_http=info,hyper=warn,sea_orm=warn"
+            - name: DEPLOYMENT_ENVIRONMENT
+              value: production
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: http://dd-otel-collector.observability.svc.cluster.local:4318
             - name: OTEL_SERVICE_NAME
@@ -63,23 +64,20 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: threefa-db
                   key: database-url
-            # Supabase identity. Set SUPABASE_PROJECT_URL to enable /v1/auth/supabase;
-            # leaving it unset runs the server in legacy-auth-only mode. The project
-            # URL is public (it is the anon-client endpoint), so it lives inline; the
-            # legacy HS256 secret, if the project still uses one, comes from a secret.
-            # Prefer asymmetric signing keys (RS256/ES256) — then no secret is needed.
-            - name: SUPABASE_PROJECT_URL
-              value: "https://REPLACE-WITH-3FA-PROJECT-REF.supabase.co"
-            # - name: SUPABASE_JWT_LEGACY_SECRET
-            #   valueFrom:
-            #     secretKeyRef:
-            #       name: threefa-supabase
-            #       key: jwt-legacy-secret
+            # Human identity is verified centrally. Traffic goes through the
+            # default-namespace gateway because shared-auth's NetworkPolicy
+            # permits that caller and mounts the service at /shared-auth/.
+            - name: SHARED_AUTH_BASE_URL
+              value: http://dd-remote-gateway.default.svc.cluster.local/shared-auth
           resources:
             requests:
               cpu: "50m"
