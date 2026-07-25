@@ -2600,15 +2600,24 @@ mod logic_tests {
     }
 
     #[test]
-    fn blocked_host_known_bypasses_are_documented() {
-        // FINDING: these all resolve to internal/loopback targets yet the guard
-        // returns false today. Captured as a tripwire, not an endorsement.
-        // IPv4-mapped IPv6 -> loopback / cloud metadata:
-        assert!(!blocked_host("::ffff:127.0.0.1"));
-        assert!(!blocked_host("::ffff:169.254.169.254"));
-        // Carrier-grade NAT shared range (100.64.0.0/10):
-        assert!(!blocked_host("100.64.0.1"));
-        // Non-dotted encodings that still resolve to 127.0.0.1 in many stacks:
+    fn blocked_host_ipv4_mapped_and_cgnat_now_blocked() {
+        // Regression for the SSRF fix: IPv4-mapped IPv6 forms of loopback and the
+        // cloud metadata address are judged by their embedded IPv4 and blocked...
+        assert!(blocked_host("::ffff:127.0.0.1"));
+        assert!(blocked_host("::ffff:169.254.169.254"));
+        // ...and the RFC 6598 carrier-grade-NAT shared range is blocked too.
+        assert!(blocked_host("100.64.0.1"));
+        assert!(blocked_host("100.127.255.255"));
+        assert!(!blocked_host("100.63.0.1")); // just outside 100.64.0.0/10
+        assert!(!blocked_host("100.128.0.1"));
+    }
+
+    #[test]
+    fn blocked_host_remaining_gap_non_dotted_ip_encodings() {
+        // KNOWN, LOWER-SEVERITY GAP (not addressed by the mapped-IPv6 fix): a
+        // decimal/octal-encoded IPv4 parses as a hostname, not an IpAddr, so it is
+        // not caught here. Impact depends on the downstream resolver. Tripwire so
+        // any future fix (parse these encodings as IPs) trips here.
         assert!(!blocked_host("2130706433")); // decimal form of 127.0.0.1
         assert!(!blocked_host("0177.0.0.1")); // octal first octet
     }
