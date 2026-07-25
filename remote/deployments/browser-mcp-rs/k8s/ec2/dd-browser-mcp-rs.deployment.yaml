@@ -99,22 +99,25 @@ spec:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
                   optional: true
-            # In-pod bearer gate on POST /mcp. OFF for now: the service is
-            # deliberately public (auth is enforced later at the gateway). Flip
-            # to 'true' and set BROWSER_MCP_AUTH_SECRET to require a bearer.
+            # In-pod bearer gate on POST /mcp. REQUIRED: the endpoint is publicly
+            # reachable through the gateway (/browser-mcp), so a compromised or
+            # missing gateway control must not leave the write-capable tools open.
+            # The bearer value lives in dd-browser-mcp-rs-secrets/BROWSER_MCP_AUTH_SECRET
+            # (must be provisioned before this is reachable, or every call 401s).
             - name: BROWSER_MCP_REQUIRE_AUTH
-              value: 'false'
+              value: 'true'
             - name: BROWSER_MCP_AUTH_SECRET
               valueFrom:
                 secretKeyRef:
                   name: dd-browser-mcp-rs-secrets
                   key: BROWSER_MCP_AUTH_SECRET
                   optional: true
-            # Server-side domain allowlist injected into every browser_act call
-            # so navigation policy is enforced centrally. Empty = any public
-            # https host (dev). Set to a concrete list in production.
+            # Server-side domain allowlist injected into every browser_act call so
+            # navigation policy is enforced centrally regardless of what the model
+            # sends. Empty would permit ANY public https host; start narrow and
+            # widen deliberately. Comma-separated hostnames.
             - name: BROWSER_MCP_ALLOWED_DOMAINS
-              value: ''
+              value: 'sos.state.co.us,irs.gov,dnb.com,accounts.google.com,mail.google.com'
             - name: OTEL_SERVICE_NAME
               value: dd-browser-mcp-rs
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
