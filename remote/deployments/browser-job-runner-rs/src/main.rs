@@ -1014,6 +1014,29 @@ mod tests {
     use super::*;
     use axum::http::{HeaderName, HeaderValue};
 
+    // ---- effective_max_ms ------------------------------------------------
+
+    #[test]
+    fn effective_max_ms_normal_floor_and_caps() {
+        // Typical: honored as-is within bounds.
+        assert_eq!(effective_max_ms(30_000, 540_000, 540), 30_000);
+        // Floored at 1s.
+        assert_eq!(effective_max_ms(100, 540_000, 540), 1_000);
+        // Capped by the configured max timeout.
+        assert_eq!(effective_max_ms(1_000_000, 60_000, 540), 60_000);
+        // Capped by the hard lifetime (lifetime*1000 < max_timeout).
+        assert_eq!(effective_max_ms(1_000_000, 600_000, 30), 30_000);
+    }
+
+    #[test]
+    fn effective_max_ms_does_not_panic_when_ceiling_below_floor() {
+        // Regression: a misconfigured ceiling < 1s must not panic (the old inline
+        // `clamp(1_000, max_timeout_ms)` panicked on min > max). The ceiling wins.
+        assert_eq!(effective_max_ms(50_000, 500, 540), 500);
+        assert_eq!(effective_max_ms(50_000, 0, 540), 0);
+        assert_eq!(effective_max_ms(50_000, 100_000, 0), 0);
+    }
+
     // ---- env test harness -------------------------------------------------
     //
     // std::env::set_var / remove_var mutate global process state shared by every
