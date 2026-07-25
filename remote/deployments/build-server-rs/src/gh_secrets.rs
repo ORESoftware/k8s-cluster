@@ -49,17 +49,108 @@ pub struct SecretSource {
     pub from_env: String,
 }
 
-pub fn parse_rules(raw: &str) -> Result<Vec<SyncRule>, String> {
+/// Policy that constrains which repos may receive secrets and which process
+/// env vars may be used as a source. Both are enforced at parse time so an
+/// invalid rule set is rejected before any sync runs.
+#[derive(Debug, Clone, Default)]
+pub struct SyncPolicy {
+    /// Repo owners (case-insensitive) allowed as a sync target. Empty = deny
+    /// all: secret sync is fail-closed until an operator names the owners.
+    pub allowed_owners: Vec<String>,
+    /// Exact env-var names permitted as a `fromEnv` source. When empty, sources
+    /// must instead carry the `GH_SYNC_` prefix convention.
+    pub allowed_env: Vec<String>,
+}
+
+/// Env names (or substrings) that may NEVER be synced to GitHub, regardless of
+/// allowlist — the cluster crown jewels. This is the structural block on the
+/// "patch the rules ConfigMap to exfiltrate every secret" chain.
+const FORBIDDEN_ENV_SUBSTRINGS: &[&str] = &[
+    "AWS_SECRET",
+    "AWS_ACCESS",
+    "AWS_SESSION",
+    "FIDUCIA_API_KEY",
+    "SERVER_AUTH_SECRET",
+    "DATABASE_URL",
+    "GH_PAT",
+    "GITHUB_TOKEN",
+    "GH_SECRETS_SYNC_TOKEN",
+    "RUNTIME_CONFIG_SERVER_SECRET",
+    "WEBHOOK_SECRET",
+    "PRIVATE_KEY",
+];
+
+fn repo_owner(repo: &str) -> Option<&str> {
+    repo.split_once('/').map(|(owner, _)| owner).filter(|owner| {
+        !owner.is_empty()
+            && owner
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+    })
+}
+
+fn env_source_allowed(from_env: &str, policy: &SyncPolicy) -> Result<(), String> {
+    let upper = from_env.to_ascii_uppercase();
+    if FORBIDDEN_ENV_SUBSTRINGS
+        .iter()
+        .any(|needle| upper.contains(needle))
+    {
+        return Err(format!(
+            "gh sync source env {from_env:?} is a protected cluster secret and can never be synced"
+        ));
+    }
+    if policy.allowed_env.is_empty() {
+        if !from_env.starts_with("GH_SYNC_") {
+            return Err(format!(
+                "gh sync source env {from_env:?} must be listed in BUILD_SERVER_GH_SYNC_ALLOWED_ENV or use the GH_SYNC_ prefix"
+            ));
+        }
+    } else if !policy.allowed_env.iter().any(|name| name == from_env) {
+        return Err(format!(
+            "gh sync source env {from_env:?} is not in BUILD_SERVER_GH_SYNC_ALLOWED_ENV"
+        ));
+    }
+    Ok(())
+}
+
+pub fn parse_rules(raw: &str, policy: &SyncPolicy) -> Result<Vec<SyncRule>, String> {
     let rules = serde_json::from_str::<Vec<SyncRule>>(raw)
         .map_err(|error| format!("invalid gh secret sync rules JSON: {error}"))?;
     for rule in &rules {
-        if !rule.repo.contains('/') {
+        // Repo must be a strict `owner/name` with a clean charset — blocks the
+        // `x/../../gists` dot-segment trick that reqwest would normalize into a
+        // different GitHub endpoint.
+        let owner = repo_owner(&rule.repo).ok_or_else(|| {
+            format!("gh sync rule repo {:?} must be a valid owner/name", rule.repo)
+        })?;
+        let (_, name) = rule.repo.split_once('/').unwrap_or_default();
+        let name_ok = !name.is_empty()
+            && !name.contains('/')
+            && name
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'));
+        if !name_ok {
             return Err(format!(
-                "gh sync rule repo {:?} must be owner/name",
+                "gh sync rule repo {:?} must be a valid owner/name",
                 rule.repo
             ));
         }
-        for name in rule.secrets.keys() {
+        // Owner allowlist — fail closed on an empty policy.
+        if policy.allowed_owners.is_empty() {
+            return Err(
+                "gh secret sync is enabled but BUILD_SERVER_GH_SYNC_ALLOWED_OWNERS is empty; refusing all rules".to_string(),
+            );
+        }
+        if !policy
+            .allowed_owners
+            .iter()
+            .any(|allowed| allowed.eq_ignore_ascii_case(owner))
+        {
+            return Err(format!(
+                "gh sync rule owner {owner:?} is not in BUILD_SERVER_GH_SYNC_ALLOWED_OWNERS"
+            ));
+        }
+        for (name, source) in &rule.secrets {
             if name.is_empty()
                 || !name
                     .chars()
@@ -69,6 +160,7 @@ pub fn parse_rules(raw: &str) -> Result<Vec<SyncRule>, String> {
                     "gh secret name {name:?} is not a valid secret name"
                 ));
             }
+            env_source_allowed(&source.from_env, policy)?;
         }
     }
     Ok(rules)
@@ -351,14 +443,63 @@ pub async fn run_periodic_sync(state: AppState) {
 mod tests {
     use super::*;
 
+    fn policy() -> SyncPolicy {
+        SyncPolicy {
+            allowed_owners: vec!["ORESoftware".to_string()],
+            allowed_env: Vec::new(),
+        }
+    }
+
     #[test]
     fn sync_rules_validate_repo_and_secret_names() {
-        let good = r#"[{"repo":"ORESoftware/k8s-cluster","secrets":{"SERVER_AUTH_SECRET":{"fromEnv":"SERVER_AUTH_SECRET"}}}]"#;
-        assert!(parse_rules(good).is_ok());
+        // Allowed owner + GH_SYNC_-prefixed source is accepted.
+        let good = r#"[{"repo":"ORESoftware/k8s-cluster","secrets":{"BUILD_TOKEN":{"fromEnv":"GH_SYNC_BUILD_TOKEN"}}}]"#;
+        assert!(parse_rules(good, &policy()).is_ok());
         let bad_repo = r#"[{"repo":"nope","secrets":{}}]"#;
-        assert!(parse_rules(bad_repo).is_err());
-        let bad_name = r#"[{"repo":"a/b","secrets":{"BAD NAME":{"fromEnv":"X"}}}]"#;
-        assert!(parse_rules(bad_name).is_err());
+        assert!(parse_rules(bad_repo, &policy()).is_err());
+        let bad_name = r#"[{"repo":"ORESoftware/b","secrets":{"BAD NAME":{"fromEnv":"GH_SYNC_X"}}}]"#;
+        assert!(parse_rules(bad_name, &policy()).is_err());
+    }
+
+    #[test]
+    fn sync_rules_block_owner_and_crown_jewel_exfiltration() {
+        // Owner not in the allowlist is rejected.
+        let other_owner = r#"[{"repo":"attacker/x","secrets":{"A":{"fromEnv":"GH_SYNC_A"}}}]"#;
+        assert!(parse_rules(other_owner, &policy()).is_err());
+
+        // Empty owner allowlist fails closed even for a plausible repo.
+        let empty_policy = SyncPolicy::default();
+        let ok_repo = r#"[{"repo":"ORESoftware/x","secrets":{"A":{"fromEnv":"GH_SYNC_A"}}}]"#;
+        assert!(parse_rules(ok_repo, &empty_policy).is_err());
+
+        // Crown-jewel env sources can never be synced, even to an allowed owner.
+        for env in [
+            "AWS_SECRET_ACCESS_KEY",
+            "FIDUCIA_API_KEY",
+            "SERVER_AUTH_SECRET",
+            "GH_PAT",
+            "BUILD_SERVER_DATABASE_URL",
+        ] {
+            let raw = format!(
+                r#"[{{"repo":"ORESoftware/x","secrets":{{"S":{{"fromEnv":"{env}"}}}}}}]"#
+            );
+            assert!(
+                parse_rules(&raw, &policy()).is_err(),
+                "{env} must be blocked as a sync source"
+            );
+        }
+
+        // A non-crown-jewel name without the GH_SYNC_ prefix is rejected when no
+        // explicit allowed_env list is configured.
+        let unprefixed = r#"[{"repo":"ORESoftware/x","secrets":{"S":{"fromEnv":"SOME_VALUE"}}}]"#;
+        assert!(parse_rules(unprefixed, &policy()).is_err());
+
+        // An explicit allowed_env entry permits an otherwise-unprefixed name.
+        let explicit = SyncPolicy {
+            allowed_owners: vec!["ORESoftware".to_string()],
+            allowed_env: vec!["SOME_VALUE".to_string()],
+        };
+        assert!(parse_rules(unprefixed, &explicit).is_ok());
     }
 
     #[test]

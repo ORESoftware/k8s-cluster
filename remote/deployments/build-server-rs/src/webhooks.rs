@@ -21,7 +21,7 @@ use axum::{
 use hmac::{Hmac, Mac};
 use serde::Deserialize;
 use serde_json::json;
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 use std::sync::atomic::Ordering;
 use subtle::ConstantTimeEq;
 
@@ -91,11 +91,22 @@ fn verify_github_signature(secret: &str, body: &[u8], signature_header: &str) ->
 }
 
 fn substitute_image(template: &str, sha: &str, git_ref: &str) -> String {
-    let short_sha = &sha[..sha.len().min(12)];
+    // Slice by chars, never bytes: `sha` comes from untrusted webhook JSON, and
+    // a byte slice at [..12] panics if it lands mid-codepoint. `valid_commit_sha`
+    // gates callers, but keep this total on its own.
+    let short_sha: String = sha.chars().take(12).collect();
     template
         .replace("{sha}", sha)
-        .replace("{shortSha}", short_sha)
+        .replace("{shortSha}", &short_sha)
         .replace("{ref}", git_ref)
+}
+
+/// A commit sha must be 7–64 lowercase hex chars before it is interpolated into
+/// an image tag or lock key. Rejects non-ASCII (the old byte-slice panic) and
+/// any shell/tag metacharacter in one check.
+fn valid_commit_sha(sha: &str) -> bool {
+    let len = sha.len();
+    (7..=64).contains(&len) && sha.chars().all(|ch| ch.is_ascii_hexdigit())
 }
 
 fn branch_from_ref(git_ref: &str) -> Option<&str> {
@@ -305,7 +316,11 @@ pub async fn github_webhook(
         }
     }
 
-    if !actionable || repo.is_empty() || sha.is_empty() {
+    // `valid_commit_sha` subsumes the empty check and rejects a malformed or
+    // non-ASCII sha before it reaches `substitute_image`/lock keys. An invalid
+    // sha is ignored (not built), and the idempotency lease is finished so no
+    // zombie holder is left behind.
+    if !actionable || repo.is_empty() || !valid_commit_sha(&sha) {
         fiducia::idempotency_finish(&state.http, &state.config, &idem_key, &state.holder, true)
             .await;
         return (
@@ -368,11 +383,20 @@ fn registry_secret_ok(state: &AppState, headers: &HeaderMap) -> bool {
     let Some(secret) = state.config.registry_webhook_secret.as_deref() else {
         return false;
     };
-    headers
+    let Some(presented) = headers
         .get("x-registry-webhook-secret")
         .or_else(|| headers.get("x-webhook-secret"))
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.as_bytes().ct_eq(secret.as_bytes()).into())
+    else {
+        return false;
+    };
+    // Hash both sides to a fixed 32 bytes before the constant-time compare.
+    // `subtle`'s slice `ct_eq` short-circuits on a length mismatch, which would
+    // leak the secret's length over the public `/webhooks/` path; hashing makes
+    // both operands the same length regardless of input.
+    let presented_digest = Sha256::digest(presented.as_bytes());
+    let expected_digest = Sha256::digest(secret.as_bytes());
+    presented_digest.ct_eq(&expected_digest).into()
 }
 
 /// Normalize either an ECR EventBridge event or a docker distribution v2
@@ -458,11 +482,25 @@ pub async fn registry_webhook(
         .webhooks_received
         .fetch_add(1, Ordering::Relaxed);
     let events = registry_events(&payload);
-    let delivery_id = headers
+    // Require a stable delivery id: falling back to a timestamp made every
+    // request unique, so omitting the header defeated dedupe entirely and let a
+    // caller flood the image subject. Mirror the GitHub path, which hard-requires
+    // its delivery header.
+    let delivery_id = match headers
         .get("x-delivery-id")
         .and_then(|value| value.to_str().ok())
-        .map(ToString::to_string)
-        .unwrap_or_else(|| format!("registry-{}", crate::now_ms()));
+        .map(str::trim)
+        .filter(|value| (1..=128).contains(&value.len()))
+    {
+        Some(value) => value.to_string(),
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": "missing or invalid X-Delivery-Id header (1-128 chars)" })),
+            )
+                .into_response();
+        }
+    };
 
     if let Some(db) = state.db.as_ref() {
         let repo = events

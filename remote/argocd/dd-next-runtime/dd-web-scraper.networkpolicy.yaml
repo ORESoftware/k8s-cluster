@@ -16,12 +16,17 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Only the gateway (proxied /scrape) and the observability scrapers (/metrics)
-    # may reach the service port. Nothing else in the cluster can call it.
+    # The gateway (proxied /scrape), the browser-automation MCP control plane
+    # (dd-browser-mcp-rs, which drives the persistent /agent/* sessions), and the
+    # observability scrapers (/metrics) may reach the service port. Nothing else
+    # in the cluster can call it.
     - from:
         - podSelector:
             matchLabels:
               app: dd-remote-gateway
+        - podSelector:
+            matchLabels:
+              app: dd-browser-mcp-rs
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability
@@ -56,6 +61,16 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    # The one-shot Selenium bridge (/agent/selenium-run) forwards native
+    # scenarios to dd-selenium-server. Only reachable when the bridge is
+    # configured (BROWSER_AGENT_SELENIUM_URL set on the deployment).
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-selenium-server
+      ports:
+        - protocol: TCP
+          port: 8105
     # Public internet on ANY port (scrape targets and rotating proxies use
     # arbitrary ports), but never the cluster, host, link-local, or cloud
     # metadata ranges. This is the network-layer SSRF backstop: even if a browser
