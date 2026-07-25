@@ -430,6 +430,45 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn a_base_version_at_the_counter_maximum_is_a_400_before_any_query() {
+        // The hostile shape an authenticated device can send today: its OWN
+        // counter at u64::MAX. It dominates, it is causal, and it used to reach
+        // the increment. It must now be refused by the envelope check — on a
+        // mock connection with no canned rows, anything past that check would
+        // surface as a database error rather than `BadRequest`.
+        let who = AuthedDevice {
+            account_id: Uuid::new_v4(),
+            device_id: Uuid::new_v4(),
+        };
+        let mut request = max_size_push(64, who);
+        request.base_version = vec![VersionEntry {
+            device_id: who.device_id.to_string(),
+            counter: u64::MAX,
+        }];
+        let database = MockDatabase::new(DatabaseBackend::Postgres).into_connection();
+        assert!(
+            matches!(
+                store(&database, who, &request).await,
+                Err(ApiError::BadRequest)
+            ),
+            "a counter that cannot be incremented is not a usable causal history"
+        );
+
+        // One below is an ordinary large counter and must still be accepted by
+        // the validator (it gets as far as the database, which is the point).
+        let mut fine = request.clone();
+        fine.base_version[0].counter = u64::MAX - 1;
+        let database = MockDatabase::new(DatabaseBackend::Postgres).into_connection();
+        assert!(
+            !matches!(
+                store(&database, who, &fine).await,
+                Err(ApiError::BadRequest)
+            ),
+            "large-but-incrementable counters are legal and must not be swept up by the fix"
+        );
+    }
+
     #[test]
     fn concurrent_vectors_dominate_neither_way() {
         // Each side has an event the other has not observed: true concurrency.
