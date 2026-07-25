@@ -2108,4 +2108,544 @@ mod tests {
         assert!(metrics.contains("# TYPE dd_queue_consumer_dead_lettered_total counter"));
         assert!(metrics.contains("# TYPE dd_queue_consumer_ready gauge"));
     }
+
+    // ---- test helpers ---------------------------------------------------
+
+    /// Deserialize a task envelope from JSON, exercising the same serde path the
+    /// consumer uses on the wire. Panics on invalid input so routing/validation
+    /// tests can read cleanly.
+    fn parse_task(value: Value) -> QueueTaskMessage {
+        serde_json::from_value::<QueueTaskMessage>(value).expect("task should parse")
+    }
+
+    /// A per-test scratch directory under the crate's build tree. Uses the
+    /// compile-time manifest dir (no runtime getenv) plus a process-global
+    /// counter, so it is unique across parallel tests and never races the
+    /// env-mutating tests below.
+    fn unique_receipts_dir(tag: &str) -> PathBuf {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("qc-receipt-tests")
+            .join(format!("{tag}-{}-{n}", std::process::id()))
+    }
+
+    // Serializes every test that reads or writes process environment. The env
+    // parsers below use fixed or shared keys and `set_var`/`remove_var` mutate
+    // global state, so concurrent access from other test threads must be
+    // excluded. Recovers a poisoned lock so one failing env test can't cascade.
+    static ENV_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        ENV_GUARD.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    // ---- message parsing / validation ----------------------------------
+
+    #[test]
+    fn task_message_requires_thread_and_task_ids() {
+        // Minimal valid envelope: only the two required ids; optionals stay None.
+        let task = parse_task(json!({"threadId": "th", "taskId": "tk"}));
+        assert_eq!(task.thread_id, "th");
+        assert_eq!(task.task_id, "tk");
+        assert!(task.message_kind.is_none());
+        assert!(task.shadow.is_none());
+
+        // Missing either required id is a hard parse error (not a silent default).
+        assert!(serde_json::from_value::<QueueTaskMessage>(json!({"threadId": "th"})).is_err());
+        assert!(serde_json::from_value::<QueueTaskMessage>(json!({"taskId": "tk"})).is_err());
+
+        // Empty, truncated, non-JSON, and non-object bodies are all rejected.
+        assert!(serde_json::from_slice::<QueueTaskMessage>(b"").is_err());
+        assert!(serde_json::from_slice::<QueueTaskMessage>(b"not json").is_err());
+        assert!(serde_json::from_slice::<QueueTaskMessage>(b"{").is_err());
+        assert!(serde_json::from_value::<QueueTaskMessage>(json!([])).is_err());
+        assert!(serde_json::from_value::<QueueTaskMessage>(json!("string")).is_err());
+        assert!(serde_json::from_value::<QueueTaskMessage>(json!(123)).is_err());
+        assert!(serde_json::from_value::<QueueTaskMessage>(json!(null)).is_err());
+    }
+
+    #[test]
+    fn task_message_maps_camelcase_and_ignores_unknown_fields() {
+        let task = parse_task(json!({
+            "threadId": "th",
+            "taskId": "tk",
+            "messageKind": "task.dispatch",
+            "directDispatch": true,
+            "dispatchMode": "container-pool",
+            "containerPoolDispatch": false,
+            "baseBranch": "main",
+            "threadTitle": "My Thread",
+            "contextMode": "selected",
+            "contextIds": ["a", "b"],
+            "createdAtMs": 1_700_000_000_000_i64,
+            // A field this consumer does not model must be ignored, not fatal:
+            // producers may emit newer envelope keys during a rolling upgrade.
+            "somethingBrandNew": {"nested": 1}
+        }));
+        assert_eq!(task.message_kind.as_deref(), Some("task.dispatch"));
+        assert_eq!(task.direct_dispatch, Some(true));
+        assert_eq!(task.dispatch_mode.as_deref(), Some("container-pool"));
+        assert_eq!(task.container_pool_dispatch, Some(false));
+        assert_eq!(task.base_branch.as_deref(), Some("main"));
+        assert_eq!(task.thread_title.as_deref(), Some("My Thread"));
+        assert_eq!(task.context_mode.as_deref(), Some("selected"));
+        assert_eq!(
+            task.context_ids,
+            Some(vec!["a".to_string(), "b".to_string()])
+        );
+        assert_eq!(task.created_at_ms, Some(1_700_000_000_000));
+    }
+
+    #[test]
+    fn task_message_rejects_wrong_field_types() {
+        // Required ids must be strings.
+        assert!(
+            serde_json::from_value::<QueueTaskMessage>(json!({"threadId": 1, "taskId": "tk"}))
+                .is_err()
+        );
+        // A boolean flag given as a string is a type error, not a coercion.
+        assert!(serde_json::from_value::<QueueTaskMessage>(
+            json!({"threadId": "th", "taskId": "tk", "shadow": "yes"})
+        )
+        .is_err());
+        // contextIds must be an array of strings, not a comma-joined string.
+        assert!(serde_json::from_value::<QueueTaskMessage>(
+            json!({"threadId": "th", "taskId": "tk", "contextIds": "a,b"})
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn validate_task_identifiers_checks_both_ids() {
+        let ok = parse_task(json!({"threadId": "th-1", "taskId": "tk-1"}));
+        assert!(validate_task_identifiers(&ok).is_ok());
+
+        // An unsafe threadId is rejected and the error names the field.
+        let bad_thread = parse_task(json!({"threadId": "../etc", "taskId": "tk-1"}));
+        let err = validate_task_identifiers(&bad_thread).unwrap_err();
+        assert!(err.contains("threadId"), "unexpected error: {err}");
+
+        // A valid threadId but an unsafe taskId must still be rejected: proves
+        // the taskId is validated too, not just the first field.
+        let bad_task = parse_task(json!({"threadId": "th-1", "taskId": "a/b"}));
+        let err = validate_task_identifiers(&bad_task).unwrap_err();
+        assert!(err.contains("taskId"), "unexpected error: {err}");
+    }
+
+    // ---- routing / subject-to-handler mapping --------------------------
+
+    #[test]
+    fn is_shadow_task_uses_flag_or_message_kind() {
+        // The explicit shadow flag alone marks a shadow task.
+        assert!(is_shadow_task(&parse_task(
+            json!({"threadId": "t", "taskId": "k", "shadow": true})
+        )));
+        // messageKind == "task.shadow" marks it even when the flag is false/absent.
+        assert!(is_shadow_task(&parse_task(
+            json!({"threadId": "t", "taskId": "k", "shadow": false, "messageKind": "task.shadow"})
+        )));
+        assert!(is_shadow_task(&parse_task(
+            json!({"threadId": "t", "taskId": "k", "messageKind": "task.shadow"})
+        )));
+        // Neither signal present → not a shadow task.
+        assert!(!is_shadow_task(&parse_task(json!({"threadId": "t", "taskId": "k"}))));
+        assert!(!is_shadow_task(&parse_task(
+            json!({"threadId": "t", "taskId": "k", "shadow": false, "messageKind": "task.dispatch"})
+        )));
+    }
+
+    #[test]
+    fn container_pool_dispatch_mode_matches_only_pool_aliases() {
+        for mode in ["queued-pool", "nats-pool", "container-pool", "pool"] {
+            assert!(is_container_pool_dispatch_mode(mode), "{mode} should be a pool alias");
+        }
+        // Non-pool modes and case variants are not pool aliases (match is exact).
+        for mode in ["queued", "nats", "async", "direct", "", "POOL", "Container-Pool"] {
+            assert!(
+                !is_container_pool_dispatch_mode(mode),
+                "{mode} should not be a pool alias"
+            );
+        }
+    }
+
+    #[test]
+    fn should_dispatch_to_container_pool_flag_overrides_mode() {
+        // The explicit containerPoolDispatch flag wins in both directions,
+        // regardless of dispatchMode.
+        assert!(should_dispatch_to_container_pool(&parse_task(
+            json!({"threadId": "t", "taskId": "k", "containerPoolDispatch": true, "dispatchMode": "queued"})
+        )));
+        assert!(!should_dispatch_to_container_pool(&parse_task(
+            json!({"threadId": "t", "taskId": "k", "containerPoolDispatch": false, "dispatchMode": "container-pool"})
+        )));
+        // With no explicit flag, the trimmed dispatchMode decides.
+        assert!(should_dispatch_to_container_pool(&parse_task(
+            json!({"threadId": "t", "taskId": "k", "dispatchMode": "  container-pool  "})
+        )));
+        assert!(!should_dispatch_to_container_pool(&parse_task(
+            json!({"threadId": "t", "taskId": "k", "dispatchMode": "queued"})
+        )));
+        // A blank or absent dispatchMode is not a pool dispatch.
+        assert!(!should_dispatch_to_container_pool(&parse_task(
+            json!({"threadId": "t", "taskId": "k", "dispatchMode": "   "})
+        )));
+        assert!(!should_dispatch_to_container_pool(&parse_task(
+            json!({"threadId": "t", "taskId": "k"})
+        )));
+    }
+
+    #[test]
+    fn repo_pool_slug_matches_readme_affinity_example() {
+        // The readme documents nodejs-chat-claude-live-mutex-dev for this shape.
+        assert_eq!(
+            repo_pool_slug("https://github.com/ORG/live-mutex.git", "dev"),
+            "nodejs-chat-claude-live-mutex-dev"
+        );
+        // SCP-style git URL: last '/'-or-':'-delimited segment, .git stripped,
+        // and both repo and branch are slug-sanitized (lowercased, '/'→'-').
+        assert_eq!(
+            repo_pool_slug("git@github.com:Org/My_Repo.git", "feature/New"),
+            "nodejs-chat-claude-my-repo-feature-new"
+        );
+        // A bare repo name with no host or .git suffix.
+        assert_eq!(
+            repo_pool_slug("simplerepo", "main"),
+            "nodejs-chat-claude-simplerepo-main"
+        );
+    }
+
+    #[test]
+    fn sanitize_slug_part_lowercases_collapses_and_caps() {
+        assert_eq!(sanitize_slug_part("Hello World"), "hello-world");
+        // A run of non-alphanumerics collapses to a single dash.
+        assert_eq!(sanitize_slug_part("a__b!!c"), "a-b-c");
+        // Leading and trailing dashes are trimmed off.
+        assert_eq!(sanitize_slug_part("--Lead--Trail--"), "lead-trail");
+        assert_eq!(sanitize_slug_part(""), "");
+        // The result is capped at 80 characters.
+        assert_eq!(sanitize_slug_part(&"a".repeat(200)).len(), 80);
+    }
+
+    // ---- config: env defaults / overrides ------------------------------
+
+    #[test]
+    fn env_value_trims_and_falls_back_on_empty_or_unset() {
+        let _guard = env_lock();
+        let key = "DD_QC_TEST_ENV_VALUE";
+        std::env::remove_var(key);
+        assert_eq!(env_value(key, "fb"), "fb"); // unset → fallback
+        std::env::set_var(key, "  hello  ");
+        assert_eq!(env_value(key, "fb"), "hello"); // surrounding whitespace trimmed
+        std::env::set_var(key, "   ");
+        assert_eq!(env_value(key, "fb"), "fb"); // whitespace-only → empty → fallback
+        std::env::set_var(key, "");
+        assert_eq!(env_value(key, "fb"), "fb"); // empty → fallback
+        std::env::remove_var(key);
+    }
+
+    #[test]
+    fn env_i64_accepts_only_positive_integers() {
+        let _guard = env_lock();
+        let key = "DD_QC_TEST_ENV_I64";
+        std::env::remove_var(key);
+        assert_eq!(env_i64(key, 7), 7); // unset → fallback
+        std::env::set_var(key, " 42 ");
+        assert_eq!(env_i64(key, 7), 42); // trimmed then parsed
+        std::env::set_var(key, "0");
+        assert_eq!(env_i64(key, 7), 7); // zero rejected (must be > 0)
+        std::env::set_var(key, "-5");
+        assert_eq!(env_i64(key, 7), 7); // negative rejected
+        std::env::set_var(key, "notanumber");
+        assert_eq!(env_i64(key, 7), 7); // non-numeric rejected
+        std::env::remove_var(key);
+    }
+
+    #[test]
+    fn env_u64_accepts_only_positive_integers() {
+        let _guard = env_lock();
+        let key = "DD_QC_TEST_ENV_U64";
+        std::env::remove_var(key);
+        assert_eq!(env_u64(key, 9), 9); // unset → fallback
+        std::env::set_var(key, " 120 ");
+        assert_eq!(env_u64(key, 9), 120); // trimmed then parsed
+        std::env::set_var(key, "0");
+        assert_eq!(env_u64(key, 9), 9); // zero rejected (must be > 0)
+        std::env::set_var(key, "-1");
+        assert_eq!(env_u64(key, 9), 9); // negative fails u64 parse
+        std::env::set_var(key, "abc");
+        assert_eq!(env_u64(key, 9), 9); // non-numeric rejected
+        std::env::remove_var(key);
+    }
+
+    #[test]
+    fn env_bool_matches_truthy_tokens_case_insensitively() {
+        let _guard = env_lock();
+        let key = "DD_QC_TEST_ENV_BOOL";
+        std::env::remove_var(key);
+        assert!(env_bool(key, true)); // unset → fallback (true)
+        assert!(!env_bool(key, false)); // unset → fallback (false)
+        for truthy in ["1", "true", "TRUE", " yes ", "On"] {
+            std::env::set_var(key, truthy);
+            assert!(env_bool(key, false), "{truthy:?} should be truthy");
+        }
+        // Any present-but-non-truthy value is false even when the fallback is true.
+        for falsy in ["0", "false", "no", "off", "2", ""] {
+            std::env::set_var(key, falsy);
+            assert!(!env_bool(key, true), "{falsy:?} should override fallback to false");
+        }
+        std::env::remove_var(key);
+    }
+
+    #[test]
+    fn server_auth_secret_precedence_and_default() {
+        let _guard = env_lock();
+        let primary = "REMOTE_DEV_SERVER_SECRET";
+        let secondary = "SERVER_AUTH_SECRET";
+        std::env::remove_var(primary);
+        std::env::remove_var(secondary);
+        // Both unset → the compiled-in default.
+        assert_eq!(server_auth_secret(), DEFAULT_SERVER_SECRET);
+        // Secondary key is used when the primary is unset.
+        std::env::set_var(secondary, "from-secondary");
+        assert_eq!(server_auth_secret(), "from-secondary");
+        // Primary takes precedence over the secondary, and is trimmed.
+        std::env::set_var(primary, "  from-primary  ");
+        assert_eq!(server_auth_secret(), "from-primary");
+        std::env::remove_var(primary);
+        std::env::remove_var(secondary);
+    }
+
+    #[test]
+    fn optional_env_returns_none_for_unset_or_blank() {
+        let _guard = env_lock();
+        let key = "DD_QC_TEST_OPTIONAL_ENV";
+        std::env::remove_var(key);
+        assert_eq!(optional_env(key), None); // unset → None
+        std::env::set_var(key, "   ");
+        assert_eq!(optional_env(key), None); // blank → None
+        std::env::set_var(key, "  value  ");
+        assert_eq!(optional_env(key), Some("value".to_string())); // trimmed
+        std::env::remove_var(key);
+    }
+
+    // ---- dedup / idempotency receipts ----------------------------------
+
+    #[test]
+    fn receipt_round_trip_persists_and_detects_by_task_id() {
+        let dir = unique_receipts_dir("roundtrip");
+        let _ = fs::remove_dir_all(&dir);
+        let base = dir.to_str().unwrap();
+        let task = parse_task(json!({
+            "threadId": "th-1",
+            "taskId": "tk-1",
+            "messageKind": "task.dispatch"
+        }));
+
+        let mut receipts = HashSet::new();
+        // Absent before any write.
+        assert!(!has_task_receipt(&mut receipts, base, "tk-1"));
+
+        write_task_receipt(base, &task).expect("receipt should persist");
+
+        // A brand-new in-memory cache still detects the durable on-disk receipt,
+        // and the disk hit warms the in-memory fast path.
+        let mut fresh = HashSet::new();
+        assert!(has_task_receipt(&mut fresh, base, "tk-1"));
+        assert!(fresh.contains("tk-1"));
+        // A different task id is not suppressed.
+        assert!(!has_task_receipt(&mut fresh, base, "tk-2"));
+
+        // The write was atomic: exactly the final .json exists, with no
+        // half-written .tmp-* file left behind.
+        let entries: Vec<String> = fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(entries.len(), 1, "unexpected receipt dir contents: {entries:?}");
+        assert!(entries[0].ends_with(".json"), "not a .json receipt: {entries:?}");
+        assert!(!entries[0].contains(".tmp-"), "leftover tmp file: {entries:?}");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn has_task_receipt_rejects_untrusted_files_and_uses_cache() {
+        let dir = unique_receipts_dir("untrusted");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let base = dir.to_str().unwrap();
+
+        // The in-memory cache short-circuits even with no file on disk.
+        let mut receipts = HashSet::new();
+        record_receipt(&mut receipts, "cached-id");
+        assert!(has_task_receipt(&mut receipts, base, "cached-id"));
+
+        let mut cold = HashSet::new();
+        // A receipt whose recorded taskId does not match must not suppress work
+        // (guards the sanitized-filename collision case).
+        fs::write(
+            receipt_path(base, "real-id"),
+            serde_json::to_vec(&json!({"taskId": "someone-else"})).unwrap(),
+        )
+        .unwrap();
+        assert!(!has_task_receipt(&mut cold, base, "real-id"));
+        // A corrupt (non-JSON) receipt file is likewise not trusted.
+        fs::write(receipt_path(base, "corrupt-id"), b"not json {{{").unwrap();
+        assert!(!has_task_receipt(&mut cold, base, "corrupt-id"));
+        // A receipt whose taskId matches IS trusted, and warms the cache.
+        fs::write(
+            receipt_path(base, "match-id"),
+            serde_json::to_vec(&json!({"taskId": "match-id"})).unwrap(),
+        )
+        .unwrap();
+        assert!(has_task_receipt(&mut cold, base, "match-id"));
+        assert!(cold.contains("match-id"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ---- log schema / critical-event / status shaping ------------------
+
+    #[test]
+    fn severity_number_maps_known_levels_and_defaults() {
+        assert_eq!(severity_number("FATAL"), 24);
+        assert_eq!(severity_number("ERROR"), 17);
+        assert_eq!(severity_number("WARN"), 13);
+        assert_eq!(severity_number("INFO"), 9);
+        assert_eq!(severity_number("DEBUG"), 5);
+        // Unknown or wrong-case labels fall through to the minimum severity.
+        assert_eq!(severity_number("TRACE"), 1);
+        assert_eq!(severity_number("error"), 1);
+        assert_eq!(severity_number(""), 1);
+    }
+
+    #[test]
+    fn structured_log_record_uses_log_schema_and_service_identity() {
+        let record = structured_log_record("WARN", "some-event", "a body", json!({"k": "v"}));
+        assert_eq!(record["schema"], LOG_SCHEMA);
+        assert_eq!(record["severity_text"], "WARN");
+        assert_eq!(record["severity_number"], severity_number("WARN"));
+        assert_eq!(record["resource_service_name"], SERVICE_NAME);
+        assert_eq!(record["resource_service_namespace"], SERVICE_NAMESPACE);
+        assert_eq!(record["scope_name"], LOG_SCOPE);
+        assert_eq!(record["event_name"], "some-event");
+        assert_eq!(record["body"], "a body");
+        assert_eq!(record["attributes"]["k"], "v");
+        // The timestamp is emitted as a stringified unix-nano stamp.
+        assert!(record["time_unix_nano"].is_string());
+    }
+
+    #[test]
+    fn compact_critical_event_attributes_extracts_and_falls_back() {
+        // Direct extraction from top-level fields and log.attributes.
+        let payload = json!({
+            "schema": "dd.log.v1",
+            "type": "runtime-critical-event",
+            "source": "svc-a",
+            "eventName": "boom",
+            "severity": "ERROR",
+            "log": {"attributes": {"threadId": "th-A", "taskId": "tk-A"}}
+        });
+        let attrs = compact_critical_event_attributes("crit.subject", 42, &payload);
+        assert_eq!(attrs["criticalSubject"], "crit.subject");
+        assert_eq!(attrs["payloadBytes"], 42);
+        assert_eq!(attrs["upstreamSchema"], "dd.log.v1");
+        assert_eq!(attrs["upstreamType"], "runtime-critical-event");
+        assert_eq!(attrs["upstreamSource"], "svc-a");
+        assert_eq!(attrs["upstreamEventName"], "boom");
+        assert_eq!(attrs["upstreamSeverity"], "ERROR");
+        assert_eq!(attrs["threadId"], "th-A");
+        assert_eq!(attrs["taskId"], "tk-A");
+
+        // Fallbacks: source/eventName/severity read from the nested log record,
+        // and ids fall back to the dd.request.* attribute keys.
+        let fallback = json!({
+            "log": {
+                "resource_service_name": "svc-b",
+                "event_name": "nested-event",
+                "severity_text": "WARN",
+                "attributes": {
+                    "dd.request.thread_id": "th-B",
+                    "dd.request.task_id": "tk-B"
+                }
+            }
+        });
+        let attrs = compact_critical_event_attributes("s", 0, &fallback);
+        assert_eq!(attrs["upstreamSource"], "svc-b");
+        assert_eq!(attrs["upstreamEventName"], "nested-event");
+        assert_eq!(attrs["upstreamSeverity"], "WARN");
+        assert_eq!(attrs["threadId"], "th-B");
+        assert_eq!(attrs["taskId"], "tk-B");
+
+        // Final fallback: ids read from the payload root when no log exists, and
+        // absent optional fields serialize as JSON null.
+        let root_ids = json!({"threadId": "th-C", "taskId": "tk-C"});
+        let attrs = compact_critical_event_attributes("s", 0, &root_ids);
+        assert_eq!(attrs["threadId"], "th-C");
+        assert_eq!(attrs["taskId"], "tk-C");
+        assert!(attrs["upstreamSchema"].is_null());
+    }
+
+    #[test]
+    fn queue_status_event_shape_and_flag_defaults() {
+        let task = parse_task(json!({
+            "threadId": "th",
+            "taskId": "tk",
+            "messageKind": "task.dispatch"
+        }));
+        let event = queue_status_event(&task, "queue-received", "ok", "hello", json!({"a": 1}));
+        assert_eq!(event["kind"], "status");
+        assert_eq!(event["source"], "dd-remote-queue-consumer");
+        assert_eq!(event["stage"], "queue-received");
+        assert_eq!(event["status"], "ok");
+        assert_eq!(event["message"], "hello");
+        assert_eq!(event["messageKind"], "task.dispatch");
+        // shadow/directDispatch default to false when the envelope omits them.
+        assert_eq!(event["shadow"], false);
+        assert_eq!(event["directDispatch"], false);
+        assert_eq!(event["details"]["a"], 1);
+        assert!(event["atMs"].is_number());
+    }
+
+    #[test]
+    fn task_message_id_combines_task_id_and_stage() {
+        let task = parse_task(json!({"threadId": "th", "taskId": "tk-9"}));
+        assert_eq!(task_message_id(&task, "prepare"), "tk-9:prepare");
+        assert_eq!(task_message_id(&task, "dispatch"), "tk-9:dispatch");
+    }
+
+    #[test]
+    fn render_metrics_exposes_every_counter_and_ready_gauge() {
+        let metrics = render_metrics();
+        for name in [
+            "dd_queue_consumer_messages_received_total",
+            "dd_queue_consumer_fetch_errors_total",
+            "dd_queue_consumer_invalid_messages_total",
+            "dd_queue_consumer_duplicate_messages_total",
+            "dd_queue_consumer_ack_progress_failures_total",
+            "dd_queue_consumer_handoff_successes_total",
+            "dd_queue_consumer_handoff_failures_total",
+            "dd_queue_consumer_dead_lettered_total",
+            "dd_queue_consumer_dlq_publish_failures_total",
+        ] {
+            assert!(
+                metrics.contains(&format!("# TYPE {name} counter")),
+                "missing TYPE line for {name}"
+            );
+            // Each counter also emits a "name <value>" sample line.
+            assert!(
+                metrics.lines().any(|line| line.starts_with(&format!("{name} "))),
+                "missing sample line for {name}"
+            );
+        }
+        // The readiness gauge is present and its value is a 0/1 flag.
+        assert!(metrics.contains("# TYPE dd_queue_consumer_ready gauge"));
+        let ready_line = metrics
+            .lines()
+            .find(|line| line.starts_with("dd_queue_consumer_ready "))
+            .expect("ready gauge sample line");
+        let value = ready_line.rsplit(' ').next().unwrap();
+        assert!(value == "0" || value == "1", "ready gauge value was {value:?}");
+    }
 }
