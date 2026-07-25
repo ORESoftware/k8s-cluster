@@ -1149,6 +1149,37 @@ mod tests {
 
     /// A Config mirroring config_from_env()'s documented defaults, built without
     /// touching the environment so the pure-logic tests can run in parallel.
+    fn sample_tracked_job() -> TrackedJob {
+        TrackedJob {
+            job_id: "abc123".to_string(),
+            engine: "playwright".to_string(),
+            container_name: "dd-browser-job-abc123".to_string(),
+            started_ms: 1_000,
+            deadline_ms: 61_000,
+            result_subject: "dd.remote.browser_jobs.abc123.result".to_string(),
+            events_subject: "dd.remote.browser_jobs.abc123.events".to_string(),
+        }
+    }
+
+    #[test]
+    fn nerdctl_run_args_are_detached_without_rm() {
+        // Regression (found by E2E against the deployed runner): nerdctl rejects
+        // `-d --rm` together, which made every nerdctl-fallback browser job fail.
+        let args = nerdctl_run_args(&base_config(), &sample_tracked_job(), "c3BlYw==", 60_000);
+        assert!(args.iter().any(|a| a == "-d"), "must run detached");
+        assert!(
+            !args.iter().any(|a| a == "--rm"),
+            "must NOT pass --rm — nerdctl rejects `-d --rm`"
+        );
+        // Shape sanity: `-n <ns> run`, container name, env, image last.
+        assert_eq!(args.first().unwrap(), "-n");
+        assert!(args.contains(&"run".to_string()));
+        assert!(args.windows(2).any(|w| w[0] == "--name" && w[1] == "dd-browser-job-abc123"));
+        assert!(args.iter().any(|a| a == "JOB_SPEC_B64=c3BlYw=="));
+        assert!(args.iter().any(|a| a == "BROWSER_JOB_ID=abc123"));
+        assert_eq!(args.last().unwrap(), &base_config().image);
+    }
+
     fn base_config() -> Config {
         Config {
             host: "0.0.0.0".to_string(),
