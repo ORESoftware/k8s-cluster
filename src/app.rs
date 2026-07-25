@@ -35,6 +35,40 @@ use tower_http::timeout::TimeoutLayer;
 /// Per-request wall-clock budget. Bounds slow/stuck handlers.
 const REQUEST_TIMEOUT_SECS: u64 = 15;
 
+/// Body cap for every route that is not a vault push. Enrollment and device
+/// bodies are a few hundred bytes; 1 MiB is already enormous for them.
+const DEFAULT_BODY_LIMIT: usize = 1024 * 1024;
+
+/// Body cap for the vault routes, sized so a *conforming* client can actually
+/// send the published `MAX_CIPHERTEXT_LEN`.
+///
+/// The arithmetic, because the old 1 MiB cap made the published constant a lie
+/// (a 512 KiB ciphertext was refused with 413 at ~300 KiB of plaintext bytes):
+/// byte fields travel as JSON integer arrays, so each byte costs up to four
+/// characters on the wire — `"255,"`.
+///
+///   ciphertext   512 KiB x 4 chars/byte              = 2 097 152
+///   nonce        NONCE_LEN (24) x 4                  =       96
+///   kdf_salt     MAX_KDF_SALT_LEN (64) x 4           =      256
+///   kdf_params   three u32 fields, generously        =      128
+///   device_id    MAX_DEVICE_ID_LEN (64) + quoting    =       80
+///   base_version MAX_VERSION_ENTRIES (64) entries
+///                x (64-char id + u64 counter + JSON) =   10 240
+///   field names, brackets, commas                    =      256
+///                                                      ---------
+///                                            total    ~2 108 208  (~2.01 MiB)
+///
+/// 4 MiB is that rounded up to the next power of two, leaving headroom for a
+/// client that pretty-prints or sends extra forward-compatible fields.
+///
+/// DoS note: this doubles the memory a single accepted request can buffer, so
+/// it is applied to the vault routes ONLY — never globally, and never to the
+/// unauthenticated enrollment routes. Both the vault routes and enrollment now
+/// carry per-IP GCRA rate limiting (see below), so the sustained cost is capped
+/// at burst x limit rather than by concurrency alone, and `store()` still
+/// rejects anything past `MAX_CIPHERTEXT_LEN` before it touches the database.
+const VAULT_BODY_LIMIT: usize = 4 * 1024 * 1024;
+
 pub fn router(state: AppState) -> Router {
     // GCRA: replenish ~1 request/s with a small burst. SmartIpKeyExtractor uses
     // trusted ingress forwarding headers and falls back to the socket peer.
