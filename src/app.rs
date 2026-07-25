@@ -248,9 +248,12 @@ mod tests {
             "text/plain; version=0.0.4"
         );
         let body = response.into_body().collect().await.unwrap().to_bytes();
+        // An unlabelled gauge always renders, even on a registry that has not
+        // served a request yet; the labelled families are covered by
+        // `router_middleware_records_requests_and_sets_security_headers`.
         assert!(String::from_utf8(body.to_vec())
             .unwrap()
-            .contains("threefa_http_requests_total"));
+            .contains("threefa_http_requests_in_flight"));
 
         // And it serves nothing else: no API surface leaks onto the port the
         // observability namespace is allowed to reach.
@@ -424,16 +427,16 @@ mod tests {
                     .method("POST")
                     .uri("/v1/vault")
                     .header(header::CONTENT_TYPE, "application/json")
-                    .header(header::AUTHORIZATION, "Bearer not-a-real-token")
+                    .header(header::CONTENT_LENGTH, body.len())
                     .header("x-forwarded-for", "203.0.113.9")
                     .body(Body::from(body))
                     .unwrap(),
             )
             .await
             .unwrap();
-        // 401 because the mock database knows no such device — the point is that
-        // the request got as far as authentication instead of being cut off at
-        // the transport with 413.
+        // 401 because no credential was presented — the point is that the
+        // request reached the authentication step instead of being cut off at
+        // the transport with 413, which is what used to happen.
         assert_eq!(
             response.status(),
             StatusCode::UNAUTHORIZED,
@@ -450,6 +453,7 @@ mod tests {
                     .method("POST")
                     .uri("/v1/vault")
                     .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::CONTENT_LENGTH, body.len())
                     .header("x-forwarded-for", "203.0.113.10")
                     .body(Body::from(body))
                     .unwrap(),
@@ -469,6 +473,7 @@ mod tests {
                         .method("POST")
                         .uri(path)
                         .header(header::CONTENT_TYPE, "application/json")
+                        .header(header::CONTENT_LENGTH, body.len())
                         .header("x-forwarded-for", "203.0.113.11")
                         .body(Body::from(body.clone()))
                         .unwrap(),
