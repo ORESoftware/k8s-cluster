@@ -26101,6 +26101,182 @@ fn fdm_printer_catalog_advertises_creality_k1_and_k2_models() {
 }
 
 #[test]
+fn bambu_a1_family_and_corexy_models_resolve_and_join_the_default_fleet() {
+    for reference in [
+        "bambu-a1",
+        "Bambu Lab A1",
+        "a1",
+        "bambu-a1-combo",
+        "Bambu Lab A1 Combo",
+        "a1-combo",
+        "a1-mini",
+        "bambu-a1-mini-combo",
+        "p1s",
+        "Bambu Lab P1S",
+        "x1c",
+        "Bambu Lab X1 Carbon",
+        "x1-carbon",
+    ] {
+        assert_eq!(
+            machine_class(reference),
+            MachineClass::Additive,
+            "{reference} should classify as an additive printer"
+        );
+    }
+
+    let machines = default_machines();
+
+    // Open-frame Cartesian bed-slinger: Bambu firmware maps to bambu-gcode, not marlin.
+    let a1 = machines
+        .iter()
+        .find(|machine| machine.id == "bambu-a1-1")
+        .expect("default fleet should include the Bambu Lab A1");
+    assert_eq!(a1.kind, "fdm-printer");
+    assert_eq!(a1.controller.as_deref(), Some("bambu"));
+    assert_eq!(a1.work_envelope_mm, Some(vec![256.0, 256.0, 256.0]));
+    let a1_languages = machine_catalog_instruction_languages(a1);
+    assert!(a1_languages.iter().any(|language| language == "bambu-gcode"));
+    assert!(!a1_languages
+        .iter()
+        .any(|language| language == "marlin-gcode"));
+
+    // AMS Lite combo is a multi-material FDM printer and advertises the AMS job language.
+    let a1_combo = machines
+        .iter()
+        .find(|machine| machine.id == "bambu-a1-combo-1")
+        .expect("default fleet should include the Bambu Lab A1 Combo");
+    assert_eq!(a1_combo.kind, "multi-material-fdm-printer");
+    assert_eq!(a1_combo.controller.as_deref(), Some("bambu"));
+    let a1_combo_languages = machine_catalog_instruction_languages(a1_combo);
+    assert!(a1_combo_languages
+        .iter()
+        .any(|language| language == "ams-mmu-job"));
+    assert!(a1_combo_languages
+        .iter()
+        .any(|language| language == "bambu-gcode"));
+
+    // The mini shares the platform but a smaller envelope.
+    let a1_mini = machines
+        .iter()
+        .find(|machine| machine.id == "bambu-a1-mini-1")
+        .expect("default fleet should include the Bambu Lab A1 mini");
+    assert_eq!(a1_mini.work_envelope_mm, Some(vec![180.0, 180.0, 180.0]));
+
+    // Enclosed CoreXY flagship: still Bambu firmware, still multi-material.
+    let x1_carbon = machines
+        .iter()
+        .find(|machine| machine.id == "bambu-x1-carbon-1")
+        .expect("default fleet should include the Bambu Lab X1 Carbon");
+    assert_eq!(x1_carbon.kind, "multi-material-fdm-printer");
+    assert_eq!(x1_carbon.controller.as_deref(), Some("bambu"));
+    assert_eq!(x1_carbon.work_envelope_mm, Some(vec![256.0, 256.0, 256.0]));
+    let x1_carbon_languages = machine_catalog_instruction_languages(x1_carbon);
+    assert!(x1_carbon_languages
+        .iter()
+        .any(|language| language == "bambu-gcode"));
+    assert!(x1_carbon_languages
+        .iter()
+        .any(|language| language == "ams-mmu-job"));
+}
+
+#[test]
+fn fdm_printer_catalog_advertises_bambu_a1_and_corexy_models() {
+    let payload = fdm_printer_catalog_response();
+    let models = payload
+        .get("supportedPrinterModels")
+        .and_then(Value::as_array)
+        .expect("supported printer models should be present");
+    for expected in [
+        "bambu-a1",
+        "bambu-a1-combo",
+        "bambu-a1-mini",
+        "bambu-a1-mini-combo",
+        "bambu-p1s",
+        "bambu-x1-carbon",
+    ] {
+        assert!(
+            models
+                .iter()
+                .any(|model| model.get("model").and_then(Value::as_str) == Some(expected)),
+            "missing supported printer model {expected}"
+        );
+    }
+
+    let find = |model_name: &str| {
+        models
+            .iter()
+            .find(|model| model.get("model").and_then(Value::as_str) == Some(model_name))
+            .unwrap_or_else(|| panic!("{model_name} model entry"))
+    };
+
+    // Open-frame A1: single-nozzle FDM, Cartesian, not enclosed.
+    let a1 = find("bambu-a1");
+    assert_eq!(
+        a1.get("machineKind").and_then(Value::as_str),
+        Some("fdm-printer")
+    );
+    assert_eq!(a1.get("kinematics").and_then(Value::as_str), Some("cartesian"));
+    assert_eq!(a1.get("enclosed").and_then(Value::as_bool), Some(false));
+
+    // A1 Combo: AMS Lite is 4 slots, not chainable.
+    let a1_combo = find("bambu-a1-combo");
+    assert_eq!(
+        a1_combo.get("machineKind").and_then(Value::as_str),
+        Some("multi-material-fdm-printer")
+    );
+    assert_eq!(a1_combo.get("maxMaterials").and_then(Value::as_u64), Some(4));
+    assert_eq!(
+        a1_combo.get("enclosed").and_then(Value::as_bool),
+        Some(false)
+    );
+
+    // X1 Carbon: enclosed CoreXY, AMS chains to 16 spools.
+    let x1_carbon = find("bambu-x1-carbon");
+    assert_eq!(
+        x1_carbon.get("kinematics").and_then(Value::as_str),
+        Some("corexy")
+    );
+    assert_eq!(
+        x1_carbon.get("enclosed").and_then(Value::as_bool),
+        Some(true)
+    );
+    assert_eq!(
+        x1_carbon.get("maxMaterials").and_then(Value::as_u64),
+        Some(16)
+    );
+
+    let printers = payload
+        .get("fdmPrinters")
+        .and_then(Value::as_array)
+        .expect("fdm printers should be present");
+    for expected in [
+        "bambu-a1-1",
+        "bambu-a1-combo-1",
+        "bambu-a1-mini-1",
+        "bambu-a1-mini-combo-1",
+        "bambu-p1s-1",
+        "bambu-x1-carbon-1",
+    ] {
+        assert!(
+            printers
+                .iter()
+                .any(|printer| printer.get("id").and_then(Value::as_str) == Some(expected)),
+            "missing fleet printer {expected}"
+        );
+    }
+    let a1_printer = printers
+        .iter()
+        .find(|printer| printer.get("id").and_then(Value::as_str) == Some("bambu-a1-1"))
+        .expect("bambu-a1-1 fleet entry");
+    assert!(a1_printer
+        .get("acceptedInstructionLanguages")
+        .and_then(Value::as_array)
+        .is_some_and(|languages| languages
+            .iter()
+            .any(|language| language.as_str() == Some("bambu-gcode"))));
+}
+
+#[test]
 fn machine_catalog_endpoint_exposes_default_fleet_and_release_contract() {
     let payload = machine_catalog_response();
     assert_eq!(

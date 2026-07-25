@@ -630,6 +630,135 @@ mod tests {
         assert!(response.release_ready, "findings: {:?}", response.findings);
     }
 
+    fn bambu_a1_request() -> PrintPreflightRequest {
+        PrintPreflightRequest::Fdm {
+            request_id: Some("bambu-a1".to_string()),
+            part: part(),
+            machine: FdmMachine {
+                build_volume: dimensions(256.0, 256.0, 256.0),
+                nozzle_diameter_mm: 0.4,
+                max_volumetric_flow_mm3_s: 28.0,
+                enclosed: false,
+                max_materials: 1,
+            },
+            material: FdmMaterial {
+                name: "PLA".to_string(),
+                nozzle_temp_min_c: 190.0,
+                nozzle_temp_max_c: 230.0,
+                bed_temp_min_c: 45.0,
+                bed_temp_max_c: 60.0,
+                drying_required: false,
+                enclosure_required: false,
+            },
+            profile: FdmProfile {
+                layer_height_mm: 0.2,
+                first_layer_height_mm: 0.24,
+                line_width_mm: 0.42,
+                print_speed_mm_s: 250.0,
+                nozzle_temp_c: 220.0,
+                bed_temp_c: 55.0,
+                supports_enabled: true,
+                material_count: 1,
+                tool_changes: 0,
+                purge_volume_per_change_mm3: 0.0,
+                dried_hours: None,
+            },
+        }
+    }
+
+    fn bambu_a1_combo_request() -> PrintPreflightRequest {
+        PrintPreflightRequest::Fdm {
+            request_id: Some("bambu-a1-combo".to_string()),
+            part: part(),
+            machine: FdmMachine {
+                build_volume: dimensions(256.0, 256.0, 256.0),
+                nozzle_diameter_mm: 0.4,
+                max_volumetric_flow_mm3_s: 28.0,
+                enclosed: false,
+                max_materials: 4,
+            },
+            material: FdmMaterial {
+                name: "PLA".to_string(),
+                nozzle_temp_min_c: 190.0,
+                nozzle_temp_max_c: 230.0,
+                bed_temp_min_c: 45.0,
+                bed_temp_max_c: 60.0,
+                drying_required: false,
+                enclosure_required: false,
+            },
+            profile: FdmProfile {
+                layer_height_mm: 0.2,
+                first_layer_height_mm: 0.24,
+                line_width_mm: 0.42,
+                print_speed_mm_s: 250.0,
+                nozzle_temp_c: 220.0,
+                bed_temp_c: 55.0,
+                supports_enabled: true,
+                material_count: 4,
+                tool_changes: 24,
+                purge_volume_per_change_mm3: 45.0,
+                dried_hours: None,
+            },
+        }
+    }
+
+    fn bambu_x1_carbon_request() -> PrintPreflightRequest {
+        PrintPreflightRequest::Fdm {
+            request_id: Some("bambu-x1-carbon".to_string()),
+            part: part(),
+            machine: FdmMachine {
+                build_volume: dimensions(256.0, 256.0, 256.0),
+                nozzle_diameter_mm: 0.4,
+                max_volumetric_flow_mm3_s: 32.0,
+                enclosed: true,
+                max_materials: 16,
+            },
+            material: FdmMaterial {
+                name: "ABS".to_string(),
+                nozzle_temp_min_c: 240.0,
+                nozzle_temp_max_c: 270.0,
+                bed_temp_min_c: 90.0,
+                bed_temp_max_c: 110.0,
+                drying_required: false,
+                enclosure_required: true,
+            },
+            profile: FdmProfile {
+                layer_height_mm: 0.2,
+                first_layer_height_mm: 0.24,
+                line_width_mm: 0.42,
+                print_speed_mm_s: 200.0,
+                nozzle_temp_c: 250.0,
+                bed_temp_c: 100.0,
+                supports_enabled: true,
+                material_count: 4,
+                tool_changes: 20,
+                purge_volume_per_change_mm3: 60.0,
+                dried_hours: None,
+            },
+        }
+    }
+
+    #[test]
+    fn bambu_a1_open_frame_profile_is_release_ready() {
+        let response = analyze(bambu_a1_request()).expect("FDM analysis");
+        assert!(response.release_ready, "findings: {:?}", response.findings);
+        assert_eq!(response.derived["volumetricFlowMm3S"], 21.0);
+    }
+
+    #[test]
+    fn bambu_a1_combo_ams_lite_multi_material_profile_is_release_ready() {
+        let response = analyze(bambu_a1_combo_request()).expect("FDM analysis");
+        assert!(response.release_ready, "findings: {:?}", response.findings);
+    }
+
+    #[test]
+    fn bambu_x1_carbon_enclosed_abs_profile_is_release_ready() {
+        // ABS demands an enclosure; the enclosed CoreXY machine satisfies it, so the
+        // enclosure boundary must not fire.
+        let response = analyze(bambu_x1_carbon_request()).expect("FDM analysis");
+        assert!(response.release_ready, "findings: {:?}", response.findings);
+    }
+
     #[test]
     fn safe_fdm_profile_remains_release_ready() {
         let response = analyze(fdm_request()).expect("FDM analysis");

@@ -1,0 +1,15 @@
+{
+  "name": "dd-fab-e2e-puppeteer",
+  "private": true,
+  "type": "module",
+  "description": "Puppeteer browser smoke tests for dd-fabrication-web-server",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "devDependencies": {
+    "puppeteer": "^23.10.0"
+  }
+}

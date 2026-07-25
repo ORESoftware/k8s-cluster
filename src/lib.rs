@@ -30404,6 +30404,7 @@ fn is_machine_code_language(language: &str) -> bool {
                 | "grbl"
                 | "marlin"
                 | "klipper"
+                | "bambu"
                 | "prusa"
                 | "shopbot"
                 | "sinumerik"
@@ -107206,6 +107207,7 @@ fn firmware_gcode_dialect(controller: Option<&str>) -> Option<&'static str> {
         "klipper" => Some("klipper-gcode"),
         "marlin" => Some("marlin-gcode"),
         "reprap" => Some("reprap-gcode"),
+        "bambu" => Some("bambu-gcode"),
         _ => None,
     }
 }
