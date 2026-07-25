@@ -29,7 +29,10 @@ spec:
   hard:
     requests.cpu: "1"
     requests.memory: 1Gi
-    limits.cpu: "4"
+    # Leaves room for max-surge rollouts while Postgres and both servers are
+    # present; a quota equal to steady state deadlocks recovery from a failed
+    # image because old replicas cannot be replaced.
+    limits.cpu: "6"
     limits.memory: 4Gi
     pods: "20"
 ---
