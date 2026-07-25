@@ -828,6 +828,7 @@ mod tests {
     }
 
     struct EnvGuard {
+        #[allow(dead_code)]
         _guard: MutexGuard<'static, ()>,
         saved: Vec<(String, Option<String>)>,
     }
