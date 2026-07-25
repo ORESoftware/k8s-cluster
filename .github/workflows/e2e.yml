@@ -53,6 +53,11 @@ jobs:
       # Enables the ops B2B-approval test; must equal the app's boot value below.
       ATHLETO_OPERATIONS_API_KEY: ${{ github.ref == 'refs/heads/main' && secrets.ATHLETO_OPERATIONS_API_KEY || '' }}
       E2E_OPS_KEY: ${{ github.ref == 'refs/heads/main' && secrets.ATHLETO_OPERATIONS_API_KEY || '' }}
+      # A pre-issued approved-B2B API key enables the ERP order-create suite
+      # (erp-orders-api.test.mjs). Minting one needs an AAL2 UI session, so it is
+      # supplied out of band; the suite skips cleanly when this is unset. The
+      # guest-safe erp-api-guard suite runs regardless.
+      E2E_ERP_KEY: ${{ github.ref == 'refs/heads/main' && secrets.ATHLETO_E2E_ERP_KEY || '' }}
       E2E_BASE_URL: http://localhost:8145
       # The biz-host chrome check hits the deployed host; skip it in CI.
       E2E_SKIP_LIVE: "1"

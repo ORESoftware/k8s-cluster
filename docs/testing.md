@@ -70,6 +70,18 @@ Auth-dependent suites self-skip when `SUPABASE_*` is unset, so CI stays green
 without secrets and richer with them. `E2E_SKIP_LIVE=1` skips the biz-host check
 that hits the deployed site.
 
+The **ERP `/api/v1` surface** has two suites: `erp-api-guard.test.mjs` asserts
+the negative space — a missing/malformed/unknown key never yields a `2xx` — and
+needs no secrets, so it runs in every lane (with a DB it's a `401`; degraded
+it's the `503` the guard returns before reading the token). The write path,
+`erp-orders-api.test.mjs`, needs a real approved-B2B key: minting one through the
+UI requires an AAL2 session (`require_b2b_ready` + `require_full`), which the
+harness doesn't automate, so it takes a pre-issued key from **`E2E_ERP_KEY`** and
+skips when unset. Its last case — a retried create with an `Idempotency-Key`
+returning the original order — stays `skip`ped against
+[athleto-app-rs#2](https://github.com/athlet-o/athleto-app-rs/issues/2) until
+that guard lands; flip it on when it does.
+
 ## Highest-value missing tests (ranked)
 
 All DB-bound; add as `tests/*_db.rs` (see the pattern above).
@@ -111,4 +123,8 @@ All DB-bound; add as `tests/*_db.rs` (see the pattern above).
 window (all three providers), CSRF missing/mismatched/partial + security headers
 + nonce freshness + rate limiting, `host_allowed`, and the browser flows
 (storefront/cart/holds/checkout/receipt/tracking/reorder/2FA-setup/B2B-approval/
-payment-status).
+payment-status), the ERP `/api/v1` auth guard (missing/malformed/unknown key,
+guest-safe, always-on), cross-user order-read isolation (`order-isolation`), the
+API-key card + its 2FA mint gate (`account-api-keys`), the empty-cart/reorder
+checkout edges (`checkout-flows`), and the ERP order-create contract +
+validation (`erp-orders-api`, `E2E_ERP_KEY`-gated).
