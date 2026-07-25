@@ -588,10 +588,13 @@ fn blocked_host(host: &str) -> bool {
     match host.parse::<IpAddr>() {
         Ok(IpAddr::V4(addr)) => blocked_v4(addr),
         Ok(IpAddr::V6(addr)) => {
-            // An IPv4-mapped/compatible IPv6 literal (e.g. `::ffff:169.254.169.254`)
-            // must be judged by its embedded IPv4, or the v4 ranges above are
-            // reachable through the v6 form — an SSRF bypass to loopback/metadata.
-            if let Some(v4) = addr.to_ipv4_mapped().or_else(|| addr.to_ipv4()) {
+            // An IPv4-mapped IPv6 literal (e.g. `::ffff:169.254.169.254`) must be
+            // judged by its embedded IPv4, or the v4 ranges above are reachable
+            // through the v6 form — an SSRF bypass to loopback/metadata. Use
+            // `to_ipv4_mapped` (only the `::ffff:0:0/96` range), NOT `to_ipv4`,
+            // which also maps the deprecated `::/96` compat range and would turn
+            // `::1` into `0.0.0.1` and wrongly unblock loopback.
+            if let Some(v4) = addr.to_ipv4_mapped() {
                 blocked_v4(v4)
             } else {
                 addr.is_loopback()
