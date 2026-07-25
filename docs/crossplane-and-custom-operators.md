@@ -6,7 +6,7 @@ survived scrutiny. Nothing in this doc is wired into a live cluster.
 The question is whether we would benefit from **custom** operators, and whether Crossplane
 belongs here. Short answer:
 
-> We already run six third-party operators and get real leverage from them. We should
+> We already run a stack of third-party operators and get real leverage from them. We should
 > **not write a custom operator** — every workload that looks operator-shaped here is
 > better served by templating or by an operator that already exists. The one clear win is
 > **finishing the cert-manager story**, which is less about adding an operator than about
