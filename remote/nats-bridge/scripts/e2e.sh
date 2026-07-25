@@ -131,6 +131,22 @@ docker run -d --name "$NATS_CONTAINER" \
   nats:2.11.17-alpine -js -m 8222 >/dev/null
 wait_for 30 curl -sf "${MON_URL}/healthz" || { echo "NATS never became healthy"; exit 1; }
 
+step "0. Fail-closed startup (the bridge must refuse to be an open relay)"
+# Each of these must exit non-zero rather than start serving.
+refuses() { # refuses <description> <env assignments...>
+  local desc="$1"; shift
+  if env "$@" NATS_URL="nats://127.0.0.1:${NATS_PORT}" PORT="$BRIDGE_PORT" \
+      "${BRIDGE_DIR}/target/debug/nats-bridge" >/dev/null 2>&1; then
+    bad "$desc" "process started anyway"
+  else
+    ok "$desc"
+  fi
+}
+refuses "refuses to start with no BRIDGE_TOKEN" BRIDGE_SUBJECT_PREFIXES="vxl."
+refuses "refuses a BRIDGE_TOKEN under 16 chars" BRIDGE_TOKEN="short" BRIDGE_SUBJECT_PREFIXES="vxl."
+refuses "refuses to start with no BRIDGE_SUBJECT_PREFIXES" BRIDGE_TOKEN="$BRIDGE_TOKEN_VALUE"
+refuses "refuses an empty BRIDGE_SUBJECT_PREFIXES" BRIDGE_TOKEN="$BRIDGE_TOKEN_VALUE" BRIDGE_SUBJECT_PREFIXES=" , "
+
 start_bridge
 wait_for 30 curl -sf "${BRIDGE_URL}/readyz" || { echo "bridge never became ready"; exit 1; }
 
