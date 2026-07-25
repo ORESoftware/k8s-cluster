@@ -1,0 +1,52 @@
+# ClusterIssuers — an EXACT mirror of what remote/hetzner/ingress-tls.sh applies today.
+#
+# This file is deliberately a byte-for-byte-equivalent copy of the issuers that script
+# writes, so adopting it into GitOps is a no-op takeover: ArgoCD adopts the existing live
+# objects instead of changing them. Do NOT "improve" these while adopting — land the
+# takeover first, confirm the Applications are green, then change issuers in a separate
+# commit where any cert re-issue is the only moving part.
+#
+# The `letsencrypt-prod` issuer here is the one referenced by
+# remote/argocd/dd-next-runtime/dd-remote-gateway.ingress.yaml and the athleto ingress.
+#
+# NOTE: all three solve over HTTP-01 through the `nginx` IngressClass, so they only work
+# on clusters that run ingress-nginx (Hetzner today, GCP when it lands). The AWS cluster
+# has no ingress controller and its gateway owns hostPort 80 — see dns01-cloudflare/ for
+# the solver that works there.
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: alexander.d.mills@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-staging-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: alexander.d.mills@gmail.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx

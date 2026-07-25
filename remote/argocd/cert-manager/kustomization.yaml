@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# ClusterIssuers only. The cert-manager controller itself is a Helm chart, installed by
+# remote/argocd/apps/cert-manager.application.yaml — issuers are split into their own
+# Application so the CRD-owning chart and the CRs that depend on it can be synced (and
+# rolled back) independently. A single Application would race: the CRs fail to apply on
+# first sync because their CRDs do not exist yet.
+#
+# dns01-cloudflare/ is intentionally NOT included here. It is opt-in and has a real
+# prerequisite (a Cloudflare token in AWS Secrets Manager) — see that dir's README.
+resources:
+  - clusterissuers.yaml
