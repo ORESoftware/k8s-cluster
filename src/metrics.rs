@@ -115,11 +115,11 @@ pub async fn record_http_metrics(
 
     metrics
         .requests
-        .with_label_values(&[&method, route, &status])
+        .with_label_values(&[method, route, &status])
         .inc();
     metrics
         .request_duration
-        .with_label_values(&[&method, route])
+        .with_label_values(&[method, route])
         .observe(started.elapsed().as_secs_f64());
     response
 }
