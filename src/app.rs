@@ -444,18 +444,8 @@ mod tests {
         // A test that stops at 401 would pass even with the body cap still too
         // low, because the credential check now runs first — that is exactly how
         // the first version of this test missed the axum `DefaultBodyLimit`.
-        let token = "a-test-sync-token";
-        let device = crate::entity::device::Model {
-            id: uuid::Uuid::new_v4(),
-            account_id: uuid::Uuid::new_v4(),
-            device_name: "body limit probe".to_owned(),
-            sync_token_hash: crate::auth::token_hash(token),
-            revoked: false,
-            created_at: time::OffsetDateTime::now_utc(),
-            last_seen_at: None,
-        };
         let database = MockDatabase::new(DatabaseBackend::Postgres)
-            .append_query_results([vec![device.clone()]])
+            .append_query_results([vec![device]])
             .append_exec_results([MockExecResult::default()])
             .into_connection();
         let state = AppState::new(database).expect("test state");
