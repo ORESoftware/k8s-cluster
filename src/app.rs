@@ -572,9 +572,18 @@ mod tests {
             "DEPLOYMENT_ENVIRONMENT",
             "SHARED_AUTH_BASE_URL",
             "sea_orm=warn",
+            // SeaORM's statement logging is emitted under the `sqlx::query`
+            // target, which `sea_orm=warn` does not match — without this
+            // directive production logs every SQL statement it issues at INFO.
+            "sqlx::query=warn",
         ] {
             assert!(manifest.contains(required), "manifest missing {required}");
         }
+        assert!(
+            telemetry::default_log_filter().contains("sqlx::query=warn"),
+            "the built-in default must silence per-statement SQL too, so a deployment that \
+             forgets RUST_LOG does not ship the noisy filter"
+        );
         assert!(
             !manifest.contains("prometheus.io/port: \"8080\""),
             "the scrape annotation must not point at the public API port"
