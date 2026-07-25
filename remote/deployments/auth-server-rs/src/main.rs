@@ -325,7 +325,11 @@ fn safe_return_to(value: Option<String>) -> String {
     let Some(value) = value else {
         return "/home".to_string();
     };
-    if value.starts_with('/') && !value.starts_with("//") {
+    // Must be a local absolute path. Reject `//host` (protocol-relative) and also
+    // `/\host` (and `/\/host`): a backslash right after the leading slash is
+    // folded to `/` by browsers, so `/\evil.com` resolves to `//evil.com` ->
+    // https://evil.com — an open redirect off the auth gate.
+    if value.starts_with('/') && !value.starts_with("//") && !value.starts_with("/\\") {
         value
     } else {
         "/home".to_string()
