@@ -73,6 +73,13 @@ spec:
               corepack pnpm run build
               exec corepack pnpm run start
           env:
+            # Clone the source rather than depending on the EC2 hostPath, so
+            # this deployment also runs on Hetzner (which syncs this same
+            # dd-next-runtime path).
+            - name: BROWSER_TEST_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: BROWSER_TEST_GIT_REF
+              value: dev
             - name: HOME
               value: /tmp
             - name: PNPM_HOME
