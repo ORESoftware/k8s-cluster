@@ -2130,4 +2130,553 @@ mod tests {
         assert_eq!(sidecar.cpu_millicores, 5);
         assert_eq!(sidecar.memory_bytes, 1024 * 1024);
     }
+
+    // --- test helpers -----------------------------------------------------
+
+    /// Fully-populated Config with harmless test defaults. Individual tests
+    /// clone/override the fields they exercise.
+    fn base_config() -> Config {
+        Config {
+            server_auth_secret: Some("s3cr3t".to_string()),
+            public_base_url: "http://dd-bastion.vpn.svc.cluster.local:8111".to_string(),
+            wireguard_endpoint: "54.91.17.58:51820".to_string(),
+            vpn_cidr: "10.8.0.0/24".to_string(),
+            service_cidr: "10.96.0.0/12".to_string(),
+            pod_cidr: "10.244.0.0/16".to_string(),
+            dns: "10.96.0.10".to_string(),
+            kube_api_server: "https://kubernetes.default.svc".to_string(),
+            kube_cluster_name: "dd-remote-dev".to_string(),
+            kube_context_name: "dd-vpn-readonly".to_string(),
+            kube_user_name: "dd-bastion-readonly".to_string(),
+            ca_path: "/tmp/ca".to_string(),
+            token_path: "/tmp/token".to_string(),
+            kubectl_bin: "/usr/bin/kubectl".to_string(),
+            script_bin: "/usr/bin/script".to_string(),
+            kubeconfig_enabled: true,
+            include_serviceaccount_token: true,
+            terminal_enabled: false,
+        }
+    }
+
+    fn app_state(secret: Option<&str>) -> AppState {
+        let mut config = base_config();
+        config.server_auth_secret = secret.map(ToString::to_string);
+        AppState {
+            config: Arc::new(config),
+        }
+    }
+
+    // --- auth: constant-time comparison ----------------------------------
+
+    #[test]
+    fn constant_time_eq_matches_only_identical_strings() {
+        assert!(constant_time_eq("secret", "secret"));
+        assert!(constant_time_eq("", ""));
+        assert!(!constant_time_eq("secret", "Secret")); // case sensitive
+        assert!(!constant_time_eq("secret", "secre")); // right is a prefix
+        assert!(!constant_time_eq("secre", "secret")); // left is a prefix
+        assert!(!constant_time_eq("secret", "")); // empty vs non-empty
+        assert!(!constant_time_eq("", "secret"));
+        assert!(!constant_time_eq("secret", "secreu")); // same length, last byte differs
+                                                        // non-ascii is compared byte-wise
+        assert!(constant_time_eq("naïve-tökén", "naïve-tökén"));
+        assert!(!constant_time_eq("naïve", "naive"));
+    }
+
+    // --- auth: header extraction -----------------------------------------
+
+    #[test]
+    fn request_is_authorized_accepts_each_supported_header() {
+        let secret = "s3cr3t";
+        for name in ["x-bastion-auth", "x-server-auth", "auth"] {
+            let mut headers = HeaderMap::new();
+            headers.insert(name, HeaderValue::from_static("s3cr3t"));
+            assert!(
+                request_is_authorized(&headers, secret),
+                "header {name} should authorize"
+            );
+        }
+        let mut headers = HeaderMap::new();
+        headers.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer s3cr3t"));
+        assert!(request_is_authorized(&headers, secret));
+    }
+
+    #[test]
+    fn request_is_authorized_rejects_bad_or_missing_credentials() {
+        let secret = "s3cr3t";
+        assert!(!request_is_authorized(&HeaderMap::new(), secret));
+
+        let mut headers = HeaderMap::new();
+        headers.insert("x-bastion-auth", HeaderValue::from_static("nope"));
+        assert!(!request_is_authorized(&headers, secret));
+
+        // strip_prefix("Bearer ") is exact: a lowercase scheme is rejected.
+        let mut headers = HeaderMap::new();
+        headers.insert(header::AUTHORIZATION, HeaderValue::from_static("bearer s3cr3t"));
+        assert!(!request_is_authorized(&headers, secret));
+
+        // Raw secret in Authorization without the "Bearer " prefix is rejected.
+        let mut headers = HeaderMap::new();
+        headers.insert(header::AUTHORIZATION, HeaderValue::from_static("s3cr3t"));
+        assert!(!request_is_authorized(&headers, secret));
+
+        // A trailing space makes the compared token differ.
+        let mut headers = HeaderMap::new();
+        headers.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer s3cr3t "));
+        assert!(!request_is_authorized(&headers, secret));
+    }
+
+    #[test]
+    fn request_is_authorized_header_name_insensitive_value_sensitive() {
+        let secret = "s3cr3t";
+        // HeaderMap normalizes names: X-Bastion-Auth == x-bastion-auth.
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            HeaderName::from_static("x-bastion-auth"),
+            HeaderValue::from_static("s3cr3t"),
+        );
+        assert!(request_is_authorized(&headers, secret));
+
+        // The value must match exactly, casing included.
+        let mut headers = HeaderMap::new();
+        headers.insert("x-bastion-auth", HeaderValue::from_static("S3CR3T"));
+        assert!(!request_is_authorized(&headers, secret));
+    }
+
+    #[test]
+    fn request_is_authorized_primary_direct_header_is_not_rescued() {
+        // Edge case: a WRONG x-bastion-auth is NOT rescued by a correct
+        // x-server-auth, because `.or_else` returns the first PRESENT header
+        // among the three direct headers and only that one is compared. This
+        // fails closed (denies), so it is safe, just surprising.
+        let secret = "s3cr3t";
+        let mut headers = HeaderMap::new();
+        headers.insert("x-bastion-auth", HeaderValue::from_static("wrong"));
+        headers.insert("x-server-auth", HeaderValue::from_static("s3cr3t"));
+        assert!(!request_is_authorized(&headers, secret));
+
+        // The Bearer path is independent and still authorizes.
+        headers.insert(header::AUTHORIZATION, HeaderValue::from_static("Bearer s3cr3t"));
+        assert!(request_is_authorized(&headers, secret));
+    }
+
+    #[test]
+    fn request_is_authorized_empty_secret_edge_is_config_guarded() {
+        // constant_time_eq("", "") is true, so an empty Auth header would match
+        // an empty secret. This is unreachable in practice: config_from_env()
+        // uses first_env(), which discards empty values, so server_auth_secret
+        // is never Some(""). We assert the raw behavior to document that the
+        // real guard lives at the config layer (require_auth), not here.
+        let mut headers = HeaderMap::new();
+        headers.insert("auth", HeaderValue::from_static(""));
+        assert!(request_is_authorized(&headers, ""));
+        assert!(!request_is_authorized(&headers, "s3cr3t"));
+    }
+
+    // --- auth: require_auth gate -----------------------------------------
+
+    #[test]
+    fn require_auth_returns_503_when_secret_unconfigured() {
+        let state = app_state(None);
+        let err = require_auth(&HeaderMap::new(), &state).unwrap_err();
+        assert_eq!(err.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[test]
+    fn require_auth_returns_401_on_missing_or_wrong_credentials() {
+        let state = app_state(Some("s3cr3t"));
+        let err = require_auth(&HeaderMap::new(), &state).unwrap_err();
+        assert_eq!(err.status(), StatusCode::UNAUTHORIZED);
+
+        let mut headers = HeaderMap::new();
+        headers.insert("x-bastion-auth", HeaderValue::from_static("wrong"));
+        let err = require_auth(&headers, &state).unwrap_err();
+        assert_eq!(err.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn require_auth_accepts_valid_credentials() {
+        let state = app_state(Some("s3cr3t"));
+        let mut headers = HeaderMap::new();
+        headers.insert("x-bastion-auth", HeaderValue::from_static("s3cr3t"));
+        assert!(require_auth(&headers, &state).is_ok());
+    }
+
+    // --- input validation: safe_name ------------------------------------
+
+    #[test]
+    fn safe_name_accepts_valid_k8s_names_and_rejects_injection() {
+        assert!(safe_name("dd-bastion"));
+        assert!(safe_name("pod.name_1-2"));
+        assert!(safe_name("A"));
+        assert!(safe_name(&"a".repeat(253))); // boundary: max length
+
+        assert!(!safe_name("")); // empty
+        assert!(!safe_name(&"a".repeat(254))); // over max length
+        assert!(!safe_name("../../etc/passwd")); // path traversal
+        assert!(!safe_name("a/b")); // slash
+        assert!(!safe_name("a b")); // space
+        assert!(!safe_name("a;rm -rf /")); // command separator
+        assert!(!safe_name("a|b"));
+        assert!(!safe_name("a&b"));
+        assert!(!safe_name("a$b"));
+        assert!(!safe_name("a`b`"));
+        assert!(!safe_name("a'b"));
+        assert!(!safe_name("a\"b"));
+        assert!(!safe_name("a(b)"));
+        assert!(!safe_name("a\nb")); // newline
+        assert!(!safe_name("a\0b")); // null byte
+        assert!(!safe_name("pödñame")); // non-ascii
+    }
+
+    // --- injection guards: shell / html / yaml ---------------------------
+
+    #[test]
+    fn shell_quote_wraps_and_neutralizes_single_quote_breakout() {
+        assert_eq!(shell_quote(""), "''");
+        assert_eq!(shell_quote("plain"), "'plain'");
+        // Metacharacters stay literal inside single quotes.
+        assert_eq!(shell_quote("; rm -rf /"), "'; rm -rf /'");
+        assert_eq!(shell_quote("$(id)"), "'$(id)'");
+        // The classic single-quote breakout is neutralized.
+        assert_eq!(shell_quote("a'b"), "'a'\"'\"'b'");
+        // Every output remains wrapped in single quotes.
+        let quoted = shell_quote("x'y'z");
+        assert!(quoted.starts_with('\'') && quoted.ends_with('\''));
+    }
+
+    #[test]
+    fn html_escape_neutralizes_xss_and_escapes_ampersand_first() {
+        assert_eq!(html_escape("<script>"), "&lt;script&gt;");
+        assert_eq!(html_escape("&"), "&amp;");
+        assert_eq!(html_escape("\""), "&quot;");
+        assert_eq!(html_escape("'"), "&#39;");
+        // Ampersand is escaped first, so the entities it emits are not
+        // double-encoded.
+        assert_eq!(
+            html_escape("<b>&\"'</b>"),
+            "&lt;b&gt;&amp;&quot;&#39;&lt;/b&gt;"
+        );
+        // A realistic terminal-target payload cannot inject markup.
+        let out = html_escape("\"><img src=x onerror=alert(1)>");
+        assert!(!out.contains('<') && !out.contains('>') && !out.contains('"'));
+    }
+
+    #[test]
+    fn yaml_string_quotes_and_escapes_to_block_kubeconfig_injection() {
+        assert_eq!(yaml_string("dd-remote-dev"), "\"dd-remote-dev\"");
+        // A newline is escaped, so a value cannot introduce new YAML keys.
+        let out = yaml_string("evil\n    token: stolen");
+        assert!(out.starts_with('"') && out.ends_with('"'));
+        assert!(out.contains("\\n"));
+        assert!(!out.contains('\n')); // no raw newline to break the structure
+                                      // Embedded double quote is escaped.
+        assert_eq!(yaml_string("a\"b"), "\"a\\\"b\"");
+    }
+
+    // --- websocket stdin parsing -----------------------------------------
+
+    #[test]
+    fn terminal_input_extracts_data_or_falls_back_to_raw_text() {
+        assert_eq!(terminal_input(r#"{"data":"ls -la"}"#), "ls -la");
+        assert_eq!(terminal_input(r#"{"type":"input","data":"x"}"#), "x");
+        // Control chars inside data are preserved (terminal stdin).
+        assert_eq!(terminal_input(r#"{"data":"a\nb"}"#), "a\nb");
+        // Object without a string `data` field => empty.
+        assert_eq!(terminal_input(r#"{"type":"resize"}"#), "");
+        assert_eq!(terminal_input(r#"{"data":123}"#), "");
+        // Non-JSON text is passed through verbatim.
+        assert_eq!(terminal_input("raw bytes here"), "raw bytes here");
+        assert_eq!(terminal_input(""), "");
+        // Valid JSON that is not an object with `data` => empty (NOT passthrough).
+        assert_eq!(terminal_input("[1,2,3]"), "");
+        assert_eq!(terminal_input(r#""just a string""#), "");
+    }
+
+    // --- allowlist authorization -----------------------------------------
+
+    #[test]
+    fn find_managed_deployment_enforces_exact_namespace_and_name() {
+        let hit = find_managed_deployment("vpn", "dd-bastion").expect("bastion is managed");
+        assert_eq!(hit.slug, "bastion");
+        assert!(find_managed_deployment("default", "dd-web-scraper").is_some());
+        // Right deployment, WRONG namespace must not match (blocks ns pivot).
+        assert!(find_managed_deployment("default", "dd-bastion").is_none());
+        assert!(find_managed_deployment("default", "kube-apiserver").is_none());
+        assert!(find_managed_deployment("VPN", "dd-bastion").is_none()); // case sensitive
+        // Injection-shaped input is simply absent from the allowlist.
+        assert!(find_managed_deployment("default", "dd-web-scraper; rm -rf /").is_none());
+    }
+
+    #[test]
+    fn selector_matches_pod_requires_all_selector_labels() {
+        let deployment =
+            json!({"spec":{"selector":{"matchLabels":{"app":"dd-bastion","tier":"vpn"}}}});
+        let pod_ok = json!({"metadata":{"labels":{"app":"dd-bastion","tier":"vpn","extra":"y"}}});
+        assert!(selector_matches_pod(&deployment, &pod_ok));
+
+        let pod_missing = json!({"metadata":{"labels":{"app":"dd-bastion"}}});
+        assert!(!selector_matches_pod(&deployment, &pod_missing));
+
+        let pod_wrong = json!({"metadata":{"labels":{"app":"dd-bastion","tier":"other"}}});
+        assert!(!selector_matches_pod(&deployment, &pod_wrong));
+
+        assert!(!selector_matches_pod(&deployment, &json!({"metadata":{}})));
+        assert!(!selector_matches_pod(&json!({"spec":{}}), &pod_ok));
+    }
+
+    #[test]
+    fn selector_matches_pod_empty_matchlabels_matches_any_pod() {
+        // FINDING: a deployment whose selector.matchLabels is an empty object
+        // matches EVERY pod, because all() over an empty set is true. Real
+        // Deployments always carry a non-empty selector, and resolve_pod_target
+        // still gates on the managed allowlist plus a same-namespace pod lookup,
+        // so this is latent rather than directly exploitable. Locked here so a
+        // future regression is visible.
+        let deployment = json!({"spec":{"selector":{"matchLabels":{}}}});
+        assert!(selector_matches_pod(
+            &deployment,
+            &json!({"metadata":{"labels":{"whatever":"1"}}})
+        ));
+        assert!(selector_matches_pod(
+            &deployment,
+            &json!({"metadata":{"labels":{}}})
+        ));
+    }
+
+    // --- profile / config projection -------------------------------------
+
+    #[test]
+    fn split_allowed_ips_orders_vpn_service_pod() {
+        let config = base_config();
+        assert_eq!(
+            split_allowed_ips(&config),
+            vec![
+                config.vpn_cidr.clone(),
+                config.service_cidr.clone(),
+                config.pod_cidr.clone(),
+            ]
+        );
+    }
+
+    #[test]
+    fn access_profile_trims_base_url_and_builds_endpoints() {
+        let mut config = base_config();
+        config.public_base_url = "http://base///".to_string(); // trailing slashes
+        let profile = access_profile(&config);
+        assert!(profile.auth_required);
+        assert_eq!(profile.endpoints.bastion_url, "http://base");
+        assert_eq!(profile.endpoints.healthz, "http://base/healthz");
+        assert_eq!(profile.endpoints.kubeconfig, "http://base/kubeconfig");
+        assert_eq!(
+            profile.endpoints.runtime_deployments,
+            "http://base/runtime/deployments"
+        );
+        assert_eq!(profile.cluster.kubeconfig_endpoint, "http://base/kubeconfig");
+        assert_eq!(profile.vpn.split_tunnel_allowed_ips, split_allowed_ips(&config));
+    }
+
+    #[test]
+    fn access_profile_reports_kubeconfig_mode_and_terminal_note() {
+        let mut config = base_config();
+        config.include_serviceaccount_token = true;
+        config.terminal_enabled = false;
+        let profile = access_profile(&config);
+        assert_eq!(
+            profile.cluster.kubeconfig_mode,
+            "read-only service account token"
+        );
+        assert!(profile
+            .notes
+            .iter()
+            .any(|note| note.contains("Exec terminals are disabled")));
+
+        config.include_serviceaccount_token = false;
+        config.terminal_enabled = true;
+        let profile = access_profile(&config);
+        assert_eq!(profile.cluster.kubeconfig_mode, "template without token");
+        assert!(profile
+            .notes
+            .iter()
+            .any(|note| note.contains("Exec terminals are enabled")));
+    }
+
+    #[test]
+    fn managed_deployment_namespaces_are_unique_and_sorted() {
+        let namespaces = managed_deployment_namespaces();
+        assert_eq!(
+            namespaces,
+            vec!["ai-ml", "default", "headlamp", "messaging", "vpn"]
+        );
+        for target in MANAGED_DEPLOYMENTS {
+            assert!(namespaces.contains(&target.namespace));
+        }
+    }
+
+    // --- json helpers ----------------------------------------------------
+
+    #[test]
+    fn json_at_helpers_navigate_and_type_check() {
+        let value = json!({"a":{"b":{"c":"deep","n":42}}});
+        assert_eq!(json_at_string(&value, &["a", "b", "c"]).as_deref(), Some("deep"));
+        assert_eq!(json_at_i64(&value, &["a", "b", "n"]), Some(42));
+        assert!(json_at(&value, &["a", "x"]).is_none());
+        assert!(json_at_string(&value, &["a", "b"]).is_none()); // object, not a string
+        assert!(json_at_i64(&value, &["a", "b", "c"]).is_none()); // string, not i64
+        assert!(json_at(&value, &[]).is_some()); // empty path returns the root
+    }
+
+    #[test]
+    fn json_items_and_by_name_handle_missing_and_unnamed_items() {
+        let list = json!({"items":[
+            {"metadata":{"name":"one"}},
+            {"metadata":{"name":"two"}},
+            {"metadata":{}},        // no name -> skipped by by_name
+            "not-an-object"
+        ]});
+        assert_eq!(json_items(&list).len(), 4);
+        let by_name = json_items_by_name(&list);
+        assert_eq!(by_name.len(), 2);
+        assert!(by_name.contains_key("one") && by_name.contains_key("two"));
+        assert_eq!(json_items(&json!({})).len(), 0);
+        assert_eq!(json_items_by_name(&json!({})).len(), 0);
+    }
+
+    // --- metrics quantity parsing: edge & abuse cases --------------------
+
+    #[test]
+    fn parse_cpu_millicores_edge_and_abuse_cases() {
+        assert_eq!(parse_cpu_millicores(" 250m "), Some(250)); // surrounding whitespace
+        assert_eq!(parse_cpu_millicores("m"), None); // lone suffix
+        assert_eq!(parse_cpu_millicores("abc"), None);
+        assert_eq!(parse_cpu_millicores("  "), None);
+        // ODDITY: negative values pass through despite the "non-negative" doc.
+        assert_eq!(parse_cpu_millicores("-100m"), Some(-100));
+        // Out-of-range nano value fails to parse (no panic) => None.
+        assert_eq!(parse_cpu_millicores("99999999999999999999n"), None);
+    }
+
+    #[test]
+    fn parse_memory_bytes_suffix_ordering_and_abuse_cases() {
+        // Binary suffix is matched before the decimal one with the same lead char.
+        assert_eq!(parse_memory_bytes("1Ei"), Some(1_152_921_504_606_846_976));
+        assert_eq!(parse_memory_bytes("1E"), Some(1_000_000_000_000_000_000));
+        assert_eq!(parse_memory_bytes("8Mi"), Some(8 * 1_048_576));
+        // Lowercase / unknown suffixes are not recognized.
+        assert_eq!(parse_memory_bytes("1gi"), None);
+        assert_eq!(parse_memory_bytes("garbage"), None);
+        // ODDITY: negatives pass through.
+        assert_eq!(parse_memory_bytes("-1Ki"), Some(-1024));
+    }
+
+    // --- summarizers -----------------------------------------------------
+
+    #[test]
+    fn summarize_deployment_extracts_status_with_defaults() {
+        let deployment = json!({
+            "metadata":{"name":"dd-x","namespace":"default","creationTimestamp":"2026-01-01T00:00:00Z"},
+            "spec":{"replicas":3},
+            "status":{"replicas":3,"readyReplicas":2,"availableReplicas":2,"updatedReplicas":3,"unavailableReplicas":1,
+                "conditions":[{"type":"Available","status":"True","reason":"Ok","message":"all good"}]}
+        });
+        let summary = summarize_deployment(&deployment);
+        assert_eq!(summary["name"].as_str(), Some("dd-x"));
+        assert_eq!(summary["desiredReplicas"].as_i64(), Some(3));
+        assert_eq!(summary["readyReplicas"].as_i64(), Some(2));
+        assert_eq!(summary["unavailableReplicas"].as_i64(), Some(1));
+        assert_eq!(summary["conditions"][0]["type"].as_str(), Some("Available"));
+
+        // Missing status fields default to 0 with an empty conditions list.
+        let bare = summarize_deployment(&json!({"metadata":{"name":"y","namespace":"default"}}));
+        assert_eq!(bare["desiredReplicas"].as_i64(), Some(0));
+        assert_eq!(bare["readyReplicas"].as_i64(), Some(0));
+        assert_eq!(bare["conditions"].as_array().map(Vec::len), Some(0));
+    }
+
+    #[test]
+    fn summarize_pod_omits_terminal_url_when_terminal_base_is_empty() {
+        let pod = json!({
+            "metadata":{"name":"p1","namespace":"vpn"},
+            "spec":{"nodeName":"node1"},
+            "status":{"phase":"Running","podIP":"10.244.0.5","containerStatuses":[
+                {"name":"c1","ready":true,"restartCount":0,"image":"img:1","state":{}}
+            ]}
+        });
+
+        // Terminal disabled => empty terminal_base => no terminalUrl is emitted.
+        let summary = summarize_pod(&pod, "dd-bastion", "", "/bastion/logs/ws", None);
+        let container = &summary["containers"][0];
+        assert_eq!(container["terminalUrl"].as_str(), Some(""));
+        assert_eq!(
+            container["logsUrl"].as_str(),
+            Some("/bastion/logs/ws?namespace=vpn&deployment=dd-bastion&pod=p1&container=c1")
+        );
+        assert!(container["metrics"].is_null());
+
+        // Terminal enabled => terminalUrl is populated with the target quad.
+        let summary = summarize_pod(&pod, "dd-bastion", "/bastion/terminal", "/bastion/logs/ws", None);
+        assert_eq!(
+            summary["containers"][0]["terminalUrl"].as_str(),
+            Some("/bastion/terminal?namespace=vpn&deployment=dd-bastion&pod=p1&container=c1")
+        );
+    }
+
+    // --- config-from-env -------------------------------------------------
+
+    #[test]
+    fn env_helpers_parse_config_flags_safely() {
+        // This is the ONLY test that touches process env; it uses unique keys
+        // and drives all mutation from a single thread, so no other test races
+        // it. `set_var`/`remove_var` are safe on this crate's 2021 edition.
+        let bool_key = "BASTION_TEST_ENVBOOL_XZ";
+        let val_key = "BASTION_TEST_ENVVAL_XZ";
+        let first_a = "BASTION_TEST_FIRST_A_XZ";
+        let first_b = "BASTION_TEST_FIRST_B_XZ";
+        for key in [bool_key, val_key, first_a, first_b] {
+            std::env::remove_var(key);
+        }
+
+        // env_bool: only the exact allowlist is truthy.
+        for truthy in ["1", "true", "TRUE", "yes", "YES", "on", "ON"] {
+            std::env::set_var(bool_key, truthy);
+            assert!(env_bool(bool_key, false), "{truthy} should be truthy");
+        }
+        // Anything else (incl. near-miss casings) is false regardless of fallback.
+        for falsy in ["0", "false", "False", "True", "enabled", "2"] {
+            std::env::set_var(bool_key, falsy);
+            assert!(!env_bool(bool_key, true), "{falsy:?} should be falsy");
+        }
+        // Surrounding whitespace is trimmed before matching.
+        std::env::set_var(bool_key, "  true  ");
+        assert!(env_bool(bool_key, false));
+        // Empty value behaves like unset => fallback wins.
+        std::env::set_var(bool_key, "");
+        assert!(!env_bool(bool_key, false));
+        assert!(env_bool(bool_key, true));
+        std::env::remove_var(bool_key);
+        assert!(env_bool(bool_key, true));
+        assert!(!env_bool(bool_key, false));
+
+        // env_value: trims, falls back on empty/unset.
+        std::env::set_var(val_key, "  hello  ");
+        assert_eq!(env_value(val_key, "fb"), "hello");
+        std::env::set_var(val_key, "   "); // whitespace-only == empty after trim
+        assert_eq!(env_value(val_key, "fb"), "fb");
+        std::env::remove_var(val_key);
+        assert_eq!(env_value(val_key, "fb"), "fb");
+
+        // first_env: first non-empty (trimmed) key wins.
+        std::env::remove_var(first_a);
+        std::env::set_var(first_b, "second");
+        assert_eq!(first_env(&[first_a, first_b]).as_deref(), Some("second"));
+        std::env::set_var(first_a, "  first  ");
+        assert_eq!(first_env(&[first_a, first_b]).as_deref(), Some("first"));
+        std::env::set_var(first_a, "   "); // empty after trim => skipped
+        assert_eq!(first_env(&[first_a, first_b]).as_deref(), Some("second"));
+        assert_eq!(first_env(&["BASTION_TEST_ABSENT_XZ"]), None);
+
+        for key in [bool_key, val_key, first_a, first_b] {
+            std::env::remove_var(key);
+        }
+    }
 }
