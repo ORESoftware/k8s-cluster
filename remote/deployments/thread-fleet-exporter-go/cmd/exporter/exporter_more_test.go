@@ -92,15 +92,6 @@ func threadInfoLabelSets(t *testing.T, reg *prometheus.Registry) []map[string]st
 	return out
 }
 
-func histogramSampleCount(t *testing.T, h prometheus.Histogram) uint64 {
-	t.Helper()
-	var m dto.Metric
-	if err := h.Write(&m); err != nil {
-		t.Fatalf("write histogram: %v", err)
-	}
-	return m.Histogram.GetSampleCount()
-}
-
 // ---- config: envOr ----
 
 func TestEnvOr(t *testing.T) {
