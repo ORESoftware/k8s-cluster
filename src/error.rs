@@ -25,13 +25,59 @@ pub enum ApiError {
 }
 
 // Note: a Postgres unique violation is folded to a coarse 409 at registration.
-// Every other SeaORM error flows through this conversion to an opaque 500 and
-// is logged only on the server side.
+// Every other SeaORM error flows through this conversion and is logged only on
+// the server side.
+//
+// The split below is the difference between "this deployment is broken" and
+// "the database is briefly unreachable, back off and retry". PROTOCOL.md §8
+// documents 503 for the latter, and clients, dashboards, and traces
+// (`otel.status_code = ERROR` on 5xx) all key off it: folding an infrastructure
+// blip into a 500 makes it indistinguishable from a service defect.
 
 impl From<sea_orm::DbErr> for ApiError {
     fn from(error: sea_orm::DbErr) -> Self {
+        if database_is_unreachable(&error) {
+            tracing::warn!(error = %error, "database unavailable");
+            return ApiError::Unavailable;
+        }
         tracing::error!(error = %error, "database error");
         ApiError::Internal
+    }
+}
+
+/// True when the error says the *database* could not be reached, rather than
+/// that a query was wrong. Only these become 503; a genuine query/logic fault
+/// stays an opaque 500 because retrying it would not help.
+///
+/// The variants are the ones sea-orm 1.1 actually produces on this path (see
+/// `sea_orm::driver::sqlx_common::sqlx_conn_acquire_err`): pool acquisition
+/// failures become `ConnectionAcquire`, everything else at connect time becomes
+/// `Conn`, and a connection that dies mid-statement surfaces as `Exec`/`Query`
+/// wrapping a transport-level `sqlx::Error`.
+fn database_is_unreachable(error: &sea_orm::DbErr) -> bool {
+    use sea_orm::DbErr;
+
+    match error {
+        DbErr::Conn(_) | DbErr::ConnectionAcquire(_) => true,
+        DbErr::Exec(runtime) | DbErr::Query(runtime) => runtime_error_is_transport(runtime),
+        _ => false,
+    }
+}
+
+fn runtime_error_is_transport(error: &sea_orm::RuntimeErr) -> bool {
+    use sea_orm::{RuntimeErr, SqlxError};
+
+    match error {
+        RuntimeErr::SqlxError(error) => matches!(
+            error,
+            SqlxError::Io(_)
+                | SqlxError::Tls(_)
+                | SqlxError::PoolTimedOut
+                | SqlxError::PoolClosed
+                | SqlxError::WorkerCrashed
+        ),
+        // Generated inside SeaORM (e.g. "Disconnected"), not by the driver.
+        RuntimeErr::Internal(message) => message.contains("Disconnected"),
     }
 }
 
