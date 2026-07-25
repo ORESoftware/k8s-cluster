@@ -50,6 +50,18 @@ bridge stays a dumb, auditable chokepoint with no k8s API credentials —
 `automountServiceAccountToken: false` stays true. `dd-thread-operator` remains
 the right tool for per-entity pods, not for queue-depth scaling.
 
+## Automated test harnesses (committed, repeatable)
+
+Two scripts run real binaries against a real broker — no mocks:
+
+- `remote/nats-bridge/scripts/e2e.sh` (26 checks) — bridge + worker + NATS.
+- `vxl-api-server.rs/scripts/e2e-nats-chain.sh` (in the voxletra repo, 20
+  checks) — the full cross-repo chain: vxl-api-server → dd-nats-bridge →
+  JetStream → dd-rust-vapi-phone, including competing consumers, tenant
+  isolation, degraded modes, and a KEDA config-contract check that parses the
+  ScaledObject YAML and verifies its stream/consumer/account actually exist on
+  the live broker (catches config drift before Argo does).
+
 ## End-to-end verification (local, real NATS 2.11.17-alpine in docker, JetStream on)
 
 Ran the actual bridge binary and the actual vapi server binary against a real
