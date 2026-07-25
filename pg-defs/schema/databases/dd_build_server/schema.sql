@@ -47,7 +47,7 @@ create table if not exists build_jobs (
   constraint build_jobs_status_chk
     check (status in ('queued', 'running', 'succeeded', 'failed')),
   constraint build_jobs_job_kind_chk
-    check (job_kind in ('build-image', 'build-and-deploy')),
+    check (job_kind in ('build-image', 'build-and-deploy', 'run-profile')),
   constraint build_jobs_source_chk
     check (source in ('http', 'webhook', 'nats')),
   constraint build_jobs_executor_chk
