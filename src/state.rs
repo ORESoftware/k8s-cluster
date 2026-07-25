@@ -2,7 +2,7 @@
 
 use crate::metrics::Metrics;
 use crate::shared_auth::SharedAuthClient;
-use sea_orm::DatabaseConnection;
+use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement};
 use std::sync::Arc;
 
 #[derive(Clone)]
