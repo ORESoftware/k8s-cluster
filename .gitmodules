@@ -30,3 +30,7 @@
 	path = apps/shared-auth-sync
 	url = git@github.com:shared-auth/shared-auth-sync.git
 	branch = main
+[submodule "apps/shared-auth-nats-bridge.rs"]
+	path = apps/shared-auth-nats-bridge.rs
+	url = git@github.com:shared-auth/shared-auth-nats-bridge.rs.git
+	branch = main
