@@ -125492,3 +125492,6 @@ mod tests;
 
 #[cfg(test)]
 mod route_authorization_tests;
+
+#[cfg(test)]
+mod e2e_tests;
