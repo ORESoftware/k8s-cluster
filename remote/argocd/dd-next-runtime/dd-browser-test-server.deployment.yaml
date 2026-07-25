@@ -26,6 +26,35 @@ spec:
     spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
+      # Source comes from a per-pod clone of the (public) repo into an emptyDir,
+      # NOT a host path, so the pod is self-contained on every node/cluster.
+      initContainers:
+        - name: fetch-source
+          image: docker.io/library/maven:3.9.9-eclipse-temurin-17
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export HOME=/tmp
+              git config --global --add safe.directory '*'
+              # Idempotent across init restarts (the emptyDir persists). The
+              # browser-test-server pnpm build is self-contained (--ignore-workspace),
+              # so ONLY the public superproject is needed.
+              if [ ! -e /opt/dd-next-1/.git ]; then
+                git clone --depth 1 --branch dev https://github.com/ORESoftware/k8s-cluster.git /opt/dd-next-1
+              fi
+              test -e /opt/dd-next-1/remote/deployments/browser-test-server/package.json
+              # Main container runs as uid 1000 and pnpm-installs into the tree.
+              chown -R 1000:1000 /opt/dd-next-1
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
       containers:
         - name: browser-test-server
           # Reuse the Playwright Noble image so a single bundled Chromium drives
@@ -144,8 +173,10 @@ spec:
               mountPath: /tmp
       volumes:
         - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
+          # Was hostPath (AWS-node-only, missing on Hetzner -> crashloop). Now a
+          # per-pod emptyDir populated by the fetch-source initContainer, so it
+          # works on every node/cluster (matches dd-selenium-server).
+          emptyDir:
+            sizeLimit: 4Gi
         - name: tmp
           emptyDir: {}
