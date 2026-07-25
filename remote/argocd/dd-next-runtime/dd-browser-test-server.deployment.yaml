@@ -50,6 +50,10 @@ spec:
               # `git config --global`.
               export HOME=/tmp
               git config --global --add safe.directory '*'
+              # remote/libs is registered with an SSH URL (git@github.com:...);
+              # the initContainer has no SSH key, so rewrite to HTTPS. The repos
+              # are public, so no credentials are needed.
+              git config --global url."https://github.com/".insteadOf "git@github.com:"
               # Idempotent across init restarts: the emptyDir persists, so clone
               # only when there is no repo yet, but always (re-)sync the submodule
               # so a partial first attempt self-heals on retry.
