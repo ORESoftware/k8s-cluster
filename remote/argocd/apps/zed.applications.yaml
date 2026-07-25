@@ -9,16 +9,20 @@
 # (k8s-cluster -> zed-monorepo -> apps/*) is INVENTORY + PIN: it records which
 # commit of each app is current and is how CI promotes. See docs/app-deploy-contract.md.
 #
-# PREREQS before applying (left inert until then, per the threefa/daedalus precedent):
+# TEMPORARY BOOTSTRAP PROFILE:
+#   Artifacts and metadata are both RAM-backed, API auth/rate limits are off,
+#   and the app manifests use the namespace-local Postgres DSN directly. This
+#   makes the whole registry disposable and immediately testable.
+#
+# PREREQS before applying:
 #   1. apply remote/argocd/projects/zed.tenant.yaml     (Namespace + quota + default-deny)
 #   2. apply remote/argocd/projects/zed.appproject.yaml (the enforced boundary)
-#   3. commit + push each app repo's k8s/ dir to its main (done)
-#   4. publish images ghcr.io/zed-pkg/zed-{api,web}-server:main (+ imagePullSecret if private)
-#   5. seed AWS Secrets Manager path dd/remote-dev/zed-secrets with the DSN + R2 creds
-#      (ZED_API_DATABASE_URL, ZED_WEB_DATABASE_URL, ZED_R2_ACCESS_KEY_ID,
-#       ZED_R2_SECRET_ACCESS_KEY) so the ExternalSecrets resolve
-#   6. fill the R2 endpoint account-id into zed-api-server.rs/k8s/deployment.yaml
-#   7. run the api-server DB migration once (AUTO_MIGRATE is off in-cluster)
+#   3. apply remote/argocd/projects/zed.bootstrap-postgres.yaml
+#   4. commit + push each app repo's k8s/ dir to its main
+#   5. publish images ghcr.io/zed-pkg/zed-{api,web}-server:main
+#
+# Before production, replace the bootstrap database with durable Postgres,
+# restore the ExternalSecrets, enable auth/rate limiting, and use object storage.
 #
 # Promotion knob: flip targetRevision from `main` to a pinned tag/sha per the contract.
 apiVersion: argoproj.io/v1alpha1
