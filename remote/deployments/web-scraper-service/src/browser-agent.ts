@@ -1113,6 +1113,7 @@ async function runActions(
       results.push({ index: i, type: action.type, status: 'blocked', message: session.lastBlocker.message });
       return { status: 'blocked', results, blocker: session.lastBlocker, pending: null, changed };
     }
+    const urlBefore = session.page.url();
     try {
       switch (action.type) {
         case 'start': {
@@ -1256,6 +1257,13 @@ async function runActions(
           return { status: 'completed', results, blocker: null, pending: null, changed: true };
         }
       }
+      // Early-exit when a stop_when clause is satisfied: skip remaining actions.
+      if (req.stop_when && (await stopConditionMet(session, req.stop_when, urlBefore))) {
+        for (let j = i + 1; j < req.actions.length; j++) {
+          results.push({ index: j, type: req.actions[j]!.type, status: 'skipped', message: 'stop_when satisfied' });
+        }
+        return { status: 'completed', results, blocker: null, pending: null, changed };
+      }
     } catch (e) {
       if (e instanceof AgentError && (e.code === 'ambiguous_target' || e.code === 'target_not_found')) {
         const blocker: { type: BlockerType; message: string } = {
@@ -1272,6 +1280,45 @@ async function runActions(
     }
   }
   return { status: 'completed', results, blocker: null, pending: null, changed };
+}
+
+// Evaluate a stop_when clause after an action. Returns true when the batch
+// should halt early (remaining actions skipped). All probes are immediate
+// (no waiting) so a stop check never blocks the action batch.
+async function stopConditionMet(
+  session: Session,
+  sw: NonNullable<ActRequest['stop_when']>,
+  urlBefore: string,
+): Promise<boolean> {
+  const url = session.page.url();
+  if (sw.navigation_occurs && url !== urlBefore) return true;
+  if (sw.url_matches && new RegExp(escapeRegex(sw.url_matches)).test(url)) return true;
+  if (sw.text_visible) {
+    try {
+      if (await session.page.getByText(sw.text_visible).first().isVisible()) return true;
+    } catch {
+      /* not present yet */
+    }
+  }
+  if (sw.element_visible) {
+    try {
+      const loc = await resolveTarget(session, sw.element_visible);
+      if (await loc.isVisible()) return true;
+    } catch {
+      /* not resolvable yet */
+    }
+  }
+  if (sw.validation_error_occurs) {
+    try {
+      const hasError = await session.page.evaluate(
+        '(function(){var els=document.querySelectorAll("input,select,textarea");for(var i=0;i<els.length;i++){var e=els[i];if(e.willValidate&&!e.validity.valid&&e.validationMessage)return true;}return false;})()',
+      );
+      if (hasError === true) return true;
+    } catch {
+      /* ignore */
+    }
+  }
+  return false;
 }
 
 async function runWait(
@@ -1431,6 +1478,42 @@ function projectObserve(session: Session, req: ObserveRequest, timedOut: boolean
   return out;
 }
 
+// Capture a bounded JPEG screenshot of the current viewport. Returned inline as
+// base64 (the MCP gateway can re-wrap it as image content). Never full-page and
+// never a public URL. Fails soft: returns null so observe still succeeds.
+async function captureScreenshot(
+  session: Session,
+): Promise<{ mime_type: 'image/jpeg'; width: number; height: number; data_base64: string } | null> {
+  try {
+    const buffer = await session.page.screenshot({ type: 'jpeg', quality: 55, fullPage: false, timeout: 8_000 });
+    const vp = session.page.viewportSize() ?? { width: 0, height: 0 };
+    return {
+      mime_type: 'image/jpeg',
+      width: vp.width,
+      height: vp.height,
+      data_base64: Buffer.from(buffer).toString('base64'),
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Build the observe response and attach a screenshot when requested. Split from
+// projectObserve (which stays sync) because screenshot capture is async.
+async function finishObserve(
+  session: Session,
+  req: ObserveRequest,
+  timedOut: boolean,
+  previousRevision?: number,
+): Promise<Record<string, unknown>> {
+  const out = projectObserve(session, req, timedOut, previousRevision);
+  if ((req.include ?? []).includes('screenshot')) {
+    const shot = await captureScreenshot(session);
+    if (shot) out.screenshot = shot;
+  }
+  return out;
+}
+
 function summarizeSnapshot(snap: RawSnapshot, session: Session): string {
   const blocker = session.lastBlocker ? ` Blocker: ${session.lastBlocker.type}.` : '';
   const forms = snap.forms.length;
@@ -1564,7 +1647,7 @@ export function registerBrowserAgentRoutes(
       // Immediate return path.
       if (previousRevision === undefined || session.revision !== previousRevision || !req.wait_ms) {
         await takeSnapshot(session, req.max_elements ?? agentConfig.maxElements, req.max_visible_text_chars ?? agentConfig.maxVisibleTextChars);
-        return projectObserve(session, req, false, previousRevision);
+        return finishObserve(session, req, false, previousRevision);
       }
 
       // Long-poll: wait for a revision change or timeout. Never holds a browser
@@ -1576,7 +1659,7 @@ export function registerBrowserAgentRoutes(
       if (changed) {
         await takeSnapshot(sessionStill, req.max_elements ?? agentConfig.maxElements, req.max_visible_text_chars ?? agentConfig.maxVisibleTextChars);
       }
-      return projectObserve(sessionStill, req, !changed, previousRevision);
+      return finishObserve(sessionStill, req, !changed, previousRevision);
     } catch (e) {
       return replyError(reply, e, deps.log);
     }

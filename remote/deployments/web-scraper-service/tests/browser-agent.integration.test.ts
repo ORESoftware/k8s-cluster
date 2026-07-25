@@ -148,11 +148,34 @@ test(
       assert.equal(confirmed.status, 'completed', JSON.stringify(confirmed));
       assert.match((confirmed.page as { url: string }).url, /\/done/);
 
+      // 7b) screenshot is captured on demand.
+      const shot = await observe({ session_id: sessionId, include: ['summary', 'screenshot'] });
+      const s = shot.screenshot as { mime_type: string; data_base64: string } | undefined;
+      assert.ok(s && s.mime_type === 'image/jpeg' && s.data_base64.length > 100, 'screenshot returned');
+
+      // 7c) stop_when halts a batch early (navigation short-circuits the reload).
+      const stopped = await act({
+        request_id: 'r6b',
+        session_id: sessionId,
+        expected_revision: (shot as { revision: number }).revision,
+        intent: 'navigate then stop before the extra action',
+        actions: [
+          { type: 'goto', url: `${fixture.url}/step1` },
+          { type: 'reload' },
+        ],
+        stop_when: { url_matches: '/step1' },
+      });
+      assert.equal(stopped.status, 'completed', JSON.stringify(stopped));
+      const stoppedResults = stopped.action_results as Array<{ type: string; status: string }>;
+      const reload = stoppedResults.find((r) => r.type === 'reload');
+      assert.equal(reload?.status, 'skipped', 'reload skipped after stop_when satisfied');
+
       // 8) navigate to the CAPTCHA page -> blocker is detected and interaction is refused.
+      const obsBeforeNav = await observe({ session_id: sessionId, include: ['summary'] });
       const nav = await act({
         request_id: 'r7',
         session_id: sessionId,
-        expected_revision: confirmed.revision,
+        expected_revision: obsBeforeNav.revision,
         intent: 'go to the verify page',
         actions: [{ type: 'goto', url: `${fixture.url}/captcha` }],
       });
