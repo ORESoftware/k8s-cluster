@@ -52,9 +52,10 @@ on `:8222` to scale that deployment by consumer lag.
 ## Hardening delivered so far (2026-07-24)
 
 - `nats.networkpolicy.yaml`: `:4222` ingress is now scoped to the known client
-  namespaces (`default`, `shared-auth`, `voxletra`, `messaging`), `:8222` to
-  `keda` + `observability`, `:7777` to `observability`. This is the network
-  half of the backlog above; account/nkey auth remains the deliberate rollout.
+  namespaces (`default`, `shared-auth`, `voxletra`, `messaging`, `ai-ml`,
+  `daedalus`), `:8222` to `keda` + `observability`, `:7777` to `observability`.
+  This is the network half of the backlog above; account/nkey auth remains the
+  deliberate rollout.
 - `dd-nats-bridge` (this namespace, from `remote/nats-bridge`): hardened
   HTTP→NATS chokepoint for callers that shouldn't get raw bus access
   (e.g. the voxletra tenant). Bearer-token auth (fail-closed), subject
