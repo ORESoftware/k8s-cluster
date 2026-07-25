@@ -1224,12 +1224,12 @@ mod tests {
     fn decode_totp_secret_roundtrips_and_tolerates_formatting() {
         assert_eq!(
             decode_totp_secret(RFC6238_SECRET_B32).unwrap(),
-            b"12345678901234567890"
+            b"12345678901234567890".to_vec()
         );
         // Lowercase, spaces and dashes are normalized away before decoding.
         assert_eq!(
             decode_totp_secret("gezd gnbv gy3t qojq gezd-gnbv-gy3t-qojq").unwrap(),
-            b"12345678901234567890"
+            b"12345678901234567890".to_vec()
         );
     }
 
