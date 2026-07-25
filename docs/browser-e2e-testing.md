@@ -153,24 +153,34 @@ Hetzner went from `0/2` to **`2/2` available** after the fix deployed via ArgoCD
 (PR #34 → `dev`); a `selenium /run` against the real service returns `ok:true`
 driving example.com and `app.fiducia.cloud` ("Fiducia Customer Portal").
 
-**Still blocked — `dd-browser-test-server` on Hetzner (PR #35, do not merge yet):**
-it needs the private `remote/libs` submodule, but the Hetzner
-`dd-agent-secrets/GH_PAT` secret is **empty** (verified: base64 length 0), so the
-authenticated submodule clone fails. Populate that token first, then validate a
-throwaway before merging (merging also switches AWS's currently-working
-browser-test-server to the clone path, so confirm AWS's GH_PAT too).
+**`dd-browser-test-server` — also FIXED (PR #36).** It additionally needs the
+**private** `remote/libs` submodule (for the `@dd/telemetry` file: dep). `GH_PAT`
+turned out to be **empty in the backing store on both clusters** (base64 length 0
+on AWS and Hetzner — AWS only worked because it used the pre-populated hostPath and
+never cloned). The correct, already-provisioned credential is **`GH_DEPLOY_KEY`**
+(present on both, 560 bytes), and the submodule URL is natively SSH. So an
+`alpine/git` initContainer (which bundles openssh — the Playwright image doesn't)
+writes the deploy key, `ssh-keyscan` + `StrictHostKeyChecking=yes`, clones the
+public superproject over HTTPS and the private submodule over SSH, then `chown`s
+the tree to the uid-1000 runtime so pnpm can build. **Validated in production
+(2026-07-25):** both clusters went to **2/2** and `/run` returns `ok:true` for
+**all three drivers** (Playwright/Puppeteer/Selenium) against app.fiducia.cloud.
 
 Historical `DiskPressure` also left ~92 `Evicted` tombstones per service; nodes
 now report all pressures `False`. Evicted-pod cleanup is safe hygiene.
 
 ## Findings & recommendations
 
-1. **[DONE for selenium] Self-contained source via initContainer clone.**
-   Shipped for `dd-selenium-server` (PR #34, live on Hetzner). The same change is
-   ready for `dd-browser-test-server` (PR #35) but **blocked on the empty Hetzner
-   `GH_PAT`** — populate `dd-agent-secrets/GH_PAT` on Hetzner, then merge #35.
-   A future hardening is to bake a proper CI image (build-server patch 01 style)
-   so no runtime clone/build is needed at all.
+1. **[DONE] Self-contained source via initContainer clone.**
+   Shipped for both `dd-selenium-server` (PR #34) and `dd-browser-test-server`
+   (PR #36) — live and 2/2 on **both** clusters. selenium clones the public
+   superproject only; browser-test additionally clones the private `remote/libs`
+   submodule over SSH via `GH_DEPLOY_KEY`. A future hardening is to bake proper CI
+   images (build-server patch 01 style) so no runtime clone/build is needed at all.
+2. **[LOW] `GH_PAT` is empty in the backing store** (`dd/remote-dev/agent-secrets`)
+   on both clusters. Nothing currently depends on it (the browser services use
+   `GH_DEPLOY_KEY`), but dd-build-server's config references it — worth populating
+   or removing the reference to avoid a future silent gap.
 2. **[MED] Evicted-pod hygiene.** Add a reaper (or
    `kubectl delete pod --field-selector status.phase=Failed`) so historical
    `DiskPressure` doesn't leave hundreds of `Failed` tombstones; investigate the

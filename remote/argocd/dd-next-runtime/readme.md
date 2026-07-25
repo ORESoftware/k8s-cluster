@@ -950,6 +950,41 @@ containers: the official `selenium/standalone-chromium` image (the actual Seleni
 `RemoteWebDriver` at `localhost:4444`. The Grid port is never published on the Service, so the only
 reachable entrypoint is the authenticated API on `:8105`.
 
+### Where the API container's source comes from
+
+A `fetch-source` initContainer shallow-clones the public superproject into a per-pod `emptyDir` at
+`/opt/dd-next-1` (idempotent — it skips the clone if `.git` already exists, since the volume survives
+init restarts), then asserts `remote/deployments/selenium-server/pom.xml` landed before the build
+container runs. Only the public superproject is needed; the Maven build is self-contained and does
+not require the private `remote/libs` submodule.
+
+**This replaced a `hostPath` mount, and the reason is worth remembering.** The volume used to be
+`hostPath: /home/ec2-user/codes/dd/dd-next-1` with `type: Directory` — which only asserts that the
+*mounted* path itself exists. A node where the `remote/deployments/selenium-server` subtree had never
+been provisioned therefore mounted cleanly and *then* failed at start-up with a bare
+`cd: No such file or directory`. On Hetzner that ran for **23 days and 6,600+ restarts** without being
+noticed, because the Grid container stayed healthy the whole time: the pod sat at `1/2` and only the
+`/run` API and the `:8105` Service endpoints were down. The `emptyDir` + initContainer design removes
+the node dependency entirely, so the pod is now portable across nodes and clusters.
+
+Two consequences worth knowing when debugging:
+
+- `kubectl port-forward` to the **pod**'s `:4444` reaches the Grid directly, bypassing both the
+  Service and the pod's `Ready` gate — which is why external Selenium suites kept working throughout
+  the outage above, and why "my tests pass" is not evidence that the API is healthy. Check
+  `kubectl get endpoints dd-selenium-server` for that.
+- The clone tracks `--branch dev`, matching the `targetRevision: dev` that Argo syncs for
+  `dd-next-runtime`. Changing one without the other makes the running code and the manifest disagree.
+
+The API container carries a second line of defence: the initContainer preflight can only speak for
+the moment it ran, so the start-up command re-checks for `pom.xml` and exits `78` (`EX_CONFIG`) if
+the mount is present but unpopulated — a distinct, alertable state, rather than failing deep inside
+Maven where it reads as an application crash-loop.
+
+`remote/tests/general/selenium-server-config.test.ts` pins this: it asserts the initContainer, the
+preflight, the start-up `pom.xml` / exit-78 guard, and that the `repo` volume is an `emptyDir` with
+no `hostPath` anywhere in the manifest.
+
 The API exposes `GET /healthz`, `GET /readyz`, `GET /metrics`, `GET /status`, `GET /tools`, and
 `POST /run`; the gateway mirrors those under `/selenium/...`. `POST /run` accepts the same bounded
 scenario DSL as `dd-browser-test-server` (`goto`, `click`, `fill`, `select`, `press`,
