@@ -50,6 +50,35 @@ bridge stays a dumb, auditable chokepoint with no k8s API credentials —
 `automountServiceAccountToken: false` stays true. `dd-thread-operator` remains
 the right tool for per-entity pods, not for queue-depth scaling.
 
+## End-to-end verification (local, real NATS 2.11.17-alpine in docker, JetStream on)
+
+Ran the actual bridge binary and the actual vapi server binary against a real
+broker (same image as the cluster):
+
+- Bridge rejection matrix: no token → 401, wrong token → 401, off-allowlist
+  subject (`dd.remote.contracts.solana.settle`) → 403, `$JS.API.STREAM.DELETE.*`
+  → 403, wildcard `>` → 403, non-JSON body → 400, body over cap → 413. All
+  counted in `rejected_total`; nothing reached the bus.
+- Allowed subject with no stream bound → 200 `durable:false` (core fallback).
+  This surfaced a bug during testing: async-nats reports "no stream found for
+  given subject" (not only "no responders"); classifier fixed + unit test added.
+- Vapi worker provisioned `DD_VAPI_TASKS` + `dd-vapi-phone-worker` at startup.
+  Malformed task (`type:"reboot-cluster"`) → dropped + acked. `outbound-call`
+  without `VAPI_PHONE_NUMBER_ID` → permanent drop + ack. `setup-refresh` with
+  no `VAPI_API_KEY` → NAK'd and redelivered exactly `max_deliver` (3) times,
+  then delivery stopped with `num_ack_pending: 0` — poison messages cannot
+  wedge the consumer and do not inflate the KEDA lag signal.
+- Scale signal: with the worker stopped, 5 bridge-published tasks →
+  `num_pending: 5` on the monitoring endpoint (above the ScaledObject's
+  `activationLagThreshold: 2`); worker restart drained it to 0.
+
+Test-found fixes also applied to voxletra/vxl-api-server.rs: axum 0.7 uses
+`:id` captures, so the pre-existing `/vapi/call/{id}` route was unreachable —
+fixed with a regression test, plus 6 integration tests covering
+`/vapi/call/dispatch` (auth fail-closed, bad token, bridge-unconfigured 503,
+invalid number rejected before the bridge is touched, and the full queued
+publish with subject/token/payload asserted against a fake bridge).
+
 ## Rollout order
 
 1. Seed ClusterSecretStore key `dd/messaging/nats-bridge-secrets`
