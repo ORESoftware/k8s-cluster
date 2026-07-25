@@ -270,8 +270,11 @@ async fn publish_jetstream(
     Ok(())
 }
 
+/// async-nats surfaces "subject not bound to a stream" as either
+/// "no responders" (JS API request layer) or "no stream found for given
+/// subject" (publish ack), depending on the path.
 fn classify_js_error(msg: &str) -> PublishError {
-    if msg.contains("no responders") {
+    if msg.contains("no responders") || msg.contains("no stream found") {
         PublishError::NoStream
     } else {
         PublishError::Other(msg.to_string())
@@ -330,10 +333,26 @@ fn validate_subject(subject: &str, prefixes: &[String]) -> Result<(), String> {
             return Err(format!("subject token '{token}' has invalid characters"));
         }
     }
-    if !prefixes.iter().any(|p| subject.starts_with(p.as_str())) {
+    if !prefixes.iter().any(|p| subject_in_prefix(subject, p)) {
         return Err("subject is outside the bridge allowlist".into());
     }
     Ok(())
+}
+
+/// True if `subject` is within the namespace named by `prefix`, anchored to a
+/// subject-token boundary. Prefix `vxl` matches `vxl` and `vxl.events` but NOT
+/// the sibling `vxlmalicious.foo`; a prefix that already ends in `.` is matched
+/// verbatim. This makes the allowlist safe regardless of whether an operator
+/// remembered the trailing dot in `BRIDGE_SUBJECT_PREFIXES` — a plain
+/// `starts_with` would otherwise widen `vxl` to every `vxl*` sibling subject.
+fn subject_in_prefix(subject: &str, prefix: &str) -> bool {
+    if prefix.ends_with('.') {
+        return subject.starts_with(prefix);
+    }
+    match subject.strip_prefix(prefix) {
+        Some(rest) => rest.is_empty() || rest.starts_with('.'),
+        None => false,
+    }
 }
 
 #[cfg(test)]
@@ -374,6 +393,22 @@ mod tests {
     }
 
     #[test]
+    fn classifies_no_stream_errors_for_core_fallback() {
+        assert!(matches!(
+            classify_js_error("no stream found for given subject"),
+            PublishError::NoStream
+        ));
+        assert!(matches!(
+            classify_js_error("503 no responders available"),
+            PublishError::NoStream
+        ));
+        assert!(matches!(
+            classify_js_error("timed out"),
+            PublishError::Other(_)
+        ));
+    }
+
+    #[test]
     fn token_comparison_is_exact() {
         assert!(constant_time_eq("secret-token-1234", "secret-token-1234"));
         assert!(!constant_time_eq("secret-token-1234", "secret-token-1235"));
@@ -391,5 +426,530 @@ mod tests {
         assert!(caller_authorized(&h2, Some("tok-abcdef123456")));
 
         assert!(!caller_authorized(&HeaderMap::new(), Some("tok-abcdef123456")));
+    }
+
+    // ---------------------------------------------------------------------
+    // Added security-surface tests (2026-07-25).
+    //
+    // These pin the *current on-disk* behavior of the hardened bridge's
+    // authorization surface: the subject allowlist (`validate_subject`), the
+    // bearer/`x-bridge-token` auth (`caller_authorized` / `constant_time_eq`),
+    // and the allowlist-config parser (`parse_prefixes`). They assert genuine
+    // invariants and document actual behavior on adversarial inputs. Where a
+    // test documents a latent sharp edge rather than a bug, it says so inline.
+    // ---------------------------------------------------------------------
+
+    /// The token the hardened deployment ships (≥16 chars, per startup check).
+    const TOK: &str = "tok-abcdef123456";
+
+    /// Build a `HeaderMap` from `(name, value)` pairs (test helper).
+    fn headers(pairs: &[(&'static str, &str)]) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        for &(k, v) in pairs {
+            h.insert(k, v.parse().unwrap());
+        }
+        h
+    }
+
+    // ---- subject authorization: JetStream / system / settlement -----------
+
+    /// Finding #1 (audit): the pre-hardening relay could POST to `$JS.API.>`
+    /// and delete/purge streams. Every JetStream-API control subject must be
+    /// denied (all are `$`-prefixed, so the dedicated leading-`$` guard fires).
+    #[test]
+    fn denies_all_jetstream_api_subjects() {
+        for s in [
+            "$JS.API.>",
+            "$JS.API.STREAM.DELETE.DD_VAPI_TASKS",
+            "$JS.API.STREAM.DELETE.*",
+            "$JS.API.STREAM.PURGE.DD_VAPI_TASKS",
+            "$JS.API.STREAM.CREATE.EVIL",
+            "$JS.API.CONSUMER.DELETE.DD_VAPI_TASKS.dd-vapi-phone-worker",
+            "$JS.API.CONSUMER.CREATE.DD_VAPI_TASKS",
+            "$JS.ACK.DD_VAPI_TASKS.>",
+            "$JSC.>",
+        ] {
+            assert!(
+                validate_subject(s, &prefixes()).is_err(),
+                "JetStream control subject must be denied: {s}"
+            );
+        }
+    }
+
+    /// System subjects (`$SYS.>`) leak fleet/account telemetry and server
+    /// control; all must be denied.
+    #[test]
+    fn denies_all_system_subjects() {
+        for s in [
+            "$SYS.>",
+            "$SYS.REQ.SERVER.PING",
+            "$SYS.REQ.ACCOUNT.PING",
+            "$SYS.ACCOUNT.DD.CONNS",
+            "$SYS.SERVER.>",
+            "$",
+        ] {
+            assert!(
+                validate_subject(s, &prefixes()).is_err(),
+                "system subject must be denied: {s}"
+            );
+        }
+    }
+
+    /// The messaging readme flags `dd.remote.contracts.solana.{settle,resolve}`
+    /// as on-chain broadcast triggers, and `dd.remote.thread.*.tasks` as the
+    /// separate remote work-queue. None share the bridge's allowlist prefixes
+    /// (`dd.vapi.tasks.`, `vxl.`), so all must be denied — the bridge must not
+    /// be a path to trigger settlement or enqueue remote-thread work. Also
+    /// confirms the allowlist is `dd.vapi.tasks.` specifically, not `dd.vapi.`.
+    #[test]
+    fn denies_settlement_and_remote_thread_subjects() {
+        for s in [
+            "dd.remote.contracts.solana.settle",
+            "dd.remote.contracts.solana.resolve",
+            "dd.remote.contracts.solana.settle.mainnet",
+            "dd.remote.thread.abc123.tasks",
+            "dd.remote.thread.abc.results",
+            "dd.vapi.status",
+            "dd.vapi.results",
+        ] {
+            assert!(
+                validate_subject(s, &prefixes()).is_err(),
+                "off-allowlist / settlement subject must be denied: {s}"
+            );
+        }
+    }
+
+    // ---- subject authorization: wildcards, `$`, dots, encoding ------------
+
+    /// Wildcards are denied both as standalone tokens (`*`/`>`, the NATS
+    /// wildcard guard) and when embedded in a token (caught by the char
+    /// allowlist). Either way a caller cannot fan-out a publish.
+    #[test]
+    fn denies_wildcards_standalone_and_embedded() {
+        for s in [
+            // standalone wildcard tokens
+            "dd.vapi.tasks.>",
+            "dd.vapi.tasks.*",
+            "dd.vapi.tasks.a.>",
+            "dd.vapi.tasks.*.b",
+            "vxl.>",
+            ">",
+            "*",
+            // embedded wildcards -> rejected by the character allowlist
+            "dd.vapi.tasks.a>b",
+            "dd.vapi.tasks.a*b",
+            "dd.vapi.tasks.pre*",
+            "dd.vapi.tasks.>suffix",
+        ] {
+            assert!(
+                validate_subject(s, &prefixes()).is_err(),
+                "wildcard subject must be denied: {s}"
+            );
+        }
+    }
+
+    /// A leading `$` is denied by the dedicated system-subject guard; a `$`
+    /// anywhere else is denied by the character allowlist. So `$` can never be
+    /// smuggled into a subject regardless of position.
+    #[test]
+    fn denies_dollar_injection_leading_and_embedded() {
+        for s in [
+            "$JS.API.STREAM.INFO", // leading -> system-subject guard
+            "$",                   // leading
+            "dd.vapi.tasks.$JS",   // embedded -> char guard
+            "dd.vapi.tasks.a$b",   // embedded -> char guard
+        ] {
+            assert!(
+                validate_subject(s, &prefixes()).is_err(),
+                "`$` injection must be denied: {s}"
+            );
+        }
+    }
+
+    /// Leading dot, trailing dot, and double dots all produce an empty token
+    /// and are denied. Critically, the bare allowlist prefix itself
+    /// (`dd.vapi.tasks.` / `vxl.`) has a trailing empty token and is denied —
+    /// a caller cannot publish to the namespace root.
+    #[test]
+    fn denies_empty_leading_trailing_double_dots_and_bare_prefix() {
+        for s in [
+            ".dd.vapi.tasks.call", // leading dot
+            "dd.vapi.tasks.call.", // trailing dot
+            "dd.vapi.tasks..call", // double dot
+            "dd.vapi.tasks.",      // bare prefix (trailing empty token)
+            "vxl.",                // bare prefix
+            "vxl..events",
+            ".",
+            "..",
+            "dd.vapi.tasks", // prefix minus its trailing dot: shorter than the
+                             // configured prefix, so it is outside the allowlist
+        ] {
+            assert!(
+                validate_subject(s, &prefixes()).is_err(),
+                "empty-token / bare-prefix subject must be denied: {s}"
+            );
+        }
+    }
+
+    /// Unicode homoglyphs, control bytes, zero-width chars, whitespace, and
+    /// percent-encoded payloads are all denied by the ASCII char allowlist.
+    /// The last two rows show that whether or not the HTTP layer percent-decodes
+    /// the path, both the encoded and decoded forms of a `$JS` attack are denied.
+    #[test]
+    fn denies_unicode_control_and_encoding_tricks() {
+        for s in [
+            "dd.vapi.tasks.c\u{0430}ll", // Cyrillic 'а' homoglyph
+            "dd.vapi.tasks.caf\u{00E9}", // 'é'
+            "dd.vapi.tasks.a\u{0000}b",  // null byte
+            "dd.vapi.tasks.a\nb",        // newline
+            "dd.vapi.tasks.a\tb",        // tab
+            "dd.vapi.tasks.a b",         // space
+            "dd.vapi.tasks.\u{200B}x",   // zero-width space
+            "dd.vapi.tasks.\u{1F4A9}",   // emoji
+            "%24JS.API.%3E",             // percent-encoded `$JS.API.>` (undecoded)
+            "$JS.API.>",                 // ...and its decoded form
+        ] {
+            assert!(
+                validate_subject(s, &prefixes()).is_err(),
+                "encoding/unicode trick must be denied: {s}"
+            );
+        }
+    }
+
+    // ---- subject authorization: allowlist semantics ----------------------
+
+    /// The allowlist match is case-sensitive and anchored to the START of the
+    /// subject. Uppercased or mixed-case variants of the prefix, and subjects
+    /// that merely *contain* an allowed prefix, all fail closed.
+    #[test]
+    fn allowlist_is_case_sensitive_and_prefix_anchored() {
+        for s in [
+            // case-sensitivity (fails closed: never widens)
+            "DD.VAPI.TASKS.call",
+            "VXL.events",
+            "Vxl.events",
+            "Dd.vapi.tasks.call",
+            "$js.api.foo", // lowercased `$js` still hits the leading-`$` guard
+            // must START with a prefix, not contain / be suffixed by one
+            "evil.vxl.events",
+            "prefix.dd.vapi.tasks.call",
+            "xvxl.events",
+            "myvxl.events",
+        ] {
+            assert!(
+                validate_subject(s, &prefixes()).is_err(),
+                "case/anchor variant must be denied: {s}"
+            );
+        }
+    }
+
+    /// The allowlist match is anchored to a subject-token boundary
+    /// (`subject_in_prefix`), so it is safe whether or not a configured prefix
+    /// ends in `.`. A prefix without the trailing dot (`vxl`) still matches only
+    /// `vxl` and `vxl.*`, never the sibling `vxlmalicious.*`. (Previously the
+    /// match was a raw `str::starts_with`, which widened `vxl` to every textual
+    /// sibling — a latent, config-dependent allowlist bypass; now closed.)
+    #[test]
+    fn allowlist_prefix_boundary_is_token_anchored() {
+        // Prefixes ending in '.' behave exactly as before (shipped config).
+        let safe = parse_prefixes("dd.vapi.tasks.,vxl.");
+        assert!(validate_subject("vxl.events", &safe).is_ok());
+        assert!(validate_subject("vxlmalicious.foo", &safe).is_err());
+        assert!(validate_subject("dd.vapi.tasksX.y", &safe).is_err());
+
+        // Prefixes WITHOUT a trailing '.' are now anchored too: the exact subject
+        // and its children pass; textual siblings are denied.
+        let no_dot = parse_prefixes("vxl,dd.vapi.tasks");
+        assert!(validate_subject("vxl", &no_dot).is_ok());
+        assert!(validate_subject("vxl.events", &no_dot).is_ok());
+        assert!(validate_subject("dd.vapi.tasks.call", &no_dot).is_ok());
+        assert!(
+            validate_subject("vxlmalicious.foo", &no_dot).is_err(),
+            "prefix 'vxl' must NOT widen to sibling 'vxlmalicious.*'"
+        );
+        assert!(
+            validate_subject("dd.vapi.tasksX.y", &no_dot).is_err(),
+            "prefix 'dd.vapi.tasks' must NOT widen to 'dd.vapi.tasksX.*'"
+        );
+    }
+
+    /// Direct unit coverage of the boundary matcher.
+    #[test]
+    fn subject_in_prefix_anchors_at_token_boundary() {
+        assert!(subject_in_prefix("vxl", "vxl"));
+        assert!(subject_in_prefix("vxl.events", "vxl"));
+        assert!(subject_in_prefix("vxl.events", "vxl."));
+        assert!(!subject_in_prefix("vxlmalicious.foo", "vxl"));
+        assert!(!subject_in_prefix("vxlmalicious.foo", "vxl."));
+        assert!(!subject_in_prefix("vx", "vxl"));
+    }
+
+    /// Legitimate vapi/vxl traffic must still pass — the narrowing must not
+    /// over-block. Note uppercase/digits/`_`/`-` are valid *within* tokens
+    /// (only the leading prefix match is case-sensitive).
+    #[test]
+    fn allows_legitimate_vapi_and_vxl_subjects() {
+        for s in [
+            "dd.vapi.tasks.call",
+            "dd.vapi.tasks.outbound-call",
+            "dd.vapi.tasks.setup_refresh",
+            "dd.vapi.tasks.a.b.c.d",
+            "dd.vapi.tasks.CALL_123",
+            "vxl.events.stt",
+            "vxl.a",
+            "vxl.events.v2",
+            "vxl.EVENT-1_x",
+        ] {
+            assert!(
+                validate_subject(s, &prefixes()).is_ok(),
+                "legitimate subject must be allowed: {s}"
+            );
+        }
+    }
+
+    /// Length bounds: 1..=255 chars; empty and >255 are denied. The upper
+    /// bound is checked before per-token work, so an oversized subject can't
+    /// burn cycles. 255 is the inclusive max.
+    #[test]
+    fn subject_length_bounds_enforced() {
+        let at_limit = format!("vxl.{}", "a".repeat(251)); // 4 + 251 = 255
+        assert_eq!(at_limit.len(), 255);
+        assert!(validate_subject(&at_limit, &prefixes()).is_ok());
+
+        let over_limit = format!("vxl.{}", "a".repeat(252)); // 256
+        assert_eq!(over_limit.len(), 256);
+        assert!(validate_subject(&over_limit, &prefixes()).is_err());
+
+        assert!(validate_subject("", &prefixes()).is_err());
+        assert!(validate_subject(&"a".repeat(1000), &prefixes()).is_err());
+    }
+
+    // ---- auth: caller_authorized / constant_time_eq ----------------------
+
+    /// `BRIDGE_ALLOW_INSECURE` maps to `expected = None`, which bypasses ALL
+    /// auth (returns true for any/no credentials). This is all-or-nothing —
+    /// there is no partial auth — so it must never be set in production. Pinned
+    /// so the bypass is explicit and visible to reviewers.
+    #[test]
+    fn insecure_mode_bypasses_all_auth() {
+        assert!(caller_authorized(&HeaderMap::new(), None));
+        assert!(caller_authorized(&headers(&[("authorization", "Bearer whatever")]), None));
+        assert!(caller_authorized(&headers(&[("x-bridge-token", "")]), None));
+    }
+
+    /// With a token configured, missing / empty / malformed / wrong
+    /// credentials are all denied. Note a same-length wrong token
+    /// (`wrong-token-0000`) is denied on content, and `Bearer ` with an empty
+    /// token is denied.
+    #[test]
+    fn missing_empty_and_malformed_tokens_denied() {
+        let cases: &[&[(&'static str, &str)]] = &[
+            &[],
+            &[("authorization", "")],
+            &[("authorization", "Bearer ")],
+            &[("authorization", "Bearer wrong-token-0000")],
+            &[("authorization", "Bearer")],
+            &[("authorization", "Basic dXNlcjpwYXNz")],
+            &[("x-bridge-token", "")],
+            &[("x-bridge-token", "wrong-token-0000")],
+        ];
+        for c in cases {
+            assert!(
+                !caller_authorized(&headers(c), Some(TOK)),
+                "credentials must be denied: {c:?}"
+            );
+        }
+    }
+
+    /// The correct token is accepted via either channel, and surrounding
+    /// whitespace on the presented token is trimmed before comparison.
+    #[test]
+    fn correct_token_accepted_and_whitespace_trimmed() {
+        assert!(caller_authorized(
+            &headers(&[("authorization", "Bearer tok-abcdef123456")]),
+            Some(TOK)
+        ));
+        assert!(caller_authorized(
+            &headers(&[("x-bridge-token", "tok-abcdef123456")]),
+            Some(TOK)
+        ));
+        // trimmed
+        assert!(caller_authorized(
+            &headers(&[("authorization", "Bearer tok-abcdef123456 ")]),
+            Some(TOK)
+        ));
+        assert!(caller_authorized(
+            &headers(&[("x-bridge-token", "  tok-abcdef123456  ")]),
+            Some(TOK)
+        ));
+        assert!(caller_authorized(
+            &headers(&[("authorization", "Bearer  tok-abcdef123456")]),
+            Some(TOK)
+        ));
+    }
+
+    /// The `Bearer ` scheme is matched exactly (case- and format-sensitive):
+    /// lowercase/uppercase scheme, or a missing space, all fall through and are
+    /// denied. This fails closed (never widens), so it is a strictness note,
+    /// not a bypass.
+    #[test]
+    fn bearer_scheme_is_case_and_format_sensitive() {
+        for c in [
+            "bearer tok-abcdef123456",
+            "BEARER tok-abcdef123456",
+            "Bearertok-abcdef123456",
+            "Token tok-abcdef123456",
+        ] {
+            assert!(
+                !caller_authorized(&headers(&[("authorization", c)]), Some(TOK)),
+                "non-exact scheme must be denied: {c}"
+            );
+        }
+    }
+
+    /// Header precedence: a `Bearer `-prefixed value is always consumed (even
+    /// when wrong), so a wrong bearer SHADOWS a correct `x-bridge-token` and
+    /// the request is denied (fails closed). The `x-bridge-token` fallback is
+    /// only consulted when the authorization header is absent or not
+    /// `Bearer `-prefixed.
+    #[test]
+    fn wrong_bearer_shadows_xbridge_but_nonbearer_falls_back() {
+        // wrong bearer shadows correct x-bridge-token -> denied
+        assert!(!caller_authorized(
+            &headers(&[
+                ("authorization", "Bearer wrong-token-0000"),
+                ("x-bridge-token", "tok-abcdef123456"),
+            ]),
+            Some(TOK)
+        ));
+        // non-Bearer authorization -> fallback to correct x-bridge-token -> ok
+        assert!(caller_authorized(
+            &headers(&[
+                ("authorization", "Basic zzz"),
+                ("x-bridge-token", "tok-abcdef123456"),
+            ]),
+            Some(TOK)
+        ));
+        // absent authorization -> fallback -> ok
+        assert!(caller_authorized(
+            &headers(&[("x-bridge-token", "tok-abcdef123456")]),
+            Some(TOK)
+        ));
+        // correct bearer wins; wrong x-bridge-token is ignored -> ok
+        assert!(caller_authorized(
+            &headers(&[
+                ("authorization", "Bearer tok-abcdef123456"),
+                ("x-bridge-token", "nope"),
+            ]),
+            Some(TOK)
+        ));
+    }
+
+    /// `constant_time_eq` rejects on both length and content mismatch, is
+    /// case-sensitive, and treats prefix relationships (`tok` vs `token`) as
+    /// unequal. Equal-length equal-content is the only accepting case.
+    #[test]
+    fn constant_time_eq_rejects_length_and_content_mismatch() {
+        assert!(constant_time_eq("tok-abcdef123456", "tok-abcdef123456"));
+        assert!(!constant_time_eq("tok-abcdef123456", "tok-abcdef123457")); // content
+        assert!(!constant_time_eq("tok", "tok-abcdef123456")); // shorter presented
+        assert!(!constant_time_eq("tok-abcdef123456xxxx", "tok-abcdef123456")); // longer
+        assert!(!constant_time_eq("tok-abcdef12345", "tok-abcdef123456")); // off-by-one len
+        assert!(constant_time_eq("", "")); // degenerate equal
+        assert!(!constant_time_eq("", "x"));
+        assert!(!constant_time_eq("ABCDEF", "abcdef")); // case-sensitive
+    }
+
+    // ---- allowlist config parsing (security-critical) --------------------
+
+    /// `parse_prefixes` filters empty tokens, so it can NEVER emit an
+    /// empty-string prefix. This is load-bearing: an empty prefix would make
+    /// `starts_with("")` true for every subject — i.e. permit-all (see
+    /// `empty_string_prefix_would_be_permit_all`). Doubled commas, trailing
+    /// commas, and whitespace-only tokens are all dropped.
+    #[test]
+    fn parse_prefixes_cannot_produce_permit_all_empty_prefix() {
+        assert!(parse_prefixes("").is_empty());
+        assert!(parse_prefixes("   ").is_empty());
+        assert!(parse_prefixes(", ,\t,").is_empty());
+
+        let p = parse_prefixes("dd.vapi.tasks.,,vxl.");
+        assert_eq!(p, vec!["dd.vapi.tasks.".to_string(), "vxl.".to_string()]);
+        assert!(p.iter().all(|s| !s.is_empty()));
+
+        assert_eq!(
+            parse_prefixes(" vxl. , dd.vapi.tasks. "),
+            vec!["vxl.".to_string(), "dd.vapi.tasks.".to_string()]
+        );
+        assert_eq!(parse_prefixes("vxl.,"), vec!["vxl.".to_string()]);
+
+        // No parse of any garbage config can yield the permit-all empty prefix.
+        for raw in ["", "   ", ",,,", ", ,\t,", "vxl.,,", ",dd.vapi.tasks."] {
+            assert!(
+                !parse_prefixes(raw).iter().any(|s| s.is_empty()),
+                "parse_prefixes must never emit an empty prefix: {raw:?}"
+            );
+        }
+    }
+
+    /// An empty allowlist fails closed: `validate_subject` denies everything,
+    /// including otherwise-legal subjects. (`main()` also refuses to start with
+    /// an empty allowlist, but the function itself must not fall open.)
+    #[test]
+    fn empty_allowlist_fails_closed() {
+        assert!(validate_subject("dd.vapi.tasks.call", &[]).is_err());
+        assert!(validate_subject("vxl.events", &[]).is_err());
+        assert!(validate_subject("dd.vapi.tasks.call", &parse_prefixes("")).is_err());
+    }
+
+    /// Even a manually-constructed empty-string prefix is no longer permit-all:
+    /// the token-anchored matcher only treats a subject as inside `""` if the
+    /// remainder after stripping the (empty) prefix is empty or starts with `.`,
+    /// which a normal dotted subject never is. So an empty prefix denies real
+    /// subjects rather than waving them through. (`parse_prefixes` still filters
+    /// empties, and `main()` refuses an empty allowlist — this is the third,
+    /// independent layer.)
+    #[test]
+    fn empty_string_prefix_is_not_permit_all() {
+        let empties = vec![String::new()];
+        // A settlement subject is denied even with an empty prefix present.
+        assert!(validate_subject("dd.remote.contracts.solana.settle", &empties).is_err());
+        assert!(validate_subject("dd.vapi.tasks.call", &empties).is_err());
+        // The independent `$`/wildcard guards also still hold.
+        assert!(validate_subject("$JS.API.STREAM.DELETE.DD_VAPI_TASKS", &empties).is_err());
+        assert!(validate_subject("dd.vapi.tasks.>", &empties).is_err());
+    }
+
+    // ---- publish-path fallback routing (durability, not authz) ------------
+
+    /// `classify_js_error` decides JetStream-vs-core fallback via a naive,
+    /// case-sensitive substring match. Documented here: any error message
+    /// containing "no responders"/"no stream found" routes to the core-NATS
+    /// fallback. This is a durability concern only — the subject is already
+    /// authorized before publish — but the substring behavior is a sharp edge
+    /// worth pinning.
+    #[test]
+    fn classify_js_error_substring_and_case_sensitivity() {
+        assert!(matches!(
+            classify_js_error("no stream found for given subject foo"),
+            PublishError::NoStream
+        ));
+        assert!(matches!(
+            classify_js_error("nats: no responders"),
+            PublishError::NoStream
+        ));
+        assert!(matches!(
+            classify_js_error("fatal: no stream found; giving up"),
+            PublishError::NoStream
+        ));
+        // case-sensitive: capitalized variants are NOT treated as no-stream
+        assert!(matches!(
+            classify_js_error("No Responders"),
+            PublishError::Other(_)
+        ));
+        assert!(matches!(
+            classify_js_error("permission denied"),
+            PublishError::Other(_)
+        ));
     }
 }
