@@ -26135,7 +26135,9 @@ fn bambu_a1_family_and_corexy_models_resolve_and_join_the_default_fleet() {
     assert_eq!(a1.controller.as_deref(), Some("bambu"));
     assert_eq!(a1.work_envelope_mm, Some(vec![256.0, 256.0, 256.0]));
     let a1_languages = machine_catalog_instruction_languages(a1);
-    assert!(a1_languages.iter().any(|language| language == "bambu-gcode"));
+    assert!(a1_languages
+        .iter()
+        .any(|language| language == "bambu-gcode"));
     assert!(!a1_languages
         .iter()
         .any(|language| language == "marlin-gcode"));
@@ -26215,7 +26217,10 @@ fn fdm_printer_catalog_advertises_bambu_a1_and_corexy_models() {
         a1.get("machineKind").and_then(Value::as_str),
         Some("fdm-printer")
     );
-    assert_eq!(a1.get("kinematics").and_then(Value::as_str), Some("cartesian"));
+    assert_eq!(
+        a1.get("kinematics").and_then(Value::as_str),
+        Some("cartesian")
+    );
     assert_eq!(a1.get("enclosed").and_then(Value::as_bool), Some(false));
 
     // A1 Combo: AMS Lite is 4 slots, not chainable.
@@ -26224,7 +26229,10 @@ fn fdm_printer_catalog_advertises_bambu_a1_and_corexy_models() {
         a1_combo.get("machineKind").and_then(Value::as_str),
         Some("multi-material-fdm-printer")
     );
-    assert_eq!(a1_combo.get("maxMaterials").and_then(Value::as_u64), Some(4));
+    assert_eq!(
+        a1_combo.get("maxMaterials").and_then(Value::as_u64),
+        Some(4)
+    );
     assert_eq!(
         a1_combo.get("enclosed").and_then(Value::as_bool),
         Some(false)
