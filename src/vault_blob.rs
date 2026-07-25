@@ -453,14 +453,41 @@ mod tests {
     #[test]
     fn bump_adds_absent_device_and_preserves_others() {
         let base = vv(&[("a", 3)]);
-        let out = bump(&base, "b");
+        let out = bump(&base, "b").expect("an absent device starts at 1");
         assert_eq!(counter_for(&out, "a"), 3);
         assert_eq!(counter_for(&out, "b"), 1);
         assert_eq!(out.len(), 2);
         // Bumping an existing device increments only that entry.
-        let again = bump(&out, "b");
+        let again = bump(&out, "b").expect("a small counter advances");
         assert_eq!(counter_for(&again, "b"), 2);
         assert_eq!(counter_for(&again, "a"), 3);
+    }
+
+    #[test]
+    fn a_counter_at_the_maximum_has_no_successor() {
+        // `u64::MAX` is dominant and causal for its own device, so nothing else
+        // in `reconcile` refuses it — this is the only thing that does. The
+        // arithmetic must not panic (debug) or wrap to the invalid `counter: 0`
+        // (release); `store` turns the same predicate into a 400.
+        let at_max = vv(&[("devA", u64::MAX)]);
+        assert!(bump(&at_max, "devA").is_none());
+        assert!(!base_version_is_advanceable(&at_max, "devA"));
+
+        // One below the maximum still advances, and a device that is not the one
+        // sitting at the maximum is unaffected by it.
+        let below = vv(&[("devA", u64::MAX - 1)]);
+        assert!(base_version_is_advanceable(&below, "devA"));
+        assert_eq!(
+            counter_for(&bump(&below, "devA").expect("u64::MAX is representable"), "devA"),
+            u64::MAX
+        );
+        assert!(base_version_is_advanceable(&at_max, "devB"));
+        assert_eq!(counter_for(&bump(&at_max, "devB").expect("devB is at 0"), "devB"), 1);
+
+        // And `reconcile` stays total: no panic, no wrapped counter, and never
+        // an `Ok` carrying one.
+        let outcome = reconcile(&at_max, &at_max, "devA");
+        assert_eq!(outcome, Err(at_max), "an unadvanceable base cannot be accepted");
     }
 
     #[test]
