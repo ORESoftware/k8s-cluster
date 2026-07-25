@@ -35,6 +35,12 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: messaging
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ai-ml
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: daedalus
       ports:
         - protocol: TCP
           port: 4222
