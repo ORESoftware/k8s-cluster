@@ -35,7 +35,12 @@ seeds or your password. Written in Rust (axum + SeaORM/Postgres).
 | POST   | `/v1/devices/revoke`  | ✓    | Revoke a device's sync token         |
 | GET    | `/healthz`            | —    | Liveness                             |
 | GET    | `/readyz`             | —    | Postgres readiness                   |
-| GET    | `/metrics`            | —    | Prometheus metrics                   |
+| GET    | `/metrics`            | —    | Prometheus metrics — **separate listener**, see below |
+
+`/metrics` is not served on the API port. It has its own listener bound from
+`METRICS_BIND_ADDR` (default `0.0.0.0:9091`), so whether telemetry is readable
+is a property of this service and of the NetworkPolicy, not of an Ingress path
+rule in another repository. Everything else is on `BIND_ADDR`.
 
 "Auth ✓" is a service-local sync token (`Authorization: Bearer <sync_token>`).
 "Auth JWT" is a short-lived shared-auth access token. The compatibility route
@@ -76,7 +81,8 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/0002_isolate_threefa_schem
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/0003_supabase_auth.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/0004_shared_auth_identity.sql
 cargo run
-# serves on :8080 (override with BIND_ADDR)
+# API on :8080 (override with BIND_ADDR)
+# metrics on :9091 (override with METRICS_BIND_ADDR)
 ```
 
 Database changes are an explicit operator step: the server never applies DDL on
@@ -104,7 +110,13 @@ builder is pinned to the multi-architecture Rust 1.95 Bookworm image digest.
   `observability` namespace; no general Internet egress is opened.
 - `/metrics` exposes bounded route/status counters, request latency histograms,
   in-flight requests, SeaORM query count/latency, and vault-conflict counts for
-  Prometheus. SQL statements and user identifiers are never metric labels.
+  Prometheus. SQL statements and user identifiers are never metric labels. It is
+  served on its own listener (`METRICS_BIND_ADDR`, default `0.0.0.0:9091`), which
+  the NetworkPolicy opens to the `observability` namespace alone; ingress-nginx
+  reaches `8080` only.
+- Readiness runs its database probe as an ordinary instrumented query, so the
+  most frequent database operation in a deployment is visible in
+  `threefa_database_queries_total` and its latency histogram.
 ## Shared-auth identity
 
 Set `SHARED_AUTH_BASE_URL` to the shared-auth service or gateway mount. If it is
@@ -122,11 +134,12 @@ human-login token—is used for `/v1/vault` and `/v1/devices`.
 
 ```
 src/main.rs        Minimal binary entrypoint
-src/server.rs      Listener lifecycle and graceful SIGTERM shutdown
+src/server.rs      API + metrics listeners, one graceful SIGTERM shutdown
 src/config.rs      Environment configuration
 src/app.rs         HTTP router and middleware composition
 src/accounts.rs    Identity-enrollment response and device-name contracts
-src/auth.rs        Service-local device sync tokens
+src/auth.rs        Service-local device sync tokens (auth runs before body parsing)
+src/json.rs        Request-body JSON extractor with coarse, contract-shaped errors
 src/devices.rs     Device handlers and persistence
 src/vault_blob.rs  Sealed-blob handlers and reconciliation
 src/entity.rs      SeaORM models for the `threefa` schema

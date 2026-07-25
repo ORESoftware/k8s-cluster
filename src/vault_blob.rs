@@ -61,17 +61,26 @@ pub fn dominates(a: &VersionVector, b: &VersionVector) -> bool {
     b.iter().all(|e| counter_for(a, &e.device_id) >= e.counter)
 }
 
-/// Return `base` with `device`'s counter incremented by one (added if absent).
-pub fn bump(base: &VersionVector, device: &str) -> VersionVector {
+/// Return `base` with `device`'s counter incremented by one (added if absent),
+/// or `None` if that counter is already at `u64::MAX` and cannot be advanced.
+///
+/// The `None` arm is not theoretical: [`reconcile`] deliberately lets a device
+/// advance its OWN counter freely (see [`is_causal`]), so an authenticated
+/// client can present `base_version: [{own_device_id, u64::MAX}]` — causally
+/// valid, dominant, accepted. An unchecked `+= 1` there panics the request task
+/// in debug and wraps to `counter: 0` in release, and a zero counter is a vector
+/// `protocol::version_vector_is_well_formed` itself rejects, so the account's
+/// own stored history would become un-echoable forever after.
+pub fn bump(base: &VersionVector, device: &str) -> Option<VersionVector> {
     let mut out = base.clone();
     match out.iter_mut().find(|e| e.device_id == device) {
-        Some(e) => e.counter += 1,
+        Some(e) => e.counter = e.counter.checked_add(1)?,
         None => out.push(VersionEntry {
             device_id: device.to_string(),
             counter: 1,
         }),
     }
-    out
+    Some(out)
 }
 
 /// True if `base_version` is *causally reachable* by `pushing_device`: it may
