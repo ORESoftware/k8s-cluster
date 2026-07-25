@@ -10,6 +10,10 @@
 //!   GET  /livez              -> liveness (no DB)   (/healthz: back-compat alias)
 //!   GET  /readyz             -> readiness (DB ping)
 //!
+//! `/metrics` is deliberately NOT here: it is served by [`metrics_router`] on a
+//! separate listener (`METRICS_BIND_ADDR`, default `0.0.0.0:9091`) that the
+//! public Ingress does not front. See [`metrics_router`].
+//!
 //! Unauthenticated identity routes are per-client rate-limited; all routes are
 //! body-size capped and wrapped in a request timeout (see [`router`]).
 
