@@ -228,6 +228,18 @@ impl AppConfig {
             ));
         }
 
+        let introspect_secret = std::env::var("AUTH_INTROSPECT_SECRET")
+            .ok()
+            .filter(|value| !value.is_empty());
+        if introspect_secret
+            .as_ref()
+            .is_some_and(|secret| secret.len() < 32)
+        {
+            return Err(ConfigError::Invalid(
+                "AUTH_INTROSPECT_SECRET must contain at least 32 bytes",
+            ));
+        }
+
         let cors_allow_origins = env_or("AUTH_CORS_ALLOW_ORIGINS", "")
             .split(',')
             .map(str::trim)
