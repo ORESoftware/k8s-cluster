@@ -96,6 +96,16 @@ fn is_causal(stored: &VersionVector, base_version: &VersionVector, pushing_devic
     })
 }
 
+/// True if `pushing_device` still has a *next* version in `base_version`: its
+/// own counter is below `u64::MAX`, so the push it is asking for can actually be
+/// represented. A base at the maximum is causally valid but has no successor, so
+/// it is refused up front (400) rather than wrapped or panicked on — see
+/// [`bump`]. Every other entry is irrelevant: only the pushing device's own
+/// counter is ever incremented.
+pub fn base_version_is_advanceable(base_version: &VersionVector, pushing_device: &str) -> bool {
+    counter_for(base_version, pushing_device) < u64::MAX
+}
+
 /// Decide the outcome of a push given the currently-stored version.
 pub fn reconcile(
     stored: &VersionVector,
@@ -105,7 +115,12 @@ pub fn reconcile(
     // The client must have seen the server's latest before overwriting it, and
     // may only advance its own counter (not fabricate a sibling's).
     if dominates(base_version, stored) && is_causal(stored, base_version, pushing_device) {
-        Ok(bump(base_version, pushing_device))
+        // `bump` yields `None` only for a counter at `u64::MAX`, which `store`
+        // has already refused with 400 (`base_version_is_advanceable`). Folding
+        // it into a conflict keeps this function total — the caller can never
+        // observe a panic or a wrapped counter — instead of relying on that
+        // earlier check for memory safety of the arithmetic.
+        bump(base_version, pushing_device).ok_or_else(|| stored.clone())
     } else {
         Err(stored.clone())
     }
