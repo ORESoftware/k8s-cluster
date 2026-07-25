@@ -69,10 +69,21 @@ struct IntrospectResponse {
 }
 
 impl SharedAuthClient {
+    /// Build the client **once**, at startup. `reqwest::Client` owns the
+    /// connection pool, so it is cloned (cheaply, it is an `Arc` inside) rather
+    /// than rebuilt per request; `SharedAuthClient` lives in `AppState`.
     pub fn new(config: SharedAuthConfig) -> Self {
+        let http = reqwest::Client::builder()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(REQUEST_TIMEOUT)
+            .build()
+            // Only fails if the TLS backend cannot be initialized. Falling back
+            // to an untimed client would silently reintroduce the hang this
+            // guards against, so surface it instead.
+            .expect("shared-auth HTTP client must build");
         Self {
             base_url: config.base_url,
-            http: reqwest::Client::new(),
+            http,
         }
     }
 
