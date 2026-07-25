@@ -108,8 +108,9 @@ pub async fn introspect(
             "email": claims.email,
             "email_verified": claims.email_verified,
             "roles": claims.roles,
-        })),
-        Err(_) => Json(json!({ "active": false })),
+        }))
+        .into_response(),
+        Err(_) => Json(json!({ "active": false })).into_response(),
     }
 }
 
