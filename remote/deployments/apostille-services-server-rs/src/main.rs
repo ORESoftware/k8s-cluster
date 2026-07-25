@@ -564,26 +564,42 @@ fn validate_outbound_url(raw: &str, allow_private: bool) -> Result<Url, String> 
     Ok(url)
 }
 
+/// True if an IPv4 address is in a range we refuse to make outbound requests to
+/// (SSRF guard): private, loopback, link-local (incl. the `169.254.169.254` cloud
+/// metadata endpoint), broadcast, documentation, unspecified, and the RFC 6598
+/// carrier-grade-NAT shared range `100.64.0.0/10`.
+fn blocked_v4(addr: std::net::Ipv4Addr) -> bool {
+    let o = addr.octets();
+    let is_cgnat = o[0] == 100 && (64..=127).contains(&o[1]);
+    addr.is_private()
+        || addr.is_loopback()
+        || addr.is_link_local()
+        || addr.is_broadcast()
+        || addr.is_documentation()
+        || addr.is_unspecified()
+        || is_cgnat
+}
+
 fn blocked_host(host: &str) -> bool {
     let host = host.trim().trim_matches(['[', ']']).to_ascii_lowercase();
     if host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local") {
         return true;
     }
     match host.parse::<IpAddr>() {
-        Ok(IpAddr::V4(addr)) => {
-            addr.is_private()
-                || addr.is_loopback()
-                || addr.is_link_local()
-                || addr.is_broadcast()
-                || addr.is_documentation()
-                || addr.is_unspecified()
-        }
+        Ok(IpAddr::V4(addr)) => blocked_v4(addr),
         Ok(IpAddr::V6(addr)) => {
-            addr.is_loopback()
-                || addr.is_unspecified()
-                || addr.is_unique_local()
-                || addr.is_unicast_link_local()
-                || addr.is_multicast()
+            // An IPv4-mapped/compatible IPv6 literal (e.g. `::ffff:169.254.169.254`)
+            // must be judged by its embedded IPv4, or the v4 ranges above are
+            // reachable through the v6 form — an SSRF bypass to loopback/metadata.
+            if let Some(v4) = addr.to_ipv4_mapped().or_else(|| addr.to_ipv4()) {
+                blocked_v4(v4)
+            } else {
+                addr.is_loopback()
+                    || addr.is_unspecified()
+                    || addr.is_unique_local()
+                    || addr.is_unicast_link_local()
+                    || addr.is_multicast()
+            }
         }
         Err(_) => false,
     }
