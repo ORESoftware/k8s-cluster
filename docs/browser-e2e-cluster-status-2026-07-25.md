@@ -66,7 +66,36 @@ one layer later, in the container:
 ```
 
 Exit code 1, restart, repeat. One pod has accumulated **6371 restarts over 23
-days**. `dd-selenium-server` fails the same way (1/2 containers up).
+days**. ### dd-selenium-server fails the same way — but only half of it
+
+`dd-selenium-server` is one pod with two containers, and they fail
+*independently*, which is worth stating plainly because the summary line
+(`1/2 CrashLoopBackOff`) hides it:
+
+| Container | Image | State on Hetzner |
+| --- | --- | --- |
+| `selenium` | `selenium/standalone-chromium` | **Ready**, 1 restart. The Grid is healthy and has served sessions (Chrome 131.0.6778.204). |
+| `selenium-api` | `maven:…-temurin-17` | **6,645 restarts.** Same hostPath error: `cd: /opt/dd-next-1/remote/deployments/selenium-server: No such file or directory`. |
+
+So the Selenium **Grid itself is fine on Hetzner** — it is the authenticated Java
+API in front of it that cannot start. Because the Service exposes only `:8105`
+(the API) and never the Grid, the capability is unavailable regardless:
+
+```
+$ kubectl get endpoints dd-selenium-server dd-browser-test-server -n default
+NAME                     ENDPOINTS   AGE
+dd-selenium-server                   43d
+dd-browser-test-server               43d
+
+# from inside the cluster
+selenium-api :8105 -> UNREACHABLE (HTTP 000)
+```
+
+Zero endpoints for 43 days on both Services.
+
+For contrast, the same API on AWS drives a real Grid session end to end —
+`goto https://example.com` → `waitForSelector h1` → `extractText` →
+`extractAttribute`, 770ms, with a 16 KB PNG screenshot.
 
 This is the important part: an empty-but-present hostPath is indistinguishable
 from a correct one at mount time, so the manifest is silently non-portable
