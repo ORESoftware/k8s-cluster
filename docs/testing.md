@@ -23,11 +23,19 @@ each seeding its own rows and cleaning up) cover:
 | Suite | Covers |
 | --- | --- |
 | `place_order_db` | stock decrement on success + cart/hold clearing; a live cross-cart hold blocking oversell (`Insufficient`, no decrement); `ensure_hold` cross-cart availability, lazy expiry, and upsert-not-stack |
+| `concurrent_order_db` | **two shoppers racing for the last unit** on separate connections — exactly one wins, the loser gets a clean `Insufficient`, `on_hand` lands at 0, one order exists (the `FOR UPDATE` serialization, which unit logic can't prove) |
 | `payment_status_db` | `set_order_payment_status`: `paid_at` stamped once and never moved by a replay; a `Paid` order never regresses (only a refund supersedes); sub-`Paid` transitions still advance |
+| `record_payment_db` | `record_payment` money idempotency — dedupe on `UNIQUE (provider, provider_ref)` so a settlement + its ledger post apply once; distinct ref, or same ref under a different provider, is its own payment |
 | `payment_events_db` | `record_payment_event` replay dedup — the entire webhook idempotency guarantee (claim once, dedupe retries, distinct per provider) |
+| `fulfillment_db` | `record_fulfillment` ships a placed order (shipment + ETA window, order → `fulfilled`), returns `None` for an unknown order, and refuses to ship a `cancelled` order (tx rolls back, no shipment) |
 | `recurring_runner_db` | the runner fires an owned recurring order but skips a provider-subscription one |
 | `recurring_holds_db` | the runner subtracts live cart holds (skips-but-advances when a shopper holds the stock, fires after expiry) |
 | `order_ownership_db` | order items + shipments are scoped to the owner |
+
+There is also a pure-logic host-routing suite that runs in the **default** `cargo
+test` (no DB): `tests/host_routing.rs` pins `Config::is_biz_host` /
+`host_allowed` — the B2B-chrome authorization gate — against `biz.`-lookalike
+spoofs and the `ALLOWED_HOSTS` allowlist.
 
 **New money/stock logic should still get a DB-backed test** — see the pattern below.
 
@@ -94,35 +102,30 @@ that guard lands; flip it on when it does.
 
 ## Highest-value missing tests (ranked)
 
-All DB-bound; add as `tests/*_db.rs` (see the pattern above). Items 1, 3, and 4
-from the original list are now **done** (`payment_events_db`, `place_order_db`);
-what remains:
+Add as `tests/*_db.rs` (see the pattern above). Now **done**:
+`payment_events_db`, `place_order_db` + `concurrent_order_db` (incl. the
+concurrent-oversell race), `payment_status_db`, `record_payment_db`,
+`fulfillment_db`, and the `is_biz_host` half of the CSRF/host item
+(`tests/host_routing.rs`). What remains:
 
-1. **`payments::settle_order` — amount / provider / idempotency.** (a) `charged`
+1. **`payments::settle_order` — amount / provider glue.** (a) `charged`
    ≠ `total_cents` → order stays unpaid, no ledger post; (b) provider ≠ the
-   order's initiated provider → no-op; (c) settling twice with the same
-   `provider_ref` → `Paid` once, ledger posted once. (The status-write half —
-   `paid_at` idempotency + the no-regression guard — is now covered by
-   `payment_status_db`; this is the `settle_order` wrapper around it.)
-2. **`db::place_order` — concurrent oversell.** The decrement, cross-cart-hold
-   `Insufficient`, and cart-clear cases are covered by `place_order_db`; the
-   remaining gap is (c) two *concurrent* `place_order` on one product not
-   overselling under the `FOR UPDATE` — needs two live connections racing, which
-   the single-connection seed pattern can't express.
-3. **`/ws` cross-user isolation.** Two authenticated connections; broadcasting
+   order's initiated provider → no-op. The idempotency half is now covered by the
+   primitives (`payment_status_db` for the status write, `record_payment_db` for
+   the `provider_ref` dedup); this is the private `settle_order` wrapper that
+   composes them (needs `SharedState` + a stubbed ledger to test directly).
+2. **`/ws` cross-user isolation.** Two authenticated connections; broadcasting
    user B's `cart_id` must **not** push to A. Only the anon-reject is tested
    today (`integration.rs`). Needs an authenticated-ws harness.
-4. **`db::run_due_recurring_orders` — due-selection & double-fire.** The provider
+3. **`db::run_due_recurring_orders` — due-selection & double-fire.** The provider
    guard (`recurring_runner_db`) and hold-awareness (`recurring_holds_db`) are
    covered; still want: exactly one child + cursor advance for an owned order,
    none for a cancelled/NULL cursor, and one-child-not-two under concurrency (the
    advisory lock).
-5. **`security::apply` — untested CSRF branches.** Header-token *mismatch* (only
-   form-field mismatch is tested) and the `PAYLOAD_TOO_LARGE` branch; plus
-   `Config::is_biz_host` rejecting a spoofed `biz.`-looking Host.
-6. **`db::record_fulfillment` — status advance & scoping.** Correct ETA window,
-   flips order to `fulfilled`, `None` for an unknown order.
-7. **`payments::stripe_webhook` end-to-end replay.** A signed
+4. **`security::apply` — remaining CSRF branches.** Header-token *mismatch* (only
+   form-field mismatch is tested) and the `PAYLOAD_TOO_LARGE` branch. (The
+   `is_biz_host` spoof half is now done in `tests/host_routing.rs`.)
+5. **`payments::stripe_webhook` end-to-end replay.** A signed
    `checkout.session.completed` settles once; the identical event replayed
    returns 200 with no re-settle and no second ledger post (ties the
    `record_payment_event` dedup and `settle_order` idempotency together at the

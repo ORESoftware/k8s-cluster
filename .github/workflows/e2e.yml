@@ -110,7 +110,8 @@ jobs:
       # has the schema. Each suite seeds its own rows and cleans up.
       - name: DB-backed Rust tests
         run: |
-          for t in place_order_db payment_status_db payment_events_db \
+          for t in place_order_db concurrent_order_db payment_status_db \
+                   record_payment_db payment_events_db fulfillment_db \
                    recurring_runner_db recurring_holds_db order_ownership_db; do
             echo "::group::$t"
             cargo test --test "$t" -- --ignored --test-threads=1 --nocapture
