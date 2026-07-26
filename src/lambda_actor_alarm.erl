@@ -20,7 +20,8 @@ init([Command0]) ->
         command => to_binary(Command0),
         active => #{},
         keys => #{},
-        cooldowns => #{}
+        cooldowns => #{},
+        last_scan_error_log_ms => -60000
     }}.
 
 handle_call(_Request, _From, State) ->
@@ -88,12 +89,7 @@ dispatch_due(State) ->
                 _ ->
                     case lambda_actor_store:list_due_alarms(Capacity) of
                         {ok, Due} -> start_due(Due, State);
-                        {error, Reason} ->
-                            io:format(
-                                "durable actor alarm scan failed: ~s~n",
-                                [safe(Reason)]
-                            ),
-                            State
+                        {error, Reason} -> maybe_log_scan_error(Reason, State)
                     end
             end
     end.
@@ -154,6 +150,26 @@ prune_cooldowns(State) ->
         maps:get(cooldowns, State)
     ),
     State#{cooldowns := Cooldowns}.
+
+maybe_log_scan_error(Reason, State) ->
+    Now = erlang:monotonic_time(millisecond),
+    Last = maps:get(last_scan_error_log_ms, State),
+    Interval = env_int(
+        <<"ACTOR_ALARM_ERROR_LOG_INTERVAL_MS">>,
+        30000,
+        1000,
+        3600000
+    ),
+    case Now - Last >= Interval of
+        true ->
+            io:format(
+                "durable actor alarm scan failed: ~s~n",
+                [safe(Reason)]
+            ),
+            State#{last_scan_error_log_ms := Now};
+        false ->
+            State
+    end.
 
 map_value(Map, Key, Default) when is_map(Map) -> maps:get(Key, Map, Default);
 map_value(_, _Key, Default) -> Default.

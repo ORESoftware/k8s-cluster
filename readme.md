@@ -334,12 +334,15 @@ WebSocket hibernation remains separate work.
 | `ACTOR_ALARM_MAX_CONCURRENCY` | `50` |
 | `ACTOR_ALARM_TIMEOUT_MS` | `300000` |
 | `ACTOR_ALARM_ERROR_COOLDOWN_MS` | `5000` |
+| `ACTOR_ALARM_ERROR_LOG_INTERVAL_MS` | `30000` |
 | `LAMBDA_ACTOR_STATE_MAX_BYTES` | `524288` |
 
 The declarative storage authority is
 `remote/libs/pg-defs/schema/schema.sql` (`lambda_actor_instances`). Applying
 that schema to a live database remains a separately reviewed migration; the
-runner does not create or mutate schema at startup.
+runner does not create or mutate schema at startup. The checked-in Kubernetes
+deployment therefore keeps `ACTOR_ENGINE_ENABLED=0` until that reviewed
+migration has landed; switch it to `1` in the rollout that follows the schema.
 
 ## Durable asynchronous invocation
 

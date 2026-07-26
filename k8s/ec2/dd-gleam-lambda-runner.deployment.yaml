@@ -174,7 +174,9 @@ spec:
             - name: EVENT_ROUTER_MAX_TARGETS
               value: '100'
             - name: ACTOR_ENGINE_ENABLED
-              value: '1'
+              # Enable only after the separately reviewed
+              # lambda_actor_instances migration has landed.
+              value: '0'
             - name: ACTOR_IDLE_MS
               value: '60000'
             - name: ACTOR_LEASE_MS
@@ -193,6 +195,8 @@ spec:
               value: '300000'
             - name: ACTOR_ALARM_ERROR_COOLDOWN_MS
               value: '5000'
+            - name: ACTOR_ALARM_ERROR_LOG_INTERVAL_MS
+              value: '30000'
             - name: LAMBDA_CONTAINER_NERDCTL
               value: /usr/local/bin/nerdctl
             - name: LAMBDA_CONTAINER_NAMESPACE

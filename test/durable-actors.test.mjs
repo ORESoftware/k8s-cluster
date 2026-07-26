@@ -215,6 +215,10 @@ test('durable actor contract is fenced, bounded, observable, and authenticated',
   assert.match(http, /require_authenticated_post/);
   assert.match(http, /Delete, \["actors", function_id, actor_key\]/);
   assert.match(deployment, /ACTOR_ALARM_MAX_CONCURRENCY/);
+  assert.match(
+    deployment,
+    /name:\s*ACTOR_ENGINE_ENABLED[\s\S]{0,160}value:\s*'0'/,
+  );
   assert.match(flags, /\[flags\.actor_lease_ms\]/);
   assert.match(flags, /\[flags\.lambda_actor_state_max_bytes\]/);
 });

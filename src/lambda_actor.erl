@@ -104,6 +104,13 @@ handle_call({reset, QueueWaitMs0, LeaseMs0}, _From, State) ->
                         <<"actor">> => response_actor(Claim, Actor)
                     }))};
                 {error, Reason} ->
+                    _ = lambda_actor_store:fail(
+                        ActorId,
+                        Owner,
+                        Version,
+                        Reason,
+                        false
+                    ),
                     {error, Reason}
             end;
         {error, Reason} ->
