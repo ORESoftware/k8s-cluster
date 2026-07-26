@@ -863,11 +863,21 @@ pub(crate) async fn customer_mfa_activate(
         Err(error) => return dependency_error("supabase", "mfa_challenge_failed", error),
     };
     match supabase.verify_factor(&token, &challenge, &form.code).await {
-        Ok(_) => mfa_result_markup(
-            "Authenticator enabled",
-            "Your authenticator app is now required at sign-in. Keep your recovery method up to date.",
-        )
-        .into_response(),
+        Ok(session) => {
+            // Verification upgrades the Supabase token to aal2. Rotate the app
+            // cookie immediately so the user can manage the newly enrolled
+            // factor without being trapped behind the MFA-aware app gate.
+            let mut response = mfa_result_markup(
+                "Authenticator enabled",
+                "Your authenticator app is now required at sign-in. Keep your recovery method up to date.",
+            )
+            .into_response();
+            append_set_cookie(
+                &mut response,
+                &make_customer_session_cookie(&session.access_token),
+            );
+            response
+        }
         Err(error) => supabase_auth_error_response(
             error,
             mfa_result_markup(

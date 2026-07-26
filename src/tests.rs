@@ -1021,6 +1021,75 @@ async fn aal1_session_with_a_verified_factor_is_rejected_on_customer_routes() {
     supabase_task.abort();
 }
 
+#[tokio::test]
+async fn mfa_activation_rotates_the_app_cookie_to_the_stepped_up_session() {
+    let supabase = Router::new()
+        .route(
+            "/auth/v1/user",
+            get(|| async {
+                Json(json!({
+                    "factors": [
+                        { "id": "factor-1", "factor_type": "totp", "status": "unverified" }
+                    ]
+                }))
+            }),
+        )
+        .route(
+            "/auth/v1/factors/factor-1/challenge",
+            post(|| async { Json(json!({ "id": "challenge-1" })) }),
+        )
+        .route(
+            "/auth/v1/factors/factor-1/verify",
+            post(|| async { Json(json!({ "access_token": "fresh-aal2-session" })) }),
+        );
+    let (supabase_url, supabase_task) = spawn_mock(supabase).await;
+    let customer = CustomerCtx {
+        user_id: "00000000-0000-4000-8000-000000000002".to_string(),
+        email: Some("customer@example.com".to_string()),
+        orgs: vec![ORG_A.to_string()],
+        aal: "aal1".to_string(),
+        credential_binding: "authorization\0old-aal1-session".to_string(),
+        cookie_authenticated: false,
+    };
+    let mut config = test_config();
+    let csrf = customer_csrf_token(&config, &customer);
+    config.supabase_url = Some(supabase_url);
+    config.supabase_publishable_key = Some("publishable-test-key".to_string());
+    config.authenticator = Authenticator::Static(Arc::new(customer));
+
+    let response = build_router(config)
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/app/security/mfa/activate")
+                .header(header::HOST, "app.fiducia.cloud")
+                .header(header::AUTHORIZATION, "Bearer old-aal1-session")
+                .header(header::ORIGIN, "https://app.fiducia.cloud")
+                .header("sec-fetch-site", "same-origin")
+                .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body(Body::from(format!(
+                    "csrf_token={csrf}&factor_id=factor-1&code=123456"
+                )))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let cookies = response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .collect::<Vec<_>>();
+    assert!(
+        cookies
+            .iter()
+            .any(|cookie| cookie.starts_with("fiducia_customer_session=fresh-aal2-session;")),
+        "activation must replace the aal1 app cookie with Supabase's aal2 token"
+    );
+    supabase_task.abort();
+}
+
 // H14 regression: a single-factor context must never remove an MFA factor,
 // even if a future router refactor accidentally bypasses the global gate.
 #[tokio::test]
