@@ -28,7 +28,7 @@ and **gap** is not yet implemented.
 | Durable multi-step workflows | **yes** | Persisted runs and steps, retries, sleep/wait, external signals, cancel |
 | Browser automation | **yes** | Hardened Chromium with Playwright and Puppeteer plus SSRF/robots policy |
 | Event bus invocation | **yes** | NATS queue subscription accepts structured CloudEvents and fans matching bindings into durable async runs |
-| Stateful actor / durable object | **partial** | Reusable per-key BEAM processes; needs transactional per-key durable storage |
+| Stateful actor / durable object | **yes** | Dynamically supervised single-mailbox BEAM actors, Postgres JSON storage, state-version fencing, crash-expiring cross-replica leases, idle hibernation, and at-least-once alarms; Node.js handlers today |
 | Metrics, logs, and traces | **yes** | Prometheus, structured stdout, and OTLP |
 | Runtime secrets and environment | **yes** | Secret-backed runner config; child environments are explicitly minimized |
 | Network isolation | **partial** | Hardened containers and Kubernetes NetworkPolicy; needs per-function egress policy |
@@ -113,8 +113,8 @@ CloudEvents routing, scale-to-zero, and Kubernetes-native traffic splitting.
   idempotency.
 - Add queue, webhook, database-change, and object-change source adapters that
   normalize to the same CloudEvents router.
-- Add durable keyed actors with transactional storage, alarms, and supervised
-  WebSocket sessions.
+- Extend the implemented durable keyed actors and alarms with supervised,
+  hibernation-aware WebSocket sessions.
 - Add service bindings and per-function identity/egress policy.
 
 ### Wave 5 — placement and elasticity

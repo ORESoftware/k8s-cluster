@@ -201,6 +201,8 @@ test('durable actor contract is fenced, bounded, observable, and authenticated',
 
   assert.match(store, /lease_owner = :'owner'/);
   assert.match(store, /state_version = :'version'::bigint/);
+  assert.match(store, /match -> "id = :'function_ref'"/);
+  assert.match(store, /nullif\(:'alarm_at', ''\)::timestamptz/);
   assert.match(store, /alarm_attempt < 6/);
   assert.match(actor, /claim_with_wait/);
   assert.match(actor, /lambda_actor_store:commit/);
