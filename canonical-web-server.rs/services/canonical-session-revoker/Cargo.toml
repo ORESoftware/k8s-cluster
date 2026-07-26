@@ -9,7 +9,7 @@ canonical-auth = { path = "../../crates/canonical-auth" }
 canonical-config = { path = "../../crates/canonical-config" }
 canonical-session = { path = "../../crates/canonical-session" }
 canonical-store = { path = "../../crates/canonical-store" }
-sea-orm = { version = "1.1.20", default-features = false, features = ["runtime-tokio-rustls", "sqlx-postgres", "sqlx-sqlite"] }
+sea-orm = { workspace = true, features = ["runtime-tokio-rustls", "sqlx-postgres", "sqlx-sqlite"] }
 tokio = { version = "1.52.3", features = ["macros", "rt-multi-thread", "signal"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }

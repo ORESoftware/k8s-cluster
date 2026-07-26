@@ -4,6 +4,11 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    groups:
+      sea-orm:
+        patterns:
+          - sea-orm
+          - sea-orm-migration
   - package-ecosystem: npm
     directory: "/client"
     schedule:
