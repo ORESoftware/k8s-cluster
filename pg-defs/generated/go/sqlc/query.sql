@@ -466,6 +466,21 @@ update lambda_functions set slug = $2, display_name = $3, description = $4, runt
 -- name: DeleteLambdaFunctions :exec
 delete from lambda_functions where id = $1;
 
+-- name: ListLambdaActorInstances :many
+select id, function_id, actor_key, state, state_version, alarm_at, alarm_attempt, lease_owner, lease_until, last_invoked_at, last_error, created_at, updated_at from lambda_actor_instances;
+
+-- name: GetLambdaActorInstances :one
+select id, function_id, actor_key, state, state_version, alarm_at, alarm_attempt, lease_owner, lease_until, last_invoked_at, last_error, created_at, updated_at from lambda_actor_instances where id = $1 limit 1;
+
+-- name: CreateLambdaActorInstances :one
+insert into lambda_actor_instances (id, function_id, actor_key, state, state_version, alarm_at, alarm_attempt, lease_owner, lease_until, last_invoked_at, last_error, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id, function_id, actor_key, state, state_version, alarm_at, alarm_attempt, lease_owner, lease_until, last_invoked_at, last_error, created_at, updated_at;
+
+-- name: UpdateLambdaActorInstances :one
+update lambda_actor_instances set function_id = $2, actor_key = $3, state = $4, state_version = $5, alarm_at = $6, alarm_attempt = $7, lease_owner = $8, lease_until = $9, last_invoked_at = $10, last_error = $11, updated_at = $12 where id = $1 returning id, function_id, actor_key, state, state_version, alarm_at, alarm_attempt, lease_owner, lease_until, last_invoked_at, last_error, created_at, updated_at;
+
+-- name: DeleteLambdaActorInstances :exec
+delete from lambda_actor_instances where id = $1;
+
 -- name: ListWorkflowDefinitions :many
 select id, slug, display_name, description, steps, default_retry, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from workflow_definitions;
 

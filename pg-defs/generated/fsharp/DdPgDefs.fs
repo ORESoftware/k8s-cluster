@@ -2583,6 +2583,61 @@ let validateLambdaFunctionMaxRunMs (value: int) : Result<int, string> =
     elif value > 300000 then Error "lambda_functions.max_run_ms is above the maximum"
     else Ok value
 
+let lambdaActorInstancesTable = "lambda_actor_instances"
+let lambdaActorInstancesColumns = [ "id"; "function_id"; "actor_key"; "state"; "state_version"; "alarm_at"; "alarm_attempt"; "lease_owner"; "lease_until"; "last_invoked_at"; "last_error"; "created_at"; "updated_at" ]
+let lambdaActorInstancesSelectSql = "select\n      id::text as id,\n      function_id::text as function_id,\n      actor_key,\n      state::text as state_json,\n      state_version,\n      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as alarm_at,\n      alarm_attempt,\n      lease_owner,\n      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_until,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from lambda_actor_instances"
+
+type LambdaActorInstanceRow =
+    { LambdaActorInstanceId: string
+      LambdaActorInstanceFunctionId: string
+      LambdaActorInstanceActorKey: string
+      LambdaActorInstanceState: string
+      LambdaActorInstanceStateVersion: int64
+      LambdaActorInstanceAlarmAt: string option
+      LambdaActorInstanceAlarmAttempt: int
+      LambdaActorInstanceLeaseOwner: string option
+      LambdaActorInstanceLeaseUntil: string option
+      LambdaActorInstanceLastInvokedAt: string option
+      LambdaActorInstanceLastError: string option
+      LambdaActorInstanceCreatedAt: string
+      LambdaActorInstanceUpdatedAt: string
+    }
+
+let lambdaActorInstanceRowOfRow (get: int -> string) (isNullAt: int -> bool) : LambdaActorInstanceRow =
+    { LambdaActorInstanceId = get 0
+      LambdaActorInstanceFunctionId = get 1
+      LambdaActorInstanceActorKey = get 2
+      LambdaActorInstanceState = get 3
+      LambdaActorInstanceStateVersion = int64 (get 4)
+      LambdaActorInstanceAlarmAt = (if isNullAt 5 then None else Some (get 5))
+      LambdaActorInstanceAlarmAttempt = int (get 6)
+      LambdaActorInstanceLeaseOwner = (if isNullAt 7 then None else Some (get 7))
+      LambdaActorInstanceLeaseUntil = (if isNullAt 8 then None else Some (get 8))
+      LambdaActorInstanceLastInvokedAt = (if isNullAt 9 then None else Some (get 9))
+      LambdaActorInstanceLastError = (if isNullAt 10 then None else Some (get 10))
+      LambdaActorInstanceCreatedAt = get 11
+      LambdaActorInstanceUpdatedAt = get 12
+    }
+
+let validateLambdaActorInstanceActorKey (value: string) : Result<string, string> =
+    if value.Length < 1 then Error "lambda_actor_instances.actor_key must be at least 1 characters"
+    elif value.Length > 200 then Error "lambda_actor_instances.actor_key must be at most 200 characters"
+    elif not (Regex.IsMatch(value, @"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")) then Error "lambda_actor_instances.actor_key does not match the required pattern"
+    else Ok value
+
+let validateLambdaActorInstanceStateVersion (value: int64) : Result<int64, string> =
+    if value < 0L then Error "lambda_actor_instances.state_version is below the minimum"
+    else Ok value
+
+let validateLambdaActorInstanceAlarmAttempt (value: int) : Result<int, string> =
+    if value < 0 then Error "lambda_actor_instances.alarm_attempt is below the minimum"
+    elif value > 6 then Error "lambda_actor_instances.alarm_attempt is above the maximum"
+    else Ok value
+
+let validateLambdaActorInstanceLeaseOwner (value: string) : Result<string, string> =
+    if value.Length > 200 then Error "lambda_actor_instances.lease_owner must be at most 200 characters"
+    else Ok value
+
 let workflowDefinitionsTable = "workflow_definitions"
 let workflowDefinitionsColumns = [ "id"; "slug"; "display_name"; "description"; "steps"; "default_retry"; "status"; "labels"; "meta_data"; "is_soft_deleted"; "created_at"; "updated_at"; "created_by"; "updated_by" ]
 let workflowDefinitionsSelectSql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      steps::text as steps_json,\n      default_retry::text as default_retry_json,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from workflow_definitions"

@@ -4445,6 +4445,101 @@ pub fn validate_lambda_functions_insert(value: &LambdaFunctionInsert) -> Result<
     Ok(())
 }
 
+pub const LAMBDA_ACTOR_INSTANCES_TABLE: &str = "lambda_actor_instances";
+pub const LAMBDA_ACTOR_INSTANCES_COLUMNS: &[&str] = &["id", "function_id", "actor_key", "state", "state_version", "alarm_at", "alarm_attempt", "lease_owner", "lease_until", "last_invoked_at", "last_error", "created_at", "updated_at"];
+pub const LAMBDA_ACTOR_INSTANCES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      function_id::text as function_id,
+      actor_key,
+      state,
+      state_version,
+      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as alarm_at,
+      alarm_attempt,
+      lease_owner,
+      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as lease_until,
+      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_invoked_at,
+      last_error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from lambda_actor_instances"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct LambdaActorInstanceRow {
+    pub id: String,
+    pub function_id: String,
+    pub actor_key: String,
+    pub state: Value,
+    pub state_version: i64,
+    pub alarm_at: Option<String>,
+    pub alarm_attempt: i32,
+    pub lease_owner: Option<String>,
+    pub lease_until: Option<String>,
+    pub last_invoked_at: Option<String>,
+    pub last_error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LambdaActorInstanceInsert {
+    pub id: Option<String>,
+    pub function_id: Option<String>,
+    pub actor_key: Option<String>,
+    pub state: Option<Value>,
+    pub state_version: Option<i64>,
+    pub alarm_at: Option<String>,
+    pub alarm_attempt: Option<i32>,
+    pub lease_owner: Option<String>,
+    pub lease_until: Option<String>,
+    pub last_invoked_at: Option<String>,
+    pub last_error: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_lambda_actor_instances_row(value: &LambdaActorInstanceRow) -> Result<(), String> {
+    validate_string_length("lambda_actor_instances.actor_key", &value.actor_key, Some(1), Some(200))?;
+    if !(&value.state).is_object() { return Err("lambda_actor_instances.state must be a JSON object".to_string()); }
+    if *(&value.state_version) < 0 { return Err("lambda_actor_instances.state_version is below the minimum".to_string()); }
+    if *(&value.alarm_attempt) < 0 { return Err("lambda_actor_instances.alarm_attempt is below the minimum".to_string()); }
+    if *(&value.alarm_attempt) > 6 { return Err("lambda_actor_instances.alarm_attempt is above the maximum".to_string()); }
+    if let Some(value) = &value.lease_owner {
+        validate_string_length("lambda_actor_instances.lease_owner", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("lambda_actor_instances.lease_owner exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.last_error {
+        if (value).as_bytes().len() > 8192 { return Err("lambda_actor_instances.last_error exceeds 8192 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_lambda_actor_instances_insert(value: &LambdaActorInstanceInsert) -> Result<(), String> {
+    if let Some(value) = &value.actor_key {
+        validate_string_length("lambda_actor_instances.actor_key", value, Some(1), Some(200))?;
+    }
+    if let Some(value) = &value.state {
+        if !(value).is_object() { return Err("lambda_actor_instances.state must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.state_version {
+        if *(value) < 0 { return Err("lambda_actor_instances.state_version is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.alarm_attempt {
+        if *(value) < 0 { return Err("lambda_actor_instances.alarm_attempt is below the minimum".to_string()); }
+        if *(value) > 6 { return Err("lambda_actor_instances.alarm_attempt is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.lease_owner {
+        validate_string_length("lambda_actor_instances.lease_owner", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("lambda_actor_instances.lease_owner exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.last_error {
+        if (value).as_bytes().len() > 8192 { return Err("lambda_actor_instances.last_error exceeds 8192 bytes".to_string()); }
+    }
+    Ok(())
+}
+
 pub const WORKFLOW_DEFINITIONS_TABLE: &str = "workflow_definitions";
 pub const WORKFLOW_DEFINITIONS_COLUMNS: &[&str] = &["id", "slug", "display_name", "description", "steps", "default_retry", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by"];
 pub const WORKFLOW_DEFINITIONS_SELECT_SQL: &str = r###"select

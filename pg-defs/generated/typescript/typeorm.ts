@@ -1485,6 +1485,52 @@ export class LambdaFunctionEntity {
 
 }
 
+@Index("lambda_actor_instances_function_key_uq", ["functionId", "actorKey"], { unique: true })
+@Index("lambda_actor_instances_alarm_due_idx", ["alarmAt"], { where: "alarm_at is not null" })
+@Index("lambda_actor_instances_lease_expiry_idx", ["leaseUntil"], { where: "lease_until is not null" })
+@Entity({ name: "lambda_actor_instances" })
+export class LambdaActorInstanceEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "function_id", type: "uuid" })
+  functionId!: string;
+
+  @Column({ name: "actor_key", type: "varchar", length: 200 })
+  actorKey!: string;
+
+  @Column({ name: "state", type: "jsonb", default: () => "'{}'::jsonb" })
+  state!: Record<string, unknown>;
+
+  @Column({ name: "state_version", type: "bigint", default: () => "0" })
+  stateVersion!: number;
+
+  @Column({ name: "alarm_at", type: "timestamptz", nullable: true })
+  alarmAt!: Date | null;
+
+  @Column({ name: "alarm_attempt", type: "integer", default: () => "0" })
+  alarmAttempt!: number;
+
+  @Column({ name: "lease_owner", type: "varchar", length: 200, nullable: true })
+  leaseOwner!: string | null;
+
+  @Column({ name: "lease_until", type: "timestamptz", nullable: true })
+  leaseUntil!: Date | null;
+
+  @Column({ name: "last_invoked_at", type: "timestamptz", nullable: true })
+  lastInvokedAt!: Date | null;
+
+  @Column({ name: "last_error", type: "text", nullable: true })
+  lastError!: string | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
 @Index("workflow_definitions_slug_active_uq", ["slug"], { unique: true, where: "is_soft_deleted = false" })
 @Index("workflow_definitions_status_idx", ["status"], { where: "is_soft_deleted = false" })
 // workflow_definitions_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.

@@ -2451,6 +2451,63 @@ let validate_lambda_functions_max_run_ms (value : int) : (int, string) result =
   else if value > 300000 then Error "lambda_functions.max_run_ms is above the maximum"
   else Ok value
 
+let lambda_actor_instances_table = "lambda_actor_instances"
+
+let lambda_actor_instances_columns = ["id"; "function_id"; "actor_key"; "state"; "state_version"; "alarm_at"; "alarm_attempt"; "lease_owner"; "lease_until"; "last_invoked_at"; "last_error"; "created_at"; "updated_at"]
+
+let lambda_actor_instances_select_sql = "select\n      id::text as id,\n      function_id::text as function_id,\n      actor_key,\n      state::text as state_json,\n      state_version,\n      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as alarm_at,\n      alarm_attempt,\n      lease_owner,\n      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_until,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from lambda_actor_instances"
+
+type lambda_actor_instances_row = {
+  lambda_actor_instances_id : string;
+  lambda_actor_instances_function_id : string;
+  lambda_actor_instances_actor_key : string;
+  lambda_actor_instances_state : string;
+  lambda_actor_instances_state_version : int64;
+  lambda_actor_instances_alarm_at : string option;
+  lambda_actor_instances_alarm_attempt : int;
+  lambda_actor_instances_lease_owner : string option;
+  lambda_actor_instances_lease_until : string option;
+  lambda_actor_instances_last_invoked_at : string option;
+  lambda_actor_instances_last_error : string option;
+  lambda_actor_instances_created_at : string;
+  lambda_actor_instances_updated_at : string;
+}
+
+let lambda_actor_instances_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : lambda_actor_instances_row =
+  {
+    lambda_actor_instances_id = get 0;
+    lambda_actor_instances_function_id = get 1;
+    lambda_actor_instances_actor_key = get 2;
+    lambda_actor_instances_state = get 3;
+    lambda_actor_instances_state_version = Int64.of_string (get 4);
+    lambda_actor_instances_alarm_at = (if is_null 5 then None else Some (get 5));
+    lambda_actor_instances_alarm_attempt = int_of_string (get 6);
+    lambda_actor_instances_lease_owner = (if is_null 7 then None else Some (get 7));
+    lambda_actor_instances_lease_until = (if is_null 8 then None else Some (get 8));
+    lambda_actor_instances_last_invoked_at = (if is_null 9 then None else Some (get 9));
+    lambda_actor_instances_last_error = (if is_null 10 then None else Some (get 10));
+    lambda_actor_instances_created_at = get 11;
+    lambda_actor_instances_updated_at = get 12;
+  }
+
+let validate_lambda_actor_instances_actor_key (value : string) : (string, string) result =
+  if String.length value < 1 then Error "lambda_actor_instances.actor_key must be at least 1 characters"
+  else if String.length value > 200 then Error "lambda_actor_instances.actor_key must be at most 200 characters"
+  else Ok value
+
+let validate_lambda_actor_instances_state_version (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "lambda_actor_instances.state_version is below the minimum"
+  else Ok value
+
+let validate_lambda_actor_instances_alarm_attempt (value : int) : (int, string) result =
+  if value < 0 then Error "lambda_actor_instances.alarm_attempt is below the minimum"
+  else if value > 6 then Error "lambda_actor_instances.alarm_attempt is above the maximum"
+  else Ok value
+
+let validate_lambda_actor_instances_lease_owner (value : string) : (string, string) result =
+  if String.length value > 200 then Error "lambda_actor_instances.lease_owner must be at most 200 characters"
+  else Ok value
+
 let workflow_definitions_table = "workflow_definitions"
 
 let workflow_definitions_columns = ["id"; "slug"; "display_name"; "description"; "steps"; "default_retry"; "status"; "labels"; "meta_data"; "is_soft_deleted"; "created_at"; "updated_at"; "created_by"; "updated_by"]

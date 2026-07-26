@@ -1320,6 +1320,49 @@ impl ActiveModelBehavior for ActiveModel {}
 pub use lambda_functions::Entity as LambdaFunctionEntity;
 pub use lambda_functions::Model as LambdaFunctionModel;
 
+pub mod lambda_actor_instances {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "lambda_actor_instances")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "function_id")]
+    pub function_id: Uuid,
+    #[sea_orm(column_name = "actor_key")]
+    pub actor_key: String,
+    pub state: Json,
+    #[sea_orm(column_name = "state_version")]
+    pub state_version: i64,
+    #[sea_orm(column_name = "alarm_at")]
+    pub alarm_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "alarm_attempt")]
+    pub alarm_attempt: i32,
+    #[sea_orm(column_name = "lease_owner")]
+    pub lease_owner: Option<String>,
+    #[sea_orm(column_name = "lease_until")]
+    pub lease_until: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_invoked_at")]
+    pub last_invoked_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_error")]
+    pub last_error: Option<String>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use lambda_actor_instances::Entity as LambdaActorInstanceEntity;
+pub use lambda_actor_instances::Model as LambdaActorInstanceModel;
+
 pub mod workflow_definitions {
     use super::*;
 

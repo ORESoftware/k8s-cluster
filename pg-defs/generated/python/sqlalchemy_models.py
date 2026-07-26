@@ -2973,6 +2973,97 @@ class LambdaFunctionInsert(BaseModel):
             raise ValueError("lambda_functions.container_build_error exceeds 8192 bytes")
         return value
 
+class LambdaActorInstance(Base):
+    __tablename__ = "lambda_actor_instances"
+    __table_args__ = (
+        CheckConstraint("actor_key ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$'", name="lambda_actor_instances_actor_key_chk"),
+        CheckConstraint("octet_length(state::text) <= 1048576", name="lambda_actor_instances_state_size_chk"),
+        CheckConstraint("state_version >= 0", name="lambda_actor_instances_state_version_chk"),
+        CheckConstraint("alarm_attempt between 0 and 6", name="lambda_actor_instances_alarm_attempt_chk"),
+        CheckConstraint("lease_owner is null or octet_length(lease_owner) <= 200", name="lambda_actor_instances_lease_owner_size_chk"),
+        CheckConstraint("(lease_owner is null) = (lease_until is null)", name="lambda_actor_instances_lease_pair_chk"),
+        CheckConstraint("last_error is null or octet_length(last_error) <= 8192", name="lambda_actor_instances_last_error_size_chk"),
+        Index("lambda_actor_instances_function_key_uq", "function_id", "actor_key", unique=True),
+        Index("lambda_actor_instances_alarm_due_idx", "alarm_at", postgresql_where=text("alarm_at is not null")),
+        Index("lambda_actor_instances_lease_expiry_idx", "lease_until", postgresql_where=text("lease_until is not null")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    function_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    actor_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    state: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    state_version: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    alarm_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    alarm_attempt: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    lease_owner: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_invoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class LambdaActorInstanceRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    functionId: UUID
+    actorKey: str = Field(..., min_length=1, max_length=200, pattern="^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
+    state: dict[str, Any]
+    stateVersion: int
+    alarmAt: datetime | None = None
+    alarmAttempt: int = Field(..., ge=0, le=6)
+    leaseOwner: str | None = Field(None, max_length=200)
+    leaseUntil: datetime | None = None
+    lastInvokedAt: datetime | None = None
+    lastError: str | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("leaseOwner")
+    @classmethod
+    def validate_lease_owner(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("lambda_actor_instances.lease_owner exceeds 200 bytes")
+        return value
+
+    @field_validator("lastError")
+    @classmethod
+    def validate_last_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("lambda_actor_instances.last_error exceeds 8192 bytes")
+        return value
+
+class LambdaActorInstanceInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    functionId: UUID
+    actorKey: str = Field(..., min_length=1, max_length=200, pattern="^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
+    state: dict[str, Any] | None = Field(default_factory=dict)
+    stateVersion: int | None = 0
+    alarmAt: datetime | None = None
+    alarmAttempt: int | None = Field(0, ge=0, le=6)
+    leaseOwner: str | None = Field(None, max_length=200)
+    leaseUntil: datetime | None = None
+    lastInvokedAt: datetime | None = None
+    lastError: str | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("leaseOwner")
+    @classmethod
+    def validate_lease_owner(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("lambda_actor_instances.lease_owner exceeds 200 bytes")
+        return value
+
+    @field_validator("lastError")
+    @classmethod
+    def validate_last_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("lambda_actor_instances.last_error exceeds 8192 bytes")
+        return value
+
 WorkflowDefinitionsStatus = Literal["draft", "active", "paused", "archived"]
 
 class WorkflowDefinitions(Base):

@@ -680,6 +680,27 @@ model LambdaFunction {
   @@map("lambda_functions")
 }
 
+model LambdaActorInstance {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  functionId String @map("function_id") @db.Uuid
+  actorKey String @map("actor_key") @db.VarChar(200)
+  state Json @default("{}")
+  stateVersion BigInt @map("state_version") @default(0) @db.BigInt
+  alarmAt DateTime? @map("alarm_at") @db.Timestamptz(6)
+  alarmAttempt Int @map("alarm_attempt") @default(0)
+  leaseOwner String? @map("lease_owner") @db.VarChar(200)
+  leaseUntil DateTime? @map("lease_until") @db.Timestamptz(6)
+  lastInvokedAt DateTime? @map("last_invoked_at") @db.Timestamptz(6)
+  lastError String? @map("last_error") @db.Text
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  @@unique([functionId, actorKey], map: "lambda_actor_instances_function_key_uq")
+  // lambda_actor_instances_alarm_due_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // lambda_actor_instances_lease_expiry_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("lambda_actor_instances")
+}
+
 model WorkflowDefinitions {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   slug String @db.VarChar(120)

@@ -1849,6 +1849,59 @@ public class LambdaFunction
     public Guid? UpdatedBy { get; set; }
 }
 
+/// <summary>Durable state, alarms, and cross-replica execution leases for keyed serverless actors.</summary>
+[Table("lambda_actor_instances")]
+public class LambdaActorInstance
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("function_id")]
+    public Guid FunctionId { get; set; }
+
+    [Required]
+    [Column("actor_key")]
+    [MaxLength(200)]
+    [RegularExpression(@"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")]
+    public string ActorKey { get; set; } = null!;
+
+    [Required]
+    [Column("state", TypeName = "jsonb")]
+    public string State { get; set; } = null!;
+
+    [Column("state_version")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long StateVersion { get; set; }
+
+    [Column("alarm_at")]
+    public DateTimeOffset? AlarmAt { get; set; }
+
+    [Column("alarm_attempt")]
+    [Range(0, 6)]
+    public int AlarmAttempt { get; set; }
+
+    [Column("lease_owner")]
+    [MaxLength(200)]
+    public string? LeaseOwner { get; set; }
+
+    [Column("lease_until")]
+    public DateTimeOffset? LeaseUntil { get; set; }
+
+    [Column("last_invoked_at")]
+    public DateTimeOffset? LastInvokedAt { get; set; }
+
+    [Column("last_error")]
+    public string? LastError { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 [Table("workflow_definitions")]
 public class WorkflowDefinitions
 {
@@ -9218,6 +9271,8 @@ public class DdPgDefsContext : DbContext
     public DbSet<MipSolverEvents> MipSolverEventsSet => Set<MipSolverEvents>();
 
     public DbSet<LambdaFunction> LambdaFunctionSet => Set<LambdaFunction>();
+
+    public DbSet<LambdaActorInstance> LambdaActorInstanceSet => Set<LambdaActorInstance>();
 
     public DbSet<WorkflowDefinitions> WorkflowDefinitionsSet => Set<WorkflowDefinitions>();
 

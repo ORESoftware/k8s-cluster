@@ -1370,6 +1370,66 @@ create index if not exists lambda_functions_labels_gin_idx
   on lambda_functions using gin (labels);
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- Stateful serverless actors (Cloudflare Durable Objects-style):
+--
+-- Each `(function_id, actor_key)` pair is one logical actor with strongly
+-- consistent JSON state. The runner creates a supervised BEAM process on
+-- demand for the hot in-memory instance. A short Postgres lease prevents two
+-- runner replicas from executing the same actor concurrently; state_version
+-- provides an additional compare-and-swap fence when the lease is committed.
+-- Processes may stop when idle because state, alarms, and crash recovery live
+-- here rather than in process memory.
+--
+-- alarm_at is a single durable per-actor alarm. Delivery is at least once:
+-- the runner clears it only after the alarm handler and state update commit,
+-- and retries failures with bounded exponential backoff.
+create table if not exists lambda_actor_instances (
+  id uuid primary key default gen_random_uuid(),
+  function_id uuid not null,
+  actor_key varchar(200) not null,
+  state jsonb default '{}'::jsonb not null,
+  state_version bigint default 0 not null,
+  alarm_at timestamptz,
+  alarm_attempt integer default 0 not null,
+  lease_owner varchar(200),
+  lease_until timestamptz,
+  last_invoked_at timestamptz,
+  last_error text,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  constraint lambda_actor_instances_actor_key_chk
+    check (actor_key ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$'),
+  constraint lambda_actor_instances_state_size_chk
+    check (octet_length(state::text) <= 1048576),
+  constraint lambda_actor_instances_state_version_chk
+    check (state_version >= 0),
+  constraint lambda_actor_instances_alarm_attempt_chk
+    check (alarm_attempt between 0 and 6),
+  constraint lambda_actor_instances_lease_owner_size_chk
+    check (lease_owner is null or octet_length(lease_owner) <= 200),
+  constraint lambda_actor_instances_lease_pair_chk
+    check ((lease_owner is null) = (lease_until is null)),
+  constraint lambda_actor_instances_last_error_size_chk
+    check (last_error is null or octet_length(last_error) <= 8192)
+);
+
+create unique index if not exists lambda_actor_instances_function_key_uq
+  on lambda_actor_instances (function_id, actor_key);
+
+create index if not exists lambda_actor_instances_alarm_due_idx
+  on lambda_actor_instances (alarm_at)
+  where alarm_at is not null;
+
+create index if not exists lambda_actor_instances_lease_expiry_idx
+  on lambda_actor_instances (lease_until)
+  where lease_until is not null;
+
+alter table if exists lambda_actor_instances
+  add constraint lambda_actor_instances_function_fk
+  foreign key (function_id) references lambda_functions(id)
+  on delete cascade;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Workflow execution engine (lightweight Temporal):
 --
 -- A workflow_definition is a declarative, ordered list of steps owned by

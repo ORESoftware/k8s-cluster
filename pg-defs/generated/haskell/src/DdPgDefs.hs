@@ -2274,6 +2274,56 @@ validateLambdaFunctionMaxRunMs value
   | value > 300000 = Left "lambda_functions.max_run_ms is above the maximum"
   | otherwise = Right value
 
+lambdaActorInstancesTable :: Text
+lambdaActorInstancesTable = "lambda_actor_instances"
+
+lambdaActorInstancesColumns :: [Text]
+lambdaActorInstancesColumns = ["id", "function_id", "actor_key", "state", "state_version", "alarm_at", "alarm_attempt", "lease_owner", "lease_until", "last_invoked_at", "last_error", "created_at", "updated_at"]
+
+lambdaActorInstancesSelectSql :: Text
+lambdaActorInstancesSelectSql = "select\n      id::text as id,\n      function_id::text as function_id,\n      actor_key,\n      state::text as state_json,\n      state_version,\n      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as alarm_at,\n      alarm_attempt,\n      lease_owner,\n      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_until,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from lambda_actor_instances"
+
+data LambdaActorInstanceRow = LambdaActorInstanceRow
+  { lambdaActorInstanceId :: Text
+  , lambdaActorInstanceFunctionId :: Text
+  , lambdaActorInstanceActorKey :: Text
+  , lambdaActorInstanceState :: Text
+  , lambdaActorInstanceStateVersion :: Int
+  , lambdaActorInstanceAlarmAt :: (Maybe Text)
+  , lambdaActorInstanceAlarmAttempt :: Int
+  , lambdaActorInstanceLeaseOwner :: (Maybe Text)
+  , lambdaActorInstanceLeaseUntil :: (Maybe Text)
+  , lambdaActorInstanceLastInvokedAt :: (Maybe Text)
+  , lambdaActorInstanceLastError :: (Maybe Text)
+  , lambdaActorInstanceCreatedAt :: Text
+  , lambdaActorInstanceUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow LambdaActorInstanceRow where
+  fromRow = LambdaActorInstanceRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateLambdaActorInstanceActorKey :: Text -> Either Text Text
+validateLambdaActorInstanceActorKey value
+  | T.length value < 1 = Left "lambda_actor_instances.actor_key must be at least 1 characters"
+  | T.length value > 200 = Left "lambda_actor_instances.actor_key must be at most 200 characters"
+  | otherwise = Right value
+
+validateLambdaActorInstanceStateVersion :: Int -> Either Text Int
+validateLambdaActorInstanceStateVersion value
+  | value < 0 = Left "lambda_actor_instances.state_version is below the minimum"
+  | otherwise = Right value
+
+validateLambdaActorInstanceAlarmAttempt :: Int -> Either Text Int
+validateLambdaActorInstanceAlarmAttempt value
+  | value < 0 = Left "lambda_actor_instances.alarm_attempt is below the minimum"
+  | value > 6 = Left "lambda_actor_instances.alarm_attempt is above the maximum"
+  | otherwise = Right value
+
+validateLambdaActorInstanceLeaseOwner :: Text -> Either Text Text
+validateLambdaActorInstanceLeaseOwner value
+  | T.length value > 200 = Left "lambda_actor_instances.lease_owner must be at most 200 characters"
+  | otherwise = Right value
+
 workflowDefinitionsTable :: Text
 workflowDefinitionsTable = "workflow_definitions"
 

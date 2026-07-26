@@ -2082,6 +2082,35 @@ pub fn validate_lambda_functions_status(value: String) -> Result(String, String)
   }
 }
 
+pub const lambda_actor_instances_table = "lambda_actor_instances"
+pub const lambda_actor_instances_select_sql = "select\n      id::text as id,\n      function_id::text as function_id,\n      actor_key,\n      state::text as state_json,\n      state_version,\n      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as alarm_at,\n      alarm_attempt,\n      lease_owner,\n      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_until,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from lambda_actor_instances"
+
+pub type LambdaActorInstanceRow {
+  LambdaActorInstanceRow(
+    id: String,
+    function_id: String,
+    actor_key: String,
+    state_json: String,
+    state_version: Int,
+    alarm_at: Option(String),
+    alarm_attempt: Int,
+    lease_owner: Option(String),
+    lease_until: Option(String),
+    last_invoked_at: Option(String),
+    last_error: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_lambda_actor_instances_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("lambda_actor_instances.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
 pub const workflow_definitions_table = "workflow_definitions"
 pub const workflow_definitions_select_sql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      steps::text as steps_json,\n      default_retry::text as default_retry_json,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from workflow_definitions"
 

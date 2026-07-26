@@ -51,6 +51,7 @@ var agentRemoteDevEventEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1
 var agentRemoteDevBreadcrumbKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var mipSolverEventsEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var lambdaFunctionSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
+var lambdaActorInstanceActorKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$`)
 var workflowDefinitionsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
 var containerPoolImageRevisionsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
 var containerPoolImageRevisionsDockerfileSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -1779,6 +1780,56 @@ func (value LambdaFunctionGorm) Validate() error {
 	if !validateJSONString(value.Env) { return errors.New("lambda_functions.env must be valid JSON") }
 	if !validateJSONString(value.Labels) { return errors.New("lambda_functions.labels must be valid JSON") }
 	if !validateJSONString(value.MetaData) { return errors.New("lambda_functions.meta_data must be valid JSON") }
+	return nil
+}
+
+const LambdaActorInstanceTable = "lambda_actor_instances"
+const LambdaActorInstanceSelectSQL = `select
+      id::text as id,
+      function_id::text as function_id,
+      actor_key,
+      state,
+      state_version,
+      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as alarm_at,
+      alarm_attempt,
+      lease_owner,
+      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as lease_until,
+      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_invoked_at,
+      last_error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from lambda_actor_instances`
+
+type LambdaActorInstanceGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	FunctionId uuid.UUID `gorm:"column:function_id;type:uuid;not null" json:"functionId"`
+	ActorKey string `gorm:"column:actor_key;type:varchar(200);not null" json:"actorKey"`
+	State datatypes.JSON `gorm:"column:state;type:jsonb;default:'{}'::jsonb;not null" json:"state"`
+	StateVersion int64 `gorm:"column:state_version;type:bigint;default:0;not null" json:"stateVersion"`
+	AlarmAt *time.Time `gorm:"column:alarm_at;type:timestamptz" json:"alarmAt,omitempty"`
+	AlarmAttempt int32 `gorm:"column:alarm_attempt;type:integer;default:0;not null" json:"alarmAttempt"`
+	LeaseOwner *string `gorm:"column:lease_owner;type:varchar(200)" json:"leaseOwner,omitempty"`
+	LeaseUntil *time.Time `gorm:"column:lease_until;type:timestamptz" json:"leaseUntil,omitempty"`
+	LastInvokedAt *time.Time `gorm:"column:last_invoked_at;type:timestamptz" json:"lastInvokedAt,omitempty"`
+	LastError *string `gorm:"column:last_error;type:text" json:"lastError,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (LambdaActorInstanceGorm) TableName() string { return LambdaActorInstanceTable }
+
+func (value LambdaActorInstanceGorm) Validate() error {
+	if !lambdaActorInstanceActorKeyPattern.MatchString(value.ActorKey) { return errors.New("lambda_actor_instances.actor_key does not match the required pattern") }
+	if !validateJSONString(value.State) { return errors.New("lambda_actor_instances.state must be valid JSON") }
+	if value.StateVersion < 0 { return errors.New("lambda_actor_instances.state_version is below the minimum") }
+	if value.AlarmAttempt < 0 { return errors.New("lambda_actor_instances.alarm_attempt is below the minimum") }
+	if value.AlarmAttempt > 6 { return errors.New("lambda_actor_instances.alarm_attempt is above the maximum") }
+	if value.LeaseOwner != nil {
+		if len([]byte(*value.LeaseOwner)) > 200 { return errors.New("lambda_actor_instances.lease_owner exceeds 200 bytes") }
+	}
+	if value.LastError != nil {
+		if len([]byte(*value.LastError)) > 8192 { return errors.New("lambda_actor_instances.last_error exceeds 8192 bytes") }
+	}
 	return nil
 }
 

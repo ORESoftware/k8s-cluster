@@ -2746,6 +2746,91 @@ class LambdaFunctionObjectBox {
 }
 
 @Entity()
+class LambdaActorInstanceObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String functionId;
+
+  String actorKey;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String state;
+
+  int stateVersion;
+
+  String? alarmAt;
+
+  int alarmAttempt;
+
+  String? leaseOwner;
+
+  String? leaseUntil;
+
+  String? lastInvokedAt;
+
+  String? lastError;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  LambdaActorInstanceObjectBox({
+    required this.id,
+    required this.functionId,
+    required this.actorKey,
+    required this.state,
+    required this.stateVersion,
+    this.alarmAt,
+    required this.alarmAttempt,
+    this.leaseOwner,
+    this.leaseUntil,
+    this.lastInvokedAt,
+    this.lastError,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "functionId": functionId,
+    "actorKey": actorKey,
+    "state": jsonDecode(state),
+    "stateVersion": stateVersion,
+    "alarmAt": alarmAt,
+    "alarmAttempt": alarmAttempt,
+    "leaseOwner": leaseOwner,
+    "leaseUntil": leaseUntil,
+    "lastInvokedAt": lastInvokedAt,
+    "lastError": lastError,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static LambdaActorInstanceObjectBox fromJson(Map<String, Object?> json) {
+    return LambdaActorInstanceObjectBox(
+      id: json["id"] as String,
+      functionId: json["functionId"] as String,
+      actorKey: json["actorKey"] as String,
+      state: json["state"] is String ? json["state"] as String : jsonEncode(json["state"]),
+      stateVersion: (json["stateVersion"] as num).toInt(),
+      alarmAt: json["alarmAt"] as String?,
+      alarmAttempt: (json["alarmAttempt"] as num).toInt(),
+      leaseOwner: json["leaseOwner"] as String?,
+      leaseUntil: json["leaseUntil"] as String?,
+      lastInvokedAt: json["lastInvokedAt"] as String?,
+      lastError: json["lastError"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
 class WorkflowDefinitionsObjectBox {
   @Id()
   int obxId = 0;

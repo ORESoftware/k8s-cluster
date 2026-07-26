@@ -2315,6 +2315,74 @@ export type LambdaFunctionRow = z.infer<typeof lambdaFunctionRowSchema>;
 export type LambdaFunctionInsert = z.infer<typeof lambdaFunctionInsertSchema>;
 export type LambdaFunctionUpdate = z.infer<typeof lambdaFunctionUpdateSchema>;
 
+export const lambdaActorInstances = pgTable(
+  "lambda_actor_instances",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    functionId: uuid("function_id").notNull(),
+    actorKey: varchar("actor_key", { length: 200 }).notNull(),
+    state: jsonb("state").default(sql`'{}'::jsonb`).notNull(),
+    stateVersion: bigint("state_version", { mode: "number" }).default(sql`0`).notNull(),
+    alarmAt: timestamp("alarm_at", { withTimezone: true, mode: "string" }),
+    alarmAttempt: integer("alarm_attempt").default(sql`0`).notNull(),
+    leaseOwner: varchar("lease_owner", { length: 200 }),
+    leaseUntil: timestamp("lease_until", { withTimezone: true, mode: "string" }),
+    lastInvokedAt: timestamp("last_invoked_at", { withTimezone: true, mode: "string" }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    lambdaActorInstancesActorKeyChk: check("lambda_actor_instances_actor_key_chk", sql.raw("actor_key ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$'")),
+    lambdaActorInstancesStateSizeChk: check("lambda_actor_instances_state_size_chk", sql.raw("octet_length(state::text) <= 1048576")),
+    lambdaActorInstancesStateVersionChk: check("lambda_actor_instances_state_version_chk", sql.raw("state_version >= 0")),
+    lambdaActorInstancesAlarmAttemptChk: check("lambda_actor_instances_alarm_attempt_chk", sql.raw("alarm_attempt between 0 and 6")),
+    lambdaActorInstancesLeaseOwnerSizeChk: check("lambda_actor_instances_lease_owner_size_chk", sql.raw("lease_owner is null or octet_length(lease_owner) <= 200")),
+    lambdaActorInstancesLeasePairChk: check("lambda_actor_instances_lease_pair_chk", sql.raw("(lease_owner is null) = (lease_until is null)")),
+    lambdaActorInstancesLastErrorSizeChk: check("lambda_actor_instances_last_error_size_chk", sql.raw("last_error is null or octet_length(last_error) <= 8192")),
+    lambdaActorInstancesFunctionKeyUq: uniqueIndex("lambda_actor_instances_function_key_uq").on(table.functionId, table.actorKey),
+    lambdaActorInstancesAlarmDueIdx: index("lambda_actor_instances_alarm_due_idx").on(table.alarmAt).where(sql.raw("alarm_at is not null")),
+    lambdaActorInstancesLeaseExpiryIdx: index("lambda_actor_instances_lease_expiry_idx").on(table.leaseUntil).where(sql.raw("lease_until is not null")),
+  }),
+);
+
+export const lambdaActorInstanceRowSchema = z.object({
+  id: z.string().uuid(),
+  functionId: z.string().uuid(),
+  actorKey: z.string().min(1).max(200).regex(new RegExp("^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")),
+  state: jsonObjectSchema,
+  stateVersion: z.number().int().min(0),
+  alarmAt: z.string().datetime().nullable(),
+  alarmAttempt: z.number().int().min(0).max(6),
+  leaseOwner: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable(),
+  leaseUntil: z.string().datetime().nullable(),
+  lastInvokedAt: z.string().datetime().nullable(),
+  lastError: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const lambdaActorInstanceInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  functionId: z.string().uuid(),
+  actorKey: z.string().min(1).max(200).regex(new RegExp("^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")),
+  state: jsonObjectSchema.optional().default({}),
+  stateVersion: z.number().int().min(0).optional().default(0),
+  alarmAt: z.string().datetime().nullable().optional(),
+  alarmAttempt: z.number().int().min(0).max(6).optional().default(0),
+  leaseOwner: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable().optional(),
+  leaseUntil: z.string().datetime().nullable().optional(),
+  lastInvokedAt: z.string().datetime().nullable().optional(),
+  lastError: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const lambdaActorInstanceUpdateSchema = lambdaActorInstanceInsertSchema.partial();
+export type LambdaActorInstanceRow = z.infer<typeof lambdaActorInstanceRowSchema>;
+export type LambdaActorInstanceInsert = z.infer<typeof lambdaActorInstanceInsertSchema>;
+export type LambdaActorInstanceUpdate = z.infer<typeof lambdaActorInstanceUpdateSchema>;
+
 export const workflowDefinitionsStatusValues = ["draft","active","paused","archived"] as const;
 export const workflowDefinitionsStatusSchema = z.enum(workflowDefinitionsStatusValues);
 export type WorkflowDefinitionsStatus = z.infer<typeof workflowDefinitionsStatusSchema>;
