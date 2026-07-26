@@ -20,7 +20,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
@@ -60,7 +60,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
@@ -68,26 +68,25 @@ jobs:
           toolchain: "1.95.0"
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked --version 0.22.2
-      - name: Assert ignored RSA package is not in the build graph
+      - name: Assert optional RSA package is not in the build graph
         shell: bash
         run: |
-          # RUSTSEC-2023-0071 is allowed below only because Cargo.lock records
-          # SQLx's disabled optional MySQL/RSA edge. If that edge ever becomes
-          # active, this gate fails before the advisory allow-list is applied.
-          rsa_path="$(cargo tree --workspace --invert rsa 2>/dev/null)"
-          if [ -n "$rsa_path" ]; then
-            echo "rsa unexpectedly entered the active dependency graph" >&2
-            exit 1
+          # SQLx previously recorded a disabled optional MySQL/RSA edge. The
+          # package is absent under SQLx 0.9, but keep a fail-closed graph check
+          # in case a future lockfile brings it back.
+          if grep -q '^name = "rsa"$' Cargo.lock; then
+            rsa_path="$(cargo tree --workspace --invert rsa 2>/dev/null)"
+            if [ -n "$rsa_path" ]; then
+              echo "rsa unexpectedly entered the active dependency graph" >&2
+              exit 1
+            fi
           fi
       - name: Audit Rust dependencies
         shell: bash
         run: |
-          # RUSTSEC-2023-0071: unreachable optional SQLx MySQL/RSA lock entry;
-          # the preceding inverse-tree gate makes this exception fail closed.
           # RUSTSEC-2026-0173: unmaintained (not vulnerable) compile-time-only
           # proc-macro-error2, currently required by SeaORM's derive macros.
           cargo audit --deny warnings \
-            --ignore RUSTSEC-2023-0071 \
             --ignore RUSTSEC-2026-0173
 
   postgres-rls:
@@ -110,7 +109,7 @@ jobs:
     env:
       TEST_POSTGRES_ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
@@ -147,7 +146,7 @@ jobs:
     env:
       PGPASSWORD: postgres
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
@@ -207,7 +206,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
@@ -247,7 +246,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
@@ -280,7 +279,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Build production image

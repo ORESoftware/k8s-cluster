@@ -42,7 +42,7 @@ where
     }
 
     connection
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT CURRENT_TIMESTAMP AS database_now".to_owned(),
         ))
@@ -100,7 +100,7 @@ async fn verify_isolated_database_role(
         return Ok(());
     }
     let row = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             r#"
             SELECT
@@ -218,7 +218,7 @@ pub async fn begin_user_transaction(
         })
         .to_string();
         transaction
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
                 SELECT
@@ -249,7 +249,7 @@ pub async fn begin_session_revocation_transaction(
     let transaction = db.begin().await?;
     if db.get_database_backend() == DatabaseBackend::Postgres {
         transaction
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
                 SELECT
@@ -292,7 +292,7 @@ pub async fn begin_admin_transaction(
         })
         .to_string();
         transaction
-            .execute(Statement::from_sql_and_values(
+            .execute_raw(Statement::from_sql_and_values(
                 DatabaseBackend::Postgres,
                 r#"
                 SELECT

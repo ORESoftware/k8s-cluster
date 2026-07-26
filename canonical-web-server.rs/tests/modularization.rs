@@ -178,7 +178,7 @@ fn postgres_driver_escape_is_confined_to_the_seaorm_reexport() {
 
 async fn application_tables(database: &DatabaseConnection) -> Vec<String> {
     database
-        .query_all(Statement::from_string(
+        .query_all_raw(Statement::from_string(
             DatabaseBackend::Sqlite,
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
         ))
