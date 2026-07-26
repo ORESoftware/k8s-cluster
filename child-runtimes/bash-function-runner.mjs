@@ -123,10 +123,22 @@ async function invoke(line) {
     id: definition.id,
     invocationId: envelope.invocationId,
     slug: definition.slug || envelope.slug,
+    release: {
+      mode: definition.releaseMode || 'latest',
+      alias: definition.alias || null,
+      revisionId: definition.revisionId || null,
+      revisionNumber: definition.revisionNumber || null,
+      routingVersion: definition.routingVersion || null,
+      definitionDigest: definition.definitionDigest || null,
+    },
     meta: {
       runtime: definition.runtime,
       labels: definition.labels,
       metaData: definition.metaData,
+      releaseMode: definition.releaseMode || 'latest',
+      revisionId: definition.revisionId || null,
+      revisionNumber: definition.revisionNumber || null,
+      alias: definition.alias || null,
       ...(envelope.meta || {}),
     },
   };

@@ -155,6 +155,10 @@ spec:
               value: '16777216'
             - name: LAMBDA_STREAM_CHUNK_BYTES
               value: '65536'
+            - name: LAMBDA_REVISION_ROUTING_ENABLED
+              # Enable only after the separately reviewed lambda revision and
+              # alias migration has landed.
+              value: '0'
             - name: LAMBDA_ACTOR_STATE_MAX_BYTES
               value: '524288'
             - name: LAMBDA_ALLOW_HOST_RUNTIMES

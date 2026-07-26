@@ -150,10 +150,22 @@ def invoke(line):
         "id": definition.get("id"),
         "invocationId": envelope.get("invocationId"),
         "slug": definition.get("slug") or envelope.get("slug"),
+        "release": {
+            "mode": definition.get("releaseMode") or "latest",
+            "alias": definition.get("alias"),
+            "revisionId": definition.get("revisionId"),
+            "revisionNumber": definition.get("revisionNumber"),
+            "routingVersion": definition.get("routingVersion"),
+            "definitionDigest": definition.get("definitionDigest"),
+        },
         "meta": {
             "runtime": definition.get("runtime"),
             "labels": definition.get("labels"),
             "metaData": definition.get("metaData"),
+            "releaseMode": definition.get("releaseMode") or "latest",
+            "revisionId": definition.get("revisionId"),
+            "revisionNumber": definition.get("revisionNumber"),
+            "alias": definition.get("alias"),
             **(envelope.get("meta") or {}),
         },
     }

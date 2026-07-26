@@ -262,6 +262,65 @@ function with `poolBacked=true` fails closed on this endpoint. Other language
 runtimes retain buffered invocation until they implement the same bounded
 runtime.v1 stream framing contract.
 
+## Immutable revisions and weighted aliases
+
+`lambda_functions` is the editable `$LATEST` definition. Publishing calls the
+canonical Postgres routine `publish_lambda_function_revision(function_id, …)`,
+which takes a transactionally consistent snapshot, assigns the next monotonic
+revision number under an advisory lock, and records a SHA-256 definition
+digest. A database trigger rejects every UPDATE to a published revision;
+changing code or configuration always creates a new revision.
+
+Invoke one immutable revision directly:
+
+```text
+POST /invoke/:function_id/revisions/:revision
+POST /invoke-stream/:function_id/revisions/:revision
+POST /async/invoke/:function_id/revisions/:revision
+```
+
+Named aliases are changed atomically with
+`set_lambda_function_alias(function_id, name, traffic, …)`. `traffic` maps 1–10
+same-function revision UUIDs to positive integer basis-point weights that must
+total exactly 10,000. That supports multi-revision canaries, full promotion,
+abort, and instant rollback. A revision endpoint remains available as a 0%
+preview while it receives no alias traffic.
+
+```text
+POST /invoke/:function_id/aliases/:alias
+POST /invoke-stream/:function_id/aliases/:alias
+POST /async/invoke/:function_id/aliases/:alias
+```
+
+Alias selection is random by default. Send `X-Scintilla-Affinity` (or the
+`affinity` query parameter) to hash a stable tenant, account, session, or user
+onto the same routing interval. Durable async invocation resolves an alias
+before accepting the run and stores the concrete `function-id@revision`
+reference; later retries cannot jump revisions when an operator promotes or
+rolls back the alias.
+
+Every runtime receives non-secret release information at `context.release`
+(`mode`, `alias`, `revisionId`, `revisionNumber`, `routingVersion`, and
+`definitionDigest`). Revision IDs are also part of function-specific BEAM
+worker keys, so stable and canary stateful workers coexist as distinct dynamic
+OTP children. Moving new traffic never interrupts an in-flight invocation or
+requires a server restart; old workers disappear through the normal idle drain.
+Prometheus exposes `dd_lambda_runner_release_routed_invocations_total` and the
+alias/revision-specific counters.
+
+| Env | Default |
+| --- | --- |
+| `LAMBDA_REVISION_ROUTING_ENABLED` | `0` until the reviewed schema migration lands |
+
+The canonical tables, triggers, and routines are
+`lambda_function_revisions`, `lambda_function_aliases`,
+`lambda_reject_revision_update`, `lambda_validate_alias_traffic`,
+`publish_lambda_function_revision`, and `set_lambda_function_alias` in
+`remote/libs/pg-defs/schema/schema.sql`. The runner never mutates schema at
+startup. The checked-in Kubernetes deployment therefore fails closed with
+`LAMBDA_REVISION_ROUTING_ENABLED=0`; switch it to `1` only in the rollout after
+the separately reviewed migration has converged.
+
 ## Durable keyed actors
 
 Authenticated `POST /actors/:function_id/:actor_key` turns an active Node.js
