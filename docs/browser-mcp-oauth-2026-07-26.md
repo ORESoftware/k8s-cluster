@@ -156,7 +156,7 @@ The deployment remains a prebuilt distroless image, pinned to the OCI index
 published from this branch:
 
 ```text
-ghcr.io/oresoftware/dd-browser-mcp-rs@sha256:9076c098c03f6a4c24c8220b0b1878de42c87dde2da07b41d54cf21d8ebad1d3
+ghcr.io/oresoftware/dd-browser-mcp-rs@sha256:f54dd077bae876ac36b2ddd8676ce0bc8cb6f6d31df063c5c526e873048b74d7
 ```
 
 It does not mount the shared EC2 checkout and does not run Cargo in the pod.
@@ -263,8 +263,8 @@ plane and Playwright worker from `agent/browser-mcp-oauth`. The GitOps
 manifests pin both runtime images by OCI index digest:
 
 ```text
-dd-browser-mcp-rs: sha256:9114241f546c88df5a7f8a4e4d6cc0ad4b25334fa9811b6763b52eb7899d5d2a
-dd-web-scraper:    sha256:713a943c6bfb2e2f39ccf7a643f5e86bbf76a77b5dca14fd546f38268f99ebdd
+dd-browser-mcp-rs: sha256:f54dd077bae876ac36b2ddd8676ce0bc8cb6f6d31df063c5c526e873048b74d7
+dd-web-scraper:    sha256:fec450d14e203d7e747b9eb8046c18e48c8e617798228ac914296a994decde1f
 ```
 
 The `dd-browser-mcp-rs` ArgoCD Applications reported `Synced/Healthy` on AWS and
