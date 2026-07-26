@@ -123,15 +123,16 @@ pub(crate) async fn customer_mfa_assurance_gate(
     // into an authentication response by this outer middleware.
     let unsupported_sync_method = path.starts_with("/api/customer/sync/")
         && !matches!(*request.method(), Method::GET | Method::HEAD);
-    let protected = path.starts_with("/app")
-        || path.starts_with("/api/customer")
-        || (path == "/" && should_serve_customer_app(&config, request.headers()));
+    let customer_root = path == "/" && should_serve_customer_app(&config, request.headers());
+    let protected = path.starts_with("/app") || path.starts_with("/api/customer") || customer_root;
     if protected && !unsupported_sync_method {
         if let Err(response) = config.authenticate_mfa_aware(request.headers()).await {
             // Browser pages previously turn an absent/invalid session into the
             // login flow. Preserve that UX for the new aal1 backstop as well;
             // JSON customer APIs retain an explicit 401 for programmatic callers.
-            if response.status() == StatusCode::UNAUTHORIZED && path.starts_with("/app") {
+            if response.status() == StatusCode::UNAUTHORIZED
+                && (path.starts_with("/app") || customer_root)
+            {
                 return (StatusCode::SEE_OTHER, [(header::LOCATION, "/login")]).into_response();
             }
             return response;

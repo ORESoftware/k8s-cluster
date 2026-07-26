@@ -1261,20 +1261,26 @@ async fn mfa_disable_uses_the_freshly_verified_session_for_unenrollment() {
 
 #[tokio::test]
 async fn customer_pages_redirect_missing_sessions_to_customer_login() {
-    let mut config = test_config();
-    config.authenticator = Authenticator::AuthService("http://127.0.0.1:1".to_string());
-    let response = build_router(config)
-        .oneshot(
-            Request::builder()
-                .uri("/app")
-                .header(header::HOST, "app.fiducia.cloud")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::SEE_OTHER);
-    assert_eq!(response.headers().get("location").unwrap(), "/login");
+    for uri in ["/", "/app"] {
+        let mut config = test_config();
+        config.authenticator = Authenticator::AuthService("http://127.0.0.1:1".to_string());
+        let response = build_router(config)
+            .oneshot(
+                Request::builder()
+                    .uri(uri)
+                    .header(header::HOST, "app.fiducia.cloud")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SEE_OTHER, "{uri}");
+        assert_eq!(
+            response.headers().get("location").unwrap(),
+            "/login",
+            "{uri}"
+        );
+    }
 }
 
 async fn send_json(
