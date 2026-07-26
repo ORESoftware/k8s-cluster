@@ -688,6 +688,55 @@ class LambdaFunction(models.Model):
         db_table = "lambda_functions"
 
 
+class LambdaFunctionRevision(models.Model):
+    # Immutable published snapshots of lambda function code and runtime configuration.
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    function_id = models.UUIDField()
+    revision_number = models.BigIntegerField(validators=[MinValueValidator(1)])
+    definition_digest = models.CharField(max_length=64, validators=[MinLengthValidator(64), RegexValidator(regex="^[a-f0-9]{64}$")])
+    description = models.TextField(default="")
+    runtime = models.CharField(max_length=40, choices=[("nodejs", "nodejs"), ("javascript", "javascript"), ("typescript", "typescript"), ("python3", "python3"), ("python", "python"), ("ruby", "ruby"), ("bash", "bash"), ("shell", "shell"), ("golang", "golang"), ("go", "go"), ("dart", "dart"), ("erlang", "erlang"), ("erl", "erl"), ("elixir", "elixir"), ("ex", "ex"), ("java", "java"), ("jvm", "jvm"), ("gleam", "gleam"), ("gleamlang", "gleamlang"), ("rust", "rust"), ("rs", "rs"), ("browser", "browser")])
+    entry_command = models.TextField(default="")
+    function_body = models.TextField(validators=[MinLengthValidator(1)])
+    reuse_key = models.CharField(max_length=200, null=True, blank=True)
+    idle_timeout_seconds = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(3600)])
+    max_run_ms = models.IntegerField(validators=[MinValueValidator(1000), MaxValueValidator(300000)])
+    containerized = models.BooleanField()
+    container_image = models.TextField(null=True, blank=True)
+    container_build_status = models.CharField(max_length=32, choices=[("not_requested", "not_requested"), ("pending", "pending"), ("building", "building"), ("built", "built"), ("failed", "failed"), ("skipped", "skipped")])
+    container_build_error = models.TextField(null=True, blank=True)
+    container_built_at = models.DateTimeField(null=True, blank=True)
+    env = models.JSONField()
+    labels = models.JSONField()
+    meta_data = models.JSONField()
+    created_at = models.DateTimeField()
+    created_by = models.UUIDField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "lambda_function_revisions"
+
+
+class LambdaFunctionAlias(models.Model):
+    # Named weighted routing policies over immutable lambda function revisions.
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    function_id = models.UUIDField()
+    name = models.CharField(max_length=64, validators=[MinLengthValidator(1), RegexValidator(regex="^[a-z][a-z0-9._-]{0,63}$")])
+    description = models.TextField(default="")
+    traffic = models.JSONField()
+    routing_version = models.BigIntegerField(default=1, validators=[MinValueValidator(1)])
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+    created_by = models.UUIDField(null=True, blank=True)
+    updated_by = models.UUIDField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "lambda_function_aliases"
+
+
 class LambdaActorInstance(models.Model):
     # Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

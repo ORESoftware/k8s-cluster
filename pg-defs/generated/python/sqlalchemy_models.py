@@ -2973,6 +2973,253 @@ class LambdaFunctionInsert(BaseModel):
             raise ValueError("lambda_functions.container_build_error exceeds 8192 bytes")
         return value
 
+LambdaFunctionRevisionRuntime = Literal["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"]
+LambdaFunctionRevisionContainerBuildStatus = Literal["not_requested", "pending", "building", "built", "failed", "skipped"]
+
+class LambdaFunctionRevision(Base):
+    __tablename__ = "lambda_function_revisions"
+    __table_args__ = (
+        CheckConstraint("revision_number > 0", name="lambda_function_revisions_number_chk"),
+        CheckConstraint("definition_digest ~ '^[a-f0-9]{64}$'", name="lambda_function_revisions_digest_chk"),
+        CheckConstraint("octet_length(description) <= 4096", name="lambda_function_revisions_description_size_chk"),
+        CheckConstraint("octet_length(function_body) <= 262144", name="lambda_function_revisions_body_size_chk"),
+        CheckConstraint("octet_length(entry_command) <= 512", name="lambda_function_revisions_entry_command_chk"),
+        CheckConstraint("reuse_key is null or octet_length(reuse_key) <= 200", name="lambda_function_revisions_reuse_key_chk"),
+        CheckConstraint("idle_timeout_seconds between 1 and 3600", name="lambda_function_revisions_idle_timeout_chk"),
+        CheckConstraint("max_run_ms between 1000 and 300000", name="lambda_function_revisions_max_run_chk"),
+        CheckConstraint("container_image is null or octet_length(container_image) <= 512", name="lambda_function_revisions_container_image_size_chk"),
+        CheckConstraint("container_build_error is null or octet_length(container_build_error) <= 8192", name="lambda_function_revisions_container_build_error_size_chk"),
+        CheckConstraint("jsonb_typeof(env) = 'object'", name="lambda_function_revisions_env_object_chk"),
+        CheckConstraint("jsonb_typeof(labels) = 'array'", name="lambda_function_revisions_labels_array_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="lambda_function_revisions_meta_object_chk"),
+        CheckConstraint("runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm', 'gleam', 'gleamlang', 'rust', 'rs', 'browser')", name="lambda_function_revisions_runtime_chk"),
+        CheckConstraint("container_build_status in ('not_requested', 'pending', 'building', 'built', 'failed', 'skipped')", name="lambda_function_revisions_container_build_status_chk"),
+        Index("lambda_function_revisions_function_number_uq", "function_id", "revision_number", unique=True),
+        Index("lambda_function_revisions_function_id_uq", "function_id", "id", unique=True),
+        Index("lambda_function_revisions_created_at_idx", "function_id", text("created_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    function_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    revision_number: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    definition_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    runtime: Mapped[str] = mapped_column(String(40), nullable=False)
+    entry_command: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    function_body: Mapped[str] = mapped_column(Text(), nullable=False)
+    reuse_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    idle_timeout_seconds: Mapped[int] = mapped_column(Integer(), nullable=False)
+    max_run_ms: Mapped[int] = mapped_column(Integer(), nullable=False)
+    containerized: Mapped[bool] = mapped_column(Boolean(), nullable=False)
+    container_image: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    container_build_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    container_build_error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    container_built_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    env: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)
+    labels: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class LambdaFunctionRevisionRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    functionId: UUID
+    revisionNumber: int
+    definitionDigest: str = Field(..., min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")
+    description: str = Field(..., max_length=4096)
+    runtime: LambdaFunctionRevisionRuntime
+    entryCommand: str
+    functionBody: str = Field(..., min_length=1)
+    reuseKey: str | None = Field(None, max_length=200)
+    idleTimeoutSeconds: int = Field(..., ge=1, le=3600)
+    maxRunMs: int = Field(..., ge=1000, le=300000)
+    containerized: bool
+    containerImage: str | None = None
+    containerBuildStatus: LambdaFunctionRevisionContainerBuildStatus
+    containerBuildError: str | None = None
+    containerBuiltAt: datetime | None = None
+    env: dict[str, Any]
+    labels: list[Any]
+    metaData: dict[str, Any]
+    createdAt: datetime
+    createdBy: UUID | None = None
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4096:
+            raise ValueError("lambda_function_revisions.description exceeds 4096 bytes")
+        return value
+
+    @field_validator("entryCommand")
+    @classmethod
+    def validate_entry_command(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("lambda_function_revisions.entry_command exceeds 512 bytes")
+        return value
+
+    @field_validator("functionBody")
+    @classmethod
+    def validate_function_body(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 262144:
+            raise ValueError("lambda_function_revisions.function_body exceeds 262144 bytes")
+        return value
+
+    @field_validator("reuseKey")
+    @classmethod
+    def validate_reuse_key(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("lambda_function_revisions.reuse_key exceeds 200 bytes")
+        return value
+
+    @field_validator("containerImage")
+    @classmethod
+    def validate_container_image(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("lambda_function_revisions.container_image exceeds 512 bytes")
+        return value
+
+    @field_validator("containerBuildError")
+    @classmethod
+    def validate_container_build_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("lambda_function_revisions.container_build_error exceeds 8192 bytes")
+        return value
+
+class LambdaFunctionRevisionInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    functionId: UUID
+    revisionNumber: int
+    definitionDigest: str = Field(..., min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")
+    description: str | None = Field("", max_length=4096)
+    runtime: LambdaFunctionRevisionRuntime
+    entryCommand: str | None = ""
+    functionBody: str = Field(..., min_length=1)
+    reuseKey: str | None = Field(None, max_length=200)
+    idleTimeoutSeconds: int = Field(..., ge=1, le=3600)
+    maxRunMs: int = Field(..., ge=1000, le=300000)
+    containerized: bool
+    containerImage: str | None = None
+    containerBuildStatus: LambdaFunctionRevisionContainerBuildStatus
+    containerBuildError: str | None = None
+    containerBuiltAt: datetime | None = None
+    env: dict[str, Any]
+    labels: list[Any]
+    metaData: dict[str, Any]
+    createdAt: datetime | None = None
+    createdBy: UUID | None = None
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4096:
+            raise ValueError("lambda_function_revisions.description exceeds 4096 bytes")
+        return value
+
+    @field_validator("entryCommand")
+    @classmethod
+    def validate_entry_command(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("lambda_function_revisions.entry_command exceeds 512 bytes")
+        return value
+
+    @field_validator("functionBody")
+    @classmethod
+    def validate_function_body(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 262144:
+            raise ValueError("lambda_function_revisions.function_body exceeds 262144 bytes")
+        return value
+
+    @field_validator("reuseKey")
+    @classmethod
+    def validate_reuse_key(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("lambda_function_revisions.reuse_key exceeds 200 bytes")
+        return value
+
+    @field_validator("containerImage")
+    @classmethod
+    def validate_container_image(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("lambda_function_revisions.container_image exceeds 512 bytes")
+        return value
+
+    @field_validator("containerBuildError")
+    @classmethod
+    def validate_container_build_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("lambda_function_revisions.container_build_error exceeds 8192 bytes")
+        return value
+
+class LambdaFunctionAlias(Base):
+    __tablename__ = "lambda_function_aliases"
+    __table_args__ = (
+        CheckConstraint("name ~ '^[a-z][a-z0-9._-]{0,63}$'", name="lambda_function_aliases_name_chk"),
+        CheckConstraint("octet_length(description) <= 4096", name="lambda_function_aliases_description_size_chk"),
+        CheckConstraint("jsonb_typeof(traffic) = 'object'", name="lambda_function_aliases_traffic_object_chk"),
+        CheckConstraint("octet_length(traffic::text) <= 8192", name="lambda_function_aliases_traffic_size_chk"),
+        CheckConstraint("routing_version > 0", name="lambda_function_aliases_routing_version_chk"),
+        Index("lambda_function_aliases_function_name_uq", "function_id", "name", unique=True),
+        Index("lambda_function_aliases_updated_at_idx", "function_id", text("updated_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    function_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    traffic: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)
+    routing_version: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("1"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class LambdaFunctionAliasRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    functionId: UUID
+    name: str = Field(..., min_length=1, max_length=64, pattern="^[a-z][a-z0-9._-]{0,63}$")
+    description: str = Field(..., max_length=4096)
+    traffic: dict[str, Any]
+    routingVersion: int
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4096:
+            raise ValueError("lambda_function_aliases.description exceeds 4096 bytes")
+        return value
+
+class LambdaFunctionAliasInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    functionId: UUID
+    name: str = Field(..., min_length=1, max_length=64, pattern="^[a-z][a-z0-9._-]{0,63}$")
+    description: str | None = Field("", max_length=4096)
+    traffic: dict[str, Any]
+    routingVersion: int | None = 1
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4096:
+            raise ValueError("lambda_function_aliases.description exceeds 4096 bytes")
+        return value
+
 class LambdaActorInstance(Base):
     __tablename__ = "lambda_actor_instances"
     __table_args__ = (

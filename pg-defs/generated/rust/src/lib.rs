@@ -4445,6 +4445,373 @@ pub fn validate_lambda_functions_insert(value: &LambdaFunctionInsert) -> Result<
     Ok(())
 }
 
+pub const LAMBDA_FUNCTION_REVISIONS_TABLE: &str = "lambda_function_revisions";
+pub const LAMBDA_FUNCTION_REVISIONS_COLUMNS: &[&str] = &["id", "function_id", "revision_number", "definition_digest", "description", "runtime", "entry_command", "function_body", "reuse_key", "idle_timeout_seconds", "max_run_ms", "containerized", "container_image", "container_build_status", "container_build_error", "container_built_at", "env", "labels", "meta_data", "created_at", "created_by"];
+pub const LAMBDA_FUNCTION_REVISIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      function_id::text as function_id,
+      revision_number,
+      definition_digest,
+      description,
+      runtime,
+      entry_command,
+      function_body,
+      reuse_key,
+      idle_timeout_seconds,
+      max_run_ms,
+      containerized,
+      container_image,
+      container_build_status,
+      container_build_error,
+      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as container_built_at,
+      env,
+      labels,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      created_by::text as created_by
+    from lambda_function_revisions"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LambdaFunctionRevisionRuntime {
+    Nodejs,
+    Javascript,
+    Typescript,
+    Python3,
+    Python,
+    Ruby,
+    Bash,
+    Shell,
+    Golang,
+    Go,
+    Dart,
+    Erlang,
+    Erl,
+    Elixir,
+    Ex,
+    Java,
+    Jvm,
+    Gleam,
+    Gleamlang,
+    Rust,
+    Rs,
+    Browser,
+}
+
+impl LambdaFunctionRevisionRuntime {
+    pub const VALUES: &'static [&'static str] = &["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Nodejs => "nodejs",
+            Self::Javascript => "javascript",
+            Self::Typescript => "typescript",
+            Self::Python3 => "python3",
+            Self::Python => "python",
+            Self::Ruby => "ruby",
+            Self::Bash => "bash",
+            Self::Shell => "shell",
+            Self::Golang => "golang",
+            Self::Go => "go",
+            Self::Dart => "dart",
+            Self::Erlang => "erlang",
+            Self::Erl => "erl",
+            Self::Elixir => "elixir",
+            Self::Ex => "ex",
+            Self::Java => "java",
+            Self::Jvm => "jvm",
+            Self::Gleam => "gleam",
+            Self::Gleamlang => "gleamlang",
+            Self::Rust => "rust",
+            Self::Rs => "rs",
+            Self::Browser => "browser",
+        }
+    }
+}
+
+impl TryFrom<&str> for LambdaFunctionRevisionRuntime {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "nodejs" => Ok(Self::Nodejs),
+            "javascript" => Ok(Self::Javascript),
+            "typescript" => Ok(Self::Typescript),
+            "python3" => Ok(Self::Python3),
+            "python" => Ok(Self::Python),
+            "ruby" => Ok(Self::Ruby),
+            "bash" => Ok(Self::Bash),
+            "shell" => Ok(Self::Shell),
+            "golang" => Ok(Self::Golang),
+            "go" => Ok(Self::Go),
+            "dart" => Ok(Self::Dart),
+            "erlang" => Ok(Self::Erlang),
+            "erl" => Ok(Self::Erl),
+            "elixir" => Ok(Self::Elixir),
+            "ex" => Ok(Self::Ex),
+            "java" => Ok(Self::Java),
+            "jvm" => Ok(Self::Jvm),
+            "gleam" => Ok(Self::Gleam),
+            "gleamlang" => Ok(Self::Gleamlang),
+            "rust" => Ok(Self::Rust),
+            "rs" => Ok(Self::Rs),
+            "browser" => Ok(Self::Browser),
+            _ => Err(format!("unsupported runtime: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LambdaFunctionRevisionContainerBuildStatus {
+    NotRequested,
+    Pending,
+    Building,
+    Built,
+    Failed,
+    Skipped,
+}
+
+impl LambdaFunctionRevisionContainerBuildStatus {
+    pub const VALUES: &'static [&'static str] = &["not_requested", "pending", "building", "built", "failed", "skipped"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NotRequested => "not_requested",
+            Self::Pending => "pending",
+            Self::Building => "building",
+            Self::Built => "built",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+        }
+    }
+}
+
+impl TryFrom<&str> for LambdaFunctionRevisionContainerBuildStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "not_requested" => Ok(Self::NotRequested),
+            "pending" => Ok(Self::Pending),
+            "building" => Ok(Self::Building),
+            "built" => Ok(Self::Built),
+            "failed" => Ok(Self::Failed),
+            "skipped" => Ok(Self::Skipped),
+            _ => Err(format!("unsupported container_build_status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct LambdaFunctionRevisionRow {
+    pub id: String,
+    pub function_id: String,
+    pub revision_number: i64,
+    pub definition_digest: String,
+    pub description: String,
+    pub runtime: String,
+    pub entry_command: String,
+    pub function_body: String,
+    pub reuse_key: Option<String>,
+    pub idle_timeout_seconds: i32,
+    pub max_run_ms: i32,
+    pub containerized: bool,
+    pub container_image: Option<String>,
+    pub container_build_status: String,
+    pub container_build_error: Option<String>,
+    pub container_built_at: Option<String>,
+    pub env: Value,
+    pub labels: Value,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub created_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LambdaFunctionRevisionInsert {
+    pub id: Option<String>,
+    pub function_id: Option<String>,
+    pub revision_number: Option<i64>,
+    pub definition_digest: Option<String>,
+    pub description: Option<String>,
+    pub runtime: Option<String>,
+    pub entry_command: Option<String>,
+    pub function_body: Option<String>,
+    pub reuse_key: Option<String>,
+    pub idle_timeout_seconds: Option<i32>,
+    pub max_run_ms: Option<i32>,
+    pub containerized: Option<bool>,
+    pub container_image: Option<String>,
+    pub container_build_status: Option<String>,
+    pub container_build_error: Option<String>,
+    pub container_built_at: Option<String>,
+    pub env: Option<Value>,
+    pub labels: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub created_by: Option<String>,
+}
+
+pub fn validate_lambda_function_revisions_row(value: &LambdaFunctionRevisionRow) -> Result<(), String> {
+    if *(&value.revision_number) < 1 { return Err("lambda_function_revisions.revision_number is below the minimum".to_string()); }
+    validate_string_length("lambda_function_revisions.definition_digest", &value.definition_digest, Some(64), Some(64))?;
+    validate_string_length("lambda_function_revisions.description", &value.description, None, Some(4096))?;
+    if (&value.description).as_bytes().len() > 4096 { return Err("lambda_function_revisions.description exceeds 4096 bytes".to_string()); }
+    if !["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"].contains(&(&value.runtime).as_str()) { return Err(format!("unsupported lambda_function_revisions.runtime: {}", &value.runtime)); }
+    if (&value.entry_command).as_bytes().len() > 512 { return Err("lambda_function_revisions.entry_command exceeds 512 bytes".to_string()); }
+    validate_string_length("lambda_function_revisions.function_body", &value.function_body, Some(1), None)?;
+    if (&value.function_body).as_bytes().len() > 262144 { return Err("lambda_function_revisions.function_body exceeds 262144 bytes".to_string()); }
+    if let Some(value) = &value.reuse_key {
+        validate_string_length("lambda_function_revisions.reuse_key", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("lambda_function_revisions.reuse_key exceeds 200 bytes".to_string()); }
+    }
+    if *(&value.idle_timeout_seconds) < 1 { return Err("lambda_function_revisions.idle_timeout_seconds is below the minimum".to_string()); }
+    if *(&value.idle_timeout_seconds) > 3600 { return Err("lambda_function_revisions.idle_timeout_seconds is above the maximum".to_string()); }
+    if *(&value.max_run_ms) < 1000 { return Err("lambda_function_revisions.max_run_ms is below the minimum".to_string()); }
+    if *(&value.max_run_ms) > 300000 { return Err("lambda_function_revisions.max_run_ms is above the maximum".to_string()); }
+    if let Some(value) = &value.container_image {
+        if (value).as_bytes().len() > 512 { return Err("lambda_function_revisions.container_image exceeds 512 bytes".to_string()); }
+    }
+    if !["not_requested", "pending", "building", "built", "failed", "skipped"].contains(&(&value.container_build_status).as_str()) { return Err(format!("unsupported lambda_function_revisions.container_build_status: {}", &value.container_build_status)); }
+    if let Some(value) = &value.container_build_error {
+        if (value).as_bytes().len() > 8192 { return Err("lambda_function_revisions.container_build_error exceeds 8192 bytes".to_string()); }
+    }
+    if !(&value.env).is_object() { return Err("lambda_function_revisions.env must be a JSON object".to_string()); }
+    if !(&value.labels).is_array() { return Err("lambda_function_revisions.labels must be a JSON array".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("lambda_function_revisions.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_lambda_function_revisions_insert(value: &LambdaFunctionRevisionInsert) -> Result<(), String> {
+    if let Some(value) = &value.revision_number {
+        if *(value) < 1 { return Err("lambda_function_revisions.revision_number is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.definition_digest {
+        validate_string_length("lambda_function_revisions.definition_digest", value, Some(64), Some(64))?;
+    }
+    if let Some(value) = &value.description {
+        validate_string_length("lambda_function_revisions.description", value, None, Some(4096))?;
+        if (value).as_bytes().len() > 4096 { return Err("lambda_function_revisions.description exceeds 4096 bytes".to_string()); }
+    }
+    if let Some(value) = &value.runtime {
+        if !["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"].contains(&(value).as_str()) { return Err(format!("unsupported lambda_function_revisions.runtime: {}", value)); }
+    }
+    if let Some(value) = &value.entry_command {
+        if (value).as_bytes().len() > 512 { return Err("lambda_function_revisions.entry_command exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.function_body {
+        validate_string_length("lambda_function_revisions.function_body", value, Some(1), None)?;
+        if (value).as_bytes().len() > 262144 { return Err("lambda_function_revisions.function_body exceeds 262144 bytes".to_string()); }
+    }
+    if let Some(value) = &value.reuse_key {
+        validate_string_length("lambda_function_revisions.reuse_key", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("lambda_function_revisions.reuse_key exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.idle_timeout_seconds {
+        if *(value) < 1 { return Err("lambda_function_revisions.idle_timeout_seconds is below the minimum".to_string()); }
+        if *(value) > 3600 { return Err("lambda_function_revisions.idle_timeout_seconds is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.max_run_ms {
+        if *(value) < 1000 { return Err("lambda_function_revisions.max_run_ms is below the minimum".to_string()); }
+        if *(value) > 300000 { return Err("lambda_function_revisions.max_run_ms is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.container_image {
+        if (value).as_bytes().len() > 512 { return Err("lambda_function_revisions.container_image exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.container_build_status {
+        if !["not_requested", "pending", "building", "built", "failed", "skipped"].contains(&(value).as_str()) { return Err(format!("unsupported lambda_function_revisions.container_build_status: {}", value)); }
+    }
+    if let Some(value) = &value.container_build_error {
+        if (value).as_bytes().len() > 8192 { return Err("lambda_function_revisions.container_build_error exceeds 8192 bytes".to_string()); }
+    }
+    if let Some(value) = &value.env {
+        if !(value).is_object() { return Err("lambda_function_revisions.env must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.labels {
+        if !(value).is_array() { return Err("lambda_function_revisions.labels must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("lambda_function_revisions.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const LAMBDA_FUNCTION_ALIASES_TABLE: &str = "lambda_function_aliases";
+pub const LAMBDA_FUNCTION_ALIASES_COLUMNS: &[&str] = &["id", "function_id", "name", "description", "traffic", "routing_version", "created_at", "updated_at", "created_by", "updated_by"];
+pub const LAMBDA_FUNCTION_ALIASES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      function_id::text as function_id,
+      name,
+      description,
+      traffic,
+      routing_version,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from lambda_function_aliases"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct LambdaFunctionAliasRow {
+    pub id: String,
+    pub function_id: String,
+    pub name: String,
+    pub description: String,
+    pub traffic: Value,
+    pub routing_version: i64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LambdaFunctionAliasInsert {
+    pub id: Option<String>,
+    pub function_id: Option<String>,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub traffic: Option<Value>,
+    pub routing_version: Option<i64>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_lambda_function_aliases_row(value: &LambdaFunctionAliasRow) -> Result<(), String> {
+    validate_string_length("lambda_function_aliases.name", &value.name, Some(1), Some(64))?;
+    validate_string_length("lambda_function_aliases.description", &value.description, None, Some(4096))?;
+    if (&value.description).as_bytes().len() > 4096 { return Err("lambda_function_aliases.description exceeds 4096 bytes".to_string()); }
+    if !(&value.traffic).is_object() { return Err("lambda_function_aliases.traffic must be a JSON object".to_string()); }
+    if *(&value.routing_version) < 1 { return Err("lambda_function_aliases.routing_version is below the minimum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_lambda_function_aliases_insert(value: &LambdaFunctionAliasInsert) -> Result<(), String> {
+    if let Some(value) = &value.name {
+        validate_string_length("lambda_function_aliases.name", value, Some(1), Some(64))?;
+    }
+    if let Some(value) = &value.description {
+        validate_string_length("lambda_function_aliases.description", value, None, Some(4096))?;
+        if (value).as_bytes().len() > 4096 { return Err("lambda_function_aliases.description exceeds 4096 bytes".to_string()); }
+    }
+    if let Some(value) = &value.traffic {
+        if !(value).is_object() { return Err("lambda_function_aliases.traffic must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.routing_version {
+        if *(value) < 1 { return Err("lambda_function_aliases.routing_version is below the minimum".to_string()); }
+    }
+    Ok(())
+}
+
 pub const LAMBDA_ACTOR_INSTANCES_TABLE: &str = "lambda_actor_instances";
 pub const LAMBDA_ACTOR_INSTANCES_COLUMNS: &[&str] = &["id", "function_id", "actor_key", "state", "state_version", "alarm_at", "alarm_attempt", "lease_owner", "lease_until", "last_invoked_at", "last_error", "created_at", "updated_at"];
 pub const LAMBDA_ACTOR_INSTANCES_SELECT_SQL: &str = r###"select

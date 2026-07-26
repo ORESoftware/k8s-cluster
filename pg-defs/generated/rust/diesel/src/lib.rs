@@ -1766,6 +1766,129 @@ pub struct LambdaFunctionDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
+    lambda_function_revisions (id) {
+        id -> Uuid,
+        function_id -> Uuid,
+        revision_number -> Int8,
+        definition_digest -> Varchar,
+        description -> Text,
+        runtime -> Varchar,
+        entry_command -> Text,
+        function_body -> Text,
+        reuse_key -> Nullable<Varchar>,
+        idle_timeout_seconds -> Int4,
+        max_run_ms -> Int4,
+        containerized -> Bool,
+        container_image -> Nullable<Text>,
+        container_build_status -> Varchar,
+        container_build_error -> Nullable<Text>,
+        container_built_at -> Nullable<Timestamptz>,
+        env -> Jsonb,
+        labels -> Jsonb,
+        meta_data -> Jsonb,
+        created_at -> Timestamptz,
+        created_by -> Nullable<Uuid>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = lambda_function_revisions)]
+pub struct LambdaFunctionRevisionDieselRow {
+    pub id: Uuid,
+    pub function_id: Uuid,
+    pub revision_number: i64,
+    pub definition_digest: String,
+    pub description: String,
+    pub runtime: String,
+    pub entry_command: String,
+    pub function_body: String,
+    pub reuse_key: Option<String>,
+    pub idle_timeout_seconds: i32,
+    pub max_run_ms: i32,
+    pub containerized: bool,
+    pub container_image: Option<String>,
+    pub container_build_status: String,
+    pub container_build_error: Option<String>,
+    pub container_built_at: Option<DateTime<Utc>>,
+    pub env: Value,
+    pub labels: Value,
+    pub meta_data: Value,
+    pub created_at: DateTime<Utc>,
+    pub created_by: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = lambda_function_revisions)]
+pub struct LambdaFunctionRevisionDieselInsert {
+    pub function_id: Option<Uuid>,
+    pub revision_number: Option<i64>,
+    pub definition_digest: Option<String>,
+    pub description: Option<String>,
+    pub runtime: Option<String>,
+    pub entry_command: Option<String>,
+    pub function_body: Option<String>,
+    pub reuse_key: Option<String>,
+    pub idle_timeout_seconds: Option<i32>,
+    pub max_run_ms: Option<i32>,
+    pub containerized: Option<bool>,
+    pub container_image: Option<String>,
+    pub container_build_status: Option<String>,
+    pub container_build_error: Option<String>,
+    pub container_built_at: Option<DateTime<Utc>>,
+    pub env: Option<Value>,
+    pub labels: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub created_by: Option<Uuid>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    lambda_function_aliases (id) {
+        id -> Uuid,
+        function_id -> Uuid,
+        name -> Varchar,
+        description -> Text,
+        traffic -> Jsonb,
+        routing_version -> Int8,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        created_by -> Nullable<Uuid>,
+        updated_by -> Nullable<Uuid>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = lambda_function_aliases)]
+pub struct LambdaFunctionAliasDieselRow {
+    pub id: Uuid,
+    pub function_id: Uuid,
+    pub name: String,
+    pub description: String,
+    pub traffic: Value,
+    pub routing_version: i64,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = lambda_function_aliases)]
+pub struct LambdaFunctionAliasDieselInsert {
+    pub function_id: Option<Uuid>,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub traffic: Option<Value>,
+    pub routing_version: Option<i64>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub created_by: Option<Uuid>,
+    pub updated_by: Option<Uuid>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
     lambda_actor_instances (id) {
         id -> Uuid,
         function_id -> Uuid,

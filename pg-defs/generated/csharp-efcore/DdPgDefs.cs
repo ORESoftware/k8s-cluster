@@ -1849,6 +1849,138 @@ public class LambdaFunction
     public Guid? UpdatedBy { get; set; }
 }
 
+/// <summary>Immutable published snapshots of lambda function code and runtime configuration.</summary>
+[Table("lambda_function_revisions")]
+public class LambdaFunctionRevision
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("function_id")]
+    public Guid FunctionId { get; set; }
+
+    [Column("revision_number")]
+    [Range(typeof(long), "1", "9223372036854775807")]
+    public long RevisionNumber { get; set; }
+
+    [Required]
+    [Column("definition_digest")]
+    [MaxLength(64)]
+    [RegularExpression(@"^[a-f0-9]{64}$")]
+    public string DefinitionDigest { get; set; } = null!;
+
+    [Required]
+    [Column("description")]
+    public string Description { get; set; } = null!;
+
+    [Required]
+    [Column("runtime")]
+    [MaxLength(40)]
+    [RegularExpression(@"^(nodejs|javascript|typescript|python3|python|ruby|bash|shell|golang|go|dart|erlang|erl|elixir|ex|java|jvm|gleam|gleamlang|rust|rs|browser)$")]
+    public string Runtime { get; set; } = null!;
+
+    [Required]
+    [Column("entry_command")]
+    public string EntryCommand { get; set; } = null!;
+
+    [Required]
+    [Column("function_body")]
+    public string FunctionBody { get; set; } = null!;
+
+    [Column("reuse_key")]
+    [MaxLength(200)]
+    public string? ReuseKey { get; set; }
+
+    [Column("idle_timeout_seconds")]
+    [Range(1, 3600)]
+    public int IdleTimeoutSeconds { get; set; }
+
+    [Column("max_run_ms")]
+    [Range(1000, 300000)]
+    public int MaxRunMs { get; set; }
+
+    [Column("containerized")]
+    public bool Containerized { get; set; }
+
+    [Column("container_image")]
+    public string? ContainerImage { get; set; }
+
+    [Required]
+    [Column("container_build_status")]
+    [MaxLength(32)]
+    [RegularExpression(@"^(not_requested|pending|building|built|failed|skipped)$")]
+    public string ContainerBuildStatus { get; set; } = null!;
+
+    [Column("container_build_error")]
+    public string? ContainerBuildError { get; set; }
+
+    [Column("container_built_at")]
+    public DateTimeOffset? ContainerBuiltAt { get; set; }
+
+    [Required]
+    [Column("env", TypeName = "jsonb")]
+    public string Env { get; set; } = null!;
+
+    [Required]
+    [Column("labels", TypeName = "jsonb")]
+    public string Labels { get; set; } = null!;
+
+    [Required]
+    [Column("meta_data", TypeName = "jsonb")]
+    public string MetaData { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("created_by")]
+    public Guid? CreatedBy { get; set; }
+}
+
+/// <summary>Named weighted routing policies over immutable lambda function revisions.</summary>
+[Table("lambda_function_aliases")]
+public class LambdaFunctionAlias
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("function_id")]
+    public Guid FunctionId { get; set; }
+
+    [Required]
+    [Column("name")]
+    [MaxLength(64)]
+    [RegularExpression(@"^[a-z][a-z0-9._-]{0,63}$")]
+    public string Name { get; set; } = null!;
+
+    [Required]
+    [Column("description")]
+    public string Description { get; set; } = null!;
+
+    [Required]
+    [Column("traffic", TypeName = "jsonb")]
+    public string Traffic { get; set; } = null!;
+
+    [Column("routing_version")]
+    [Range(typeof(long), "1", "9223372036854775807")]
+    public long RoutingVersion { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [Column("created_by")]
+    public Guid? CreatedBy { get; set; }
+
+    [Column("updated_by")]
+    public Guid? UpdatedBy { get; set; }
+}
+
 /// <summary>Durable state, alarms, and cross-replica execution leases for keyed serverless actors.</summary>
 [Table("lambda_actor_instances")]
 public class LambdaActorInstance
@@ -9271,6 +9403,10 @@ public class DdPgDefsContext : DbContext
     public DbSet<MipSolverEvents> MipSolverEventsSet => Set<MipSolverEvents>();
 
     public DbSet<LambdaFunction> LambdaFunctionSet => Set<LambdaFunction>();
+
+    public DbSet<LambdaFunctionRevision> LambdaFunctionRevisionSet => Set<LambdaFunctionRevision>();
+
+    public DbSet<LambdaFunctionAlias> LambdaFunctionAliasSet => Set<LambdaFunctionAlias>();
 
     public DbSet<LambdaActorInstance> LambdaActorInstanceSet => Set<LambdaActorInstance>();
 

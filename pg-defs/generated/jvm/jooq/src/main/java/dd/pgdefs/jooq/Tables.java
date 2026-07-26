@@ -539,6 +539,43 @@ public final class Tables {
     public static final Field<UUID> LAMBDA_FUNCTIONS_CREATED_BY = DSL.field(DSL.name("lambda_functions", "created_by"), SQLDataType.UUID);
     public static final Field<UUID> LAMBDA_FUNCTIONS_UPDATED_BY = DSL.field(DSL.name("lambda_functions", "updated_by"), SQLDataType.UUID);
 
+    public static final Name LAMBDA_FUNCTION_REVISIONS_NAME = DSL.name("lambda_function_revisions");
+    public static final Table<org.jooq.Record> LAMBDA_FUNCTION_REVISIONS = DSL.table(LAMBDA_FUNCTION_REVISIONS_NAME);
+    public static final Field<UUID> LAMBDA_FUNCTION_REVISIONS_ID = DSL.field(DSL.name("lambda_function_revisions", "id"), SQLDataType.UUID);
+    public static final Field<UUID> LAMBDA_FUNCTION_REVISIONS_FUNCTION_ID = DSL.field(DSL.name("lambda_function_revisions", "function_id"), SQLDataType.UUID);
+    public static final Field<Long> LAMBDA_FUNCTION_REVISIONS_REVISION_NUMBER = DSL.field(DSL.name("lambda_function_revisions", "revision_number"), SQLDataType.BIGINT);
+    public static final Field<String> LAMBDA_FUNCTION_REVISIONS_DEFINITION_DIGEST = DSL.field(DSL.name("lambda_function_revisions", "definition_digest"), SQLDataType.VARCHAR(64));
+    public static final Field<String> LAMBDA_FUNCTION_REVISIONS_DESCRIPTION = DSL.field(DSL.name("lambda_function_revisions", "description"), SQLDataType.CLOB);
+    public static final Field<String> LAMBDA_FUNCTION_REVISIONS_RUNTIME = DSL.field(DSL.name("lambda_function_revisions", "runtime"), SQLDataType.VARCHAR(40));
+    public static final Field<String> LAMBDA_FUNCTION_REVISIONS_ENTRY_COMMAND = DSL.field(DSL.name("lambda_function_revisions", "entry_command"), SQLDataType.CLOB);
+    public static final Field<String> LAMBDA_FUNCTION_REVISIONS_FUNCTION_BODY = DSL.field(DSL.name("lambda_function_revisions", "function_body"), SQLDataType.CLOB);
+    public static final Field<String> LAMBDA_FUNCTION_REVISIONS_REUSE_KEY = DSL.field(DSL.name("lambda_function_revisions", "reuse_key"), SQLDataType.VARCHAR(200));
+    public static final Field<Integer> LAMBDA_FUNCTION_REVISIONS_IDLE_TIMEOUT_SECONDS = DSL.field(DSL.name("lambda_function_revisions", "idle_timeout_seconds"), SQLDataType.INTEGER);
+    public static final Field<Integer> LAMBDA_FUNCTION_REVISIONS_MAX_RUN_MS = DSL.field(DSL.name("lambda_function_revisions", "max_run_ms"), SQLDataType.INTEGER);
+    public static final Field<Boolean> LAMBDA_FUNCTION_REVISIONS_CONTAINERIZED = DSL.field(DSL.name("lambda_function_revisions", "containerized"), SQLDataType.BOOLEAN);
+    public static final Field<String> LAMBDA_FUNCTION_REVISIONS_CONTAINER_IMAGE = DSL.field(DSL.name("lambda_function_revisions", "container_image"), SQLDataType.CLOB);
+    public static final Field<String> LAMBDA_FUNCTION_REVISIONS_CONTAINER_BUILD_STATUS = DSL.field(DSL.name("lambda_function_revisions", "container_build_status"), SQLDataType.VARCHAR(32));
+    public static final Field<String> LAMBDA_FUNCTION_REVISIONS_CONTAINER_BUILD_ERROR = DSL.field(DSL.name("lambda_function_revisions", "container_build_error"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> LAMBDA_FUNCTION_REVISIONS_CONTAINER_BUILT_AT = DSL.field(DSL.name("lambda_function_revisions", "container_built_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<JSONB> LAMBDA_FUNCTION_REVISIONS_ENV = DSL.field(DSL.name("lambda_function_revisions", "env"), SQLDataType.JSONB);
+    public static final Field<JSONB> LAMBDA_FUNCTION_REVISIONS_LABELS = DSL.field(DSL.name("lambda_function_revisions", "labels"), SQLDataType.JSONB);
+    public static final Field<JSONB> LAMBDA_FUNCTION_REVISIONS_META_DATA = DSL.field(DSL.name("lambda_function_revisions", "meta_data"), SQLDataType.JSONB);
+    public static final Field<OffsetDateTime> LAMBDA_FUNCTION_REVISIONS_CREATED_AT = DSL.field(DSL.name("lambda_function_revisions", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<UUID> LAMBDA_FUNCTION_REVISIONS_CREATED_BY = DSL.field(DSL.name("lambda_function_revisions", "created_by"), SQLDataType.UUID);
+
+    public static final Name LAMBDA_FUNCTION_ALIASES_NAME = DSL.name("lambda_function_aliases");
+    public static final Table<org.jooq.Record> LAMBDA_FUNCTION_ALIASES = DSL.table(LAMBDA_FUNCTION_ALIASES_NAME);
+    public static final Field<UUID> LAMBDA_FUNCTION_ALIASES_ID = DSL.field(DSL.name("lambda_function_aliases", "id"), SQLDataType.UUID);
+    public static final Field<UUID> LAMBDA_FUNCTION_ALIASES_FUNCTION_ID = DSL.field(DSL.name("lambda_function_aliases", "function_id"), SQLDataType.UUID);
+    public static final Field<String> LAMBDA_FUNCTION_ALIASES_NAME = DSL.field(DSL.name("lambda_function_aliases", "name"), SQLDataType.VARCHAR(64));
+    public static final Field<String> LAMBDA_FUNCTION_ALIASES_DESCRIPTION = DSL.field(DSL.name("lambda_function_aliases", "description"), SQLDataType.CLOB);
+    public static final Field<JSONB> LAMBDA_FUNCTION_ALIASES_TRAFFIC = DSL.field(DSL.name("lambda_function_aliases", "traffic"), SQLDataType.JSONB);
+    public static final Field<Long> LAMBDA_FUNCTION_ALIASES_ROUTING_VERSION = DSL.field(DSL.name("lambda_function_aliases", "routing_version"), SQLDataType.BIGINT);
+    public static final Field<OffsetDateTime> LAMBDA_FUNCTION_ALIASES_CREATED_AT = DSL.field(DSL.name("lambda_function_aliases", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> LAMBDA_FUNCTION_ALIASES_UPDATED_AT = DSL.field(DSL.name("lambda_function_aliases", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<UUID> LAMBDA_FUNCTION_ALIASES_CREATED_BY = DSL.field(DSL.name("lambda_function_aliases", "created_by"), SQLDataType.UUID);
+    public static final Field<UUID> LAMBDA_FUNCTION_ALIASES_UPDATED_BY = DSL.field(DSL.name("lambda_function_aliases", "updated_by"), SQLDataType.UUID);
+
     public static final Name LAMBDA_ACTOR_INSTANCES_NAME = DSL.name("lambda_actor_instances");
     public static final Table<org.jooq.Record> LAMBDA_ACTOR_INSTANCES = DSL.table(LAMBDA_ACTOR_INSTANCES_NAME);
     public static final Field<UUID> LAMBDA_ACTOR_INSTANCES_ID = DSL.field(DSL.name("lambda_actor_instances", "id"), SQLDataType.UUID);

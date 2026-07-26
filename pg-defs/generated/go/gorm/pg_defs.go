@@ -51,6 +51,8 @@ var agentRemoteDevEventEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1
 var agentRemoteDevBreadcrumbKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var mipSolverEventsEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var lambdaFunctionSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
+var lambdaFunctionRevisionDefinitionDigestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var lambdaFunctionAliasNamePattern = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,63}$`)
 var lambdaActorInstanceActorKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$`)
 var workflowDefinitionsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
 var containerPoolImageRevisionsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
@@ -1780,6 +1782,124 @@ func (value LambdaFunctionGorm) Validate() error {
 	if !validateJSONString(value.Env) { return errors.New("lambda_functions.env must be valid JSON") }
 	if !validateJSONString(value.Labels) { return errors.New("lambda_functions.labels must be valid JSON") }
 	if !validateJSONString(value.MetaData) { return errors.New("lambda_functions.meta_data must be valid JSON") }
+	return nil
+}
+
+const LambdaFunctionRevisionTable = "lambda_function_revisions"
+const LambdaFunctionRevisionSelectSQL = `select
+      id::text as id,
+      function_id::text as function_id,
+      revision_number,
+      definition_digest,
+      description,
+      runtime,
+      entry_command,
+      function_body,
+      reuse_key,
+      idle_timeout_seconds,
+      max_run_ms,
+      containerized,
+      container_image,
+      container_build_status,
+      container_build_error,
+      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as container_built_at,
+      env,
+      labels,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      created_by::text as created_by
+    from lambda_function_revisions`
+
+var LambdaFunctionRevisionRuntimeValues = []string{"nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"}
+var LambdaFunctionRevisionContainerBuildStatusValues = []string{"not_requested", "pending", "building", "built", "failed", "skipped"}
+
+type LambdaFunctionRevisionGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	FunctionId uuid.UUID `gorm:"column:function_id;type:uuid;not null" json:"functionId"`
+	RevisionNumber int64 `gorm:"column:revision_number;type:bigint;not null" json:"revisionNumber"`
+	DefinitionDigest string `gorm:"column:definition_digest;type:varchar(64);not null" json:"definitionDigest"`
+	Description string `gorm:"column:description;type:text;default:'';not null" json:"description"`
+	Runtime string `gorm:"column:runtime;type:varchar(40);not null" json:"runtime"`
+	EntryCommand string `gorm:"column:entry_command;type:text;default:'';not null" json:"entryCommand"`
+	FunctionBody string `gorm:"column:function_body;type:text;not null" json:"functionBody"`
+	ReuseKey *string `gorm:"column:reuse_key;type:varchar(200)" json:"reuseKey,omitempty"`
+	IdleTimeoutSeconds int32 `gorm:"column:idle_timeout_seconds;type:integer;not null" json:"idleTimeoutSeconds"`
+	MaxRunMs int32 `gorm:"column:max_run_ms;type:integer;not null" json:"maxRunMs"`
+	Containerized bool `gorm:"column:containerized;type:boolean;not null" json:"containerized"`
+	ContainerImage *string `gorm:"column:container_image;type:text" json:"containerImage,omitempty"`
+	ContainerBuildStatus string `gorm:"column:container_build_status;type:varchar(32);not null" json:"containerBuildStatus"`
+	ContainerBuildError *string `gorm:"column:container_build_error;type:text" json:"containerBuildError,omitempty"`
+	ContainerBuiltAt *time.Time `gorm:"column:container_built_at;type:timestamptz" json:"containerBuiltAt,omitempty"`
+	Env datatypes.JSON `gorm:"column:env;type:jsonb;not null" json:"env"`
+	Labels datatypes.JSON `gorm:"column:labels;type:jsonb;not null" json:"labels"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+}
+
+func (LambdaFunctionRevisionGorm) TableName() string { return LambdaFunctionRevisionTable }
+
+func (value LambdaFunctionRevisionGorm) Validate() error {
+	if value.RevisionNumber < 1 { return errors.New("lambda_function_revisions.revision_number is below the minimum") }
+	if !lambdaFunctionRevisionDefinitionDigestPattern.MatchString(value.DefinitionDigest) { return errors.New("lambda_function_revisions.definition_digest does not match the required pattern") }
+	if len([]byte(value.Description)) > 4096 { return errors.New("lambda_function_revisions.description exceeds 4096 bytes") }
+	if !containsString(LambdaFunctionRevisionRuntimeValues, value.Runtime) { return errors.New("unsupported lambda_function_revisions.runtime") }
+	if len([]byte(value.EntryCommand)) > 512 { return errors.New("lambda_function_revisions.entry_command exceeds 512 bytes") }
+	if len([]byte(value.FunctionBody)) > 262144 { return errors.New("lambda_function_revisions.function_body exceeds 262144 bytes") }
+	if value.ReuseKey != nil {
+		if len([]byte(*value.ReuseKey)) > 200 { return errors.New("lambda_function_revisions.reuse_key exceeds 200 bytes") }
+	}
+	if value.IdleTimeoutSeconds < 1 { return errors.New("lambda_function_revisions.idle_timeout_seconds is below the minimum") }
+	if value.IdleTimeoutSeconds > 3600 { return errors.New("lambda_function_revisions.idle_timeout_seconds is above the maximum") }
+	if value.MaxRunMs < 1000 { return errors.New("lambda_function_revisions.max_run_ms is below the minimum") }
+	if value.MaxRunMs > 300000 { return errors.New("lambda_function_revisions.max_run_ms is above the maximum") }
+	if value.ContainerImage != nil {
+		if len([]byte(*value.ContainerImage)) > 512 { return errors.New("lambda_function_revisions.container_image exceeds 512 bytes") }
+	}
+	if !containsString(LambdaFunctionRevisionContainerBuildStatusValues, value.ContainerBuildStatus) { return errors.New("unsupported lambda_function_revisions.container_build_status") }
+	if value.ContainerBuildError != nil {
+		if len([]byte(*value.ContainerBuildError)) > 8192 { return errors.New("lambda_function_revisions.container_build_error exceeds 8192 bytes") }
+	}
+	if !validateJSONString(value.Env) { return errors.New("lambda_function_revisions.env must be valid JSON") }
+	if !validateJSONString(value.Labels) { return errors.New("lambda_function_revisions.labels must be valid JSON") }
+	if !validateJSONString(value.MetaData) { return errors.New("lambda_function_revisions.meta_data must be valid JSON") }
+	return nil
+}
+
+const LambdaFunctionAliasTable = "lambda_function_aliases"
+const LambdaFunctionAliasSelectSQL = `select
+      id::text as id,
+      function_id::text as function_id,
+      name,
+      description,
+      traffic,
+      routing_version,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from lambda_function_aliases`
+
+type LambdaFunctionAliasGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	FunctionId uuid.UUID `gorm:"column:function_id;type:uuid;not null" json:"functionId"`
+	Name string `gorm:"column:name;type:varchar(64);not null" json:"name"`
+	Description string `gorm:"column:description;type:text;default:'';not null" json:"description"`
+	Traffic datatypes.JSON `gorm:"column:traffic;type:jsonb;not null" json:"traffic"`
+	RoutingVersion int64 `gorm:"column:routing_version;type:bigint;default:1;not null" json:"routingVersion"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (LambdaFunctionAliasGorm) TableName() string { return LambdaFunctionAliasTable }
+
+func (value LambdaFunctionAliasGorm) Validate() error {
+	if !lambdaFunctionAliasNamePattern.MatchString(value.Name) { return errors.New("lambda_function_aliases.name does not match the required pattern") }
+	if len([]byte(value.Description)) > 4096 { return errors.New("lambda_function_aliases.description exceeds 4096 bytes") }
+	if !validateJSONString(value.Traffic) { return errors.New("lambda_function_aliases.traffic must be valid JSON") }
+	if value.RoutingVersion < 1 { return errors.New("lambda_function_aliases.routing_version is below the minimum") }
 	return nil
 }
 

@@ -1370,6 +1370,346 @@ create index if not exists lambda_functions_labels_gin_idx
   on lambda_functions using gin (labels);
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- Immutable function revisions and weighted aliases:
+--
+-- `lambda_functions` remains the editable `$LATEST` definition. Publishing
+-- takes one transactionally consistent snapshot in `lambda_function_revisions`
+-- and assigns the next monotonically increasing revision number. Published
+-- rows reject UPDATEs; callers may only publish a new revision or delete an
+-- unreferenced old one.
+--
+-- An alias contains a JSON object mapping revision UUIDs to integer basis-point
+-- weights. The validation trigger requires 1..10 revisions from the same
+-- function and an exact total of 10,000. That supports atomic promotion,
+-- multi-revision canaries, affinity routing, and instant rollback without
+-- restarting the BEAM runner or its supervision tree.
+create table if not exists lambda_function_revisions (
+  id uuid primary key default gen_random_uuid(),
+  function_id uuid not null,
+  revision_number bigint not null,
+  definition_digest varchar(64) not null,
+  description text default '' not null,
+  runtime varchar(40) not null,
+  entry_command text default '' not null,
+  function_body text not null,
+  reuse_key varchar(200),
+  idle_timeout_seconds integer not null,
+  max_run_ms integer not null,
+  containerized boolean not null,
+  container_image text,
+  container_build_status varchar(32) not null,
+  container_build_error text,
+  container_built_at timestamptz,
+  env jsonb not null,
+  labels jsonb not null,
+  meta_data jsonb not null,
+  created_at timestamptz default now() not null,
+  created_by uuid,
+  constraint lambda_function_revisions_number_chk
+    check (revision_number > 0),
+  constraint lambda_function_revisions_digest_chk
+    check (definition_digest ~ '^[a-f0-9]{64}$'),
+  constraint lambda_function_revisions_description_size_chk
+    check (octet_length(description) <= 4096),
+  constraint lambda_function_revisions_body_size_chk
+    check (octet_length(function_body) <= 262144),
+  constraint lambda_function_revisions_entry_command_chk
+    check (octet_length(entry_command) <= 512),
+  constraint lambda_function_revisions_reuse_key_chk
+    check (reuse_key is null or octet_length(reuse_key) <= 200),
+  constraint lambda_function_revisions_idle_timeout_chk
+    check (idle_timeout_seconds between 1 and 3600),
+  constraint lambda_function_revisions_max_run_chk
+    check (max_run_ms between 1000 and 300000),
+  constraint lambda_function_revisions_container_image_size_chk
+    check (container_image is null or octet_length(container_image) <= 512),
+  constraint lambda_function_revisions_container_build_error_size_chk
+    check (container_build_error is null or octet_length(container_build_error) <= 8192),
+  constraint lambda_function_revisions_env_object_chk
+    check (jsonb_typeof(env) = 'object'),
+  constraint lambda_function_revisions_labels_array_chk
+    check (jsonb_typeof(labels) = 'array'),
+  constraint lambda_function_revisions_meta_object_chk
+    check (jsonb_typeof(meta_data) = 'object'),
+  constraint lambda_function_revisions_runtime_chk
+    check (runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm', 'gleam', 'gleamlang', 'rust', 'rs', 'browser')),
+  constraint lambda_function_revisions_container_build_status_chk
+    check (container_build_status in ('not_requested', 'pending', 'building', 'built', 'failed', 'skipped'))
+);
+
+create unique index if not exists lambda_function_revisions_function_number_uq
+  on lambda_function_revisions (function_id, revision_number);
+
+create unique index if not exists lambda_function_revisions_function_id_uq
+  on lambda_function_revisions (function_id, id);
+
+create index if not exists lambda_function_revisions_created_at_idx
+  on lambda_function_revisions (function_id, created_at desc);
+
+alter table if exists lambda_function_revisions
+  add constraint lambda_function_revisions_function_fk
+  foreign key (function_id) references lambda_functions(id)
+  on delete cascade;
+
+create table if not exists lambda_function_aliases (
+  id uuid primary key default gen_random_uuid(),
+  function_id uuid not null,
+  name varchar(64) not null,
+  description text default '' not null,
+  traffic jsonb not null,
+  routing_version bigint default 1 not null,
+  created_at timestamptz default now() not null,
+  updated_at timestamptz default now() not null,
+  created_by uuid,
+  updated_by uuid,
+  constraint lambda_function_aliases_name_chk
+    check (name ~ '^[a-z][a-z0-9._-]{0,63}$'),
+  constraint lambda_function_aliases_description_size_chk
+    check (octet_length(description) <= 4096),
+  constraint lambda_function_aliases_traffic_object_chk
+    check (jsonb_typeof(traffic) = 'object'),
+  constraint lambda_function_aliases_traffic_size_chk
+    check (octet_length(traffic::text) <= 8192),
+  constraint lambda_function_aliases_routing_version_chk
+    check (routing_version > 0)
+);
+
+create unique index if not exists lambda_function_aliases_function_name_uq
+  on lambda_function_aliases (function_id, name);
+
+create index if not exists lambda_function_aliases_updated_at_idx
+  on lambda_function_aliases (function_id, updated_at desc);
+
+alter table if exists lambda_function_aliases
+  add constraint lambda_function_aliases_function_fk
+  foreign key (function_id) references lambda_functions(id)
+  on delete cascade;
+
+create or replace function lambda_reject_revision_update()
+returns trigger
+language plpgsql
+as $$
+begin
+  raise exception 'published lambda function revisions are immutable'
+    using errcode = '55000';
+end;
+$$;
+
+create trigger lambda_function_revisions_immutable
+before update on lambda_function_revisions
+for each row execute function lambda_reject_revision_update();
+
+create or replace function lambda_validate_alias_traffic()
+returns trigger
+language plpgsql
+as $$
+declare
+  v_target_count integer;
+  v_weight_sum bigint;
+  v_revision_count integer;
+begin
+  if jsonb_typeof(new.traffic) is distinct from 'object' then
+    raise exception 'lambda alias traffic must be a JSON object'
+      using errcode = '23514';
+  end if;
+
+  select count(*) into v_target_count
+  from jsonb_each(new.traffic);
+
+  if v_target_count < 1 or v_target_count > 10 then
+    raise exception 'lambda alias traffic must contain 1..10 revisions'
+      using errcode = '23514';
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_each(new.traffic) as target(revision_id, weight)
+    where target.revision_id !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+       or jsonb_typeof(target.weight) <> 'number'
+       or target.weight::text !~ '^[0-9]+$'
+       or (target.weight::text)::integer not between 1 and 10000
+  ) then
+    raise exception 'lambda alias traffic keys must be revision UUIDs with integer weights of 1..10000'
+      using errcode = '23514';
+  end if;
+
+  select sum((target.weight::text)::integer) into v_weight_sum
+  from jsonb_each(new.traffic) as target(revision_id, weight);
+
+  if v_weight_sum <> 10000 then
+    raise exception 'lambda alias traffic weights must total exactly 10000 basis points'
+      using errcode = '23514';
+  end if;
+
+  select count(*) into v_revision_count
+  from jsonb_each(new.traffic) as target(revision_id, weight)
+  join lambda_function_revisions revision
+    on revision.id = target.revision_id::uuid
+   and revision.function_id = new.function_id;
+
+  if v_revision_count <> v_target_count then
+    raise exception 'lambda alias traffic may only reference revisions of the same function'
+      using errcode = '23503';
+  end if;
+
+  if tg_op = 'UPDATE' then
+    new.routing_version := old.routing_version + 1;
+    new.updated_at := now();
+  else
+    new.routing_version := 1;
+  end if;
+
+  return new;
+end;
+$$;
+
+create trigger lambda_function_aliases_validate
+before insert or update on lambda_function_aliases
+for each row execute function lambda_validate_alias_traffic();
+
+create or replace function publish_lambda_function_revision(
+  p_function_id uuid,
+  p_description text default '',
+  p_created_by uuid default null
+)
+returns table (
+  revision_id uuid,
+  revision_number bigint,
+  definition_digest varchar(64)
+)
+language plpgsql
+as $$
+declare
+  v_function lambda_functions%rowtype;
+  v_revision_id uuid;
+  v_revision_number bigint;
+  v_definition_digest varchar(64);
+begin
+  select * into v_function
+  from lambda_functions
+  where id = p_function_id
+    and is_soft_deleted = false
+    and status <> 'archived'
+  for share;
+
+  if not found then
+    raise exception 'lambda function not found or archived'
+      using errcode = 'P0002';
+  end if;
+
+  perform pg_advisory_xact_lock(
+    hashtextextended('lambda-function-revision:' || p_function_id::text, 0)
+  );
+
+  select coalesce(max(existing.revision_number), 0) + 1
+  into v_revision_number
+  from lambda_function_revisions existing
+  where existing.function_id = p_function_id;
+
+  v_definition_digest := encode(sha256(convert_to(jsonb_build_object(
+    'runtime', v_function.runtime,
+    'entryCommand', v_function.entry_command,
+    'functionBody', v_function.function_body,
+    'reuseKey', v_function.reuse_key,
+    'idleTimeoutSeconds', v_function.idle_timeout_seconds,
+    'maxRunMs', v_function.max_run_ms,
+    'containerized', v_function.containerized,
+    'containerImage', v_function.container_image,
+    'containerBuildStatus', v_function.container_build_status,
+    'containerBuildError', v_function.container_build_error,
+    'containerBuiltAt', v_function.container_built_at,
+    'env', v_function.env,
+    'labels', v_function.labels,
+    'metaData', v_function.meta_data
+  )::text, 'UTF8')), 'hex');
+
+  insert into lambda_function_revisions (
+    function_id,
+    revision_number,
+    definition_digest,
+    description,
+    runtime,
+    entry_command,
+    function_body,
+    reuse_key,
+    idle_timeout_seconds,
+    max_run_ms,
+    containerized,
+    container_image,
+    container_build_status,
+    container_build_error,
+    container_built_at,
+    env,
+    labels,
+    meta_data,
+    created_by
+  ) values (
+    p_function_id,
+    v_revision_number,
+    v_definition_digest,
+    left(coalesce(p_description, ''), 4096),
+    v_function.runtime,
+    v_function.entry_command,
+    v_function.function_body,
+    v_function.reuse_key,
+    v_function.idle_timeout_seconds,
+    v_function.max_run_ms,
+    v_function.containerized,
+    v_function.container_image,
+    v_function.container_build_status,
+    v_function.container_build_error,
+    v_function.container_built_at,
+    v_function.env,
+    v_function.labels,
+    v_function.meta_data,
+    p_created_by
+  )
+  returning id into v_revision_id;
+
+  return query
+  select v_revision_id, v_revision_number, v_definition_digest;
+end;
+$$;
+
+create or replace function set_lambda_function_alias(
+  p_function_id uuid,
+  p_name varchar(64),
+  p_traffic jsonb,
+  p_description text default '',
+  p_updated_by uuid default null
+)
+returns table (
+  alias_id uuid,
+  routing_version bigint
+)
+language plpgsql
+as $$
+begin
+  return query
+  insert into lambda_function_aliases (
+    function_id,
+    name,
+    description,
+    traffic,
+    created_by,
+    updated_by
+  ) values (
+    p_function_id,
+    p_name,
+    left(coalesce(p_description, ''), 4096),
+    p_traffic,
+    p_updated_by,
+    p_updated_by
+  )
+  on conflict (function_id, name) do update set
+    description = excluded.description,
+    traffic = excluded.traffic,
+    updated_by = excluded.updated_by
+  returning id, lambda_function_aliases.routing_version;
+end;
+$$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Stateful serverless actors (Cloudflare Durable Objects-style):
 --
 -- Each `(function_id, actor_key)` pair is one logical actor with strongly

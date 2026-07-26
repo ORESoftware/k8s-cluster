@@ -909,6 +909,70 @@ class LambdaFunction extends Model
     }
 }
 
+/** Immutable published snapshots of lambda function code and runtime configuration. */
+class LambdaFunctionRevision extends Model
+{
+    protected $table = 'lambda_function_revisions';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['function_id', 'revision_number', 'definition_digest', 'description', 'runtime', 'entry_command', 'function_body', 'reuse_key', 'idle_timeout_seconds', 'max_run_ms', 'containerized', 'container_image', 'container_build_status', 'container_build_error', 'container_built_at', 'env', 'labels', 'meta_data', 'created_at', 'created_by'];
+    protected $casts = ['revision_number' => 'integer', 'idle_timeout_seconds' => 'integer', 'max_run_ms' => 'integer', 'containerized' => 'boolean', 'container_built_at' => 'datetime', 'env' => 'array', 'labels' => 'array', 'meta_data' => 'array', 'created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'function_id' => ['required', 'uuid'],
+            'revision_number' => ['required', 'integer', 'min:1'],
+            'definition_digest' => ['required', 'string', 'min:64', 'max:64', 'regex:/^[a-f0-9]{64}$/'],
+            'description' => ['nullable', 'string', 'max:4096'],
+            'runtime' => ['required', 'string', 'in:nodejs,javascript,typescript,python3,python,ruby,bash,shell,golang,go,dart,erlang,erl,elixir,ex,java,jvm,gleam,gleamlang,rust,rs,browser'],
+            'entry_command' => ['nullable', 'string'],
+            'function_body' => ['required', 'string', 'min:1'],
+            'reuse_key' => ['nullable', 'string', 'max:200'],
+            'idle_timeout_seconds' => ['required', 'integer', 'min:1', 'max:3600'],
+            'max_run_ms' => ['required', 'integer', 'min:1000', 'max:300000'],
+            'containerized' => ['required', 'boolean'],
+            'container_image' => ['nullable', 'string'],
+            'container_build_status' => ['required', 'string', 'in:not_requested,pending,building,built,failed,skipped'],
+            'container_build_error' => ['nullable', 'string'],
+            'container_built_at' => ['nullable', 'date'],
+            'env' => ['required', 'array'],
+            'labels' => ['required', 'array'],
+            'meta_data' => ['required', 'array'],
+            'created_by' => ['nullable', 'uuid'],
+        ];
+    }
+}
+
+/** Named weighted routing policies over immutable lambda function revisions. */
+class LambdaFunctionAlias extends Model
+{
+    protected $table = 'lambda_function_aliases';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['function_id', 'name', 'description', 'traffic', 'routing_version', 'created_at', 'updated_at', 'created_by', 'updated_by'];
+    protected $casts = ['traffic' => 'array', 'routing_version' => 'integer', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'function_id' => ['required', 'uuid'],
+            'name' => ['required', 'string', 'min:1', 'max:64', 'regex:/^[a-z][a-z0-9._-]{0,63}$/'],
+            'description' => ['nullable', 'string', 'max:4096'],
+            'traffic' => ['required', 'array'],
+            'routing_version' => ['nullable', 'integer', 'min:1'],
+            'created_by' => ['nullable', 'uuid'],
+            'updated_by' => ['nullable', 'uuid'],
+        ];
+    }
+}
+
 /** Durable state, alarms, and cross-replica execution leases for keyed serverless actors. */
 class LambdaActorInstance extends Model
 {

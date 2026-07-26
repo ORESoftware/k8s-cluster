@@ -596,6 +596,49 @@ object LambdaFunctions : Table("lambda_functions") {
     override val primaryKey = PrimaryKey(id)
 }
 
+// Immutable published snapshots of lambda function code and runtime configuration.
+object LambdaFunctionRevisions : Table("lambda_function_revisions") {
+    val id = uuid("id")
+    val functionId = uuid("function_id")
+    val revisionNumber = long("revision_number")
+    val definitionDigest = varchar("definition_digest", 64)
+    val description = text("description")
+    val runtime = varchar("runtime", 40)
+    val entryCommand = text("entry_command")
+    val functionBody = text("function_body")
+    val reuseKey = varchar("reuse_key", 200).nullable()
+    val idleTimeoutSeconds = integer("idle_timeout_seconds")
+    val maxRunMs = integer("max_run_ms")
+    val containerized = bool("containerized")
+    val containerImage = text("container_image").nullable()
+    val containerBuildStatus = varchar("container_build_status", 32)
+    val containerBuildError = text("container_build_error").nullable()
+    val containerBuiltAt = timestampWithTimeZone("container_built_at").nullable()
+    val env = jsonb<String>("env", { it }, { it })
+    val labels = jsonb<String>("labels", { it }, { it })
+    val metaData = jsonb<String>("meta_data", { it }, { it })
+    val createdAt = timestampWithTimeZone("created_at")
+    val createdBy = uuid("created_by").nullable()
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+// Named weighted routing policies over immutable lambda function revisions.
+object LambdaFunctionAliases : Table("lambda_function_aliases") {
+    val id = uuid("id")
+    val functionId = uuid("function_id")
+    val name = varchar("name", 64)
+    val description = text("description")
+    val traffic = jsonb<String>("traffic", { it }, { it })
+    val routingVersion = long("routing_version")
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+    val createdBy = uuid("created_by").nullable()
+    val updatedBy = uuid("updated_by").nullable()
+
+    override val primaryKey = PrimaryKey(id)
+}
+
 // Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
 object LambdaActorInstances : Table("lambda_actor_instances") {
     val id = uuid("id")
@@ -4029,6 +4072,80 @@ fun toLambdaFunctionsRow(row: ResultRow): LambdaFunctionsRow = LambdaFunctionsRo
     row[LambdaFunctions.updatedAt],
     row[LambdaFunctions.createdBy],
     row[LambdaFunctions.updatedBy],
+)
+
+data class LambdaFunctionRevisionsRow(
+    val id: UUID,
+    val functionId: UUID,
+    val revisionNumber: Long,
+    val definitionDigest: String,
+    val description: String,
+    val runtime: String,
+    val entryCommand: String,
+    val functionBody: String,
+    val reuseKey: String?,
+    val idleTimeoutSeconds: Int,
+    val maxRunMs: Int,
+    val containerized: Boolean,
+    val containerImage: String?,
+    val containerBuildStatus: String,
+    val containerBuildError: String?,
+    val containerBuiltAt: OffsetDateTime?,
+    val env: String,
+    val labels: String,
+    val metaData: String,
+    val createdAt: OffsetDateTime,
+    val createdBy: UUID?,
+)
+
+fun toLambdaFunctionRevisionsRow(row: ResultRow): LambdaFunctionRevisionsRow = LambdaFunctionRevisionsRow(
+    row[LambdaFunctionRevisions.id],
+    row[LambdaFunctionRevisions.functionId],
+    row[LambdaFunctionRevisions.revisionNumber],
+    row[LambdaFunctionRevisions.definitionDigest],
+    row[LambdaFunctionRevisions.description],
+    row[LambdaFunctionRevisions.runtime],
+    row[LambdaFunctionRevisions.entryCommand],
+    row[LambdaFunctionRevisions.functionBody],
+    row[LambdaFunctionRevisions.reuseKey],
+    row[LambdaFunctionRevisions.idleTimeoutSeconds],
+    row[LambdaFunctionRevisions.maxRunMs],
+    row[LambdaFunctionRevisions.containerized],
+    row[LambdaFunctionRevisions.containerImage],
+    row[LambdaFunctionRevisions.containerBuildStatus],
+    row[LambdaFunctionRevisions.containerBuildError],
+    row[LambdaFunctionRevisions.containerBuiltAt],
+    row[LambdaFunctionRevisions.env],
+    row[LambdaFunctionRevisions.labels],
+    row[LambdaFunctionRevisions.metaData],
+    row[LambdaFunctionRevisions.createdAt],
+    row[LambdaFunctionRevisions.createdBy],
+)
+
+data class LambdaFunctionAliasesRow(
+    val id: UUID,
+    val functionId: UUID,
+    val name: String,
+    val description: String,
+    val traffic: String,
+    val routingVersion: Long,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+    val createdBy: UUID?,
+    val updatedBy: UUID?,
+)
+
+fun toLambdaFunctionAliasesRow(row: ResultRow): LambdaFunctionAliasesRow = LambdaFunctionAliasesRow(
+    row[LambdaFunctionAliases.id],
+    row[LambdaFunctionAliases.functionId],
+    row[LambdaFunctionAliases.name],
+    row[LambdaFunctionAliases.description],
+    row[LambdaFunctionAliases.traffic],
+    row[LambdaFunctionAliases.routingVersion],
+    row[LambdaFunctionAliases.createdAt],
+    row[LambdaFunctionAliases.updatedAt],
+    row[LambdaFunctionAliases.createdBy],
+    row[LambdaFunctionAliases.updatedBy],
 )
 
 data class LambdaActorInstancesRow(

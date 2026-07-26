@@ -51,6 +51,8 @@ var agentRemoteDevEventEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1
 var agentRemoteDevBreadcrumbKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var mipSolverEventsEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var lambdaFunctionSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
+var lambdaFunctionRevisionDefinitionDigestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var lambdaFunctionAliasNamePattern = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,63}$`)
 var lambdaActorInstanceActorKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$`)
 var workflowDefinitionsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
 var containerPoolImageRevisionsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
@@ -1749,6 +1751,122 @@ func (value LambdaFunctionBun) Validate() error {
 	if !validateRawJSON(value.Env) { return errors.New("lambda_functions.env must be valid JSON") }
 	if !validateRawJSON(value.Labels) { return errors.New("lambda_functions.labels must be valid JSON") }
 	if !validateRawJSON(value.MetaData) { return errors.New("lambda_functions.meta_data must be valid JSON") }
+	return nil
+}
+
+const LambdaFunctionRevisionTable = "lambda_function_revisions"
+const LambdaFunctionRevisionSelectSQL = `select
+      id::text as id,
+      function_id::text as function_id,
+      revision_number,
+      definition_digest,
+      description,
+      runtime,
+      entry_command,
+      function_body,
+      reuse_key,
+      idle_timeout_seconds,
+      max_run_ms,
+      containerized,
+      container_image,
+      container_build_status,
+      container_build_error,
+      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as container_built_at,
+      env,
+      labels,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      created_by::text as created_by
+    from lambda_function_revisions`
+
+var LambdaFunctionRevisionRuntimeValues = []string{"nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"}
+var LambdaFunctionRevisionContainerBuildStatusValues = []string{"not_requested", "pending", "building", "built", "failed", "skipped"}
+
+type LambdaFunctionRevisionBun struct {
+	bun.BaseModel `bun:"table:lambda_function_revisions"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	FunctionId uuid.UUID `bun:"function_id,type:uuid" json:"functionId"`
+	RevisionNumber int64 `bun:"revision_number,type:bigint" json:"revisionNumber"`
+	DefinitionDigest string `bun:"definition_digest,type:varchar(64)" json:"definitionDigest"`
+	Description string `bun:"description,type:text,default:''" json:"description"`
+	Runtime string `bun:"runtime,type:varchar(40)" json:"runtime"`
+	EntryCommand string `bun:"entry_command,type:text,default:''" json:"entryCommand"`
+	FunctionBody string `bun:"function_body,type:text" json:"functionBody"`
+	ReuseKey *string `bun:"reuse_key,type:varchar(200),nullzero" json:"reuseKey,omitempty"`
+	IdleTimeoutSeconds int32 `bun:"idle_timeout_seconds,type:integer" json:"idleTimeoutSeconds"`
+	MaxRunMs int32 `bun:"max_run_ms,type:integer" json:"maxRunMs"`
+	Containerized bool `bun:"containerized,type:boolean" json:"containerized"`
+	ContainerImage *string `bun:"container_image,type:text,nullzero" json:"containerImage,omitempty"`
+	ContainerBuildStatus string `bun:"container_build_status,type:varchar(32)" json:"containerBuildStatus"`
+	ContainerBuildError *string `bun:"container_build_error,type:text,nullzero" json:"containerBuildError,omitempty"`
+	ContainerBuiltAt *time.Time `bun:"container_built_at,type:timestamptz,nullzero" json:"containerBuiltAt,omitempty"`
+	Env json.RawMessage `bun:"env,type:jsonb" json:"env"`
+	Labels json.RawMessage `bun:"labels,type:jsonb" json:"labels"`
+	MetaData json.RawMessage `bun:"meta_data,type:jsonb" json:"metaData"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+}
+
+func (value LambdaFunctionRevisionBun) Validate() error {
+	if value.RevisionNumber < 1 { return errors.New("lambda_function_revisions.revision_number is below the minimum") }
+	if !lambdaFunctionRevisionDefinitionDigestPattern.MatchString(value.DefinitionDigest) { return errors.New("lambda_function_revisions.definition_digest does not match the required pattern") }
+	if len([]byte(value.Description)) > 4096 { return errors.New("lambda_function_revisions.description exceeds 4096 bytes") }
+	if !containsString(LambdaFunctionRevisionRuntimeValues, value.Runtime) { return errors.New("unsupported lambda_function_revisions.runtime") }
+	if len([]byte(value.EntryCommand)) > 512 { return errors.New("lambda_function_revisions.entry_command exceeds 512 bytes") }
+	if len([]byte(value.FunctionBody)) > 262144 { return errors.New("lambda_function_revisions.function_body exceeds 262144 bytes") }
+	if value.ReuseKey != nil {
+		if len([]byte(*value.ReuseKey)) > 200 { return errors.New("lambda_function_revisions.reuse_key exceeds 200 bytes") }
+	}
+	if value.IdleTimeoutSeconds < 1 { return errors.New("lambda_function_revisions.idle_timeout_seconds is below the minimum") }
+	if value.IdleTimeoutSeconds > 3600 { return errors.New("lambda_function_revisions.idle_timeout_seconds is above the maximum") }
+	if value.MaxRunMs < 1000 { return errors.New("lambda_function_revisions.max_run_ms is below the minimum") }
+	if value.MaxRunMs > 300000 { return errors.New("lambda_function_revisions.max_run_ms is above the maximum") }
+	if value.ContainerImage != nil {
+		if len([]byte(*value.ContainerImage)) > 512 { return errors.New("lambda_function_revisions.container_image exceeds 512 bytes") }
+	}
+	if !containsString(LambdaFunctionRevisionContainerBuildStatusValues, value.ContainerBuildStatus) { return errors.New("unsupported lambda_function_revisions.container_build_status") }
+	if value.ContainerBuildError != nil {
+		if len([]byte(*value.ContainerBuildError)) > 8192 { return errors.New("lambda_function_revisions.container_build_error exceeds 8192 bytes") }
+	}
+	if !validateRawJSON(value.Env) { return errors.New("lambda_function_revisions.env must be valid JSON") }
+	if !validateRawJSON(value.Labels) { return errors.New("lambda_function_revisions.labels must be valid JSON") }
+	if !validateRawJSON(value.MetaData) { return errors.New("lambda_function_revisions.meta_data must be valid JSON") }
+	return nil
+}
+
+const LambdaFunctionAliasTable = "lambda_function_aliases"
+const LambdaFunctionAliasSelectSQL = `select
+      id::text as id,
+      function_id::text as function_id,
+      name,
+      description,
+      traffic,
+      routing_version,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from lambda_function_aliases`
+
+type LambdaFunctionAliasBun struct {
+	bun.BaseModel `bun:"table:lambda_function_aliases"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	FunctionId uuid.UUID `bun:"function_id,type:uuid" json:"functionId"`
+	Name string `bun:"name,type:varchar(64)" json:"name"`
+	Description string `bun:"description,type:text,default:''" json:"description"`
+	Traffic json.RawMessage `bun:"traffic,type:jsonb" json:"traffic"`
+	RoutingVersion int64 `bun:"routing_version,type:bigint,default:1" json:"routingVersion"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+	CreatedBy *uuid.UUID `bun:"created_by,type:uuid,nullzero" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `bun:"updated_by,type:uuid,nullzero" json:"updatedBy,omitempty"`
+}
+
+func (value LambdaFunctionAliasBun) Validate() error {
+	if !lambdaFunctionAliasNamePattern.MatchString(value.Name) { return errors.New("lambda_function_aliases.name does not match the required pattern") }
+	if len([]byte(value.Description)) > 4096 { return errors.New("lambda_function_aliases.description exceeds 4096 bytes") }
+	if !validateRawJSON(value.Traffic) { return errors.New("lambda_function_aliases.traffic must be valid JSON") }
+	if value.RoutingVersion < 1 { return errors.New("lambda_function_aliases.routing_version is below the minimum") }
 	return nil
 }
 

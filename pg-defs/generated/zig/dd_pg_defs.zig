@@ -2831,6 +2831,256 @@ pub fn validateLambdaFunctionsMaxRunMs(value: i32) ?[]const u8 {
     return null;
 }
 
+// Immutable published snapshots of lambda function code and runtime configuration.
+pub const lambda_function_revisions_table: []const u8 = "lambda_function_revisions";
+pub const lambda_function_revisions_columns = [_][]const u8{ "id", "function_id", "revision_number", "definition_digest", "description", "runtime", "entry_command", "function_body", "reuse_key", "idle_timeout_seconds", "max_run_ms", "containerized", "container_image", "container_build_status", "container_build_error", "container_built_at", "env", "labels", "meta_data", "created_at", "created_by" };
+pub const lambda_function_revisions_select_sql: []const u8 = "select\n      id::text as id,\n      function_id::text as function_id,\n      revision_number,\n      definition_digest,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      created_by::text as created_by\n    from lambda_function_revisions";
+
+pub const LambdaFunctionRevisionRuntime = enum {
+    nodejs,
+    javascript,
+    typescript,
+    python3,
+    python,
+    ruby,
+    bash,
+    shell,
+    golang,
+    go,
+    dart,
+    erlang,
+    erl,
+    elixir,
+    ex,
+    java,
+    jvm,
+    gleam,
+    gleamlang,
+    rust,
+    rs,
+    browser,
+
+    pub fn toString(self: LambdaFunctionRevisionRuntime) []const u8 {
+        return switch (self) {
+            .nodejs => "nodejs",
+            .javascript => "javascript",
+            .typescript => "typescript",
+            .python3 => "python3",
+            .python => "python",
+            .ruby => "ruby",
+            .bash => "bash",
+            .shell => "shell",
+            .golang => "golang",
+            .go => "go",
+            .dart => "dart",
+            .erlang => "erlang",
+            .erl => "erl",
+            .elixir => "elixir",
+            .ex => "ex",
+            .java => "java",
+            .jvm => "jvm",
+            .gleam => "gleam",
+            .gleamlang => "gleamlang",
+            .rust => "rust",
+            .rs => "rs",
+            .browser => "browser",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?LambdaFunctionRevisionRuntime {
+        if (std.mem.eql(u8, value, "nodejs")) return .nodejs;
+        if (std.mem.eql(u8, value, "javascript")) return .javascript;
+        if (std.mem.eql(u8, value, "typescript")) return .typescript;
+        if (std.mem.eql(u8, value, "python3")) return .python3;
+        if (std.mem.eql(u8, value, "python")) return .python;
+        if (std.mem.eql(u8, value, "ruby")) return .ruby;
+        if (std.mem.eql(u8, value, "bash")) return .bash;
+        if (std.mem.eql(u8, value, "shell")) return .shell;
+        if (std.mem.eql(u8, value, "golang")) return .golang;
+        if (std.mem.eql(u8, value, "go")) return .go;
+        if (std.mem.eql(u8, value, "dart")) return .dart;
+        if (std.mem.eql(u8, value, "erlang")) return .erlang;
+        if (std.mem.eql(u8, value, "erl")) return .erl;
+        if (std.mem.eql(u8, value, "elixir")) return .elixir;
+        if (std.mem.eql(u8, value, "ex")) return .ex;
+        if (std.mem.eql(u8, value, "java")) return .java;
+        if (std.mem.eql(u8, value, "jvm")) return .jvm;
+        if (std.mem.eql(u8, value, "gleam")) return .gleam;
+        if (std.mem.eql(u8, value, "gleamlang")) return .gleamlang;
+        if (std.mem.eql(u8, value, "rust")) return .rust;
+        if (std.mem.eql(u8, value, "rs")) return .rs;
+        if (std.mem.eql(u8, value, "browser")) return .browser;
+        return null;
+    }
+};
+
+pub const LambdaFunctionRevisionContainerBuildStatus = enum {
+    not_requested,
+    pending,
+    building,
+    built,
+    failed,
+    skipped,
+
+    pub fn toString(self: LambdaFunctionRevisionContainerBuildStatus) []const u8 {
+        return switch (self) {
+            .not_requested => "not_requested",
+            .pending => "pending",
+            .building => "building",
+            .built => "built",
+            .failed => "failed",
+            .skipped => "skipped",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?LambdaFunctionRevisionContainerBuildStatus {
+        if (std.mem.eql(u8, value, "not_requested")) return .not_requested;
+        if (std.mem.eql(u8, value, "pending")) return .pending;
+        if (std.mem.eql(u8, value, "building")) return .building;
+        if (std.mem.eql(u8, value, "built")) return .built;
+        if (std.mem.eql(u8, value, "failed")) return .failed;
+        if (std.mem.eql(u8, value, "skipped")) return .skipped;
+        return null;
+    }
+};
+
+pub const LambdaFunctionRevisionRow = struct {
+    id: []const u8,
+    function_id: []const u8,
+    revision_number: i64,
+    definition_digest: []const u8,
+    description: []const u8,
+    runtime: []const u8,
+    entry_command: []const u8,
+    function_body: []const u8,
+    reuse_key: ?[]const u8,
+    idle_timeout_seconds: i32,
+    max_run_ms: i32,
+    containerized: bool,
+    container_image: ?[]const u8,
+    container_build_status: []const u8,
+    container_build_error: ?[]const u8,
+    container_built_at: ?[]const u8,
+    env: []const u8,
+    labels: []const u8,
+    meta_data: []const u8,
+    created_at: []const u8,
+    created_by: ?[]const u8,
+
+    pub fn fromRow(reader: RowReader) LambdaFunctionRevisionRow {
+        return LambdaFunctionRevisionRow{
+            .id = reader.text(0),
+            .function_id = reader.text(1),
+            .revision_number = reader.int(2),
+            .definition_digest = reader.text(3),
+            .description = reader.text(4),
+            .runtime = reader.text(5),
+            .entry_command = reader.text(6),
+            .function_body = reader.text(7),
+            .reuse_key = if (reader.is_null(8)) null else reader.text(8),
+            .idle_timeout_seconds = @as(i32, @intCast(reader.int(9))),
+            .max_run_ms = @as(i32, @intCast(reader.int(10))),
+            .containerized = reader.boolean(11),
+            .container_image = if (reader.is_null(12)) null else reader.text(12),
+            .container_build_status = reader.text(13),
+            .container_build_error = if (reader.is_null(14)) null else reader.text(14),
+            .container_built_at = if (reader.is_null(15)) null else reader.text(15),
+            .env = reader.text(16),
+            .labels = reader.text(17),
+            .meta_data = reader.text(18),
+            .created_at = reader.text(19),
+            .created_by = if (reader.is_null(20)) null else reader.text(20),
+        };
+    }
+};
+
+pub fn validateLambdaFunctionRevisionsRevisionNumber(value: i64) ?[]const u8 {
+    if (value < 1) return "lambda_function_revisions.revision_number is below the minimum";
+    return null;
+}
+
+pub fn validateLambdaFunctionRevisionsDefinitionDigest(value: []const u8) ?[]const u8 {
+    if (value.len < 64) return "lambda_function_revisions.definition_digest must be at least 64 characters";
+    if (value.len > 64) return "lambda_function_revisions.definition_digest must be at most 64 characters";
+    return null;
+}
+
+pub fn validateLambdaFunctionRevisionsDescription(value: []const u8) ?[]const u8 {
+    if (value.len > 4096) return "lambda_function_revisions.description must be at most 4096 characters";
+    return null;
+}
+
+pub fn validateLambdaFunctionRevisionsFunctionBody(value: []const u8) ?[]const u8 {
+    if (value.len < 1) return "lambda_function_revisions.function_body must be at least 1 characters";
+    return null;
+}
+
+pub fn validateLambdaFunctionRevisionsReuseKey(value: []const u8) ?[]const u8 {
+    if (value.len > 200) return "lambda_function_revisions.reuse_key must be at most 200 characters";
+    return null;
+}
+
+pub fn validateLambdaFunctionRevisionsIdleTimeoutSeconds(value: i32) ?[]const u8 {
+    if (value < 1) return "lambda_function_revisions.idle_timeout_seconds is below the minimum";
+    if (value > 3600) return "lambda_function_revisions.idle_timeout_seconds is above the maximum";
+    return null;
+}
+
+pub fn validateLambdaFunctionRevisionsMaxRunMs(value: i32) ?[]const u8 {
+    if (value < 1000) return "lambda_function_revisions.max_run_ms is below the minimum";
+    if (value > 300000) return "lambda_function_revisions.max_run_ms is above the maximum";
+    return null;
+}
+
+// Named weighted routing policies over immutable lambda function revisions.
+pub const lambda_function_aliases_table: []const u8 = "lambda_function_aliases";
+pub const lambda_function_aliases_columns = [_][]const u8{ "id", "function_id", "name", "description", "traffic", "routing_version", "created_at", "updated_at", "created_by", "updated_by" };
+pub const lambda_function_aliases_select_sql: []const u8 = "select\n      id::text as id,\n      function_id::text as function_id,\n      name,\n      description,\n      traffic::text as traffic_json,\n      routing_version,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_function_aliases";
+
+pub const LambdaFunctionAliasRow = struct {
+    id: []const u8,
+    function_id: []const u8,
+    name: []const u8,
+    description: []const u8,
+    traffic: []const u8,
+    routing_version: i64,
+    created_at: []const u8,
+    updated_at: []const u8,
+    created_by: ?[]const u8,
+    updated_by: ?[]const u8,
+
+    pub fn fromRow(reader: RowReader) LambdaFunctionAliasRow {
+        return LambdaFunctionAliasRow{
+            .id = reader.text(0),
+            .function_id = reader.text(1),
+            .name = reader.text(2),
+            .description = reader.text(3),
+            .traffic = reader.text(4),
+            .routing_version = reader.int(5),
+            .created_at = reader.text(6),
+            .updated_at = reader.text(7),
+            .created_by = if (reader.is_null(8)) null else reader.text(8),
+            .updated_by = if (reader.is_null(9)) null else reader.text(9),
+        };
+    }
+};
+
+pub fn validateLambdaFunctionAliasesName(value: []const u8) ?[]const u8 {
+    if (value.len < 1) return "lambda_function_aliases.name must be at least 1 characters";
+    if (value.len > 64) return "lambda_function_aliases.name must be at most 64 characters";
+    return null;
+}
+
+pub fn validateLambdaFunctionAliasesDescription(value: []const u8) ?[]const u8 {
+    if (value.len > 4096) return "lambda_function_aliases.description must be at most 4096 characters";
+    return null;
+}
+
+pub fn validateLambdaFunctionAliasesRoutingVersion(value: i64) ?[]const u8 {
+    if (value < 1) return "lambda_function_aliases.routing_version is below the minimum";
+    return null;
+}
+
 // Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
 pub const lambda_actor_instances_table: []const u8 = "lambda_actor_instances";
 pub const lambda_actor_instances_columns = [_][]const u8{ "id", "function_id", "actor_key", "state", "state_version", "alarm_at", "alarm_attempt", "lease_owner", "lease_until", "last_invoked_at", "last_error", "created_at", "updated_at" };

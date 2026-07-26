@@ -2583,6 +2583,238 @@ let validateLambdaFunctionMaxRunMs (value: int) : Result<int, string> =
     elif value > 300000 then Error "lambda_functions.max_run_ms is above the maximum"
     else Ok value
 
+let lambdaFunctionRevisionsTable = "lambda_function_revisions"
+let lambdaFunctionRevisionsColumns = [ "id"; "function_id"; "revision_number"; "definition_digest"; "description"; "runtime"; "entry_command"; "function_body"; "reuse_key"; "idle_timeout_seconds"; "max_run_ms"; "containerized"; "container_image"; "container_build_status"; "container_build_error"; "container_built_at"; "env"; "labels"; "meta_data"; "created_at"; "created_by" ]
+let lambdaFunctionRevisionsSelectSql = "select\n      id::text as id,\n      function_id::text as function_id,\n      revision_number,\n      definition_digest,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      created_by::text as created_by\n    from lambda_function_revisions"
+
+[<RequireQualifiedAccess>]
+type LambdaFunctionRevisionRuntime =
+    | Nodejs
+    | Javascript
+    | Typescript
+    | Python3
+    | Python
+    | Ruby
+    | Bash
+    | Shell
+    | Golang
+    | Go
+    | Dart
+    | Erlang
+    | Erl
+    | Elixir
+    | Ex
+    | Java
+    | Jvm
+    | Gleam
+    | Gleamlang
+    | Rust
+    | Rs
+    | Browser
+
+let lambdaFunctionRevisionRuntimeToString (value: LambdaFunctionRevisionRuntime) : string =
+    match value with
+    | LambdaFunctionRevisionRuntime.Nodejs -> "nodejs"
+    | LambdaFunctionRevisionRuntime.Javascript -> "javascript"
+    | LambdaFunctionRevisionRuntime.Typescript -> "typescript"
+    | LambdaFunctionRevisionRuntime.Python3 -> "python3"
+    | LambdaFunctionRevisionRuntime.Python -> "python"
+    | LambdaFunctionRevisionRuntime.Ruby -> "ruby"
+    | LambdaFunctionRevisionRuntime.Bash -> "bash"
+    | LambdaFunctionRevisionRuntime.Shell -> "shell"
+    | LambdaFunctionRevisionRuntime.Golang -> "golang"
+    | LambdaFunctionRevisionRuntime.Go -> "go"
+    | LambdaFunctionRevisionRuntime.Dart -> "dart"
+    | LambdaFunctionRevisionRuntime.Erlang -> "erlang"
+    | LambdaFunctionRevisionRuntime.Erl -> "erl"
+    | LambdaFunctionRevisionRuntime.Elixir -> "elixir"
+    | LambdaFunctionRevisionRuntime.Ex -> "ex"
+    | LambdaFunctionRevisionRuntime.Java -> "java"
+    | LambdaFunctionRevisionRuntime.Jvm -> "jvm"
+    | LambdaFunctionRevisionRuntime.Gleam -> "gleam"
+    | LambdaFunctionRevisionRuntime.Gleamlang -> "gleamlang"
+    | LambdaFunctionRevisionRuntime.Rust -> "rust"
+    | LambdaFunctionRevisionRuntime.Rs -> "rs"
+    | LambdaFunctionRevisionRuntime.Browser -> "browser"
+
+let parseLambdaFunctionRevisionRuntime (value: string) : Result<LambdaFunctionRevisionRuntime, string> =
+    match value with
+    | "nodejs" -> Ok LambdaFunctionRevisionRuntime.Nodejs
+    | "javascript" -> Ok LambdaFunctionRevisionRuntime.Javascript
+    | "typescript" -> Ok LambdaFunctionRevisionRuntime.Typescript
+    | "python3" -> Ok LambdaFunctionRevisionRuntime.Python3
+    | "python" -> Ok LambdaFunctionRevisionRuntime.Python
+    | "ruby" -> Ok LambdaFunctionRevisionRuntime.Ruby
+    | "bash" -> Ok LambdaFunctionRevisionRuntime.Bash
+    | "shell" -> Ok LambdaFunctionRevisionRuntime.Shell
+    | "golang" -> Ok LambdaFunctionRevisionRuntime.Golang
+    | "go" -> Ok LambdaFunctionRevisionRuntime.Go
+    | "dart" -> Ok LambdaFunctionRevisionRuntime.Dart
+    | "erlang" -> Ok LambdaFunctionRevisionRuntime.Erlang
+    | "erl" -> Ok LambdaFunctionRevisionRuntime.Erl
+    | "elixir" -> Ok LambdaFunctionRevisionRuntime.Elixir
+    | "ex" -> Ok LambdaFunctionRevisionRuntime.Ex
+    | "java" -> Ok LambdaFunctionRevisionRuntime.Java
+    | "jvm" -> Ok LambdaFunctionRevisionRuntime.Jvm
+    | "gleam" -> Ok LambdaFunctionRevisionRuntime.Gleam
+    | "gleamlang" -> Ok LambdaFunctionRevisionRuntime.Gleamlang
+    | "rust" -> Ok LambdaFunctionRevisionRuntime.Rust
+    | "rs" -> Ok LambdaFunctionRevisionRuntime.Rs
+    | "browser" -> Ok LambdaFunctionRevisionRuntime.Browser
+    | _ -> Error ("unsupported lambda_function_revisions.runtime: " + value)
+
+[<RequireQualifiedAccess>]
+type LambdaFunctionRevisionContainerBuildStatus =
+    | NotRequested
+    | Pending
+    | Building
+    | Built
+    | Failed
+    | Skipped
+
+let lambdaFunctionRevisionContainerBuildStatusToString (value: LambdaFunctionRevisionContainerBuildStatus) : string =
+    match value with
+    | LambdaFunctionRevisionContainerBuildStatus.NotRequested -> "not_requested"
+    | LambdaFunctionRevisionContainerBuildStatus.Pending -> "pending"
+    | LambdaFunctionRevisionContainerBuildStatus.Building -> "building"
+    | LambdaFunctionRevisionContainerBuildStatus.Built -> "built"
+    | LambdaFunctionRevisionContainerBuildStatus.Failed -> "failed"
+    | LambdaFunctionRevisionContainerBuildStatus.Skipped -> "skipped"
+
+let parseLambdaFunctionRevisionContainerBuildStatus (value: string) : Result<LambdaFunctionRevisionContainerBuildStatus, string> =
+    match value with
+    | "not_requested" -> Ok LambdaFunctionRevisionContainerBuildStatus.NotRequested
+    | "pending" -> Ok LambdaFunctionRevisionContainerBuildStatus.Pending
+    | "building" -> Ok LambdaFunctionRevisionContainerBuildStatus.Building
+    | "built" -> Ok LambdaFunctionRevisionContainerBuildStatus.Built
+    | "failed" -> Ok LambdaFunctionRevisionContainerBuildStatus.Failed
+    | "skipped" -> Ok LambdaFunctionRevisionContainerBuildStatus.Skipped
+    | _ -> Error ("unsupported lambda_function_revisions.container_build_status: " + value)
+
+type LambdaFunctionRevisionRow =
+    { LambdaFunctionRevisionId: string
+      LambdaFunctionRevisionFunctionId: string
+      LambdaFunctionRevisionRevisionNumber: int64
+      LambdaFunctionRevisionDefinitionDigest: string
+      LambdaFunctionRevisionDescription: string
+      LambdaFunctionRevisionRuntime: string
+      LambdaFunctionRevisionEntryCommand: string
+      LambdaFunctionRevisionFunctionBody: string
+      LambdaFunctionRevisionReuseKey: string option
+      LambdaFunctionRevisionIdleTimeoutSeconds: int
+      LambdaFunctionRevisionMaxRunMs: int
+      LambdaFunctionRevisionContainerized: bool
+      LambdaFunctionRevisionContainerImage: string option
+      LambdaFunctionRevisionContainerBuildStatus: string
+      LambdaFunctionRevisionContainerBuildError: string option
+      LambdaFunctionRevisionContainerBuiltAt: string option
+      LambdaFunctionRevisionEnv: string
+      LambdaFunctionRevisionLabels: string
+      LambdaFunctionRevisionMetaData: string
+      LambdaFunctionRevisionCreatedAt: string
+      LambdaFunctionRevisionCreatedBy: string option
+    }
+
+let lambdaFunctionRevisionRowOfRow (get: int -> string) (isNullAt: int -> bool) : LambdaFunctionRevisionRow =
+    { LambdaFunctionRevisionId = get 0
+      LambdaFunctionRevisionFunctionId = get 1
+      LambdaFunctionRevisionRevisionNumber = int64 (get 2)
+      LambdaFunctionRevisionDefinitionDigest = get 3
+      LambdaFunctionRevisionDescription = get 4
+      LambdaFunctionRevisionRuntime = get 5
+      LambdaFunctionRevisionEntryCommand = get 6
+      LambdaFunctionRevisionFunctionBody = get 7
+      LambdaFunctionRevisionReuseKey = (if isNullAt 8 then None else Some (get 8))
+      LambdaFunctionRevisionIdleTimeoutSeconds = int (get 9)
+      LambdaFunctionRevisionMaxRunMs = int (get 10)
+      LambdaFunctionRevisionContainerized = (get 11 = "t")
+      LambdaFunctionRevisionContainerImage = (if isNullAt 12 then None else Some (get 12))
+      LambdaFunctionRevisionContainerBuildStatus = get 13
+      LambdaFunctionRevisionContainerBuildError = (if isNullAt 14 then None else Some (get 14))
+      LambdaFunctionRevisionContainerBuiltAt = (if isNullAt 15 then None else Some (get 15))
+      LambdaFunctionRevisionEnv = get 16
+      LambdaFunctionRevisionLabels = get 17
+      LambdaFunctionRevisionMetaData = get 18
+      LambdaFunctionRevisionCreatedAt = get 19
+      LambdaFunctionRevisionCreatedBy = (if isNullAt 20 then None else Some (get 20))
+    }
+
+let validateLambdaFunctionRevisionRevisionNumber (value: int64) : Result<int64, string> =
+    if value < 1L then Error "lambda_function_revisions.revision_number is below the minimum"
+    else Ok value
+
+let validateLambdaFunctionRevisionDefinitionDigest (value: string) : Result<string, string> =
+    if value.Length < 64 then Error "lambda_function_revisions.definition_digest must be at least 64 characters"
+    elif value.Length > 64 then Error "lambda_function_revisions.definition_digest must be at most 64 characters"
+    elif not (Regex.IsMatch(value, @"^[a-f0-9]{64}$")) then Error "lambda_function_revisions.definition_digest does not match the required pattern"
+    else Ok value
+
+let validateLambdaFunctionRevisionDescription (value: string) : Result<string, string> =
+    if value.Length > 4096 then Error "lambda_function_revisions.description must be at most 4096 characters"
+    else Ok value
+
+let validateLambdaFunctionRevisionFunctionBody (value: string) : Result<string, string> =
+    if value.Length < 1 then Error "lambda_function_revisions.function_body must be at least 1 characters"
+    else Ok value
+
+let validateLambdaFunctionRevisionReuseKey (value: string) : Result<string, string> =
+    if value.Length > 200 then Error "lambda_function_revisions.reuse_key must be at most 200 characters"
+    else Ok value
+
+let validateLambdaFunctionRevisionIdleTimeoutSeconds (value: int) : Result<int, string> =
+    if value < 1 then Error "lambda_function_revisions.idle_timeout_seconds is below the minimum"
+    elif value > 3600 then Error "lambda_function_revisions.idle_timeout_seconds is above the maximum"
+    else Ok value
+
+let validateLambdaFunctionRevisionMaxRunMs (value: int) : Result<int, string> =
+    if value < 1000 then Error "lambda_function_revisions.max_run_ms is below the minimum"
+    elif value > 300000 then Error "lambda_function_revisions.max_run_ms is above the maximum"
+    else Ok value
+
+let lambdaFunctionAliasesTable = "lambda_function_aliases"
+let lambdaFunctionAliasesColumns = [ "id"; "function_id"; "name"; "description"; "traffic"; "routing_version"; "created_at"; "updated_at"; "created_by"; "updated_by" ]
+let lambdaFunctionAliasesSelectSql = "select\n      id::text as id,\n      function_id::text as function_id,\n      name,\n      description,\n      traffic::text as traffic_json,\n      routing_version,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_function_aliases"
+
+type LambdaFunctionAliasRow =
+    { LambdaFunctionAliasId: string
+      LambdaFunctionAliasFunctionId: string
+      LambdaFunctionAliasName: string
+      LambdaFunctionAliasDescription: string
+      LambdaFunctionAliasTraffic: string
+      LambdaFunctionAliasRoutingVersion: int64
+      LambdaFunctionAliasCreatedAt: string
+      LambdaFunctionAliasUpdatedAt: string
+      LambdaFunctionAliasCreatedBy: string option
+      LambdaFunctionAliasUpdatedBy: string option
+    }
+
+let lambdaFunctionAliasRowOfRow (get: int -> string) (isNullAt: int -> bool) : LambdaFunctionAliasRow =
+    { LambdaFunctionAliasId = get 0
+      LambdaFunctionAliasFunctionId = get 1
+      LambdaFunctionAliasName = get 2
+      LambdaFunctionAliasDescription = get 3
+      LambdaFunctionAliasTraffic = get 4
+      LambdaFunctionAliasRoutingVersion = int64 (get 5)
+      LambdaFunctionAliasCreatedAt = get 6
+      LambdaFunctionAliasUpdatedAt = get 7
+      LambdaFunctionAliasCreatedBy = (if isNullAt 8 then None else Some (get 8))
+      LambdaFunctionAliasUpdatedBy = (if isNullAt 9 then None else Some (get 9))
+    }
+
+let validateLambdaFunctionAliasName (value: string) : Result<string, string> =
+    if value.Length < 1 then Error "lambda_function_aliases.name must be at least 1 characters"
+    elif value.Length > 64 then Error "lambda_function_aliases.name must be at most 64 characters"
+    elif not (Regex.IsMatch(value, @"^[a-z][a-z0-9._-]{0,63}$")) then Error "lambda_function_aliases.name does not match the required pattern"
+    else Ok value
+
+let validateLambdaFunctionAliasDescription (value: string) : Result<string, string> =
+    if value.Length > 4096 then Error "lambda_function_aliases.description must be at most 4096 characters"
+    else Ok value
+
+let validateLambdaFunctionAliasRoutingVersion (value: int64) : Result<int64, string> =
+    if value < 1L then Error "lambda_function_aliases.routing_version is below the minimum"
+    else Ok value
+
 let lambdaActorInstancesTable = "lambda_actor_instances"
 let lambdaActorInstancesColumns = [ "id"; "function_id"; "actor_key"; "state"; "state_version"; "alarm_at"; "alarm_attempt"; "lease_owner"; "lease_until"; "last_invoked_at"; "last_error"; "created_at"; "updated_at" ]
 let lambdaActorInstancesSelectSql = "select\n      id::text as id,\n      function_id::text as function_id,\n      actor_key,\n      state::text as state_json,\n      state_version,\n      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as alarm_at,\n      alarm_attempt,\n      lease_owner,\n      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_until,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from lambda_actor_instances"

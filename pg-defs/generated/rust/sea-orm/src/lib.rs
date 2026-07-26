@@ -1320,6 +1320,96 @@ impl ActiveModelBehavior for ActiveModel {}
 pub use lambda_functions::Entity as LambdaFunctionEntity;
 pub use lambda_functions::Model as LambdaFunctionModel;
 
+pub mod lambda_function_revisions {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "lambda_function_revisions")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "function_id")]
+    pub function_id: Uuid,
+    #[sea_orm(column_name = "revision_number")]
+    pub revision_number: i64,
+    #[sea_orm(column_name = "definition_digest")]
+    pub definition_digest: String,
+    pub description: String,
+    pub runtime: String,
+    #[sea_orm(column_name = "entry_command")]
+    pub entry_command: String,
+    #[sea_orm(column_name = "function_body")]
+    pub function_body: String,
+    #[sea_orm(column_name = "reuse_key")]
+    pub reuse_key: Option<String>,
+    #[sea_orm(column_name = "idle_timeout_seconds")]
+    pub idle_timeout_seconds: i32,
+    #[sea_orm(column_name = "max_run_ms")]
+    pub max_run_ms: i32,
+    pub containerized: bool,
+    #[sea_orm(column_name = "container_image")]
+    pub container_image: Option<String>,
+    #[sea_orm(column_name = "container_build_status")]
+    pub container_build_status: String,
+    #[sea_orm(column_name = "container_build_error")]
+    pub container_build_error: Option<String>,
+    #[sea_orm(column_name = "container_built_at")]
+    pub container_built_at: Option<DateTimeWithTimeZone>,
+    pub env: Json,
+    pub labels: Json,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use lambda_function_revisions::Entity as LambdaFunctionRevisionEntity;
+pub use lambda_function_revisions::Model as LambdaFunctionRevisionModel;
+
+pub mod lambda_function_aliases {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "lambda_function_aliases")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "function_id")]
+    pub function_id: Uuid,
+    pub name: String,
+    pub description: String,
+    pub traffic: Json,
+    #[sea_orm(column_name = "routing_version")]
+    pub routing_version: i64,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use lambda_function_aliases::Entity as LambdaFunctionAliasEntity;
+pub use lambda_function_aliases::Model as LambdaFunctionAliasModel;
+
 pub mod lambda_actor_instances {
     use super::*;
 

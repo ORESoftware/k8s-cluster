@@ -516,6 +516,49 @@ module DdPgDefs
     validates :status, inclusion: { in: ["draft", "active", "paused", "archived"] }
   end
 
+  class LambdaFunctionRevision < ActiveRecord::Base
+    # Immutable published snapshots of lambda function code and runtime configuration.
+    self.table_name = "lambda_function_revisions"
+    self.primary_key = "id"
+
+    validates :function_id, presence: true
+    validates :revision_number, presence: true
+    validates :revision_number, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
+    validates :definition_digest, presence: true
+    validates :definition_digest, length: { minimum: 64, maximum: 64 }
+    validates :definition_digest, format: { with: Regexp.new("\\A[a-f0-9]{64}\\z") }
+    validates :description, length: { maximum: 4096 }
+    validates :runtime, presence: true
+    validates :runtime, inclusion: { in: ["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"] }
+    validates :function_body, presence: true
+    validates :function_body, length: { minimum: 1 }
+    validates :reuse_key, length: { maximum: 200 }, allow_nil: true
+    validates :idle_timeout_seconds, presence: true
+    validates :idle_timeout_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 3600 }
+    validates :max_run_ms, presence: true
+    validates :max_run_ms, numericality: { only_integer: true, greater_than_or_equal_to: 1000, less_than_or_equal_to: 300000 }
+    validates :containerized, presence: true
+    validates :container_build_status, presence: true
+    validates :container_build_status, inclusion: { in: ["not_requested", "pending", "building", "built", "failed", "skipped"] }
+    validates :env, presence: true
+    validates :labels, presence: true
+    validates :meta_data, presence: true
+  end
+
+  class LambdaFunctionAlias < ActiveRecord::Base
+    # Named weighted routing policies over immutable lambda function revisions.
+    self.table_name = "lambda_function_aliases"
+    self.primary_key = "id"
+
+    validates :function_id, presence: true
+    validates :name, presence: true
+    validates :name, length: { minimum: 1, maximum: 64 }
+    validates :name, format: { with: Regexp.new("\\A[a-z][a-z0-9._-]{0,63}\\z") }
+    validates :description, length: { maximum: 4096 }
+    validates :traffic, presence: true
+    validates :routing_version, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
+  end
+
   class LambdaActorInstance < ActiveRecord::Base
     # Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
     self.table_name = "lambda_actor_instances"

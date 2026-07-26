@@ -2082,6 +2082,195 @@ pub fn validate_lambda_functions_status(value: String) -> Result(String, String)
   }
 }
 
+pub const lambda_function_revisions_table = "lambda_function_revisions"
+pub const lambda_function_revisions_select_sql = "select\n      id::text as id,\n      function_id::text as function_id,\n      revision_number,\n      definition_digest,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      created_by::text as created_by\n    from lambda_function_revisions"
+
+pub type LambdaFunctionRevisionRuntime {
+  LambdaFunctionRevisionRuntimeNodejs
+  LambdaFunctionRevisionRuntimeJavascript
+  LambdaFunctionRevisionRuntimeTypescript
+  LambdaFunctionRevisionRuntimePython3
+  LambdaFunctionRevisionRuntimePython
+  LambdaFunctionRevisionRuntimeRuby
+  LambdaFunctionRevisionRuntimeBash
+  LambdaFunctionRevisionRuntimeShell
+  LambdaFunctionRevisionRuntimeGolang
+  LambdaFunctionRevisionRuntimeGo
+  LambdaFunctionRevisionRuntimeDart
+  LambdaFunctionRevisionRuntimeErlang
+  LambdaFunctionRevisionRuntimeErl
+  LambdaFunctionRevisionRuntimeElixir
+  LambdaFunctionRevisionRuntimeEx
+  LambdaFunctionRevisionRuntimeJava
+  LambdaFunctionRevisionRuntimeJvm
+  LambdaFunctionRevisionRuntimeGleam
+  LambdaFunctionRevisionRuntimeGleamlang
+  LambdaFunctionRevisionRuntimeRust
+  LambdaFunctionRevisionRuntimeRs
+  LambdaFunctionRevisionRuntimeBrowser
+}
+
+pub fn lambda_function_revisions_runtime_to_string(value: LambdaFunctionRevisionRuntime) -> String {
+  case value {
+    LambdaFunctionRevisionRuntimeNodejs -> "nodejs"
+    LambdaFunctionRevisionRuntimeJavascript -> "javascript"
+    LambdaFunctionRevisionRuntimeTypescript -> "typescript"
+    LambdaFunctionRevisionRuntimePython3 -> "python3"
+    LambdaFunctionRevisionRuntimePython -> "python"
+    LambdaFunctionRevisionRuntimeRuby -> "ruby"
+    LambdaFunctionRevisionRuntimeBash -> "bash"
+    LambdaFunctionRevisionRuntimeShell -> "shell"
+    LambdaFunctionRevisionRuntimeGolang -> "golang"
+    LambdaFunctionRevisionRuntimeGo -> "go"
+    LambdaFunctionRevisionRuntimeDart -> "dart"
+    LambdaFunctionRevisionRuntimeErlang -> "erlang"
+    LambdaFunctionRevisionRuntimeErl -> "erl"
+    LambdaFunctionRevisionRuntimeElixir -> "elixir"
+    LambdaFunctionRevisionRuntimeEx -> "ex"
+    LambdaFunctionRevisionRuntimeJava -> "java"
+    LambdaFunctionRevisionRuntimeJvm -> "jvm"
+    LambdaFunctionRevisionRuntimeGleam -> "gleam"
+    LambdaFunctionRevisionRuntimeGleamlang -> "gleamlang"
+    LambdaFunctionRevisionRuntimeRust -> "rust"
+    LambdaFunctionRevisionRuntimeRs -> "rs"
+    LambdaFunctionRevisionRuntimeBrowser -> "browser"
+  }
+}
+
+pub fn parse_lambda_function_revisions_runtime(value: String) -> Result(LambdaFunctionRevisionRuntime, String) {
+  case value {
+    "nodejs" -> Ok(LambdaFunctionRevisionRuntimeNodejs)
+    "javascript" -> Ok(LambdaFunctionRevisionRuntimeJavascript)
+    "typescript" -> Ok(LambdaFunctionRevisionRuntimeTypescript)
+    "python3" -> Ok(LambdaFunctionRevisionRuntimePython3)
+    "python" -> Ok(LambdaFunctionRevisionRuntimePython)
+    "ruby" -> Ok(LambdaFunctionRevisionRuntimeRuby)
+    "bash" -> Ok(LambdaFunctionRevisionRuntimeBash)
+    "shell" -> Ok(LambdaFunctionRevisionRuntimeShell)
+    "golang" -> Ok(LambdaFunctionRevisionRuntimeGolang)
+    "go" -> Ok(LambdaFunctionRevisionRuntimeGo)
+    "dart" -> Ok(LambdaFunctionRevisionRuntimeDart)
+    "erlang" -> Ok(LambdaFunctionRevisionRuntimeErlang)
+    "erl" -> Ok(LambdaFunctionRevisionRuntimeErl)
+    "elixir" -> Ok(LambdaFunctionRevisionRuntimeElixir)
+    "ex" -> Ok(LambdaFunctionRevisionRuntimeEx)
+    "java" -> Ok(LambdaFunctionRevisionRuntimeJava)
+    "jvm" -> Ok(LambdaFunctionRevisionRuntimeJvm)
+    "gleam" -> Ok(LambdaFunctionRevisionRuntimeGleam)
+    "gleamlang" -> Ok(LambdaFunctionRevisionRuntimeGleamlang)
+    "rust" -> Ok(LambdaFunctionRevisionRuntimeRust)
+    "rs" -> Ok(LambdaFunctionRevisionRuntimeRs)
+    "browser" -> Ok(LambdaFunctionRevisionRuntimeBrowser)
+    _ -> Error("unsupported lambda_function_revisions.runtime: " <> value)
+  }
+}
+
+pub type LambdaFunctionRevisionContainerBuildStatus {
+  LambdaFunctionRevisionContainerBuildStatusNotRequested
+  LambdaFunctionRevisionContainerBuildStatusPending
+  LambdaFunctionRevisionContainerBuildStatusBuilding
+  LambdaFunctionRevisionContainerBuildStatusBuilt
+  LambdaFunctionRevisionContainerBuildStatusFailed
+  LambdaFunctionRevisionContainerBuildStatusSkipped
+}
+
+pub fn lambda_function_revisions_container_build_status_to_string(value: LambdaFunctionRevisionContainerBuildStatus) -> String {
+  case value {
+    LambdaFunctionRevisionContainerBuildStatusNotRequested -> "not_requested"
+    LambdaFunctionRevisionContainerBuildStatusPending -> "pending"
+    LambdaFunctionRevisionContainerBuildStatusBuilding -> "building"
+    LambdaFunctionRevisionContainerBuildStatusBuilt -> "built"
+    LambdaFunctionRevisionContainerBuildStatusFailed -> "failed"
+    LambdaFunctionRevisionContainerBuildStatusSkipped -> "skipped"
+  }
+}
+
+pub fn parse_lambda_function_revisions_container_build_status(value: String) -> Result(LambdaFunctionRevisionContainerBuildStatus, String) {
+  case value {
+    "not_requested" -> Ok(LambdaFunctionRevisionContainerBuildStatusNotRequested)
+    "pending" -> Ok(LambdaFunctionRevisionContainerBuildStatusPending)
+    "building" -> Ok(LambdaFunctionRevisionContainerBuildStatusBuilding)
+    "built" -> Ok(LambdaFunctionRevisionContainerBuildStatusBuilt)
+    "failed" -> Ok(LambdaFunctionRevisionContainerBuildStatusFailed)
+    "skipped" -> Ok(LambdaFunctionRevisionContainerBuildStatusSkipped)
+    _ -> Error("unsupported lambda_function_revisions.container_build_status: " <> value)
+  }
+}
+
+pub type LambdaFunctionRevisionRow {
+  LambdaFunctionRevisionRow(
+    id: String,
+    function_id: String,
+    revision_number: Int,
+    definition_digest: String,
+    description: String,
+    runtime: String,
+    entry_command: String,
+    function_body: String,
+    reuse_key: Option(String),
+    idle_timeout_seconds: Int,
+    max_run_ms: Int,
+    containerized: Bool,
+    container_image: Option(String),
+    container_build_status: String,
+    container_build_error: Option(String),
+    container_built_at: Option(String),
+    env_json: String,
+    labels_json: String,
+    meta_data_json: String,
+    created_at: String,
+    created_by: Option(String),
+  )
+}
+
+pub fn validate_lambda_function_revisions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("lambda_function_revisions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_lambda_function_revisions_runtime(value: String) -> Result(String, String) {
+  case list.contains(["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported lambda_function_revisions.runtime: " <> value)
+  }
+}
+
+pub fn validate_lambda_function_revisions_container_build_status(value: String) -> Result(String, String) {
+  case list.contains(["not_requested", "pending", "building", "built", "failed", "skipped"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported lambda_function_revisions.container_build_status: " <> value)
+  }
+}
+
+pub const lambda_function_aliases_table = "lambda_function_aliases"
+pub const lambda_function_aliases_select_sql = "select\n      id::text as id,\n      function_id::text as function_id,\n      name,\n      description,\n      traffic::text as traffic_json,\n      routing_version,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_function_aliases"
+
+pub type LambdaFunctionAliasRow {
+  LambdaFunctionAliasRow(
+    id: String,
+    function_id: String,
+    name: String,
+    description: String,
+    traffic_json: String,
+    routing_version: Int,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_lambda_function_aliases_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("lambda_function_aliases.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
 pub const lambda_actor_instances_table = "lambda_actor_instances"
 pub const lambda_actor_instances_select_sql = "select\n      id::text as id,\n      function_id::text as function_id,\n      actor_key,\n      state::text as state_json,\n      state_version,\n      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as alarm_at,\n      alarm_attempt,\n      lease_owner,\n      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_until,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from lambda_actor_instances"
 
