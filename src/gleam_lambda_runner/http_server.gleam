@@ -3,12 +3,13 @@ import dd_runtime_config_client
 import gleam/bit_array
 import gleam/bytes_tree
 import gleam/erlang/process
-import gleam/http.{Get, Post}
+import gleam/http.{Delete, Get, Post}
 import gleam/http/request
 import gleam/http/response
 import gleam/int
 import gleam/list
 import gleam/string
+import gleam_lambda_runner/actors
 import gleam_lambda_runner/api_docs
 import gleam_lambda_runner/async_invocation
 import gleam_lambda_runner/child_process
@@ -77,6 +78,14 @@ fn route(
       require_authenticated_post(req, fn() { invoke(req, function_id) })
     Post, ["invoke-stream", function_id] ->
       require_authenticated_post(req, fn() { invoke_stream(req, function_id) })
+    Post, ["actors", function_id, actor_key] ->
+      require_authenticated_post(req, fn() {
+        actor_invoke(req, function_id, actor_key)
+      })
+    Get, ["actors", function_id, actor_key, "state"] ->
+      require_authenticated(req, fn() { actor_state(function_id, actor_key) })
+    Delete, ["actors", function_id, actor_key] ->
+      require_authenticated(req, fn() { actor_reset(function_id, actor_key) })
     Post, ["check"] -> require_authenticated_post(req, fn() { check(req) })
     Post, ["destroy", reuse_key] ->
       require_authenticated_post(req, fn() { destroy(reuse_key) })
@@ -106,6 +115,8 @@ fn route(
       dd_runtime_config_client.handle_reset(req)
     _, ["invoke", _] -> method_not_allowed()
     _, ["invoke-stream", _] -> method_not_allowed()
+    _, ["actors", _, _] -> method_not_allowed()
+    _, ["actors", _, _, "state"] -> method_not_allowed()
     _, ["check"] -> method_not_allowed()
     _, ["destroy", _] -> method_not_allowed()
     _, ["async", "invoke", _] -> method_not_allowed()
@@ -117,6 +128,75 @@ fn route(
     _, ["internal", "runtime-config", "reset"] -> method_not_allowed()
     _, _ -> not_found()
   }
+}
+
+fn actor_invoke(
+  req: request.Request(mist.Connection),
+  function_id: String,
+  actor_key: String,
+) -> response.Response(mist.ResponseData) {
+  with_body(req, fn(payload) {
+    case actors.invoke(function_id, actor_key, request_payload(payload)) {
+      Ok(body) -> json_response(200, body)
+      Error(error) -> actor_error_response(error)
+    }
+  })
+}
+
+fn actor_state(
+  function_id: String,
+  actor_key: String,
+) -> response.Response(mist.ResponseData) {
+  case actors.get_state(function_id, actor_key) {
+    Ok(body) -> json_response(200, body)
+    Error(error) -> actor_error_response(error)
+  }
+}
+
+fn actor_reset(
+  function_id: String,
+  actor_key: String,
+) -> response.Response(mist.ResponseData) {
+  case actors.reset(function_id, actor_key) {
+    Ok(body) -> json_response(200, body)
+    Error(error) -> actor_error_response(error)
+  }
+}
+
+fn actor_error_response(error: String) -> response.Response(mist.ResponseData) {
+  let status = case
+    string.contains(error, "queue depth")
+    || string.contains(error, "capacity reached")
+    || string.contains(error, "concurrency wait")
+  {
+    True -> 429
+    False ->
+      case string.contains(error, "not found") {
+        True -> 404
+        False ->
+          case
+            string.contains(error, "unavailable")
+            || string.contains(error, "LAMBDA_DATABASE_URL")
+            || string.contains(error, "psql executable")
+            || string.contains(error, "does not exist")
+          {
+            True -> 503
+            False ->
+              case
+                string.contains(error, "valid")
+                || string.contains(error, "unsupported")
+                || string.contains(error, "requires")
+              {
+                True -> 400
+                False -> 502
+              }
+          }
+      }
+  }
+  json_response(
+    status,
+    "{\"ok\":false,\"error\":\"" <> json_escape(error) <> "\"}",
+  )
 }
 
 fn invoke(
@@ -491,6 +571,10 @@ fn healthz() -> response.Response(mist.ResponseData) {
       <> bool_json(schedule.enabled())
       <> ",\"eventRouterEnabled\":"
       <> bool_json(events.enabled())
+      <> ",\"actorEngineEnabled\":"
+      <> bool_json(actors.enabled())
+      <> ",\"actorSupervisorHealthy\":"
+      <> bool_json(actors.healthy())
       <> ",\"runtimeSupervisorHealthy\":"
       <> bool_json(runtime_supervisor.healthy())
       <> "}",
@@ -498,7 +582,10 @@ fn healthz() -> response.Response(mist.ResponseData) {
 }
 
 fn readyz() -> response.Response(mist.ResponseData) {
-  let ready = runtime_supervisor.healthy() && !runtime_supervisor.draining()
+  let ready =
+    runtime_supervisor.healthy()
+    && actors.healthy()
+    && !runtime_supervisor.draining()
   json_response(
     case ready {
       True -> 200
@@ -508,6 +595,8 @@ fn readyz() -> response.Response(mist.ResponseData) {
       <> bool_json(ready)
       <> ",\"runtimeSupervisorHealthy\":"
       <> bool_json(runtime_supervisor.healthy())
+      <> ",\"actorSupervisorHealthy\":"
+      <> bool_json(actors.healthy())
       <> ",\"draining\":"
       <> bool_json(runtime_supervisor.draining())
       <> "}",
@@ -515,7 +604,14 @@ fn readyz() -> response.Response(mist.ResponseData) {
 }
 
 fn runtime_processes() -> response.Response(mist.ResponseData) {
-  json_response(200, runtime_supervisor.snapshot())
+  json_response(
+    200,
+    "{\"ok\":true,\"runtimes\":"
+      <> runtime_supervisor.snapshot()
+      <> ",\"actors\":"
+      <> actors.snapshot()
+      <> "}",
+  )
 }
 
 fn metrics() -> response.Response(mist.ResponseData) {
@@ -534,7 +630,9 @@ fn metrics() -> response.Response(mist.ResponseData) {
       <> "\n"
       <> schedule.metrics()
       <> "\n"
-      <> events.metrics(),
+      <> events.metrics()
+      <> "\n"
+      <> actors.metrics(),
     )),
   )
 }
@@ -545,7 +643,7 @@ fn not_found() -> response.Response(mist.ResponseData) {
 
 fn method_not_allowed() -> response.Response(mist.ResponseData) {
   response.new(405)
-  |> response.set_header("allow", "POST")
+  |> response.set_header("allow", "GET, POST, DELETE")
   |> response.set_header("content-type", "application/json")
   |> response.set_body(
     mist.Bytes(bytes_tree.from_string(
@@ -667,4 +765,4 @@ fn request_payload(request_payload: String) -> String {
   }
 }
 
-const home_html = "<!doctype html><html><head><meta charset=\"utf-8\"/><title>dd gleam lambda runner</title><style>body{font-family:system-ui;margin:24px;line-height:1.45}code{background:#f1f5f9;padding:2px 5px;border-radius:4px}pre{max-height:50vh;overflow:auto;background:#111827;color:#d1fae5;padding:12px;border-radius:8px}</style></head><body><h1>dd gleam lambda runner</h1><p>Liveness: <code>/healthz</code> · readiness/draining: <code>/readyz</code></p><p>Metrics: <code>/metrics</code></p><p>Invocation endpoint: <code>POST /invoke/:function_id</code>. Gateway invocation traffic lands here directly; the child runner loads the active function definition from Postgres and Gleam manages reusable child processes under an OTP supervision tree.</p></body></html>"
+const home_html = "<!doctype html><html><head><meta charset=\"utf-8\"/><title>dd gleam lambda runner</title><style>body{font-family:system-ui;margin:24px;line-height:1.45}code{background:#f1f5f9;padding:2px 5px;border-radius:4px}pre{max-height:50vh;overflow:auto;background:#111827;color:#d1fae5;padding:12px;border-radius:8px}</style></head><body><h1>dd gleam lambda runner</h1><p>Liveness: <code>/healthz</code> · readiness/draining: <code>/readyz</code></p><p>Metrics: <code>/metrics</code></p><p>Invocation endpoint: <code>POST /invoke/:function_id</code>. Gateway invocation traffic lands here directly; the child runner loads the active function definition from Postgres and Gleam manages reusable child processes under an OTP supervision tree.</p><p>Durable actors: <code>POST /actors/:function_id/:actor_key</code>. Each hot key is a dynamically supervised BEAM process with Postgres-fenced state and alarms.</p></body></html>"

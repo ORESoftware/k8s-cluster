@@ -3,6 +3,7 @@
 -export([
     invoke/5,
     invoke_definition/6,
+    invoke_actor_definition/7,
     invoke_stream/6,
     invoke_stream_definition/7,
     check_definition/3,
@@ -64,6 +65,64 @@ invoke_definition(Command0, Identifier0, DefinitionJson0, Payload0, IdleMs0, Tim
         IdleMs0,
         TimeoutMs0
     ).
+
+%% Invoke one transaction on a keyed durable actor. Actor calls are always
+%% local, Node.js, single-flight workers: the surrounding OTP actor owns
+%% ordering while lambda_actor_store owns cross-replica lease fencing and
+%% durable state. NATS request/reply cannot preserve that ownership boundary.
+invoke_actor_definition(
+    Command0,
+    Identifier0,
+    DefinitionJson0,
+    ActorJson0,
+    Payload0,
+    IdleMs0,
+    TimeoutMs0
+) ->
+    ensure_tables(),
+    FallbackCommand = to_binary(Command0),
+    Identifier = to_binary(Identifier0),
+    DefinitionJson = normalize_json_payload(to_binary(DefinitionJson0)),
+    ActorJson = normalize_json_payload(to_binary(ActorJson0)),
+    RequestPayload = default_request_payload(Payload0),
+    reap_idle(now_ms()),
+    case {runtime_from_definition(DefinitionJson), pool_dispatch_target(DefinitionJson)} of
+        {<<"nodejs">>, false} ->
+            case command_for_definition(FallbackCommand, DefinitionJson) of
+                {ok, Command} ->
+                    ActorId = json_string_field(ActorJson, <<"id">>),
+                    ActorKey = json_string_field(ActorJson, <<"key">>),
+                    case ActorId =/= <<>> andalso ActorKey =/= <<>> of
+                        true ->
+                            IdleMs = max_int(IdleMs0, 1000),
+                            TimeoutMs = timeout_ms_from_definition(
+                                DefinitionJson,
+                                TimeoutMs0
+                            ),
+                            invoke_worker(
+                                Command,
+                                actor_worker_key(Identifier, ActorKey),
+                                actor_invocation_payload(
+                                    Identifier,
+                                    DefinitionJson,
+                                    ActorJson,
+                                    RequestPayload
+                                ),
+                                IdleMs,
+                                TimeoutMs,
+                                1
+                            );
+                        false ->
+                            {error, <<"actor id and key are required">>}
+                    end;
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        {<<"nodejs">>, _PoolTarget} ->
+            {error, <<"durable actors do not support NATS container-pool dispatch">>};
+        {_Runtime, _PoolTarget} ->
+            {error, <<"durable actors currently require the nodejs runtime">>}
+    end.
 
 %% Stream one Node.js invocation through a callback. The callback is
 %% invoked synchronously for every decoded binary chunk; the HTTP bridge does
@@ -914,7 +973,8 @@ runtime_container_env_args(EntryCommand) ->
         {"OTEL_PROPAGATORS", <<"tracecontext,baggage">>},
         {"OTEL_RESOURCE_ATTRIBUTES", <<>>},
         {"LAMBDA_STREAM_MAX_BYTES", <<"16777216">>},
-        {"LAMBDA_STREAM_CHUNK_BYTES", <<"65536">>}
+        {"LAMBDA_STREAM_CHUNK_BYTES", <<"65536">>},
+        {"LAMBDA_ACTOR_STATE_MAX_BYTES", <<"524288">>}
         ])
     ].
 
@@ -1234,6 +1294,26 @@ stream_invocation_payload(Slug, DefinitionJson, RequestJson) ->
         RequestJson,
         "}"
     ]).
+
+actor_invocation_payload(Slug, DefinitionJson, ActorJson, RequestJson) ->
+    iolist_to_binary([
+        "{\"mode\":\"actor\",\"slug\":\"",
+        json_escape(Slug),
+        "\",\"definition\":",
+        DefinitionJson,
+        ",\"actor\":",
+        ActorJson,
+        ",\"request\":",
+        RequestJson,
+        "}"
+    ]).
+
+actor_worker_key(Identifier, ActorKey) ->
+    Digest = binary:encode_hex(
+        crypto:hash(sha256, <<Identifier/binary, 0, ActorKey/binary>>),
+        lowercase
+    ),
+    iolist_to_binary(["actor:", Identifier, ":", Digest]).
 
 default_request_payload(Payload0) ->
     case normalize_json_payload(to_binary(Payload0)) of

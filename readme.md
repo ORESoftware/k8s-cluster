@@ -24,6 +24,9 @@ Deno Deploy, and Knative lives in
 - `POST /invoke/:function_id` forwards one request envelope to a child process.
 - `POST /invoke-stream/:function_id` streams a Node.js response with
   end-to-end backpressure.
+- `POST /actors/:function_id/:actor_key` serializes one durable actor transaction.
+- `GET /actors/:function_id/:actor_key/state` reads versioned actor state.
+- `DELETE /actors/:function_id/:actor_key` atomically resets actor state and its alarm.
 - `POST /check` compiles or syntax-checks a posted lambda definition without executing the
   function body.
 - `POST /destroy/:reuse_key` closes a cached child process.
@@ -37,8 +40,8 @@ Deno Deploy, and Knative lives in
 - `POST /workflows/runs/:run_id/signal` delivers an external signal to a run.
 - `POST /workflows/runs/:run_id/cancel` cancels a non-terminal run.
 
-Function execution, async invocation, CloudEvents, workflows, and internal
-process-state routes fail closed unless `LAMBDA_SERVER_AUTH_SECRET`,
+Function execution, durable actors, async invocation, CloudEvents, workflows,
+and internal process-state routes fail closed unless `LAMBDA_SERVER_AUTH_SECRET`,
 `SERVER_AUTH_SECRET`, or `REMOTE_DEV_SERVER_SECRET` is configured. Callers must
 present the secret in `X-Server-Auth`, `X-Lambda-Runner-Auth`, or
 `X-Agent-Auth`. `GET /healthz`, `GET /readyz`, and `GET /metrics` remain
@@ -56,6 +59,12 @@ and rebuilds both together so stale or orphaned workers cannot survive.
 This is intentionally separate from loading customer code into the server VM. Trusted platform
 capabilities can evolve as supervised Gleam/Erlang processes; untrusted functions stay behind the
 child-process or hardened-container boundary.
+
+Durable actors follow the same rule. The actor registry, dynamic actor
+supervisor, per-key mailbox, alarm scanner, and Postgres lease coordinator are
+trusted OTP processes. The user handler is still evaluated only in the isolated
+Node child or runtime container. Adding an actor never loads uploaded code into
+the BEAM VM and never requires restarting the HTTP server.
 
 Kubernetes rollout safety mirrors the in-VM model. The deployment runs two replicas, uses
 `maxUnavailable: 0`, and has a `minAvailable: 1` disruption budget. A pre-stop hook marks the pod
@@ -252,6 +261,88 @@ Container-pool request/reply transport does not yet carry stream frames, so a
 function with `poolBacked=true` fails closed on this endpoint. Other language
 runtimes retain buffered invocation until they implement the same bounded
 runtime.v1 stream framing contract.
+
+## Durable keyed actors
+
+Authenticated `POST /actors/:function_id/:actor_key` turns an active Node.js
+function into a Cloudflare Durable Objects-style keyed actor. Each hot
+`(function, key)` pair is a temporary dynamic child under its own OTP
+supervisor. Its `gen_server` mailbox executes one request at a time, while a
+short Postgres lease extends that single-writer invariant across runner
+replicas. Calls that land on another replica wait for the current lease within
+a bounded window, then receive HTTP 429 instead of creating a split brain or an
+unbounded queue.
+
+Actor functions use the transaction-scoped `context.actor` API:
+
+```js
+const count = (await context.actor.storage.get("count")) ?? 0;
+await context.actor.storage.put("count", count + request.increment);
+
+if (request.wakeAt) {
+  await context.actor.alarm.set(request.wakeAt);
+}
+
+return {
+  count: await context.actor.storage.get("count"),
+  actorId: context.actor.id,
+  key: context.actor.key,
+  version: context.actor.version,
+};
+```
+
+`context.actor.storage` provides async `get(key)`, `put(key, value)`,
+`delete(key)`, and `list({ prefix, limit })`. Keys are 1–512 UTF-8 bytes and
+values must be JSON serializable. The complete transaction state is bounded by
+`LAMBDA_ACTOR_STATE_MAX_BYTES` (512 KiB by default) and must commit before the
+result is acknowledged. PostgreSQL applies the write only when both the lease
+owner and prior `state_version` still match, then advances the version. A child
+error, timeout, pod crash, or failed commit cannot publish a partial state
+mutation.
+
+`context.actor.alarm` provides async `get()`, `set(dateOrTimestamp)`, and
+`delete()`. The supervised alarm scanner may discover a due row on every
+replica, but only the process that obtains the actor lease runs the handler.
+The function receives `{ "type": "alarm", "scheduledAt": ... }`. Successful
+delivery clears the old alarm unless the handler sets a replacement. Failures
+are at least once with exponential backoff and six retries; state is unchanged
+until a handler completes and commits.
+
+Actors automatically stop after `ACTOR_IDLE_MS`. A later request recreates the
+BEAM process and loads the same strongly fenced state from Postgres. This is
+process hibernation, not data eviction: an integration test verifies the hot
+actor count returns to zero while its state version remains readable.
+`GET /actors/:function_id/:actor_key/state` exposes that explicit authenticated
+read model, and `DELETE /actors/:function_id/:actor_key` performs a serialized
+reset. Function bodies and environment values are never included in actor
+state, process snapshots, metrics, or logs.
+
+Actor mode is intentionally Node.js-only today, matching Durable Objects'
+JavaScript-facing storage style. It fails closed for NATS container-pool
+dispatch because request/reply does not transfer actor lease ownership.
+WebSocket hibernation remains separate work.
+
+| Env | Default |
+| --- | --- |
+| `ACTOR_ENGINE_ENABLED` | `1` when Postgres is configured |
+| `ACTOR_IDLE_MS` | `60000` |
+| `ACTOR_LEASE_MS` | `310000` |
+| `ACTOR_QUEUE_WAIT_MS` | `30000` |
+| `ACTOR_MAX_ACTIVE_PER_REPLICA` | `10000` |
+| `ACTOR_MAX_QUEUE_DEPTH` | `100` |
+| `ACTOR_ALARM_POLL_MS` | `1000` |
+| `ACTOR_ALARM_MAX_CONCURRENCY` | `50` |
+| `ACTOR_ALARM_TIMEOUT_MS` | `300000` |
+| `ACTOR_ALARM_ERROR_COOLDOWN_MS` | `5000` |
+| `ACTOR_ALARM_ERROR_LOG_INTERVAL_MS` | `30000` |
+| `LAMBDA_ACTOR_STATE_MAX_BYTES` | `524288` |
+
+The declarative storage authority is
+`remote/libs/pg-defs/schema/schema.sql` (`lambda_actor_instances`). Applying
+that schema to a live database remains a separately reviewed migration; the
+runner does not create or mutate schema at startup. The checked-in Kubernetes
+deployment therefore keeps `ACTOR_ENGINE_ENABLED=0` until that reviewed
+migration has landed; switch it to `1` in the rollout that follows the schema.
 
 ## Durable asynchronous invocation
 
