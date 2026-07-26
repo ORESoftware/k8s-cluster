@@ -687,6 +687,9 @@ interface Session {
 
 const sessions = new Map<string, Session>();
 
+// Cap concurrent long-poll waiters per session (DoS guard).
+const MAX_WAITERS_PER_SESSION = 24;
+
 function ownerCount(owner: string): number {
   let n = 0;
   for (const s of sessions.values()) if (s.owner === owner) n++;
@@ -768,7 +771,10 @@ function requestUrlAllowedByDomain(raw: string, allowlist: string[]): boolean {
     url.port === '' ||
     ((url.protocol === 'https:' || url.protocol === 'wss:') && url.port === '443') ||
     ((url.protocol === 'http:' || url.protocol === 'ws:') && url.port === '80');
-  return defaultPort && domainAllowed(url.hostname, allowlist);
+  // Explicit ports are needed by local integration fixtures, but only when the
+  // operator has already opted into private-network access. Production keeps
+  // that option disabled and therefore remains limited to 80/443 defaults.
+  return (defaultPort || agentConfig.allowPrivateNetworks) && domainAllowed(url.hostname, allowlist);
 }
 
 // Each entry authorizes that hostname and its subdomains. Intersect the
@@ -843,23 +849,40 @@ async function assertUrlAllowed(
 // Secrets
 // ---------------------------------------------------------------------------
 
-let secretsCache: Record<string, string> | null = null;
-async function resolveSecret(ref: string): Promise<string> {
+// A secret entry is either a bare string (no domain binding) or an object with
+// an explicit `domains` allowlist. On a public endpoint, bind every secret to
+// specific domains: a bound secret is only ever typed into a matching origin, so
+// a caller cannot steer the browser to an attacker page and harvest it there.
+type SecretEntry = string | { value: string; domains?: string[] };
+let secretsCache: Record<string, SecretEntry> | null = null;
+
+async function resolveSecret(ref: string, currentHost: string): Promise<string> {
   if (!agentConfig.secretsFile) {
     throw new AgentError('secret_required', 'secret references are not configured on this worker');
   }
   if (!secretsCache) {
     try {
-      secretsCache = JSON.parse(await readFile(agentConfig.secretsFile, 'utf8')) as Record<string, string>;
+      secretsCache = JSON.parse(await readFile(agentConfig.secretsFile, 'utf8')) as Record<string, SecretEntry>;
     } catch {
       throw new AgentError('secret_required', 'secret store is unavailable');
     }
   }
-  const value = secretsCache[ref];
-  if (typeof value !== 'string') {
+  const entry = secretsCache[ref];
+  if (entry === undefined) {
     throw new AgentError('secret_required', 'no secret bound to that reference');
   }
-  return value;
+  if (typeof entry === 'string') return entry;
+  if (typeof entry.value !== 'string') {
+    throw new AgentError('secret_required', 'malformed secret entry');
+  }
+  if (entry.domains && entry.domains.length > 0) {
+    const host = currentHost.toLowerCase();
+    const permitted = entry.domains.some((d) => host === d.toLowerCase() || host.endsWith('.' + d.toLowerCase()));
+    if (!permitted) {
+      throw new AgentError('secret_required', 'secret is not permitted on the current page domain');
+    }
+  }
+  return entry.value;
 }
 
 // ---------------------------------------------------------------------------
@@ -909,7 +932,9 @@ async function resolveTarget(session: Session, target: Target): Promise<Locator>
   if (target.visible_text) candidates.push(scope.getByText(target.visible_text, { exact }));
   if (target.title) candidates.push(scope.getByTitle(target.title, { exact }));
   if (target.test_id) candidates.push(scope.getByTestId(target.test_id));
-  if (target.css_fallback) candidates.push(scope.locator(target.css_fallback));
+  // Force the CSS engine so a caller cannot smuggle another Playwright selector
+  // engine (e.g. `xpath=`, `text=`) through css_fallback — XPath is unsupported.
+  if (target.css_fallback) candidates.push(scope.locator(`css=${target.css_fallback}`));
 
   if (candidates.length === 0) {
     throw new AgentError('invalid_request', 'target must specify at least one selector strategy');
@@ -990,6 +1015,10 @@ function detectBlocker(snap: RawSnapshot): { type: BlockerType; message: string 
 }
 
 async function takeSnapshot(session: Session, maxElements: number, maxText: number): Promise<RawSnapshot> {
+  // esbuild/tsx (dev + tests) instruments named functions with a `__name` helper
+  // that is not defined once EXTRACT_FN is serialized into the page. Shim it as
+  // identity before evaluating; harmless under tsc production builds (no __name).
+  await session.page.evaluate('globalThis.__name = globalThis.__name || function (f) { return f; };');
   const snap = (await session.page.evaluate(EXTRACT_FN, {
     maxElements,
     maxTextChars: maxText,
@@ -1095,11 +1124,18 @@ async function createSession(
   // backstop for private and reserved ranges.
   const approvedOrigins = new Map<string, Promise<void>>();
   await context.route('**/*', async (route) => {
-    const raw = route.request().url();
+    const request = route.request();
+    const raw = request.url();
+    const reportNavigationBlock = (message: string): void => {
+      if (request.resourceType() === 'document' && request.isNavigationRequest()) {
+        session.lastBlocker = { type: 'domain_not_allowed', message };
+      }
+    };
     let url: URL;
     try {
       url = new URL(raw);
     } catch {
+      reportNavigationBlock('navigation URL is malformed');
       await route.abort('blockedbyclient');
       return;
     }
@@ -1108,6 +1144,7 @@ async function createSession(
       return;
     }
     if (!requestUrlAllowedByDomain(raw, allowedDomains)) {
+      reportNavigationBlock(`navigation to ${url.hostname} is outside the domain allowlist`);
       await route.abort('blockedbyclient');
       return;
     }
@@ -1122,6 +1159,7 @@ async function createSession(
       await route.continue();
     } catch {
       approvedOrigins.delete(origin);
+      reportNavigationBlock(`navigation to ${url.hostname} failed the public-address policy`);
       await route.abort('blockedbyclient');
     }
   });
@@ -1191,7 +1229,13 @@ interface ActionResult {
 
 async function fillValue(session: Session, value: z.infer<typeof ValueSchema>): Promise<string> {
   if ('literal' in value) return value.literal;
-  return resolveSecret(value.secret_ref);
+  let host = '';
+  try {
+    host = new URL(session.page.url()).hostname;
+  } catch {
+    host = '';
+  }
+  return resolveSecret(value.secret_ref, host);
 }
 
 // Returns true if the batch produced a state change.
@@ -1226,6 +1270,7 @@ async function runActions(
       results.push({ index: i, type: action.type, status: 'blocked', message: session.lastBlocker.message });
       return { status: 'blocked', results, blocker: session.lastBlocker, pending: null, changed };
     }
+    const urlBefore = session.page.url();
     try {
       switch (action.type) {
         case 'start': {
@@ -1369,13 +1414,26 @@ async function runActions(
           return { status: 'completed', results, blocker: null, pending: null, changed: true };
         }
       }
+      // Early-exit when a stop_when clause is satisfied: skip remaining actions.
+      if (req.stop_when && (await stopConditionMet(session, req.stop_when, urlBefore))) {
+        for (let j = i + 1; j < req.actions.length; j++) {
+          results.push({ index: j, type: req.actions[j]!.type, status: 'skipped', message: 'stop_when satisfied' });
+        }
+        return { status: 'completed', results, blocker: null, pending: null, changed };
+      }
     } catch (e) {
-      if (e instanceof AgentError && (e.code === 'ambiguous_target' || e.code === 'target_not_found')) {
-        const blocker: { type: BlockerType; message: string } = {
-          type: e.code === 'ambiguous_target' ? 'ambiguous_target' : 'other',
-          message: e.message,
-        };
-        results.push({ index: i, type: action.type, status: 'failed', message: e.message });
+      if (
+        e instanceof AgentError &&
+        (e.code === 'ambiguous_target' || e.code === 'target_not_found' || e.code === 'domain_not_allowed')
+      ) {
+        const type: BlockerType =
+          e.code === 'ambiguous_target'
+            ? 'ambiguous_target'
+            : e.code === 'domain_not_allowed'
+              ? 'domain_not_allowed'
+              : 'other';
+        const blocker: { type: BlockerType; message: string } = { type, message: e.message };
+        results.push({ index: i, type: action.type, status: 'blocked', message: e.message });
         return { status: 'blocked', results, blocker, pending: null, changed };
       }
       const message = e instanceof Error ? e.message.slice(0, 200) : 'action failed';
@@ -1385,6 +1443,45 @@ async function runActions(
     }
   }
   return { status: 'completed', results, blocker: null, pending: null, changed };
+}
+
+// Evaluate a stop_when clause after an action. Returns true when the batch
+// should halt early (remaining actions skipped). All probes are immediate
+// (no waiting) so a stop check never blocks the action batch.
+async function stopConditionMet(
+  session: Session,
+  sw: NonNullable<ActRequest['stop_when']>,
+  urlBefore: string,
+): Promise<boolean> {
+  const url = session.page.url();
+  if (sw.navigation_occurs && url !== urlBefore) return true;
+  if (sw.url_matches && new RegExp(escapeRegex(sw.url_matches)).test(url)) return true;
+  if (sw.text_visible) {
+    try {
+      if (await session.page.getByText(sw.text_visible).first().isVisible()) return true;
+    } catch {
+      /* not present yet */
+    }
+  }
+  if (sw.element_visible) {
+    try {
+      const loc = await resolveTarget(session, sw.element_visible);
+      if (await loc.isVisible()) return true;
+    } catch {
+      /* not resolvable yet */
+    }
+  }
+  if (sw.validation_error_occurs) {
+    try {
+      const hasError = await session.page.evaluate(
+        '(function(){var els=document.querySelectorAll("input,select,textarea");for(var i=0;i<els.length;i++){var e=els[i];if(e.willValidate&&!e.validity.valid&&e.validationMessage)return true;}return false;})()',
+      );
+      if (hasError === true) return true;
+    } catch {
+      /* ignore */
+    }
+  }
+  return false;
 }
 
 async function runWait(
@@ -1450,8 +1547,11 @@ function buildSummary(session: Session | null, outcome: Awaited<ReturnType<typeo
   if (outcome.status === 'needs_confirmation') return 'Consequential action requires explicit confirmation.';
   if (outcome.blocker) return `Blocked: ${outcome.blocker.message}`;
   const done = outcome.results.filter((r) => r.status === 'completed').length;
-  const title = session?.lastSnapshot?.title ?? '';
-  return `${done} action(s) completed${title ? ` on "${title.slice(0, 80)}"` : ''}.`;
+  // Page title is untrusted (attacker-controlled) and is surfaced via the MCP
+  // text content block, so it is deliberately NOT interpolated here. It remains
+  // available in the structured page.title field.
+  void session;
+  return `${done} action(s) completed.`;
 }
 
 function projectObserve(session: Session, req: ObserveRequest, timedOut: boolean, previousRevision?: number): Record<string, unknown> {
@@ -1544,11 +1644,49 @@ function projectObserve(session: Session, req: ObserveRequest, timedOut: boolean
   return out;
 }
 
+// Capture a bounded JPEG screenshot of the current viewport. Returned inline as
+// base64 (the MCP gateway can re-wrap it as image content). Never full-page and
+// never a public URL. Fails soft: returns null so observe still succeeds.
+async function captureScreenshot(
+  session: Session,
+): Promise<{ mime_type: 'image/jpeg'; width: number; height: number; data_base64: string } | null> {
+  try {
+    const buffer = await session.page.screenshot({ type: 'jpeg', quality: 55, fullPage: false, timeout: 8_000 });
+    const vp = session.page.viewportSize() ?? { width: 0, height: 0 };
+    return {
+      mime_type: 'image/jpeg',
+      width: vp.width,
+      height: vp.height,
+      data_base64: Buffer.from(buffer).toString('base64'),
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Build the observe response and attach a screenshot when requested. Split from
+// projectObserve (which stays sync) because screenshot capture is async.
+async function finishObserve(
+  session: Session,
+  req: ObserveRequest,
+  timedOut: boolean,
+  previousRevision?: number,
+): Promise<Record<string, unknown>> {
+  const out = projectObserve(session, req, timedOut, previousRevision);
+  if ((req.include ?? []).includes('screenshot')) {
+    const shot = await captureScreenshot(session);
+    if (shot) out.screenshot = shot;
+  }
+  return out;
+}
+
 function summarizeSnapshot(snap: RawSnapshot, session: Session): string {
   const blocker = session.lastBlocker ? ` Blocker: ${session.lastBlocker.type}.` : '';
   const forms = snap.forms.length;
   const controls = snap.elements.length;
-  return `Page "${snap.title.slice(0, 80)}" with ${controls} interactive control(s) and ${forms} form(s).${blocker}`;
+  // Untrusted page title is NOT interpolated into this summary (it surfaces via
+  // the MCP text content block). It stays in the structured page.title field.
+  return `Page with ${controls} interactive control(s) and ${forms} form(s).${blocker}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1562,6 +1700,14 @@ export function registerBrowserAgentRoutes(
   if (!agentConfig.enabled) {
     deps.log.info('browser-agent routes disabled (BROWSER_AGENT_ENABLED=false)');
     return;
+  }
+  if (agentConfig.secretsFile) {
+    // Secrets typed into pages are only as safe as the domains they're bound to.
+    // Never provision a secrets file on a publicly reachable, unauthenticated
+    // worker unless every secret entry carries a `domains` binding.
+    deps.log.warn(
+      'browser-agent: BROWSER_AGENT_SECRETS_FILE is set; ensure every secret is domain-bound and the endpoint is authenticated',
+    );
   }
   startSweeper(deps.log);
 
@@ -1680,9 +1826,14 @@ export function registerBrowserAgentRoutes(
       // Immediate return path.
       if (previousRevision === undefined || session.revision !== previousRevision || !req.wait_ms) {
         await takeSnapshot(session, req.max_elements ?? agentConfig.maxElements, req.max_visible_text_chars ?? agentConfig.maxVisibleTextChars);
-        return projectObserve(session, req, false, previousRevision);
+        return finishObserve(session, req, false, previousRevision);
       }
 
+      // Bound concurrent long-polls per session so a caller cannot pin an
+      // unbounded number of waiters (and upstream connections) on one session.
+      if (session.waiters.length >= MAX_WAITERS_PER_SESSION) {
+        return finishObserve(session, req, true, previousRevision);
+      }
       // Long-poll: wait for a revision change or timeout. Never holds a browser
       // lock; a concurrent /agent/act can still run.
       const waitMs = Math.min(req.wait_ms, agentConfig.maxLongPollMs);
@@ -1692,7 +1843,7 @@ export function registerBrowserAgentRoutes(
       if (changed) {
         await takeSnapshot(sessionStill, req.max_elements ?? agentConfig.maxElements, req.max_visible_text_chars ?? agentConfig.maxVisibleTextChars);
       }
-      return projectObserve(sessionStill, req, !changed, previousRevision);
+      return finishObserve(sessionStill, req, !changed, previousRevision);
     } catch (e) {
       return replyError(reply, e, deps.log);
     }

@@ -1,0 +1,252 @@
+// Real-browser integration test for the persistent browser-agent loop.
+// Boots a local fixture site + a fastify instance with the /agent/* routes and a
+// real headless Chromium, then drives the full observe -> act -> observe loop:
+// validation errors, semantic + ref targeting, revisions, consequential-action
+// confirmation, and CAPTCHA blocker detection.
+//
+// Requires the Playwright Chromium binary. Skips itself (does not fail) when the
+// browser is unavailable, so unit-only CI stays green.
+
+// Env must be set before importing the module (agentConfig reads it at load).
+process.env.BROWSER_AGENT_ALLOW_INSECURE_HTTP = 'true';
+process.env.BROWSER_AGENT_ALLOW_PRIVATE_NETWORKS = 'true';
+process.env.BROWSER_AGENT_ALLOWED_DOMAINS = '';
+
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+
+import Fastify, { type FastifyInstance } from 'fastify';
+import type { Browser } from 'playwright';
+
+import { startFixture } from './fixtures/test-site.mjs';
+
+// Dynamic import AFTER the env is set above: agentConfig reads env at module load,
+// and static imports are hoisted above the process.env assignments.
+const { registerBrowserAgentRoutes, closeAllSessions } = await import('../src/browser-agent.js');
+
+let chromium: typeof import('playwright').chromium | null = null;
+let launchBrowser: Browser | null = null;
+try {
+  ({ chromium } = await import('playwright'));
+  launchBrowser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+} catch (e) {
+  // eslint-disable-next-line no-console
+  console.warn('skipping browser-agent integration test: Chromium unavailable ->', (e as Error).message);
+}
+
+test(
+  'full observe/act loop: validation, refs, revisions, confirmation, captcha blocker',
+  { skip: launchBrowser === null },
+  async () => {
+    const browser = launchBrowser!;
+    const fixture = await startFixture();
+    const app: FastifyInstance = Fastify();
+    registerBrowserAgentRoutes(app, {
+      getBrowser: async () => browser,
+      isPrivateIp: () => false,
+      isAuthorized: () => true,
+      log: app.log,
+    });
+    await app.ready();
+
+    const act = async (payload: unknown): Promise<Record<string, unknown>> => {
+      const r = await app.inject({ method: 'POST', url: '/agent/act', payload });
+      return JSON.parse(r.body) as Record<string, unknown>;
+    };
+    const observe = async (payload: unknown): Promise<Record<string, unknown>> => {
+      const r = await app.inject({ method: 'POST', url: '/agent/observe', payload });
+      return JSON.parse(r.body) as Record<string, unknown>;
+    };
+
+    try {
+      // 1) start a session at step 1.
+      const started = await act({
+        request_id: 'r1',
+        intent: 'open registration form',
+        actions: [{ type: 'start', initial_url: `${fixture.url}/step1` }],
+      });
+      assert.equal(started.status, 'completed', JSON.stringify(started));
+      const sessionId = started.session_id as string;
+      assert.ok(sessionId, 'session_id returned');
+      assert.match(started.page ? (started.page as { url: string }).url : '', /\/step1$/);
+
+      // 2) observe -> forms + interactive elements with refs.
+      const obs1 = await observe({
+        session_id: sessionId,
+        include: ['interactive_elements', 'forms', 'validation_errors'],
+      });
+      const els = (obs1.interactive_elements ?? []) as Array<Record<string, unknown>>;
+      assert.ok(els.length >= 3, `expected controls, got ${els.length}`);
+      const entity = els.find((e) => e.label === 'Entity name' || e.name === 'Entity name');
+      assert.ok(entity, 'entity field observed with a ref');
+
+      // 3) click Next with the required field empty -> native validation error.
+      const badSubmit = await act({
+        request_id: 'r2',
+        session_id: sessionId,
+        expected_revision: obs1.revision,
+        intent: 'attempt submit with empty required field',
+        actions: [{ type: 'click', target: { visible_text: 'Next' } }],
+      });
+      assert.ok(['completed', 'partially_completed'].includes(badSubmit.status as string), JSON.stringify(badSubmit));
+      // still on step 1 (native validation blocked navigation)
+      assert.match((badSubmit.page as { url: string }).url, /\/step1/);
+
+      const obs2 = await observe({ session_id: sessionId, include: ['validation_errors', 'interactive_elements'] });
+      const vErrors = (obs2.validation_errors ?? []) as Array<Record<string, unknown>>;
+      assert.ok(vErrors.length >= 1, `expected a validation error, got ${JSON.stringify(vErrors)}`);
+
+      // 4) fill the form correctly (semantic + ref targeting) and advance.
+      const filled = await act({
+        request_id: 'r3',
+        session_id: sessionId,
+        expected_revision: obs2.revision,
+        intent: 'complete the form and continue',
+        actions: [
+          { type: 'fill', target: { label: 'Entity name' }, value: { literal: 'ORE Software LLC' } },
+          { type: 'select', target: { role: 'combobox', name: 'State' }, option: { value: 'CO' } },
+          { type: 'check', target: { label: 'I agree to the terms' } },
+          { type: 'click', target: { visible_text: 'Next' } },
+        ],
+      });
+      assert.equal(filled.status, 'completed', JSON.stringify(filled));
+      assert.match((filled.page as { url: string }).url, /\/step2/);
+      assert.ok((filled.revision as number) > (obs2.revision as number), 'revision advanced after navigation');
+
+      // 5) stale revision is rejected.
+      const stale = await act({
+        request_id: 'r4',
+        session_id: sessionId,
+        expected_revision: 0,
+        intent: 'act on stale state',
+        actions: [{ type: 'reload' }],
+      });
+      assert.equal(stale.status, 'revision_conflict', JSON.stringify(stale));
+
+      // 6) consequential submit -> needs_confirmation with a digest.
+      const obs3 = await observe({ session_id: sessionId, include: ['interactive_elements'] });
+      const pending = await act({
+        request_id: 'r5',
+        session_id: sessionId,
+        expected_revision: obs3.revision,
+        intent: 'submit the filing',
+        actions: [{ type: 'click', target: { visible_text: 'Submit filing' } }],
+      });
+      assert.equal(pending.status, 'needs_confirmation', JSON.stringify(pending));
+      const pa = pending.pending_action as { action_digest: string; revision: number };
+      assert.match(pa.action_digest, /^sha256:[0-9a-f]{64}$/);
+
+      // 7) confirmed submit succeeds and navigates to /done.
+      const confirmed = await act({
+        request_id: 'r6',
+        session_id: sessionId,
+        expected_revision: pa.revision,
+        intent: 'submit the filing (confirmed)',
+        actions: [{ type: 'click', target: { visible_text: 'Submit filing' } }],
+        confirmation: { action_digest: pa.action_digest, confirmed_revision: pa.revision, user_explicitly_approved: true },
+      });
+      assert.equal(confirmed.status, 'completed', JSON.stringify(confirmed));
+      assert.match((confirmed.page as { url: string }).url, /\/done/);
+
+      // 7b) screenshot is captured on demand.
+      const shot = await observe({ session_id: sessionId, include: ['summary', 'screenshot'] });
+      const s = shot.screenshot as { mime_type: string; data_base64: string } | undefined;
+      assert.ok(s && s.mime_type === 'image/jpeg' && s.data_base64.length > 100, 'screenshot returned');
+
+      // 7c) stop_when halts a batch early (navigation short-circuits the reload).
+      const stopped = await act({
+        request_id: 'r6b',
+        session_id: sessionId,
+        expected_revision: (shot as { revision: number }).revision,
+        intent: 'navigate then stop before the extra action',
+        actions: [
+          { type: 'goto', url: `${fixture.url}/step1` },
+          { type: 'reload' },
+        ],
+        stop_when: { url_matches: '/step1' },
+      });
+      assert.equal(stopped.status, 'completed', JSON.stringify(stopped));
+      const stoppedResults = stopped.action_results as Array<{ type: string; status: string }>;
+      const reload = stoppedResults.find((r) => r.type === 'reload');
+      assert.equal(reload?.status, 'skipped', 'reload skipped after stop_when satisfied');
+
+      // 8) navigate to the CAPTCHA page -> blocker is detected and interaction is refused.
+      const obsBeforeNav = await observe({ session_id: sessionId, include: ['summary'] });
+      const nav = await act({
+        request_id: 'r7',
+        session_id: sessionId,
+        expected_revision: obsBeforeNav.revision,
+        intent: 'go to the verify page',
+        actions: [{ type: 'goto', url: `${fixture.url}/captcha` }],
+      });
+      assert.equal(nav.status, 'completed', JSON.stringify(nav));
+      const obsCaptcha = await observe({ session_id: sessionId, include: ['summary'] });
+      assert.ok(obsCaptcha.blocker, 'captcha blocker surfaced on observe');
+      assert.equal((obsCaptcha.blocker as { type: string }).type, 'captcha');
+
+      // 9) close the session.
+      const closed = await act({
+        request_id: 'r8',
+        session_id: sessionId,
+        intent: 'done',
+        actions: [{ type: 'close' }],
+      });
+      assert.equal(closed.status, 'completed');
+      const gone = await observe({ session_id: sessionId });
+      assert.equal((gone as { error_code?: string }).error_code, 'session_not_found');
+    } finally {
+      await closeAllSessions();
+      await app.close();
+      await fixture.close();
+    }
+  },
+);
+
+test(
+  'domain allowlist is enforced: navigation off the allowlist is blocked',
+  { skip: launchBrowser === null },
+  async () => {
+    const browser = launchBrowser!;
+    const fixture = await startFixture();
+    const app = Fastify();
+    registerBrowserAgentRoutes(app, {
+      getBrowser: async () => browser,
+      isPrivateIp: () => false,
+      isAuthorized: () => true,
+      log: app.log,
+    });
+    await app.ready();
+    const act = async (payload: unknown): Promise<Record<string, unknown>> =>
+      JSON.parse((await app.inject({ method: 'POST', url: '/agent/act', payload })).body) as Record<string, unknown>;
+    try {
+      // A caller-supplied allowlist that does not include the fixture host must
+      // block navigation to it (caller can only narrow, and goto is guarded).
+      const res = await act({
+        request_id: 'a1',
+        intent: 'start restricted to a different domain',
+        actions: [{ type: 'start', browser: 'chromium' }],
+        allowed_domains: ['example.invalid'],
+      });
+      const started = res.status === 'completed';
+      assert.ok(started, JSON.stringify(res));
+      const sessionId = res.session_id as string;
+      const blocked = await act({
+        request_id: 'a2',
+        session_id: sessionId,
+        intent: 'try to leave the allowlist',
+        actions: [{ type: 'goto', url: `${fixture.url}/step1` }],
+      });
+      // goto off the allowlist is surfaced as a domain_not_allowed blocker.
+      assert.equal(blocked.status, 'blocked', JSON.stringify(blocked));
+      assert.equal((blocked.blocker as { type: string }).type, 'domain_not_allowed');
+    } finally {
+      await closeAllSessions();
+      await app.close();
+      await fixture.close();
+    }
+  },
+);
+
+test('teardown: close shared browser', { skip: launchBrowser === null }, async () => {
+  await launchBrowser!.close();
+});

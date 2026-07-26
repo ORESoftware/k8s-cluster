@@ -106,6 +106,34 @@ Machine-readable error codes: `invalid_request`, `session_not_found`,
 `navigation_failed`, `secret_required`, `unsafe_download`, `too_many_sessions`,
 `worker_unavailable`, `internal_error`.
 
+## Hardening checklist before real public exposure
+
+The service is intentionally shipped **public + unauthenticated** for now. Before
+leaning on it, confirm:
+
+1. **Set a domain allowlist.** With an empty `BROWSER_MCP_ALLOWED_DOMAINS` /
+   `BROWSER_AGENT_ALLOWED_DOMAINS` it is an open browser proxy to the whole
+   public internet using your egress IP. Once set, the gateway overwrites any
+   caller-supplied `allowed_domains` and the worker enforces the allowlist on
+   **every** navigation (clicks, redirects, JS), not just explicit `goto`.
+2. **SSRF backstop is the NetworkPolicy.** The app blocks IP-literals, private
+   DNS answers, and non-https, but Chromium re-resolves DNS at navigation time
+   (rebinding), so the pod's egress `except`-list (private ranges + `169.254/16`)
+   is load-bearing. Verify your CNI actually enforces ipBlock `except`, and use
+   IMDSv2 with hop-limit 1 so the metadata service isn't reachable regardless.
+3. **Do not mount an unbound secrets file.** `BROWSER_AGENT_SECRETS_FILE` should
+   be absent on a public worker. If used, every entry must be
+   `{"value": "...", "domains": ["irs.gov"]}` — a bound secret is only typed
+   into a matching origin, never an attacker page. Bare-string secrets have no
+   domain binding.
+4. **DoS posture.** Anonymous callers share one `owner`, so per-owner caps are a
+   shared bucket; the gateway rate-limits per IP (300/min). Enable
+   `BROWSER_MCP_REQUIRE_AUTH` before heavy public use so sessions are
+   per-identity. Long-poll waiters are capped per session.
+5. **Webpage text is untrusted** and is only ever returned under
+   `visible_text.untrusted_content`; page titles are kept out of the model's
+   text/summary stream.
+
 ## Endpoints
 
 | Path       | Method        | Notes                                             |

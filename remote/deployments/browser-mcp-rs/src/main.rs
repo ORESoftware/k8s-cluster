@@ -468,11 +468,22 @@ fn random_request_id() -> String {
 }
 
 fn tool_result(id: Value, structured: Value, summary: &str, is_error: bool) -> Value {
+    // When the worker returned a screenshot, surface it as a proper MCP image
+    // content block so clients render it natively (in addition to structured).
+    let mut content = vec![json!({ "type": "text", "text": summary })];
+    if let Some(shot) = structured.get("screenshot") {
+        if let (Some(data), Some(mime)) = (
+            shot.get("data_base64").and_then(Value::as_str),
+            shot.get("mime_type").and_then(Value::as_str),
+        ) {
+            content.push(json!({ "type": "image", "data": data, "mimeType": mime }));
+        }
+    }
     json!({
         "jsonrpc": "2.0",
         "id": id,
         "result": {
-            "content": [ { "type": "text", "text": summary } ],
+            "content": content,
             "structuredContent": structured,
             "isError": is_error
         }
@@ -532,6 +543,9 @@ fn worker_body_from_args(
         _ => Map::new(),
     };
     map.insert("owner".to_string(), Value::String(owner.to_string()));
+    // Authoritatively overwrite (not just default) the allowlist with the
+    // server policy, including an empty policy, so a caller can never widen
+    // navigation scope with its own allowed_domains value.
     if inject_allowlist {
         map.insert(
             "allowed_domains".to_string(),
