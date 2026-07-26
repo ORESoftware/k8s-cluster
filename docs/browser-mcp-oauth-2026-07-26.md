@@ -253,18 +253,21 @@ never prints access, refresh, signing, worker, or operator secrets.
 
 ## Live validation
 
-On 2026-07-26, GitHub Actions published the merged OAuth binary from
-`d30218ac210291bd9aaebbac0e4204728e9c3faf`. Commit `c71b802e` pinned both
-runtime images, including browser MCP OCI index digest:
+On 2026-07-26, GitHub Actions published the merged OAuth binary and corrected
+Playwright form detector. The final GitOps revisions pin both runtime images by
+OCI index digest:
 
 ```text
-sha256:9076c098c03f6a4c24c8220b0b1878de42c87dde2da07b41d54cf21d8ebad1d3
+dd-browser-mcp-rs: sha256:9076c098c03f6a4c24c8220b0b1878de42c87dde2da07b41d54cf21d8ebad1d3
+dd-web-scraper:    sha256:9a70963bd9a6799e76380e3eb8b541bd76ca1263b8e46df26181fe6eefe1faa4
 ```
 
-Both `dd-browser-mcp-rs` ArgoCD Applications then reported `Synced/Healthy` at
-`c71b802e48d7287095ce50e0a0778a7cc4c87ae0`, with two ready OAuth replicas in
-each cluster. The full verifier passed independently against both public URLs.
-The passing sequence covered:
+Both `dd-browser-mcp-rs` ArgoCD Applications reported `Synced/Healthy` at
+`83140294d63622f76bc122dbeee536ae009e613c`, with two ready OAuth replicas in
+each cluster. The browser worker pin is deployed from
+`d01047df1396cab4e4e4d03350d14f80bf341779`, with one ready worker and zero
+restarts in each cluster. The full verifier passed independently against both
+public URLs. The passing sequence covered:
 
 - trusted public TLS and `/healthz`;
 - unauthenticated MCP `401` with the RFC 9728 discovery challenge;
