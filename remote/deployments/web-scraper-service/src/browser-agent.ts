@@ -694,6 +694,19 @@ function EXTRACT_FN(opts: { maxElements: number; maxTextChars: number }): RawSna
   );
   const hasMfaPromptShape =
     MFA_RE.test(haystack) && visibleFormControls.length > 0 && visibleFormControls.length <= 4;
+  const hasExplicitPaymentControl = !!document.querySelector(
+    [
+      'input[autocomplete="cc-number"]',
+      'input[autocomplete="cc-exp"]',
+      'input[autocomplete="cc-csc"]',
+      'input[name*="cardnumber" i]',
+      'input[id*="card-number" i]',
+      'input[name="cvv" i]',
+      'input[name="cvc" i]',
+    ].join(','),
+  );
+  const hasPaymentPromptShape =
+    PAYMENT_RE.test(haystack) && visibleFormControls.length > 0 && visibleFormControls.length <= 4;
 
   return {
     title: document.title || '',
@@ -706,7 +719,9 @@ function EXTRACT_FN(opts: { maxElements: number; maxTextChars: number }): RawSna
       // Treat it as a blocker only when the page also looks like a compact
       // code-entry challenge or exposes an explicit one-time-code control.
       mfa: hasExplicitMfaControl || hasMfaPromptShape,
-      payment: PAYMENT_RE.test(haystack) || !!document.querySelector('input[autocomplete="cc-number"],input[name*="cardnumber" i]'),
+      // Pricing/help copy is common on application pages. Require an explicit
+      // card control or a compact payment-form shape before blocking actions.
+      payment: hasExplicitPaymentControl || hasPaymentPromptShape,
       signature: SIGNATURE_RE.test(haystack) || !!document.querySelector('canvas[class*="sign" i],iframe[src*="docusign" i]'),
       legalAttestation: LEGAL_RE.test(haystack),
     },

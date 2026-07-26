@@ -38,6 +38,7 @@ const CAPTCHA = `<!doctype html><html><head><title>Verify</title></head><body>
 const STARTUP_FORM = `<!doctype html><html><head><title>Startup application</title></head><body>
   <h1>Startup application</h1>
   <p>Our product supports multi-factor authentication for customer accounts.</p>
+  <p>No payment method is required to submit this application.</p>
   <form>
     <label for="first-name">First name</label><input id="first-name" name="first_name" />
     <label for="last-name">Last name</label><input id="last-name" name="last_name" />
@@ -55,6 +56,15 @@ const MFA = `<!doctype html><html><head><title>Verify your sign-in</title></head
   <form><label for="code">One-time code</label><input id="code" name="verification_code" /></form>
 </body></html>`;
 
+const PAYMENT = `<!doctype html><html><head><title>Payment method</title></head><body>
+  <h1>Add a payment method</h1>
+  <form>
+    <label for="card">Card number</label><input id="card" name="cardnumber" autocomplete="cc-number" />
+    <label for="expiry">Expiration date</label><input id="expiry" autocomplete="cc-exp" />
+    <label for="cvc">CVC</label><input id="cvc" name="cvc" autocomplete="cc-csc" />
+  </form>
+</body></html>`;
+
 const DONE = `<!doctype html><html><head><title>Filing complete</title></head><body>
   <h1>Filing complete</h1><p id="ok">Your filing was submitted.</p>
 </body></html>`;
@@ -68,6 +78,7 @@ export async function startFixture() {
     if (url.pathname === '/captcha') return res.end(CAPTCHA);
     if (url.pathname === '/startup') return res.end(STARTUP_FORM);
     if (url.pathname === '/mfa') return res.end(MFA);
+    if (url.pathname === '/payment') return res.end(PAYMENT);
     if (url.pathname === '/done') return res.end(DONE);
     res.statusCode = 404;
     res.end('<h1>not found</h1>');

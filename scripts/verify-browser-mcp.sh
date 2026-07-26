@@ -19,6 +19,7 @@ done
 
 session_id=''
 access_token=''
+refresh_token=''
 
 rpc() {
   auth_args=()
@@ -152,6 +153,7 @@ oauth_login() {
       "$token_endpoint"
   )"
   access_token="$(jq -er '.access_token' <<<"$token_response")"
+  refresh_token="$(jq -er '.refresh_token' <<<"$token_response")"
   jq -e '
     .token_type == "Bearer" and
     .expires_in > 0 and
@@ -160,6 +162,39 @@ oauth_login() {
     (.scope | contains("browser:act")) and
     (.refresh_token | type == "string")
   ' <<<"$token_response" >/dev/null
+
+  echo "checking refresh-token rotation and replay rejection"
+  previous_refresh_token="$refresh_token"
+  refresh_response="$(
+    curl --fail-with-body --silent --show-error \
+      -X POST \
+      --data-urlencode 'grant_type=refresh_token' \
+      --data-urlencode "refresh_token=$previous_refresh_token" \
+      --data-urlencode "client_id=$client_id" \
+      --data-urlencode "resource=$endpoint" \
+      "$token_endpoint"
+  )"
+  access_token="$(jq -er '.access_token' <<<"$refresh_response")"
+  refresh_token="$(jq -er '.refresh_token' <<<"$refresh_response")"
+  jq -e '
+    .token_type == "Bearer" and
+    .expires_in > 0 and
+    (.refresh_token | type == "string")
+  ' <<<"$refresh_response" >/dev/null
+  test "$refresh_token" != "$previous_refresh_token"
+
+  replay_status="$(
+    curl --silent --show-error \
+      -o /dev/null \
+      -w '%{http_code}' \
+      -X POST \
+      --data-urlencode 'grant_type=refresh_token' \
+      --data-urlencode "refresh_token=$previous_refresh_token" \
+      --data-urlencode "client_id=$client_id" \
+      --data-urlencode "resource=$endpoint" \
+      "$token_endpoint"
+  )"
+  test "$replay_status" = '400'
 }
 
 cleanup() {

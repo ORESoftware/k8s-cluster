@@ -55,7 +55,7 @@ spec:
               app: dd-browser-mcp-rs
       containers:
         - name: browser-mcp-rs
-          image: ghcr.io/oresoftware/dd-browser-mcp-rs@sha256:5ce57443a08cb9373e5c58db2e791c4d198e29c2ffce0b4cda1c48a2bf611dbe
+          image: ghcr.io/oresoftware/dd-browser-mcp-rs@sha256:9076c098c03f6a4c24c8220b0b1878de42c87dde2da07b41d54cf21d8ebad1d3
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -129,7 +129,7 @@ spec:
             # and AWS Community Day CFP host. Filing sites, webmail, cloud
             # metadata, and arbitrary prospect domains remain blocked.
             - name: BROWSER_MCP_ALLOWED_DOMAINS
-              value: 'benefactor.cc,confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,www.pulumi.com,tally.so,allthingsopen.org,allthingsopen.wufoo.com,static.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com,www.gstatic.com,ssl.gstatic.com,fonts.googleapis.com,fonts.gstatic.com,httpbin.org'
+              value: 'benefactor.cc,confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,app.posthog.com,elevenlabs.io,www.together.ai,support.snyk.io,us.ovhcloud.com,www.pulumi.com,tally.so,allthingsopen.org,allthingsopen.wufoo.com,static.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com,www.gstatic.com,ssl.gstatic.com,fonts.googleapis.com,fonts.gstatic.com,httpbin.org'
             # Callers select one named workflow profile. Profiles are
             # server-defined subsets of the ceiling above; caller-provided
             # allowed_domains are always discarded.
@@ -137,7 +137,7 @@ spec:
               value: fiducia-applications
             - name: BROWSER_MCP_WORKFLOW_ALLOWLISTS_JSON
               value: >-
-                {"benefactor-site":["benefactor.cc"],"fiducia-applications":["benefactor.cc","confluent.cloud","confluent.io","signoz.io","tailscale.com","planetscale.com","clerk.com","algolia.com","www.pulumi.com","tally.so","allthingsopen.org","allthingsopen.wufoo.com","static.wufoo.com","talks.devopsdays.org","sessionize.com","events.linuxfoundation.org","cfp.awscommunitydaysoflo.com","forms.gle","docs.google.com","www.gstatic.com","ssl.gstatic.com","fonts.googleapis.com","fonts.gstatic.com"],"smoke-test":["httpbin.org"]}
+                {"benefactor-site":["benefactor.cc"],"fiducia-applications":["confluent.cloud","confluent.io","signoz.io","tailscale.com","planetscale.com","clerk.com","algolia.com","app.posthog.com","elevenlabs.io","www.together.ai","support.snyk.io","us.ovhcloud.com","www.pulumi.com","tally.so","allthingsopen.org","allthingsopen.wufoo.com","static.wufoo.com","talks.devopsdays.org","sessionize.com","events.linuxfoundation.org","cfp.awscommunitydaysoflo.com","forms.gle","docs.google.com","www.gstatic.com","ssl.gstatic.com","fonts.googleapis.com","fonts.gstatic.com"],"smoke-test":["httpbin.org"]}
             - name: OTEL_SERVICE_NAME
               value: dd-browser-mcp-rs
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
