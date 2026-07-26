@@ -162,7 +162,7 @@ The deployment remains a prebuilt distroless image, pinned to the OCI index
 published from this branch:
 
 ```text
-ghcr.io/oresoftware/dd-browser-mcp-rs@sha256:f54dd077bae876ac36b2ddd8676ce0bc8cb6f6d31df063c5c526e873048b74d7
+ghcr.io/oresoftware/dd-browser-mcp-rs@sha256:e07da89e3489442464df4730d78006ec83ae8ddcd38d966826f27031b6de4b14
 ```
 
 It does not mount the shared EC2 checkout and does not run Cargo in the pod.
@@ -269,7 +269,7 @@ plane and Playwright worker from `agent/browser-mcp-oauth`. The GitOps
 manifests pin both runtime images by OCI index digest:
 
 ```text
-dd-browser-mcp-rs: sha256:f54dd077bae876ac36b2ddd8676ce0bc8cb6f6d31df063c5c526e873048b74d7
+dd-browser-mcp-rs: sha256:e07da89e3489442464df4730d78006ec83ae8ddcd38d966826f27031b6de4b14
 dd-web-scraper:    sha256:fec450d14e203d7e747b9eb8046c18e48c8e617798228ac914296a994decde1f
 ```
 
