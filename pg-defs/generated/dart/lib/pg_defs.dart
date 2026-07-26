@@ -3147,6 +3147,95 @@ class LambdaFunctionRow {
   }
 }
 
+const lambdaActorInstanceTable = "lambda_actor_instances";
+const lambdaActorInstanceSelectSql = "select\n      id::text as id,\n      function_id::text as function_id,\n      actor_key,\n      state::text as state_json,\n      state_version,\n      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as alarm_at,\n      alarm_attempt,\n      lease_owner,\n      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_until,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from lambda_actor_instances";
+
+class LambdaActorInstanceRow {
+  const LambdaActorInstanceRow({
+    required this.id,
+    required this.functionId,
+    required this.actorKey,
+    required this.state,
+    required this.stateVersion,
+    this.alarmAt,
+    required this.alarmAttempt,
+    this.leaseOwner,
+    this.leaseUntil,
+    this.lastInvokedAt,
+    this.lastError,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final String id;
+  final String functionId;
+  final String actorKey;
+  final Map<String, Object?> state;
+  final int stateVersion;
+  final String? alarmAt;
+  final int alarmAttempt;
+  final String? leaseOwner;
+  final String? leaseUntil;
+  final String? lastInvokedAt;
+  final String? lastError;
+  final String createdAt;
+  final String updatedAt;
+
+  factory LambdaActorInstanceRow.fromJson(Map<String, Object?> json) {
+    return LambdaActorInstanceRow(
+      id: _readRequiredString(json, "id"),
+      functionId: _readRequiredString(json, "functionId"),
+      actorKey: _readRequiredString(json, "actorKey"),
+      state: _readRequiredObject(json, "state"),
+      stateVersion: _readRequiredInt(json, "stateVersion"),
+      alarmAt: _readOptionalString(json, "alarmAt"),
+      alarmAttempt: _readRequiredInt(json, "alarmAttempt"),
+      leaseOwner: _readOptionalString(json, "leaseOwner"),
+      leaseUntil: _readOptionalString(json, "leaseUntil"),
+      lastInvokedAt: _readOptionalString(json, "lastInvokedAt"),
+      lastError: _readOptionalString(json, "lastError"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "functionId": functionId,
+    "actorKey": actorKey,
+    "state": state,
+    "stateVersion": stateVersion,
+    "alarmAt": alarmAt,
+    "alarmAttempt": alarmAttempt,
+    "leaseOwner": leaseOwner,
+    "leaseUntil": leaseUntil,
+    "lastInvokedAt": lastInvokedAt,
+    "lastError": lastError,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$').hasMatch(actorKey)) {
+      errors.add("lambda_actor_instances.actor_key does not match the required pattern");
+    }
+    if (alarmAttempt < 0) {
+      errors.add("lambda_actor_instances.alarm_attempt is below the minimum");
+    }
+    if (alarmAttempt > 6) {
+      errors.add("lambda_actor_instances.alarm_attempt is above the maximum");
+    }
+    if (leaseOwner != null && utf8.encode(leaseOwner!).length > 200) {
+      errors.add("lambda_actor_instances.lease_owner exceeds 200 bytes");
+    }
+    if (lastError != null && utf8.encode(lastError!).length > 8192) {
+      errors.add("lambda_actor_instances.last_error exceeds 8192 bytes");
+    }
+    return errors;
+  }
+}
+
 const workflowDefinitionsTable = "workflow_definitions";
 const workflowDefinitionsSelectSql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      steps::text as steps_json,\n      default_retry::text as default_retry_json,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from workflow_definitions";
 

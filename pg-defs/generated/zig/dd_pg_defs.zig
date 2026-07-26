@@ -2831,6 +2831,67 @@ pub fn validateLambdaFunctionsMaxRunMs(value: i32) ?[]const u8 {
     return null;
 }
 
+// Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
+pub const lambda_actor_instances_table: []const u8 = "lambda_actor_instances";
+pub const lambda_actor_instances_columns = [_][]const u8{ "id", "function_id", "actor_key", "state", "state_version", "alarm_at", "alarm_attempt", "lease_owner", "lease_until", "last_invoked_at", "last_error", "created_at", "updated_at" };
+pub const lambda_actor_instances_select_sql: []const u8 = "select\n      id::text as id,\n      function_id::text as function_id,\n      actor_key,\n      state::text as state_json,\n      state_version,\n      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as alarm_at,\n      alarm_attempt,\n      lease_owner,\n      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_until,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from lambda_actor_instances";
+
+pub const LambdaActorInstanceRow = struct {
+    id: []const u8,
+    function_id: []const u8,
+    actor_key: []const u8,
+    state: []const u8,
+    state_version: i64,
+    alarm_at: ?[]const u8,
+    alarm_attempt: i32,
+    lease_owner: ?[]const u8,
+    lease_until: ?[]const u8,
+    last_invoked_at: ?[]const u8,
+    last_error: ?[]const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) LambdaActorInstanceRow {
+        return LambdaActorInstanceRow{
+            .id = reader.text(0),
+            .function_id = reader.text(1),
+            .actor_key = reader.text(2),
+            .state = reader.text(3),
+            .state_version = reader.int(4),
+            .alarm_at = if (reader.is_null(5)) null else reader.text(5),
+            .alarm_attempt = @as(i32, @intCast(reader.int(6))),
+            .lease_owner = if (reader.is_null(7)) null else reader.text(7),
+            .lease_until = if (reader.is_null(8)) null else reader.text(8),
+            .last_invoked_at = if (reader.is_null(9)) null else reader.text(9),
+            .last_error = if (reader.is_null(10)) null else reader.text(10),
+            .created_at = reader.text(11),
+            .updated_at = reader.text(12),
+        };
+    }
+};
+
+pub fn validateLambdaActorInstancesActorKey(value: []const u8) ?[]const u8 {
+    if (value.len < 1) return "lambda_actor_instances.actor_key must be at least 1 characters";
+    if (value.len > 200) return "lambda_actor_instances.actor_key must be at most 200 characters";
+    return null;
+}
+
+pub fn validateLambdaActorInstancesStateVersion(value: i64) ?[]const u8 {
+    if (value < 0) return "lambda_actor_instances.state_version is below the minimum";
+    return null;
+}
+
+pub fn validateLambdaActorInstancesAlarmAttempt(value: i32) ?[]const u8 {
+    if (value < 0) return "lambda_actor_instances.alarm_attempt is below the minimum";
+    if (value > 6) return "lambda_actor_instances.alarm_attempt is above the maximum";
+    return null;
+}
+
+pub fn validateLambdaActorInstancesLeaseOwner(value: []const u8) ?[]const u8 {
+    if (value.len > 200) return "lambda_actor_instances.lease_owner must be at most 200 characters";
+    return null;
+}
+
 pub const workflow_definitions_table: []const u8 = "workflow_definitions";
 pub const workflow_definitions_columns = [_][]const u8{ "id", "slug", "display_name", "description", "steps", "default_retry", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by" };
 pub const workflow_definitions_select_sql: []const u8 = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      steps::text as steps_json,\n      default_retry::text as default_retry_json,\n      status,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from workflow_definitions";

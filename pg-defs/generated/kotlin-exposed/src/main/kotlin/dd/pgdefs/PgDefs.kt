@@ -596,6 +596,25 @@ object LambdaFunctions : Table("lambda_functions") {
     override val primaryKey = PrimaryKey(id)
 }
 
+// Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
+object LambdaActorInstances : Table("lambda_actor_instances") {
+    val id = uuid("id")
+    val functionId = uuid("function_id")
+    val actorKey = varchar("actor_key", 200)
+    val state = jsonb<String>("state", { it }, { it })
+    val stateVersion = long("state_version")
+    val alarmAt = timestampWithTimeZone("alarm_at").nullable()
+    val alarmAttempt = integer("alarm_attempt")
+    val leaseOwner = varchar("lease_owner", 200).nullable()
+    val leaseUntil = timestampWithTimeZone("lease_until").nullable()
+    val lastInvokedAt = timestampWithTimeZone("last_invoked_at").nullable()
+    val lastError = text("last_error").nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
 object WorkflowDefinitions : Table("workflow_definitions") {
     val id = uuid("id")
     val slug = varchar("slug", 120)
@@ -4010,6 +4029,38 @@ fun toLambdaFunctionsRow(row: ResultRow): LambdaFunctionsRow = LambdaFunctionsRo
     row[LambdaFunctions.updatedAt],
     row[LambdaFunctions.createdBy],
     row[LambdaFunctions.updatedBy],
+)
+
+data class LambdaActorInstancesRow(
+    val id: UUID,
+    val functionId: UUID,
+    val actorKey: String,
+    val state: String,
+    val stateVersion: Long,
+    val alarmAt: OffsetDateTime?,
+    val alarmAttempt: Int,
+    val leaseOwner: String?,
+    val leaseUntil: OffsetDateTime?,
+    val lastInvokedAt: OffsetDateTime?,
+    val lastError: String?,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toLambdaActorInstancesRow(row: ResultRow): LambdaActorInstancesRow = LambdaActorInstancesRow(
+    row[LambdaActorInstances.id],
+    row[LambdaActorInstances.functionId],
+    row[LambdaActorInstances.actorKey],
+    row[LambdaActorInstances.state],
+    row[LambdaActorInstances.stateVersion],
+    row[LambdaActorInstances.alarmAt],
+    row[LambdaActorInstances.alarmAttempt],
+    row[LambdaActorInstances.leaseOwner],
+    row[LambdaActorInstances.leaseUntil],
+    row[LambdaActorInstances.lastInvokedAt],
+    row[LambdaActorInstances.lastError],
+    row[LambdaActorInstances.createdAt],
+    row[LambdaActorInstances.updatedAt],
 )
 
 data class WorkflowDefinitionsRow(

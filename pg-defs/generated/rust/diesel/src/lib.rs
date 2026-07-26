@@ -1766,6 +1766,60 @@ pub struct LambdaFunctionDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
+    lambda_actor_instances (id) {
+        id -> Uuid,
+        function_id -> Uuid,
+        actor_key -> Varchar,
+        state -> Jsonb,
+        state_version -> Int8,
+        alarm_at -> Nullable<Timestamptz>,
+        alarm_attempt -> Int4,
+        lease_owner -> Nullable<Varchar>,
+        lease_until -> Nullable<Timestamptz>,
+        last_invoked_at -> Nullable<Timestamptz>,
+        last_error -> Nullable<Text>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = lambda_actor_instances)]
+pub struct LambdaActorInstanceDieselRow {
+    pub id: Uuid,
+    pub function_id: Uuid,
+    pub actor_key: String,
+    pub state: Value,
+    pub state_version: i64,
+    pub alarm_at: Option<DateTime<Utc>>,
+    pub alarm_attempt: i32,
+    pub lease_owner: Option<String>,
+    pub lease_until: Option<DateTime<Utc>>,
+    pub last_invoked_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = lambda_actor_instances)]
+pub struct LambdaActorInstanceDieselInsert {
+    pub function_id: Option<Uuid>,
+    pub actor_key: Option<String>,
+    pub state: Option<Value>,
+    pub state_version: Option<i64>,
+    pub alarm_at: Option<DateTime<Utc>>,
+    pub alarm_attempt: Option<i32>,
+    pub lease_owner: Option<String>,
+    pub lease_until: Option<DateTime<Utc>>,
+    pub last_invoked_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
     workflow_definitions (id) {
         id -> Uuid,
         slug -> Varchar,

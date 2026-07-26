@@ -51,6 +51,7 @@ var agentRemoteDevEventEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1
 var agentRemoteDevBreadcrumbKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var mipSolverEventsEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var lambdaFunctionSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
+var lambdaActorInstanceActorKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$`)
 var workflowDefinitionsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
 var containerPoolImageRevisionsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
 var containerPoolImageRevisionsDockerfileSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -1748,6 +1749,55 @@ func (value LambdaFunctionBun) Validate() error {
 	if !validateRawJSON(value.Env) { return errors.New("lambda_functions.env must be valid JSON") }
 	if !validateRawJSON(value.Labels) { return errors.New("lambda_functions.labels must be valid JSON") }
 	if !validateRawJSON(value.MetaData) { return errors.New("lambda_functions.meta_data must be valid JSON") }
+	return nil
+}
+
+const LambdaActorInstanceTable = "lambda_actor_instances"
+const LambdaActorInstanceSelectSQL = `select
+      id::text as id,
+      function_id::text as function_id,
+      actor_key,
+      state,
+      state_version,
+      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as alarm_at,
+      alarm_attempt,
+      lease_owner,
+      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as lease_until,
+      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_invoked_at,
+      last_error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from lambda_actor_instances`
+
+type LambdaActorInstanceBun struct {
+	bun.BaseModel `bun:"table:lambda_actor_instances"`
+	Id uuid.UUID `bun:"id,type:uuid,pk,default:gen_random_uuid()" json:"id"`
+	FunctionId uuid.UUID `bun:"function_id,type:uuid" json:"functionId"`
+	ActorKey string `bun:"actor_key,type:varchar(200)" json:"actorKey"`
+	State json.RawMessage `bun:"state,type:jsonb,default:'{}'::jsonb" json:"state"`
+	StateVersion int64 `bun:"state_version,type:bigint,default:0" json:"stateVersion"`
+	AlarmAt *time.Time `bun:"alarm_at,type:timestamptz,nullzero" json:"alarmAt,omitempty"`
+	AlarmAttempt int32 `bun:"alarm_attempt,type:integer,default:0" json:"alarmAttempt"`
+	LeaseOwner *string `bun:"lease_owner,type:varchar(200),nullzero" json:"leaseOwner,omitempty"`
+	LeaseUntil *time.Time `bun:"lease_until,type:timestamptz,nullzero" json:"leaseUntil,omitempty"`
+	LastInvokedAt *time.Time `bun:"last_invoked_at,type:timestamptz,nullzero" json:"lastInvokedAt,omitempty"`
+	LastError *string `bun:"last_error,type:text,nullzero" json:"lastError,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value LambdaActorInstanceBun) Validate() error {
+	if !lambdaActorInstanceActorKeyPattern.MatchString(value.ActorKey) { return errors.New("lambda_actor_instances.actor_key does not match the required pattern") }
+	if !validateRawJSON(value.State) { return errors.New("lambda_actor_instances.state must be valid JSON") }
+	if value.StateVersion < 0 { return errors.New("lambda_actor_instances.state_version is below the minimum") }
+	if value.AlarmAttempt < 0 { return errors.New("lambda_actor_instances.alarm_attempt is below the minimum") }
+	if value.AlarmAttempt > 6 { return errors.New("lambda_actor_instances.alarm_attempt is above the maximum") }
+	if value.LeaseOwner != nil {
+		if len([]byte(*value.LeaseOwner)) > 200 { return errors.New("lambda_actor_instances.lease_owner exceeds 200 bytes") }
+	}
+	if value.LastError != nil {
+		if len([]byte(*value.LastError)) > 8192 { return errors.New("lambda_actor_instances.last_error exceeds 8192 bytes") }
+	}
 	return nil
 }
 

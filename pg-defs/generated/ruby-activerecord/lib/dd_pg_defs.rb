@@ -516,6 +516,20 @@ module DdPgDefs
     validates :status, inclusion: { in: ["draft", "active", "paused", "archived"] }
   end
 
+  class LambdaActorInstance < ActiveRecord::Base
+    # Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
+    self.table_name = "lambda_actor_instances"
+    self.primary_key = "id"
+
+    validates :function_id, presence: true
+    validates :actor_key, presence: true
+    validates :actor_key, length: { minimum: 1, maximum: 200 }
+    validates :actor_key, format: { with: Regexp.new("\\A[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\\z") }
+    validates :state_version, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :alarm_attempt, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 6 }
+    validates :lease_owner, length: { maximum: 200 }, allow_nil: true
+  end
+
   class WorkflowDefinitions < ActiveRecord::Base
     self.table_name = "workflow_definitions"
     self.primary_key = "id"

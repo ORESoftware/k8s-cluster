@@ -215,6 +215,46 @@ const CODEGEN_METADATA = {
         },
       },
     },
+    lambda_actor_instances: {
+      description: "Durable state, alarms, and cross-replica execution leases for keyed serverless actors.",
+      names: {
+        typescript: "lambdaActorInstances",
+        rust: "LambdaActorInstance",
+        gleam: "LambdaActorInstance",
+      },
+      columns: {
+        id: {
+          generated: true,
+        },
+        actor_key: {
+          validation: {
+            minLength: 1,
+            maxLength: 200,
+          },
+        },
+        state_version: {
+          validation: {
+            min: 0,
+          },
+        },
+        alarm_attempt: {
+          validation: {
+            min: 0,
+            max: 6,
+          },
+        },
+        lease_owner: {
+          validation: {
+            maxLength: 200,
+          },
+        },
+        last_error: {
+          validation: {
+            maxBytes: 8192,
+          },
+        },
+      },
+    },
   },
 };
 

@@ -909,6 +909,35 @@ class LambdaFunction extends Model
     }
 }
 
+/** Durable state, alarms, and cross-replica execution leases for keyed serverless actors. */
+class LambdaActorInstance extends Model
+{
+    protected $table = 'lambda_actor_instances';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['function_id', 'actor_key', 'state', 'state_version', 'alarm_at', 'alarm_attempt', 'lease_owner', 'lease_until', 'last_invoked_at', 'last_error', 'created_at', 'updated_at'];
+    protected $casts = ['state' => 'array', 'state_version' => 'integer', 'alarm_at' => 'datetime', 'alarm_attempt' => 'integer', 'lease_until' => 'datetime', 'last_invoked_at' => 'datetime', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'function_id' => ['required', 'uuid'],
+            'actor_key' => ['required', 'string', 'min:1', 'max:200', 'regex:/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/'],
+            'state' => ['nullable', 'array'],
+            'state_version' => ['nullable', 'integer', 'min:0'],
+            'alarm_at' => ['nullable', 'date'],
+            'alarm_attempt' => ['nullable', 'integer', 'min:0', 'max:6'],
+            'lease_owner' => ['nullable', 'string', 'max:200'],
+            'lease_until' => ['nullable', 'date'],
+            'last_invoked_at' => ['nullable', 'date'],
+            'last_error' => ['nullable', 'string'],
+        ];
+    }
+}
+
 class WorkflowDefinitions extends Model
 {
     protected $table = 'workflow_definitions';

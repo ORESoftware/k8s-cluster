@@ -688,6 +688,28 @@ class LambdaFunction(models.Model):
         db_table = "lambda_functions"
 
 
+class LambdaActorInstance(models.Model):
+    # Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    function_id = models.UUIDField()
+    actor_key = models.CharField(max_length=200, validators=[MinLengthValidator(1), RegexValidator(regex="^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")])
+    state = models.JSONField(default=dict)
+    state_version = models.BigIntegerField(default=0, validators=[MinValueValidator(0)])
+    alarm_at = models.DateTimeField(null=True, blank=True)
+    alarm_attempt = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(6)])
+    lease_owner = models.CharField(max_length=200, null=True, blank=True)
+    lease_until = models.DateTimeField(null=True, blank=True)
+    last_invoked_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "lambda_actor_instances"
+
+
 class WorkflowDefinitions(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     slug = models.CharField(max_length=120, validators=[RegexValidator(regex="^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")])

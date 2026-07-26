@@ -824,6 +824,32 @@ class LambdaFunctionTable extends Table {
   };
 }
 
+@DataClassName("LambdaActorInstanceData")
+class LambdaActorInstanceTable extends Table {
+  @override String get tableName => "lambda_actor_instances";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get functionId => text().named("function_id").customConstraint("UUID")();
+  TextColumn get actorKey => text().named("actor_key").withLength(max: 200)();
+  TextColumn get state => text().named("state").clientDefault(() => '{}').customConstraint("JSONB")();
+  Int64Column get stateVersion => int64().named("state_version").clientDefault(() => 0)();
+  DateTimeColumn get alarmAt => dateTime().named("alarm_at").nullable().customConstraint("TIMESTAMPTZ")();
+  IntColumn get alarmAttempt => integer().named("alarm_attempt").clientDefault(() => 0)();
+  TextColumn get leaseOwner => text().named("lease_owner").withLength(max: 200).nullable()();
+  DateTimeColumn get leaseUntil => dateTime().named("lease_until").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastInvokedAt => dateTime().named("last_invoked_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get lastError => text().named("last_error").nullable()();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 @DataClassName("WorkflowDefinitionsData")
 class WorkflowDefinitionsTable extends Table {
   @override String get tableName => "workflow_definitions";
@@ -4292,6 +4318,7 @@ const List<Type> registeredDriftTables = <Type>[
   MipSolverJobsTable,
   MipSolverEventsTable,
   LambdaFunctionTable,
+  LambdaActorInstanceTable,
   WorkflowDefinitionsTable,
   WorkflowRunsTable,
   WorkflowStepRunsTable,

@@ -645,6 +645,26 @@ class LambdaFunction(BaseModel):
         table_name = "lambda_functions"
 
 
+class LambdaActorInstance(BaseModel):
+    # Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
+    id = UUIDField(primary_key=True)
+    function_id = UUIDField()
+    actor_key = CharField(max_length=200)
+    state = BinaryJSONField()
+    state_version = BigIntegerField()
+    alarm_at = DateTimeField(null=True)
+    alarm_attempt = IntegerField()
+    lease_owner = CharField(max_length=200, null=True)
+    lease_until = DateTimeField(null=True)
+    last_invoked_at = DateTimeField(null=True)
+    last_error = TextField(null=True)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "lambda_actor_instances"
+
+
 class WorkflowDefinitions(BaseModel):
     id = UUIDField(primary_key=True)
     slug = CharField(max_length=120)

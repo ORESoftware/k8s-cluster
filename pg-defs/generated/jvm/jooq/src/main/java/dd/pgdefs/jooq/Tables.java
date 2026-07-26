@@ -539,6 +539,22 @@ public final class Tables {
     public static final Field<UUID> LAMBDA_FUNCTIONS_CREATED_BY = DSL.field(DSL.name("lambda_functions", "created_by"), SQLDataType.UUID);
     public static final Field<UUID> LAMBDA_FUNCTIONS_UPDATED_BY = DSL.field(DSL.name("lambda_functions", "updated_by"), SQLDataType.UUID);
 
+    public static final Name LAMBDA_ACTOR_INSTANCES_NAME = DSL.name("lambda_actor_instances");
+    public static final Table<org.jooq.Record> LAMBDA_ACTOR_INSTANCES = DSL.table(LAMBDA_ACTOR_INSTANCES_NAME);
+    public static final Field<UUID> LAMBDA_ACTOR_INSTANCES_ID = DSL.field(DSL.name("lambda_actor_instances", "id"), SQLDataType.UUID);
+    public static final Field<UUID> LAMBDA_ACTOR_INSTANCES_FUNCTION_ID = DSL.field(DSL.name("lambda_actor_instances", "function_id"), SQLDataType.UUID);
+    public static final Field<String> LAMBDA_ACTOR_INSTANCES_ACTOR_KEY = DSL.field(DSL.name("lambda_actor_instances", "actor_key"), SQLDataType.VARCHAR(200));
+    public static final Field<JSONB> LAMBDA_ACTOR_INSTANCES_STATE = DSL.field(DSL.name("lambda_actor_instances", "state"), SQLDataType.JSONB);
+    public static final Field<Long> LAMBDA_ACTOR_INSTANCES_STATE_VERSION = DSL.field(DSL.name("lambda_actor_instances", "state_version"), SQLDataType.BIGINT);
+    public static final Field<OffsetDateTime> LAMBDA_ACTOR_INSTANCES_ALARM_AT = DSL.field(DSL.name("lambda_actor_instances", "alarm_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<Integer> LAMBDA_ACTOR_INSTANCES_ALARM_ATTEMPT = DSL.field(DSL.name("lambda_actor_instances", "alarm_attempt"), SQLDataType.INTEGER);
+    public static final Field<String> LAMBDA_ACTOR_INSTANCES_LEASE_OWNER = DSL.field(DSL.name("lambda_actor_instances", "lease_owner"), SQLDataType.VARCHAR(200));
+    public static final Field<OffsetDateTime> LAMBDA_ACTOR_INSTANCES_LEASE_UNTIL = DSL.field(DSL.name("lambda_actor_instances", "lease_until"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> LAMBDA_ACTOR_INSTANCES_LAST_INVOKED_AT = DSL.field(DSL.name("lambda_actor_instances", "last_invoked_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<String> LAMBDA_ACTOR_INSTANCES_LAST_ERROR = DSL.field(DSL.name("lambda_actor_instances", "last_error"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> LAMBDA_ACTOR_INSTANCES_CREATED_AT = DSL.field(DSL.name("lambda_actor_instances", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> LAMBDA_ACTOR_INSTANCES_UPDATED_AT = DSL.field(DSL.name("lambda_actor_instances", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
     public static final Name WORKFLOW_DEFINITIONS_NAME = DSL.name("workflow_definitions");
     public static final Table<org.jooq.Record> WORKFLOW_DEFINITIONS = DSL.table(WORKFLOW_DEFINITIONS_NAME);
     public static final Field<UUID> WORKFLOW_DEFINITIONS_ID = DSL.field(DSL.name("workflow_definitions", "id"), SQLDataType.UUID);

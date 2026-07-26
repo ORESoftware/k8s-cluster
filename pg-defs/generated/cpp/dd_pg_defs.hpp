@@ -2996,6 +2996,79 @@ inline std::optional<std::string> validate_lambda_functions_max_run_ms(int32_t v
     return std::nullopt;
 }
 
+// Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
+inline const char* lambda_actor_instances_table = "lambda_actor_instances";
+inline const std::vector<std::string> lambda_actor_instances_columns = { "id", "function_id", "actor_key", "state", "state_version", "alarm_at", "alarm_attempt", "lease_owner", "lease_until", "last_invoked_at", "last_error", "created_at", "updated_at" };
+inline const char* lambda_actor_instances_select_sql = R"SQL(select
+      id::text as id,
+      function_id::text as function_id,
+      actor_key,
+      state::text as state_json,
+      state_version,
+      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as alarm_at,
+      alarm_attempt,
+      lease_owner,
+      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as lease_until,
+      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_invoked_at,
+      last_error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from lambda_actor_instances)SQL";
+
+struct LambdaActorInstanceRow {
+    std::string id;
+    std::string function_id;
+    std::string actor_key;
+    std::string state;
+    int64_t state_version;
+    std::optional<std::string> alarm_at;
+    int32_t alarm_attempt;
+    std::optional<std::string> lease_owner;
+    std::optional<std::string> lease_until;
+    std::optional<std::string> last_invoked_at;
+    std::optional<std::string> last_error;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline LambdaActorInstanceRow lambda_actor_instances_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    LambdaActorInstanceRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.function_id = get(1);
+    row.actor_key = get(2);
+    row.state = get(3);
+    row.state_version = std::stoll(get(4));
+    row.alarm_at = is_null(5) ? std::nullopt : std::optional<std::string>(get(5));
+    row.alarm_attempt = std::stoi(get(6));
+    row.lease_owner = is_null(7) ? std::nullopt : std::optional<std::string>(get(7));
+    row.lease_until = is_null(8) ? std::nullopt : std::optional<std::string>(get(8));
+    row.last_invoked_at = is_null(9) ? std::nullopt : std::optional<std::string>(get(9));
+    row.last_error = is_null(10) ? std::nullopt : std::optional<std::string>(get(10));
+    row.created_at = get(11);
+    row.updated_at = get(12);
+    return row;
+}
+inline std::optional<std::string> validate_lambda_actor_instances_actor_key(const std::string& value) {
+    if (value.size() < 1) return std::string("lambda_actor_instances.actor_key must be at least 1 characters");
+    if (value.size() > 200) return std::string("lambda_actor_instances.actor_key must be at most 200 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$)RX"))) return std::string("lambda_actor_instances.actor_key does not match the required pattern");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_actor_instances_state_version(int64_t value) {
+    if (value < 0) return std::string("lambda_actor_instances.state_version is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_actor_instances_alarm_attempt(int32_t value) {
+    if (value < 0) return std::string("lambda_actor_instances.alarm_attempt is below the minimum");
+    if (value > 6) return std::string("lambda_actor_instances.alarm_attempt is above the maximum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_actor_instances_lease_owner(const std::string& value) {
+    if (value.size() > 200) return std::string("lambda_actor_instances.lease_owner must be at most 200 characters");
+    return std::nullopt;
+}
+
 inline const char* workflow_definitions_table = "workflow_definitions";
 inline const std::vector<std::string> workflow_definitions_columns = { "id", "slug", "display_name", "description", "steps", "default_retry", "status", "labels", "meta_data", "is_soft_deleted", "created_at", "updated_at", "created_by", "updated_by" };
 inline const char* workflow_definitions_select_sql = R"SQL(select
