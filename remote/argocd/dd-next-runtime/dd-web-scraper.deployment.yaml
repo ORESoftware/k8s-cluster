@@ -40,7 +40,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: web-scraper
-          image: ghcr.io/oresoftware/dd-web-scraper@sha256:e940f48a6cf355c24429b492fe75d3b8b5d2a55c95caf574ffcea895e844f69b
+          image: ghcr.io/oresoftware/dd-web-scraper@sha256:09e240a65b620cc17e58d2ae2136516584ad637abfe7fb7e5876aad79c26118f
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -177,7 +177,7 @@ spec:
             # temporary Fiducia applications profile. Root hostnames include
             # that vendor's subdomains; non-root entries are exact form hosts.
             - name: BROWSER_AGENT_ALLOWED_DOMAINS
-              value: 'benefactor.cc,confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,www.pulumi.com,tally.so,allthingsopen.org,allthingsopen.wufoo.com,static.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com,www.gstatic.com,ssl.gstatic.com,fonts.googleapis.com,fonts.gstatic.com'
+              value: 'confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,app.posthog.com,elevenlabs.io,www.together.ai,support.snyk.io,us.ovhcloud.com,www.pulumi.com,tally.so,allthingsopen.org,allthingsopen.wufoo.com,static.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com,www.gstatic.com,ssl.gstatic.com,fonts.googleapis.com,fonts.gstatic.com'
             # Optional JSON secret store for secret_ref resolution (never logged
             # or returned). Absent by default -> secret refs are rejected.
             - name: BROWSER_AGENT_SECRETS_FILE

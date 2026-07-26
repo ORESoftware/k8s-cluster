@@ -212,9 +212,13 @@ No HubSpot or Benefactor Postgres reads/writes and no outreach occurred.
 
 ## Post-merge external verification
 
-Merging to `dev` publishes the image and lets ArgoCD reconcile both clusters.
-After both applications are Synced/Healthy, retrieve the operator value without
-printing it and run the repository verifier against each edge:
+The deployment is pinned to an immutable image digest. Publishing source to
+`dev` builds the image but does not move the deployment automatically: wait for
+the browser-runtime image workflow, resolve the digest for the newly published
+browser MCP image, commit that digest to the Deployment, and then let ArgoCD
+reconcile both clusters. After both applications are Synced/Healthy, retrieve
+the operator value without printing it and run the repository verifier against
+each edge:
 
 ```bash
 export BROWSER_MCP_OAUTH_OPERATOR_SECRET="$(
