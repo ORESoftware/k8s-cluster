@@ -28,7 +28,7 @@
         "descriptor"
       ],
       "sourceFiles": [
-        "remote/deployments/build-server-rs/src/main.rs"
+        "remote/deployments/build-server-rs/src/http.rs"
       ],
       "notes": ""
     },
@@ -45,7 +45,7 @@
         "api_docs_html"
       ],
       "sourceFiles": [
-        "remote/deployments/build-server-rs/src/main.rs"
+        "remote/deployments/build-server-rs/src/http.rs"
       ],
       "notes": ""
     },
@@ -62,7 +62,7 @@
         "api_docs_json"
       ],
       "sourceFiles": [
-        "remote/deployments/build-server-rs/src/main.rs"
+        "remote/deployments/build-server-rs/src/http.rs"
       ],
       "notes": ""
     },
@@ -81,7 +81,7 @@
         "submit_build"
       ],
       "sourceFiles": [
-        "remote/deployments/build-server-rs/src/main.rs"
+        "remote/deployments/build-server-rs/src/http.rs"
       ],
       "notes": ""
     },
@@ -98,7 +98,7 @@
         "get_build"
       ],
       "sourceFiles": [
-        "remote/deployments/build-server-rs/src/main.rs"
+        "remote/deployments/build-server-rs/src/http.rs"
       ],
       "notes": ""
     },
@@ -115,7 +115,7 @@
         "get_build_artifacts"
       ],
       "sourceFiles": [
-        "remote/deployments/build-server-rs/src/main.rs"
+        "remote/deployments/build-server-rs/src/http.rs"
       ],
       "notes": ""
     },
@@ -132,7 +132,7 @@
         "get_build_logs"
       ],
       "sourceFiles": [
-        "remote/deployments/build-server-rs/src/main.rs"
+        "remote/deployments/build-server-rs/src/http.rs"
       ],
       "notes": ""
     },
@@ -149,7 +149,7 @@
         "api_docs_html"
       ],
       "sourceFiles": [
-        "remote/deployments/build-server-rs/src/main.rs"
+        "remote/deployments/build-server-rs/src/http.rs"
       ],
       "notes": ""
     },
@@ -166,7 +166,7 @@
         "healthz"
       ],
       "sourceFiles": [
-        "remote/deployments/build-server-rs/src/main.rs"
+        "remote/deployments/build-server-rs/src/http.rs"
       ],
       "notes": ""
     },
@@ -234,7 +234,7 @@
         "metrics"
       ],
       "sourceFiles": [
-        "remote/deployments/build-server-rs/src/main.rs"
+        "remote/deployments/build-server-rs/src/http.rs"
       ],
       "notes": ""
     },
@@ -251,7 +251,7 @@
         "readyz"
       ],
       "sourceFiles": [
-        "remote/deployments/build-server-rs/src/main.rs"
+        "remote/deployments/build-server-rs/src/http.rs"
       ],
       "notes": ""
     },
@@ -268,7 +268,7 @@
         "sync_secrets"
       ],
       "sourceFiles": [
-        "remote/deployments/build-server-rs/src/main.rs"
+        "remote/deployments/build-server-rs/src/http.rs"
       ],
       "notes": ""
     },
@@ -285,7 +285,7 @@
         "sync_secrets_status"
       ],
       "sourceFiles": [
-        "remote/deployments/build-server-rs/src/main.rs"
+        "remote/deployments/build-server-rs/src/http.rs"
       ],
       "notes": ""
     },
@@ -302,7 +302,7 @@
         "webhooks"
       ],
       "sourceFiles": [
-        "remote/deployments/build-server-rs/src/main.rs"
+        "remote/deployments/build-server-rs/src/http.rs"
       ],
       "notes": ""
     },
@@ -319,7 +319,7 @@
         "webhooks"
       ],
       "sourceFiles": [
-        "remote/deployments/build-server-rs/src/main.rs"
+        "remote/deployments/build-server-rs/src/http.rs"
       ],
       "notes": ""
     }
