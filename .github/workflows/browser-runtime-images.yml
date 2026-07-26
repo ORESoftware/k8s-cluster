@@ -53,7 +53,11 @@ jobs:
           ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
       - name: Initialize pinned shared libraries
-        run: git submodule update --init --depth 1 -- remote/libs
+        run: |
+          set -euo pipefail
+          ssh_command="$(git config --local core.sshCommand)"
+          test -n "$ssh_command"
+          GIT_SSH_COMMAND="$ssh_command" git submodule update --init --depth 1 -- remote/libs
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
