@@ -17,7 +17,7 @@ hostname ceiling remains mandatory in every auth mode.
 
 The change was deployed to AWS and Hetzner on 2026-07-25. Both public edges
 passed the repository verifier through `initialize`, `tools/list`, a real
-`browser_act` and `browser_observe`, off-allowlist rejection, and session
+`browser_act` and `browser_state`, off-allowlist rejection, and session
 cleanup. The target pods are image-based, Ready, and at zero restarts.
 
 ## Live state observed before the change
@@ -248,7 +248,7 @@ The final public checks were:
 The verifier checks the initial 401, RFC 9728/RFC 8414 discovery, dynamic client
 registration, PKCE authorization, token exchange, authenticated SSE refusal,
 `initialize`, `notifications/initialized`, exact `tools/list`, a real
-`browser_act` navigation to All Things Open, `browser_observe`, denial of an
+`browser_act` navigation to a harmless form, `browser_state`, denial of an
 off-allowlist host, and session cleanup.
 
 The broader `dd-next-runtime` Application still reports the historical
@@ -264,7 +264,7 @@ In an eligible ChatGPT workspace on the web:
 1. Enable Developer mode.
 2. Create a custom app with the stable public HTTPS MCP URL.
 3. Choose OAuth and complete the operator-secret consent screen.
-4. Scan and verify exactly `browser_act` and `browser_observe`.
+4. Scan and verify exactly `browser_act` and `browser_state`.
 5. Keep write-action approvals enabled.
 6. Recreate or refresh the app after tool-schema changes; ChatGPT uses a frozen
    tool snapshot after workspace approval.

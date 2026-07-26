@@ -6,4 +6,5 @@ resources:
   - dd-browser-mcp-rs.deployment.yaml
   - dd-browser-mcp-rs.networkpolicy.yaml
   - dd-browser-mcp-rs.pdb.yaml
+  - dd-browser-mcp-rs.serviceaccount.yaml
   - dd-browser-mcp-rs.service.yaml

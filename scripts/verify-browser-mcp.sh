@@ -206,6 +206,17 @@ sse_status="$(
     "$endpoint"
 )"
 test "$sse_status" = '405'
+plain_get_status="$(
+  curl --silent --show-error \
+    --connect-timeout 10 \
+    --max-time 20 \
+    -o /dev/null \
+    -w '%{http_code}' \
+    -H "Authorization: Bearer $access_token" \
+    -H 'Accept: application/json' \
+    "$endpoint"
+)"
+test "$plain_get_status" = '406'
 
 echo "checking initialize and notifications/initialized"
 initialize="$(
@@ -234,39 +245,120 @@ test "$initialized_status" = '202'
 echo "checking tools/list"
 tools="$(rpc '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')"
 jq -e '
-  [.result.tools[].name] | sort ==
-  ["browser_act", "browser_observe"] and
+  ([.result.tools[].name] | sort) ==
+  ["browser_act", "browser_state"] and
   all(.result.tools[];
     .securitySchemes[0].type == "oauth2" and
     (.securitySchemes[0].scopes | index("mcp:tools"))
   )
 ' <<<"$tools" >/dev/null
 
-echo "checking browser_act against an approved CFP domain"
+echo "checking browser_act against the isolated harmless form profile"
 start="$(
-  rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"browser_act","arguments":{"intent":"read-only production smoke test","actions":[{"type":"start","initial_url":"https://allthingsopen.org"}]}}}'
+  rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"browser_act","arguments":{"workflow_id":"smoke-test","intent":"open a harmless test form","actions":[{"type":"start","initial_url":"https://httpbin.org/forms/post"}]}}}'
 )"
 jq -e '.result.isError == false' <<<"$start" >/dev/null
 session_id="$(jq -er '.result.structuredContent.session_id' <<<"$start")"
 
-echo "checking browser_observe"
-observe_payload="$(
+echo "checking browser_state"
+state_payload="$(
   jq -cn --arg session_id "$session_id" '{
     jsonrpc: "2.0",
     id: 4,
     method: "tools/call",
     params: {
-      name: "browser_observe",
+      name: "browser_state",
       arguments: {
         session_id: $session_id,
-        include: ["summary"],
-        max_visible_text_chars: 1000
+        include: ["summary", "visible_text", "interactive_elements", "accessibility_snapshot", "forms", "validation_errors", "downloads"],
+        max_visible_text_chars: 4000
       }
     }
   }'
 )"
-observe="$(rpc "$observe_payload")"
-jq -e '.result.isError == false' <<<"$observe" >/dev/null
+state_result="$(rpc "$state_payload")"
+jq -e '
+  .result.isError == false and
+  (.result.structuredContent.page.url | startswith("https://httpbin.org/forms/post")) and
+  (.result.structuredContent.page.title | type == "string") and
+  (.result.structuredContent.accessibility_snapshot.role == "document") and
+  (.result.structuredContent.forms | length > 0) and
+  (.result.structuredContent.fields | length > 0) and
+  (.result.structuredContent.buttons | length > 0) and
+  (.result.structuredContent.links | type == "array") and
+  (.result.structuredContent.validation_errors | type == "array") and
+  (.result.structuredContent.downloads | type == "array")
+' <<<"$state_result" >/dev/null
+
+revision="$(jq -er '.result.structuredContent.revision' <<<"$state_result")"
+field_ref="$(
+  jq -er '
+    .result.structuredContent.fields[]
+    | select(.role == "textbox" and .value_state != "redacted")
+    | .ref
+  ' <<<"$state_result" | head -1
+)"
+
+echo "checking harmless form fill"
+fill_payload="$(
+  jq -cn --arg session_id "$session_id" --arg field_ref "$field_ref" --argjson revision "$revision" '{
+    jsonrpc: "2.0",
+    id: 5,
+    method: "tools/call",
+    params: {
+      name: "browser_act",
+      arguments: {
+        session_id: $session_id,
+        expected_revision: $revision,
+        intent: "fill one harmless test field",
+        actions: [{type: "type", target: {ref: $field_ref}, value: {literal: "Browser MCP smoke test"}, clear_first: true}]
+      }
+    }
+  }'
+)"
+fill_result="$(rpc "$fill_payload")"
+jq -e '
+  .result.isError == false and
+  .result.structuredContent.status == "completed"
+' <<<"$fill_result" >/dev/null
+
+echo "checking explicit submit stops for approval"
+post_fill_state_payload="$(
+  jq -cn --arg session_id "$session_id" '{
+    jsonrpc: "2.0",
+    id: 6,
+    method: "tools/call",
+    params: {
+      name: "browser_state",
+      arguments: {session_id: $session_id, include: ["forms"]}
+    }
+  }'
+)"
+post_fill_state="$(rpc "$post_fill_state_payload")"
+post_fill_revision="$(jq -er '.result.structuredContent.revision' <<<"$post_fill_state")"
+submit_ref="$(jq -er '.result.structuredContent.forms[0].submit_refs[0]' <<<"$post_fill_state")"
+submit_payload="$(
+  jq -cn --arg session_id "$session_id" --arg submit_ref "$submit_ref" --argjson revision "$post_fill_revision" '{
+    jsonrpc: "2.0",
+    id: 7,
+    method: "tools/call",
+    params: {
+      name: "browser_act",
+      arguments: {
+        session_id: $session_id,
+        expected_revision: $revision,
+        intent: "verify submit approval boundary",
+        actions: [{type: "submit", target: {ref: $submit_ref}}]
+      }
+    }
+  }'
+)"
+submit_result="$(rpc "$submit_payload")"
+jq -e '
+  .result.isError == false and
+  .result.structuredContent.status == "needs_confirmation" and
+  (.result.structuredContent.pending_action.action_digest | startswith("sha256:"))
+' <<<"$submit_result" >/dev/null
 
 echo "checking that off-allowlist navigation is denied"
 blocked_payload="$(

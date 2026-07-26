@@ -83,7 +83,7 @@ rate, connection, body-size, trusted-forwarding, and redacted-log controls.
 
 ```text
 mcp:tools       initialize, ping, notifications/initialized, tools/list
-browser:read    browser_observe
+browser:read    browser_state
 browser:act     browser_act
 offline_access request a rotating refresh token
 ```
@@ -96,6 +96,8 @@ treating refresh as a resource-server requirement.
 The browser worker still independently enforces:
 
 - the process-level hostname ceiling;
+- a caller-selected, server-defined per-workflow hostname profile that cannot
+  widen the process ceiling;
 - HTTPS-only navigation and redirect revalidation;
 - private, link-local, loopback, metadata, and reserved-network denial;
 - prompt-injection boundaries;
@@ -194,7 +196,7 @@ dynamic client registration     201
 authorization + PKCE redirect   303
 token exchange                  200
 authenticated initialize        200
-tools/list                      browser_act, browser_observe
+tools/list                      browser_act, browser_state
 authenticated SSE GET           405
 refresh rotation                200
 old refresh-token replay        400 invalid_grant
@@ -205,7 +207,7 @@ A second integration run used the OAuth access token against the real
 
 ```text
 browser_act -> https://benefactor.cc/   success
-browser_observe                         success
+browser_state                           success
 browser_act close                       success
 ```
 
@@ -237,7 +239,7 @@ unset BROWSER_MCP_OAUTH_OPERATOR_SECRET
 
 The verifier performs the complete discovery, dynamic registration, PKCE,
 operator consent, token, authenticated MCP, real `browser_act`,
-`browser_observe`, off-allowlist rejection, and session-cleanup sequence. It
+`browser_state`, off-allowlist rejection, and session-cleanup sequence. It
 never prints access, refresh, signing, worker, or operator secrets.
 
 ## Rollback

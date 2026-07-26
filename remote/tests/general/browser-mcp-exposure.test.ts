@@ -31,7 +31,7 @@ const GATEWAY = 'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml'
 const AWS_APPS = 'remote/argocd/clusters/aws/applications.yaml';
 const HETZNER_APPS = 'remote/argocd/clusters/hetzner/applications.yaml';
 const CLI_FLAGS = 'remote/deployments/browser-mcp-rs/.cli-flags.toml';
-const FIDUCIA_PORTAL_DOMAINS = [
+const REVIEWED_BROWSER_CEILING_DOMAINS = [
   'benefactor.cc',
   'confluent.cloud',
   'confluent.io',
@@ -55,6 +55,7 @@ const FIDUCIA_PORTAL_DOMAINS = [
   'ssl.gstatic.com',
   'fonts.googleapis.com',
   'fonts.gstatic.com',
+  'httpbin.org',
 ];
 
 function readDeployment(): string {
@@ -86,7 +87,7 @@ function nginxLocation(source: string, declaration: string): string {
   return source.slice(start, end);
 }
 
-test('OAuth browser-mcp has a reviewed, hostname-only domain ceiling', () => {
+test('OAuth browser-mcp has reviewed, server-defined workflow domain ceilings', () => {
   const manifest = readDeployment();
   if (!manifest) return;
 
@@ -111,8 +112,8 @@ test('OAuth browser-mcp has a reviewed, hostname-only domain ceiling', () => {
   const domains = (value as string).split(',').map((domain) => domain.trim());
   assert.deepEqual(
     domains,
-    FIDUCIA_PORTAL_DOMAINS,
-    'The OAuth production endpoint must contain only the reviewed Fiducia portal profile.',
+    REVIEWED_BROWSER_CEILING_DOMAINS,
+    'The OAuth production endpoint must contain only the reviewed workflow-profile union.',
   );
   assert.ok(
     domains.every(
@@ -137,6 +138,18 @@ test('OAuth browser-mcp has a reviewed, hostname-only domain ceiling', () => {
       'login.microsoftonline.com',
     ].every((domain) => !domains.includes(domain)),
     'Webmail and identity-provider login hosts must never be exposed by this browser profile.',
+  );
+  assert.match(
+    manifest,
+    /BROWSER_MCP_DEFAULT_WORKFLOW\s*\n\s*value:\s*fiducia-applications/,
+  );
+  assert.match(
+    manifest,
+    /"benefactor-site":\["benefactor\.cc"\]/,
+  );
+  assert.match(
+    manifest,
+    /"smoke-test":\["httpbin\.org"\]/,
   );
 
   const worker = readFileSync(resolve(repoRoot, WORKER_DEPLOYMENT), 'utf8');
@@ -191,6 +204,7 @@ test('browser-mcp is a prebuilt, non-root container without shared source mounts
   assert.match(manifest, /replicas:\s*2/);
   assert.match(manifest, /readOnlyRootFilesystem:\s*true/);
   assert.match(manifest, /automountServiceAccountToken:\s*false/);
+  assert.match(manifest, /serviceAccountName:\s*dd-browser-mcp-rs/);
   assert.match(manifest, /startupProbe:[\s\S]*path:\s*\/healthz/);
   assert.match(manifest, /readinessProbe:[\s\S]*path:\s*\/readyz/);
   assert.doesNotMatch(manifest, /hostPath:/);

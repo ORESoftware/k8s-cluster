@@ -7,7 +7,7 @@ model-callable tools**:
 
 | Tool              | Kind         | Purpose                                                             |
 | ----------------- | ------------ | ------------------------------------------------------------------- |
-| `browser_observe` | read-only    | Sanitized snapshot of a session: forms, controls, refs, validation. |
+| `browser_state`   | read-only    | Sanitized snapshot of a session: forms, controls, refs, validation. |
 | `browser_act`     | write-capable| Start/advance a session with a declarative action plan.             |
 
 The primary use case is navigating government and business-registration sites,
@@ -66,7 +66,7 @@ observe(session)                      → inspect forms, controls, refs, revisio
 * **Revisions** prevent stale actions: every meaningful page change increments
   `revision`. Pass `expected_revision` on `browser_act`; a mismatch returns
   `status: "revision_conflict"` instead of acting on stale state.
-* **Long-polling**: `browser_observe` with `since_revision` + `wait_ms` (≤ 25 s)
+* **Long-polling**: `browser_state` with `since_revision` + `wait_ms` (≤ 25 s)
   blocks until the revision changes, then returns immediately. It never holds a
   browser lock, so `browser_act` can run concurrently. Returns `changed:false`
   on timeout; client disconnect cancels the wait.
@@ -169,6 +169,8 @@ Public URLs:
 | `BROWSER_MCP_OAUTH_CODE_TTL_SECONDS` | `300`                                                  | Authorization-code TTL.                                |
 | `BROWSER_MCP_OAUTH_REFRESH_TTL_SECONDS` | `2592000`                                           | Rotating refresh-token TTL.                            |
 | `BROWSER_MCP_ALLOWED_DOMAINS`        | —                                                      | Required non-empty hostname ceiling in every mode.     |
+| `BROWSER_MCP_DEFAULT_WORKFLOW`       | `default`                                              | Default named server-side allowlist profile.           |
+| `BROWSER_MCP_WORKFLOW_ALLOWLISTS_JSON` | —                                                    | JSON map of workflow IDs to hostname-ceiling subsets.  |
 
 Worker-side knobs live on `dd-web-scraper` (`BROWSER_AGENT_*`, see its deployment).
 Production currently sets both layers to the reviewed, temporary Fiducia portal
@@ -223,7 +225,14 @@ www.gstatic.com
 ssl.gstatic.com
 fonts.googleapis.com
 fonts.gstatic.com
+httpbin.org
 ```
+
+The ceiling is divided into server-defined `fiducia-applications`,
+`benefactor-site`, and `smoke-test` workflow profiles. Callers select a
+`workflow_id`; they cannot define a profile or widen its hostnames.
+`httpbin.org` is isolated in `smoke-test` for the reproducible harmless-form
+verification script and is not reachable from the application profiles.
 
 Root vendor hostnames include that vendor's subdomains. The Wufoo, Pulumi,
 Google static-asset, and AWS CFP entries are intentionally exact hosts. Filing
@@ -256,7 +265,7 @@ npx @modelcontextprotocol/inspector
 # (public) URL: https://98.90.186.114/browser-mcp
 ```
 
-Run the Inspector and confirm `tools/list` shows `browser_act` + `browser_observe`
+Run the Inspector and confirm `tools/list` shows `browser_act` + `browser_state`
 before connecting a real client.
 
 ## Connect an MCP client
@@ -264,7 +273,7 @@ before connecting a real client.
 **ChatGPT (eligible Developer mode account, web).** Enable Developer mode,
 create a custom app, choose OAuth, and scan one of the public URLs above. Enter the
 operator authorization secret only on the server's HTTPS consent page. Verify
-exactly `browser_act` and `browser_observe`, and keep write-action approvals
+exactly `browser_act` and `browser_state`, and keep write-action approvals
 enabled.
 
 **Claude / API clients.** Point the client's MCP/tool configuration at the same
@@ -300,7 +309,7 @@ Start at a URL:
 Observe, then fill using refs:
 
 ```json
-{ "name": "browser_observe", "arguments": { "session_id": "…", "include": ["forms","interactive_elements","validation_errors"] } }
+{ "name": "browser_state", "arguments": { "session_id": "…", "include": ["forms","interactive_elements","accessibility_snapshot","validation_errors"] } }
 { "name": "browser_act", "arguments": {
   "session_id": "…", "expected_revision": 2, "intent": "fill the entity name",
   "actions": [{ "type": "fill", "target": { "ref": "e4" }, "value": { "literal": "ORE Software LLC" } }] } }
@@ -309,7 +318,7 @@ Observe, then fill using refs:
 Long-poll for a change:
 
 ```json
-{ "name": "browser_observe", "arguments": { "session_id": "…", "since_revision": 3, "wait_ms": 20000 } }
+{ "name": "browser_state", "arguments": { "session_id": "…", "since_revision": 3, "wait_ms": 20000 } }
 ```
 
 Consequential submit → confirmation:
