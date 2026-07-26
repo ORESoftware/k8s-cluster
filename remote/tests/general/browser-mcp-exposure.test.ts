@@ -90,7 +90,7 @@ function nginxLocation(source: string, declaration: string): string {
   return source.slice(start, end);
 }
 
-test('OAuth browser-mcp has a reviewed, hostname-only domain ceiling', () => {
+test('temporary no-auth browser-mcp has a reviewed, hostname-only domain ceiling', () => {
   const manifest = readDeployment();
   if (!manifest) return;
 
@@ -108,15 +108,15 @@ test('OAuth browser-mcp has a reviewed, hostname-only domain ceiling', () => {
   );
   assert.equal(
     envValue(manifest, 'BROWSER_MCP_REQUIRE_AUTH'),
-    'true',
-    'The public write-capable browser MCP must require OAuth.',
+    'false',
+    'The temporary public posture must remain an explicit no-auth decision.',
   );
 
   const domains = (value as string).split(',').map((domain) => domain.trim());
   assert.deepEqual(
     domains,
     FIDUCIA_PORTAL_DOMAINS,
-    'The OAuth production endpoint must contain only the reviewed Fiducia portal profile.',
+    'The no-auth production endpoint must contain only the reviewed Fiducia portal profile.',
   );
   assert.ok(
     domains.every(

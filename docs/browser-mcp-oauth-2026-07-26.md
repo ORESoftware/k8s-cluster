@@ -8,6 +8,12 @@ Date: 2026-07-26
 apps instead of depending on a user-entered static resource-server bearer or an
 anonymous MCP endpoint.
 
+Temporary production posture, approved on 2026-07-26: both public edges set
+`BROWSER_MCP_REQUIRE_AUTH=false`, so anonymous `initialize`, `tools/list`, and
+tool calls are accepted. The OAuth implementation, endpoints, and secrets
+remain deployed for a one-line re-enable. The reviewed Fiducia hostname ceiling,
+SSRF controls, rate limits, and consequential-action blockers remain mandatory.
+
 The implementation provides:
 
 - HTTP 401 for an unauthenticated MCP request, with an RFC 6750 Bearer

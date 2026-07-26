@@ -7,8 +7,17 @@ edge_origin="${endpoint%/browser-mcp}"
 resource_metadata_url="${edge_origin}/.well-known/oauth-protected-resource/browser-mcp"
 server_metadata_url="${edge_origin}/.well-known/oauth-authorization-server/browser-mcp"
 operator_secret="${BROWSER_MCP_OAUTH_OPERATOR_SECRET:-}"
+auth_mode="${BROWSER_MCP_AUTH_MODE:-oauth}"
 content_type='Content-Type: application/json'
 accept='Accept: application/json, text/event-stream'
+
+case "$auth_mode" in
+  oauth | none) ;;
+  *)
+    echo "BROWSER_MCP_AUTH_MODE must be oauth or none" >&2
+    exit 2
+    ;;
+esac
 
 for dependency in curl jq openssl python3; do
   command -v "$dependency" >/dev/null || {
@@ -162,6 +171,17 @@ oauth_login() {
   ' <<<"$token_response" >/dev/null
 }
 
+verify_no_auth() {
+  echo "checking anonymous initialize"
+  anonymous_initialize="$(
+    rpc '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"browser-mcp-no-auth-verifier","version":"1.0"}}}'
+  )"
+  jq -e '
+    .result.protocolVersion == "2025-11-25" and
+    (.result.capabilities.tools | type == "object")
+  ' <<<"$anonymous_initialize" >/dev/null
+}
+
 cleanup() {
   if [[ -z "$session_id" ]]; then
     return
@@ -192,16 +212,24 @@ curl --fail-with-body --silent --show-error \
   "$health_url" |
   jq -e '.ok == true' >/dev/null
 
-oauth_login
+if [[ "$auth_mode" == 'oauth' ]]; then
+  oauth_login
+else
+  verify_no_auth
+fi
 
-echo "checking authenticated Streamable HTTP negotiation"
+echo "checking Streamable HTTP negotiation"
+sse_auth_args=()
+if [[ -n "$access_token" ]]; then
+  sse_auth_args=(-H "Authorization: Bearer $access_token")
+fi
 sse_status="$(
   curl --silent --show-error \
     --connect-timeout 10 \
     --max-time 20 \
     -o /dev/null \
     -w '%{http_code}' \
-    -H "Authorization: Bearer $access_token" \
+    "${sse_auth_args[@]}" \
     -H 'Accept: text/event-stream' \
     "$endpoint"
 )"
@@ -341,4 +369,4 @@ close_payload="$(
 rpc "$close_payload" | jq -e '.result.isError == false' >/dev/null
 session_id=''
 
-echo "browser MCP end-to-end verification passed: $endpoint"
+echo "browser MCP end-to-end verification passed ($auth_mode): $endpoint"

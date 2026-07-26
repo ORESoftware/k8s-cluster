@@ -88,11 +88,12 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
-            # ChatGPT custom MCP apps discover the in-process OAuth 2.1
-            # authorization server from the 401 Bearer challenge. A static
-            # operator bearer is deliberately not accepted on this public path.
+            # Temporary operator-approved no-auth posture for ChatGPT. OAuth
+            # endpoints and secrets remain configured so re-enabling the 401
+            # discovery flow is a one-line change back to 'true'. The reviewed
+            # hostname ceiling and browser safety blockers remain mandatory.
             - name: BROWSER_MCP_REQUIRE_AUTH
-              value: 'true'
+              value: 'false'
             # Both trusted public edges serve the same GitOps workload. Host
             # matching selects the exact issuer/resource and binds each access
             # token to the edge where its flow started.
