@@ -2438,7 +2438,7 @@ export const lambdaFunctionAliases = pgTable(
     updatedBy: uuid("updated_by"),
   },
   (table) => ({
-    lambdaFunctionAliasesNameChk: check("lambda_function_aliases_name_chk", sql.raw("name ~ '^[a-z][a-z0-9._-]{0,63}$'")),
+    lambdaFunctionAliasesNameChk: check("lambda_function_aliases_name_chk", sql.raw("name ~ '^[a-z][a-z0-9._-]{0,63}$' and name <> 'latest'")),
     lambdaFunctionAliasesDescriptionSizeChk: check("lambda_function_aliases_description_size_chk", sql.raw("octet_length(description) <= 4096")),
     lambdaFunctionAliasesTrafficObjectChk: check("lambda_function_aliases_traffic_object_chk", sql.raw("jsonb_typeof(traffic) = 'object'")),
     lambdaFunctionAliasesTrafficSizeChk: check("lambda_function_aliases_traffic_size_chk", sql.raw("octet_length(traffic::text) <= 8192")),

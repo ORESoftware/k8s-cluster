@@ -1469,7 +1469,7 @@ create table if not exists lambda_function_aliases (
   created_by uuid,
   updated_by uuid,
   constraint lambda_function_aliases_name_chk
-    check (name ~ '^[a-z][a-z0-9._-]{0,63}$'),
+    check (name ~ '^[a-z][a-z0-9._-]{0,63}$' and name <> 'latest'),
   constraint lambda_function_aliases_description_size_chk
     check (octet_length(description) <= 4096),
   constraint lambda_function_aliases_traffic_object_chk

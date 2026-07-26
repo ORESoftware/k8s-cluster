@@ -3158,7 +3158,7 @@ class LambdaFunctionRevisionInsert(BaseModel):
 class LambdaFunctionAlias(Base):
     __tablename__ = "lambda_function_aliases"
     __table_args__ = (
-        CheckConstraint("name ~ '^[a-z][a-z0-9._-]{0,63}$'", name="lambda_function_aliases_name_chk"),
+        CheckConstraint("name ~ '^[a-z][a-z0-9._-]{0,63}$' and name <> 'latest'", name="lambda_function_aliases_name_chk"),
         CheckConstraint("octet_length(description) <= 4096", name="lambda_function_aliases_description_size_chk"),
         CheckConstraint("jsonb_typeof(traffic) = 'object'", name="lambda_function_aliases_traffic_object_chk"),
         CheckConstraint("octet_length(traffic::text) <= 8192", name="lambda_function_aliases_traffic_size_chk"),
