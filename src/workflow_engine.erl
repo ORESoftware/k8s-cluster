@@ -735,8 +735,9 @@ activity_command() ->
     case getenv(<<"LAMBDA_NODEJS_HOST_COMMAND">>) of
         <<>> ->
             "env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 "
-            "node --permission --allow-net --allow-fs-read=child-runtimes "
-            "--allow-fs-read=../../../../libs/nats/subject-defs/generated/javascript "
+            "child-runtimes/node-permission-launcher.sh "
+            "--allow-fs-read=child-runtimes "
+            "--allow-fs-read=../../../../libs "
             "child-runtimes/js-function-runner.mjs";
         Value ->
             binary_to_list(Value)

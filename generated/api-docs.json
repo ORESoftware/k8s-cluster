@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "gleam-lambda-runner",
   "language": "gleam",
-  "routeCount": 24,
+  "routeCount": 25,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 14,
+    "user-generated": 15,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -258,6 +258,21 @@
       ],
       "sourceFiles": [
         "remote/libs/runtime-config-client-gleam/src/dd_runtime_config_client.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/invoke-stream/:function_id",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
       ],
       "notes": ""
     },

@@ -2,6 +2,7 @@ import dd_otel_client
 import dd_runtime_config_client
 import gleam/bit_array
 import gleam/bytes_tree
+import gleam/erlang/process
 import gleam/http.{Get, Post}
 import gleam/http/request
 import gleam/http/response
@@ -26,7 +27,7 @@ const default_port = 8083
 
 const max_body_bytes = 5_242_880
 
-const default_command = "env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 NATS_URL=\"${NATS_URL:-}\" CONTAINER_POOL_NATS_URL=\"${CONTAINER_POOL_NATS_URL:-}\" CONTAINER_POOL_NATS_SUBJECT_PREFIX=\"${CONTAINER_POOL_NATS_SUBJECT_PREFIX:-dd.remote.container_pool}\" CONTAINER_POOL_NATS_TIMEOUT_MS=\"${CONTAINER_POOL_NATS_TIMEOUT_MS:-30000}\" node --permission --allow-net --allow-fs-read=child-runtimes --allow-fs-read=../../../../libs/nats/subject-defs/generated/javascript child-runtimes/js-function-runner.mjs"
+const default_command = "env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 NATS_URL=\"${NATS_URL:-}\" CONTAINER_POOL_NATS_URL=\"${CONTAINER_POOL_NATS_URL:-}\" CONTAINER_POOL_NATS_SUBJECT_PREFIX=\"${CONTAINER_POOL_NATS_SUBJECT_PREFIX:-dd.remote.container_pool}\" CONTAINER_POOL_NATS_TIMEOUT_MS=\"${CONTAINER_POOL_NATS_TIMEOUT_MS:-30000}\" LAMBDA_STREAM_MAX_BYTES=\"${LAMBDA_STREAM_MAX_BYTES:-16777216}\" LAMBDA_STREAM_CHUNK_BYTES=\"${LAMBDA_STREAM_CHUNK_BYTES:-65536}\" child-runtimes/node-permission-launcher.sh --allow-fs-read=child-runtimes --allow-fs-read=../../../../libs child-runtimes/js-function-runner.mjs"
 
 const child_idle_ms = 300_000
 
@@ -74,6 +75,8 @@ fn route(
       require_authenticated(req, runtime_processes)
     Post, ["invoke", function_id] ->
       require_authenticated_post(req, fn() { invoke(req, function_id) })
+    Post, ["invoke-stream", function_id] ->
+      require_authenticated_post(req, fn() { invoke_stream(req, function_id) })
     Post, ["check"] -> require_authenticated_post(req, fn() { check(req) })
     Post, ["destroy", reuse_key] ->
       require_authenticated_post(req, fn() { destroy(reuse_key) })
@@ -102,6 +105,7 @@ fn route(
     Post, ["internal", "runtime-config", "reset"] ->
       dd_runtime_config_client.handle_reset(req)
     _, ["invoke", _] -> method_not_allowed()
+    _, ["invoke-stream", _] -> method_not_allowed()
     _, ["check"] -> method_not_allowed()
     _, ["destroy", _] -> method_not_allowed()
     _, ["async", "invoke", _] -> method_not_allowed()
@@ -150,6 +154,67 @@ fn invoke(
       }
     }
     Error(_) -> json_response(400, "{\"ok\":false,\"error\":\"invalid-body\"}")
+  }
+}
+
+fn invoke_stream(
+  req: request.Request(mist.Connection),
+  function_id: String,
+) -> response.Response(mist.ResponseData) {
+  case mist.read_body(req, max_body_bytes) {
+    Ok(body_req) ->
+      case bit_array.to_string(body_req.body) {
+        Ok(payload) -> {
+          let initial_response =
+            response.new(200)
+            |> response.set_header("content-type", "application/octet-stream")
+            |> response.set_header("cache-control", "no-store")
+            |> response.set_header("x-content-type-options", "nosniff")
+            |> response.set_header("x-scintilla-stream-protocol", "raw-v1")
+          mist.chunked(
+            request: req,
+            response: initial_response,
+            init: fn(subject) {
+              let _ =
+                child_process.start_stream(
+                  default_command,
+                  function_id,
+                  request_payload(payload),
+                  child_idle_ms,
+                  300_000,
+                  subject,
+                )
+              Nil
+            },
+            loop: stream_loop,
+          )
+        }
+        Error(_) ->
+          json_response(400, "{\"ok\":false,\"error\":\"body-not-utf8\"}")
+      }
+    Error(_) -> json_response(400, "{\"ok\":false,\"error\":\"invalid-body\"}")
+  }
+}
+
+fn stream_loop(
+  state: Nil,
+  message: child_process.StreamMessage,
+  connection: mist.Connection,
+) -> mist.ChunkNext(Nil) {
+  case message {
+    child_process.StreamChunk(data:, acknowledge:) -> {
+      let sent = mist.send_chunk(connection, data)
+      // Always release the runtime worker. A failed socket send stops the
+      // connection actor immediately after the acknowledgement.
+      process.send(acknowledge, Nil)
+      case sent {
+        Ok(_) -> mist.chunk_continue(state)
+        Error(_) -> mist.chunk_stop_abnormal("stream client disconnected")
+      }
+    }
+    child_process.StreamFinished -> mist.chunk_stop()
+    child_process.StreamFailed(_) ->
+      mist.chunk_stop_abnormal("stream invocation failed")
   }
 }
 

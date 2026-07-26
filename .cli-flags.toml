@@ -91,6 +91,18 @@ env = "LAMBDA_RESULT_MAX_BYTES"
 aliases = ["lambda-result-max-bytes"]
 type = "integer"
 
+[flags.lambda_stream_max_bytes]
+env = "LAMBDA_STREAM_MAX_BYTES"
+aliases = ["lambda-stream-max-bytes"]
+type = "integer"
+default = 16777216
+
+[flags.lambda_stream_chunk_bytes]
+env = "LAMBDA_STREAM_CHUNK_BYTES"
+aliases = ["lambda-stream-chunk-bytes"]
+type = "integer"
+default = 65536
+
 [flags.lambda_allow_host_runtimes]
 env = "LAMBDA_ALLOW_HOST_RUNTIMES"
 aliases = ["lambda-allow-host-runtimes"]

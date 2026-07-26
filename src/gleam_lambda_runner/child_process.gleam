@@ -1,3 +1,11 @@
+import gleam/erlang/process
+
+pub type StreamMessage {
+  StreamChunk(data: BitArray, acknowledge: process.Subject(Nil))
+  StreamFinished
+  StreamFailed(reason: String)
+}
+
 @external(erlang, "lambda_child_runner", "invoke")
 pub fn invoke(
   command: String,
@@ -16,6 +24,48 @@ pub fn invoke_definition(
   idle_ms: Int,
   timeout_ms: Int,
 ) -> Result(String, String)
+
+@external(erlang, "lambda_child_runner", "invoke_stream")
+fn invoke_stream_ffi(
+  command: String,
+  function_id: String,
+  payload: String,
+  idle_ms: Int,
+  timeout_ms: Int,
+  emit: fn(BitArray) -> Nil,
+) -> Result(Int, String)
+
+/// Start a linked streaming invocation. Every callback synchronously calls the
+/// connection actor and waits for its socket-send acknowledgement, carrying
+/// network backpressure through the BEAM port to the child runtime.
+pub fn start_stream(
+  command: String,
+  function_id: String,
+  payload: String,
+  idle_ms: Int,
+  timeout_ms: Int,
+  target: process.Subject(StreamMessage),
+) -> process.Pid {
+  process.spawn(fn() {
+    let result =
+      invoke_stream_ffi(
+        command,
+        function_id,
+        payload,
+        idle_ms,
+        timeout_ms,
+        fn(data) {
+          process.call_forever(target, fn(acknowledge) {
+            StreamChunk(data:, acknowledge:)
+          })
+        },
+      )
+    case result {
+      Ok(_) -> process.send(target, StreamFinished)
+      Error(reason) -> process.send(target, StreamFailed(reason:))
+    }
+  })
+}
 
 @external(erlang, "lambda_child_runner", "check_definition")
 pub fn check_definition(

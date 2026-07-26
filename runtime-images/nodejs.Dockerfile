@@ -29,9 +29,10 @@ RUN apk add --no-cache \
   font-noto
 COPY --from=toolchain /opt/scintilla/node_modules /opt/scintilla/node_modules
 COPY deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/child-runtimes/js-function-runner.mjs /opt/dd-next/remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/child-runtimes/js-function-runner.mjs
+COPY --chmod=0555 deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/child-runtimes/node-permission-launcher.sh /usr/local/bin/node-permission-launcher
 COPY libs/nats/subject-defs/generated/javascript/index.mjs /opt/dd-next/remote/libs/nats/subject-defs/generated/javascript/index.mjs
 ENV NODE_NO_WARNINGS=1 \
     LAMBDA_BROWSER_AUTOMATION=1 \
     LAMBDA_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 USER 10001:10001
-CMD ["node", "--permission", "--allow-child-process", "--allow-fs-read=/opt/dd-next", "--allow-fs-read=/usr/bin/chromium-browser", "--allow-fs-read=/usr/lib/chromium", "--allow-fs-read=/etc/fonts", "--allow-fs-read=/usr/share/fonts", "--allow-fs-read=/tmp", "--allow-fs-read=/work", "--allow-fs-write=/tmp", "--allow-fs-write=/work", "/opt/dd-next/remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/child-runtimes/js-function-runner.mjs"]
+CMD ["/usr/local/bin/node-permission-launcher", "--allow-child-process", "--allow-fs-read=/opt/dd-next", "--allow-fs-read=/opt/scintilla/node_modules", "--allow-fs-read=/usr/bin/chromium-browser", "--allow-fs-read=/usr/lib/chromium", "--allow-fs-read=/etc/fonts", "--allow-fs-read=/usr/share/fonts", "--allow-fs-read=/tmp", "--allow-fs-read=/work", "--allow-fs-write=/tmp", "--allow-fs-write=/work", "/opt/dd-next/remote/deployments/scintilla-run-monorepo/apps/gleam-lambda-runner/child-runtimes/js-function-runner.mjs"]

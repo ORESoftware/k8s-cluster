@@ -3,6 +3,8 @@
 -export([
     invoke/5,
     invoke_definition/6,
+    invoke_stream/6,
+    invoke_stream_definition/7,
     check_definition/3,
     metrics/0,
     worker_counts/0,
@@ -17,6 +19,7 @@
 -define(SERVER, lambda_child_runner_manager).
 -define(WORKERS, lambda_child_runner_workers).
 -define(METRICS, lambda_child_runner_metrics).
+-define(MAX_STREAM_FRAME_BYTES, 524288).
 
 invoke(Command0, Identifier0, Payload0, IdleMs0, TimeoutMs0) ->
     ensure_tables(),
@@ -60,6 +63,58 @@ invoke_definition(Command0, Identifier0, DefinitionJson0, Payload0, IdleMs0, Tim
         RequestPayload,
         IdleMs0,
         TimeoutMs0
+    ).
+
+%% Stream one Node.js invocation through a callback. The callback is
+%% invoked synchronously for every decoded binary chunk; the HTTP bridge does
+%% not acknowledge it until that chunk has reached the client socket, so
+%% backpressure propagates through the BEAM worker and OS pipe to user code.
+invoke_stream(Command0, Identifier0, Payload0, IdleMs0, TimeoutMs0, Emit) ->
+    ensure_tables(),
+    FallbackCommand = to_binary(Command0),
+    Identifier = to_binary(Identifier0),
+    RequestPayload = default_request_payload(Payload0),
+    reap_idle(now_ms()),
+    case load_function_definition(Identifier) of
+        {ok, DefinitionJson} ->
+            invoke_loaded_definition_stream(
+                FallbackCommand,
+                Identifier,
+                DefinitionJson,
+                RequestPayload,
+                IdleMs0,
+                TimeoutMs0,
+                Emit
+            );
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%% Definition-injected variant used by behavioral tests and trusted internal
+%% callers that already resolved an immutable definition snapshot.
+invoke_stream_definition(
+    Command0,
+    Identifier0,
+    DefinitionJson0,
+    Payload0,
+    IdleMs0,
+    TimeoutMs0,
+    Emit
+) ->
+    ensure_tables(),
+    FallbackCommand = to_binary(Command0),
+    Identifier = to_binary(Identifier0),
+    DefinitionJson = normalize_json_payload(to_binary(DefinitionJson0)),
+    RequestPayload = default_request_payload(Payload0),
+    reap_idle(now_ms()),
+    invoke_loaded_definition_stream(
+        FallbackCommand,
+        Identifier,
+        DefinitionJson,
+        RequestPayload,
+        IdleMs0,
+        TimeoutMs0,
+        Emit
     ).
 
 check_definition(Command0, DefinitionJson0, TimeoutMs0) ->
@@ -151,6 +206,95 @@ invoke_loaded_definition_local(FallbackCommand, Identifier, DefinitionJson, Requ
                     {error, Reason}
             end;
         {error, Reason} ->
+            {error, Reason}
+    end.
+
+invoke_loaded_definition_stream(
+    FallbackCommand,
+    Identifier,
+    DefinitionJson,
+    RequestPayload,
+    IdleMs0,
+    TimeoutMs0,
+    Emit
+) when is_function(Emit, 1) ->
+    bump(invocations_total, 1),
+    bump(stream_invocations_total, 1),
+    case pool_dispatch_target(DefinitionJson) of
+        {ok, _Subject, _PoolSlug} ->
+            bump(stream_failures_total, 1),
+            {error, <<"response streaming is unavailable for pool-backed functions">>};
+        {error, Reason} ->
+            bump(stream_failures_total, 1),
+            {error, Reason};
+        false ->
+            Runtime = runtime_from_definition(DefinitionJson),
+            case Runtime =:= <<"nodejs">> of
+                false ->
+                    bump(stream_failures_total, 1),
+                    {error, <<"response streaming currently requires the nodejs runtime">>};
+                true ->
+                    invoke_loaded_definition_stream_local(
+                        FallbackCommand,
+                        Identifier,
+                        DefinitionJson,
+                        RequestPayload,
+                        IdleMs0,
+                        TimeoutMs0,
+                        Emit,
+                        Runtime
+                    )
+            end
+    end;
+invoke_loaded_definition_stream(
+    _FallbackCommand,
+    _Identifier,
+    _DefinitionJson,
+    _RequestPayload,
+    _IdleMs0,
+    _TimeoutMs0,
+    _Emit
+) ->
+    {error, <<"stream callback is required">>}.
+
+invoke_loaded_definition_stream_local(
+    FallbackCommand,
+    Identifier,
+    DefinitionJson,
+    RequestPayload,
+    IdleMs0,
+    TimeoutMs0,
+    Emit,
+    Runtime
+) ->
+    case command_for_definition(FallbackCommand, DefinitionJson) of
+        {ok, Command} ->
+            Containerized = json_bool_field(DefinitionJson, <<"containerized">>, false),
+            case worker_pool(Identifier, DefinitionJson, Runtime, Containerized) of
+                {ok, PoolKey, MaxConcurrency} ->
+                    IdleMs = idle_ms_from_definition(DefinitionJson, IdleMs0),
+                    TimeoutMs = timeout_ms_from_definition(DefinitionJson, TimeoutMs0),
+                    Payload = stream_invocation_payload(
+                        Identifier,
+                        DefinitionJson,
+                        RequestPayload
+                    ),
+                    invoke_stream_worker(
+                        Command,
+                        PoolKey,
+                        Payload,
+                        IdleMs,
+                        TimeoutMs,
+                        MaxConcurrency,
+                        stream_max_bytes(),
+                        Emit
+                    );
+                {error, Reason} ->
+                    bump(stream_failures_total, 1),
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            bump(stream_failures_total, 1),
             {error, Reason}
     end.
 
@@ -295,6 +439,61 @@ invoke_worker(Command, PoolKey, Payload, IdleMs, TimeoutMs, MaxConcurrency) ->
             {error, Reason}
     end.
 
+invoke_stream_worker(
+    Command,
+    PoolKey,
+    Payload,
+    IdleMs,
+    TimeoutMs,
+    MaxConcurrency,
+    MaxBytes,
+    Emit
+) ->
+    case acquire_worker(Command, PoolKey, IdleMs, MaxConcurrency) of
+        {ok, Pid, WorkerKey, LeaseRef} ->
+            Ref = make_ref(),
+            Monitor = erlang:monitor(process, Pid),
+            Pid ! {invoke_stream, self(), Ref, Payload, MaxBytes, Emit},
+            receive
+                {Ref, {ok, Bytes, Chunks}} ->
+                    erlang:demonitor(Monitor, [flush]),
+                    bump(stream_bytes_total, Bytes),
+                    bump(stream_chunks_total, Chunks),
+                    release_worker(WorkerKey, LeaseRef),
+                    {ok, Bytes};
+                {Ref, {stream_error, Reason, Bytes, Chunks}} ->
+                    erlang:demonitor(Monitor, [flush]),
+                    bump(stream_bytes_total, Bytes),
+                    bump(stream_chunks_total, Chunks),
+                    bump(stream_failures_total, 1),
+                    release_worker(WorkerKey, LeaseRef),
+                    {error, Reason};
+                {Ref, {error, Reason}} ->
+                    erlang:demonitor(Monitor, [flush]),
+                    bump(stream_failures_total, 1),
+                    remove_worker(WorkerKey, LeaseRef),
+                    {error, Reason};
+                {'DOWN', Monitor, process, Pid, Reason} ->
+                    bump(stream_failures_total, 1),
+                    remove_worker(WorkerKey, LeaseRef),
+                    bump(child_exits_total, 1),
+                    {error, iolist_to_binary(io_lib:format(
+                        "streaming child worker exited: ~p",
+                        [Reason]
+                    ))}
+            after TimeoutMs ->
+                Pid ! stop,
+                erlang:demonitor(Monitor, [flush]),
+                remove_worker(WorkerKey, LeaseRef),
+                bump(invocation_timeouts_total, 1),
+                bump(stream_failures_total, 1),
+                {error, <<"lambda streaming process timed out">>}
+            end;
+        {error, Reason} ->
+            bump(stream_failures_total, 1),
+            {error, Reason}
+    end.
+
 metrics() ->
     ensure_tables(),
     Counts = worker_counts(),
@@ -340,6 +539,30 @@ metrics() ->
         metric_line(
             "dd_lambda_runner_abandoned_leases_total",
             get_metric(abandoned_leases_total)
+        ),
+        "# HELP dd_lambda_runner_stream_invocations_total Streaming invocations started.\n",
+        "# TYPE dd_lambda_runner_stream_invocations_total counter\n",
+        metric_line(
+            "dd_lambda_runner_stream_invocations_total",
+            get_metric(stream_invocations_total)
+        ),
+        "# HELP dd_lambda_runner_stream_chunks_total Backpressured response chunks delivered to HTTP streams.\n",
+        "# TYPE dd_lambda_runner_stream_chunks_total counter\n",
+        metric_line(
+            "dd_lambda_runner_stream_chunks_total",
+            get_metric(stream_chunks_total)
+        ),
+        "# HELP dd_lambda_runner_stream_bytes_total Streaming response bytes delivered to HTTP streams.\n",
+        "# TYPE dd_lambda_runner_stream_bytes_total counter\n",
+        metric_line(
+            "dd_lambda_runner_stream_bytes_total",
+            get_metric(stream_bytes_total)
+        ),
+        "# HELP dd_lambda_runner_stream_failures_total Streaming invocations that failed or were interrupted.\n",
+        "# TYPE dd_lambda_runner_stream_failures_total counter\n",
+        metric_line(
+            "dd_lambda_runner_stream_failures_total",
+            get_metric(stream_failures_total)
         ),
         "# HELP dd_lambda_runner_active_workers Active reusable child processes.\n",
         "# TYPE dd_lambda_runner_active_workers gauge\n",
@@ -482,7 +705,7 @@ is_browser_runtime(_Runtime) -> false.
 host_command(<<"nodejs">>) ->
     host_command_from_env(
         "LAMBDA_NODEJS_HOST_COMMAND",
-        <<"env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 NATS_URL=\"${NATS_URL:-}\" CONTAINER_POOL_NATS_URL=\"${CONTAINER_POOL_NATS_URL:-}\" CONTAINER_POOL_NATS_SUBJECT_PREFIX=\"${CONTAINER_POOL_NATS_SUBJECT_PREFIX:-dd.remote.container_pool}\" CONTAINER_POOL_NATS_TIMEOUT_MS=\"${CONTAINER_POOL_NATS_TIMEOUT_MS:-30000}\" node --permission --allow-net --allow-fs-read=child-runtimes --allow-fs-read=../../../../libs/nats/subject-defs/generated/javascript child-runtimes/js-function-runner.mjs">>
+        <<"env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 NATS_URL=\"${NATS_URL:-}\" CONTAINER_POOL_NATS_URL=\"${CONTAINER_POOL_NATS_URL:-}\" CONTAINER_POOL_NATS_SUBJECT_PREFIX=\"${CONTAINER_POOL_NATS_SUBJECT_PREFIX:-dd.remote.container_pool}\" CONTAINER_POOL_NATS_TIMEOUT_MS=\"${CONTAINER_POOL_NATS_TIMEOUT_MS:-30000}\" LAMBDA_STREAM_MAX_BYTES=\"${LAMBDA_STREAM_MAX_BYTES:-16777216}\" LAMBDA_STREAM_CHUNK_BYTES=\"${LAMBDA_STREAM_CHUNK_BYTES:-65536}\" child-runtimes/node-permission-launcher.sh --allow-fs-read=child-runtimes --allow-fs-read=../../../../libs child-runtimes/js-function-runner.mjs">>
     );
 host_command(<<"python3">>) ->
     host_command_from_env(
@@ -497,7 +720,7 @@ host_command(<<"ruby">>) ->
 host_command(<<"bash">>) ->
     host_command_from_env(
         "LAMBDA_BASH_HOST_COMMAND",
-        <<"env -i PATH=\"$PATH\" NODE_NO_WARNINGS=1 node --permission --allow-net --allow-child-process child-runtimes/bash-function-runner.mjs">>
+        <<"env -i PATH=\"$PATH\" NODE_NO_WARNINGS=1 child-runtimes/node-permission-launcher.sh --allow-child-process child-runtimes/bash-function-runner.mjs">>
     );
 host_command(<<"browser">>) ->
     %% No `--permission` here: Playwright/Puppeteer must read browser binaries,
@@ -689,7 +912,9 @@ runtime_container_env_args(EntryCommand) ->
         {"OTEL_EXPORTER_OTLP_ENDPOINT", <<>>},
         {"OTEL_EXPORTER_OTLP_PROTOCOL", <<"grpc">>},
         {"OTEL_PROPAGATORS", <<"tracecontext,baggage">>},
-        {"OTEL_RESOURCE_ATTRIBUTES", <<>>}
+        {"OTEL_RESOURCE_ATTRIBUTES", <<>>},
+        {"LAMBDA_STREAM_MAX_BYTES", <<"16777216">>},
+        {"LAMBDA_STREAM_CHUNK_BYTES", <<"65536">>}
         ])
     ].
 
@@ -886,6 +1111,13 @@ timeout_ms_from_definition(DefinitionJson, Fallback) ->
 default_max_concurrency() ->
     clamp_int(env_int("LAMBDA_DEFAULT_MAX_CONCURRENCY", 16), 1, 1000).
 
+stream_max_bytes() ->
+    clamp_int(
+        env_int("LAMBDA_STREAM_MAX_BYTES", 16777216),
+        1024,
+        1073741824
+    ).
+
 runtime_from_definition(DefinitionJson) ->
     canonical_runtime(json_string_field(DefinitionJson, <<"runtime">>)).
 
@@ -991,6 +1223,23 @@ invocation_payload(Slug, DefinitionJson, RequestJson) ->
         RequestJson,
         "}"
     ]).
+
+stream_invocation_payload(Slug, DefinitionJson, RequestJson) ->
+    iolist_to_binary([
+        "{\"mode\":\"stream\",\"slug\":\"",
+        json_escape(Slug),
+        "\",\"definition\":",
+        DefinitionJson,
+        ",\"request\":",
+        RequestJson,
+        "}"
+    ]).
+
+default_request_payload(Payload0) ->
+    case normalize_json_payload(to_binary(Payload0)) of
+        <<>> -> <<"null">>;
+        Payload -> Payload
+    end.
 
 check_payload(DefinitionJson) ->
     Slug = case json_string_field(DefinitionJson, <<"slug">>) of
@@ -1323,11 +1572,180 @@ worker_loop(Port) ->
         {invoke, From, Ref, Payload} ->
             port_command(Port, [Payload, <<"\n">>]),
             worker_receive_result(Port, From, Ref, <<>>);
+        {invoke_stream, From, Ref, Payload, MaxBytes, Emit} ->
+            port_command(Port, [Payload, <<"\n">>]),
+            worker_receive_stream(
+                Port,
+                From,
+                Ref,
+                Emit,
+                <<>>,
+                0,
+                0,
+                false,
+                MaxBytes
+            );
         {Port, {exit_status, _Status}} ->
             ok;
         stop ->
             close_port(Port)
     end.
+
+worker_receive_stream(
+    Port,
+    From,
+    Ref,
+    Emit,
+    Buffer,
+    Bytes,
+    Chunks,
+    Started,
+    MaxBytes
+) ->
+    receive
+        {Port, {data, Data}} ->
+            NewBuffer = <<Buffer/binary, Data/binary>>,
+            consume_stream_buffer(
+                Port,
+                From,
+                Ref,
+                Emit,
+                NewBuffer,
+                Bytes,
+                Chunks,
+                Started,
+                MaxBytes
+            );
+        {Port, {exit_status, Status}} ->
+            From ! {Ref, {error, iolist_to_binary(io_lib:format(
+                "streaming child exited with status ~p",
+                [Status]
+            ))}};
+        stop ->
+            close_port(Port),
+            From ! {Ref, {error, <<"lambda streaming worker stopped">>}}
+    end.
+
+consume_stream_buffer(
+    Port,
+    From,
+    Ref,
+    Emit,
+    Buffer,
+    Bytes,
+    Chunks,
+    Started,
+    MaxBytes
+) ->
+    case binary:match(Buffer, <<"\n">>) of
+        nomatch when byte_size(Buffer) > ?MAX_STREAM_FRAME_BYTES ->
+            fail_stream_protocol(
+                Port,
+                From,
+                Ref,
+                <<"lambda stream frame exceeded byte limit">>
+            );
+        nomatch ->
+            worker_receive_stream(
+                Port,
+                From,
+                Ref,
+                Emit,
+                Buffer,
+                Bytes,
+                Chunks,
+                Started,
+                MaxBytes
+            );
+        {Index, 1} ->
+            Line = binary:part(Buffer, 0, Index),
+            Rest = binary:part(
+                Buffer,
+                Index + 1,
+                byte_size(Buffer) - Index - 1
+            ),
+            case decode_stream_frame(Line, Started, Bytes, Chunks, MaxBytes) of
+                {start, NewStarted} ->
+                    consume_stream_buffer(
+                        Port,
+                        From,
+                        Ref,
+                        Emit,
+                        Rest,
+                        Bytes,
+                        Chunks,
+                        NewStarted,
+                        MaxBytes
+                    );
+                {chunk, Chunk, NewBytes, NewChunks} ->
+                    %% Emit is synchronous. The Gleam bridge waits for the
+                    %% Mist connection actor to acknowledge its socket send
+                    %% before this worker reads another child frame.
+                    Emit(Chunk),
+                    consume_stream_buffer(
+                        Port,
+                        From,
+                        Ref,
+                        Emit,
+                        Rest,
+                        NewBytes,
+                        NewChunks,
+                        Started,
+                        MaxBytes
+                    );
+                done ->
+                    From ! {Ref, {ok, Bytes, Chunks}},
+                    worker_loop(Port);
+                {stream_error, Reason} ->
+                    From ! {Ref, {stream_error, Reason, Bytes, Chunks}},
+                    worker_loop(Port);
+                {error, Reason} ->
+                    fail_stream_protocol(Port, From, Ref, Reason)
+            end
+    end.
+
+decode_stream_frame(<<>>, Started, _Bytes, _Chunks, _MaxBytes) ->
+    {start, Started};
+decode_stream_frame(Line, Started, Bytes, Chunks, MaxBytes) ->
+    try json:decode(Line) of
+        #{
+            <<"stream">> := true,
+            <<"event">> := <<"start">>
+        } when Started =:= false ->
+            {start, true};
+        #{
+            <<"stream">> := true,
+            <<"event">> := <<"chunk">>,
+            <<"encoding">> := <<"base64">>,
+            <<"data">> := Encoded
+        } when Started =:= true, is_binary(Encoded) ->
+            Chunk = base64:decode(Encoded),
+            NewBytes = Bytes + byte_size(Chunk),
+            case NewBytes =< MaxBytes of
+                true -> {chunk, Chunk, NewBytes, Chunks + 1};
+                false -> {error, <<"lambda stream exceeded configured byte limit">>}
+            end;
+        #{
+            <<"stream">> := true,
+            <<"event">> := <<"end">>,
+            <<"bytes">> := Bytes
+        } when Started =:= true ->
+            done;
+        #{
+            <<"stream">> := true,
+            <<"event">> := <<"error">>,
+            <<"error">> := Reason
+        } when is_binary(Reason) ->
+            {stream_error, Reason};
+        _ ->
+            {error, <<"invalid lambda stream protocol frame">>}
+    catch
+        _:_ -> {error, <<"invalid lambda stream protocol frame">>}
+    end.
+
+fail_stream_protocol(Port, From, Ref, Reason) ->
+    From ! {Ref, {error, Reason}},
+    close_port(Port).
 
 worker_receive_result(Port, From, Ref, Buffer) ->
     receive
