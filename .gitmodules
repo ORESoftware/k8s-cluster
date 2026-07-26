@@ -1,0 +1,21 @@
+[submodule "apps/cliptown-rust-backend.rs"]
+	path = apps/cliptown-rust-backend.rs
+	url = https://github.com/cliptown/cliptown-rust-backend.rs
+[submodule "apps/cliptown-flutter"]
+	path = apps/cliptown-flutter
+	url = https://github.com/cliptown/cliptown-flutter
+[submodule "apps/cliptown-clients"]
+	path = apps/cliptown-clients
+	url = https://github.com/cliptown/cliptown-clients
+[submodule "apps/cliptown-interfaces"]
+	path = apps/cliptown-interfaces
+	url = https://github.com/cliptown/cliptown-interfaces
+[submodule "apps/cliptown-infra"]
+	path = apps/cliptown-infra
+	url = https://github.com/cliptown/cliptown-infra
+[submodule "apps/cliptown-cli"]
+	path = apps/cliptown-cli
+	url = https://github.com/cliptown/cliptown-cli
+[submodule "apps/cliptown-extension"]
+	path = apps/cliptown-extension
+	url = https://github.com/cliptown/cliptown-extension
