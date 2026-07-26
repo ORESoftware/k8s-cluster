@@ -32,7 +32,10 @@
     nudge/0,
     %% Exported for unit tests (pure helpers).
     backoff_ms/2,
-    max_attempts/1
+    max_attempts/1,
+    retry_config/2,
+    async_event_expired/2,
+    activity_payload/4
 ]).
 
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
@@ -80,6 +83,7 @@ start_run(DefRef, InputJson, IdempotencyKey) ->
     case workflow_store:create_run(DefRef, InputJson, IdempotencyKey) of
         {ok, RunJson} ->
             bump(runs_started, 1),
+            maybe_bump_async_started(DefRef),
             nudge(),
             publish_event(#{<<"event">> => <<"run.started">>, <<"run">> => raw(RunJson)}),
             {ok, RunJson};
@@ -117,6 +121,7 @@ cancel_run(RunId) ->
     case workflow_store:cancel_run(RunId) of
         {ok, RunJson} ->
             bump(runs_canceled, 1),
+            publish_async_terminal(raw(RunJson), <<"canceled">>, RunJson, undefined),
             publish_event(#{<<"event">> => <<"run.canceled">>, <<"runId">> => to_binary(RunId)}),
             {ok, RunJson};
         {conflict, _} ->
@@ -315,7 +320,7 @@ record_crash(RunId, Run, ErrBin) ->
         true ->
             ignore_commit(workflow_store:fail_retry(RunId, StepRow, NewAttempt, backoff_ms(Retry, Attempt), ErrBin));
         false ->
-            ignore_commit(workflow_store:fail_terminal(RunId, StepRow, ErrBin))
+            terminal_failure_row(RunId, Run, StepRow, StepName, ErrBin)
     end.
 
 complete_run(RunId, Run) ->
@@ -326,6 +331,7 @@ complete_run(RunId, Run) ->
         RunId,
         fun(RunJson) ->
             bump(runs_completed, 1),
+            publish_async_terminal(Run, <<"completed">>, RunJson, undefined),
             publish_event(#{<<"event">> => <<"run.completed">>, <<"run">> => raw(RunJson)})
         end
     ).
@@ -336,28 +342,33 @@ dispatch_step(RunId, Run, Status, Step, Idx, Total) ->
         <<"sleep">> -> run_sleep(RunId, Step, Idx);
         <<"waitSignal">> -> run_wait_signal(RunId, Run, Status, Step, Idx, Total);
         Other ->
-            terminal_failure(RunId, Step, Idx,
+            terminal_failure(RunId, Run, Step, Idx,
                 iolist_to_binary([<<"unknown workflow step type: ">>, Other]))
     end.
 
 %% ── activity ──
 
 run_activity(RunId, Run, Step, Idx, Total) ->
+    case async_event_expired(Run, Step) of
+        true ->
+            terminal_failure(
+                RunId,
+                Run,
+                Step,
+                Idx,
+                <<"async invocation exceeded maximum event age">>
+            );
+        false ->
+            run_activity_current(RunId, Run, Step, Idx, Total)
+    end.
+
+run_activity_current(RunId, Run, Step, Idx, Total) ->
     case activity_function_ref(Step) of
         {error, Reason} ->
-            terminal_failure(RunId, Step, Idx, Reason);
+            terminal_failure(RunId, Run, Step, Idx, Reason);
         {ok, FunctionRef} ->
-            Context = map_get(Run, <<"context">>, #{}),
-            RunInput = map_get(Run, <<"input">>, null),
-            StepInput = map_get(Step, <<"input">>, #{}),
-            Payload = encode(#{
-                <<"runId">> => RunId,
-                <<"step">> => step_name(Step, Idx),
-                <<"input">> => StepInput,
-                <<"context">> => Context,
-                <<"runInput">> => RunInput
-            }),
-            TimeoutMs = map_int(Step, <<"timeoutMs">>, ?DEFAULT_ACTIVITY_TIMEOUT_MS),
+            {StepInput, Payload} = activity_payload(RunId, Run, Step, Idx),
+            TimeoutMs = activity_timeout_ms(Run, Step),
             Started = erlang:monotonic_time(millisecond),
             Result = lambda_child_runner:invoke(
                 activity_command(), FunctionRef, Payload, ?DEFAULT_ACTIVITY_IDLE_MS, TimeoutMs),
@@ -378,7 +389,7 @@ activity_success(RunId, Run, Step, Idx, Total, FunctionRef, StepInput, Output, D
     NewContextJson = encode(NewContext),
     case byte_size(NewContextJson) > ?MAX_CONTEXT_BYTES of
         true ->
-            terminal_failure(RunId, Step, Idx,
+            terminal_failure(RunId, Run, Step, Idx,
                 iolist_to_binary([<<"workflow context exceeded ">>,
                     integer_to_binary(?MAX_CONTEXT_BYTES), <<" bytes">>]));
         false ->
@@ -398,6 +409,7 @@ activity_success_commit(RunId, Run, Idx, Total, FunctionRef, StepName, StepInput
                 fun(RunJson) ->
                     bump(steps_succeeded, 1),
                     bump(runs_completed, 1),
+                    publish_async_terminal(Run, <<"completed">>, RunJson, undefined),
                     publish_event(#{<<"event">> => <<"step.succeeded">>, <<"runId">> => RunId, <<"step">> => StepName}),
                     publish_event(#{<<"event">> => <<"run.completed">>, <<"run">> => raw(RunJson)})
                 end);
@@ -433,7 +445,7 @@ activity_failure(RunId, Run, Step, Idx, FunctionRef, StepInput, Error, DurationM
                         <<"step">> => StepName, <<"attempt">> => NewAttempt, <<"backoffMs">> => Backoff})
                 end);
         false ->
-            terminal_failure_row(RunId, StepRow, StepName, ErrBin)
+            terminal_failure_row(RunId, Run, StepRow, StepName, ErrBin)
     end.
 
 %% ── sleep ──
@@ -486,36 +498,48 @@ wait_no_signal(RunId, Run, <<"waiting">>, Step, Idx, _StepName) ->
         null ->
             ignore_commit(workflow_store:repark_wait(RunId));
         Deadline when is_number(Deadline), NowMs >= Deadline ->
-            terminal_failure(RunId, Step, Idx,
+            terminal_failure(RunId, Run, Step, Idx,
                 iolist_to_binary([<<"signal wait timeout: ">>, map_bin(Step, <<"signalName">>, <<"?">>)]));
         _ ->
             ignore_commit(workflow_store:repark_wait(RunId))
     end;
-wait_no_signal(RunId, _Run, _Status, Step, _Idx, _StepName) ->
+wait_no_signal(RunId, Run, _Status, Step, _Idx, _StepName) ->
     %% First entry into the wait: park until a signal or the timeout.
     Deadline =
         case map_int(Step, <<"waitTimeoutMs">>, 0) of
             0 -> infinity;
             Ms -> Ms
         end,
-    ignore_commit(workflow_store:park_wait(RunId, Deadline)),
-    bump(waits_started, 1).
+    case async_event_expired(Run, Step) of
+        true ->
+            terminal_failure(
+                RunId,
+                Run,
+                Step,
+                map_int(Run, <<"currentStepIndex">>, 0),
+                <<"async invocation exceeded maximum event age">>
+            );
+        false ->
+            ignore_commit(workflow_store:park_wait(RunId, Deadline)),
+            bump(waits_started, 1)
+    end.
 
 %% ── failure helpers ──
 
-terminal_failure(RunId, Step, Idx, ErrBin) ->
+terminal_failure(RunId, Run, Step, Idx, ErrBin) ->
     StepName = step_name(Step, Idx),
     StepRow = step_row(Idx, StepName, step_type(Step), <<>>, 0, <<"failed">>,
         undefined, undefined, ErrBin, undefined),
-    terminal_failure_row(RunId, StepRow, StepName, ErrBin).
+    terminal_failure_row(RunId, Run, StepRow, StepName, ErrBin).
 
-terminal_failure_row(RunId, StepRow, StepName, ErrBin) ->
+terminal_failure_row(RunId, Run, StepRow, StepName, ErrBin) ->
     handle_commit(
         workflow_store:fail_terminal(RunId, StepRow, ErrBin),
         RunId,
         fun(RunJson) ->
             bump(steps_failed, 1),
             bump(runs_failed, 1),
+            publish_async_terminal(Run, <<"failed">>, RunJson, ErrBin),
             publish_event(#{<<"event">> => <<"step.failed">>, <<"runId">> => RunId,
                 <<"step">> => StepName, <<"error">> => ErrBin}),
             publish_event(#{<<"event">> => <<"run.failed">>, <<"run">> => raw(RunJson)})
@@ -568,6 +592,65 @@ activity_function_ref(Step) ->
             {ok, Id}
     end.
 
+activity_payload(RunId, Run, Step, Idx) ->
+    RunInput = map_get(Run, <<"input">>, null),
+    case map_bin(Step, <<"payloadMode">>, <<"workflow">>) of
+        <<"asyncPayload">> ->
+            Payload = case RunInput of
+                InputMap when is_map(InputMap) ->
+                    map_get(InputMap, <<"payload">>, null);
+                _ ->
+                    null
+            end,
+            {Payload, encode(Payload)};
+        _ ->
+            Context = map_get(Run, <<"context">>, #{}),
+            StepInput = map_get(Step, <<"input">>, #{}),
+            {StepInput, encode(#{
+                <<"runId">> => RunId,
+                <<"step">> => step_name(Step, Idx),
+                <<"input">> => StepInput,
+                <<"context">> => Context,
+                <<"runInput">> => RunInput
+            })}
+    end.
+
+activity_timeout_ms(Run, Step) ->
+    Requested = case is_async_step(Step) of
+        true ->
+            Options = async_options(Run),
+            map_int(Options, <<"timeoutMs">>, ?DEFAULT_ACTIVITY_TIMEOUT_MS);
+        false ->
+            map_int(Step, <<"timeoutMs">>, ?DEFAULT_ACTIVITY_TIMEOUT_MS)
+    end,
+    min(300000, max(1000, Requested)).
+
+async_event_expired(Run, Step) ->
+    case is_async_step(Step) of
+        false ->
+            false;
+        true ->
+            Options = async_options(Run),
+            MaxAge = map_int(Options, <<"maxEventAgeMs">>, 21600000),
+            CreatedAt = map_int(Run, <<"createdAtMs">>, 0),
+            Now = map_int(Run, <<"nowMs">>, 0),
+            CreatedAt > 0 andalso Now > CreatedAt andalso Now - CreatedAt > MaxAge
+    end.
+
+is_async_step(Step) ->
+    map_get(Step, <<"asyncPolicy">>, false) =:= true.
+
+async_options(Run) ->
+    case map_get(Run, <<"input">>, #{}) of
+        Input when is_map(Input) ->
+            case map_get(Input, <<"options">>, #{}) of
+                Options when is_map(Options) -> Options;
+                _ -> #{}
+            end;
+        _ ->
+            #{}
+    end.
+
 step_row(Idx, Name, Type, FunctionRef, Attempt, Status, Input, Output, Error, DurationMs) ->
     Base = #{
         index => Idx,
@@ -588,11 +671,23 @@ maybe_put(Key, Value, Map) -> Map#{Key => Value}.
 retry_config(Run, Step) ->
     DefaultRetry = map_get(Run, <<"defaultRetry">>, #{}),
     StepRetry = map_get(Step, <<"retry">>, #{}),
-    case {is_map(DefaultRetry), is_map(StepRetry)} of
+    Base = case {is_map(DefaultRetry), is_map(StepRetry)} of
         {true, true} -> maps:merge(DefaultRetry, StepRetry);
         {true, false} -> DefaultRetry;
         {false, true} -> StepRetry;
         _ -> #{}
+    end,
+    case is_async_step(Step) of
+        false ->
+            Base;
+        true ->
+            Options = async_options(Run),
+            case map_get(Options, <<"retry">>, #{}) of
+                AsyncRetry when is_map(AsyncRetry) ->
+                    maps:merge(Base, AsyncRetry);
+                _ ->
+                    Base
+            end
     end.
 
 %% Cap maxAttempts to a sane range so a definition can't request effectively
@@ -665,6 +760,85 @@ event_subject() ->
         Value -> Value
     end.
 
+maybe_bump_async_started(DefRef) ->
+    case to_binary(DefRef) of
+        <<"async-", _/binary>> -> bump(async_runs_started, 1);
+        _ -> ok
+    end.
+
+publish_async_terminal(Run, Status, RunJson, Error) when is_map(Run) ->
+    case map_bin(Run, <<"definitionSlug">>, <<>>) of
+        <<"async-", _/binary>> ->
+            Event0 = #{
+                <<"type">> => <<"lambda-async-invocation-result">>,
+                <<"status">> => Status,
+                <<"invocationId">> => map_bin(Run, <<"id">>, <<>>),
+                <<"run">> => raw(RunJson),
+                <<"ts">> => iso_now()
+            },
+            Event = case Error of
+                undefined -> Event0;
+                _ -> Event0#{<<"error">> => safe(Error)}
+            end,
+            publish_async_status(Status, Event);
+        _ ->
+            ok
+    end;
+publish_async_terminal(_Run, _Status, _RunJson, _Error) ->
+    ok.
+
+publish_async_status(<<"completed">>, Event) ->
+    bump(async_runs_completed, 1),
+    publish_destination(
+        async_subject(
+            <<"NATS_ASYNC_SUCCESS_SUBJECT">>,
+            <<"dd.remote.lambda.async.success">>
+        ),
+        Event
+    );
+publish_async_status(<<"failed">>, Event) ->
+    bump(async_runs_failed, 1),
+    publish_destination(
+        async_subject(
+            <<"NATS_ASYNC_FAILURE_SUBJECT">>,
+            <<"dd.remote.lambda.async.failure">>
+        ),
+        Event
+    ),
+    bump(async_dlq_published, 1),
+    publish_destination(
+        async_subject(
+            <<"NATS_ASYNC_DLQ_SUBJECT">>,
+            <<"dd.remote.lambda.async.dlq">>
+        ),
+        Event#{<<"deadLetter">> => true}
+    );
+publish_async_status(<<"canceled">>, Event) ->
+    bump(async_runs_canceled, 1),
+    publish_destination(
+        async_subject(
+            <<"NATS_ASYNC_CANCELED_SUBJECT">>,
+            <<"dd.remote.lambda.async.canceled">>
+        ),
+        Event
+    );
+publish_async_status(_Status, _Event) ->
+    ok.
+
+publish_destination(Subject, Event) ->
+    try
+        _ = lambda_nats:publish(Subject, encode(Event)),
+        ok
+    catch
+        _:_ -> ok
+    end.
+
+async_subject(Name, Default) ->
+    case getenv(Name) of
+        <<>> -> Default;
+        Value -> Value
+    end.
+
 %% raw/1 embeds an already-encoded JSON string as a structured value in an event
 %% by decoding it; on failure it degrades to the raw string.
 raw(Json) ->
@@ -693,9 +867,11 @@ bump(Key, By) ->
     catch _:_ -> 0 end.
 
 metric(Key) ->
-    case catch ets:lookup(?METRICS, Key) of
+    try ets:lookup(?METRICS, Key) of
         [{Key, V}] -> V;
         _ -> 0
+    catch
+        _:_ -> 0
     end.
 
 metrics() ->
@@ -716,7 +892,12 @@ metrics() ->
         {<<"workflow_commit_conflicts_total">>, commit_conflicts},
         {<<"workflow_commit_errors_total">>, commit_errors},
         {<<"workflow_worker_crashes_total">>, worker_crashes},
-        {<<"workflow_worker_exceptions_total">>, worker_exceptions}
+        {<<"workflow_worker_exceptions_total">>, worker_exceptions},
+        {<<"lambda_async_invocations_started_total">>, async_runs_started},
+        {<<"lambda_async_invocations_completed_total">>, async_runs_completed},
+        {<<"lambda_async_invocations_failed_total">>, async_runs_failed},
+        {<<"lambda_async_invocations_canceled_total">>, async_runs_canceled},
+        {<<"lambda_async_dlq_published_total">>, async_dlq_published}
     ],
     Lines = [[Name, <<" ">>, integer_to_binary(metric(Key)), <<"\n">>] || {Name, Key} <- Counters],
     iolist_to_binary([
@@ -759,9 +940,11 @@ env_int(Name, Default, Min, Max) ->
     case getenv(Name) of
         <<>> -> Default;
         Bin ->
-            case catch binary_to_integer(Bin) of
-                V when is_integer(V), V >= Min, V =< Max -> V;
+            try binary_to_integer(Bin) of
+                V when V >= Min, V =< Max -> V;
                 _ -> Default
+            catch
+                _:_ -> Default
             end
     end.
 

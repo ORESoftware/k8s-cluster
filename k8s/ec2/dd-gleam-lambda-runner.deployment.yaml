@@ -111,6 +111,14 @@ spec:
               value: dd.remote.lambdas.functions
             - name: NATS_LAMBDA_MAX_PAYLOAD_BYTES
               value: '5242880'
+            - name: NATS_ASYNC_SUCCESS_SUBJECT
+              value: dd.remote.lambda.async.success
+            - name: NATS_ASYNC_FAILURE_SUBJECT
+              value: dd.remote.lambda.async.failure
+            - name: NATS_ASYNC_DLQ_SUBJECT
+              value: dd.remote.lambda.async.dlq
+            - name: NATS_ASYNC_CANCELED_SUBJECT
+              value: dd.remote.lambda.async.canceled
             - name: OTEL_SERVICE_NAME
               value: scintilla-runner
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -145,6 +153,8 @@ spec:
               value: nodejs
             - name: LAMBDA_PREWARM_CONTAINER_RUNTIMES
               value: ''
+            - name: LAMBDA_DEFAULT_MAX_CONCURRENCY
+              value: '16'
             - name: LAMBDA_CONTAINER_NERDCTL
               value: /usr/local/bin/nerdctl
             - name: LAMBDA_CONTAINER_NAMESPACE

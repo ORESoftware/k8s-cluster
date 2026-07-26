@@ -18,6 +18,7 @@ pub fn main() -> Nil {
   let assert Ok(_started) =
     supervisor.new(supervisor.OneForOne)
     |> supervisor.add(runtime_supervisor.supervised())
+    |> supervisor.add(workflow.supervised())
     |> supervisor.add(http_server.supervised())
     |> supervisor.start
 
@@ -25,7 +26,6 @@ pub fn main() -> Nil {
   // ask for a dynamic worker. This also prevents a startup race where an early
   // message lazily starts an unsupervised copy of the runtime tree.
   let _ = nats.start()
-  let _ = workflow.start()
   let _ = dd_runtime_config_client.start_registration_loop()
 
   io.println(
