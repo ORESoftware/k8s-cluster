@@ -76,6 +76,7 @@ jobs:
             general/athleto-app-routing.test.ts
             general/bastion-config.test.ts
             general/browser-job-runner-config.test.ts
+            general/browser-mcp-exposure.test.ts
             general/browser-test-server-config.test.ts
             general/build-server-config.test.ts
             general/canonical-cloud-gitops.test.ts

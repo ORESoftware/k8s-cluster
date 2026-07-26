@@ -226,6 +226,29 @@ spec:
     syncOptions:
       - CreateNamespace=true
 ---
+# Browser MCP is intentionally a separate Application so it can roll back or
+# scale independently of the 100+ resources in dd-next-runtime.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-browser-mcp-rs
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/deployments/browser-mcp-rs/k8s/ec2
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
 # Akrion's continuous learner is separated from the shared runtime so the AWS
 # and Hetzner clusters can declare different safe replica counts.
 apiVersion: argoproj.io/v1alpha1

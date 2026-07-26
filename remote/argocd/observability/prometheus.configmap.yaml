@@ -553,6 +553,42 @@ data:
             annotations:
               summary: Web scraper robots policy overrides are being used
               description: "dd-web-scraper accepted one or more explicit robots.txt overrides; verify that the target is owned or authorized and inspect the corresponding structured audit records in Loki."
+          - alert: DDWebScraperTargetDown
+            expr: up{job="dd-web-scraper"} == 0
+            for: 2m
+            labels:
+              severity: critical
+              service: dd-web-scraper
+            annotations:
+              summary: Browser worker metrics target is down
+              description: "dd-web-scraper is unreachable, so browser MCP readiness and every browser_act/browser_observe workflow are unavailable."
+          - alert: DDBrowserMcpTargetDown
+            expr: up{job="dd-browser-mcp-rs"} == 0
+            for: 2m
+            labels:
+              severity: critical
+              service: dd-browser-mcp-rs
+            annotations:
+              summary: Public browser MCP target is down
+              description: "Prometheus cannot scrape dd-browser-mcp-rs; verify its ArgoCD Application, image pull, Service endpoints, and public gateway route."
+          - alert: DDBrowserMcpWorkerNotReady
+            expr: dd_browser_mcp_worker_ready == 0
+            for: 2m
+            labels:
+              severity: critical
+              service: dd-browser-mcp-rs
+            annotations:
+              summary: Browser MCP cannot reach its private worker
+              description: "The MCP process is running but dd-web-scraper /agent/healthz is unavailable, so tool discovery may work while browser calls fail."
+          - alert: DDBrowserMcpWorkerErrorsIncreasing
+            expr: sum(increase(dd_browser_mcp_worker_errors_total[5m])) > 0
+            for: 1m
+            labels:
+              severity: warning
+              service: dd-browser-mcp-rs
+            annotations:
+              summary: Browser MCP worker calls are failing
+              description: "One or more browser_act/browser_observe calls failed at the private worker boundary in the last five minutes."
           - alert: DDQueueConsumerTargetDown
             expr: up{job="dd-remote-queue-consumer"} == 0
             for: 2m
