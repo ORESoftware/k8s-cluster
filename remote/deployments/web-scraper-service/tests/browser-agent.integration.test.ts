@@ -213,10 +213,23 @@ test(
       });
       assert.equal(blockedMfaFill.status, 'blocked', JSON.stringify(blockedMfaFill));
 
-      // 10) navigate to the CAPTCHA page -> blocker is detected and interaction is refused.
+      // 10) A genuine card-entry page remains blocked as payment.
+      const beforePayment = await observe({ session_id: sessionId, include: ['summary'] });
+      const paymentNav = await act({
+        request_id: 'r11',
+        session_id: sessionId,
+        expected_revision: beforePayment.revision,
+        intent: 'open a payment screen',
+        actions: [{ type: 'goto', url: `${fixture.url}/payment` }],
+      });
+      assert.equal(paymentNav.status, 'completed', JSON.stringify(paymentNav));
+      const obsPayment = await observe({ session_id: sessionId, include: ['summary'] });
+      assert.equal((obsPayment.blocker as { type: string }).type, 'payment');
+
+      // 11) navigate to the CAPTCHA page -> blocker is detected and interaction is refused.
       const obsBeforeNav = await observe({ session_id: sessionId, include: ['summary'] });
       const nav = await act({
-        request_id: 'r11',
+        request_id: 'r12',
         session_id: sessionId,
         expected_revision: obsBeforeNav.revision,
         intent: 'go to the verify page',
@@ -227,9 +240,9 @@ test(
       assert.ok(obsCaptcha.blocker, 'captcha blocker surfaced on observe');
       assert.equal((obsCaptcha.blocker as { type: string }).type, 'captcha');
 
-      // 11) close the session.
+      // 12) close the session.
       const closed = await act({
-        request_id: 'r12',
+        request_id: 'r13',
         session_id: sessionId,
         intent: 'done',
         actions: [{ type: 'close' }],

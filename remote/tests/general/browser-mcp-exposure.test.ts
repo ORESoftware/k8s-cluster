@@ -32,7 +32,6 @@ const AWS_APPS = 'remote/argocd/clusters/aws/applications.yaml';
 const HETZNER_APPS = 'remote/argocd/clusters/hetzner/applications.yaml';
 const CLI_FLAGS = 'remote/deployments/browser-mcp-rs/.cli-flags.toml';
 const FIDUCIA_PORTAL_DOMAINS = [
-  'benefactor.cc',
   'confluent.cloud',
   'confluent.io',
   'signoz.io',
@@ -40,6 +39,11 @@ const FIDUCIA_PORTAL_DOMAINS = [
   'planetscale.com',
   'clerk.com',
   'algolia.com',
+  'app.posthog.com',
+  'elevenlabs.io',
+  'www.together.ai',
+  'support.snyk.io',
+  'us.ovhcloud.com',
   'www.pulumi.com',
   'tally.so',
   'allthingsopen.org',

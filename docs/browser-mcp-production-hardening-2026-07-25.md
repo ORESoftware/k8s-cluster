@@ -159,7 +159,6 @@ credit-redemption, startup-application, and CFP workstream. The same
 comma-separated value is set on the Rust MCP and Playwright worker:
 
 ```text
-benefactor.cc
 confluent.cloud
 confluent.io
 signoz.io
@@ -167,6 +166,11 @@ tailscale.com
 planetscale.com
 clerk.com
 algolia.com
+app.posthog.com
+elevenlabs.io
+www.together.ai
+support.snyk.io
+us.ovhcloud.com
 www.pulumi.com
 tally.so
 allthingsopen.org
@@ -187,8 +191,9 @@ fonts.gstatic.com
 `confluent.cloud` is the current Confluent console hostname; the older
 `app.confluent.cloud` route does not resolve. `confluent.io` admits the
 vendor-owned login and static asset hosts. Root vendor entries include that
-vendor's subdomains. The Pulumi, Wufoo, Google static-asset, and AWS CFP entries
-are exact hosts rather than broad provider wildcards.
+vendor's subdomains. PostHog, Together AI, Snyk, OVHcloud, Pulumi, Wufoo,
+Google static-asset, and AWS CFP entries use the exact portal or asset hostname
+rather than a broad provider wildcard.
 
 The filing profile remains disabled: `irs.gov`, `sos.state.co.us`, and
 `dnb.com` are absent. Webmail, cloud metadata, arbitrary prospect domains, and
