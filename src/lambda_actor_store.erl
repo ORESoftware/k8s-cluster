@@ -253,7 +253,8 @@ definition_object(Alias) ->
 
 identifier_clause(Identifier) ->
     case re:run(Identifier, "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", [{capture, none}]) of
-        match -> "id = :'function_ref'::uuid";
+        %% The canonical generated selector exposes UUID columns as text.
+        match -> "id = :'function_ref'";
         nomatch ->
             case re:run(Identifier, "^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$", [{capture, none}]) of
                 match -> "slug = :'function_ref'";
@@ -261,7 +262,7 @@ identifier_clause(Identifier) ->
             end
     end.
 
-function_where(Alias, "id = :'function_ref'::uuid") ->
+function_where(Alias, "id = :'function_ref'") ->
     [Alias, ".id = :'function_ref'::uuid"];
 function_where(Alias, "slug = :'function_ref'") ->
     [Alias, ".slug = :'function_ref'"].

@@ -191,6 +191,8 @@ spec:
               value: '50'
             - name: ACTOR_ALARM_TIMEOUT_MS
               value: '300000'
+            - name: ACTOR_ALARM_ERROR_COOLDOWN_MS
+              value: '5000'
             - name: LAMBDA_CONTAINER_NERDCTL
               value: /usr/local/bin/nerdctl
             - name: LAMBDA_CONTAINER_NAMESPACE

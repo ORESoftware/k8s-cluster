@@ -19,7 +19,8 @@ init([Command0]) ->
     {ok, #{
         command => to_binary(Command0),
         active => #{},
-        keys => #{}
+        keys => #{},
+        cooldowns => #{}
     }}.
 
 handle_call(_Request, _From, State) ->
@@ -36,16 +37,30 @@ handle_info(tick, State) ->
         60000
     ),
     erlang:send_after(PollMs, self(), tick),
-    {noreply, dispatch_due(State)};
-handle_info({'DOWN', Ref, process, _Pid, _Reason}, State) ->
+    {noreply, dispatch_due(prune_cooldowns(State))};
+handle_info({'DOWN', Ref, process, _Pid, Reason}, State) ->
     Active = maps:get(active, State),
     case maps:take(Ref, Active) of
         error ->
             {noreply, State};
         {Key, NewActive} ->
+            Cooldowns = case Reason of
+                normal -> maps:get(cooldowns, State);
+                _ ->
+                    CooldownMs = env_int(
+                        <<"ACTOR_ALARM_ERROR_COOLDOWN_MS">>,
+                        5000,
+                        100,
+                        300000
+                    ),
+                    (maps:get(cooldowns, State))#{
+                        Key => erlang:monotonic_time(millisecond) + CooldownMs
+                    }
+            end,
             {noreply, State#{
                 active := NewActive,
-                keys := maps:remove(Key, maps:get(keys, State))
+                keys := maps:remove(Key, maps:get(keys, State)),
+                cooldowns := Cooldowns
             }}
     end;
 handle_info(_Message, State) ->
@@ -91,8 +106,9 @@ start_due(Due, State) ->
             ScheduledAt = map_value(Event, <<"alarmAt">>, null),
             Key = {FunctionId, ActorKey},
             Keys = maps:get(keys, Current),
+            CoolingDown = maps:is_key(Key, maps:get(cooldowns, Current)),
             case FunctionId =/= <<>> andalso ActorKey =/= <<>> andalso
-                not maps:is_key(Key, Keys) of
+                not maps:is_key(Key, Keys) andalso not CoolingDown of
                 true ->
                     Command = maps:get(command, Current),
                     {Pid, Ref} = spawn_monitor(fun() ->
@@ -127,8 +143,17 @@ run_alarm(Command, FunctionId, ActorKey, ScheduledAt) ->
             io:format(
                 "durable actor alarm failed function=~s actor=~s reason=~s~n",
                 [safe(FunctionId), safe(ActorKey), safe(Reason)]
-            )
+            ),
+            exit({alarm_failed, Reason})
     end.
+
+prune_cooldowns(State) ->
+    Now = erlang:monotonic_time(millisecond),
+    Cooldowns = maps:filter(
+        fun(_Key, Until) -> Until > Now end,
+        maps:get(cooldowns, State)
+    ),
+    State#{cooldowns := Cooldowns}.
 
 map_value(Map, Key, Default) when is_map(Map) -> maps:get(Key, Map, Default);
 map_value(_, _Key, Default) -> Default.

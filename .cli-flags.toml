@@ -389,6 +389,12 @@ aliases = ["actor-alarm-timeout-ms"]
 type = "integer"
 default = 300000
 
+[flags.actor_alarm_error_cooldown_ms]
+env = "ACTOR_ALARM_ERROR_COOLDOWN_MS"
+aliases = ["actor-alarm-error-cooldown-ms"]
+type = "integer"
+default = 5000
+
 [flags.runtime_config_service_name]
 env = "RUNTIME_CONFIG_SERVICE_NAME"
 aliases = ["runtime-config-service-name"]
