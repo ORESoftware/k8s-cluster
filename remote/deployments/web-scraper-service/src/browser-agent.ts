@@ -19,7 +19,8 @@
 import { randomUUID, createHash, timingSafeEqual } from 'node:crypto';
 import { lookup as dnsLookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
+import { isAbsolute, relative, resolve } from 'node:path';
 import { z } from 'zod';
 import type {
   Browser as PlaywrightBrowser,
@@ -73,12 +74,33 @@ export const agentConfig = {
   allowPrivateNetworks: envBool('BROWSER_AGENT_ALLOW_PRIVATE_NETWORKS', false),
   allowInsecureHttp: envBool('BROWSER_AGENT_ALLOW_INSECURE_HTTP', false),
   acceptDownloads: envBool('BROWSER_AGENT_ACCEPT_DOWNLOADS', false),
+  uploadsDir: process.env.BROWSER_AGENT_UPLOADS_DIR ?? null,
   // A JSON object mapping secret_ref -> literal value, provided out-of-band via
   // a mounted file. Values are resolved only here and never returned/logged.
   secretsFile: process.env.BROWSER_AGENT_SECRETS_FILE ?? null,
   seleniumUrl: process.env.BROWSER_AGENT_SELENIUM_URL ?? null,
   seleniumAuthSecret: process.env.SERVER_AUTH_SECRET ?? null,
 } as const;
+
+function validAllowedDomain(domain: string): boolean {
+  return (
+    domain.includes('.') &&
+    !domain.startsWith('.') &&
+    !domain.endsWith('.') &&
+    !domain.includes('..') &&
+    /^[a-z0-9.-]+$/.test(domain)
+  );
+}
+
+if (
+  process.env.NODE_ENV === 'production' &&
+  agentConfig.enabled &&
+  (agentConfig.allowedDomains.length === 0 || !agentConfig.allowedDomains.every(validAllowedDomain))
+) {
+  throw new Error(
+    'production browser agent requires BROWSER_AGENT_ALLOWED_DOMAINS hostnames without schemes or ports',
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Wire schemas (mirror of schemas/browser-*.schema.json)
@@ -107,6 +129,46 @@ const ValueSchema = z.union([
   z.object({ secret_ref: z.string().min(1).max(300) }).strict(),
 ]);
 
+const FileTokenSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
+  .refine((value) => !value.includes('..'));
+
+const MAX_INLINE_UPLOAD_BYTES = 256 * 1024;
+const MAX_INLINE_UPLOAD_BASE64_CHARS = 4 * Math.ceil(MAX_INLINE_UPLOAD_BYTES / 3);
+const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const MIME_TYPE_RE = /^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$/;
+
+const InlineUploadSchema = z
+  .object({
+    file_name: z
+      .string()
+      .min(1)
+      .max(128)
+      .refine(
+        (value) =>
+          value !== '.' &&
+          value !== '..' &&
+          !value.includes('/') &&
+          !value.includes('\\') &&
+          !/[\u0000-\u001f\u007f]/.test(value),
+        'file_name must be a plain filename without path separators or control characters',
+      ),
+    mime_type: z.string().min(3).max(100).regex(MIME_TYPE_RE).optional(),
+    data_base64: z
+      .string()
+      .min(4)
+      .max(MAX_INLINE_UPLOAD_BASE64_CHARS)
+      .regex(BASE64_RE, 'data_base64 must use canonical padded base64')
+      .refine(
+        (value) => Buffer.from(value, 'base64').byteLength <= MAX_INLINE_UPLOAD_BYTES,
+        `decoded file must be no more than ${MAX_INLINE_UPLOAD_BYTES} bytes`,
+      ),
+  })
+  .strict();
+
 const WaitConditionSchema = z.union([
   z.object({ duration_ms: z.number().int().min(0).max(60_000) }).strict(),
   z.object({ url_matches: z.string().min(1).max(600) }).strict(),
@@ -117,7 +179,7 @@ const WaitConditionSchema = z.union([
     .strict(),
 ]);
 
-const ActionSchema = z.discriminatedUnion('type', [
+const ActionSchema = z.union([
   z
     .object({
       type: z.literal('start'),
@@ -153,6 +215,15 @@ const ActionSchema = z.discriminatedUnion('type', [
     .strict(),
   z
     .object({
+      type: z.literal('type'),
+      target: TargetSchema,
+      value: ValueSchema,
+      clear_first: z.boolean().optional(),
+      delay_ms: z.number().int().min(0).max(250).optional(),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal('fill_form'),
       fields: z
         .array(z.object({ target: TargetSchema, value: ValueSchema }).strict())
@@ -165,6 +236,12 @@ const ActionSchema = z.discriminatedUnion('type', [
       type: z.literal('click'),
       target: TargetSchema,
       button: z.enum(['left', 'middle', 'right']).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('submit'),
+      target: TargetSchema,
     })
     .strict(),
   z
@@ -191,7 +268,53 @@ const ActionSchema = z.discriminatedUnion('type', [
     .object({
       type: z.literal('upload'),
       target: TargetSchema,
-      file_token: z.string().min(1).max(300),
+      file_token: FileTokenSchema.optional(),
+      inline_file: InlineUploadSchema.optional(),
+    })
+    .strict()
+    .superRefine((value, ctx) => {
+      if ((value.file_token === undefined) === (value.inline_file === undefined)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'upload requires exactly one of file_token or inline_file',
+        });
+      }
+    }),
+  z
+    .object({
+      type: z.literal('scroll'),
+      target: TargetSchema.optional(),
+      delta_x: z.number().int().min(-5000).max(5000).optional(),
+      delta_y: z.number().int().min(-5000).max(5000).optional(),
+    })
+    .strict(),
+  z.object({ type: z.literal('screenshot') }).strict(),
+  z
+    .object({
+      type: z.literal('extract'),
+      include: z
+        .array(
+          z.enum([
+            'summary',
+            'visible_text',
+            'interactive_elements',
+            'accessibility_snapshot',
+            'forms',
+            'validation_errors',
+            'dialogs',
+            'frames',
+            'downloads',
+            'network_failures',
+          ]),
+        )
+        .max(10)
+        .optional(),
+      max_visible_text_chars: z
+        .number()
+        .int()
+        .min(200)
+        .max(agentConfig.maxVisibleTextChars)
+        .optional(),
     })
     .strict(),
   z.object({ type: z.literal('wait'), condition: WaitConditionSchema }).strict(),
@@ -246,6 +369,7 @@ const ObserveRequestSchema = z
           'summary',
           'visible_text',
           'interactive_elements',
+          'accessibility_snapshot',
           'forms',
           'validation_errors',
           'dialogs',
@@ -377,7 +501,8 @@ function EXTRACT_FN(opts: { maxElements: number; maxTextChars: number }): RawSna
     /(two|multi).?factor|2fa|mfa|authenticator|verification code|one.?time (code|password)|enter the code/i;
   const PAYMENT_RE =
     /card number|credit card|payment method|cardholder|expiration date|billing address|\bcvv\b|\bcvc\b/i;
-  const SIGNATURE_RE = /e-?sign|electronic signature|sign here|draw your signature|docusign/i;
+  const SIGNATURE_RE =
+    /\be-?sign\b|electronic signature|sign here|draw your signature|docusign/i;
   const LEGAL_RE =
     /under penalty of perjury|i (hereby )?certify|sworn (statement|declaration)|i attest|legally binding|i declare under/i;
 
@@ -591,6 +716,40 @@ function EXTRACT_FN(opts: { maxElements: number; maxTextChars: number }): RawSna
   const bodyText = (document.body?.innerText || '').replace(/\s+/g, ' ').trim();
   const visibleText = bodyText.slice(0, opts.maxTextChars);
   const haystack = (bodyText + ' ' + (document.title || '')).slice(0, 40000);
+  const visibleFormControls = Array.from(
+    document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+      'input:not([type="hidden"]),textarea,select',
+    ),
+  ).filter((el) => {
+    const style = window.getComputedStyle(el);
+    return !el.disabled && style.display !== 'none' && style.visibility !== 'hidden';
+  });
+  const hasExplicitMfaControl = !!document.querySelector(
+    [
+      'input[autocomplete="one-time-code"]',
+      'input[name*="otp" i]',
+      'input[id*="otp" i]',
+      'input[name*="one_time" i]',
+      'input[id*="one-time" i]',
+      'input[name*="verification_code" i]',
+      'input[id*="verification-code" i]',
+    ].join(','),
+  );
+  const hasMfaPromptShape =
+    MFA_RE.test(haystack) && visibleFormControls.length > 0 && visibleFormControls.length <= 4;
+  const hasExplicitPaymentControl = !!document.querySelector(
+    [
+      'input[autocomplete="cc-number"]',
+      'input[autocomplete="cc-exp"]',
+      'input[autocomplete="cc-csc"]',
+      'input[name*="cardnumber" i]',
+      'input[id*="card-number" i]',
+      'input[name="cvv" i]',
+      'input[name="cvc" i]',
+    ].join(','),
+  );
+  const hasPaymentPromptShape =
+    PAYMENT_RE.test(haystack) && visibleFormControls.length > 0 && visibleFormControls.length <= 4;
 
   return {
     title: document.title || '',
@@ -599,8 +758,13 @@ function EXTRACT_FN(opts: { maxElements: number; maxTextChars: number }): RawSna
     forms,
     signals: {
       captcha: CAPTCHA_RE.test(haystack) || !!document.querySelector('iframe[src*="captcha" i],iframe[src*="recaptcha" i],iframe[title*="captcha" i],.g-recaptcha,.h-captcha,.cf-turnstile'),
-      mfa: MFA_RE.test(haystack),
-      payment: PAYMENT_RE.test(haystack) || !!document.querySelector('input[autocomplete="cc-number"],input[name*="cardnumber" i]'),
+      // A vendor page may mention MFA in marketing, support, or footer copy.
+      // Treat it as a blocker only when the page also looks like a compact
+      // code-entry challenge or exposes an explicit one-time-code control.
+      mfa: hasExplicitMfaControl || hasMfaPromptShape,
+      // Pricing/help copy is common on application pages. Require an explicit
+      // card control or a compact payment-form shape before blocking actions.
+      payment: hasExplicitPaymentControl || hasPaymentPromptShape,
       signature: SIGNATURE_RE.test(haystack) || !!document.querySelector('canvas[class*="sign" i],iframe[src*="docusign" i]'),
       legalAttestation: LEGAL_RE.test(haystack),
     },
@@ -623,6 +787,12 @@ interface DialogRecord {
 interface DownloadRecord {
   suggestedFilename: string;
   url: string;
+}
+interface ScreenshotRecord {
+  mime_type: 'image/jpeg';
+  width: number;
+  height: number;
+  data_base64: string;
 }
 interface NetworkFailure {
   method: string;
@@ -661,6 +831,8 @@ interface Session {
   lastSnapshot: RawSnapshot | null;
   lastBlocker: { type: BlockerType; message: string } | null;
   pending: PendingAction | null;
+  lastActionScreenshot: ScreenshotRecord | null;
+  lastExtraction: Record<string, unknown> | null;
   idempotency: Map<string, unknown>;
   waiters: ((rev: number) => void)[];
 }
@@ -732,6 +904,48 @@ function domainAllowed(host: string, allowlist: string[]): boolean {
   return allowlist.some((d) => h === d || h.endsWith('.' + d));
 }
 
+function requestUrlAllowedByDomain(raw: string, allowlist: string[]): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.username || url.password) return false;
+  const secureNetworkProtocol = url.protocol === 'https:';
+  const allowedDevelopmentProtocol = agentConfig.allowInsecureHttp && url.protocol === 'http:';
+  if (!secureNetworkProtocol && !allowedDevelopmentProtocol) return false;
+  const defaultPort =
+    url.port === '' ||
+    (url.protocol === 'https:' && url.port === '443') ||
+    (url.protocol === 'http:' && url.port === '80');
+  // Explicit ports are needed by local integration fixtures, but only when the
+  // operator has already opted into private-network access. Production keeps
+  // that option disabled and therefore remains limited to 80/443 defaults.
+  return (defaultPort || agentConfig.allowPrivateNetworks) && domainAllowed(url.hostname, allowlist);
+}
+
+// Each entry authorizes that hostname and its subdomains. Intersect the
+// caller's requested scope with the process-level production ceiling by keeping
+// the more specific entry whenever the two suffix trees overlap.
+function effectiveAllowedDomains(requested: string[] | undefined, configured: string[]): string[] {
+  const requestDomains = (requested ?? []).map((domain) => domain.toLowerCase());
+  if (configured.length === 0) return requestDomains;
+  if (requestDomains.length === 0) return configured;
+
+  const effective = new Set<string>();
+  for (const requestDomain of requestDomains) {
+    for (const configuredDomain of configured) {
+      if (requestDomain === configuredDomain || requestDomain.endsWith('.' + configuredDomain)) {
+        effective.add(requestDomain);
+      } else if (configuredDomain.endsWith('.' + requestDomain)) {
+        effective.add(configuredDomain);
+      }
+    }
+  }
+  return [...effective];
+}
+
 async function assertUrlAllowed(
   raw: string,
   allowlist: string[],
@@ -749,8 +963,14 @@ async function assertUrlAllowed(
   if (url.protocol !== 'https:' && !(agentConfig.allowInsecureHttp && url.protocol === 'http:')) {
     throw new AgentError('domain_not_allowed', 'only https:// navigation is permitted');
   }
-  if (!domainAllowed(url.hostname, allowlist)) {
-    throw new AgentError('domain_not_allowed', `host ${url.hostname} is not on the allowlist`);
+  if (url.username || url.password) {
+    throw new AgentError('domain_not_allowed', 'URL credentials are not permitted');
+  }
+  if (!requestUrlAllowedByDomain(raw, allowlist)) {
+    throw new AgentError(
+      'domain_not_allowed',
+      `host ${url.hostname} or its explicit port is not on the allowlist`,
+    );
   }
   // SSRF: reject IP literals and DNS answers that resolve to private ranges.
   if (isIP(url.hostname)) {
@@ -811,6 +1031,49 @@ async function resolveSecret(ref: string, currentHost: string): Promise<string> 
     }
   }
   return entry.value;
+}
+
+async function resolveUploadToken(token: string): Promise<string> {
+  if (!agentConfig.uploadsDir) {
+    throw new AgentError('unsafe_download', 'the operator-staged upload token store is not enabled');
+  }
+  const base = await realpath(agentConfig.uploadsDir).catch(() => {
+    throw new AgentError('unsafe_download', 'the upload token store is unavailable');
+  });
+  const file = await realpath(resolve(base, token)).catch(() => {
+    throw new AgentError('unsafe_download', 'file_token is unknown or expired');
+  });
+  const child = relative(base, file);
+  if (!child || child.startsWith('..') || isAbsolute(child)) {
+    throw new AgentError('unsafe_download', 'file_token resolved outside the upload token store');
+  }
+  const metadata = await stat(file);
+  if (!metadata.isFile() || metadata.size > 25 * 1024 * 1024) {
+    throw new AgentError('unsafe_download', 'upload token must reference a regular file up to 25 MiB');
+  }
+  return file;
+}
+
+function resolveInlineUpload(inline: z.infer<typeof InlineUploadSchema>): {
+  name: string;
+  mimeType: string;
+  buffer: Buffer;
+} {
+  const buffer = Buffer.from(inline.data_base64, 'base64');
+  if (
+    buffer.byteLength > MAX_INLINE_UPLOAD_BYTES ||
+    buffer.toString('base64') !== inline.data_base64
+  ) {
+    throw new AgentError(
+      'unsafe_download',
+      `inline upload must be canonical base64 encoding no more than ${MAX_INLINE_UPLOAD_BYTES} bytes`,
+    );
+  }
+  return {
+    name: inline.file_name,
+    mimeType: inline.mime_type ?? 'application/octet-stream',
+    buffer,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -893,6 +1156,25 @@ function actionDigest(sessionId: string, revision: number, pageUrl: string, deta
   const h = createHash('sha256');
   h.update([sessionId, String(revision), pageUrl, detail].join('\u0000'));
   return 'sha256:' + h.digest('hex');
+}
+
+function auditHash(value: string): string {
+  return createHash('sha256').update(value).digest('hex').slice(0, 16);
+}
+
+function actionDestinationHost(action: BrowserAction): string | undefined {
+  const raw =
+    action.type === 'goto'
+      ? action.url
+      : action.type === 'start'
+        ? action.initial_url
+        : undefined;
+  if (!raw) return undefined;
+  try {
+    return new URL(raw).hostname;
+  } catch {
+    return undefined;
+  }
 }
 
 // A click/submit is "consequential" when the control looks like a final
@@ -1012,6 +1294,9 @@ async function createSession(
     locale: start.locale,
     timezoneId: start.timezone,
     acceptDownloads: agentConfig.acceptDownloads,
+    // Service workers can handle requests outside Playwright's route handler.
+    // Block them so the context-wide hostname ceiling covers every request.
+    serviceWorkers: 'block',
   });
   const page = await context.newPage();
   const id = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
@@ -1038,37 +1323,52 @@ async function createSession(
     lastSnapshot: null,
     lastBlocker: null,
     pending: null,
+    lastActionScreenshot: null,
+    lastExtraction: null,
     idempotency: new Map(),
     waiters: [],
   };
 
-  // Network-layer allowlist enforcement: gate EVERY top-level document
-  // navigation (clicks, form posts, 3xx redirects, JS/meta refresh), not just
-  // explicit `goto` actions. Only active when a domain allowlist is in force;
-  // with an empty allowlist (dev/public-any) the NetworkPolicy egress except-list
-  // remains the private/metadata backstop. Subresources are not gated so pages
-  // can still load CDN assets.
-  if (allowedDomains.length > 0) {
-    await context.route('**/*', async (route) => {
-      const request = route.request();
+  // Enforce the session ceiling below model actions: clicks, form redirects,
+  // iframes, scripts, images, fetch/XHR, and WebSockets cannot escape merely
+  // because page code initiated them rather than an explicit `goto`. DNS is
+  // checked once per origin; NetworkPolicy is the per-packet DNS-rebinding
+  // backstop for private and reserved ranges.
+  await context.route('**/*', async (route) => {
+    const request = route.request();
+    const raw = request.url();
+    const reportNavigationBlock = (message: string): void => {
       if (request.resourceType() === 'document' && request.isNavigationRequest()) {
-        let host = '';
-        try {
-          host = new URL(request.url()).hostname;
-        } catch {
-          return route.abort('blockedbyclient');
-        }
-        if (!domainAllowed(host, allowedDomains)) {
-          session.lastBlocker = {
-            type: 'domain_not_allowed',
-            message: `navigation to ${host} is outside the domain allowlist`,
-          };
-          return route.abort('blockedbyclient');
-        }
+        session.lastBlocker = { type: 'domain_not_allowed', message };
       }
-      return route.continue();
-    });
-  }
+    };
+    let url: URL;
+    try {
+      url = new URL(raw);
+    } catch {
+      reportNavigationBlock('navigation URL is malformed');
+      await route.abort('blockedbyclient');
+      return;
+    }
+    if (!requestUrlAllowedByDomain(raw, allowedDomains)) {
+      reportNavigationBlock(`navigation to ${url.hostname} is outside the domain allowlist`);
+      await route.abort('blockedbyclient');
+      return;
+    }
+    try {
+      // Re-resolve every outbound request. Chromium performs its own DNS lookup
+      // after this policy check, so the pod NetworkPolicy remains the
+      // per-packet backstop against DNS rebinding to private/reserved ranges.
+      await assertUrlAllowed(raw, allowedDomains, deps.isPrivateIp);
+      await route.continue();
+    } catch {
+      reportNavigationBlock(`navigation to ${url.hostname} failed the public-address policy`);
+      await route.abort('blockedbyclient');
+    }
+  });
+  await context.routeWebSocket('**', async (webSocket) => {
+    await webSocket.close({ code: 1008, reason: 'non-HTTP(S) schemes are disabled' });
+  });
 
   page.on('dialog', (dialog: Dialog) => {
     session.dialogs.push({
@@ -1085,7 +1385,24 @@ async function createSession(
     bumpRevision(session);
   });
   page.on('framenavigated', (fr) => {
-    if (fr === session.page.mainFrame()) bumpRevision(session);
+    if (fr === session.page.mainFrame()) {
+      let destinationHost = '';
+      try {
+        destinationHost = new URL(fr.url()).hostname;
+      } catch {
+        destinationHost = '';
+      }
+      deps.log.info(
+        {
+          event: 'browser_navigation',
+          ownerHash: auditHash(owner),
+          sessionHash: auditHash(session.id),
+          destinationHost,
+        },
+        'browser-agent audit',
+      );
+      bumpRevision(session);
+    }
   });
   page.on('requestfailed', (req) => {
     if (session.networkFailures.length >= 50) return;
@@ -1152,6 +1469,8 @@ async function runActions(
 }> {
   const results: ActionResult[] = [];
   let changed = false;
+  session.lastActionScreenshot = null;
+  session.lastExtraction = null;
   const deadline = Date.now() + timeoutMs;
   const remaining = () => Math.max(1000, deadline - Date.now());
 
@@ -1164,7 +1483,18 @@ async function runActions(
     // Pre-action blocker gate: never let a page-interaction action proceed on a
     // sensitive/blocked page (CAPTCHA/MFA/payment/signature/attestation).
     // Navigation and lifecycle actions are allowed so the agent can recover.
-    const INTERACTION = new Set(['fill', 'fill_form', 'click', 'select', 'check', 'uncheck', 'press', 'upload']);
+    const INTERACTION = new Set([
+      'fill',
+      'type',
+      'fill_form',
+      'click',
+      'submit',
+      'select',
+      'check',
+      'uncheck',
+      'press',
+      'upload',
+    ]);
     if (session.lastBlocker && INTERACTION.has(action.type)) {
       results.push({ index: i, type: action.type, status: 'blocked', message: session.lastBlocker.message });
       return { status: 'blocked', results, blocker: session.lastBlocker, pending: null, changed };
@@ -1194,6 +1524,18 @@ async function runActions(
           await loc.fill(value, { timeout: remaining() });
           changed = true;
           results.push({ index: i, type: 'fill', status: 'completed', resolved_ref: action.target.ref });
+          break;
+        }
+        case 'type': {
+          const loc = await resolveTarget(session, action.target);
+          if (action.clear_first) await loc.fill('', { timeout: remaining() });
+          const value = await fillValue(session, action.value);
+          await loc.pressSequentially(value, {
+            delay: action.delay_ms ?? 0,
+            timeout: remaining(),
+          });
+          changed = true;
+          results.push({ index: i, type: 'type', status: 'completed', resolved_ref: action.target.ref });
           break;
         }
         case 'fill_form': {
@@ -1237,6 +1579,41 @@ async function runActions(
           results.push({ index: i, type: 'click', status: 'completed', resolved_ref: action.target.ref });
           break;
         }
+        case 'submit': {
+          const loc = await resolveTarget(session, action.target);
+          const labelText =
+            (await loc.innerText().catch(() => '')) ||
+            (await loc.getAttribute('value').catch(() => '')) ||
+            'submit';
+          const digest = actionDigest(
+            session.id,
+            session.revision,
+            session.page.url(),
+            `submit:${labelText.trim()}`,
+          );
+          const confirmed =
+            req.confirmation &&
+            req.confirmation.action_digest === digest &&
+            req.confirmation.confirmed_revision === session.revision &&
+            req.confirmation.user_explicitly_approved === true;
+          if (!confirmed) {
+            const pending: PendingAction = {
+              description: `Submit using "${labelText.trim().slice(0, 120)}"`,
+              targetRef: action.target.ref ?? '',
+              pageUrl: session.page.url(),
+              revision: session.revision,
+              actionDigest: digest,
+              consequences: ['Will submit a form or trigger a potentially irreversible action'],
+            };
+            session.pending = pending;
+            results.push({ index: i, type: 'submit', status: 'blocked', message: 'needs confirmation' });
+            return { status: 'needs_confirmation', results, blocker: null, pending, changed };
+          }
+          await loc.click({ button: 'left', timeout: remaining() });
+          changed = true;
+          results.push({ index: i, type: 'submit', status: 'completed', resolved_ref: action.target.ref });
+          break;
+        }
         case 'select': {
           const loc = await resolveTarget(session, action.target);
           const opt = action.option;
@@ -1273,16 +1650,64 @@ async function runActions(
           break;
         }
         case 'upload': {
-          // Uploads require an opaque file_token minted by a local admin import
-          // flow, which is not provisioned on this worker. Fail closed.
-          results.push({ index: i, type: 'upload', status: 'blocked', message: 'file uploads are not enabled' });
-          return {
-            status: 'blocked',
-            results,
-            blocker: { type: 'other', message: 'file uploads are not enabled on this worker' },
-            pending: null,
-            changed,
-          };
+          const loc = await resolveTarget(session, action.target);
+          const file =
+            action.file_token !== undefined
+              ? await resolveUploadToken(action.file_token)
+              : resolveInlineUpload(action.inline_file!);
+          await loc.setInputFiles(file, { timeout: remaining() });
+          changed = true;
+          results.push({ index: i, type: 'upload', status: 'completed', resolved_ref: action.target.ref });
+          break;
+        }
+        case 'scroll': {
+          if (action.target) {
+            const loc = await resolveTarget(session, action.target);
+            await loc.scrollIntoViewIfNeeded({ timeout: remaining() });
+          } else {
+            await session.page.mouse.wheel(action.delta_x ?? 0, action.delta_y ?? 600);
+          }
+          changed = true;
+          results.push({ index: i, type: 'scroll', status: 'completed', resolved_ref: action.target?.ref });
+          break;
+        }
+        case 'screenshot': {
+          session.lastActionScreenshot = await captureScreenshot(session);
+          results.push({
+            index: i,
+            type: 'screenshot',
+            status: session.lastActionScreenshot ? 'completed' : 'failed',
+            message: session.lastActionScreenshot ? 'viewport screenshot captured' : 'screenshot capture failed',
+          });
+          break;
+        }
+        case 'extract': {
+          await takeSnapshot(
+            session,
+            agentConfig.maxElements,
+            action.max_visible_text_chars ?? agentConfig.maxVisibleTextChars,
+          );
+          session.lastExtraction = projectObserve(
+            session,
+            {
+              session_id: session.id,
+              include:
+                action.include ??
+                [
+                  'summary',
+                  'visible_text',
+                  'interactive_elements',
+                  'accessibility_snapshot',
+                  'forms',
+                  'validation_errors',
+                  'downloads',
+                ],
+              max_visible_text_chars: action.max_visible_text_chars,
+            },
+            false,
+          );
+          results.push({ index: i, type: 'extract', status: 'completed' });
+          break;
         }
         case 'wait': {
           await runWait(session, action.condition, remaining());
@@ -1437,6 +1862,8 @@ function buildActResponse(
           },
         }
       : {}),
+    ...(session?.lastActionScreenshot ? { screenshot: session.lastActionScreenshot } : {}),
+    ...(session?.lastExtraction ? { extracted: session.lastExtraction } : {}),
     changed: outcome.changed,
     summary: buildSummary(session, outcome),
   };
@@ -1454,7 +1881,17 @@ function buildSummary(session: Session | null, outcome: Awaited<ReturnType<typeo
 }
 
 function projectObserve(session: Session, req: ObserveRequest, timedOut: boolean, previousRevision?: number): Record<string, unknown> {
-  const include = new Set(req.include ?? ['summary', 'interactive_elements', 'forms', 'validation_errors', 'dialogs']);
+  const include = new Set(
+    req.include ?? [
+      'summary',
+      'visible_text',
+      'interactive_elements',
+      'accessibility_snapshot',
+      'forms',
+      'validation_errors',
+      'downloads',
+    ],
+  );
   const snap = session.lastSnapshot;
   const maxElements = req.max_elements ?? 200;
   const strict = (req.redaction ?? 'standard') === 'strict';
@@ -1470,8 +1907,8 @@ function projectObserve(session: Session, req: ObserveRequest, timedOut: boolean
     summary: snap ? summarizeSnapshot(snap, session) : 'No page loaded yet.',
   };
 
-  if (snap && include.has('interactive_elements')) {
-    out.interactive_elements = snap.elements.slice(0, maxElements).map((el) => {
+  if (snap && (include.has('interactive_elements') || include.has('accessibility_snapshot'))) {
+    const projectedElements = snap.elements.slice(0, maxElements).map((el) => {
       const ref = session.refByFp.get(el.fp) ?? '';
       const valueState = el.sensitive ? 'redacted' : el.hasValue ? 'present' : 'empty';
       const base: Record<string, unknown> = {
@@ -1496,6 +1933,30 @@ function projectObserve(session: Session, req: ObserveRequest, timedOut: boolean
       if (el.validationMessage) base.validation_message = el.validationMessage;
       return base;
     });
+    if (include.has('interactive_elements')) {
+      out.interactive_elements = projectedElements;
+      out.fields = projectedElements.filter((el) =>
+        ['textbox', 'combobox', 'checkbox', 'radio', 'slider'].includes(String(el.role)),
+      );
+      out.buttons = projectedElements.filter((el) => el.role === 'button');
+      out.links = projectedElements.filter((el) => el.role === 'link');
+    }
+    if (include.has('accessibility_snapshot')) {
+      out.accessibility_snapshot = {
+        format: 'dd-accessibility-v1',
+        role: 'document',
+        name: snap.title.slice(0, 300),
+        children: projectedElements.map((el) => ({
+          ref: el.ref,
+          role: el.role,
+          ...(el.name ? { name: el.name } : {}),
+          ...(el.required ? { required: true } : {}),
+          ...(el.disabled ? { disabled: true } : {}),
+          ...(el.checked !== undefined ? { checked: el.checked } : {}),
+          value_state: el.value_state,
+        })),
+      };
+    }
   }
   if (snap && include.has('forms')) {
     out.forms = snap.forms.map((f) => ({
@@ -1548,7 +2009,7 @@ function projectObserve(session: Session, req: ObserveRequest, timedOut: boolean
 // never a public URL. Fails soft: returns null so observe still succeeds.
 async function captureScreenshot(
   session: Session,
-): Promise<{ mime_type: 'image/jpeg'; width: number; height: number; data_base64: string } | null> {
+): Promise<ScreenshotRecord | null> {
   try {
     const buffer = await session.page.screenshot({ type: 'jpeg', quality: 55, fullPage: false, timeout: 8_000 });
     const vp = session.page.viewportSize() ?? { width: 0, height: 0 };
@@ -1623,11 +2084,17 @@ export function registerBrowserAgentRoutes(
     ok: true,
     sessions: sessions.size,
     maxSessions: agentConfig.maxSessionsTotal,
+    uploadsEnabled: true,
+    inlineUploadsEnabled: true,
+    tokenUploadsEnabled: Boolean(agentConfig.uploadsDir),
+    maxInlineUploadBytes: MAX_INLINE_UPLOAD_BYTES,
   }));
 
   fastify.get('/agent/tools', async () => ({
-    tools: ['browser_act', 'browser_observe'],
+    tools: ['browser_act', 'browser_state'],
     engines: ['chromium', 'firefox', 'webkit'],
+    uploadModes: agentConfig.uploadsDir ? ['inline', 'file_token'] : ['inline'],
+    maxInlineUploadBytes: MAX_INLINE_UPLOAD_BYTES,
     allowlistEnforced: agentConfig.allowedDomains.length > 0,
     allowedDomains: agentConfig.allowedDomains,
   }));
@@ -1650,20 +2117,12 @@ export function registerBrowserAgentRoutes(
         if (!startAction) {
           throw new AgentError('invalid_request', 'a request without session_id must include a start action');
         }
-        // Effective allowlist. When the server has a policy, a caller may only
-        // NARROW within it, never widen it: caller-supplied allowed_domains that
-        // fall outside the server list are dropped. This closes the gateway
-        // override gap where a caller passes its own allowed_domains.
-        const server = agentConfig.allowedDomains;
-        const caller = (req.allowed_domains ?? []).map((d) => d.toLowerCase());
-        let allow: string[];
-        if (server.length === 0) {
-          allow = caller; // dev/public: any host (still SSRF-guarded + netpol backstop)
-        } else if (caller.length === 0) {
-          allow = server;
-        } else {
-          allow = caller.filter((d) => domainAllowed(d, server));
-          if (allow.length === 0) allow = server; // caller asked for nothing valid -> full server policy
+        const allow = effectiveAllowedDomains(req.allowed_domains, agentConfig.allowedDomains);
+        if (agentConfig.allowedDomains.length > 0 && allow.length === 0) {
+          throw new AgentError(
+            'domain_not_allowed',
+            'requested domains do not intersect the server allowlist',
+          );
         }
         session = await createSession(deps, owner, startAction, allow);
         if (startAction.initial_url) {
@@ -1704,6 +2163,25 @@ export function registerBrowserAgentRoutes(
         bumpRevision(session);
       }
       const response = buildActResponse(stillOpen ? session : null, req, outcome);
+      const ownerHash = auditHash(owner);
+      const sessionHash = auditHash(session.id);
+      for (const result of outcome.results) {
+        const action = req.actions[result.index];
+        deps.log.info(
+          {
+            event: 'browser_action',
+            requestId: req.request_id,
+            ownerHash,
+            sessionHash,
+            actionIndex: result.index,
+            actionType: result.type,
+            status: result.status,
+            destinationHost: action ? actionDestinationHost(action) : undefined,
+            resolvedRef: result.resolved_ref,
+          },
+          'browser-agent audit',
+        );
+      }
       if (stillOpen) {
         session.busy = false;
         session.idempotency.set(req.request_id, response);
@@ -1733,7 +2211,17 @@ export function registerBrowserAgentRoutes(
       // Immediate return path.
       if (previousRevision === undefined || session.revision !== previousRevision || !req.wait_ms) {
         await takeSnapshot(session, req.max_elements ?? agentConfig.maxElements, req.max_visible_text_chars ?? agentConfig.maxVisibleTextChars);
-        return finishObserve(session, req, false, previousRevision);
+        const response = await finishObserve(session, req, false, previousRevision);
+        deps.log.info(
+          {
+            event: 'browser_state',
+            ownerHash: auditHash(owner),
+            sessionHash: auditHash(session.id),
+            revision: session.revision,
+          },
+          'browser-agent audit',
+        );
+        return response;
       }
 
       // Bound concurrent long-polls per session so a caller cannot pin an
@@ -1750,14 +2238,26 @@ export function registerBrowserAgentRoutes(
       if (changed) {
         await takeSnapshot(sessionStill, req.max_elements ?? agentConfig.maxElements, req.max_visible_text_chars ?? agentConfig.maxVisibleTextChars);
       }
-      return finishObserve(sessionStill, req, !changed, previousRevision);
+      const response = await finishObserve(sessionStill, req, !changed, previousRevision);
+      deps.log.info(
+        {
+          event: 'browser_state',
+          ownerHash: auditHash(owner),
+          sessionHash: auditHash(sessionStill.id),
+          revision: sessionStill.revision,
+          longPoll: true,
+          changed,
+        },
+        'browser-agent audit',
+      );
+      return response;
     } catch (e) {
       return replyError(reply, e, deps.log);
     }
   });
 
   // One-shot Selenium bridge (the "wrapper" over dd-selenium-server). Playwright
-  // backs the stateful browser_act/browser_observe loop; this endpoint forwards a
+  // backs the stateful browser_act/browser_state loop; this endpoint forwards a
   // native, bounded Selenium scenario (CSS-selector DSL) to the existing
   // dd-selenium-server /run in a single call. Internal-only, same auth gate.
   const SeleniumRunSchema = z
@@ -1839,6 +2339,9 @@ export const __test = {
   ActRequestSchema,
   ObserveRequestSchema,
   domainAllowed,
+  requestUrlAllowedByDomain,
+  effectiveAllowedDomains,
+  validAllowedDomain,
   actionDigest,
   assertUrlAllowed,
   CONSEQUENTIAL_RE,

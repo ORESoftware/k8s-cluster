@@ -1,8 +1,13 @@
 # browser-mcp-rs — ChatGPT MCP server verification, 2026-07-25
 
+> Historical verification record. The hostPath/auth/ArgoCD findings below
+> describe the pre-hardening deployment. The current image-based multi-cloud
+> design, anonymous-domain ceiling, rollout procedure, and residual risks are in
+> [`browser-mcp-production-hardening-2026-07-25.md`](browser-mcp-production-hardening-2026-07-25.md).
+
 `remote/deployments/browser-mcp-rs` is the public MCP server that lets **ChatGPT**
 (or Claude / any MCP client) drive a real browser through two model-callable
-tools — `browser_observe` (read-only) and `browser_act` (write-capable) — while
+tools — `browser_state` (read-only) and `browser_act` (write-capable) — while
 stopping before CAPTCHA / MFA / payment / signatures / final submissions. It
 speaks MCP-over-HTTP (JSON-RPC 2.0 at `/mcp`) and proxies validated calls to the
 private `dd-web-scraper` `/agent/*` (Playwright), which can bridge to
@@ -23,7 +28,7 @@ Built and ran the server locally, pointed at the deployed `dd-web-scraper` (via
 - **Protocol handshake** — `initialize` returns the negotiated `protocolVersion`,
   `capabilities.tools`, and the safety instructions (prompt-injection notice +
   human-gate for CAPTCHA/MFA/payment/signatures). `notifications/initialized` →
-  `202`. `tools/list` → exactly `browser_act` + `browser_observe`.
+  `202`. `tools/list` → exactly `browser_act` + `browser_state`.
 - **Full tool call, end-to-end** — `tools/call browser_act` with
   `{intent, actions:[{type:"start"},{type:"goto","url":"https://example.com"}]}`
   returned `isError:false`, `page.title:"Example Domain"`,
@@ -58,7 +63,7 @@ Verified live after the fix:
 | `GET /mcp` `Accept: application/json` | 200 (JSON descriptor) |
 | `POST /mcp` `initialize` (`Accept: application/json, text/event-stream`) | 200 |
 | `POST /mcp` `notifications/initialized` | 202 |
-| `POST /mcp` `tools/list` | `browser_act`, `browser_observe` |
+| `POST /mcp` `tools/list` | `browser_act`, `browser_state` |
 
 ## Reproduce
 
@@ -91,7 +96,7 @@ production.** Driven through the public gateway with the bearer:
 
 | Call | Result |
 |---|---|
-| `tools/list` | `browser_act`, `browser_observe` |
+| `tools/list` | `browser_act`, `browser_state` |
 | `browser_act` → `goto https://www.irs.gov/` | `isError:false`, title *"Internal Revenue Service \| An official website…"* |
 | `browser_act` → `goto https://example.com/` | `"host example.com is not on the allowlist"` (policy working) |
 
@@ -173,12 +178,13 @@ This was deliberate (`dfd9089b` "filing sites only", Gmail explicitly dropped), 
 credit-program and conference-CFP sites are blocked by design. Widening it is a
 policy decision, not a bug. Widen deliberately, host by host.
 
-### Also worth knowing: required tools
+### Also worth knowing: search/fetch are surface-specific
 
-OpenAI's docs require read-only `search` and `fetch` tools (compatibility schema)
-for the **deep-research / company-knowledge** connector surface. This server
-exposes `browser_act`/`browser_observe`, which is fine for Developer-Mode/agent
-tool calling but will not satisfy the deep-research surface without adding them.
+OpenAI's current docs no longer require every custom MCP app to expose `search`
+and `fetch`. This server's `browser_act`/`browser_state` pair is sufficient
+for a Developer-Mode custom app. Company knowledge and deep research use only
+read/fetch capabilities, so this write-oriented app is not intended for those
+surfaces.
 
 ## Reproduce the live verification
 

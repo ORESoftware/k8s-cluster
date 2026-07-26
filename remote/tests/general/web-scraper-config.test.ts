@@ -20,26 +20,14 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
-function regexEscape(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function assertDeploymentRow(source: string, deployment: string, service: string): void {
-  assert.match(
-    source,
-    new RegExp(
-      `DeploymentRow \\{ deployments: &\\[[^\\]]*"${regexEscape(
-        deployment,
-      )}"[^\\]]*\\], service: &\\[[^\\]]*"${regexEscape(service)}"[^\\]]*\\]`,
-    ),
-  );
-}
-
 test('web scraper service supports browser, DOM, fetch, and Browserless strategies', async () => {
   const packageJson = await readRepoFile('remote/deployments/web-scraper-service/package.json');
   const source = await readRepoFile('remote/deployments/web-scraper-service/src/server.ts');
   const extractionWorker = await readRepoFile(
     'remote/deployments/web-scraper-service/src/extraction-worker.ts',
+  );
+  const browserAgent = await readRepoFile(
+    'remote/deployments/web-scraper-service/src/browser-agent.ts',
   );
   const readme = await readRepoFile('remote/deployments/web-scraper-service/readme.md');
 
@@ -126,6 +114,10 @@ test('web scraper service supports browser, DOM, fetch, and Browserless strategi
   assert.match(extractionWorker, /extractWithJsdom/);
   assert.match(extractionWorker, /extractWithLinkedom/);
   assert.match(extractionWorker, /extractWithCheerio/);
+  assert.match(browserAgent, /serviceWorkers:\s*'block'/);
+  assert.match(browserAgent, /context\.route\('\*\*\/\*'/);
+  assert.match(browserAgent, /context\.routeWebSocket\('\*\*'/);
+  assert.match(browserAgent, /requestUrlAllowedByDomain/);
   assert.match(readme, /Fastify instead of Nest/);
   assert.match(readme, /worker_threads/);
   assert.match(readme, /SCRAPER_BROWSER_HEADLESS=true/);
@@ -144,17 +136,21 @@ test('web scraper is deployed through Argo runtime manifests and gateway', async
   );
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
-  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
 
   assert.match(deployment, /name:\s*dd-web-scraper/);
-  assert.match(deployment, /mcr\.microsoft\.com\/playwright:v1\.56\.0-noble/);
+  assert.match(
+    deployment,
+    /image:\s*ghcr\.io\/oresoftware\/dd-web-scraper@sha256:[a-f0-9]{64}/,
+    'The browser worker must run an immutable dedicated image, not a mutable branch tag.',
+  );
   assert.doesNotMatch(deployment, /corepack enable/);
-  assert.match(deployment, /COREPACK_HOME[\s\S]*value:\s*\/tmp\/corepack/);
-  assert.match(deployment, /corepack pnpm install --frozen-lockfile --ignore-workspace --prod=false/);
-  assert.match(deployment, /corepack pnpm run build/);
-  assert.match(deployment, /corepack pnpm run start/);
+  assert.doesNotMatch(deployment, /pnpm install/);
+  assert.doesNotMatch(deployment, /pnpm run build/);
+  assert.doesNotMatch(deployment, /hostPath:/);
   assert.match(deployment, /allowPrivilegeEscalation:\s*false/);
+  assert.match(deployment, /readOnlyRootFilesystem:\s*true/);
+  assert.match(deployment, /automountServiceAccountToken:\s*false/);
   assert.match(deployment, /runAsNonRoot:\s*true/);
   assert.match(deployment, /capabilities:[\s\S]*drop:[\s\S]*- ALL/);
   assert.match(deployment, /seccompProfile:[\s\S]*type:\s*RuntimeDefault/);
@@ -170,6 +166,10 @@ test('web scraper is deployed through Argo runtime manifests and gateway', async
   assert.match(deployment, /SCRAPER_ALLOW_PRIVATE_NETWORKS[\s\S]*value:\s*'false'/);
   assert.match(deployment, /SCRAPER_ALLOW_SENSITIVE_HEADERS[\s\S]*value:\s*'false'/);
   assert.match(deployment, /SCRAPER_ALLOW_URL_CREDENTIALS[\s\S]*value:\s*'false'/);
+  assert.match(
+    deployment,
+    /BROWSER_AGENT_ALLOWED_DOMAINS[\s\S]*value:\s*'[^']*talks\.devopsdays\.org[^']*'/,
+  );
   assert.match(deployment, /SERVER_AUTH_SECRET[\s\S]*dd-agent-secrets[\s\S]*SERVER_AUTH_SECRET/);
   assert.match(deployment, /BROWSERLESS_TOKEN[\s\S]*optional:\s*true/);
   assert.match(deployment, /startupProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);
@@ -196,8 +196,6 @@ test('web scraper is deployed through Argo runtime manifests and gateway', async
     otel,
     /job_name:\s*dd-web-scraper[\s\S]*dd-web-scraper\.default\.svc\.cluster\.local:8097/,
   );
-  assert.match(home, /dd-web-scraper Fastify deployment/);
-  assertDeploymentRow(home, 'dd-web-scraper', 'dd-web-scraper:8097');
   assert.match(runtimeReadme, /`dd-web-scraper`/);
   assert.match(runtimeReadme, /worker_threads/);
   assert.match(runtimeReadme, /SCRAPER_PARSER_WORKERS=2/);
