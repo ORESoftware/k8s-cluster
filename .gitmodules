@@ -177,3 +177,6 @@
 	path = remote/submodules/shared-auth-nats-bridge.rs
 	url = git@github.com:shared-auth/shared-auth-nats-bridge.rs.git
 	branch = main
+[submodule "remote/deployments/cliptown-monorepo"]
+	path = remote/deployments/cliptown-monorepo
+	url = https://github.com/cliptown/cliptown-monorepo.git
