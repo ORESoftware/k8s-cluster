@@ -15,6 +15,12 @@ This organization uses several repositories to manage the project:
 - [cliptown-interfaces](https://github.com/cliptown/cliptown-interfaces): Shared interface definitions (Proto/OpenAPI).
 - [cliptown-infra](https://github.com/cliptown/cliptown-infra): Kubernetes infrastructure manifests (App of Apps).
 
-## Authentication
+## Authentication & Security
 
 Authentication is handled via Supabase. We utilize a 6-digit PIN as the primary authentication method, with biometric fallbacks (thumbprint, voice recognition). Sessions expire every 10 days by default (configurable up to 20 days).
+
+### End-to-End Encryption (E2EE)
+All clipboard items are fully encrypted on the client side before being sent to Supabase or the Rust backend.
+- **Algorithm**: AES-256-GCM.
+- **Key Derivation**: The encryption key is derived locally from the user's 6-digit PIN and biometrics using PBKDF2/Argon2.
+- **Zero-Knowledge**: The backend never sees the plaintext clipboard items, only the encrypted ciphertexts (`encrypted_data`).

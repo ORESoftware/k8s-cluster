@@ -1,0 +1,21 @@
+name: Lint Docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-markdown:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install MarkdownLint
+        run: npm install -g markdownlint-cli
+      - name: Run MarkdownLint
+        run: markdownlint '**/*.md'
