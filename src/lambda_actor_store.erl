@@ -102,8 +102,7 @@ commit(ActorId0, Owner0, Version0, State0, AlarmAt0, Kind0) ->
     Sql = [
         "update lambda_actor_instances set ",
         "state = :'state'::jsonb, state_version = state_version + 1, ",
-        "alarm_at = case when :'alarm_at' = '' then null ",
-        "else :'alarm_at'::timestamptz end, ",
+        "alarm_at = nullif(:'alarm_at', '')::timestamptz, ",
         "alarm_attempt = 0, lease_owner = null, lease_until = null, ",
         "last_invoked_at = now(), last_error = null, updated_at = now() ",
         "where id = :'actor_id'::uuid and lease_owner = :'owner' ",

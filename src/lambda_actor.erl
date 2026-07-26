@@ -232,6 +232,13 @@ finish_child_output(Claim, Kind, Owner, ActorId, Version, Output0) ->
                                 <<"actor">> => response_actor(Claim, Committed)
                             }))};
                         {error, Reason} ->
+                            _ = lambda_actor_store:fail(
+                                ActorId,
+                                Owner,
+                                Version,
+                                Reason,
+                                Kind =:= alarm
+                            ),
                             {error, Reason}
                     end;
                 false ->
