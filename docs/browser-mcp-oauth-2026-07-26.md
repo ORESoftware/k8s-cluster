@@ -144,7 +144,7 @@ The deployment remains a prebuilt distroless image, pinned to the OCI index
 published from this branch:
 
 ```text
-ghcr.io/oresoftware/dd-browser-mcp-rs@sha256:5ce57443a08cb9373e5c58db2e791c4d198e29c2ffce0b4cda1c48a2bf611dbe
+ghcr.io/oresoftware/dd-browser-mcp-rs@sha256:9076c098c03f6a4c24c8220b0b1878de42c87dde2da07b41d54cf21d8ebad1d3
 ```
 
 It does not mount the shared EC2 checkout and does not run Cargo in the pod.
