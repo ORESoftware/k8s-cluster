@@ -70,15 +70,28 @@ test(
       assert.ok(sessionId, 'session_id returned');
       assert.match(started.page ? (started.page as { url: string }).url : '', /\/step1$/);
 
-      // 2) observe -> forms + interactive elements with refs.
+      // 2) browser state -> forms, typed control buckets, and accessibility refs.
       const obs1 = await observe({
         session_id: sessionId,
-        include: ['interactive_elements', 'forms', 'validation_errors'],
+        include: [
+          'visible_text',
+          'interactive_elements',
+          'accessibility_snapshot',
+          'forms',
+          'validation_errors',
+          'downloads',
+        ],
       });
       const els = (obs1.interactive_elements ?? []) as Array<Record<string, unknown>>;
       assert.ok(els.length >= 3, `expected controls, got ${els.length}`);
       const entity = els.find((e) => e.label === 'Entity name' || e.name === 'Entity name');
       assert.ok(entity, 'entity field observed with a ref');
+      assert.ok(Array.isArray(obs1.fields) && (obs1.fields as unknown[]).length > 0);
+      assert.ok(Array.isArray(obs1.buttons) && (obs1.buttons as unknown[]).length > 0);
+      assert.ok(Array.isArray(obs1.links));
+      assert.equal((obs1.accessibility_snapshot as { role: string }).role, 'document');
+      assert.ok(obs1.visible_text);
+      assert.deepEqual(obs1.downloads, []);
 
       // 3) click Next with the required field empty -> native validation error.
       const badSubmit = await act({
@@ -96,14 +109,45 @@ test(
       const vErrors = (obs2.validation_errors ?? []) as Array<Record<string, unknown>>;
       assert.ok(vErrors.length >= 1, `expected a validation error, got ${JSON.stringify(vErrors)}`);
 
-      // 4) fill the form correctly (semantic + ref targeting) and advance.
+      // 4) upload a small file entirely in memory and observe its page-visible
+      // filename/size. The worker must not need an upload-token directory.
+      const uploaded = await act({
+        request_id: 'r2a',
+        session_id: sessionId,
+        expected_revision: obs2.revision,
+        intent: 'attach a harmless text fixture',
+        actions: [
+          {
+            type: 'upload',
+            target: { label: 'Attachment' },
+            inline_file: {
+              file_name: 'fixture.txt',
+              mime_type: 'text/plain',
+              data_base64: Buffer.from('hello').toString('base64'),
+            },
+          },
+        ],
+      });
+      assert.equal(uploaded.status, 'completed', JSON.stringify(uploaded));
+      const obsUpload = await observe({ session_id: sessionId, include: ['visible_text'] });
+      assert.match(
+        (obsUpload.visible_text as { untrusted_content: string }).untrusted_content,
+        /Selected fixture\.txt \(5 bytes\)/,
+      );
+
+      // 5) fill the form correctly (semantic + ref targeting) and advance.
       const filled = await act({
         request_id: 'r3',
         session_id: sessionId,
-        expected_revision: obs2.revision,
+        expected_revision: obsUpload.revision,
         intent: 'complete the form and continue',
         actions: [
-          { type: 'fill', target: { label: 'Entity name' }, value: { literal: 'ORE Software LLC' } },
+          {
+            type: 'type',
+            target: { label: 'Entity name' },
+            value: { literal: 'ORE Software LLC' },
+            clear_first: true,
+          },
           { type: 'select', target: { role: 'combobox', name: 'State' }, option: { value: 'CO' } },
           { type: 'check', target: { label: 'I agree to the terms' } },
           { type: 'click', target: { visible_text: 'Next' } },
@@ -113,7 +157,7 @@ test(
       assert.match((filled.page as { url: string }).url, /\/step2/);
       assert.ok((filled.revision as number) > (obs2.revision as number), 'revision advanced after navigation');
 
-      // 5) stale revision is rejected.
+      // 6) stale revision is rejected.
       const stale = await act({
         request_id: 'r4',
         session_id: sessionId,
@@ -123,26 +167,26 @@ test(
       });
       assert.equal(stale.status, 'revision_conflict', JSON.stringify(stale));
 
-      // 6) consequential submit -> needs_confirmation with a digest.
+      // 7) consequential submit -> needs_confirmation with a digest.
       const obs3 = await observe({ session_id: sessionId, include: ['interactive_elements'] });
       const pending = await act({
         request_id: 'r5',
         session_id: sessionId,
         expected_revision: obs3.revision,
         intent: 'submit the filing',
-        actions: [{ type: 'click', target: { visible_text: 'Submit filing' } }],
+        actions: [{ type: 'submit', target: { visible_text: 'Submit filing' } }],
       });
       assert.equal(pending.status, 'needs_confirmation', JSON.stringify(pending));
       const pa = pending.pending_action as { action_digest: string; revision: number };
       assert.match(pa.action_digest, /^sha256:[0-9a-f]{64}$/);
 
-      // 7) confirmed submit succeeds and navigates to /done.
+      // 8) confirmed submit succeeds and navigates to /done.
       const confirmed = await act({
         request_id: 'r6',
         session_id: sessionId,
         expected_revision: pa.revision,
         intent: 'submit the filing (confirmed)',
-        actions: [{ type: 'click', target: { visible_text: 'Submit filing' } }],
+        actions: [{ type: 'submit', target: { visible_text: 'Submit filing' } }],
         confirmation: { action_digest: pa.action_digest, confirmed_revision: pa.revision, user_explicitly_approved: true },
       });
       assert.equal(confirmed.status, 'completed', JSON.stringify(confirmed));
@@ -153,11 +197,34 @@ test(
       const s = shot.screenshot as { mime_type: string; data_base64: string } | undefined;
       assert.ok(s && s.mime_type === 'image/jpeg' && s.data_base64.length > 100, 'screenshot returned');
 
-      // 7c) stop_when halts a batch early (navigation short-circuits the reload).
+      // 7c) action-level scroll, screenshot, and extract return bounded data.
+      const captured = await act({
+        request_id: 'r6a',
+        session_id: sessionId,
+        expected_revision: (shot as { revision: number }).revision,
+        intent: 'exercise bounded read actions',
+        actions: [
+          { type: 'scroll', delta_y: 200 },
+          { type: 'screenshot' },
+          {
+            type: 'extract',
+            include: ['visible_text', 'interactive_elements', 'accessibility_snapshot'],
+            max_visible_text_chars: 2000,
+          },
+        ],
+      });
+      assert.equal(captured.status, 'completed', JSON.stringify(captured));
+      assert.ok((captured.screenshot as { data_base64?: string }).data_base64);
+      assert.equal(
+        ((captured.extracted as { accessibility_snapshot: { role: string } }).accessibility_snapshot).role,
+        'document',
+      );
+
+      // 7d) stop_when halts a batch early (navigation short-circuits the reload).
       const stopped = await act({
         request_id: 'r6b',
         session_id: sessionId,
-        expected_revision: (shot as { revision: number }).revision,
+        expected_revision: captured.revision,
         intent: 'navigate then stop before the extra action',
         actions: [
           { type: 'goto', url: `${fixture.url}/step1` },

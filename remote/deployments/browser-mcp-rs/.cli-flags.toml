@@ -131,3 +131,16 @@ env = "BROWSER_MCP_ALLOWED_DOMAINS"
 aliases = ["allowed-domains", "allowlist", "domain-allowlist"]
 type = "string"
 help = "Required comma-separated process-level hostname ceiling injected into every browser_act call and enforced for all Playwright traffic. There is deliberately no implicit navigation profile; anonymous startup rejects an empty value."
+
+[flags.default_workflow]
+env = "BROWSER_MCP_DEFAULT_WORKFLOW"
+aliases = ["default-workflow", "workflow"]
+type = "string"
+default = "default"
+help = "Default server-defined workflow allowlist profile used when browser_act omits workflow_id."
+
+[flags.workflow_allowlists_json]
+env = "BROWSER_MCP_WORKFLOW_ALLOWLISTS_JSON"
+aliases = ["workflow-allowlists-json"]
+type = "string"
+help = "JSON object mapping workflow IDs to non-empty hostname lists. Every hostname must be a subset of BROWSER_MCP_ALLOWED_DOMAINS; callers can select but never define or widen a profile."

@@ -28,6 +28,7 @@ done
 
 session_id=''
 access_token=''
+refresh_token=''
 
 rpc() {
   auth_args=()
@@ -161,6 +162,7 @@ oauth_login() {
       "$token_endpoint"
   )"
   access_token="$(jq -er '.access_token' <<<"$token_response")"
+  refresh_token="$(jq -er '.refresh_token' <<<"$token_response")"
   jq -e '
     .token_type == "Bearer" and
     .expires_in > 0 and
@@ -169,6 +171,39 @@ oauth_login() {
     (.scope | contains("browser:act")) and
     (.refresh_token | type == "string")
   ' <<<"$token_response" >/dev/null
+
+  echo "checking refresh-token rotation and replay rejection"
+  previous_refresh_token="$refresh_token"
+  refresh_response="$(
+    curl --fail-with-body --silent --show-error \
+      -X POST \
+      --data-urlencode 'grant_type=refresh_token' \
+      --data-urlencode "refresh_token=$previous_refresh_token" \
+      --data-urlencode "client_id=$client_id" \
+      --data-urlencode "resource=$endpoint" \
+      "$token_endpoint"
+  )"
+  access_token="$(jq -er '.access_token' <<<"$refresh_response")"
+  refresh_token="$(jq -er '.refresh_token' <<<"$refresh_response")"
+  jq -e '
+    .token_type == "Bearer" and
+    .expires_in > 0 and
+    (.refresh_token | type == "string")
+  ' <<<"$refresh_response" >/dev/null
+  test "$refresh_token" != "$previous_refresh_token"
+
+  replay_status="$(
+    curl --silent --show-error \
+      -o /dev/null \
+      -w '%{http_code}' \
+      -X POST \
+      --data-urlencode 'grant_type=refresh_token' \
+      --data-urlencode "refresh_token=$previous_refresh_token" \
+      --data-urlencode "client_id=$client_id" \
+      --data-urlencode "resource=$endpoint" \
+      "$token_endpoint"
+  )"
+  test "$replay_status" = '400'
 }
 
 verify_no_auth() {
@@ -203,7 +238,14 @@ cleanup() {
   )"
   rpc "$cleanup_payload" >/dev/null 2>&1 || true
 }
-trap cleanup EXIT
+
+on_exit() {
+  exit_status=$?
+  trap - EXIT
+  cleanup
+  exit "$exit_status"
+}
+trap on_exit EXIT
 
 echo "checking public health"
 curl --fail-with-body --silent --show-error \
@@ -219,9 +261,9 @@ else
 fi
 
 echo "checking Streamable HTTP negotiation"
-sse_auth_args=()
+request_auth_args=()
 if [[ -n "$access_token" ]]; then
-  sse_auth_args=(-H "Authorization: Bearer $access_token")
+  request_auth_args=(-H "Authorization: Bearer $access_token")
 fi
 sse_status="$(
   curl --silent --show-error \
@@ -229,11 +271,28 @@ sse_status="$(
     --max-time 20 \
     -o /dev/null \
     -w '%{http_code}' \
-    "${sse_auth_args[@]}" \
+    "${request_auth_args[@]}" \
     -H 'Accept: text/event-stream' \
     "$endpoint"
 )"
-test "$sse_status" = '405'
+if [[ "$sse_status" != '405' ]]; then
+  echo "SSE GET returned HTTP $sse_status, expected 405" >&2
+  exit 1
+fi
+plain_get_status="$(
+  curl --silent --show-error \
+    --connect-timeout 10 \
+    --max-time 20 \
+    -o /dev/null \
+    -w '%{http_code}' \
+    "${request_auth_args[@]}" \
+    -H 'Accept: application/json' \
+    "$endpoint"
+)"
+if [[ "$plain_get_status" != '406' ]]; then
+  echo "JSON-only GET returned HTTP $plain_get_status, expected 406" >&2
+  exit 1
+fi
 
 echo "checking initialize and notifications/initialized"
 initialize="$(
@@ -251,7 +310,7 @@ initialized_status="$(
     -o /dev/null \
     -w '%{http_code}' \
     -X POST \
-    -H "Authorization: Bearer $access_token" \
+    "${request_auth_args[@]}" \
     -H "$content_type" \
     -H "$accept" \
     --data-binary '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
@@ -263,63 +322,148 @@ echo "checking tools/list"
 tools="$(rpc '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')"
 jq -e '
   ([.result.tools[].name] | sort) ==
-  ["browser_act", "browser_observe"] and
+  ["browser_act", "browser_state"] and
   all(.result.tools[];
     .securitySchemes[0].type == "oauth2" and
     (.securitySchemes[0].scopes | index("mcp:tools"))
   )
 ' <<<"$tools" >/dev/null
 
-echo "checking browser_act against the approved Tailscale application domain"
+echo "checking browser_act against the isolated harmless form profile"
 start="$(
-  rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"browser_act","arguments":{"intent":"read-only startup-form smoke test; do not enter or submit data","actions":[{"type":"start","initial_url":"https://tailscale.com/startup-program"}]}}}'
+  rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"browser_act","arguments":{"workflow_id":"smoke-test","intent":"open a harmless test form","actions":[{"type":"start","initial_url":"https://httpbingo.org/forms/post"}]}}}'
 )"
 jq -e '.result.isError == false' <<<"$start" >/dev/null
 session_id="$(jq -er '.result.structuredContent.session_id' <<<"$start")"
 
-echo "checking browser_observe"
-observe_payload="$(
+echo "checking browser_state"
+state_payload="$(
   jq -cn --arg session_id "$session_id" '{
     jsonrpc: "2.0",
     id: 4,
     method: "tools/call",
     params: {
-      name: "browser_observe",
+      name: "browser_state",
       arguments: {
         session_id: $session_id,
-        include: ["summary", "interactive_elements", "forms"],
-        max_elements: 100,
-        max_visible_text_chars: 1000
+        include: ["summary", "visible_text", "interactive_elements", "accessibility_snapshot", "forms", "validation_errors", "downloads"],
+        max_visible_text_chars: 4000
       }
     }
   }'
 )"
-observe="$(rpc "$observe_payload")"
-jq '{
-  blocker: (.result.structuredContent.blocker // null),
-  form_count: (.result.structuredContent.forms // [] | length),
-  required_field_count: ([
-    .result.structuredContent.interactive_elements[]?
-    | select(.required == true)
-  ] | length)
-}' <<<"$observe"
+state_result="$(rpc "$state_payload")"
 if ! jq -e '
   .result.isError == false and
-  (.result.structuredContent.blocker // null) == null and
-  (.result.structuredContent.forms | length) >= 1 and
-  ([.result.structuredContent.interactive_elements[] | select(.required == true)] | length) >= 10
-' <<<"$observe" >/dev/null; then
+  (.result.structuredContent.page.url | startswith("https://httpbingo.org/forms/post")) and
+  (.result.structuredContent.page.title | type == "string") and
+  (.result.structuredContent.accessibility_snapshot.role == "document") and
+  (.result.structuredContent.forms | length > 0) and
+  (.result.structuredContent.fields | length > 0) and
+  (.result.structuredContent.buttons | length > 0) and
+  (.result.structuredContent.links | type == "array") and
+  (.result.structuredContent.validation_errors | type == "array") and
+  (.result.structuredContent.downloads | type == "array")
+' <<<"$state_result" >/dev/null; then
   jq '{
     is_error: .result.isError,
-    blocker: (.result.structuredContent.blocker // null),
-    form_count: (.result.structuredContent.forms | length),
-    interactive_element_count: (.result.structuredContent.interactive_elements | length),
-    required_element_count: (
-      [.result.structuredContent.interactive_elements[] | select(.required == true)] | length
-    )
-  }' <<<"$observe" >&2
+    page: .result.structuredContent.page,
+    accessibility_role: .result.structuredContent.accessibility_snapshot.role,
+    form_count: (.result.structuredContent.forms // [] | length),
+    field_count: (.result.structuredContent.fields // [] | length),
+    button_count: (.result.structuredContent.buttons // [] | length),
+    link_count: (.result.structuredContent.links // [] | length),
+    validation_error_count: (.result.structuredContent.validation_errors // [] | length),
+    downloads_type: (.result.structuredContent.downloads | type)
+  }' <<<"$state_result" >&2
+  echo "browser_state response is missing required page-state fields" >&2
   exit 1
 fi
+
+revision="$(jq -er '.result.structuredContent.revision' <<<"$state_result")"
+field_ref="$(
+  jq -r '
+    (
+      first(
+      .result.structuredContent.fields[]
+      | select(.role == "textbox")
+      | .ref
+      )
+    ) // empty
+  ' <<<"$state_result"
+)"
+if [[ -z "$field_ref" ]]; then
+  jq '{
+    page: .result.structuredContent.page,
+    fields: [
+      .result.structuredContent.fields[]?
+      | {ref, role, name, label, type, value_state}
+    ]
+  }' <<<"$state_result" >&2
+  echo "browser_state did not return a usable textbox ref" >&2
+  exit 1
+fi
+
+echo "checking harmless form fill"
+fill_payload="$(
+  jq -cn --arg session_id "$session_id" --arg field_ref "$field_ref" --argjson revision "$revision" '{
+    jsonrpc: "2.0",
+    id: 5,
+    method: "tools/call",
+    params: {
+      name: "browser_act",
+      arguments: {
+        session_id: $session_id,
+        expected_revision: $revision,
+        intent: "fill one harmless test field",
+        actions: [{type: "type", target: {ref: $field_ref}, value: {literal: "Browser MCP smoke test"}, clear_first: true}]
+      }
+    }
+  }'
+)"
+fill_result="$(rpc "$fill_payload")"
+jq -e '
+  .result.isError == false and
+  .result.structuredContent.status == "completed"
+' <<<"$fill_result" >/dev/null
+
+echo "checking explicit submit stops for approval"
+post_fill_state_payload="$(
+  jq -cn --arg session_id "$session_id" '{
+    jsonrpc: "2.0",
+    id: 6,
+    method: "tools/call",
+    params: {
+      name: "browser_state",
+      arguments: {session_id: $session_id, include: ["forms"]}
+    }
+  }'
+)"
+post_fill_state="$(rpc "$post_fill_state_payload")"
+post_fill_revision="$(jq -er '.result.structuredContent.revision' <<<"$post_fill_state")"
+submit_ref="$(jq -er '.result.structuredContent.forms[0].submit_refs[0]' <<<"$post_fill_state")"
+submit_payload="$(
+  jq -cn --arg session_id "$session_id" --arg submit_ref "$submit_ref" --argjson revision "$post_fill_revision" '{
+    jsonrpc: "2.0",
+    id: 7,
+    method: "tools/call",
+    params: {
+      name: "browser_act",
+      arguments: {
+        session_id: $session_id,
+        expected_revision: $revision,
+        intent: "verify submit approval boundary",
+        actions: [{type: "submit", target: {ref: $submit_ref}}]
+      }
+    }
+  }'
+)"
+submit_result="$(rpc "$submit_payload")"
+jq -e '
+  .result.isError == false and
+  .result.structuredContent.status == "needs_confirmation" and
+  (.result.structuredContent.pending_action.action_digest | startswith("sha256:"))
+' <<<"$submit_result" >/dev/null
 
 echo "checking that off-allowlist navigation is denied"
 blocked_payload="$(

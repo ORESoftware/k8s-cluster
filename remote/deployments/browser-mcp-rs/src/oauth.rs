@@ -375,6 +375,15 @@ impl OAuthService {
                 "PKCE code_challenge_method=S256 is required",
             ));
         }
+        if request
+            .state
+            .as_deref()
+            .is_none_or(|state| !(16..=512).contains(&state.len()))
+        {
+            return Err(OAuthProtocolError::invalid_request(
+                "state is required and must contain between 16 and 512 bytes",
+            ));
+        }
         if request.resource != base.as_str() {
             return Err(OAuthProtocolError::invalid_target(
                 "resource must equal the canonical MCP endpoint",

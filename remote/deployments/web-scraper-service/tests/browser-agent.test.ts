@@ -65,10 +65,108 @@ test('confirmation must assert explicit approval', () => {
   assert.equal(bad.success, false);
 });
 
-test('browser_observe caps long-poll and text budgets', () => {
+test('browser_state caps long-poll and text budgets', () => {
   assert.equal(ObserveRequestSchema.safeParse({ session_id: 's', wait_ms: 25_001 }).success, false);
   assert.equal(ObserveRequestSchema.safeParse({ session_id: 's', max_visible_text_chars: 30_001 }).success, false);
   assert.equal(ObserveRequestSchema.safeParse({ session_id: 's', wait_ms: 25_000 }).success, true);
+});
+
+test('browser_act accepts the complete declarative action surface', () => {
+  const actions = [
+    { type: 'type', target: { ref: 'e1' }, value: { literal: 'safe text' }, clear_first: true },
+    { type: 'submit', target: { ref: 'e2' } },
+    { type: 'scroll', delta_y: 500 },
+    { type: 'screenshot' },
+    { type: 'extract', include: ['visible_text', 'accessibility_snapshot', 'forms'] },
+  ];
+  assert.equal(
+    ActRequestSchema.safeParse({
+      request_id: 'r-actions',
+      intent: 'exercise declarative actions',
+      session_id: 's',
+      actions,
+    }).success,
+    true,
+  );
+});
+
+test('upload accepts exactly one bounded source and rejects unsafe inline files', () => {
+  const base = {
+    request_id: 'r-upload',
+    intent: 'attach a harmless text file',
+    session_id: 's',
+  };
+  const target = { label: 'Attachment' };
+  assert.equal(
+    ActRequestSchema.safeParse({
+      ...base,
+      actions: [
+        {
+          type: 'upload',
+          target,
+          inline_file: {
+            file_name: 'note.txt',
+            mime_type: 'text/plain',
+            data_base64: Buffer.from('hello').toString('base64'),
+          },
+        },
+      ],
+    }).success,
+    true,
+  );
+  assert.equal(
+    ActRequestSchema.safeParse({
+      ...base,
+      actions: [{ type: 'upload', target, file_token: 'token-123' }],
+    }).success,
+    true,
+  );
+  assert.equal(
+    ActRequestSchema.safeParse({
+      ...base,
+      actions: [
+        {
+          type: 'upload',
+          target,
+          file_token: 'token-123',
+          inline_file: { file_name: 'note.txt', data_base64: 'aGVsbG8=' },
+        },
+      ],
+    }).success,
+    false,
+  );
+  assert.equal(
+    ActRequestSchema.safeParse({
+      ...base,
+      actions: [
+        {
+          type: 'upload',
+          target,
+          inline_file: {
+            file_name: '../secret.txt',
+            data_base64: 'aGVsbG8=',
+          },
+        },
+      ],
+    }).success,
+    false,
+  );
+  assert.equal(
+    ActRequestSchema.safeParse({
+      ...base,
+      actions: [
+        {
+          type: 'upload',
+          target,
+          inline_file: {
+            file_name: 'too-large.bin',
+            data_base64: Buffer.alloc(256 * 1024 + 1).toString('base64'),
+          },
+        },
+      ],
+    }).success,
+    false,
+  );
 });
 
 test('domain allowlist matches host and subdomains only', () => {
@@ -104,7 +202,7 @@ test('all browser-created network requests remain inside the hostname ceiling', 
   const allowlist = ['benefactor.cc'];
   assert.equal(requestUrlAllowedByDomain('https://benefactor.cc/contact', allowlist), true);
   assert.equal(requestUrlAllowedByDomain('https://www.benefactor.cc/app.js', allowlist), true);
-  assert.equal(requestUrlAllowedByDomain('wss://benefactor.cc/socket', allowlist), true);
+  assert.equal(requestUrlAllowedByDomain('wss://benefactor.cc/socket', allowlist), false);
   assert.equal(requestUrlAllowedByDomain('https://example.com/', allowlist), false);
   assert.equal(requestUrlAllowedByDomain('wss://example.com/socket', allowlist), false);
   assert.equal(requestUrlAllowedByDomain('https://benefactor.cc:8443/', allowlist), false);
