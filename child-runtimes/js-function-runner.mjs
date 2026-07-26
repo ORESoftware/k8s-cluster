@@ -15,6 +15,14 @@ const maxCompiledFunctions = positiveInt(env.LAMBDA_FUNCTION_CACHE_MAX, 128);
 const maxFunctionBodyBytes = positiveInt(env.LAMBDA_FUNCTION_BODY_MAX_BYTES, 262_144);
 const maxInputLineBytes = positiveInt(env.LAMBDA_CHILD_INPUT_MAX_BYTES, 6_291_456);
 const maxResultBytes = positiveInt(env.LAMBDA_RESULT_MAX_BYTES, 1_048_576);
+const maxStreamBytes = positiveInt(env.LAMBDA_STREAM_MAX_BYTES, 16_777_216);
+const maxStreamChunkBytes = Math.max(
+  1_024,
+  Math.min(
+    positiveInt(env.LAMBDA_STREAM_CHUNK_BYTES, 65_536),
+    262_144,
+  ),
+);
 const containerPoolNatsUrl = env.CONTAINER_POOL_NATS_URL || env.NATS_URL || '';
 // Optional override; when unset, every per-pool subject is built from the
 // generated containerPoolLanguageRequestsSubject() formatter so the dot
@@ -373,6 +381,10 @@ async function invoke(line) {
   context.browser = browserSession?.api;
   try {
     const result = await fn(request, context, safeConsole, undefined, undefined, undefined);
+    if (envelope.mode === 'stream') {
+      await writeStreamingResult(result ?? null);
+      return { streamHandled: true };
+    }
     return {
       ok: true,
       result: result ?? null,
@@ -385,15 +397,128 @@ async function invoke(line) {
 }
 
 async function handleLine(line) {
+  let streamMode = false;
   try {
+    streamMode = JSON.parse(line)?.mode === 'stream';
     const result = await invoke(line);
-    writeResult(result);
+    if (result?.streamHandled !== true) {
+      writeResult(result);
+    }
   } catch (error) {
-    writeResult({
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-    });
+    const message = error instanceof Error ? error.message : String(error);
+    if (streamMode) {
+      try {
+        await writeStreamFrame({
+          stream: true,
+          event: 'error',
+          error: message.slice(0, 4096),
+        });
+      } catch (writeError) {
+        stderr.write(
+          `[lambda:error] failed to write stream error: ${
+            writeError instanceof Error ? writeError.message : String(writeError)
+          }\n`,
+        );
+      }
+    } else {
+      writeResult({ ok: false, error: message });
+    }
   }
+}
+
+async function writeStreamingResult(result) {
+  const response = result instanceof Response ? result : null;
+  await writeStreamFrame({
+    stream: true,
+    event: 'start',
+    contentType: response?.headers.get('content-type') || 'application/octet-stream',
+    status: response?.status || 200,
+  });
+
+  let totalBytes = 0;
+  for await (const value of streamValues(result)) {
+    const bytes = encodeStreamValue(value);
+    for (let offset = 0; offset < bytes.length; offset += maxStreamChunkBytes) {
+      const chunk = bytes.subarray(offset, offset + maxStreamChunkBytes);
+      if (totalBytes + chunk.length > maxStreamBytes) {
+        throw new Error('lambda stream exceeds configured byte limit');
+      }
+      totalBytes += chunk.length;
+      await writeStreamFrame({
+        stream: true,
+        event: 'chunk',
+        encoding: 'base64',
+        data: chunk.toString('base64'),
+      });
+    }
+  }
+
+  await writeStreamFrame({
+    stream: true,
+    event: 'end',
+    bytes: totalBytes,
+  });
+}
+
+async function* streamValues(result) {
+  if (result instanceof Response) {
+    if (result.body) {
+      for await (const chunk of result.body) {
+        yield chunk;
+      }
+    }
+    return;
+  }
+
+  if (
+    result &&
+    typeof result !== 'string' &&
+    typeof result[Symbol.asyncIterator] === 'function'
+  ) {
+    for await (const chunk of result) {
+      yield chunk;
+    }
+    return;
+  }
+
+  yield result;
+}
+
+function encodeStreamValue(value) {
+  if (typeof value === 'string') {
+    return Buffer.from(value, 'utf8');
+  }
+  if (value instanceof ArrayBuffer) {
+    return Buffer.from(value);
+  }
+  if (ArrayBuffer.isView(value)) {
+    return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  }
+  const json = JSON.stringify(value ?? null);
+  return Buffer.from(`${json}\n`, 'utf8');
+}
+
+async function writeStreamFrame(frame) {
+  const encoded = `${JSON.stringify(frame)}\n`;
+  if (stdout.write(encoded)) {
+    return;
+  }
+  await new Promise((resolve, reject) => {
+    const onDrain = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = (error) => {
+      cleanup();
+      reject(error);
+    };
+    const cleanup = () => {
+      stdout.off('drain', onDrain);
+      stdout.off('error', onError);
+    };
+    stdout.once('drain', onDrain);
+    stdout.once('error', onError);
+  });
 }
 
 function writeResult(result) {

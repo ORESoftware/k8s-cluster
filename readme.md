@@ -22,6 +22,8 @@ Deno Deploy, and Knative lives in
 - `GET /internal/runtime-processes` returns authenticated, source-free OTP
   supervisor and dynamic-worker state.
 - `POST /invoke/:function_id` forwards one request envelope to a child process.
+- `POST /invoke-stream/:function_id` streams a Node.js response with
+  end-to-end backpressure.
 - `POST /check` compiles or syntax-checks a posted lambda definition without executing the
   function body.
 - `POST /destroy/:reuse_key` closes a cached child process.
@@ -150,12 +152,17 @@ runtime-specific credentials the runner should own independently.
 Node children run with the Node permission model enabled:
 
 ```sh
-node --permission --allow-net child-runtimes/js-function-runner.mjs
+child-runtimes/node-permission-launcher.sh \
+  --allow-fs-read=child-runtimes \
+  --allow-fs-read=../../../../libs \
+  child-runtimes/js-function-runner.mjs
 ```
 
 The child is started through `env -i`, so it receives no database secrets, and no filesystem write,
 child-process, worker, addon, or inspector permission is granted. The immutable runner release image
-contains Alpine `nodejs-current`, whose permission model supports the `--allow-net` host policy.
+contains Alpine `nodejs-current`. The launcher feature-detects `--allow-net`: Node 25+ gets explicit
+network permission, while older supported Node releases—which do not model network access and reject
+that flag—start with the same filesystem/process restrictions.
 
 Python, Ruby, Bash, Go, Dart, Erlang, Elixir, Java, Gleam, and Rust do not have a reliable in-process filesystem
 sandbox in this service. The API and runner therefore require `containerized: true` for those
@@ -197,6 +204,54 @@ workers from the new generation.
 The limit is local to a runner replica. Fleet-wide reserved concurrency and a
 durable overflow queue remain control-plane work; multiplying this value by
 replica count is the current upper-bound estimate for one revision.
+
+## Backpressure-aware response streaming
+
+Authenticated `POST /invoke-stream/:function_id` provides true chunked response
+streaming for `nodejs` functions running locally or in their managed runtime
+container, including Node definitions with browser automation enabled. A
+function can return an async iterable, a Web `ReadableStream`, a `Response`
+body, a string/binary value, or an ordinary JSON value:
+
+```js
+return (async function* () {
+  yield "event: start\n\n";
+  for (let index = 0; index < 100; index += 1) {
+    yield `data: ${JSON.stringify({ index })}\n\n`;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+})();
+```
+
+String and binary chunks are emitted verbatim. Object chunks are encoded as
+newline-delimited JSON. The HTTP response is `application/octet-stream` with
+`X-Scintilla-Stream-Protocol: raw-v1`; callers choose their own payload format
+inside the byte stream.
+
+Every connection is a supervised Mist actor. It owns a linked invocation
+process and an exclusive lease on a dynamically supervised runtime worker.
+For each chunk, the worker waits until the connection actor confirms the socket
+write. A slow client therefore stops the BEAM worker from reading child stdout,
+which fills the bounded OS pipe and naturally pauses user code. Chunks never
+accumulate in an unbounded intermediary queue.
+
+| Env | Default |
+| --- | --- |
+| `LAMBDA_STREAM_MAX_BYTES` | `16777216` (16 MiB) |
+| `LAMBDA_STREAM_CHUNK_BYTES` | `65536` (64 KiB, hard-capped at 256 KiB) |
+
+The normal per-function `maxConcurrency` lease and `maxRunMs` timeout apply for
+the full life of the stream. Disconnecting the client tears down the linked
+invocation and its worker rather than returning a child with unknown protocol
+state to the warm pool. Because headers have already been sent, an invocation
+error during streaming closes the response instead of replacing it with a JSON
+error body. Stream counts, chunks, bytes, and failures are exposed under
+`dd_lambda_runner_stream_*` on `/metrics`.
+
+Container-pool request/reply transport does not yet carry stream frames, so a
+function with `poolBacked=true` fails closed on this endpoint. Other language
+runtimes retain buffered invocation until they implement the same bounded
+runtime.v1 stream framing contract.
 
 ## Durable asynchronous invocation
 

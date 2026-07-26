@@ -39,7 +39,7 @@ and **gap** is not yet implemented.
 | Queue batching and partial acknowledgements | **gap** | Batch size/window, per-message ack/retry, visibility timeout |
 | Scheduled / cron triggers | **partial** | Supervised metadata-discovered five-field UTC cron, aliases/ranges/steps, deterministic cross-replica idempotency, CloudEvents output, durable async retry/history; timezone database and explicit overlap policy remain |
 | CloudEvents trigger bindings and filters | **yes** | Supervised HTTP/NATS structured-mode router, required-context validation, exact/prefix/extension filters, multi-binding fan-out, cross-transport idempotency, bounded routing concurrency, and durable async delivery |
-| Response streaming | **gap** | Backpressure-aware chunked/SSE response protocol |
+| Response streaming | **yes** | Node.js async iterables, ReadableStreams, and Response bodies use bounded runtime frames plus socket-acknowledged HTTP chunk backpressure; pool-backed and other-language streaming remain |
 | WebSockets | **gap** | Supervised connection actors, hibernation/persistence strategy |
 | Per-function concurrency controls | **partial** | Bounded per-replica worker pools, single-flight affinity keys, immediate HTTP 429 backpressure, safe lease cleanup, and busy/idle/rejection metrics; fleet-wide reservations and durable overflow remain |
 | Scale-to-zero / autoscale | **partial** | Kubernetes deployment today; needs KEDA/Knative-style demand scaling |
@@ -86,7 +86,8 @@ CloudEvents routing, scale-to-zero, and Kubernetes-native traffic splitting.
   caller-supplied idempotency keys, status, attempt history, and cancellation.
 - Enforce bounded retry, backoff, per-attempt timeout, and maximum event age;
   emit terminal success/failure/canceled and DLQ events.
-- Support sync, async, and stream invocation modes.
+- Support sync, durable async, and backpressure-aware Node.js stream
+  invocation modes.
 - Make destinations JetStream-durable and add configurable retry jitter and
   retention.
 - Add queue consumer batching, visibility leases, partial acknowledgement, and
