@@ -177,9 +177,15 @@ spec:
               value: 'false'
             - name: BROWSER_AGENT_ACCEPT_DOWNLOADS
               value: 'false'
-            # Server-side navigation allowlist. Empty = any public https host.
-            # The MCP gateway (BROWSER_MCP_ALLOWED_DOMAINS) can also inject one
-            # per call; the tighter of the two wins.
+            # Server-side navigation allowlist. Empty = any public https host
+            # (SSRF to private/reserved/metadata addresses is still blocked in
+            # the app on every navigation, plus the NetworkPolicy backstop).
+            # A caller may only NARROW this list, never widen it. The MCP gateway
+            # (BROWSER_MCP_ALLOWED_DOMAINS) is authoritative when set.
+            # Ready-to-use starter list for the gov / business-registration use
+            # case (subdomains included) — uncomment `value` below to enforce:
+            #   sos.state.co.us,irs.gov,dnb.com,sam.gov,login.gov,sec.gov,
+            #   uspto.gov,ftc.gov,usa.gov,sba.gov
             - name: BROWSER_AGENT_ALLOWED_DOMAINS
               value: ''
             # Optional JSON secret store for secret_ref resolution (never logged

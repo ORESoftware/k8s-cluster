@@ -247,6 +247,58 @@ test(
   },
 );
 
+test(
+  'off-allowlist navigation via a link click is blocked at the network layer',
+  { skip: launchBrowser === null },
+  async () => {
+    const browser = launchBrowser!;
+    const fixture = await startFixture();
+    const host = new URL(fixture.url).hostname; // 127.0.0.1
+    const app = Fastify();
+    registerBrowserAgentRoutes(app, {
+      getBrowser: async () => browser,
+      isPrivateIp: () => false,
+      isAuthorized: () => true,
+      log: app.log,
+    });
+    await app.ready();
+    const act = async (payload: unknown): Promise<Record<string, unknown>> =>
+      JSON.parse((await app.inject({ method: 'POST', url: '/agent/act', payload })).body) as Record<string, unknown>;
+    const observe = async (payload: unknown): Promise<Record<string, unknown>> =>
+      JSON.parse((await app.inject({ method: 'POST', url: '/agent/observe', payload })).body) as Record<string, unknown>;
+    try {
+      // Allowlist admits only the fixture host. The page2 link points at a
+      // different origin (example.com); clicking it must be aborted by the
+      // request interceptor (not merely by the goto guard), leaving the session
+      // with a domain_not_allowed blocker.
+      const started = await act({
+        request_id: 'n1',
+        intent: 'open step 2 within the allowlist',
+        actions: [{ type: 'start', initial_url: `${fixture.url}/step2` }],
+        allowed_domains: [host],
+      });
+      assert.equal(started.status, 'completed', JSON.stringify(started));
+      const sessionId = started.session_id as string;
+      await act({
+        request_id: 'n2',
+        session_id: sessionId,
+        intent: 'click the external link',
+        actions: [{ type: 'click', target: { visible_text: 'external site' } }],
+      });
+      // The click itself completes, but the navigation it triggers is aborted;
+      // the session records the blocker (observed on the next observe).
+      const obs = await observe({ session_id: sessionId, include: ['summary'] });
+      assert.equal((obs.blocker as { type: string } | undefined)?.type, 'domain_not_allowed', JSON.stringify(obs));
+      // The blocked target never loaded (aborted -> chrome-error page).
+      assert.doesNotMatch((obs.page as { url: string }).url, /example\.com/);
+    } finally {
+      await closeAllSessions();
+      await app.close();
+      await fixture.close();
+    }
+  },
+);
+
 test('teardown: close shared browser', { skip: launchBrowser === null }, async () => {
   await launchBrowser!.close();
 });

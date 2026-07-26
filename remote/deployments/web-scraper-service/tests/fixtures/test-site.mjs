@@ -27,6 +27,7 @@ function page2(entity, state) {
     <button id="submit-filing" type="submit">Submit filing</button>
   </form>
   <a id="captcha-link" href="/captcha">verify identity</a>
+  <a id="external-link" href="https://example.com/">external site</a>
 </body></html>`;
 }
 

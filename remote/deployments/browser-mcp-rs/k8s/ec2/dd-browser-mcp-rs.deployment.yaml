@@ -110,9 +110,13 @@ spec:
                   name: dd-browser-mcp-rs-secrets
                   key: BROWSER_MCP_AUTH_SECRET
                   optional: true
-            # Server-side domain allowlist injected into every browser_act call
-            # so navigation policy is enforced centrally. Empty = any public
-            # https host (dev). Set to a concrete list in production.
+            # Server-side domain allowlist injected AUTHORITATIVELY into every
+            # browser_act call (overwrites any caller-supplied allowed_domains).
+            # Empty = any public https host (SSRF to private/metadata addresses
+            # is still blocked in-app + by NetworkPolicy). Starter list for the
+            # gov / business-registration use case — uncomment to enforce:
+            #   sos.state.co.us,irs.gov,dnb.com,sam.gov,login.gov,sec.gov,
+            #   uspto.gov,ftc.gov,usa.gov,sba.gov
             - name: BROWSER_MCP_ALLOWED_DOMAINS
               value: ''
             - name: OTEL_SERVICE_NAME

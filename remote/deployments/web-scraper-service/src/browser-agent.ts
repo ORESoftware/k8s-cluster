@@ -952,7 +952,16 @@ async function takeSnapshot(session: Session, maxElements: number, maxText: numb
     maxTextChars: maxText,
   })) as RawSnapshot;
   session.lastSnapshot = snap;
-  session.lastBlocker = detectBlocker(snap);
+  // Content blockers (captcha/mfa/payment/...) are recomputed each snapshot.
+  // A policy blocker set by the navigation interceptor (domain_not_allowed) is
+  // NOT recomputable from page content, so preserve it here; it is cleared by
+  // the framenavigated handler once a navigation actually succeeds.
+  const contentBlocker = detectBlocker(snap);
+  if (contentBlocker) {
+    session.lastBlocker = contentBlocker;
+  } else if (session.lastBlocker?.type !== 'domain_not_allowed') {
+    session.lastBlocker = null;
+  }
   assignRefs(session, snap);
   return snap;
 }
@@ -1042,28 +1051,53 @@ async function createSession(
     waiters: [],
   };
 
-  // Network-layer allowlist enforcement: gate EVERY top-level document
-  // navigation (clicks, form posts, 3xx redirects, JS/meta refresh), not just
-  // explicit `goto` actions. Only active when a domain allowlist is in force;
-  // with an empty allowlist (dev/public-any) the NetworkPolicy egress except-list
-  // remains the private/metadata backstop. Subresources are not gated so pages
-  // can still load CDN assets.
-  if (allowedDomains.length > 0) {
+  // Network-layer navigation gate on EVERY top-level document navigation
+  // (clicks, form posts, 3xx redirects, JS/meta refresh), not just explicit
+  // `goto` actions. Two independent checks, both applied here so the app — not
+  // only the NetworkPolicy — enforces them:
+  //   1) domain allowlist (when one is configured), and
+  //   2) SSRF: block navigations resolving to private/reserved/metadata IPs.
+  // The SSRF check runs even with an EMPTY allowlist (public-any mode) and is
+  // done at request time, which closes the DNS-rebinding window that the
+  // pre-navigation `goto` guard alone cannot (Chromium re-resolves at connect).
+  // Subresources are not gated so pages can still load public CDN assets.
+  const enforceAllowlist = allowedDomains.length > 0;
+  const enforceSsrf = !agentConfig.allowPrivateNetworks;
+  if (enforceAllowlist || enforceSsrf) {
     await context.route('**/*', async (route) => {
       const request = route.request();
-      if (request.resourceType() === 'document' && request.isNavigationRequest()) {
-        let host = '';
-        try {
-          host = new URL(request.url()).hostname;
-        } catch {
-          return route.abort('blockedbyclient');
-        }
-        if (!domainAllowed(host, allowedDomains)) {
-          session.lastBlocker = {
-            type: 'domain_not_allowed',
-            message: `navigation to ${host} is outside the domain allowlist`,
-          };
-          return route.abort('blockedbyclient');
+      if (!(request.resourceType() === 'document' && request.isNavigationRequest())) {
+        return route.continue();
+      }
+      let url: URL;
+      try {
+        url = new URL(request.url());
+      } catch {
+        return route.abort('blockedbyclient');
+      }
+      const host = url.hostname;
+      const block = (type: BlockerType, message: string) => {
+        session.lastBlocker = { type, message };
+        return route.abort('blockedbyclient');
+      };
+      if (BLOCKED_SCHEMES.has(url.protocol)) {
+        return block('domain_not_allowed', `navigation scheme ${url.protocol} is not permitted`);
+      }
+      if (enforceAllowlist && !domainAllowed(host, allowedDomains)) {
+        return block('domain_not_allowed', `navigation to ${host} is outside the domain allowlist`);
+      }
+      if (enforceSsrf) {
+        if (isIP(host)) {
+          if (deps.isPrivateIp(host)) return block('domain_not_allowed', 'navigation to a private/reserved address is blocked');
+        } else {
+          try {
+            const answers = await dnsLookup(host, { all: true });
+            if (answers.some((a) => deps.isPrivateIp(a.address))) {
+              return block('domain_not_allowed', 'navigation host resolves to a private/reserved address');
+            }
+          } catch {
+            return block('domain_not_allowed', 'navigation host could not be resolved safely');
+          }
         }
       }
       return route.continue();
@@ -1085,7 +1119,22 @@ async function createSession(
     bumpRevision(session);
   });
   page.on('framenavigated', (fr) => {
-    if (fr === session.page.mainFrame()) bumpRevision(session);
+    if (fr === session.page.mainFrame()) {
+      // Clear a stale domain_not_allowed policy blocker only when we actually
+      // land on an ALLOWED host. An aborted off-allowlist navigation lands on a
+      // chrome-error page (which also fires this event) — that must NOT clear it.
+      if (session.lastBlocker?.type === 'domain_not_allowed') {
+        let landedHost = '';
+        try {
+          landedHost = new URL(fr.url()).hostname;
+        } catch {
+          landedHost = '';
+        }
+        const onAllowed = allowedDomains.length === 0 || (landedHost !== '' && domainAllowed(landedHost, allowedDomains));
+        if (onAllowed) session.lastBlocker = null;
+      }
+      bumpRevision(session);
+    }
   });
   page.on('requestfailed', (req) => {
     if (session.networkFailures.length >= 50) return;
