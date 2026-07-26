@@ -3,9 +3,9 @@
 FROM node:26-slim@sha256:715e55e4b84e4bb0ff48e49b398a848f08e55daed8eb6a0ea1839ae53bc57583 AS web
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates
-ARG MARKETING_REF=e3ad1717b34434de8b78068ad3a62cb76350d717
-ARG INTERFACES_SHA=487e470c45ab5851e8f6f3b1dc048fe067fbf408
-ARG TEST_CONFIG_REF=825220281fdc16bbf47a035177001d2fe29bdabf
+ARG MARKETING_REF=a12a224aa78712786105ca80654cfb15993b97d8
+ARG INTERFACES_SHA=2c5c806174e067fbe83ad48b724366323ba390a2
+ARG TEST_CONFIG_REF=026fcf28193c7baeb7f5feb68480a91539c1f0fa
 WORKDIR /web
 RUN for value in "$MARKETING_REF" "$INTERFACES_SHA" "$TEST_CONFIG_REF"; do \
       test "${#value}" -eq 40 \
@@ -35,13 +35,24 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates
 WORKDIR /build
 # Immutable cross-repository input. Bump this SHA together with the CI checkout.
-ARG INTERFACES_SHA=487e470c45ab5851e8f6f3b1dc048fe067fbf408
-RUN git init fiducia-interfaces \
+ARG INTERFACES_SHA=2c5c806174e067fbe83ad48b724366323ba390a2
+ARG PAYMENTS_REF=0c8b735949f90514545fd03dadcf3ba337a1e948
+RUN for value in "$INTERFACES_SHA" "$PAYMENTS_REF"; do \
+      test "${#value}" -eq 40 \
+      && test -z "$(printf '%s' "$value" | tr -d '0-9a-f')"; \
+    done \
+    && git init fiducia-interfaces \
     && git -C fiducia-interfaces remote add origin \
        https://github.com/fiducia-cloud/fiducia-interfaces.git \
     && git -C fiducia-interfaces fetch --depth 1 origin "$INTERFACES_SHA" \
     && git -C fiducia-interfaces checkout --detach FETCH_HEAD \
-    && test "$(git -C fiducia-interfaces rev-parse HEAD)" = "$INTERFACES_SHA"
+    && test "$(git -C fiducia-interfaces rev-parse HEAD)" = "$INTERFACES_SHA" \
+    && git init fiducia-payments.rs \
+    && git -C fiducia-payments.rs remote add origin \
+       https://github.com/fiducia-cloud/fiducia-payments.rs.git \
+    && git -C fiducia-payments.rs fetch --depth 1 origin "$PAYMENTS_REF" \
+    && git -C fiducia-payments.rs checkout --detach FETCH_HEAD \
+    && test "$(git -C fiducia-payments.rs rev-parse HEAD)" = "$PAYMENTS_REF"
 COPY . fiducia-customer.rs
 WORKDIR /build/fiducia-customer.rs
 RUN cargo build --locked --release && strip target/release/fiducia-backend

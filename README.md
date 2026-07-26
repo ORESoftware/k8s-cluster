@@ -175,10 +175,12 @@ scripts/with-flags2env.sh --port 8080 --static-dir ../fiducia-marketing.web/dist
 ### Reproducible container and CI dependency
 
 The backend consumes generated Rust and database contracts from
-`fiducia-interfaces`. CI and the Dockerfile both pin that dependency to commit
-`487e470c45ab5851e8f6f3b1dc048fe067fbf408`; neither follows a moving branch.
-The container checks the commit out detached and verifies that its full `HEAD`
-equals `INTERFACES_SHA` before compiling with the committed Cargo lockfile. CI,
+`fiducia-interfaces` and security-critical webhook verification from
+`fiducia-payments.rs`. CI and the Dockerfile pin those dependencies to commits
+`2c5c806174e067fbe83ad48b724366323ba390a2` and
+`0c8b735949f90514545fd03dadcf3ba337a1e948`; neither follows a moving branch.
+The container checks each commit out detached and verifies its full `HEAD`
+before compiling with the committed Cargo lockfile. CI,
 `Cargo.toml`, and the builder image use Rust 1.97; the registry-verified base and
 distroless runtime are both pinned by digest.
 
