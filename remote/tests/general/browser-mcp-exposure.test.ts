@@ -26,10 +26,29 @@ function findRepoRoot(): string {
 
 const repoRoot = findRepoRoot();
 const DEPLOYMENT = 'remote/deployments/browser-mcp-rs/k8s/ec2/dd-browser-mcp-rs.deployment.yaml';
+const WORKER_DEPLOYMENT = 'remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml';
 const GATEWAY = 'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml';
 const AWS_APPS = 'remote/argocd/clusters/aws/applications.yaml';
 const HETZNER_APPS = 'remote/argocd/clusters/hetzner/applications.yaml';
 const CLI_FLAGS = 'remote/deployments/browser-mcp-rs/.cli-flags.toml';
+const FIDUCIA_PORTAL_DOMAINS = [
+  'benefactor.cc',
+  'confluent.cloud',
+  'confluent.io',
+  'signoz.io',
+  'tailscale.com',
+  'planetscale.com',
+  'clerk.com',
+  'algolia.com',
+  'allthingsopen.org',
+  'allthingsopen.wufoo.com',
+  'talks.devopsdays.org',
+  'sessionize.com',
+  'events.linuxfoundation.org',
+  'cfp.awscommunitydaysoflo.com',
+  'forms.gle',
+  'docs.google.com',
+];
 
 function readDeployment(): string {
   const path = resolve(repoRoot, DEPLOYMENT);
@@ -76,8 +95,8 @@ test('anonymous browser-mcp has a narrow, hostname-only domain ceiling', () => {
   const domains = (value as string).split(',').map((domain) => domain.trim());
   assert.deepEqual(
     domains,
-    ['benefactor.cc'],
-    'The anonymous production endpoint must start with only Benefactor itself allowed.',
+    FIDUCIA_PORTAL_DOMAINS,
+    'The anonymous production endpoint must contain only the reviewed Fiducia portal profile.',
   );
   assert.ok(
     domains.every(
@@ -88,6 +107,18 @@ test('anonymous browser-mcp has a narrow, hostname-only domain ceiling', () => {
         /^[a-z0-9.-]+$/.test(domain),
     ),
     `BROWSER_MCP_ALLOWED_DOMAINS must contain hostnames only: ${value}`,
+  );
+  assert.ok(
+    ['irs.gov', 'sos.state.co.us', 'dnb.com'].every((domain) => !domains.includes(domain)),
+    'Filing and identity-registration sites must not be exposed by the Fiducia portal profile.',
+  );
+
+  const worker = readFileSync(resolve(repoRoot, WORKER_DEPLOYMENT), 'utf8');
+  const workerValue = envValue(worker, 'BROWSER_AGENT_ALLOWED_DOMAINS');
+  assert.equal(
+    workerValue,
+    value,
+    'The MCP and Playwright worker hostname ceilings must stay byte-for-byte aligned.',
   );
 });
 
@@ -158,15 +189,14 @@ test('public browser-mcp gateway has dedicated abuse limits and trusted client f
   );
 });
 
-test('browser-mcp CLI contract has no credential defaults and matches production policy', () => {
+test('browser-mcp CLI contract has no credential or implicit navigation defaults', () => {
   const flags = readFileSync(resolve(repoRoot, CLI_FLAGS), 'utf8');
 
   assert.doesNotMatch(flags, /dummy-.*credential/);
   assert.match(flags, /\[flags\.require_auth\][\s\S]*?default = "false"/);
-  assert.match(flags, /\[flags\.allowed_domains\][\s\S]*?default = "benefactor\.cc"/);
-  for (const section of ['worker_auth_secret', 'auth_secret']) {
+  for (const section of ['worker_auth_secret', 'auth_secret', 'allowed_domains']) {
     const body = flags.match(new RegExp(`\\[flags\\.${section}\\]([\\s\\S]*?)(?=\\n\\[|$)`))?.[1];
     assert.ok(body, `missing ${section} flag`);
-    assert.doesNotMatch(body, /\ndefault\s*=/, `${section} must not have a public default`);
+    assert.doesNotMatch(body, /\ndefault\s*=/, `${section} must not have an implicit default`);
   }
 });

@@ -13,7 +13,8 @@ signal, alerts, a narrower public rate limit, and an end-to-end verifier.
 The public ChatGPT mode remains intentionally anonymous because ChatGPT custom
 MCP apps do not accept the existing static operator bearer. Anonymous mode now
 fails closed unless a non-empty hostname allowlist is configured. The initial
-production ceiling is only `benefactor.cc` and its subdomains.
+production ceiling was only `benefactor.cc` and its subdomains; see the
+2026-07-26 Fiducia profile update below.
 
 The change was deployed to AWS and Hetzner on 2026-07-25. Both public edges
 passed the repository verifier through `initialize`, `tools/list`, a real
@@ -107,7 +108,8 @@ It is not equivalent to authorization.
 Controls now enforced:
 
 - Startup fails when anonymous mode has an empty or malformed allowlist.
-- Both the Rust MCP and Node worker have the same `benefactor.cc` ceiling.
+- Both the Rust MCP and Node worker started with the same `benefactor.cc`
+  ceiling.
 - The Rust layer always overwrites caller-supplied `owner` and
   `allowed_domains`; it no longer accepts a caller's wider list.
 - The worker intersects any per-call list with its process-level ceiling.
@@ -137,7 +139,7 @@ Controls now enforced:
 - Anonymous users are not strongly identified. Several users behind one OpenAI
   egress IP may share quotas and an owner namespace.
 - An attacker can still spend browser/CPU capacity and interact with public
-  pages on the allowed Benefactor domain.
+  pages in the active hostname profile.
 - IP rate limits are not a substitute for user authorization and are weak
   against distributed traffic.
 - Tool-call audit metrics are aggregate, not durable per-user authorization
@@ -150,23 +152,42 @@ Controls now enforced:
   `browser:observe`, `browser:act`, and `browser:approve` scopes and retain the
   server-side domain ceiling.
 
-### Future task-scoped profiles
+### 2026-07-26 Fiducia portal profile
 
-The related workstreams identified these exact hosts, but they are
-intentionally **not** in the anonymous production ceiling. Enable only one
-reviewed profile for one task window after OAuth or another strong
-authorization boundary exists:
+The operator explicitly authorized a temporary profile for the active Fiducia
+credit-redemption, startup-application, and CFP workstream. The same
+comma-separated value is set on the Rust MCP and Playwright worker:
 
-- Colorado registration: `coloradosos.gov`, `www.coloradosos.gov`,
-  `sos.state.co.us`, and `www.sos.state.co.us`.
-- EIN preparation: `irs.gov`, `www.irs.gov`, and `sa.www4.irs.gov`.
-- Immediate CFP/application work: `allthingsopen.org`, `www.pulumi.com`,
-  `talks.devopsdays.org`, `forms.gle`, `docs.google.com`, `sessionize.com`, and
-  `tally.so`. Resolve embedded Wufoo and other redirect hosts first and add the
-  exact observed hostname, not a provider wildcard.
-- Approved-program portal actions: `app.confluent.cloud`, `signoz.io`,
-  `tailscale.com`, `www.tailscale.com`, `planetscale.com`,
-  `support.planetscale.com`, and `cfp.awscommunitydaysoflo.com`.
+```text
+benefactor.cc
+confluent.cloud
+confluent.io
+signoz.io
+tailscale.com
+planetscale.com
+clerk.com
+algolia.com
+allthingsopen.org
+allthingsopen.wufoo.com
+talks.devopsdays.org
+sessionize.com
+events.linuxfoundation.org
+cfp.awscommunitydaysoflo.com
+forms.gle
+docs.google.com
+```
+
+`confluent.cloud` is the current Confluent console hostname; the older
+`app.confluent.cloud` route does not resolve. `confluent.io` admits the
+vendor-owned login and static asset hosts. Root vendor entries include that
+vendor's subdomains. `allthingsopen.wufoo.com` and
+`cfp.awscommunitydaysoflo.com` are exact tenant/event hosts rather than broad
+provider wildcards.
+
+The filing profile remains disabled: `irs.gov`, `sos.state.co.us`, and
+`dnb.com` are absent. Webmail, cloud metadata, arbitrary prospect domains, and
+generic wildcard entries are also absent. Shrink or replace the Fiducia profile
+when the workstream ends; it must not become a permanent global allowlist.
 
 The Benefactor B2B dry run should not widen this generic write-capable endpoint
 to arbitrary prospect domains. It needs a separate read-only scraper profile:

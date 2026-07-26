@@ -974,6 +974,63 @@ mod tests {
         }
     }
 
+    fn test_state(config: Config) -> AppState {
+        let config = Arc::new(config);
+        AppState {
+            http: build_worker_client(&config),
+            metrics: Arc::new(Metrics::default()),
+            config,
+        }
+    }
+
+    fn initialize_request() -> Bytes {
+        Bytes::from_static(
+            br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"auth-test","version":"1"}}}"#,
+        )
+    }
+
+    #[tokio::test]
+    async fn no_auth_mode_allows_initialize_without_credentials() {
+        let state = test_state(test_config(false, None, &["example.com"]));
+        let response = rpc(State(state), HeaderMap::new(), initialize_request()).await;
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn authenticated_mode_returns_401_until_the_static_bearer_matches() {
+        let state = test_state(test_config(true, Some("expected-secret"), &[]));
+
+        for headers in [
+            HeaderMap::new(),
+            HeaderMap::from_iter([(
+                header::AUTHORIZATION,
+                HeaderValue::from_static("Bearer wrong-secret"),
+            )]),
+        ] {
+            let response = rpc(State(state.clone()), headers, initialize_request()).await;
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+            assert_eq!(
+                response.headers().get(header::WWW_AUTHENTICATE),
+                Some(&HeaderValue::from_static(
+                    "Bearer realm=\"dd-browser-mcp-rs\""
+                ))
+            );
+            let body = axum::body::to_bytes(response.into_body(), MAX_RPC_BODY_BYTES)
+                .await
+                .unwrap();
+            let error: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(error["error"]["code"], -32001);
+            assert_eq!(error["error"]["message"], "unauthorized");
+        }
+
+        let headers = HeaderMap::from_iter([(
+            header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer expected-secret"),
+        )]);
+        let response = rpc(State(state), headers, initialize_request()).await;
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
     #[test]
     fn anonymous_mode_fails_closed_without_a_valid_allowlist() {
         assert!(validate_config(&test_config(false, None, &[])).is_err());

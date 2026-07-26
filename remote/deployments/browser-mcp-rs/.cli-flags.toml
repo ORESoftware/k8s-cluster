@@ -88,5 +88,4 @@ help = "Bearer that gates POST /mcp when require_auth is on. CREDENTIAL - supply
 env = "BROWSER_MCP_ALLOWED_DOMAINS"
 aliases = ["allowed-domains", "allowlist", "domain-allowlist"]
 type = "string"
-default = "benefactor.cc"
-help = "Comma-separated process-level hostname ceiling injected into every browser_act call and enforced for all Playwright traffic. Anonymous startup rejects an empty value. Widen one reviewed host at a time."
+help = "Required comma-separated process-level hostname ceiling injected into every browser_act call and enforced for all Playwright traffic. There is deliberately no implicit navigation profile; anonymous startup rejects an empty value."

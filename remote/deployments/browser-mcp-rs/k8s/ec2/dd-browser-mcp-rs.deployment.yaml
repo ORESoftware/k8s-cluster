@@ -104,12 +104,13 @@ spec:
             # navigation policy is enforced centrally regardless of what the model
             # sends. Empty would permit ANY public https host; start narrow and
             # widen deliberately. Comma-separated hostnames.
-            # Initial anonymous exposure is restricted to Benefactor's own
-            # public site. A root hostname also permits its subdomains. Filing
-            # sites, email providers, cloud metadata, and arbitrary prospect
-            # domains remain blocked. Widen only after an explicit target review.
+            # Temporary Fiducia applications profile, authorized 2026-07-26.
+            # Root vendor hostnames also permit that vendor's subdomains. The
+            # two non-root entries are the exact All Things Open Wufoo tenant
+            # and AWS Community Day CFP host. Filing sites, webmail, cloud
+            # metadata, and arbitrary prospect domains remain blocked.
             - name: BROWSER_MCP_ALLOWED_DOMAINS
-              value: 'benefactor.cc'
+              value: 'benefactor.cc,confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,allthingsopen.org,allthingsopen.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com'
             - name: OTEL_SERVICE_NAME
               value: dd-browser-mcp-rs
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

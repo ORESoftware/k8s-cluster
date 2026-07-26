@@ -160,8 +160,10 @@ Public URLs:
 | `BROWSER_MCP_ALLOWED_DOMAINS`  | —                                                        | Required non-empty hostname ceiling in public mode. |
 
 Worker-side knobs live on `dd-web-scraper` (`BROWSER_AGENT_*`, see its deployment).
-Production currently sets both layers to `benefactor.cc`; caller-supplied
-domains are overwritten/intersected and cannot widen that ceiling.
+Production currently sets both layers to the reviewed, temporary Fiducia portal
+profile documented below; caller-supplied domains are overwritten/intersected
+and cannot widen that ceiling. The CLI has no implicit domain default, so local
+anonymous starts must also choose a non-empty allowlist explicitly.
 
 ## Run locally
 
@@ -175,10 +177,49 @@ SERVER_AUTH_SECRET=dev-secret BROWSER_AGENT_ALLOWED_DOMAINS='' \
 cd ../browser-mcp-rs
 HOST=127.0.0.1 PORT=8092 \
 BROWSER_MCP_WORKER_URL=http://127.0.0.1:8097 \
-BROWSER_MCP_ALLOWED_DOMAINS=benefactor.cc \
+BROWSER_MCP_ALLOWED_DOMAINS=example.com \
 SERVER_AUTH_SECRET=dev-secret \
   cargo run --release --locked                                                  # :8092
 ```
+
+## Temporary Fiducia portal profile
+
+The anonymous production profile was explicitly widened on 2026-07-26 for the
+active Fiducia credit-redemption, startup-application, and conference-CFP
+workstream:
+
+```text
+benefactor.cc
+confluent.cloud
+confluent.io
+signoz.io
+tailscale.com
+planetscale.com
+clerk.com
+algolia.com
+allthingsopen.org
+allthingsopen.wufoo.com
+talks.devopsdays.org
+sessionize.com
+events.linuxfoundation.org
+cfp.awscommunitydaysoflo.com
+forms.gle
+docs.google.com
+```
+
+Root vendor hostnames include that vendor's subdomains. The Wufoo and AWS CFP
+entries are intentionally exact tenant/event hosts. Filing sites (`irs.gov`,
+`sos.state.co.us`, `dnb.com`), webmail, cloud metadata, and arbitrary target
+domains are not allowed. Keep the Rust MCP and Playwright worker values
+identical, and shrink or replace this profile when the workstream ends.
+
+The public ChatGPT connector remains no-auth because ChatGPT custom connectors
+cannot attach an arbitrary static operator bearer. When
+`BROWSER_MCP_REQUIRE_AUTH=true`, the deployed static-bearer implementation
+requires `Authorization: Bearer <BROWSER_MCP_AUTH_SECRET>` and returns HTTP 401
+plus `WWW-Authenticate` for a missing or invalid credential. This behavior is
+covered by the server test suite. Codex and the OpenAI Responses API can supply
+static headers, but that is a different client path.
 
 Build / test / lint:
 
