@@ -288,8 +288,9 @@ write-action approvals enabled. After re-enabling OAuth, reconnect the app using
 OAuth and enter the operator secret only on the server's HTTPS consent page.
 
 **Claude / API clients.** Point the client's MCP/tool configuration at the same
-URL as a Streamable-HTTP MCP server and follow its OAuth discovery metadata.
-Access tokens belong in `Authorization: Bearer`, never in a query string.
+URL as a Streamable-HTTP MCP server. The current deployment needs no
+credentials. After OAuth is re-enabled, follow its discovery metadata; access
+tokens belong in `Authorization: Bearer`, never in a query string.
 
 ## Deploy
 
