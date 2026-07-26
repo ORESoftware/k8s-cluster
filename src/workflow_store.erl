@@ -15,6 +15,7 @@
     available/0,
     ensure_async_definition/1,
     list_scheduled_functions/0,
+    list_event_bound_functions/0,
     create_run/3,
     get_run/1,
     get_run_with_steps/1,
@@ -173,6 +174,35 @@ list_scheduled_functions() ->
                 _ -> {error, <<"invalid scheduled function query result">>}
             catch
                 _:_ -> {error, <<"invalid scheduled function query result">>}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%% Read only active functions that declare CloudEvents bindings. As with
+%% schedule discovery, the generated lambda select contract remains the
+%% canonical projection and metadata supplies the trigger configuration.
+list_event_bound_functions() ->
+    SelectSql = 'gleam_lambda_runner@pg_contract':lambda_functions_select_sql(),
+    Sql = [
+        "select coalesce(jsonb_agg(jsonb_build_object(",
+        "'id', f.id, 'slug', f.slug, 'metaData', f.meta_data_json::jsonb",
+        ") order by f.id), '[]'::jsonb)::text from (",
+        "select * from (", SelectSql, ") source ",
+        "where status = 'active' and is_soft_deleted = false ",
+        "and meta_data_json::jsonb ? 'eventBindings' ",
+        "order by id limit 5000",
+        ") f"
+    ],
+    case run_psql([], Sql) of
+        {ok, <<>>} ->
+            {ok, []};
+        {ok, Json} ->
+            try json:decode(iolist_to_binary(string:trim(Json))) of
+                Functions when is_list(Functions) -> {ok, Functions};
+                _ -> {error, <<"invalid event-bound function query result">>}
+            catch
+                _:_ -> {error, <<"invalid event-bound function query result">>}
             end;
         {error, Reason} ->
             {error, Reason}

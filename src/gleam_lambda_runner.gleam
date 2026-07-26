@@ -5,6 +5,7 @@ import gleam/erlang/process
 import gleam/int
 import gleam/io
 import gleam/otp/static_supervisor as supervisor
+import gleam_lambda_runner/events
 import gleam_lambda_runner/http_server
 import gleam_lambda_runner/nats
 import gleam_lambda_runner/runtime_supervisor
@@ -20,6 +21,7 @@ pub fn main() -> Nil {
     supervisor.new(supervisor.OneForOne)
     |> supervisor.add(runtime_supervisor.supervised())
     |> supervisor.add(workflow.supervised())
+    |> supervisor.add(events.supervised())
     |> supervisor.add(schedule.supervised())
     |> supervisor.add(http_server.supervised())
     |> supervisor.start

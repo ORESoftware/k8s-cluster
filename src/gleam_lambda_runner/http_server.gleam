@@ -11,6 +11,7 @@ import gleam/string
 import gleam_lambda_runner/api_docs
 import gleam_lambda_runner/async_invocation
 import gleam_lambda_runner/child_process
+import gleam_lambda_runner/events
 import gleam_lambda_runner/runtime_supervisor
 import gleam_lambda_runner/schedule
 import gleam_lambda_runner/workflow
@@ -82,6 +83,8 @@ fn route(
       require_authenticated(req, fn() { async_get(run_id) })
     Post, ["async", "invocations", run_id, "cancel"] ->
       require_authenticated_post(req, fn() { async_cancel(run_id) })
+    Post, ["events"] ->
+      require_authenticated_post(req, fn() { event_route(req) })
     Post, ["workflows", "start"] ->
       require_authenticated_post(req, fn() { workflow_start(req) })
     Get, ["workflows", "runs"] ->
@@ -104,6 +107,7 @@ fn route(
     _, ["async", "invoke", _] -> method_not_allowed()
     _, ["async", "invocations", _] -> method_not_allowed()
     _, ["async", "invocations", _, "cancel"] -> method_not_allowed()
+    _, ["events"] -> method_not_allowed()
     _, ["workflows", "start"] -> method_not_allowed()
     _, ["internal", "update-runtime-config"] -> method_not_allowed()
     _, ["internal", "runtime-config", "reset"] -> method_not_allowed()
@@ -231,6 +235,46 @@ fn async_get(run_id: String) -> response.Response(mist.ResponseData) {
 
 fn async_cancel(run_id: String) -> response.Response(mist.ResponseData) {
   workflow_result_response(200, "invocation", async_invocation.cancel(run_id))
+}
+
+fn event_route(
+  req: request.Request(mist.Connection),
+) -> response.Response(mist.ResponseData) {
+  with_body(req, fn(payload) {
+    case events.route(payload) {
+      Ok(summary) -> json_response(202, summary)
+      Error(error) -> event_error_response(error)
+    }
+  })
+}
+
+fn event_error_response(error: String) -> response.Response(mist.ResponseData) {
+  let status = case
+    string.contains(error, "concurrency limit reached")
+    || string.contains(error, "target limit exceeded")
+  {
+    True -> 429
+    False ->
+      case
+        string.contains(error, "unavailable")
+        || string.contains(error, "LAMBDA_DATABASE_URL")
+        || string.contains(error, "psql executable")
+      {
+        True -> 503
+        False ->
+          case
+            string.contains(error, "CloudEvent")
+            || string.contains(error, "invalid")
+          {
+            True -> 400
+            False -> 502
+          }
+      }
+  }
+  json_response(
+    status,
+    "{\"ok\":false,\"error\":\"" <> json_escape(error) <> "\"}",
+  )
 }
 
 fn workflow_start(
@@ -380,6 +424,8 @@ fn healthz() -> response.Response(mist.ResponseData) {
       <> bool_json(workflow.enabled())
       <> ",\"scheduleEngineEnabled\":"
       <> bool_json(schedule.enabled())
+      <> ",\"eventRouterEnabled\":"
+      <> bool_json(events.enabled())
       <> ",\"runtimeSupervisorHealthy\":"
       <> bool_json(runtime_supervisor.healthy())
       <> "}",
@@ -421,7 +467,9 @@ fn metrics() -> response.Response(mist.ResponseData) {
       <> "\n"
       <> workflow.metrics()
       <> "\n"
-      <> schedule.metrics(),
+      <> schedule.metrics()
+      <> "\n"
+      <> events.metrics(),
     )),
   )
 }

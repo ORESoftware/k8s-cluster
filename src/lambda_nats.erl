@@ -147,6 +147,8 @@ init() ->
         workflow_start_subject => env_binary("NATS_WORKFLOW_START_SUBJECT", dd_nats_subject_consts:workflows_start_subject()),
         workflow_signal_subject => env_binary("NATS_WORKFLOW_SIGNAL_SUBJECT", dd_nats_subject_consts:workflows_signal_wildcard()),
         workflow_queue_group => env_binary("NATS_WORKFLOW_QUEUE_GROUP", dd_nats_subject_consts:workflow_engine_queue_group()),
+        cloudevents_subject => env_binary("NATS_CLOUDEVENTS_SUBJECT", <<"dd.remote.cloudevents.>">>),
+        cloudevents_queue_group => env_binary("NATS_CLOUDEVENTS_QUEUE_GROUP", <<"dd-gleam-lambda-runner-events">>),
         nats_username => env_binary("NATS_USERNAME", <<>>),
         nats_password => env_binary("NATS_PASSWORD", <<>>),
         nats_token => env_binary("NATS_TOKEN", <<>>),
@@ -154,10 +156,11 @@ init() ->
         max_payload_bytes => env_int("NATS_LAMBDA_MAX_PAYLOAD_BYTES", 5242880),
         buffer => <<>>,
         %% Outstanding request/reply correlations: InboxSubject => {From, Ref, Sid, TimerRef}.
-        %% Sids 1 (invoke), 2 (functions), 3 (workflow start), and 4 (workflow
-        %% signal) are reserved by connect/1; request/reply inboxes start at 5.
+        %% Sids 1 (invoke), 2 (functions), 3 (workflow start), 4 (workflow
+        %% signal), and 5 (CloudEvents) are reserved by connect/1;
+        %% request/reply inboxes start at 6.
         inboxes => #{},
-        next_sid => 5
+        next_sid => 6
     },
     connect(State).
 
@@ -176,11 +179,13 @@ connect(State) ->
                             subscribe(Socket, maps:get(functions_subject, State), <<>>, 2),
                             subscribe(Socket, maps:get(workflow_start_subject, State), maps:get(workflow_queue_group, State), 3),
                             subscribe(Socket, maps:get(workflow_signal_subject, State), maps:get(workflow_queue_group, State), 4),
+                            subscribe(Socket, maps:get(cloudevents_subject, State), maps:get(cloudevents_queue_group, State), 5),
                             io:format(
-                                "lambda nats connected invoke=~s functions=~s result=~s~n",
+                                "lambda nats connected invoke=~s functions=~s events=~s result=~s~n",
                                 [
                                     maps:get(invoke_subject, State),
                                     maps:get(functions_subject, State),
+                                    maps:get(cloudevents_subject, State),
                                     maps:get(result_subject, State)
                                 ]
                             ),
@@ -400,6 +405,7 @@ handle_message(State, Subject, ReplyTo, Payload) ->
     FunctionsSubject = maps:get(functions_subject, State),
     WorkflowStartSubject = maps:get(workflow_start_subject, State),
     WorkflowSignalSubject = maps:get(workflow_signal_subject, State),
+    CloudEventsSubject = maps:get(cloudevents_subject, State),
     case subject_matches(Subject, InvokeSubject) of
         true ->
             handle_invoke(State, Subject, ReplyTo, Payload);
@@ -414,11 +420,22 @@ handle_message(State, Subject, ReplyTo, Payload) ->
                         false ->
                             case subject_matches(Subject, WorkflowSignalSubject) of
                                 true -> handle_workflow_signal(Subject, ReplyTo, Payload);
-                                false -> ok
+                                false ->
+                                    case subject_matches(Subject, CloudEventsSubject) of
+                                        true -> handle_cloudevent(ReplyTo, Payload);
+                                        false -> ok
+                                    end
                             end
                     end
             end
     end.
+
+%% Route a structured-mode CloudEvent through metadata bindings. The event
+%% payload is not unwrapped: functions receive the complete CloudEvents
+%% envelope and can inspect context attributes as well as data.
+handle_cloudevent(ReplyTo, Payload) ->
+    Result = lambda_events:route_from_body(Payload),
+    maybe_reply(ReplyTo, workflow_result_json(<<"event">>, Result)).
 
 %% Start a workflow run from a NATS request. Replies with the created run JSON
 %% (or an error envelope) when the producer used request/reply.
@@ -697,11 +714,25 @@ nats_auth_fields(_) ->
     [].
 
 subject_matches(Subject, Pattern) ->
-    case binary:match(Pattern, <<"*">>) of
-        nomatch -> Subject =:= Pattern;
-        {StarIndex, 1} ->
-            Prefix = binary:part(Pattern, 0, StarIndex),
+    case first_wildcard(Pattern) of
+        nomatch ->
+            Subject =:= Pattern;
+        {WildcardIndex, _Character} ->
+            Prefix = binary:part(Pattern, 0, WildcardIndex),
             has_prefix(Subject, Prefix)
+    end.
+
+first_wildcard(Pattern) ->
+    Stars = binary:match(Pattern, <<"*">>),
+    Tails = binary:match(Pattern, <<">">>),
+    case {Stars, Tails} of
+        {nomatch, nomatch} -> nomatch;
+        {{Index, 1}, nomatch} -> {Index, $*};
+        {nomatch, {Index, 1}} -> {Index, $>};
+        {{StarIndex, 1}, {TailIndex, 1}} when StarIndex =< TailIndex ->
+            {StarIndex, $*};
+        {{_StarIndex, 1}, {TailIndex, 1}} ->
+            {TailIndex, $>}
     end.
 
 parse_nats_url(Url0) ->
