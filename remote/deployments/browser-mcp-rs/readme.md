@@ -114,8 +114,8 @@ Machine-readable error codes: `invalid_request`, `session_not_found`,
 ## Public exposure checklist
 
 The MCP surface is temporarily anonymous by explicit operator decision. OAuth
-discovery/authorization remains deployed for a one-line re-enable. Before
-relying on the no-auth posture, confirm:
+routes are dormant while disabled; the implementation and secret wiring remain
+ready for a one-line re-enable. Before relying on the no-auth posture, confirm:
 
 1. **Set a domain allowlist.** With an empty `BROWSER_MCP_ALLOWED_DOMAINS` /
    `BROWSER_AGENT_ALLOWED_DOMAINS` it is an open browser proxy to the whole

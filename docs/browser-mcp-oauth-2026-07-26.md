@@ -10,9 +10,10 @@ the same service in explicit no-auth mode for ChatGPT custom MCP compatibility.
 
 Temporary production posture, approved on 2026-07-26: both public edges set
 `BROWSER_MCP_REQUIRE_AUTH=false`, so anonymous `initialize`, `tools/list`, and
-tool calls are accepted. The OAuth implementation, endpoints, and secrets
-remain deployed for a one-line re-enable. The reviewed Fiducia hostname ceiling,
-SSRF controls, rate limits, and consequential-action blockers remain mandatory.
+tool calls are accepted. OAuth routes are dormant while disabled; the
+implementation and secret wiring remain ready for a one-line re-enable. The
+reviewed Fiducia hostname ceiling, SSRF controls, rate limits, and
+consequential-action blockers remain mandatory.
 
 When authentication is enabled, the implementation provides:
 
