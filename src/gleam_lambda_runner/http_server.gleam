@@ -12,6 +12,7 @@ import gleam_lambda_runner/api_docs
 import gleam_lambda_runner/async_invocation
 import gleam_lambda_runner/child_process
 import gleam_lambda_runner/runtime_supervisor
+import gleam_lambda_runner/schedule
 import gleam_lambda_runner/workflow
 import mist
 
@@ -377,6 +378,8 @@ fn healthz() -> response.Response(mist.ResponseData) {
       <> bool_json(env_get("NATS_URL") != "")
       <> ",\"workflowEngineEnabled\":"
       <> bool_json(workflow.enabled())
+      <> ",\"scheduleEngineEnabled\":"
+      <> bool_json(schedule.enabled())
       <> ",\"runtimeSupervisorHealthy\":"
       <> bool_json(runtime_supervisor.healthy())
       <> "}",
@@ -416,7 +419,9 @@ fn metrics() -> response.Response(mist.ResponseData) {
       <> "\n"
       <> runtime_supervisor.metrics()
       <> "\n"
-      <> workflow.metrics(),
+      <> workflow.metrics()
+      <> "\n"
+      <> schedule.metrics(),
     )),
   )
 }

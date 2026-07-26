@@ -155,6 +155,10 @@ spec:
               value: ''
             - name: LAMBDA_DEFAULT_MAX_CONCURRENCY
               value: '16'
+            - name: SCHEDULE_ENGINE_ENABLED
+              value: '1'
+            - name: SCHEDULE_MAX_DISPATCH_PER_MINUTE
+              value: '500'
             - name: LAMBDA_CONTAINER_NERDCTL
               value: /usr/local/bin/nerdctl
             - name: LAMBDA_CONTAINER_NAMESPACE
