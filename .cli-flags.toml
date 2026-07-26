@@ -103,6 +103,12 @@ aliases = ["lambda-stream-chunk-bytes"]
 type = "integer"
 default = 65536
 
+[flags.lambda_revision_routing_enabled]
+env = "LAMBDA_REVISION_ROUTING_ENABLED"
+aliases = ["lambda-revision-routing-enabled"]
+type = "boolean"
+default = false
+
 [flags.lambda_allow_host_runtimes]
 env = "LAMBDA_ALLOW_HOST_RUNTIMES"
 aliases = ["lambda-allow-host-runtimes"]

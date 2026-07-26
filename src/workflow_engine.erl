@@ -363,7 +363,7 @@ run_activity(RunId, Run, Step, Idx, Total) ->
     end.
 
 run_activity_current(RunId, Run, Step, Idx, Total) ->
-    case activity_function_ref(Step) of
+    case activity_function_ref(Step, Run) of
         {error, Reason} ->
             terminal_failure(RunId, Run, Step, Idx, Reason);
         {ok, FunctionRef} ->
@@ -581,6 +581,12 @@ step_name(Step, Idx) ->
         Name -> Name
     end.
 
+activity_function_ref(Step, Run) ->
+    case async_pinned_function_ref(Step, Run) of
+        <<>> -> activity_function_ref(Step);
+        FunctionRef -> {ok, FunctionRef}
+    end.
+
 activity_function_ref(Step) ->
     case map_bin(Step, <<"functionId">>, <<>>) of
         <<>> ->
@@ -590,6 +596,15 @@ activity_function_ref(Step) ->
             end;
         Id ->
             {ok, Id}
+    end.
+
+async_pinned_function_ref(Step, Run) ->
+    case is_async_step(Step) of
+        false ->
+            <<>>;
+        true ->
+            Options = async_options(Run),
+            map_bin(Options, <<"functionRef">>, <<>>)
     end.
 
 activity_payload(RunId, Run, Step, Idx) ->

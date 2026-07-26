@@ -445,6 +445,14 @@ async function invoke(line) {
     id: definition.id,
     invocationId: envelope.invocationId,
     slug: definition.slug || envelope.slug,
+    release: Object.freeze({
+      mode: definition.releaseMode || 'latest',
+      alias: definition.alias || null,
+      revisionId: definition.revisionId || null,
+      revisionNumber: definition.revisionNumber || null,
+      routingVersion: definition.routingVersion || null,
+      definitionDigest: definition.definitionDigest || null,
+    }),
     containerPool: Object.freeze({
       dispatch: dispatchContainerPool,
       request: dispatchContainerPool,
@@ -453,11 +461,16 @@ async function invoke(line) {
       browserAutomation,
       browserEngines: browserAutomation ? Object.freeze(['playwright', 'puppeteer']) : Object.freeze([]),
       durableActor: actorSession !== null,
+      immutableRevision: Boolean(definition.revisionId),
     }),
     meta: {
       runtime: definition.runtime,
       labels: definition.labels,
       metaData: definition.metaData,
+      releaseMode: definition.releaseMode || 'latest',
+      revisionId: definition.revisionId || null,
+      revisionNumber: definition.revisionNumber || null,
+      alias: definition.alias || null,
       ...(envelope.meta || {}),
     },
   };

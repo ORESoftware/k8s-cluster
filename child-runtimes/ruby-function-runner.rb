@@ -122,10 +122,22 @@ def invoke(line, console)
     id: definition['id'],
     invocationId: envelope['invocationId'],
     slug: definition['slug'] || envelope['slug'],
+    release: {
+      mode: definition['releaseMode'] || 'latest',
+      alias: definition['alias'],
+      revisionId: definition['revisionId'],
+      revisionNumber: definition['revisionNumber'],
+      routingVersion: definition['routingVersion'],
+      definitionDigest: definition['definitionDigest']
+    },
     meta: {
       runtime: definition['runtime'],
       labels: definition['labels'],
-      metaData: definition['metaData']
+      metaData: definition['metaData'],
+      releaseMode: definition['releaseMode'] || 'latest',
+      revisionId: definition['revisionId'],
+      revisionNumber: definition['revisionNumber'],
+      alias: definition['alias']
     }.merge(envelope['meta'] || {})
   }
   context = LambdaContext.new(request, lambda_context, console)

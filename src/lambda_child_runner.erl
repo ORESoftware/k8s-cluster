@@ -2,10 +2,13 @@
 
 -export([
     invoke/5,
+    invoke_qualified/7,
     invoke_definition/6,
     invoke_actor_definition/7,
     invoke_stream/6,
+    invoke_stream_qualified/8,
     invoke_stream_definition/7,
+    resolve_qualified_reference/3,
     check_definition/3,
     metrics/0,
     worker_counts/0,
@@ -32,8 +35,40 @@ invoke(Command0, Identifier0, Payload0, IdleMs0, TimeoutMs0) ->
         _ -> RequestPayload0
     end,
     reap_idle(now_ms()),
-    case load_function_definition(Identifier) of
+    case load_function_reference(Identifier) of
         {ok, DefinitionJson} ->
+            bump_release_routing(DefinitionJson),
+            invoke_loaded_definition(
+                FallbackCommand,
+                Identifier,
+                DefinitionJson,
+                RequestPayload,
+                IdleMs0,
+                TimeoutMs0
+            );
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+invoke_qualified(
+    Command0,
+    Identifier0,
+    Qualifier0,
+    Affinity0,
+    Payload0,
+    IdleMs0,
+    TimeoutMs0
+) ->
+    ensure_tables(),
+    FallbackCommand = to_binary(Command0),
+    Identifier = to_binary(Identifier0),
+    Qualifier = to_binary(Qualifier0),
+    Affinity = to_binary(Affinity0),
+    RequestPayload = default_request_payload(Payload0),
+    reap_idle(now_ms()),
+    case load_qualified_definition(Identifier, Qualifier, Affinity) of
+        {ok, DefinitionJson} ->
+            bump_release_routing(DefinitionJson),
             invoke_loaded_definition(
                 FallbackCommand,
                 Identifier,
@@ -134,8 +169,42 @@ invoke_stream(Command0, Identifier0, Payload0, IdleMs0, TimeoutMs0, Emit) ->
     Identifier = to_binary(Identifier0),
     RequestPayload = default_request_payload(Payload0),
     reap_idle(now_ms()),
-    case load_function_definition(Identifier) of
+    case load_function_reference(Identifier) of
         {ok, DefinitionJson} ->
+            bump_release_routing(DefinitionJson),
+            invoke_loaded_definition_stream(
+                FallbackCommand,
+                Identifier,
+                DefinitionJson,
+                RequestPayload,
+                IdleMs0,
+                TimeoutMs0,
+                Emit
+            );
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+invoke_stream_qualified(
+    Command0,
+    Identifier0,
+    Qualifier0,
+    Affinity0,
+    Payload0,
+    IdleMs0,
+    TimeoutMs0,
+    Emit
+) ->
+    ensure_tables(),
+    FallbackCommand = to_binary(Command0),
+    Identifier = to_binary(Identifier0),
+    Qualifier = to_binary(Qualifier0),
+    Affinity = to_binary(Affinity0),
+    RequestPayload = default_request_payload(Payload0),
+    reap_idle(now_ms()),
+    case load_qualified_definition(Identifier, Qualifier, Affinity) of
+        {ok, DefinitionJson} ->
+            bump_release_routing(DefinitionJson),
             invoke_loaded_definition_stream(
                 FallbackCommand,
                 Identifier,
@@ -623,6 +692,24 @@ metrics() ->
             "dd_lambda_runner_stream_failures_total",
             get_metric(stream_failures_total)
         ),
+        "# HELP dd_lambda_runner_release_routed_invocations_total Invocations pinned to immutable published revisions.\n",
+        "# TYPE dd_lambda_runner_release_routed_invocations_total counter\n",
+        metric_line(
+            "dd_lambda_runner_release_routed_invocations_total",
+            get_metric(release_routed_invocations_total)
+        ),
+        "# HELP dd_lambda_runner_alias_routed_invocations_total Invocations selected through weighted aliases.\n",
+        "# TYPE dd_lambda_runner_alias_routed_invocations_total counter\n",
+        metric_line(
+            "dd_lambda_runner_alias_routed_invocations_total",
+            get_metric(alias_routed_invocations_total)
+        ),
+        "# HELP dd_lambda_runner_revision_routed_invocations_total Invocations addressed by a concrete revision number.\n",
+        "# TYPE dd_lambda_runner_revision_routed_invocations_total counter\n",
+        metric_line(
+            "dd_lambda_runner_revision_routed_invocations_total",
+            get_metric(revision_routed_invocations_total)
+        ),
         "# HELP dd_lambda_runner_active_workers Active reusable child processes.\n",
         "# TYPE dd_lambda_runner_active_workers gauge\n",
         metric_line("dd_lambda_runner_active_workers", ActiveWorkers),
@@ -657,6 +744,16 @@ destroy(PoolKey0) ->
     ensure_tables(),
     manager_call({destroy_pool, to_binary(PoolKey0)}).
 
+load_function_reference(Reference) ->
+    case split_function_reference(Reference) of
+        {ok, Identifier, <<>>} ->
+            load_function_definition(Identifier);
+        {ok, Identifier, Qualifier} ->
+            load_qualified_definition(Identifier, Qualifier, <<>>);
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 load_function_definition(Identifier) ->
     case identifier_kind(Identifier) of
         invalid ->
@@ -670,20 +767,72 @@ load_function_definition(Identifier) ->
             end
     end.
 
+load_qualified_definition(Identifier, Qualifier, Affinity) ->
+    case revision_routing_enabled() of
+        false ->
+            {error, <<"lambda revision routing is unavailable">>};
+        true ->
+            load_qualified_definition_enabled(Identifier, Qualifier, Affinity)
+    end.
+
+load_qualified_definition_enabled(Identifier, Qualifier, Affinity) ->
+    case {identifier_kind(Identifier), qualifier_kind(Qualifier), safe_affinity(Affinity)} of
+        {invalid, _QualifierKind, _SafeAffinity} ->
+            {error, <<"valid lambda function UUID or slug is required">>};
+        {_IdentifierKind, invalid, _SafeAffinity} ->
+            {error, <<"valid lambda revision number or alias is required">>};
+        {_IdentifierKind, _QualifierKind, false} ->
+            {error, <<"lambda routing affinity exceeds 512 bytes">>};
+        {_IdentifierKind, latest, true} ->
+            load_function_definition(Identifier);
+        {IdentifierKind, {revision, RevisionNumber}, true} ->
+            load_revision_definition(
+                IdentifierKind,
+                Identifier,
+                RevisionNumber
+            );
+        {IdentifierKind, alias, true} ->
+            load_alias_definition(
+                IdentifierKind,
+                Identifier,
+                Qualifier,
+                affinity_bucket(Identifier, Qualifier, Affinity)
+            )
+    end.
+
+resolve_qualified_reference(Identifier0, Qualifier0, Affinity0) ->
+    Identifier = to_binary(Identifier0),
+    Qualifier = to_binary(Qualifier0),
+    Affinity = to_binary(Affinity0),
+    case load_qualified_definition(Identifier, Qualifier, Affinity) of
+        {ok, DefinitionJson} ->
+            FunctionId = json_string_field(DefinitionJson, <<"functionId">>),
+            RevisionNumber = json_int_field(
+                DefinitionJson,
+                <<"revisionNumber">>,
+                0
+            ),
+            case FunctionId =/= <<>> andalso RevisionNumber > 0 of
+                true ->
+                    {ok, iolist_to_binary([
+                        FunctionId,
+                        "@",
+                        integer_to_binary(RevisionNumber)
+                    ])};
+                false ->
+                    {error, <<"qualified release did not resolve an immutable revision">>}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 load_function_definition(Kind, Identifier, DatabaseUrl) ->
     case os:find_executable("psql") of
         false ->
             {error, <<"psql executable not found">>};
         Psql ->
             Sql = lambda_definition_sql(Kind, Identifier),
-            case run_psql(Psql, DatabaseUrl, Sql) of
-                {ok, <<>>} ->
-                    {error, iolist_to_binary(["lambda function not found: ", Identifier])};
-                {ok, DefinitionJson} ->
-                    {ok, DefinitionJson};
-                {error, Reason} ->
-                    {error, Reason}
-            end
+            run_definition_query(Psql, DatabaseUrl, Sql, Identifier)
     end.
 
 lambda_definition_sql(Kind, Identifier) ->
@@ -691,6 +840,7 @@ lambda_definition_sql(Kind, Identifier) ->
     iolist_to_binary([
         "select jsonb_build_object(",
         "'id', id,",
+        "'functionId', id,",
         "'slug', slug,",
         "'functionBody', function_body,",
         "'runtime', runtime,",
@@ -705,7 +855,8 @@ lambda_definition_sql(Kind, Identifier) ->
         "'containerBuiltAt', container_built_at,",
         "'status', status,",
         "'labels', labels_json::jsonb,",
-        "'metaData', meta_data_json::jsonb",
+        "'metaData', meta_data_json::jsonb,",
+        "'releaseMode', 'latest'",
         ")::text ",
         "from (",
         SelectSql,
@@ -717,10 +868,158 @@ lambda_definition_sql(Kind, Identifier) ->
         "limit 1"
     ]).
 
+load_revision_definition(Kind, Identifier, RevisionNumber) ->
+    case database_url() of
+        {error, Reason} ->
+            {error, Reason};
+        {ok, DatabaseUrl} ->
+            case os:find_executable("psql") of
+                false ->
+                    {error, <<"psql executable not found">>};
+                Psql ->
+                    Sql = lambda_revision_definition_sql(
+                        Kind,
+                        Identifier,
+                        RevisionNumber
+                    ),
+                    run_definition_query(Psql, DatabaseUrl, Sql, Identifier)
+            end
+    end.
+
+lambda_revision_definition_sql(Kind, Identifier, RevisionNumber) ->
+    iolist_to_binary([
+        "select jsonb_build_object(",
+        "'id', f.id,",
+        "'functionId', f.id,",
+        "'slug', f.slug,",
+        "'functionBody', r.function_body,",
+        "'runtime', r.runtime,",
+        "'entryCommand', r.entry_command,",
+        "'reuseKey', r.reuse_key,",
+        "'idleTimeoutSeconds', r.idle_timeout_seconds,",
+        "'maxRunMs', r.max_run_ms,",
+        "'containerized', r.containerized,",
+        "'containerImage', r.container_image,",
+        "'containerBuildStatus', r.container_build_status,",
+        "'containerBuildError', r.container_build_error,",
+        "'containerBuiltAt', r.container_built_at,",
+        "'status', f.status,",
+        "'labels', r.labels,",
+        "'metaData', r.meta_data,",
+        "'releaseMode', 'revision',",
+        "'qualifier', r.revision_number::text,",
+        "'revisionId', r.id,",
+        "'revisionNumber', r.revision_number,",
+        "'definitionDigest', r.definition_digest",
+        ")::text ",
+        "from lambda_functions f ",
+        "join lambda_function_revisions r on r.function_id = f.id ",
+        "where ",
+        qualified_identifier_where_clause(Kind, Identifier, "f"),
+        " and f.is_soft_deleted = false ",
+        "and f.status = 'active' ",
+        "and r.revision_number = ",
+        integer_to_binary(RevisionNumber),
+        " limit 1"
+    ]).
+
+load_alias_definition(Kind, Identifier, Alias, Bucket) ->
+    case database_url() of
+        {error, Reason} ->
+            {error, Reason};
+        {ok, DatabaseUrl} ->
+            case os:find_executable("psql") of
+                false ->
+                    {error, <<"psql executable not found">>};
+                Psql ->
+                    Sql = lambda_alias_definition_sql(
+                        Kind,
+                        Identifier,
+                        Alias,
+                        Bucket
+                    ),
+                    run_definition_query(Psql, DatabaseUrl, Sql, Identifier)
+            end
+    end.
+
+lambda_alias_definition_sql(Kind, Identifier, Alias, Bucket) ->
+    iolist_to_binary([
+        "with function_row as (",
+        "select f.id, f.slug, f.status from lambda_functions f where ",
+        qualified_identifier_where_clause(Kind, Identifier, "f"),
+        " and f.is_soft_deleted = false and f.status = 'active' limit 1",
+        "), alias_row as (",
+        "select a.* from lambda_function_aliases a ",
+        "join function_row f on f.id = a.function_id ",
+        "where a.name = '", Alias, "' limit 1",
+        "), weighted as (",
+        "select r.*, (target.value::text)::integer as weight_bps, ",
+        "sum((target.value::text)::integer) over ",
+        "(order by r.revision_number, r.id) as cumulative_weight ",
+        "from alias_row a ",
+        "cross join lateral jsonb_each(a.traffic) target ",
+        "join lambda_function_revisions r ",
+        "on r.id = target.key::uuid and r.function_id = a.function_id",
+        "), chosen as (",
+        "select * from weighted where ",
+        integer_to_binary(Bucket),
+        " >= cumulative_weight - weight_bps and ",
+        integer_to_binary(Bucket),
+        " < cumulative_weight limit 1",
+        ") select jsonb_build_object(",
+        "'id', f.id,",
+        "'functionId', f.id,",
+        "'slug', f.slug,",
+        "'functionBody', r.function_body,",
+        "'runtime', r.runtime,",
+        "'entryCommand', r.entry_command,",
+        "'reuseKey', r.reuse_key,",
+        "'idleTimeoutSeconds', r.idle_timeout_seconds,",
+        "'maxRunMs', r.max_run_ms,",
+        "'containerized', r.containerized,",
+        "'containerImage', r.container_image,",
+        "'containerBuildStatus', r.container_build_status,",
+        "'containerBuildError', r.container_build_error,",
+        "'containerBuiltAt', r.container_built_at,",
+        "'status', f.status,",
+        "'labels', r.labels,",
+        "'metaData', r.meta_data,",
+        "'releaseMode', 'alias',",
+        "'qualifier', a.name,",
+        "'alias', a.name,",
+        "'routingVersion', a.routing_version,",
+        "'routingBucket', ",
+        integer_to_binary(Bucket),
+        ", 'revisionId', r.id,",
+        "'revisionNumber', r.revision_number,",
+        "'definitionDigest', r.definition_digest",
+        ")::text from function_row f ",
+        "join alias_row a on a.function_id = f.id ",
+        "cross join chosen r limit 1"
+    ]).
+
+run_definition_query(Psql, DatabaseUrl, Sql, Identifier) ->
+    case run_psql(Psql, DatabaseUrl, Sql) of
+        {ok, <<>>} ->
+            {error, iolist_to_binary([
+                "lambda function release not found: ",
+                Identifier
+            ])};
+        {ok, DefinitionJson} ->
+            {ok, DefinitionJson};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 identifier_where_clause(uuid, Identifier) ->
     ["id = '", Identifier, "'"];
 identifier_where_clause(slug, Identifier) ->
     ["slug = '", Identifier, "'"].
+
+qualified_identifier_where_clause(uuid, Identifier, Alias) ->
+    [Alias, ".id = '", Identifier, "'"];
+qualified_identifier_where_clause(slug, Identifier, Alias) ->
+    [Alias, ".slug = '", Identifier, "'"].
 
 command_for_definition(FallbackCommand, DefinitionJson) ->
     Runtime = runtime_from_definition(DefinitionJson),
@@ -1121,13 +1420,21 @@ default_container_image(_Runtime) ->
     <<>>.
 
 worker_pool(Identifier, DefinitionJson, Runtime, Containerized) ->
+    DeploymentIdentifier = definition_worker_identifier(
+        Identifier,
+        DefinitionJson
+    ),
     case json_string_field(DefinitionJson, <<"reuseKey">>) of
         <<>> ->
             ConfiguredMax = json_int_field(DefinitionJson, <<"maxConcurrency">>, 0),
             case ConfiguredMax > 0 of
                 true ->
                     {ok,
-                        iolist_to_binary(["function:", Identifier, ":default"]),
+                        iolist_to_binary([
+                            "function:",
+                            DeploymentIdentifier,
+                            ":default"
+                        ]),
                         clamp_int(ConfiguredMax, 1, 1000)};
                 false ->
                     PoolKey = case Containerized of
@@ -1143,10 +1450,21 @@ worker_pool(Identifier, DefinitionJson, Runtime, Containerized) ->
                 %% also present in the definition.
                 true ->
                     {ok,
-                        iolist_to_binary(["function:", Identifier, ":", ReuseKey]),
+                        iolist_to_binary([
+                            "function:",
+                            DeploymentIdentifier,
+                            ":",
+                            ReuseKey
+                        ]),
                         1};
                 false -> {error, <<"reuseKey contains unsupported characters">>}
             end
+    end.
+
+definition_worker_identifier(Identifier, DefinitionJson) ->
+    case json_string_field(DefinitionJson, <<"revisionId">>) of
+        <<>> -> Identifier;
+        RevisionId -> iolist_to_binary([Identifier, "@", RevisionId])
     end.
 
 check_worker_key(Runtime, true) ->
@@ -1262,6 +1580,18 @@ database_url() ->
         Value -> {ok, binary_to_list(Value)}
     end.
 
+split_function_reference(Reference0) ->
+    Reference = to_binary(Reference0),
+    case binary:split(Reference, <<"@">>, [global]) of
+        [Identifier] when Identifier =/= <<>> ->
+            {ok, Identifier, <<>>};
+        [Identifier, Qualifier]
+            when Identifier =/= <<>>, Qualifier =/= <<>> ->
+            {ok, Identifier, Qualifier};
+        _ ->
+            {error, <<"valid lambda function reference is required">>}
+    end.
+
 identifier_kind(Identifier) ->
     case re:run(Identifier, "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", [{capture, none}]) of
         match ->
@@ -1271,6 +1601,54 @@ identifier_kind(Identifier) ->
                 match -> slug;
                 nomatch -> invalid
             end
+    end.
+
+qualifier_kind(<<"latest">>) ->
+    latest;
+qualifier_kind(Qualifier) ->
+    case re:run(Qualifier, "^[1-9][0-9]{0,17}$", [{capture, none}]) of
+        match ->
+            {RevisionNumber, []} = string:to_integer(
+                binary_to_list(Qualifier)
+            ),
+            {revision, RevisionNumber};
+        nomatch ->
+            case re:run(
+                Qualifier,
+                "^[a-z][a-z0-9._-]{0,63}$",
+                [{capture, none}]
+            ) of
+                match -> alias;
+                nomatch -> invalid
+            end
+    end.
+
+safe_affinity(Affinity) ->
+    byte_size(Affinity) =< 512 andalso binary:match(Affinity, <<0>>) =:= nomatch.
+
+affinity_bucket(Identifier, Qualifier, <<>>) ->
+    Random = crypto:strong_rand_bytes(16),
+    hash_bucket(<<Identifier/binary, 0, Qualifier/binary, 0, Random/binary>>);
+affinity_bucket(Identifier, Qualifier, Affinity) ->
+    hash_bucket(<<Identifier/binary, 0, Qualifier/binary, 0, Affinity/binary>>).
+
+hash_bucket(Value) ->
+    Digest = crypto:hash(sha256, Value),
+    binary:decode_unsigned(binary:part(Digest, 0, 4)) rem 10000.
+
+revision_routing_enabled() ->
+    env_bool("LAMBDA_REVISION_ROUTING_ENABLED", false).
+
+bump_release_routing(DefinitionJson) ->
+    case json_string_field(DefinitionJson, <<"releaseMode">>) of
+        <<"alias">> ->
+            bump(release_routed_invocations_total, 1),
+            bump(alias_routed_invocations_total, 1);
+        <<"revision">> ->
+            bump(release_routed_invocations_total, 1),
+            bump(revision_routed_invocations_total, 1);
+        _ ->
+            ok
     end.
 
 invocation_payload(Slug, DefinitionJson, RequestJson) ->

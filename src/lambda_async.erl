@@ -9,6 +9,7 @@
 
 -export([
     start_from_body/2,
+    start_qualified_from_body/4,
     get/1,
     cancel/1,
     %% Pure contract helper used by runtime tests.
@@ -44,6 +45,76 @@ start_from_body(FunctionRef0, Body0) ->
                 {error, Reason} ->
                     {error, Reason}
             end
+    end.
+
+start_qualified_from_body(FunctionRef0, Qualifier0, Affinity0, Body0) ->
+    case workflow_engine:enabled() of
+        false ->
+            {error, <<"durable async invocation is unavailable">>};
+        true ->
+            FunctionRef = to_binary(FunctionRef0),
+            Qualifier = to_binary(Qualifier0),
+            Affinity = to_binary(Affinity0),
+            case validate_request(Body0) of
+                {ok, Input, IdempotencyKey} ->
+                    case lambda_child_runner:resolve_qualified_reference(
+                        FunctionRef,
+                        Qualifier,
+                        Affinity
+                    ) of
+                        {ok, PinnedFunctionRef} ->
+                            start_pinned_async(
+                                PinnedFunctionRef,
+                                Input,
+                                IdempotencyKey
+                            );
+                        {error, Reason} ->
+                            {error, Reason}
+                    end;
+                {error, Reason} ->
+                    {error, Reason}
+            end
+    end.
+
+start_pinned_async(PinnedFunctionRef, Input0, IdempotencyKey) ->
+    case binary:split(PinnedFunctionRef, <<"@">>) of
+        [FunctionId, _Revision] ->
+            case workflow_store:ensure_async_definition(FunctionId) of
+                {ok, DefinitionSlug} ->
+                    case pin_function_reference(Input0, PinnedFunctionRef) of
+                        {ok, Input} ->
+                            workflow_engine:start_run(
+                                DefinitionSlug,
+                                Input,
+                                IdempotencyKey
+                            );
+                        {error, Reason} ->
+                            {error, Reason}
+                    end;
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        _ ->
+            {error, <<"invalid pinned lambda function reference">>}
+    end.
+
+pin_function_reference(Input0, PinnedFunctionRef) ->
+    Input = to_binary(Input0),
+    try json:decode(Input) of
+        #{<<"options">> := Options} = Decoded when is_map(Options) ->
+            {ok, json:encode(Decoded#{
+                <<"options">> => Options#{
+                    <<"functionRef">> => PinnedFunctionRef
+                }
+            })};
+        Decoded when is_map(Decoded) ->
+            {ok, json:encode(Decoded#{
+                <<"options">> => #{
+                    <<"functionRef">> => PinnedFunctionRef
+                }
+            })}
+    catch
+        _:_ -> {error, <<"failed to pin async lambda revision">>}
     end.
 
 validate_request(Body) ->

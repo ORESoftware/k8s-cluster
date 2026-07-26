@@ -74,8 +74,24 @@ fn route(
     Get, ["metrics"] -> metrics()
     Get, ["internal", "runtime-processes"] ->
       require_authenticated(req, runtime_processes)
+    Post, ["invoke", function_id, "aliases", alias] ->
+      require_authenticated_post(req, fn() {
+        invoke_release(req, function_id, alias)
+      })
+    Post, ["invoke", function_id, "revisions", revision] ->
+      require_authenticated_post(req, fn() {
+        invoke_release(req, function_id, revision)
+      })
     Post, ["invoke", function_id] ->
       require_authenticated_post(req, fn() { invoke(req, function_id) })
+    Post, ["invoke-stream", function_id, "aliases", alias] ->
+      require_authenticated_post(req, fn() {
+        invoke_stream_release(req, function_id, alias)
+      })
+    Post, ["invoke-stream", function_id, "revisions", revision] ->
+      require_authenticated_post(req, fn() {
+        invoke_stream_release(req, function_id, revision)
+      })
     Post, ["invoke-stream", function_id] ->
       require_authenticated_post(req, fn() { invoke_stream(req, function_id) })
     Post, ["actors", function_id, actor_key] ->
@@ -89,6 +105,14 @@ fn route(
     Post, ["check"] -> require_authenticated_post(req, fn() { check(req) })
     Post, ["destroy", reuse_key] ->
       require_authenticated_post(req, fn() { destroy(reuse_key) })
+    Post, ["async", "invoke", function_id, "aliases", alias] ->
+      require_authenticated_post(req, fn() {
+        async_invoke_release(req, function_id, alias)
+      })
+    Post, ["async", "invoke", function_id, "revisions", revision] ->
+      require_authenticated_post(req, fn() {
+        async_invoke_release(req, function_id, revision)
+      })
     Post, ["async", "invoke", function_id] ->
       require_authenticated_post(req, fn() { async_invoke(req, function_id) })
     Get, ["async", "invocations", run_id] ->
@@ -114,12 +138,18 @@ fn route(
     Post, ["internal", "runtime-config", "reset"] ->
       dd_runtime_config_client.handle_reset(req)
     _, ["invoke", _] -> method_not_allowed()
+    _, ["invoke", _, "aliases", _] -> method_not_allowed()
+    _, ["invoke", _, "revisions", _] -> method_not_allowed()
     _, ["invoke-stream", _] -> method_not_allowed()
+    _, ["invoke-stream", _, "aliases", _] -> method_not_allowed()
+    _, ["invoke-stream", _, "revisions", _] -> method_not_allowed()
     _, ["actors", _, _] -> method_not_allowed()
     _, ["actors", _, _, "state"] -> method_not_allowed()
     _, ["check"] -> method_not_allowed()
     _, ["destroy", _] -> method_not_allowed()
     _, ["async", "invoke", _] -> method_not_allowed()
+    _, ["async", "invoke", _, "aliases", _] -> method_not_allowed()
+    _, ["async", "invoke", _, "revisions", _] -> method_not_allowed()
     _, ["async", "invocations", _] -> method_not_allowed()
     _, ["async", "invocations", _, "cancel"] -> method_not_allowed()
     _, ["events"] -> method_not_allowed()
@@ -237,6 +267,48 @@ fn invoke(
   }
 }
 
+fn invoke_release(
+  req: request.Request(mist.Connection),
+  function_id: String,
+  qualifier: String,
+) -> response.Response(mist.ResponseData) {
+  let affinity = affinity_key(req)
+  case mist.read_body(req, max_body_bytes) {
+    Ok(req) -> {
+      case bit_array.to_string(req.body) {
+        Ok(payload) -> {
+          case
+            child_process.invoke_qualified(
+              default_command,
+              function_id,
+              qualifier,
+              affinity,
+              request_payload(payload),
+              child_idle_ms,
+              child_timeout_ms,
+            )
+          {
+            Ok(output) ->
+              json_response(
+                200,
+                "{\"ok\":true,\"output\":\"" <> json_escape(output) <> "\"}",
+              )
+
+            Error(error) ->
+              json_response(
+                child_error_status(error),
+                "{\"ok\":false,\"error\":\"" <> json_escape(error) <> "\"}",
+              )
+          }
+        }
+        Error(_) ->
+          json_response(400, "{\"ok\":false,\"error\":\"body-not-utf8\"}")
+      }
+    }
+    Error(_) -> json_response(400, "{\"ok\":false,\"error\":\"invalid-body\"}")
+  }
+}
+
 fn invoke_stream(
   req: request.Request(mist.Connection),
   function_id: String,
@@ -259,6 +331,49 @@ fn invoke_stream(
                 child_process.start_stream(
                   default_command,
                   function_id,
+                  request_payload(payload),
+                  child_idle_ms,
+                  300_000,
+                  subject,
+                )
+              Nil
+            },
+            loop: stream_loop,
+          )
+        }
+        Error(_) ->
+          json_response(400, "{\"ok\":false,\"error\":\"body-not-utf8\"}")
+      }
+    Error(_) -> json_response(400, "{\"ok\":false,\"error\":\"invalid-body\"}")
+  }
+}
+
+fn invoke_stream_release(
+  req: request.Request(mist.Connection),
+  function_id: String,
+  qualifier: String,
+) -> response.Response(mist.ResponseData) {
+  let affinity = affinity_key(req)
+  case mist.read_body(req, max_body_bytes) {
+    Ok(body_req) ->
+      case bit_array.to_string(body_req.body) {
+        Ok(payload) -> {
+          let initial_response =
+            response.new(200)
+            |> response.set_header("content-type", "application/octet-stream")
+            |> response.set_header("cache-control", "no-store")
+            |> response.set_header("x-content-type-options", "nosniff")
+            |> response.set_header("x-scintilla-stream-protocol", "raw-v1")
+          mist.chunked(
+            request: req,
+            response: initial_response,
+            init: fn(subject) {
+              let _ =
+                child_process.start_stream_qualified(
+                  default_command,
+                  function_id,
+                  qualifier,
+                  affinity,
                   request_payload(payload),
                   child_idle_ms,
                   300_000,
@@ -354,7 +469,27 @@ fn destroy(reuse_key: String) -> response.Response(mist.ResponseData) {
 fn child_error_status(error: String) -> Int {
   case string.contains(error, "concurrency limit reached") {
     True -> 429
-    False -> 502
+    False ->
+      case string.contains(error, "not found") {
+        True -> 404
+        False ->
+          case
+            string.contains(error, "unavailable")
+            || string.contains(error, "LAMBDA_DATABASE_URL")
+            || string.contains(error, "psql executable")
+            || string.contains(error, "does not exist")
+          {
+            True -> 503
+            False ->
+              case
+                string.contains(error, "valid")
+                || string.contains(error, "exceeds")
+              {
+                True -> 400
+                False -> 502
+              }
+          }
+      }
   }
 }
 
@@ -367,6 +502,25 @@ fn async_invoke(
       202,
       "invocation",
       async_invocation.start(function_id, payload),
+    )
+  })
+}
+
+fn async_invoke_release(
+  req: request.Request(mist.Connection),
+  function_id: String,
+  qualifier: String,
+) -> response.Response(mist.ResponseData) {
+  with_body(req, fn(payload) {
+    workflow_result_response(
+      202,
+      "invocation",
+      async_invocation.start_qualified(
+        function_id,
+        qualifier,
+        affinity_key(req),
+        payload,
+      ),
     )
   })
 }
@@ -544,6 +698,13 @@ fn query_value(req: request.Request(mist.Connection), key: String) -> String {
   }
 }
 
+fn affinity_key(req: request.Request(mist.Connection)) -> String {
+  case request.get_header(req, "x-scintilla-affinity") {
+    Ok(value) -> value
+    Error(_) -> query_value(req, "affinity")
+  }
+}
+
 fn redirect(path: String) -> response.Response(mist.ResponseData) {
   response.new(302)
   |> response.set_header("location", path)
@@ -571,6 +732,8 @@ fn healthz() -> response.Response(mist.ResponseData) {
       <> bool_json(schedule.enabled())
       <> ",\"eventRouterEnabled\":"
       <> bool_json(events.enabled())
+      <> ",\"revisionRoutingEnabled\":"
+      <> bool_json(revision_routing_enabled())
       <> ",\"actorEngineEnabled\":"
       <> bool_json(actors.enabled())
       <> ",\"actorSupervisorHealthy\":"
@@ -712,6 +875,11 @@ fn server_auth_configured() -> Bool {
   server_auth_secret() != ""
 }
 
+fn revision_routing_enabled() -> Bool {
+  env_get("LAMBDA_REVISION_ROUTING_ENABLED") == "1"
+  || env_get("LAMBDA_REVISION_ROUTING_ENABLED") == "true"
+}
+
 fn request_is_authorized(
   req: request.Request(mist.Connection),
   secret: String,
@@ -765,4 +933,4 @@ fn request_payload(request_payload: String) -> String {
   }
 }
 
-const home_html = "<!doctype html><html><head><meta charset=\"utf-8\"/><title>dd gleam lambda runner</title><style>body{font-family:system-ui;margin:24px;line-height:1.45}code{background:#f1f5f9;padding:2px 5px;border-radius:4px}pre{max-height:50vh;overflow:auto;background:#111827;color:#d1fae5;padding:12px;border-radius:8px}</style></head><body><h1>dd gleam lambda runner</h1><p>Liveness: <code>/healthz</code> · readiness/draining: <code>/readyz</code></p><p>Metrics: <code>/metrics</code></p><p>Invocation endpoint: <code>POST /invoke/:function_id</code>. Gateway invocation traffic lands here directly; the child runner loads the active function definition from Postgres and Gleam manages reusable child processes under an OTP supervision tree.</p><p>Durable actors: <code>POST /actors/:function_id/:actor_key</code>. Each hot key is a dynamically supervised BEAM process with Postgres-fenced state and alarms.</p></body></html>"
+const home_html = "<!doctype html><html><head><meta charset=\"utf-8\"/><title>dd gleam lambda runner</title><style>body{font-family:system-ui;margin:24px;line-height:1.45}code{background:#f1f5f9;padding:2px 5px;border-radius:4px}pre{max-height:50vh;overflow:auto;background:#111827;color:#d1fae5;padding:12px;border-radius:8px}</style></head><body><h1>dd gleam lambda runner</h1><p>Liveness: <code>/healthz</code> · readiness/draining: <code>/readyz</code></p><p>Metrics: <code>/metrics</code></p><p>Invocation endpoint: <code>POST /invoke/:function_id</code>. Gateway invocation traffic lands here directly; the child runner loads the active function definition from Postgres and Gleam manages reusable child processes under an OTP supervision tree.</p><p>Immutable releases: <code>POST /invoke/:function_id/revisions/:revision</code> and <code>POST /invoke/:function_id/aliases/:alias</code>. Weighted aliases can use <code>X-Scintilla-Affinity</code> for sticky canaries without restarting the BEAM server.</p><p>Durable actors: <code>POST /actors/:function_id/:actor_key</code>. Each hot key is a dynamically supervised BEAM process with Postgres-fenced state and alarms.</p></body></html>"

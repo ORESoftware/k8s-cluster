@@ -32,8 +32,8 @@ and **gap** is not yet implemented.
 | Metrics, logs, and traces | **yes** | Prometheus, structured stdout, and OTLP |
 | Runtime secrets and environment | **yes** | Secret-backed runner config; child environments are explicitly minimized |
 | Network isolation | **partial** | Hardened containers and Kubernetes NetworkPolicy; needs per-function egress policy |
-| Function revisions | **gap** | Immutable code/config snapshots with stable IDs |
-| Aliases and weighted traffic | **gap** | Named aliases, canary percentages, affinity, instant rollback |
+| Function revisions | **yes** | Editable `$LATEST` plus atomic immutable numbered code/config snapshots, SHA-256 definition digests, direct preview invocation, and revision-isolated stateful workers |
+| Aliases and weighted traffic | **yes** | Atomic named aliases over 1–10 revisions, exact basis-point weights, sticky affinity, pinned async retries, promotion, abort, and instant rollback |
 | Asynchronous invocation queue | **partial** | Postgres-durable 202 acceptance, per-function idempotency, cross-replica leases, attempt history, status, cancellation, crash recovery, and maximum event age; retention policy and native event-source ack/replay remain |
 | Retry policy and destinations / DLQ | **partial** | Per-invocation bounded exponential retry plus success/failure/canceled/DLQ NATS subjects; destination publish is best effort until JetStream-backed |
 | Queue batching and partial acknowledgements | **gap** | Batch size/window, per-message ack/retry, visibility timeout |
@@ -95,11 +95,13 @@ CloudEvents routing, scale-to-zero, and Kubernetes-native traffic splitting.
 
 ### Wave 3 — revisions and safe delivery
 
-- Snapshot function code, runtime, env references, resource policy, and trigger
-  configuration into immutable revisions.
-- Add aliases with weighted routing, version affinity, 0% preview URLs, canary
-  metrics, promotion, abort, and instant rollback.
-- Keep in-flight requests on their selected revision while new requests move.
+- Snapshot function code, runtime, environment references, resource policy, and
+  metadata into immutable revisions with atomic monotonic numbering.
+- Route named aliases across up to ten revisions with exact basis-point
+  weights, optional affinity, direct 0% preview endpoints, canary metrics,
+  promotion, abort, and instant rollback.
+- Pin durable async work and every in-flight request to its selected immutable
+  revision while new requests observe the latest alias routing generation.
 - Add signature, provenance, SBOM, and image-digest policy.
 
 ### Wave 4 — universal triggers and state
