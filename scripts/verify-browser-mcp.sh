@@ -30,16 +30,19 @@ session_id=''
 access_token=''
 refresh_token=''
 
-rpc() {
-  auth_args=()
+curl_with_auth() {
   if [[ -n "$access_token" ]]; then
-    auth_args=(-H "Authorization: Bearer $access_token")
+    curl "$@" -H "Authorization: Bearer $access_token"
+  else
+    curl "$@"
   fi
-  curl --fail-with-body --silent --show-error \
+}
+
+rpc() {
+  curl_with_auth --fail-with-body --silent --show-error \
     --connect-timeout 10 \
     --max-time 90 \
     -X POST \
-    "${auth_args[@]}" \
     -H "$content_type" \
     -H "$accept" \
     --data-binary "$1" \
@@ -261,17 +264,12 @@ else
 fi
 
 echo "checking Streamable HTTP negotiation"
-request_auth_args=()
-if [[ -n "$access_token" ]]; then
-  request_auth_args=(-H "Authorization: Bearer $access_token")
-fi
 sse_status="$(
-  curl --silent --show-error \
+  curl_with_auth --silent --show-error \
     --connect-timeout 10 \
     --max-time 20 \
     -o /dev/null \
     -w '%{http_code}' \
-    "${request_auth_args[@]}" \
     -H 'Accept: text/event-stream' \
     "$endpoint"
 )"
@@ -280,12 +278,11 @@ if [[ "$sse_status" != '405' ]]; then
   exit 1
 fi
 plain_get_status="$(
-  curl --silent --show-error \
+  curl_with_auth --silent --show-error \
     --connect-timeout 10 \
     --max-time 20 \
     -o /dev/null \
     -w '%{http_code}' \
-    "${request_auth_args[@]}" \
     -H 'Accept: application/json' \
     "$endpoint"
 )"
@@ -304,13 +301,12 @@ jq -e '
 ' <<<"$initialize" >/dev/null
 
 initialized_status="$(
-  curl --silent --show-error \
+  curl_with_auth --silent --show-error \
     --connect-timeout 10 \
     --max-time 20 \
     -o /dev/null \
     -w '%{http_code}' \
     -X POST \
-    "${request_auth_args[@]}" \
     -H "$content_type" \
     -H "$accept" \
     --data-binary '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
