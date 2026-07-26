@@ -111,6 +111,10 @@ spec:
               value: dd.remote.lambdas.functions
             - name: NATS_LAMBDA_MAX_PAYLOAD_BYTES
               value: '5242880'
+            - name: NATS_CLOUDEVENTS_SUBJECT
+              value: dd.remote.cloudevents.>
+            - name: NATS_CLOUDEVENTS_QUEUE_GROUP
+              value: dd-gleam-lambda-runner-events
             - name: NATS_ASYNC_SUCCESS_SUBJECT
               value: dd.remote.lambda.async.success
             - name: NATS_ASYNC_FAILURE_SUBJECT
@@ -159,6 +163,10 @@ spec:
               value: '1'
             - name: SCHEDULE_MAX_DISPATCH_PER_MINUTE
               value: '500'
+            - name: EVENT_ROUTER_MAX_INFLIGHT
+              value: '64'
+            - name: EVENT_ROUTER_MAX_TARGETS
+              value: '100'
             - name: LAMBDA_CONTAINER_NERDCTL
               value: /usr/local/bin/nerdctl
             - name: LAMBDA_CONTAINER_NAMESPACE

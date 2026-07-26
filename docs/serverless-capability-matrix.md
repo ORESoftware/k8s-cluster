@@ -27,7 +27,7 @@ and **gap** is not yet implemented.
 | Compile or syntax check before activation | **yes** | Runtime-aware `/check`, isolated in the target container when required |
 | Durable multi-step workflows | **yes** | Persisted runs and steps, retries, sleep/wait, external signals, cancel |
 | Browser automation | **yes** | Hardened Chromium with Playwright and Puppeteer plus SSRF/robots policy |
-| Event bus invocation | **partial** | NATS subjects and queue group; needs CloudEvents envelopes and filter bindings |
+| Event bus invocation | **yes** | NATS queue subscription accepts structured CloudEvents and fans matching bindings into durable async runs |
 | Stateful actor / durable object | **partial** | Reusable per-key BEAM processes; needs transactional per-key durable storage |
 | Metrics, logs, and traces | **yes** | Prometheus, structured stdout, and OTLP |
 | Runtime secrets and environment | **yes** | Secret-backed runner config; child environments are explicitly minimized |
@@ -38,7 +38,7 @@ and **gap** is not yet implemented.
 | Retry policy and destinations / DLQ | **partial** | Per-invocation bounded exponential retry plus success/failure/canceled/DLQ NATS subjects; destination publish is best effort until JetStream-backed |
 | Queue batching and partial acknowledgements | **gap** | Batch size/window, per-message ack/retry, visibility timeout |
 | Scheduled / cron triggers | **partial** | Supervised metadata-discovered five-field UTC cron, aliases/ranges/steps, deterministic cross-replica idempotency, CloudEvents output, durable async retry/history; timezone database and explicit overlap policy remain |
-| CloudEvents trigger bindings and filters | **partial** | Scheduled triggers emit canonical CloudEvents 1.0; HTTP/NATS source bindings, attribute filters, and fan-out remain |
+| CloudEvents trigger bindings and filters | **yes** | Supervised HTTP/NATS structured-mode router, required-context validation, exact/prefix/extension filters, multi-binding fan-out, cross-transport idempotency, bounded routing concurrency, and durable async delivery |
 | Response streaming | **gap** | Backpressure-aware chunked/SSE response protocol |
 | WebSockets | **gap** | Supervised connection actors, hibernation/persistence strategy |
 | Per-function concurrency controls | **partial** | Bounded per-replica worker pools, single-flight affinity keys, immediate HTTP 429 backpressure, safe lease cleanup, and busy/idle/rejection metrics; fleet-wide reservations and durable overflow remain |
@@ -107,8 +107,11 @@ CloudEvents routing, scale-to-zero, and Kubernetes-native traffic splitting.
   every external source.
 - Discover supervised UTC cron schedules from function metadata and route every
   fire through durable async idempotency.
-- Add HTTP, NATS, queue, webhook, database-change, and object-change bindings
-  with attribute filters and fan-out.
+- Route HTTP and NATS structured CloudEvents through metadata-discovered exact,
+  prefix, and extension filters with bounded fan-out and deterministic durable
+  idempotency.
+- Add queue, webhook, database-change, and object-change source adapters that
+  normalize to the same CloudEvents router.
 - Add durable keyed actors with transactional storage, alarms, and supervised
   WebSocket sessions.
 - Add service bindings and per-function identity/egress policy.

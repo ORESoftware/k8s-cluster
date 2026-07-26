@@ -28,17 +28,19 @@ Deno Deploy, and Knative lives in
 - `POST /async/invoke/:function_id` durably accepts an invocation and returns 202.
 - `GET /async/invocations/:run_id` returns durable status and attempt history.
 - `POST /async/invocations/:run_id/cancel` cancels queued/retrying work.
+- `POST /events` validates and durably fans out a structured CloudEvent.
 - `POST /workflows/start` starts a durable workflow run.
 - `GET /workflows/runs` lists recent runs (optional `?definition=<id|slug>&limit=N`).
 - `GET /workflows/runs/:run_id` returns one run plus its step-run history.
 - `POST /workflows/runs/:run_id/signal` delivers an external signal to a run.
 - `POST /workflows/runs/:run_id/cancel` cancels a non-terminal run.
 
-`POST /invoke/:function_id`, `POST /check`, and `POST /destroy/:reuse_key` fail closed unless
-`LAMBDA_SERVER_AUTH_SECRET`, `SERVER_AUTH_SECRET`, or `REMOTE_DEV_SERVER_SECRET` is configured.
-Callers must present the secret in `X-Server-Auth`, `X-Lambda-Runner-Auth`, or `X-Agent-Auth`.
-`GET /healthz`, `GET /readyz`, and `GET /metrics` remain unauthenticated for Kubernetes probes
-and scraping. `GET /internal/runtime-processes` requires the same service authentication as invoke.
+Function execution, async invocation, CloudEvents, workflows, and internal
+process-state routes fail closed unless `LAMBDA_SERVER_AUTH_SECRET`,
+`SERVER_AUTH_SECRET`, or `REMOTE_DEV_SERVER_SECRET` is configured. Callers must
+present the secret in `X-Server-Auth`, `X-Lambda-Runner-Auth`, or
+`X-Agent-Auth`. `GET /healthz`, `GET /readyz`, and `GET /metrics` remain
+unauthenticated for Kubernetes probes and scraping.
 
 ## BEAM supervision and zero-downtime evolution
 
@@ -71,6 +73,8 @@ same child runner used by HTTP, and publishes invocation results back to NATS:
 | `NATS_LAMBDA_QUEUE_GROUP` | `dd-gleam-lambda-runner` |
 | `NATS_LAMBDA_RESULT_SUBJECT` | `dd.remote.lambdas.results` |
 | `NATS_LAMBDA_FUNCTIONS_SUBJECT` | `dd.remote.lambdas.functions` |
+| `NATS_CLOUDEVENTS_SUBJECT` | `dd.remote.cloudevents.>` |
+| `NATS_CLOUDEVENTS_QUEUE_GROUP` | `dd-gleam-lambda-runner-events` |
 | `NATS_USERNAME` / `NATS_PASSWORD` | unset, optional NATS user/pass auth |
 | `NATS_TOKEN` | unset, optional NATS token auth |
 
@@ -292,6 +296,88 @@ Schedule scan/due/dispatch/error/overflow counters are exported on `/metrics`.
 Timezone databases, seconds-level schedules, and a dedicated schedule-history
 API remain future control-plane work; durable invocation history is already
 available through the async status endpoint.
+
+## Universal CloudEvents bindings
+
+Active functions can declare up to 50 structured CloudEvents 1.0 bindings in
+`metaData`. A binding may use exact `type`, `source`, and `subject` filters,
+`typePrefix` / `sourcePrefix`, and exact matches on any context or extension
+attribute:
+
+```json
+{
+  "eventBindings": [
+    {
+      "name": "paid-orders",
+      "type": "dev.scintilla.order.paid.v1",
+      "sourcePrefix": "/commerce/",
+      "attributes": {
+        "tenant": "acme",
+        "region": "us-central1"
+      },
+      "retry": {
+        "maxAttempts": 8,
+        "backoffMs": 1000,
+        "backoffFactor": 2,
+        "maxBackoffMs": 60000
+      },
+      "maxEventAgeMs": 21600000,
+      "timeoutMs": 60000,
+      "enabled": true
+    }
+  ]
+}
+```
+
+Publish the structured event to authenticated `POST /events` or directly to a
+subject under `NATS_CLOUDEVENTS_SUBJECT`:
+
+```json
+{
+  "specversion": "1.0",
+  "id": "evt-01J4PAID",
+  "source": "/commerce/checkout",
+  "type": "dev.scintilla.order.paid.v1",
+  "subject": "order/ord-123",
+  "time": "2026-07-26T05:00:00Z",
+  "datacontenttype": "application/json",
+  "tenant": "acme",
+  "region": "us-central1",
+  "data": {
+    "orderId": "ord-123"
+  }
+}
+```
+
+The CloudEvents router is a permanent worker in the application's OTP tree.
+Every routing request gets a monitored BEAM task, capped by
+`EVENT_ROUTER_MAX_INFLIGHT`; saturation returns HTTP 429 or an error reply
+without creating an unbounded process backlog. One event can fan out to many
+functions or many bindings on the same function, capped by
+`EVENT_ROUTER_MAX_TARGETS`. An event that exceeds the target cap fails with
+HTTP 429 before any target is dispatched; the producer can safely retry after
+the cap or bindings are adjusted, with no silent partial fan-out.
+
+Every match enters the Postgres-durable async engine. The idempotency key
+includes function, binding, event ID, source, and type, so delivery of the same
+logical event over HTTP, NATS, another replica, or a producer retry converges
+on the same run. The function receives the complete CloudEvent envelope, not
+only `data`. Retry, maximum event age, status/history, cancellation, and
+terminal destinations are the same as direct async invocation.
+
+| Env | Default |
+| --- | --- |
+| `NATS_CLOUDEVENTS_SUBJECT` | `dd.remote.cloudevents.>` |
+| `NATS_CLOUDEVENTS_QUEUE_GROUP` | `dd-gleam-lambda-runner-events` |
+| `EVENT_ROUTER_MAX_INFLIGHT` | `64` |
+| `EVENT_ROUTER_MAX_TARGETS` | `100` |
+
+Received, invalid, inflight, match, dispatch, failure, overload, and overflow
+metrics use the `lambda_events_*` prefix on `/metrics`. The current NATS
+consumer uses core queue subscriptions; JetStream acknowledgement/replay and
+source-specific adapters for object, database-change, and webhook events
+remain future transport work. Those adapters can all emit the same canonical
+CloudEvent without changing function bindings.
 
 ### Playwright and Puppeteer as Node.js lambda capabilities
 
