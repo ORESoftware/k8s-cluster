@@ -6,7 +6,11 @@
     check_definition/3,
     metrics/0,
     destroy/1,
-    container_command_for_test/2
+    container_command_for_test/2,
+    start_manager_link/0,
+    manager_init/0,
+    start_worker_link/1,
+    worker_init/1
 ]).
 
 -define(SERVER, lambda_child_runner_manager).
@@ -948,33 +952,22 @@ ensure_tables() ->
     wait_for_tables(500).
 
 ensure_manager() ->
-    case whereis(?SERVER) of
-        undefined ->
-            Pid = spawn(fun manager_bootstrap/0),
-            case catch register(?SERVER, Pid) of
-                true ->
-                    Pid ! start,
-                    ok;
-                {'EXIT', _Reason} ->
-                    Pid ! stop,
-                    ok
-            end;
-        _Pid ->
-            ok
+    case lambda_runtime_supervisor:ensure_started() of
+        ok -> ok;
+        {error, Reason} ->
+            erlang:error({lambda_runtime_supervisor_unavailable, Reason})
     end.
 
-manager_bootstrap() ->
-    receive
-        start ->
-            ensure_table(?WORKERS),
-            ensure_table(?METRICS),
-            prewarm_workers(),
-            manager_loop();
-        stop ->
-            ok
-    after 5000 ->
-        ok
-    end.
+start_manager_link() ->
+    proc_lib:start_link(?MODULE, manager_init, []).
+
+manager_init() ->
+    true = register(?SERVER, self()),
+    ensure_table(?WORKERS),
+    ensure_table(?METRICS),
+    proc_lib:init_ack({ok, self()}),
+    prewarm_workers(),
+    manager_loop().
 
 manager_loop() ->
     receive
@@ -1101,31 +1094,37 @@ ensure_worker_in_manager(Command, ReuseKey, IdleMs) ->
     end.
 
 spawn_worker(Command, ReuseKey, IdleMs) ->
-    Parent = self(),
-    Pid = spawn(fun() -> worker_start(Parent, Command) end),
-    receive
-        {Pid, started} ->
-            Monitor = erlang:monitor(process, Pid),
-            ets:insert(?WORKERS, {
-                ReuseKey,
-                #{
-                    command => Command,
-                    pid => Pid,
-                    monitor => Monitor,
-                    idle_ms => IdleMs,
-                    last_used_ms => now_ms()
-                }
-            }),
-            bump(child_spawns_total, 1),
-            {ok, Pid};
-        {Pid, failed, Reason} ->
-            {error, Reason}
-    after 5000 ->
-        Pid ! stop,
-        {error, <<"timed out starting lambda child process">>}
+    case lambda_runtime_supervisor:start_worker(Command) of
+        {ok, Pid} ->
+            register_worker(Pid, Command, ReuseKey, IdleMs);
+        {ok, Pid, _Info} ->
+            register_worker(Pid, Command, ReuseKey, IdleMs);
+        {error, Reason} ->
+            {error, iolist_to_binary(io_lib:format(
+                "failed to start supervised lambda worker: ~p",
+                [Reason]
+            ))}
     end.
 
-worker_start(Parent, Command) ->
+register_worker(Pid, Command, ReuseKey, IdleMs) ->
+    Monitor = erlang:monitor(process, Pid),
+    ets:insert(?WORKERS, {
+        ReuseKey,
+        #{
+            command => Command,
+            pid => Pid,
+            monitor => Monitor,
+            idle_ms => IdleMs,
+            last_used_ms => now_ms()
+        }
+    }),
+    bump(child_spawns_total, 1),
+    {ok, Pid}.
+
+start_worker_link(Command) ->
+    proc_lib:start_link(?MODULE, worker_init, [Command]).
+
+worker_init(Command) ->
     ShellCommand = "exec " ++ binary_to_list(Command),
     try open_port({spawn_executable, "/bin/sh"}, [
         binary,
@@ -1134,15 +1133,16 @@ worker_start(Parent, Command) ->
         {args, ["-c", ShellCommand]}
     ]) of
         Port ->
-            Parent ! {self(), started},
+            proc_lib:init_ack({ok, self()}),
             worker_loop(Port)
     catch
         Class:Reason ->
-            Parent ! {
-                self(),
-                failed,
-                iolist_to_binary(io_lib:format("failed to spawn child process: ~p:~p", [Class, Reason]))
-            }
+            Failure = iolist_to_binary(io_lib:format(
+                "failed to spawn child process: ~p:~p",
+                [Class, Reason]
+            )),
+            proc_lib:init_ack({error, Failure}),
+            exit({Class, Reason})
     end.
 
 worker_loop(Port) ->

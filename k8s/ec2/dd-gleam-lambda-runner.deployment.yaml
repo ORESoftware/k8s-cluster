@@ -6,7 +6,14 @@ metadata:
   labels:
     app: dd-gleam-lambda-runner
 spec:
-  replicas: 1
+  replicas: 2
+  minReadySeconds: 5
+  progressDeadlineSeconds: 900
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       app: dd-gleam-lambda-runner
@@ -19,7 +26,9 @@ spec:
     spec:
       serviceAccountName: dd-gleam-lambda-runner
       automountServiceAccountToken: false
-      terminationGracePeriodSeconds: 30
+      # maxRunMs is capped at 300 seconds. Leave enough time for the preStop
+      # readiness drain plus the longest accepted in-flight invocation.
+      terminationGracePeriodSeconds: 330
       # These short init containers make kubelet pull every runtime image into
       # containerd's k8s.io namespace. The nested ctr runner uses --pull=never,
       # so an invocation can only start an image reviewed and pinned by GitOps.
@@ -231,6 +240,13 @@ spec:
           ports:
             - name: http
               containerPort: 8083
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - touch /tmp/scintilla-draining && sleep 15
           startupProbe:
             httpGet:
               path: /healthz
@@ -240,7 +256,7 @@ spec:
             failureThreshold: 60
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
             initialDelaySeconds: 5
             periodSeconds: 10
