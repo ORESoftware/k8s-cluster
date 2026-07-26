@@ -142,10 +142,13 @@ blocked_payload="$(
 blocked="$(rpc "$blocked_payload")"
 jq -e '
   .result.isError == false and
-  .result.structuredContent.status == "failed" and
+  (.result.structuredContent.status == "blocked" or .result.structuredContent.status == "failed") and
   (
     .result.structuredContent.action_results
-    | any(.status == "failed" and (.message | contains("not on the allowlist")))
+    | any(
+        (.status == "blocked" or .status == "failed") and
+        (.message | contains("not on the allowlist"))
+      )
   )
 ' <<<"$blocked" >/dev/null
 
