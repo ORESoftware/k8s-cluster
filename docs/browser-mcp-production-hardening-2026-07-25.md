@@ -15,6 +15,11 @@ MCP apps do not accept the existing static operator bearer. Anonymous mode now
 fails closed unless a non-empty hostname allowlist is configured. The initial
 production ceiling is only `benefactor.cc` and its subdomains.
 
+The change was deployed to AWS and Hetzner on 2026-07-25. Both public edges
+passed the repository verifier through `initialize`, `tools/list`, a real
+`browser_act` and `browser_observe`, off-allowlist rejection, and session
+cleanup. The target pods are image-based, Ready, and at zero restarts.
+
 ## Live state observed before the change
 
 ### AWS EC2
@@ -68,9 +73,9 @@ the authoritative health source.
 - `ghcr.io/oresoftware/dd-web-scraper:dev`
 
 It also emits immutable `sha-<commit>` tags, provenance, and SBOMs. Builds use
-the pinned `remote/libs` submodule and the existing `REMOTE_DEV_GH_PAT`
-repository secret. Pull requests build without pushing; pushes to `dev` or
-`main` publish.
+the pinned `remote/libs` submodule and a dedicated read-only deploy key scoped
+only to `ORESoftware/k8s-libs-and-shared-defs`. Pull requests build without
+pushing; pushes to `dev` or `main` publish.
 
 The browser MCP runtime is distroless and starts the already-built Rust binary
 directly. The Playwright worker image starts compiled JavaScript directly.
@@ -110,9 +115,11 @@ Controls now enforced:
   redirect, iframe, subresource, fetch/XHR, and WebSocket—not only explicit
   model-authored `goto` actions. URL credentials and non-default ports are
   denied.
-- Anonymous session ownership is derived from the last
-  `X-Forwarded-For` address appended by the trusted gateway. Caller-supplied
-  bearer text cannot bypass per-owner quotas.
+- The trusted gateway normalizes anonymous session identity before forwarding:
+  direct AWS traffic uses the socket peer, while traffic from the `10.244/16`
+  cluster pod CIDR uses the outer ingress address. This prevents Hetzner
+  ingress pod changes from invalidating a browser session. Direct Internet
+  callers cannot inject the trusted value.
 - Gateway limit: 60 requests/minute per source, burst 15, at most 10 concurrent
   connections.
 - MCP body, worker response, action-count, timeout, session, idle, and absolute
@@ -186,25 +193,25 @@ search/fetch capabilities:
 - Structured stdout continues through Promtail/Loki and OTLP traces continue
   through the collector.
 
-## Deploy
+## Deployment verification
 
-1. Resolve the existing superproject merge conflict without discarding either
-   side, then merge these changes to `dev`.
-2. Confirm the `browser runtime images` workflow publishes both `:dev` images
-   and that the packages are readable by both clusters.
-3. Reconcile the cluster profiles so the new ArgoCD Application exists:
+Completed:
 
-   ```bash
-   kubectl --context dd-ec2-runtime apply -k remote/argocd/clusters/aws
-   ssh hetzner-k8s-bastion \
-     'kubectl apply -k /path/to/k8s-cluster/remote/argocd/clusters/hetzner'
-   ```
+- The hardening was merged with current `dev`, committed, and pushed through
+  `adaeb8db`.
+- The `browser runtime images` workflow published both `:dev` images with
+  provenance and SBOMs. Anonymous manifest reads succeeded.
+- The expired broad PAT was replaced for this workflow by a repository-scoped,
+  read-only deploy key.
+- The AWS and Hetzner cluster profiles were reconciled. `dd-browser-mcp-rs` is
+  now an ArgoCD-owned, Synced/Healthy Application on both clusters.
+- `dd-browser-mcp-rs`, `dd-web-scraper`, and `dd-remote-gateway` completed their
+  rollouts on both clusters. NGINX configuration tests passed in both live
+  gateway pods.
+- Two terminated Hetzner pods from the obsolete hostPath ReplicaSet were
+  removed after confirming that ReplicaSet had zero desired replicas.
 
-   Use the actual GitOps bootstrap path on the Hetzner control plane; do not
-   update the shared node checkout merely to restart one service.
-
-4. Wait for `dd-web-scraper`, `dd-browser-mcp-rs`, and the gateway rollout.
-5. Run the verifier against both public edges:
+The final public checks were:
 
    ```bash
    scripts/verify-browser-mcp.sh https://98.90.186.114/browser-mcp
@@ -216,6 +223,12 @@ The verifier checks health, correct SSE refusal, `initialize`,
 `notifications/initialized`, exact `tools/list`, a real `browser_act` navigation
 to Benefactor, `browser_observe`, denial of an off-allowlist host, and session
 cleanup.
+
+The broader `dd-next-runtime` Application still reports the historical
+`Degraded` aggregate health state (its transition timestamp predates this
+change), although its latest sync operation succeeded and all three target
+deployments are Ready. Diagnose that aggregate status separately; it is not a
+browser MCP availability failure.
 
 ## ChatGPT setup
 
