@@ -24,7 +24,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-07-26-browser-mcp-oauth'
+        dd.dev/telemetry-revision: '2026-07-26-browser-mcp-noauth'
       labels:
         app: dd-browser-mcp-rs
         app.kubernetes.io/name: dd-browser-mcp-rs
@@ -89,11 +89,13 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
-            # ChatGPT custom MCP apps discover the in-process OAuth 2.1
-            # authorization server from the 401 Bearer challenge. A static
-            # operator bearer is deliberately not accepted on this public path.
+            # Temporary ChatGPT compatibility posture, authorized 2026-07-26:
+            # permit unauthenticated MCP sessions while retaining server-defined
+            # workflow allowlists, the private worker credential, NetworkPolicy,
+            # and gateway abuse limits. Set this back to 'true' to restore the
+            # in-process OAuth 2.1 authorization flow.
             - name: BROWSER_MCP_REQUIRE_AUTH
-              value: 'true'
+              value: 'false'
             # Both trusted public edges serve the same GitOps workload. Host
             # matching selects the exact issuer/resource and binds each access
             # token to the edge where its flow started.

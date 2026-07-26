@@ -92,7 +92,7 @@ function nginxLocation(source: string, declaration: string): string {
   return source.slice(start, end);
 }
 
-test('OAuth browser-mcp has reviewed, server-defined workflow domain ceilings', () => {
+test('public browser-mcp has reviewed, server-defined workflow domain ceilings', () => {
   const manifest = readDeployment();
   if (!manifest) return;
 
@@ -110,15 +110,15 @@ test('OAuth browser-mcp has reviewed, server-defined workflow domain ceilings', 
   );
   assert.equal(
     envValue(manifest, 'BROWSER_MCP_REQUIRE_AUTH'),
-    'true',
-    'The public write-capable browser MCP must require OAuth.',
+    'false',
+    'The temporary ChatGPT compatibility surface is intentionally no-auth; keep compensating controls reviewed.',
   );
 
   const domains = (value as string).split(',').map((domain) => domain.trim());
   assert.deepEqual(
     domains,
     REVIEWED_BROWSER_CEILING_DOMAINS,
-    'The OAuth production endpoint must contain only the reviewed workflow-profile union.',
+    'The public production endpoint must contain only the reviewed workflow-profile union.',
   );
   assert.ok(
     domains.every(

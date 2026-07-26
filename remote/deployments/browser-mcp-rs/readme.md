@@ -131,10 +131,12 @@ and `/healthz` are anonymous. Before relying on it, confirm:
    `{"value": "...", "domains": ["irs.gov"]}` — a bound secret is only typed
    into a matching origin, never an attacker page. Bare-string secrets have no
    domain binding.
-4. **OAuth posture.** Keep `BROWSER_MCP_REQUIRE_AUTH=true`, rotate the signing
-   and operator secrets independently, retain short access-token lifetimes, and
-   keep Redis reachable for single-use authorization codes and rotating refresh
-   grants. The gateway separately rate-limits OAuth POSTs and MCP calls.
+4. **Temporary no-auth posture.** `BROWSER_MCP_REQUIRE_AUTH=false` is currently
+   authorized for ChatGPT compatibility. Keep the named workflow allowlists,
+   private worker credential, NetworkPolicy, gateway rate/concurrency/body
+   limits, and redacted logging in place. Restore `true` to re-enable the
+   in-process OAuth 2.1 flow; its signing/operator secrets and isolated Redis
+   state remain provisioned for that rollback.
 5. **Webpage text is untrusted** and is only ever returned under
    `visible_text.untrusted_content`; page titles are kept out of the model's
    text/summary stream.
@@ -143,7 +145,7 @@ and `/healthz` are anonymous. Before relying on it, confirm:
 
 | Path                                        | Method     | Notes                                      |
 | ------------------------------------------- | ---------- | ------------------------------------------ |
-| `/mcp`                                      | POST (GET) | OAuth-protected MCP-over-HTTP JSON-RPC.    |
+| `/mcp`                                      | POST (GET) | MCP-over-HTTP JSON-RPC; auth is configurable. |
 | `/.well-known/oauth-protected-resource`     | GET        | RFC 9728 resource metadata.                |
 | `/.well-known/oauth-authorization-server`   | GET        | RFC 8414 authorization-server metadata.    |
 | `/oauth/register`                           | POST       | Dynamic public-client registration.        |
@@ -165,7 +167,7 @@ Public URLs:
 | `PORT`                               | `8092`                                                 | Bind port.                                             |
 | `BROWSER_MCP_WORKER_URL`             | `http://dd-web-scraper.default.svc.cluster.local:8097` | Private browser worker.                                |
 | `SERVER_AUTH_SECRET`                 | —                                                      | Required worker credential.                            |
-| `BROWSER_MCP_REQUIRE_AUTH`           | `false` in code; `true` in production                  | Enable OAuth-protected MCP access.                     |
+| `BROWSER_MCP_REQUIRE_AUTH`           | `false` in code and current production                 | Set `true` to enable OAuth-protected MCP access.       |
 | `BROWSER_MCP_PUBLIC_BASE_URLS`       | —                                                      | Trusted public MCP resource/issuer URLs.               |
 | `BROWSER_MCP_OAUTH_SIGNING_SECRET`   | —                                                      | Required 32+ byte token/signature key.                 |
 | `BROWSER_MCP_OAUTH_OPERATOR_SECRET`  | —                                                      | Required 20+ byte human consent secret.                |
