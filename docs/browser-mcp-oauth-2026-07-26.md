@@ -111,6 +111,8 @@ The browser worker still independently enforces:
 - prompt-injection boundaries;
 - per-owner/session quotas;
 - CAPTCHA, MFA, payment, signature, attestation, and sensitive-field stops;
+- in-memory inline uploads capped at 256 KiB, with validated filenames, MIME
+  types, canonical base64, no persistence, and no file-content logging;
 - a separate confirmation digest for consequential submissions.
 
 OAuth does not widen the hostname ceiling. Caller-supplied `owner` and
@@ -286,6 +288,8 @@ covered:
   forms, fields, buttons, links, validation errors, and downloads;
 - typing one harmless test value, then proving an explicit `submit` stops at
   `needs_confirmation` without final submission;
+- a real Chromium regression test uploading a five-byte text fixture entirely in
+  memory and observing the selected filename and byte count;
 - rejection of navigation to a hostname outside the deployment allowlist.
 - session cleanup with zero browser sessions left behind.
 

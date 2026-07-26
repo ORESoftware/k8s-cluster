@@ -109,11 +109,37 @@ test(
       const vErrors = (obs2.validation_errors ?? []) as Array<Record<string, unknown>>;
       assert.ok(vErrors.length >= 1, `expected a validation error, got ${JSON.stringify(vErrors)}`);
 
-      // 4) fill the form correctly (semantic + ref targeting) and advance.
+      // 4) upload a small file entirely in memory and observe its page-visible
+      // filename/size. The worker must not need an upload-token directory.
+      const uploaded = await act({
+        request_id: 'r2a',
+        session_id: sessionId,
+        expected_revision: obs2.revision,
+        intent: 'attach a harmless text fixture',
+        actions: [
+          {
+            type: 'upload',
+            target: { label: 'Attachment' },
+            inline_file: {
+              file_name: 'fixture.txt',
+              mime_type: 'text/plain',
+              data_base64: Buffer.from('hello').toString('base64'),
+            },
+          },
+        ],
+      });
+      assert.equal(uploaded.status, 'completed', JSON.stringify(uploaded));
+      const obsUpload = await observe({ session_id: sessionId, include: ['visible_text'] });
+      assert.match(
+        (obsUpload.visible_text as { untrusted_content: string }).untrusted_content,
+        /Selected fixture\.txt \(5 bytes\)/,
+      );
+
+      // 5) fill the form correctly (semantic + ref targeting) and advance.
       const filled = await act({
         request_id: 'r3',
         session_id: sessionId,
-        expected_revision: obs2.revision,
+        expected_revision: obsUpload.revision,
         intent: 'complete the form and continue',
         actions: [
           {
@@ -131,7 +157,7 @@ test(
       assert.match((filled.page as { url: string }).url, /\/step2/);
       assert.ok((filled.revision as number) > (obs2.revision as number), 'revision advanced after navigation');
 
-      // 5) stale revision is rejected.
+      // 6) stale revision is rejected.
       const stale = await act({
         request_id: 'r4',
         session_id: sessionId,
@@ -141,7 +167,7 @@ test(
       });
       assert.equal(stale.status, 'revision_conflict', JSON.stringify(stale));
 
-      // 6) consequential submit -> needs_confirmation with a digest.
+      // 7) consequential submit -> needs_confirmation with a digest.
       const obs3 = await observe({ session_id: sessionId, include: ['interactive_elements'] });
       const pending = await act({
         request_id: 'r5',
@@ -154,7 +180,7 @@ test(
       const pa = pending.pending_action as { action_digest: string; revision: number };
       assert.match(pa.action_digest, /^sha256:[0-9a-f]{64}$/);
 
-      // 7) confirmed submit succeeds and navigates to /done.
+      // 8) confirmed submit succeeds and navigates to /done.
       const confirmed = await act({
         request_id: 'r6',
         session_id: sessionId,

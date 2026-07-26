@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 // dd-browser-mcp-rs
 //
 // Public MCP control plane for declarative browser automation. It exposes
@@ -350,7 +352,7 @@ fn browser_act_schema() -> Value {
             "expected_revision": { "type": "integer", "minimum": 0, "description": "The revision you last observed. If it no longer matches, the call returns status 'revision_conflict' instead of acting on stale state." },
             "actions": {
                 "type": "array", "minItems": 1, "maxItems": 20,
-                "description": "Ordered declarative actions. Types: start, goto, fill, type, fill_form, click, submit, select, check, uncheck, press, upload, scroll, screenshot, extract, wait, back, forward, reload, close. Targets use ref (from browser_state) or semantic fields role/name/label/placeholder/visible_text/test_id, with an optional css_fallback. XPath and raw JavaScript are not supported.",
+                "description": "Ordered declarative actions. Types: start, goto, fill, type, fill_form, click, submit, select, check, uncheck, press, upload, scroll, screenshot, extract, wait, back, forward, reload, close. Upload accepts exactly one of file_token (operator-staged) or inline_file ({file_name,mime_type,data_base64}, up to 256 KiB decoded). Targets use ref (from browser_state) or semantic fields role/name/label/placeholder/visible_text/test_id, with an optional css_fallback. XPath and raw JavaScript are not supported.",
                 "items": {
                     "type": "object",
                     "required": ["type"],
@@ -366,6 +368,16 @@ fn browser_act_schema() -> Value {
                         "option": { "type": "object" },
                         "key": { "type": "string" },
                         "file_token": { "type": "string" },
+                        "inline_file": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": ["file_name", "data_base64"],
+                            "properties": {
+                                "file_name": { "type": "string", "minLength": 1, "maxLength": 128 },
+                                "mime_type": { "type": "string", "minLength": 3, "maxLength": 100 },
+                                "data_base64": { "type": "string", "minLength": 4, "maxLength": 349528 }
+                            }
+                        },
                         "condition": { "type": "object" },
                         "delta_x": { "type": "integer", "minimum": -5000, "maximum": 5000 },
                         "delta_y": { "type": "integer", "minimum": -5000, "maximum": 5000 },

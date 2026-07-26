@@ -90,6 +90,85 @@ test('browser_act accepts the complete declarative action surface', () => {
   );
 });
 
+test('upload accepts exactly one bounded source and rejects unsafe inline files', () => {
+  const base = {
+    request_id: 'r-upload',
+    intent: 'attach a harmless text file',
+    session_id: 's',
+  };
+  const target = { label: 'Attachment' };
+  assert.equal(
+    ActRequestSchema.safeParse({
+      ...base,
+      actions: [
+        {
+          type: 'upload',
+          target,
+          inline_file: {
+            file_name: 'note.txt',
+            mime_type: 'text/plain',
+            data_base64: Buffer.from('hello').toString('base64'),
+          },
+        },
+      ],
+    }).success,
+    true,
+  );
+  assert.equal(
+    ActRequestSchema.safeParse({
+      ...base,
+      actions: [{ type: 'upload', target, file_token: 'token-123' }],
+    }).success,
+    true,
+  );
+  assert.equal(
+    ActRequestSchema.safeParse({
+      ...base,
+      actions: [
+        {
+          type: 'upload',
+          target,
+          file_token: 'token-123',
+          inline_file: { file_name: 'note.txt', data_base64: 'aGVsbG8=' },
+        },
+      ],
+    }).success,
+    false,
+  );
+  assert.equal(
+    ActRequestSchema.safeParse({
+      ...base,
+      actions: [
+        {
+          type: 'upload',
+          target,
+          inline_file: {
+            file_name: '../secret.txt',
+            data_base64: 'aGVsbG8=',
+          },
+        },
+      ],
+    }).success,
+    false,
+  );
+  assert.equal(
+    ActRequestSchema.safeParse({
+      ...base,
+      actions: [
+        {
+          type: 'upload',
+          target,
+          inline_file: {
+            file_name: 'too-large.bin',
+            data_base64: Buffer.alloc(256 * 1024 + 1).toString('base64'),
+          },
+        },
+      ],
+    }).success,
+    false,
+  );
+});
+
 test('domain allowlist matches host and subdomains only', () => {
   const list = ['sos.state.co.us', 'irs.gov'];
   assert.equal(domainAllowed('sos.state.co.us', list), true);

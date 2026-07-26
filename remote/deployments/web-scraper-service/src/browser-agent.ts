@@ -136,6 +136,39 @@ const FileTokenSchema = z
   .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/)
   .refine((value) => !value.includes('..'));
 
+const MAX_INLINE_UPLOAD_BYTES = 256 * 1024;
+const MAX_INLINE_UPLOAD_BASE64_CHARS = 4 * Math.ceil(MAX_INLINE_UPLOAD_BYTES / 3);
+const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const MIME_TYPE_RE = /^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$/;
+
+const InlineUploadSchema = z
+  .object({
+    file_name: z
+      .string()
+      .min(1)
+      .max(128)
+      .refine(
+        (value) =>
+          value !== '.' &&
+          value !== '..' &&
+          !value.includes('/') &&
+          !value.includes('\\') &&
+          !/[\u0000-\u001f\u007f]/.test(value),
+        'file_name must be a plain filename without path separators or control characters',
+      ),
+    mime_type: z.string().min(3).max(100).regex(MIME_TYPE_RE).optional(),
+    data_base64: z
+      .string()
+      .min(4)
+      .max(MAX_INLINE_UPLOAD_BASE64_CHARS)
+      .regex(BASE64_RE, 'data_base64 must use canonical padded base64')
+      .refine(
+        (value) => Buffer.from(value, 'base64').byteLength <= MAX_INLINE_UPLOAD_BYTES,
+        `decoded file must be no more than ${MAX_INLINE_UPLOAD_BYTES} bytes`,
+      ),
+  })
+  .strict();
+
 const WaitConditionSchema = z.union([
   z.object({ duration_ms: z.number().int().min(0).max(60_000) }).strict(),
   z.object({ url_matches: z.string().min(1).max(600) }).strict(),
@@ -146,7 +179,7 @@ const WaitConditionSchema = z.union([
     .strict(),
 ]);
 
-const ActionSchema = z.discriminatedUnion('type', [
+const ActionSchema = z.union([
   z
     .object({
       type: z.literal('start'),
@@ -235,9 +268,18 @@ const ActionSchema = z.discriminatedUnion('type', [
     .object({
       type: z.literal('upload'),
       target: TargetSchema,
-      file_token: FileTokenSchema,
+      file_token: FileTokenSchema.optional(),
+      inline_file: InlineUploadSchema.optional(),
     })
-    .strict(),
+    .strict()
+    .superRefine((value, ctx) => {
+      if ((value.file_token === undefined) === (value.inline_file === undefined)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'upload requires exactly one of file_token or inline_file',
+        });
+      }
+    }),
   z
     .object({
       type: z.literal('scroll'),
@@ -993,7 +1035,7 @@ async function resolveSecret(ref: string, currentHost: string): Promise<string> 
 
 async function resolveUploadToken(token: string): Promise<string> {
   if (!agentConfig.uploadsDir) {
-    throw new AgentError('unsafe_download', 'file uploads are not enabled on this worker');
+    throw new AgentError('unsafe_download', 'the operator-staged upload token store is not enabled');
   }
   const base = await realpath(agentConfig.uploadsDir).catch(() => {
     throw new AgentError('unsafe_download', 'the upload token store is unavailable');
@@ -1010,6 +1052,28 @@ async function resolveUploadToken(token: string): Promise<string> {
     throw new AgentError('unsafe_download', 'upload token must reference a regular file up to 25 MiB');
   }
   return file;
+}
+
+function resolveInlineUpload(inline: z.infer<typeof InlineUploadSchema>): {
+  name: string;
+  mimeType: string;
+  buffer: Buffer;
+} {
+  const buffer = Buffer.from(inline.data_base64, 'base64');
+  if (
+    buffer.byteLength > MAX_INLINE_UPLOAD_BYTES ||
+    buffer.toString('base64') !== inline.data_base64
+  ) {
+    throw new AgentError(
+      'unsafe_download',
+      `inline upload must be canonical base64 encoding no more than ${MAX_INLINE_UPLOAD_BYTES} bytes`,
+    );
+  }
+  return {
+    name: inline.file_name,
+    mimeType: inline.mime_type ?? 'application/octet-stream',
+    buffer,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1587,7 +1651,10 @@ async function runActions(
         }
         case 'upload': {
           const loc = await resolveTarget(session, action.target);
-          const file = await resolveUploadToken(action.file_token);
+          const file =
+            action.file_token !== undefined
+              ? await resolveUploadToken(action.file_token)
+              : resolveInlineUpload(action.inline_file!);
           await loc.setInputFiles(file, { timeout: remaining() });
           changed = true;
           results.push({ index: i, type: 'upload', status: 'completed', resolved_ref: action.target.ref });
@@ -2017,12 +2084,17 @@ export function registerBrowserAgentRoutes(
     ok: true,
     sessions: sessions.size,
     maxSessions: agentConfig.maxSessionsTotal,
-    uploadsEnabled: Boolean(agentConfig.uploadsDir),
+    uploadsEnabled: true,
+    inlineUploadsEnabled: true,
+    tokenUploadsEnabled: Boolean(agentConfig.uploadsDir),
+    maxInlineUploadBytes: MAX_INLINE_UPLOAD_BYTES,
   }));
 
   fastify.get('/agent/tools', async () => ({
     tools: ['browser_act', 'browser_state'],
     engines: ['chromium', 'firefox', 'webkit'],
+    uploadModes: agentConfig.uploadsDir ? ['inline', 'file_token'] : ['inline'],
+    maxInlineUploadBytes: MAX_INLINE_UPLOAD_BYTES,
     allowlistEnforced: agentConfig.allowedDomains.length > 0,
     allowedDomains: agentConfig.allowedDomains,
   }));

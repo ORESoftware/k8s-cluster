@@ -15,8 +15,18 @@ const PAGE_1 = `<!doctype html><html><head><title>Step 1 - Entity</title></head>
       <option value="NY">New York</option>
     </select>
     <label><input id="agree" name="agree" type="checkbox" required /> I agree to the terms</label>
+    <label for="attachment">Attachment</label>
+    <input id="attachment" name="attachment" type="file" />
+    <output id="upload-status">No attachment selected</output>
     <button id="next" type="submit">Next</button>
   </form>
+  <script>
+    document.querySelector('#attachment').addEventListener('change', (event) => {
+      const file = event.target.files[0];
+      document.querySelector('#upload-status').textContent =
+        file ? 'Selected ' + file.name + ' (' + file.size + ' bytes)' : 'No attachment selected';
+    });
+  </script>
 </body></html>`;
 
 function page2(entity, state) {
