@@ -40,7 +40,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: web-scraper
-          image: ghcr.io/oresoftware/dd-web-scraper@sha256:6fa9f51868aa63371304992431b5be0746705be03623d616446d2ad98dfd1ed1
+          image: ghcr.io/oresoftware/dd-web-scraper@sha256:713a943c6bfb2e2f39ccf7a643f5e86bbf76a77b5dca14fd546f38268f99ebdd
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
