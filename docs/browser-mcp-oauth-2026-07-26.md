@@ -267,7 +267,10 @@ Both `dd-browser-mcp-rs` ArgoCD Applications reported `Synced/Healthy` at
 each cluster. The browser worker pin is deployed from
 `d01047df1396cab4e4e4d03350d14f80bf341779`, with one ready worker and zero
 restarts in each cluster. The full verifier passed independently against both
-public URLs. The passing sequence covered:
+public URLs; AWS also passed two complete verifier runs back-to-back after the
+reconnect-burst adjustment. Gateway log inspection after those calls found only
+path-only `dd.gateway.access.v1` records and zero query-bearing browser-MCP
+records. The passing sequence covered:
 
 - trusted public TLS and `/healthz`;
 - unauthenticated MCP `401` with the RFC 9728 discovery challenge;
