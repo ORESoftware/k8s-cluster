@@ -611,6 +611,27 @@ function EXTRACT_FN(opts: { maxElements: number; maxTextChars: number }): RawSna
   const bodyText = (document.body?.innerText || '').replace(/\s+/g, ' ').trim();
   const visibleText = bodyText.slice(0, opts.maxTextChars);
   const haystack = (bodyText + ' ' + (document.title || '')).slice(0, 40000);
+  const visibleFormControls = Array.from(
+    document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+      'input:not([type="hidden"]),textarea,select',
+    ),
+  ).filter((el) => {
+    const style = window.getComputedStyle(el);
+    return !el.disabled && style.display !== 'none' && style.visibility !== 'hidden';
+  });
+  const hasExplicitMfaControl = !!document.querySelector(
+    [
+      'input[autocomplete="one-time-code"]',
+      'input[name*="otp" i]',
+      'input[id*="otp" i]',
+      'input[name*="one_time" i]',
+      'input[id*="one-time" i]',
+      'input[name*="verification_code" i]',
+      'input[id*="verification-code" i]',
+    ].join(','),
+  );
+  const hasMfaPromptShape =
+    MFA_RE.test(haystack) && visibleFormControls.length > 0 && visibleFormControls.length <= 4;
 
   return {
     title: document.title || '',
@@ -619,7 +640,10 @@ function EXTRACT_FN(opts: { maxElements: number; maxTextChars: number }): RawSna
     forms,
     signals: {
       captcha: CAPTCHA_RE.test(haystack) || !!document.querySelector('iframe[src*="captcha" i],iframe[src*="recaptcha" i],iframe[title*="captcha" i],.g-recaptcha,.h-captcha,.cf-turnstile'),
-      mfa: MFA_RE.test(haystack),
+      // A vendor page may mention MFA in marketing, support, or footer copy.
+      // Treat it as a blocker only when the page also looks like a compact
+      // code-entry challenge or exposes an explicit one-time-code control.
+      mfa: hasExplicitMfaControl || hasMfaPromptShape,
       payment: PAYMENT_RE.test(haystack) || !!document.querySelector('input[autocomplete="cc-number"],input[name*="cardnumber" i]'),
       signature: SIGNATURE_RE.test(haystack) || !!document.querySelector('canvas[class*="sign" i],iframe[src*="docusign" i]'),
       legalAttestation: LEGAL_RE.test(haystack),
