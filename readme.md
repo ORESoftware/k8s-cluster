@@ -175,6 +175,22 @@ The manager prewarms one Node.js host worker by default via `LAMBDA_PREWARM_RUNT
 `LAMBDA_PREWARM_CONTAINER_RUNTIMES` can also warm container workers when the runtime images below
 exist in the EC2 node's local containerd image store.
 
+Every local invocation checks out an exclusive lease on a supervised worker;
+requests never pile up inside one child's mailbox. Set `maxConcurrency` in the
+function definition (or `metaData.maxConcurrency` while using the current
+control-plane schema) to create a function-specific pool of 1–1000 workers.
+When the field is absent, compatible functions share a runtime pool capped by
+`LAMBDA_DEFAULT_MAX_CONCURRENCY` (16 by default) on each runner replica. A
+`reuseKey` is an affinity/state key and remains deliberately single-flight.
+Saturated pools fail immediately with HTTP 429, and expose busy, idle,
+rejection, and abandoned-lease metrics. During a runtime command or image
+change, busy workers from the old generation drain while new traffic checks out
+workers from the new generation.
+
+The limit is local to a runner replica. Fleet-wide reserved concurrency and a
+durable overflow queue remain control-plane work; multiplying this value by
+replica count is the current upper-bound estimate for one revision.
+
 ### Playwright and Puppeteer as Node.js lambda capabilities
 
 Containerized Node.js lambdas can opt into first-class Chromium automation by

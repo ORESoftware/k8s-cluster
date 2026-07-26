@@ -145,6 +145,8 @@ spec:
               value: nodejs
             - name: LAMBDA_PREWARM_CONTAINER_RUNTIMES
               value: ''
+            - name: LAMBDA_DEFAULT_MAX_CONCURRENCY
+              value: '16'
             - name: LAMBDA_CONTAINER_NERDCTL
               value: /usr/local/bin/nerdctl
             - name: LAMBDA_CONTAINER_NAMESPACE

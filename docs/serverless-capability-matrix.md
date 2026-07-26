@@ -41,7 +41,7 @@ and **gap** is not yet implemented.
 | CloudEvents trigger bindings and filters | **gap** | HTTP/NATS sources, attribute filters, fan-out, authenticated sinks |
 | Response streaming | **gap** | Backpressure-aware chunked/SSE response protocol |
 | WebSockets | **gap** | Supervised connection actors, hibernation/persistence strategy |
-| Per-function concurrency controls | **gap** | Reserved/max concurrency, queue backpressure, downstream protection |
+| Per-function concurrency controls | **partial** | Bounded per-replica worker pools, single-flight affinity keys, immediate HTTP 429 backpressure, safe lease cleanup, and busy/idle/rejection metrics; fleet-wide reservations and durable overflow remain |
 | Scale-to-zero / autoscale | **partial** | Kubernetes deployment today; needs KEDA/Knative-style demand scaling |
 | Edge or multi-region placement | **gap** | Region policy, data locality, replicated routing, failover |
 | Layers / shared dependency bundles | **gap** | Immutable digest-addressed dependency layers |
@@ -80,6 +80,8 @@ CloudEvents routing, scale-to-zero, and Kubernetes-native traffic splitting.
 
 ### Wave 2 — reliable asynchronous execution
 
+- Bound local per-function concurrency with exclusive worker leases, immediate
+  overload rejection, abandoned-request cleanup, and old-generation draining.
 - Add durable invocation records with caller-supplied idempotency keys.
 - Support sync, async, and stream invocation modes.
 - Add attempts, exponential backoff with jitter, maximum event age, cancellation,
@@ -107,7 +109,8 @@ CloudEvents routing, scale-to-zero, and Kubernetes-native traffic splitting.
 
 ### Wave 5 — placement and elasticity
 
-- Add per-function min/max concurrency and capacity reservations.
+- Extend local per-function max concurrency to fleet-wide min/max capacity and
+  reservations.
 - Add demand-based autoscaling and scale-to-zero without losing durable queues.
 - Add region/data-locality policy, health-aware failover, and replicated routing.
 - Preserve the same control-plane contract for single-node, Kubernetes, and

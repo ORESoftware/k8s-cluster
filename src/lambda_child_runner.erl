@@ -5,6 +5,7 @@
     invoke_definition/6,
     check_definition/3,
     metrics/0,
+    worker_counts/0,
     destroy/1,
     container_command_for_test/2,
     start_manager_link/0,
@@ -75,7 +76,8 @@ check_definition(Command0, DefinitionJson0, TimeoutMs0) ->
                 check_worker_key(Runtime, Containerized),
                 Payload,
                 30000,
-                max_int(TimeoutMs0, 1000)
+                max_int(TimeoutMs0, 1000),
+                default_max_concurrency()
             );
         {error, Reason} ->
             {error, Reason}
@@ -132,12 +134,19 @@ invoke_loaded_definition_local(FallbackCommand, Identifier, DefinitionJson, Requ
         {ok, Command} ->
             Runtime = runtime_from_definition(DefinitionJson),
             Containerized = json_bool_field(DefinitionJson, <<"containerized">>, false),
-            case worker_key(Identifier, DefinitionJson, Runtime, Containerized) of
-                {ok, WorkerKey} ->
+            case worker_pool(Identifier, DefinitionJson, Runtime, Containerized) of
+                {ok, PoolKey, MaxConcurrency} ->
                     IdleMs = idle_ms_from_definition(DefinitionJson, IdleMs0),
                     TimeoutMs = timeout_ms_from_definition(DefinitionJson, TimeoutMs0),
                     Payload = invocation_payload(Identifier, DefinitionJson, RequestPayload),
-                    invoke_worker(Command, WorkerKey, Payload, IdleMs, TimeoutMs);
+                    invoke_worker(
+                        Command,
+                        PoolKey,
+                        Payload,
+                        IdleMs,
+                        TimeoutMs,
+                        MaxConcurrency
+                    );
                 {error, Reason} ->
                     {error, Reason}
             end;
@@ -246,9 +255,9 @@ env_bool(Name, Default) ->
         _ -> Default
     end.
 
-invoke_worker(Command, ReuseKey, Payload, IdleMs, TimeoutMs) ->
-    case ensure_worker(Command, ReuseKey, IdleMs) of
-        {ok, Pid} ->
+invoke_worker(Command, PoolKey, Payload, IdleMs, TimeoutMs, MaxConcurrency) ->
+    case acquire_worker(Command, PoolKey, IdleMs, MaxConcurrency) of
+        {ok, Pid, WorkerKey, LeaseRef} ->
             Ref = make_ref(),
             Monitor = erlang:monitor(process, Pid),
             Pid ! {invoke, self(), Ref, Payload},
@@ -257,28 +266,28 @@ invoke_worker(Command, ReuseKey, Payload, IdleMs, TimeoutMs) ->
                     erlang:demonitor(Monitor, [flush]),
                     byte_bump(child_stdio_bytes_total, Data),
                     io:format(
-                        "lambda_child_stdio reuse_key=~s bytes=~p~n",
-                        [safe_label(ReuseKey), byte_size(Data)]
+                        "lambda_child_stdio pool_key=~s bytes=~p~n",
+                        [safe_label(PoolKey), byte_size(Data)]
                     ),
-                    update_last_used(ReuseKey),
+                    release_worker(WorkerKey, LeaseRef),
                     {ok, Data};
                 {Ref, {exit_status, Status}} ->
                     erlang:demonitor(Monitor, [flush]),
-                    delete_worker(ReuseKey),
+                    remove_worker(WorkerKey, LeaseRef),
                     bump(child_exits_total, 1),
                     {error, iolist_to_binary(io_lib:format("child exited with status ~p", [Status]))};
                 {Ref, {error, Reason}} ->
                     erlang:demonitor(Monitor, [flush]),
-                    delete_worker(ReuseKey),
+                    remove_worker(WorkerKey, LeaseRef),
                     {error, Reason};
                 {'DOWN', Monitor, process, Pid, Reason} ->
-                    delete_worker(ReuseKey),
+                    remove_worker(WorkerKey, LeaseRef),
                     bump(child_exits_total, 1),
                     {error, iolist_to_binary(io_lib:format("child worker exited: ~p", [Reason]))}
             after TimeoutMs ->
                 Pid ! stop,
                 erlang:demonitor(Monitor, [flush]),
-                delete_worker(ReuseKey),
+                remove_worker(WorkerKey, LeaseRef),
                 bump(invocation_timeouts_total, 1),
                 {error, <<"lambda child process timed out">>}
             end;
@@ -288,7 +297,10 @@ invoke_worker(Command, ReuseKey, Payload, IdleMs, TimeoutMs) ->
 
 metrics() ->
     ensure_tables(),
-    ActiveWorkers = ets:info(?WORKERS, size),
+    Counts = worker_counts(),
+    ActiveWorkers = maps:get(active, Counts, 0),
+    BusyWorkers = maps:get(busy, Counts, 0),
+    IdleWorkers = maps:get(idle, Counts, 0),
     iolist_to_binary([
         "# HELP dd_lambda_runner_invocations_total Lambda invocations handled by the Gleam runner.\n",
         "# TYPE dd_lambda_runner_invocations_total counter\n",
@@ -317,23 +329,51 @@ metrics() ->
         "# HELP dd_lambda_runner_pool_dispatch_failures_total Container-pool dispatches that failed (before any local fallback).\n",
         "# TYPE dd_lambda_runner_pool_dispatch_failures_total counter\n",
         metric_line("dd_lambda_runner_pool_dispatch_failures_total", get_metric(pool_dispatch_failures_total)),
+        "# HELP dd_lambda_runner_concurrency_rejections_total Invocations rejected immediately because a local worker pool reached its limit.\n",
+        "# TYPE dd_lambda_runner_concurrency_rejections_total counter\n",
+        metric_line(
+            "dd_lambda_runner_concurrency_rejections_total",
+            get_metric(concurrency_rejections_total)
+        ),
+        "# HELP dd_lambda_runner_abandoned_leases_total Busy workers terminated after their invocation owner exited.\n",
+        "# TYPE dd_lambda_runner_abandoned_leases_total counter\n",
+        metric_line(
+            "dd_lambda_runner_abandoned_leases_total",
+            get_metric(abandoned_leases_total)
+        ),
         "# HELP dd_lambda_runner_active_workers Active reusable child processes.\n",
         "# TYPE dd_lambda_runner_active_workers gauge\n",
-        metric_line("dd_lambda_runner_active_workers", ActiveWorkers)
+        metric_line("dd_lambda_runner_active_workers", ActiveWorkers),
+        "# HELP dd_lambda_runner_busy_workers Supervised child processes with an active invocation lease.\n",
+        "# TYPE dd_lambda_runner_busy_workers gauge\n",
+        metric_line("dd_lambda_runner_busy_workers", BusyWorkers),
+        "# HELP dd_lambda_runner_idle_workers Supervised child processes immediately available for work.\n",
+        "# TYPE dd_lambda_runner_idle_workers gauge\n",
+        metric_line("dd_lambda_runner_idle_workers", IdleWorkers)
     ]).
 
-destroy(ReuseKey0) ->
-    ensure_tables(),
-    ReuseKey = to_binary(ReuseKey0),
-    case ets:lookup(?WORKERS, ReuseKey) of
-        [{ReuseKey, Worker}] ->
-            close_worker(maps:get(pid, Worker)),
-            delete_worker(ReuseKey),
-            bump(child_destroys_total, 1),
-            {ok, <<"destroyed">>};
-        [] ->
-            {ok, <<"not-found">>}
+worker_counts() ->
+    case ets:info(?WORKERS) of
+        undefined ->
+            #{active => 0, busy => 0, idle => 0};
+        _ ->
+            lists:foldl(
+                fun({_WorkerKey, Worker}, Counts) ->
+                    Busy = maps:get(busy, Worker, false),
+                    Counts#{
+                        active := maps:get(active, Counts) + 1,
+                        busy := maps:get(busy, Counts) + bool_int(Busy),
+                        idle := maps:get(idle, Counts) + bool_int(not Busy)
+                    }
+                end,
+                #{active => 0, busy => 0, idle => 0},
+                ets:tab2list(?WORKERS)
+            )
     end.
+
+destroy(PoolKey0) ->
+    ensure_tables(),
+    manager_call({destroy_pool, to_binary(PoolKey0)}).
 
 load_function_definition(Identifier) ->
     case identifier_kind(Identifier) of
@@ -795,16 +835,31 @@ default_container_image(<<"browser">>) ->
 default_container_image(_Runtime) ->
     <<>>.
 
-worker_key(Identifier, DefinitionJson, Runtime, Containerized) ->
+worker_pool(Identifier, DefinitionJson, Runtime, Containerized) ->
     case json_string_field(DefinitionJson, <<"reuseKey">>) of
         <<>> ->
-            {ok, case Containerized of
-                true -> iolist_to_binary(["pool:container:", Runtime]);
-                false -> iolist_to_binary(["pool:host:", Runtime])
-            end};
+            ConfiguredMax = json_int_field(DefinitionJson, <<"maxConcurrency">>, 0),
+            case ConfiguredMax > 0 of
+                true ->
+                    {ok,
+                        iolist_to_binary(["function:", Identifier, ":default"]),
+                        clamp_int(ConfiguredMax, 1, 1000)};
+                false ->
+                    PoolKey = case Containerized of
+                        true -> iolist_to_binary(["pool:container:", Runtime]);
+                        false -> iolist_to_binary(["pool:host:", Runtime])
+                    end,
+                    {ok, PoolKey, default_max_concurrency()}
+            end;
         ReuseKey ->
             case safe_reuse_key(ReuseKey) of
-                true -> {ok, iolist_to_binary(["function:", Identifier, ":", ReuseKey])};
+                %% An affinity key represents one stateful execution context.
+                %% It therefore stays single-flight even if maxConcurrency is
+                %% also present in the definition.
+                true ->
+                    {ok,
+                        iolist_to_binary(["function:", Identifier, ":", ReuseKey]),
+                        1};
                 false -> {error, <<"reuseKey contains unsupported characters">>}
             end
     end.
@@ -827,6 +882,9 @@ timeout_ms_from_definition(DefinitionJson, Fallback) ->
         true -> max_int(Timeout, 1000);
         false -> max_int(Fallback, 1000)
     end.
+
+default_max_concurrency() ->
+    clamp_int(env_int("LAMBDA_DEFAULT_MAX_CONCURRENCY", 16), 1, 1000).
 
 runtime_from_definition(DefinitionJson) ->
     canonical_runtime(json_string_field(DefinitionJson, <<"runtime">>)).
@@ -971,8 +1029,29 @@ manager_init() ->
 
 manager_loop() ->
     receive
-        {call, From, Ref, {ensure_worker, Command, ReuseKey, IdleMs}} ->
-            From ! {Ref, ensure_worker_in_manager(Command, ReuseKey, IdleMs)},
+        {call, From, Ref, {acquire_worker, Command, PoolKey, IdleMs, MaxConcurrency}} ->
+            From ! {
+                Ref,
+                acquire_worker_in_manager(
+                    Command,
+                    PoolKey,
+                    IdleMs,
+                    MaxConcurrency,
+                    From
+                )
+            },
+            manager_loop();
+        {call, From, Ref, {release_worker, WorkerKey, LeaseRef}} ->
+            From ! {Ref, release_worker_in_manager(WorkerKey, LeaseRef)},
+            manager_loop();
+        {call, From, Ref, {remove_worker, WorkerKey, LeaseRef}} ->
+            From ! {Ref, remove_worker_in_manager(WorkerKey, LeaseRef)},
+            manager_loop();
+        {call, From, Ref, {destroy_pool, PoolKey}} ->
+            From ! {Ref, destroy_pool_in_manager(PoolKey)},
+            manager_loop();
+        {call, From, Ref, {reap_idle, NowMs}} ->
+            From ! {Ref, reap_idle_in_manager(NowMs)},
             manager_loop();
         {'DOWN', Monitor, process, _Pid, _Reason} ->
             delete_worker_by_monitor(Monitor),
@@ -1027,7 +1106,11 @@ prewarm_workers() ->
         fun(Runtime) ->
             case host_command(Runtime) of
                 {ok, Command} ->
-                    case ensure_worker_in_manager(Command, iolist_to_binary(["pool:host:", Runtime]), 300000) of
+                    case ensure_idle_worker_in_manager(
+                        Command,
+                        iolist_to_binary(["pool:host:", Runtime]),
+                        300000
+                    ) of
                         {ok, _Pid} -> ok;
                         {error, Reason} ->
                             io:format(
@@ -1054,7 +1137,11 @@ prewarm_workers() ->
             ]),
             case container_command(Runtime, DefinitionJson) of
                 {ok, Command} ->
-                    case ensure_worker_in_manager(Command, iolist_to_binary(["pool:container:", Runtime]), 300000) of
+                    case ensure_idle_worker_in_manager(
+                        Command,
+                        iolist_to_binary(["pool:container:", Runtime]),
+                        300000
+                    ) of
                         {ok, _Pid} -> ok;
                         {error, Reason} ->
                             io:format(
@@ -1072,33 +1159,95 @@ prewarm_workers() ->
         ContainerRuntimes
     ).
 
-ensure_worker(Command, ReuseKey, IdleMs) ->
-    manager_call({ensure_worker, Command, ReuseKey, IdleMs}).
+acquire_worker(Command, PoolKey, IdleMs, MaxConcurrency) ->
+    manager_call({
+        acquire_worker,
+        Command,
+        PoolKey,
+        IdleMs,
+        MaxConcurrency
+    }).
 
-ensure_worker_in_manager(Command, ReuseKey, IdleMs) ->
-    case ets:lookup(?WORKERS, ReuseKey) of
-        [{ReuseKey, Worker}] ->
-            ExistingCommand = maps:get(command, Worker),
-            Pid = maps:get(pid, Worker),
-            case ExistingCommand =:= Command andalso worker_alive(Pid) of
-                true ->
-                    bump(child_reuses_total, 1),
-                    {ok, Pid};
-                false ->
-                    close_worker(Pid),
-                    delete_worker(ReuseKey),
-                    spawn_worker(Command, ReuseKey, IdleMs)
-            end;
-        [] ->
-            spawn_worker(Command, ReuseKey, IdleMs)
+release_worker(WorkerKey, LeaseRef) ->
+    manager_call({release_worker, WorkerKey, LeaseRef}).
+
+remove_worker(WorkerKey, LeaseRef) ->
+    manager_call({remove_worker, WorkerKey, LeaseRef}).
+
+acquire_worker_in_manager(Command, PoolKey, IdleMs, MaxConcurrency, Owner) ->
+    remove_dead_and_stale_idle_workers(Command, PoolKey),
+    MatchingWorkers = matching_workers(Command, PoolKey),
+    case first_idle_worker(MatchingWorkers) of
+        {ok, WorkerKey, Worker} ->
+            bump(child_reuses_total, 1),
+            lease_worker(WorkerKey, Worker, Owner);
+        none when length(MatchingWorkers) < MaxConcurrency ->
+            spawn_worker(Command, PoolKey, IdleMs, true, Owner);
+        none ->
+            bump(concurrency_rejections_total, 1),
+            {error, iolist_to_binary([
+                "lambda concurrency limit reached for pool ",
+                PoolKey,
+                " (max ",
+                integer_to_binary(MaxConcurrency),
+                ")"
+            ])}
     end.
 
-spawn_worker(Command, ReuseKey, IdleMs) ->
+ensure_idle_worker_in_manager(Command, PoolKey, IdleMs) ->
+    remove_dead_and_stale_idle_workers(Command, PoolKey),
+    case first_idle_worker(matching_workers(Command, PoolKey)) of
+        {ok, _WorkerKey, Worker} ->
+            {ok, maps:get(pid, Worker)};
+        none ->
+            spawn_worker(Command, PoolKey, IdleMs, false, undefined)
+    end.
+
+matching_workers(Command, PoolKey) ->
+    lists:filter(
+        fun({_WorkerKey, Worker}) ->
+            maps:get(pool_key, Worker) =:= PoolKey andalso
+            maps:get(command, Worker) =:= Command andalso
+            worker_alive(maps:get(pid, Worker))
+        end,
+        ets:tab2list(?WORKERS)
+    ).
+
+first_idle_worker(Workers) ->
+    case lists:dropwhile(
+        fun({_WorkerKey, Worker}) -> maps:get(busy, Worker, false) end,
+        Workers
+    ) of
+        [{WorkerKey, Worker} | _] -> {ok, WorkerKey, Worker};
+        [] -> none
+    end.
+
+remove_dead_and_stale_idle_workers(Command, PoolKey) ->
+    lists:foreach(
+        fun({WorkerKey, Worker}) ->
+            SamePool = maps:get(pool_key, Worker) =:= PoolKey,
+            Alive = worker_alive(maps:get(pid, Worker)),
+            StaleIdle = SamePool andalso
+                maps:get(command, Worker) =/= Command andalso
+                not maps:get(busy, Worker, false),
+            case not Alive orelse StaleIdle of
+                true ->
+                    close_worker(maps:get(pid, Worker)),
+                    delete_worker(WorkerKey),
+                    bump(child_destroys_total, 1);
+                false ->
+                    ok
+            end
+        end,
+        ets:tab2list(?WORKERS)
+    ).
+
+spawn_worker(Command, PoolKey, IdleMs, Busy, Owner) ->
     case lambda_runtime_supervisor:start_worker(Command) of
         {ok, Pid} ->
-            register_worker(Pid, Command, ReuseKey, IdleMs);
+            register_worker(Pid, Command, PoolKey, IdleMs, Busy, Owner);
         {ok, Pid, _Info} ->
-            register_worker(Pid, Command, ReuseKey, IdleMs);
+            register_worker(Pid, Command, PoolKey, IdleMs, Busy, Owner);
         {error, Reason} ->
             {error, iolist_to_binary(io_lib:format(
                 "failed to start supervised lambda worker: ~p",
@@ -1106,20 +1255,44 @@ spawn_worker(Command, ReuseKey, IdleMs) ->
             ))}
     end.
 
-register_worker(Pid, Command, ReuseKey, IdleMs) ->
+register_worker(Pid, Command, PoolKey, IdleMs, Busy, Owner) ->
+    WorkerKey = iolist_to_binary([
+        PoolKey,
+        ":worker:",
+        integer_to_binary(erlang:unique_integer([positive, monotonic]))
+    ]),
     Monitor = erlang:monitor(process, Pid),
-    ets:insert(?WORKERS, {
-        ReuseKey,
-        #{
-            command => Command,
-            pid => Pid,
-            monitor => Monitor,
-            idle_ms => IdleMs,
-            last_used_ms => now_ms()
-        }
-    }),
+    Worker = #{
+        command => Command,
+        pool_key => PoolKey,
+        pid => Pid,
+        monitor => Monitor,
+        idle_ms => IdleMs,
+        last_used_ms => now_ms(),
+        busy => false,
+        lease_ref => undefined,
+        lease_monitor => undefined
+    },
+    ets:insert(?WORKERS, {WorkerKey, Worker}),
     bump(child_spawns_total, 1),
-    {ok, Pid}.
+    case Busy of
+        true ->
+            lease_worker(WorkerKey, Worker, Owner);
+        false ->
+            {ok, Pid}
+    end.
+
+lease_worker(WorkerKey, Worker, Owner) ->
+    LeaseRef = make_ref(),
+    LeaseMonitor = erlang:monitor(process, Owner),
+    Leased = Worker#{
+        busy => true,
+        lease_ref => LeaseRef,
+        lease_monitor => LeaseMonitor,
+        last_used_ms => now_ms()
+    },
+    ets:insert(?WORKERS, {WorkerKey, Leased}),
+    {ok, maps:get(pid, Worker), WorkerKey, LeaseRef}.
 
 start_worker_link(Command) ->
     proc_lib:start_link(?MODULE, worker_init, [Command]).
@@ -1190,46 +1363,114 @@ worker_receive_result(Port, From, Ref, Buffer) ->
             From ! {Ref, {error, <<"lambda child worker stopped">>}}
     end.
 
-update_last_used(ReuseKey) ->
-    case ets:lookup(?WORKERS, ReuseKey) of
-        [{ReuseKey, Worker}] ->
-            ets:insert(?WORKERS, {ReuseKey, Worker#{last_used_ms => now_ms()}});
+release_worker_in_manager(WorkerKey, LeaseRef) ->
+    case ets:lookup(?WORKERS, WorkerKey) of
+        [{WorkerKey, Worker}] ->
+            case maps:get(lease_ref, Worker, undefined) =:= LeaseRef of
+                true ->
+                    demonitor_lease(Worker),
+                    Released = Worker#{
+                        busy => false,
+                        lease_ref => undefined,
+                        lease_monitor => undefined,
+                        last_used_ms => now_ms()
+                    },
+                    ets:insert(?WORKERS, {WorkerKey, Released}),
+                    ok;
+                false ->
+                    ok
+            end;
         [] ->
             ok
     end.
 
 reap_idle(NowMs) ->
+    _ = manager_call({reap_idle, NowMs}),
+    ok.
+
+reap_idle_in_manager(NowMs) ->
     lists:foreach(
-        fun({ReuseKey, Worker}) ->
+        fun({WorkerKey, Worker}) ->
             LastUsed = maps:get(last_used_ms, Worker),
             IdleMs = maps:get(idle_ms, Worker),
-            case NowMs - LastUsed > IdleMs of
+            Busy = maps:get(busy, Worker, false),
+            case not Busy andalso NowMs - LastUsed > IdleMs of
                 true ->
                     close_worker(maps:get(pid, Worker)),
-                    delete_worker(ReuseKey),
+                    delete_worker(WorkerKey),
                     bump(child_destroys_total, 1);
                 false ->
                     ok
             end
         end,
         ets:tab2list(?WORKERS)
-    ).
+    ),
+    ok.
 
-delete_worker(ReuseKey) ->
-    case ets:lookup(?WORKERS, ReuseKey) of
-        [{ReuseKey, Worker}] ->
+remove_worker_in_manager(WorkerKey, LeaseRef) ->
+    case ets:lookup(?WORKERS, WorkerKey) of
+        [{WorkerKey, Worker}] ->
+            case maps:get(lease_ref, Worker, undefined) =:= LeaseRef of
+                true ->
+                    close_worker(maps:get(pid, Worker)),
+                    delete_worker(WorkerKey);
+                false ->
+                    ok
+            end;
+        [] ->
+            ok
+    end,
+    ok.
+
+destroy_pool_in_manager(PoolKey) ->
+    Matching = lists:filter(
+        fun({WorkerKey, Worker}) ->
+            WorkerKey =:= PoolKey orelse maps:get(pool_key, Worker) =:= PoolKey
+        end,
+        ets:tab2list(?WORKERS)
+    ),
+    lists:foreach(
+        fun({WorkerKey, Worker}) ->
+            close_worker(maps:get(pid, Worker)),
+            delete_worker(WorkerKey),
+            bump(child_destroys_total, 1)
+        end,
+        Matching
+    ),
+    case Matching of
+        [] -> {ok, <<"not-found">>};
+        _ -> {ok, <<"destroyed">>}
+    end.
+
+delete_worker(WorkerKey) ->
+    case ets:lookup(?WORKERS, WorkerKey) of
+        [{WorkerKey, Worker}] ->
             demonitor_worker(Worker),
-            ets:delete(?WORKERS, ReuseKey);
+            demonitor_lease(Worker),
+            ets:delete(?WORKERS, WorkerKey);
         [] ->
             ok
     end.
 
 delete_worker_by_monitor(Monitor) ->
     lists:foreach(
-        fun({ReuseKey, Worker}) ->
-            case maps:get(monitor, Worker, undefined) of
-                Monitor -> ets:delete(?WORKERS, ReuseKey);
-                _Other -> ok
+        fun({WorkerKey, Worker}) ->
+            WorkerMonitor = maps:get(monitor, Worker, undefined),
+            LeaseMonitor = maps:get(lease_monitor, Worker, undefined),
+            case {WorkerMonitor =:= Monitor, LeaseMonitor =:= Monitor} of
+                {true, _} ->
+                    demonitor_lease(Worker),
+                    ets:delete(?WORKERS, WorkerKey);
+                {false, true} ->
+                    %% The request process vanished while its child was still
+                    %% executing. Kill that child rather than ever returning it
+                    %% to the idle pool with unknown protocol state.
+                    close_worker(maps:get(pid, Worker)),
+                    demonitor_worker(Worker),
+                    ets:delete(?WORKERS, WorkerKey),
+                    bump(abandoned_leases_total, 1);
+                _ ->
+                    ok
             end
         end,
         ets:tab2list(?WORKERS)
@@ -1237,6 +1478,12 @@ delete_worker_by_monitor(Monitor) ->
 
 demonitor_worker(Worker) ->
     case maps:get(monitor, Worker, undefined) of
+        undefined -> ok;
+        Monitor -> erlang:demonitor(Monitor, [flush])
+    end.
+
+demonitor_lease(Worker) ->
+    case maps:get(lease_monitor, Worker, undefined) of
         undefined -> ok;
         Monitor -> erlang:demonitor(Monitor, [flush])
     end.
@@ -1281,6 +1528,18 @@ max_int(Value, Min) when is_integer(Value), Value >= Min ->
     Value;
 max_int(_Value, Min) ->
     Min.
+
+clamp_int(Value, Min, _Max) when is_integer(Value), Value < Min ->
+    Min;
+clamp_int(Value, _Min, Max) when is_integer(Value), Value > Max ->
+    Max;
+clamp_int(Value, _Min, _Max) when is_integer(Value) ->
+    Value;
+clamp_int(_Value, Min, _Max) ->
+    Min.
+
+bool_int(true) -> 1;
+bool_int(false) -> 0.
 
 to_binary(Value) when is_binary(Value) ->
     Value;
@@ -1340,6 +1599,12 @@ json_unescape_string(Value0) ->
 
 env_binary(Name, Default) ->
     dd_cli_config_client_ffi:getenv(Name, Default).
+
+env_int(Name, Default) ->
+    case string:to_integer(binary_to_list(env_binary(Name, integer_to_binary(Default)))) of
+        {Value, []} -> Value;
+        _ -> Default
+    end.
 
 csv_env(Name, Default) ->
     Raw = env_binary(Name, Default),

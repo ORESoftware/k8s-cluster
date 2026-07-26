@@ -104,6 +104,7 @@ draining() ->
 
 snapshot() ->
     Counts = worker_counts(),
+    PoolCounts = lambda_child_runner:worker_counts(),
     Active = maps:get(active, Counts, 0),
     Specs = maps:get(specs, Counts, 0),
     iolist_to_binary([
@@ -113,6 +114,8 @@ snapshot() ->
         ",\"draining\":", bool_json(draining()),
         ",\"activeWorkers\":", integer_to_binary(Active),
         ",\"workerSpecs\":", integer_to_binary(Specs),
+        ",\"busyWorkers\":", integer_to_binary(maps:get(busy, PoolCounts, 0)),
+        ",\"idleWorkers\":", integer_to_binary(maps:get(idle, PoolCounts, 0)),
         "}"
     ]).
 

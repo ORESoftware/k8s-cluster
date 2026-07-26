@@ -125,7 +125,7 @@ fn invoke(
 
             Error(error) ->
               json_response(
-                502,
+                child_error_status(error),
                 "{\"ok\":false,\"error\":\"" <> json_escape(error) <> "\"}",
               )
           }
@@ -162,7 +162,7 @@ fn check(
 
             Error(error) ->
               json_response(
-                502,
+                child_error_status(error),
                 "{\"ok\":false,\"error\":\"" <> json_escape(error) <> "\"}",
               )
           }
@@ -188,6 +188,13 @@ fn destroy(reuse_key: String) -> response.Response(mist.ResponseData) {
         502,
         "{\"ok\":false,\"error\":\"" <> json_escape(error) <> "\"}",
       )
+  }
+}
+
+fn child_error_status(error: String) -> Int {
+  case string.contains(error, "concurrency limit reached") {
+    True -> 429
+    False -> 502
   }
 }
 
