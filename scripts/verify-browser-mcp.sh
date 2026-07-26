@@ -247,7 +247,10 @@ sse_status="$(
     -H 'Accept: text/event-stream' \
     "$endpoint"
 )"
-test "$sse_status" = '405'
+if [[ "$sse_status" != '405' ]]; then
+  echo "authenticated SSE GET returned HTTP $sse_status, expected 405" >&2
+  exit 1
+fi
 plain_get_status="$(
   curl --silent --show-error \
     --connect-timeout 10 \
@@ -258,7 +261,10 @@ plain_get_status="$(
     -H 'Accept: application/json' \
     "$endpoint"
 )"
-test "$plain_get_status" = '406'
+if [[ "$plain_get_status" != '406' ]]; then
+  echo "authenticated JSON-only GET returned HTTP $plain_get_status, expected 406" >&2
+  exit 1
+fi
 
 echo "checking initialize and notifications/initialized"
 initialize="$(

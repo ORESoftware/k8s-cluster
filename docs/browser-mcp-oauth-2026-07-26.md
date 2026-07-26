@@ -256,36 +256,44 @@ never prints access, refresh, signing, worker, or operator secrets.
 
 ## Live validation
 
-On 2026-07-26, GitHub Actions published the merged OAuth binary and corrected
-Playwright form detector. The final GitOps revisions pin both runtime images by
-OCI index digest:
+On 2026-07-26, GitHub Actions published the fully reconciled browser control
+plane and Playwright worker from `agent/browser-mcp-oauth`. The GitOps
+manifests pin both runtime images by OCI index digest:
 
 ```text
-dd-browser-mcp-rs: sha256:9076c098c03f6a4c24c8220b0b1878de42c87dde2da07b41d54cf21d8ebad1d3
-dd-web-scraper:    sha256:9a70963bd9a6799e76380e3eb8b541bd76ca1263b8e46df26181fe6eefe1faa4
+dd-browser-mcp-rs: sha256:9114241f546c88df5a7f8a4e4d6cc0ad4b25334fa9811b6763b52eb7899d5d2a
+dd-web-scraper:    sha256:713a943c6bfb2e2f39ccf7a643f5e86bbf76a77b5dca14fd546f38268f99ebdd
 ```
 
-Both `dd-browser-mcp-rs` ArgoCD Applications reported `Synced/Healthy` at
-`83140294d63622f76bc122dbeee536ae009e613c`, with two ready OAuth replicas in
-each cluster. The browser worker pin is deployed from
-`d01047df1396cab4e4e4d03350d14f80bf341779`, with one ready worker and zero
-restarts in each cluster. The full verifier passed independently against both
-public URLs; AWS also passed two complete verifier runs back-to-back after the
-reconnect-burst adjustment. Gateway log inspection after those calls found only
-path-only `dd.gateway.access.v1` records and zero query-bearing browser-MCP
-records. The passing sequence covered:
+The `dd-browser-mcp-rs` ArgoCD Applications reported `Synced/Healthy` on AWS and
+the five-node Hetzner cluster, with two ready OAuth replicas and zero restarts
+in each cluster. The Playwright worker was Ready with zero active sessions out
+of a 12-session limit after verification. The full verifier passed
+independently through both public load-balanced URLs. The passing sequence
+covered:
 
 - trusted public TLS and `/healthz`;
 - unauthenticated MCP `401` with the RFC 9728 discovery challenge;
 - protected-resource and authorization-server metadata;
 - DCR, PKCE S256, operator consent, audience-bound access token, and refresh
-  token issuance;
+  token issuance, rotation, and consumed-token replay rejection;
 - authenticated `GET` with `Accept: text/event-stream` returning `405`;
-- `initialize`, `notifications/initialized` returning `202`, and `tools/list`;
-- a harmless `browser_act` start on Tailscale's allowlisted startup-program
-  page, observation of one form with 12 required fields and no false signature
-  blocker, and session cleanup; and
+- authenticated JSON-only `GET` returning `406`;
+- `initialize`, `notifications/initialized` returning `202`, and `tools/list`
+  returning exactly `browser_act` and `browser_state`;
+- a harmless `browser_act` start on `https://httpbingo.org/forms/post`,
+  `browser_state` returning the page, accessibility snapshot, visible text,
+  forms, fields, buttons, links, validation errors, and downloads;
+- typing one harmless test value, then proving an explicit `submit` stops at
+  `needs_confirmation` without final submission;
 - rejection of navigation to a hostname outside the deployment allowlist.
+- session cleanup with zero browser sessions left behind.
+
+The existing internal browser grid was also exercised on both clouds.
+Playwright 1.56.0, Puppeteer 24.43.1, and Selenium 4.44.0 each navigated
+`https://example.com` and extracted `Example Domain`. These adapters remain
+ClusterIP-only; the MCP tool path continues to prefer the persistent Playwright
+worker.
 
 AWS Security Group ingress exposes only public HTTP/HTTPS plus administrator
 allowlisted SSH/Kubernetes API access. The short-lived Let's Encrypt IP
@@ -299,8 +307,9 @@ Preferred secure rollback:
 
 1. Make the gateway return 503 for `/browser-mcp` and its OAuth paths, leaving
    only `/browser-mcp/healthz` available.
-2. Revert the OAuth commit on `dev`.
-3. Let the image workflow and both ArgoCD Applications reconcile the revert.
+2. Before merge, point both ArgoCD Applications back to `dev`; after merge,
+   revert the browser-MCP change on `dev`.
+3. Let both ArgoCD Applications reconcile the rollback.
 4. Re-run the historical no-auth verifier only if the operator explicitly
    accepts restoring anonymous browser access.
 

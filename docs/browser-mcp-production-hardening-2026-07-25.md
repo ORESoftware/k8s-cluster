@@ -251,10 +251,11 @@ The final public checks were:
    ```
 
 The verifier checks the initial 401, RFC 9728/RFC 8414 discovery, dynamic client
-registration, PKCE authorization, token exchange, authenticated SSE refusal,
-`initialize`, `notifications/initialized`, exact `tools/list`, a real
-`browser_act` navigation to a harmless form, `browser_state`, denial of an
-off-allowlist host, and session cleanup.
+registration, PKCE authorization, rotating refresh tokens, authenticated
+`405`/`406` negotiation, `initialize`, `notifications/initialized`, exact
+`tools/list`, a real `browser_act` navigation to a harmless form, rich
+`browser_state`, a harmless field fill, the explicit submit approval stop,
+denial of an off-allowlist host, and session cleanup.
 
 The broader `dd-next-runtime` Application still reports the historical
 `Degraded` aggregate health state (its transition timestamp predates this
