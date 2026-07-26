@@ -120,8 +120,8 @@ spec:
               value: '2592000'
             # Server-side domain allowlist injected into every browser_act call so
             # navigation policy is enforced centrally regardless of what the model
-            # sends. Empty would permit ANY public https host; start narrow and
-            # widen deliberately. Comma-separated hostnames.
+            # sends. The service fails closed when this is empty; keep it narrow
+            # and widen deliberately. Comma-separated hostnames.
             # Temporary Fiducia applications profile, authorized 2026-07-26.
             # Root vendor hostnames also permit that vendor's subdomains. The
             # two non-root entries are the exact All Things Open Wufoo tenant

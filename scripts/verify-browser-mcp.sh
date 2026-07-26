@@ -234,7 +234,7 @@ test "$initialized_status" = '202'
 echo "checking tools/list"
 tools="$(rpc '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')"
 jq -e '
-  [.result.tools[].name] | sort ==
+  ([.result.tools[].name] | sort) ==
   ["browser_act", "browser_observe"] and
   all(.result.tools[];
     .securitySchemes[0].type == "oauth2" and
@@ -242,9 +242,9 @@ jq -e '
   )
 ' <<<"$tools" >/dev/null
 
-echo "checking browser_act against an approved CFP domain"
+echo "checking browser_act against the approved Tailscale application domain"
 start="$(
-  rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"browser_act","arguments":{"intent":"read-only production smoke test","actions":[{"type":"start","initial_url":"https://allthingsopen.org"}]}}}'
+  rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"browser_act","arguments":{"intent":"read-only startup-form smoke test; do not enter or submit data","actions":[{"type":"start","initial_url":"https://tailscale.com/startup-program"}]}}}'
 )"
 jq -e '.result.isError == false' <<<"$start" >/dev/null
 session_id="$(jq -er '.result.structuredContent.session_id' <<<"$start")"
@@ -259,14 +259,39 @@ observe_payload="$(
       name: "browser_observe",
       arguments: {
         session_id: $session_id,
-        include: ["summary"],
+        include: ["summary", "interactive_elements", "forms"],
+        max_elements: 100,
         max_visible_text_chars: 1000
       }
     }
   }'
 )"
 observe="$(rpc "$observe_payload")"
-jq -e '.result.isError == false' <<<"$observe" >/dev/null
+jq '{
+  blocker: (.result.structuredContent.blocker // null),
+  form_count: (.result.structuredContent.forms // [] | length),
+  required_field_count: ([
+    .result.structuredContent.interactive_elements[]?
+    | select(.required == true)
+  ] | length)
+}' <<<"$observe"
+if ! jq -e '
+  .result.isError == false and
+  .result.structuredContent.blocker.type == "signature" and
+  (.result.structuredContent.forms | length) >= 1 and
+  ([.result.structuredContent.interactive_elements[] | select(.required == true)] | length) >= 10
+' <<<"$observe" >/dev/null; then
+  jq '{
+    is_error: .result.isError,
+    blocker: (.result.structuredContent.blocker // null),
+    form_count: (.result.structuredContent.forms | length),
+    interactive_element_count: (.result.structuredContent.interactive_elements | length),
+    required_element_count: (
+      [.result.structuredContent.interactive_elements[] | select(.required == true)] | length
+    )
+  }' <<<"$observe" >&2
+  exit 1
+fi
 
 echo "checking that off-allowlist navigation is denied"
 blocked_payload="$(

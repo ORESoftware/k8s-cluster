@@ -4,9 +4,9 @@ Date: 2026-07-26
 
 ## Outcome
 
-`dd-browser-mcp-rs` now implements the OAuth path required by ChatGPT custom
-MCP apps instead of depending on a user-entered static bearer or an anonymous
-MCP endpoint.
+`dd-browser-mcp-rs` now implements the OAuth path used by ChatGPT custom MCP
+apps instead of depending on a user-entered static resource-server bearer or an
+anonymous MCP endpoint.
 
 The implementation provides:
 
@@ -35,10 +35,18 @@ the OAuth specifications it profiles:
 - <https://www.rfc-editor.org/rfc/rfc7591>
 - <https://www.rfc-editor.org/rfc/rfc8707>
 
-OpenAI's current ChatGPT custom-app guidance documents OAuth discovery, DCR,
-PKCE-capable public clients, and resource-server token validation:
+OpenAI's current ChatGPT custom-app guidance supports OAuth, no authentication,
+and mixed authentication. It documents OAuth discovery, DCR or CIMD,
+PKCE-capable public clients, and resource-server token validation. The
+"static credentials" option belongs to OAuth client configuration; the
+ChatGPT custom-app flow does not document a field for injecting an arbitrary
+fixed bearer into resource requests. The Responses API is a separate surface
+whose remote-MCP `authorization` field accepts an OAuth access token supplied
+on every API request.
 
 - <https://developers.openai.com/plugins/build/auth>
+- <https://developers.openai.com/api/docs/guides/developer-mode>
+- <https://developers.openai.com/api/docs/guides/tools-connectors-mcp>
 
 ## Public resources
 
@@ -173,7 +181,7 @@ no-auth baseline that the OAuth rollout must replace.
 Local and live-worker verification completed:
 
 ```text
-cargo fmt --all -- --check
+cargo fmt --package dd-browser-mcp-rs -- --check
 cargo test --locked
 cargo clippy --all-targets --locked -- -D warnings
 pnpm exec tsx --test general/browser-mcp-exposure.test.ts
@@ -243,6 +251,39 @@ operator consent, token, authenticated MCP, real `browser_act`,
 `browser_observe`, off-allowlist rejection, and session-cleanup sequence. It
 never prints access, refresh, signing, worker, or operator secrets.
 
+## Live validation
+
+On 2026-07-26, GitHub Actions published the merged OAuth binary from
+`d30218ac210291bd9aaebbac0e4204728e9c3faf`. Commit `c71b802e` pinned both
+runtime images, including browser MCP OCI index digest:
+
+```text
+sha256:9076c098c03f6a4c24c8220b0b1878de42c87dde2da07b41d54cf21d8ebad1d3
+```
+
+Both `dd-browser-mcp-rs` ArgoCD Applications then reported `Synced/Healthy` at
+`c71b802e48d7287095ce50e0a0778a7cc4c87ae0`, with two ready OAuth replicas in
+each cluster. The full verifier passed independently against both public URLs.
+The passing sequence covered:
+
+- trusted public TLS and `/healthz`;
+- unauthenticated MCP `401` with the RFC 9728 discovery challenge;
+- protected-resource and authorization-server metadata;
+- DCR, PKCE S256, operator consent, audience-bound access token, and refresh
+  token issuance;
+- authenticated `GET` with `Accept: text/event-stream` returning `405`;
+- `initialize`, `notifications/initialized` returning `202`, and `tools/list`;
+- a harmless `browser_act` start on Tailscale's allowlisted startup-program
+  page, observation of one form with 12 required fields, enforcement of its
+  human-only electronic-signature blocker, and session cleanup; and
+- rejection of navigation to a hostname outside the deployment allowlist.
+
+AWS Security Group ingress exposes only public HTTP/HTTPS plus administrator
+allowlisted SSH/Kubernetes API access. The short-lived Let's Encrypt IP
+certificate is managed by the enabled `dd-letsencrypt-renew.timer`; its latest
+run completed successfully and its next run was scheduled. Hetzner's
+`gateway-public-tls` Certificate is Ready and cert-manager has a renewal time.
+
 ## Rollback
 
 Preferred secure rollback:
@@ -268,12 +309,7 @@ Credential rollback:
 - Restoring a pre-OAuth image can still use the preserved historical static
   bearer, but ChatGPT custom apps will not be able to supply it.
 
-## Remaining external blockers
-
-The final public 401/discovery/authorization/tool sequence cannot occur until
-this change is merged to `dev`, the image workflow publishes the new binary,
-and ArgoCD completes both rollouts. The current public endpoints remain the
-previous anonymous version until then.
+## Remaining operator improvement
 
 A stable owned DNS name such as `browser-mcp.example.com` remains preferable to
 the bare AWS IP and IP-derived Hetzner hostname. Adding it requires DNS and
