@@ -414,7 +414,7 @@ fill_payload="$(
       name: "browser_act",
       arguments: {
         session_id: $session_id,
-        expected_revision: $post_fill_revision,
+        expected_revision: $revision,
         intent: "fill one harmless test field",
         actions: [{type: "type", target: {ref: $field_ref}, value: {literal: "Browser MCP smoke test"}, clear_first: true}]
       }
