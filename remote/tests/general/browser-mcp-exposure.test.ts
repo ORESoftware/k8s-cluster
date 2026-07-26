@@ -8,9 +8,8 @@ import test from 'node:test';
 // on 2026-07-25.
 //
 // ChatGPT custom MCP apps cannot supply an operator's arbitrary static bearer.
-// This deployment therefore implements OAuth discovery, dynamic public-client
-// registration, PKCE, scoped/audience-bound access tokens, and rotating refresh
-// grants while retaining the domain ceiling and browser safety controls.
+// OAuth remains implemented, while the explicitly temporary no-auth posture
+// retains the same domain ceiling and browser safety controls.
 //
 // These are cheap file assertions on purpose: they must fail in CI *before*
 // anything reaches a cluster.
@@ -33,6 +32,9 @@ const HETZNER_APPS = 'remote/argocd/clusters/hetzner/applications.yaml';
 const CLI_FLAGS = 'remote/deployments/browser-mcp-rs/.cli-flags.toml';
 const REVIEWED_BROWSER_CEILING_DOMAINS = [
   'benefactor.cc',
+  'samsonconstruction.com',
+  'awthome.com',
+  'revduprenovations.com',
   'confluent.cloud',
   'confluent.io',
   'signoz.io',
@@ -151,6 +153,10 @@ test('temporary no-auth browser-mcp has reviewed, server-defined workflow domain
   assert.match(
     manifest,
     /"benefactor-site":\["benefactor\.cc"\]/,
+  );
+  assert.match(
+    manifest,
+    /"benefactor-prospect-audit":\["samsonconstruction\.com","awthome\.com","revduprenovations\.com"\]/,
   );
   assert.match(
     manifest,

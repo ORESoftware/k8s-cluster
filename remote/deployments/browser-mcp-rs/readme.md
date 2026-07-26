@@ -209,6 +209,9 @@ Fiducia credit-redemption, startup-application, and conference-CFP workstream:
 
 ```text
 benefactor.cc
+samsonconstruction.com
+awthome.com
+revduprenovations.com
 confluent.cloud
 confluent.io
 signoz.io
@@ -240,8 +243,11 @@ httpbingo.org
 ```
 
 The ceiling is divided into server-defined `fiducia-applications`,
-`benefactor-site`, and `smoke-test` workflow profiles. Callers select a
-`workflow_id`; they cannot define a profile or widen its hostnames.
+`benefactor-site`, `benefactor-prospect-audit`, and `smoke-test` workflow
+profiles. The prospect-audit profile contains only three public business sites
+selected from existing role-address ICP rows for the 2026-07-26 live test.
+Callers select a `workflow_id`; they cannot define a profile or widen its
+hostnames.
 `httpbingo.org` is isolated in `smoke-test` for the reproducible harmless-form
 verification script and is not reachable from the application profiles.
 
