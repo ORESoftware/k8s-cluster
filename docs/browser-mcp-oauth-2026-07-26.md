@@ -218,8 +218,8 @@ refresh rotation                200
 old refresh-token replay        400 invalid_grant
 ```
 
-A second integration run used the OAuth access token against the real
-`dd-web-scraper` service through a local Kubernetes port-forward:
+A historical pre-anonymous integration run used the OAuth access token against
+the real `dd-web-scraper` service through a local Kubernetes port-forward:
 
 ```text
 browser_act -> https://benefactor.cc/   success
@@ -289,7 +289,7 @@ covered:
 - authenticated JSON-only `GET` returning `406`;
 - `initialize`, `notifications/initialized` returning `202`, and `tools/list`
   returning exactly `browser_act` and `browser_state`;
-- a harmless `browser_act` start on `https://httpbingo.org/forms/post`,
+- a harmless `browser_act` start on the approved Tailscale startup form,
   `browser_state` returning the page, accessibility snapshot, visible text,
   forms, fields, buttons, links, validation errors, and downloads;
 - typing one harmless test value, then proving an explicit `submit` stops at

@@ -130,7 +130,7 @@ spec:
             # and AWS Community Day CFP host. Filing sites, webmail, cloud
             # metadata, and arbitrary prospect domains remain blocked.
             - name: BROWSER_MCP_ALLOWED_DOMAINS
-              value: 'benefactor.cc,samsonconstruction.com,awthome.com,revduprenovations.com,confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,app.posthog.com,elevenlabs.io,www.together.ai,support.snyk.io,us.ovhcloud.com,www.pulumi.com,tally.so,allthingsopen.org,allthingsopen.wufoo.com,static.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com,www.gstatic.com,ssl.gstatic.com,fonts.googleapis.com,fonts.gstatic.com,httpbingo.org'
+              value: 'confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,app.posthog.com,elevenlabs.io,www.together.ai,support.snyk.io,us.ovhcloud.com,www.pulumi.com,tally.so,allthingsopen.org,allthingsopen.wufoo.com,static.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com,www.gstatic.com,ssl.gstatic.com,fonts.googleapis.com,fonts.gstatic.com'
             # Callers select one named workflow profile. Profiles are
             # server-defined subsets of the ceiling above; caller-provided
             # allowed_domains are always discarded.
@@ -138,7 +138,7 @@ spec:
               value: fiducia-applications
             - name: BROWSER_MCP_WORKFLOW_ALLOWLISTS_JSON
               value: >-
-                {"benefactor-site":["benefactor.cc"],"benefactor-prospect-audit":["samsonconstruction.com","awthome.com","revduprenovations.com"],"fiducia-applications":["confluent.cloud","confluent.io","signoz.io","tailscale.com","planetscale.com","clerk.com","algolia.com","app.posthog.com","elevenlabs.io","www.together.ai","support.snyk.io","us.ovhcloud.com","www.pulumi.com","tally.so","allthingsopen.org","allthingsopen.wufoo.com","static.wufoo.com","talks.devopsdays.org","sessionize.com","events.linuxfoundation.org","cfp.awscommunitydaysoflo.com","forms.gle","docs.google.com","www.gstatic.com","ssl.gstatic.com","fonts.googleapis.com","fonts.gstatic.com"],"smoke-test":["httpbingo.org"]}
+                {"fiducia-applications":["confluent.cloud","confluent.io","signoz.io","tailscale.com","planetscale.com","clerk.com","algolia.com","app.posthog.com","elevenlabs.io","www.together.ai","support.snyk.io","us.ovhcloud.com","www.pulumi.com","tally.so","allthingsopen.org","allthingsopen.wufoo.com","static.wufoo.com","talks.devopsdays.org","sessionize.com","events.linuxfoundation.org","cfp.awscommunitydaysoflo.com","forms.gle","docs.google.com","www.gstatic.com","ssl.gstatic.com","fonts.googleapis.com","fonts.gstatic.com"]}
             - name: OTEL_SERVICE_NAME
               value: dd-browser-mcp-rs
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

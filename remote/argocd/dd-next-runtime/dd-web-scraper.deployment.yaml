@@ -177,7 +177,7 @@ spec:
             # temporary Fiducia applications profile. Root hostnames include
             # that vendor's subdomains; non-root entries are exact form hosts.
             - name: BROWSER_AGENT_ALLOWED_DOMAINS
-              value: 'benefactor.cc,samsonconstruction.com,awthome.com,revduprenovations.com,confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,app.posthog.com,elevenlabs.io,www.together.ai,support.snyk.io,us.ovhcloud.com,www.pulumi.com,tally.so,allthingsopen.org,allthingsopen.wufoo.com,static.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com,www.gstatic.com,ssl.gstatic.com,fonts.googleapis.com,fonts.gstatic.com,httpbingo.org'
+              value: 'confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,app.posthog.com,elevenlabs.io,www.together.ai,support.snyk.io,us.ovhcloud.com,www.pulumi.com,tally.so,allthingsopen.org,allthingsopen.wufoo.com,static.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com,www.gstatic.com,ssl.gstatic.com,fonts.googleapis.com,fonts.gstatic.com'
             # Optional JSON secret store for secret_ref resolution (never logged
             # or returned). Absent by default -> secret refs are rejected.
             - name: BROWSER_AGENT_SECRETS_FILE

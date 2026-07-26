@@ -8,8 +8,9 @@ import test from 'node:test';
 // on 2026-07-25.
 //
 // ChatGPT custom MCP apps cannot supply an operator's arbitrary static bearer.
-// OAuth remains implemented, while the explicitly temporary no-auth posture
-// retains the same domain ceiling and browser safety controls.
+// OAuth remains implemented for later re-enablement, but production temporarily
+// uses explicit no-auth mode with a narrow domain ceiling and browser safety
+// controls.
 //
 // These are cheap file assertions on purpose: they must fail in CI *before*
 // anything reaches a cluster.
@@ -31,10 +32,6 @@ const AWS_APPS = 'remote/argocd/clusters/aws/applications.yaml';
 const HETZNER_APPS = 'remote/argocd/clusters/hetzner/applications.yaml';
 const CLI_FLAGS = 'remote/deployments/browser-mcp-rs/.cli-flags.toml';
 const REVIEWED_BROWSER_CEILING_DOMAINS = [
-  'benefactor.cc',
-  'samsonconstruction.com',
-  'awthome.com',
-  'revduprenovations.com',
   'confluent.cloud',
   'confluent.io',
   'signoz.io',
@@ -62,7 +59,6 @@ const REVIEWED_BROWSER_CEILING_DOMAINS = [
   'ssl.gstatic.com',
   'fonts.googleapis.com',
   'fonts.gstatic.com',
-  'httpbingo.org',
 ];
 
 function readDeployment(): string {
@@ -152,15 +148,11 @@ test('temporary no-auth browser-mcp has reviewed, server-defined workflow domain
   );
   assert.match(
     manifest,
-    /"benefactor-site":\["benefactor\.cc"\]/,
+    /"fiducia-applications":\["confluent\.cloud".*"fonts\.gstatic\.com"\]/,
   );
-  assert.match(
+  assert.doesNotMatch(
     manifest,
-    /"benefactor-prospect-audit":\["samsonconstruction\.com","awthome\.com","revduprenovations\.com"\]/,
-  );
-  assert.match(
-    manifest,
-    /"smoke-test":\["httpbingo\.org"\]/,
+    /"benefactor-site"|"benefactor-prospect-audit"|"smoke-test"|benefactor\.cc|samsonconstruction\.com|awthome\.com|revduprenovations\.com|httpbingo\.org/,
   );
 
   const worker = readFileSync(resolve(repoRoot, WORKER_DEPLOYMENT), 'utf8');
