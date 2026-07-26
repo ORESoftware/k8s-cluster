@@ -37,8 +37,8 @@ and **gap** is not yet implemented.
 | Asynchronous invocation queue | **partial** | Postgres-durable 202 acceptance, per-function idempotency, cross-replica leases, attempt history, status, cancellation, crash recovery, and maximum event age; retention policy and native event-source ack/replay remain |
 | Retry policy and destinations / DLQ | **partial** | Per-invocation bounded exponential retry plus success/failure/canceled/DLQ NATS subjects; destination publish is best effort until JetStream-backed |
 | Queue batching and partial acknowledgements | **gap** | Batch size/window, per-message ack/retry, visibility timeout |
-| Scheduled / cron triggers | **gap** | UTC cron discovery, overlap policy, retries, history |
-| CloudEvents trigger bindings and filters | **gap** | HTTP/NATS sources, attribute filters, fan-out, authenticated sinks |
+| Scheduled / cron triggers | **partial** | Supervised metadata-discovered five-field UTC cron, aliases/ranges/steps, deterministic cross-replica idempotency, CloudEvents output, durable async retry/history; timezone database and explicit overlap policy remain |
+| CloudEvents trigger bindings and filters | **partial** | Scheduled triggers emit canonical CloudEvents 1.0; HTTP/NATS source bindings, attribute filters, and fan-out remain |
 | Response streaming | **gap** | Backpressure-aware chunked/SSE response protocol |
 | WebSockets | **gap** | Supervised connection actors, hibernation/persistence strategy |
 | Per-function concurrency controls | **partial** | Bounded per-replica worker pools, single-flight affinity keys, immediate HTTP 429 backpressure, safe lease cleanup, and busy/idle/rejection metrics; fleet-wide reservations and durable overflow remain |
@@ -103,9 +103,12 @@ CloudEvents routing, scale-to-zero, and Kubernetes-native traffic splitting.
 
 ### Wave 4 — universal triggers and state
 
-- Adopt CloudEvents as the canonical external event envelope.
-- Add cron, HTTP, NATS, queue, webhook, database-change, and object-change
-  bindings with attribute filters and fan-out.
+- Adopt CloudEvents as the canonical scheduled-event envelope and extend it to
+  every external source.
+- Discover supervised UTC cron schedules from function metadata and route every
+  fire through durable async idempotency.
+- Add HTTP, NATS, queue, webhook, database-change, and object-change bindings
+  with attribute filters and fan-out.
 - Add durable keyed actors with transactional storage, alarms, and supervised
   WebSocket sessions.
 - Add service bindings and per-function identity/egress policy.

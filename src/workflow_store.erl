@@ -14,6 +14,7 @@
 -export([
     available/0,
     ensure_async_definition/1,
+    list_scheduled_functions/0,
     create_run/3,
     get_run/1,
     get_run_with_steps/1,
@@ -145,6 +146,36 @@ resolve_lambda_function(FunctionRef) ->
                 {error, Reason} ->
                     {error, Reason}
             end
+    end.
+
+%% Read only active functions that declare schedule metadata. The generated
+%% lambda select contract remains the source of truth for table columns; this
+%% query only projects the schedule discovery view the BEAM scheduler needs.
+list_scheduled_functions() ->
+    SelectSql = 'gleam_lambda_runner@pg_contract':lambda_functions_select_sql(),
+    Sql = [
+        "select coalesce(jsonb_agg(jsonb_build_object(",
+        "'id', f.id, 'slug', f.slug, 'metaData', f.meta_data_json::jsonb",
+        ") order by f.id), '[]'::jsonb)::text from (",
+        "select * from (", SelectSql, ") source ",
+        "where status = 'active' and is_soft_deleted = false ",
+        "and (meta_data_json::jsonb ? 'schedules' ",
+        "or meta_data_json::jsonb ? 'cron') ",
+        "order by id limit 5000",
+        ") f"
+    ],
+    case run_psql([], Sql) of
+        {ok, <<>>} ->
+            {ok, []};
+        {ok, Json} ->
+            try json:decode(iolist_to_binary(string:trim(Json))) of
+                Functions when is_list(Functions) -> {ok, Functions};
+                _ -> {error, <<"invalid scheduled function query result">>}
+            catch
+                _:_ -> {error, <<"invalid scheduled function query result">>}
+            end;
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 %% ─── Reads ──────────────────────────────────────────────────────────────────

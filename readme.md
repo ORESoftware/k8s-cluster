@@ -244,6 +244,55 @@ publishes are currently best effort; bind the subjects to JetStream for durable
 downstream retention. Native acknowledgements, replay, and partial batch
 failure remain part of the queue/event-source wave.
 
+## Scheduled CloudEvents
+
+Active functions can declare up to 50 UTC schedules in `metaData`:
+
+```json
+{
+  "schedules": [
+    {
+      "name": "nightly-rollup",
+      "cron": "15 2 * * *",
+      "timezone": "UTC",
+      "payload": { "scope": "previous-day" },
+      "retry": {
+        "maxAttempts": 5,
+        "backoffMs": 1000,
+        "backoffFactor": 2,
+        "maxBackoffMs": 60000
+      },
+      "maxEventAgeMs": 21600000,
+      "timeoutMs": 60000,
+      "enabled": true
+    }
+  ]
+}
+```
+
+The supervised scheduler supports five-field numeric cron with comma lists,
+ranges, steps, standard day-of-month/day-of-week OR semantics, and `@yearly`,
+`@monthly`, `@weekly`, `@daily`, `@midnight`, and `@hourly`. UTC is the only
+accepted timezone today. A top-level `metaData.cron` string is a one-schedule
+shorthand.
+
+Every fire becomes a CloudEvents 1.0 envelope of type
+`dev.scintilla.function.scheduled.v1`, then enters the durable async API. Its
+idempotency key is derived from function, schedule index/name, and UTC minute.
+That makes discovery safe on every runner replica: duplicate observations
+converge on one database run, and process/node failure resumes through the
+normal workflow lease.
+
+| Env | Default |
+| --- | --- |
+| `SCHEDULE_ENGINE_ENABLED` | `1` when Postgres/workflows are available |
+| `SCHEDULE_MAX_DISPATCH_PER_MINUTE` | `500` |
+
+Schedule scan/due/dispatch/error/overflow counters are exported on `/metrics`.
+Timezone databases, seconds-level schedules, and a dedicated schedule-history
+API remain future control-plane work; durable invocation history is already
+available through the async status endpoint.
+
 ### Playwright and Puppeteer as Node.js lambda capabilities
 
 Containerized Node.js lambdas can opt into first-class Chromium automation by
