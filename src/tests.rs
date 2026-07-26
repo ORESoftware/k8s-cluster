@@ -26400,7 +26400,7 @@ fn fdm_printer_catalog_advertises_post_2024_flagship_models() {
         );
     }
 
-    // The catalog now spans five vendors including the two newest additions.
+    // Preserve the established vendor coverage while the catalog grows.
     let vendors = models
         .iter()
         .filter_map(|model| model.get("vendor").and_then(Value::as_str))
@@ -26437,6 +26437,214 @@ fn fdm_printer_catalog_advertises_post_2024_flagship_models() {
             printers
                 .iter()
                 .any(|printer| printer.get("id").and_then(Value::as_str) == Some(expected)),
+            "missing fleet printer {expected}"
+        );
+    }
+}
+
+#[test]
+fn additional_mainstream_printer_models_resolve_and_join_the_default_fleet() {
+    for reference in [
+        "anycubic-kobra-3-combo",
+        "Anycubic Kobra 3 Combo",
+        "kobra3-combo",
+        "anycubic-kobra-s1-combo",
+        "Kobra S1 Combo",
+        "qidi-q1-pro",
+        "QIDI Q1 Pro",
+        "q1-pro",
+        "qidi-plus4",
+        "QIDI Plus4",
+        "plus-4",
+        "flashforge-adventurer-5m",
+        "FlashForge Adventurer 5M",
+        "ad5m",
+        "flashforge-adventurer-5m-pro",
+        "AD5MP",
+    ] {
+        assert_eq!(
+            machine_class(reference),
+            MachineClass::Additive,
+            "{reference} should classify as an additive printer"
+        );
+    }
+
+    let machines = default_machines();
+    for (id, kind, controller, envelope) in [
+        (
+            "anycubic-kobra-3-combo-1",
+            "multi-material-fdm-printer",
+            "klipper",
+            vec![250.0, 250.0, 260.0],
+        ),
+        (
+            "anycubic-kobra-s1-combo-1",
+            "multi-material-fdm-printer",
+            "klipper",
+            vec![250.0, 250.0, 250.0],
+        ),
+        (
+            "qidi-q1-pro-1",
+            "fdm-printer",
+            "klipper",
+            vec![245.0, 245.0, 240.0],
+        ),
+        (
+            "qidi-plus4-1",
+            "fdm-printer",
+            "klipper",
+            vec![305.0, 305.0, 280.0],
+        ),
+        (
+            "flashforge-adventurer-5m-1",
+            "fdm-printer",
+            "flashforge",
+            vec![220.0, 220.0, 220.0],
+        ),
+        (
+            "flashforge-adventurer-5m-pro-1",
+            "fdm-printer",
+            "flashforge",
+            vec![220.0, 220.0, 220.0],
+        ),
+    ] {
+        let machine = machines
+            .iter()
+            .find(|machine| machine.id == id)
+            .unwrap_or_else(|| panic!("default fleet should include {id}"));
+        assert_eq!(machine.kind, kind);
+        assert_eq!(machine.controller.as_deref(), Some(controller));
+        assert_eq!(machine.work_envelope_mm, Some(envelope));
+    }
+
+    let kobra_s1 = machines
+        .iter()
+        .find(|machine| machine.id == "anycubic-kobra-s1-combo-1")
+        .expect("Kobra S1 Combo fleet entry");
+    let kobra_s1_languages = machine_catalog_instruction_languages(kobra_s1);
+    assert!(kobra_s1_languages
+        .iter()
+        .any(|language| language == "klipper-gcode"));
+    assert!(kobra_s1_languages
+        .iter()
+        .any(|language| language == "ams-mmu-job"));
+
+    let adventurer_5m_pro = machines
+        .iter()
+        .find(|machine| machine.id == "flashforge-adventurer-5m-pro-1")
+        .expect("Adventurer 5M Pro fleet entry");
+    let adventurer_languages = machine_catalog_instruction_languages(adventurer_5m_pro);
+    assert!(adventurer_languages
+        .iter()
+        .any(|language| language == "flashforge-gcode"));
+    assert!(!adventurer_languages
+        .iter()
+        .any(|language| language == "marlin-gcode"));
+}
+
+#[test]
+fn fdm_printer_catalog_advertises_three_additional_makes_and_six_models() {
+    let payload = fdm_printer_catalog_response();
+    let models = payload
+        .get("supportedPrinterModels")
+        .and_then(Value::as_array)
+        .expect("supported printer models should be present");
+    let model_names = [
+        "anycubic-kobra-3-combo",
+        "anycubic-kobra-s1-combo",
+        "qidi-q1-pro",
+        "qidi-plus4",
+        "flashforge-adventurer-5m",
+        "flashforge-adventurer-5m-pro",
+    ];
+    for expected in model_names {
+        assert!(
+            models
+                .iter()
+                .any(|model| model.get("model").and_then(Value::as_str) == Some(expected)),
+            "missing supported printer model {expected}"
+        );
+    }
+
+    let vendors = models
+        .iter()
+        .filter_map(|model| model.get("vendor").and_then(Value::as_str))
+        .collect::<std::collections::BTreeSet<_>>();
+    for vendor in ["Anycubic", "QIDI Tech", "FlashForge"] {
+        assert!(vendors.contains(vendor), "catalog missing vendor {vendor}");
+    }
+
+    let find = |model_name: &str| {
+        models
+            .iter()
+            .find(|model| model.get("model").and_then(Value::as_str) == Some(model_name))
+            .unwrap_or_else(|| panic!("{model_name} model entry"))
+    };
+
+    let kobra_3 = find("anycubic-kobra-3-combo");
+    assert_eq!(
+        kobra_3.get("machineKind").and_then(Value::as_str),
+        Some("multi-material-fdm-printer")
+    );
+    assert_eq!(kobra_3.get("maxMaterials").and_then(Value::as_u64), Some(8));
+    assert_eq!(
+        kobra_3.get("enclosed").and_then(Value::as_bool),
+        Some(false)
+    );
+
+    let kobra_s1 = find("anycubic-kobra-s1-combo");
+    assert_eq!(
+        kobra_s1.get("maxNozzleTempC").and_then(Value::as_f64),
+        Some(320.0)
+    );
+    assert_eq!(
+        kobra_s1.get("maxBedTempC").and_then(Value::as_f64),
+        Some(120.0)
+    );
+    assert_eq!(
+        kobra_s1.get("enclosed").and_then(Value::as_bool),
+        Some(true)
+    );
+
+    let plus4 = find("qidi-plus4");
+    assert_eq!(
+        plus4.get("maxNozzleTempC").and_then(Value::as_f64),
+        Some(370.0)
+    );
+    assert_eq!(plus4.get("maxMaterials").and_then(Value::as_u64), Some(1));
+
+    let adventurer_5m = find("flashforge-adventurer-5m");
+    assert_eq!(
+        adventurer_5m.get("controller").and_then(Value::as_str),
+        Some("flashforge")
+    );
+    assert_eq!(
+        adventurer_5m.get("enclosed").and_then(Value::as_bool),
+        Some(false)
+    );
+
+    let adventurer_5m_pro = find("flashforge-adventurer-5m-pro");
+    assert_eq!(
+        adventurer_5m_pro
+            .get("maxVolumetricFlowMm3S")
+            .and_then(Value::as_f64),
+        Some(32.0)
+    );
+    assert_eq!(
+        adventurer_5m_pro.get("enclosed").and_then(Value::as_bool),
+        Some(true)
+    );
+
+    let printers = payload
+        .get("fdmPrinters")
+        .and_then(Value::as_array)
+        .expect("fdm printers should be present");
+    for model in model_names {
+        let expected = format!("{model}-1");
+        assert!(
+            printers
+                .iter()
+                .any(|printer| printer.get("id").and_then(Value::as_str) == Some(&expected)),
             "missing fleet printer {expected}"
         );
     }

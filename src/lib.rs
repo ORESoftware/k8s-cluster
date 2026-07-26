@@ -107177,6 +107177,7 @@ fn firmware_gcode_dialect(controller: Option<&str>) -> Option<&'static str> {
         "marlin" => Some("marlin-gcode"),
         "reprap" => Some("reprap-gcode"),
         "bambu" => Some("bambu-gcode"),
+        "flashforge" => Some("flashforge-gcode"),
         _ => None,
     }
 }

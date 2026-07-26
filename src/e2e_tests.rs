@@ -240,6 +240,58 @@ async fn fdm_printer_catalog_advertises_post_2024_models_over_http() {
 }
 
 #[tokio::test]
+async fn fdm_printer_catalog_advertises_three_additional_makes_over_http() {
+    let app = authenticated_app();
+    let reply = get_auth(&app, "/fdm-printer/catalog").await;
+    assert!(reply.ok(), "status {}", reply.status);
+
+    let models = reply.body["supportedPrinterModels"]
+        .as_array()
+        .expect("supportedPrinterModels array");
+    for expected in [
+        "anycubic-kobra-3-combo",
+        "anycubic-kobra-s1-combo",
+        "qidi-q1-pro",
+        "qidi-plus4",
+        "flashforge-adventurer-5m",
+        "flashforge-adventurer-5m-pro",
+    ] {
+        assert!(
+            models.iter().any(|model| model["model"] == expected),
+            "over-the-wire catalog missing {expected}"
+        );
+    }
+
+    let kobra_s1 = models
+        .iter()
+        .find(|model| model["model"] == "anycubic-kobra-s1-combo")
+        .expect("Anycubic Kobra S1 Combo model");
+    assert_eq!(kobra_s1["machineKind"], "multi-material-fdm-printer");
+    assert_eq!(kobra_s1["maxMaterials"], 8);
+    assert_eq!(kobra_s1["enclosed"], true);
+
+    let plus4 = models
+        .iter()
+        .find(|model| model["model"] == "qidi-plus4")
+        .expect("QIDI Plus4 model");
+    assert_eq!(plus4["workEnvelopeMm"], json!([305.0, 305.0, 280.0]));
+    assert_eq!(plus4["maxNozzleTempC"], 370.0);
+
+    let printers = reply.body["fdmPrinters"]
+        .as_array()
+        .expect("fdmPrinters array");
+    let adventurer_5m_pro = printers
+        .iter()
+        .find(|printer| printer["id"] == "flashforge-adventurer-5m-pro-1")
+        .expect("FlashForge Adventurer 5M Pro fleet entry");
+    assert!(adventurer_5m_pro["acceptedInstructionLanguages"]
+        .as_array()
+        .is_some_and(|languages| languages
+            .iter()
+            .any(|language| language == "flashforge-gcode")));
+}
+
+#[tokio::test]
 async fn elegoo_centauri_carbon_fiber_job_passes_preflight_over_http() {
     let app = authenticated_app();
     // A carbon-fiber PA job on a Centauri-class machine (320 C nozzle, 110 C bed,

@@ -27,6 +27,7 @@ Each `FdmPrinterModelSpec` flows through three places:
    | `bambu`    | `bambu-gcode`  | Bambu A1 family, P1S, X1C, H2D |
    | `marlin`   | `marlin-gcode` | Prusa CORE One (Buddy firmware) |
    | `reprap`   | `reprap-gcode` | — |
+   | `flashforge` | `flashforge-gcode` | FlashForge Adventurer 5M family |
 
 ## Catalog (as of 2026-07)
 
@@ -47,6 +48,12 @@ preflight ceiling; "mats" is max simultaneous materials.
 | bambu-h2d | Bambu Lab | multi | bambu | CoreXY | 325×320×325 | 350 | 120 | 40 | yes | 16 |
 | prusa-core-one | Prusa Research | fdm | marlin | CoreXY | 250×220×270 | 290 | 120 | 24 | yes | 1 |
 | elegoo-centauri-carbon | Elegoo | fdm | klipper | CoreXY | 256×256×256 | 320 | 110 | 25 | yes | 1 |
+| anycubic-kobra-3-combo | Anycubic | multi | klipper | Cartesian | 250×250×260 | 300 | 110 | 18 | no | 8 |
+| anycubic-kobra-s1-combo | Anycubic | multi | klipper | CoreXY | 250×250×250 | 320 | 120 | 18 | yes | 8 |
+| qidi-q1-pro | QIDI Tech | fdm | klipper | CoreXY | 245×245×240 | 350 | 120 | 24 | yes | 1 |
+| qidi-plus4 | QIDI Tech | fdm | klipper | CoreXY | 305×305×280 | 370 | 120 | 24 | yes | 1 |
+| flashforge-adventurer-5m | FlashForge | fdm | flashforge | CoreXY | 220×220×220 | 280 | 100 | 28 | no | 1 |
+| flashforge-adventurer-5m-pro | FlashForge | fdm | flashforge | CoreXY | 220×220×220 | 280 | 100 | 32 | yes | 1 |
 
 Notable capabilities:
 
@@ -57,6 +64,17 @@ Notable capabilities:
   single-material; MMU3 (5) / INDX (8) add multi-material.
 - **Creality K1C / Elegoo Centauri Carbon** — enclosed CoreXY with hardened
   nozzles for carbon-fiber/PA out of the box.
+- **Anycubic Kobra 3 Combo / Kobra S1 Combo** — Kobra OS
+  (GoKlipper-family) systems with one ACE Pro for four-color or two units for
+  eight-color printing. The Kobra 3 is an open Cartesian machine; the S1 is an
+  enclosed CoreXY with a 320 °C hotend and 120 °C bed.
+- **QIDI Q1 Pro / Plus4** — open-source Klipper CoreXY machines with active
+  chamber heat. Plus4 expands the envelope to 305×305×280 mm and reaches
+  370 °C; optional QIDI Box support is not folded into the single-material base
+  profile.
+- **FlashForge Adventurer 5M / 5M Pro** — 220 mm-cube CoreXY machines using
+  FlashPrint/Orca-Flashforge G-code. The Pro adds the enclosure, camera, air
+  filtration, ABS/ASA support, and a published 32 mm³/s flow ceiling.
 
 Multi-material models advertise the AMS/MMU job languages
 (`ams-mmu-job`, `multi-material-fdm-job`) in addition to their G-code dialect.
