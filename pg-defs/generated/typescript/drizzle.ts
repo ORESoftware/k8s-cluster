@@ -2334,6 +2334,7 @@ export const lambdaActorInstances = pgTable(
   },
   (table) => ({
     lambdaActorInstancesActorKeyChk: check("lambda_actor_instances_actor_key_chk", sql.raw("actor_key ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$'")),
+    lambdaActorInstancesStateObjectChk: check("lambda_actor_instances_state_object_chk", sql.raw("jsonb_typeof(state) = 'object'")),
     lambdaActorInstancesStateSizeChk: check("lambda_actor_instances_state_size_chk", sql.raw("octet_length(state::text) <= 1048576")),
     lambdaActorInstancesStateVersionChk: check("lambda_actor_instances_state_version_chk", sql.raw("state_version >= 0")),
     lambdaActorInstancesAlarmAttemptChk: check("lambda_actor_instances_alarm_attempt_chk", sql.raw("alarm_attempt between 0 and 6")),

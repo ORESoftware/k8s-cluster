@@ -2977,6 +2977,7 @@ class LambdaActorInstance(Base):
     __tablename__ = "lambda_actor_instances"
     __table_args__ = (
         CheckConstraint("actor_key ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$'", name="lambda_actor_instances_actor_key_chk"),
+        CheckConstraint("jsonb_typeof(state) = 'object'", name="lambda_actor_instances_state_object_chk"),
         CheckConstraint("octet_length(state::text) <= 1048576", name="lambda_actor_instances_state_size_chk"),
         CheckConstraint("state_version >= 0", name="lambda_actor_instances_state_version_chk"),
         CheckConstraint("alarm_attempt between 0 and 6", name="lambda_actor_instances_alarm_attempt_chk"),

@@ -1405,6 +1405,8 @@ create table if not exists lambda_actor_instances (
   updated_at timestamptz default now() not null,
   constraint lambda_actor_instances_actor_key_chk
     check (actor_key ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$'),
+  constraint lambda_actor_instances_state_object_chk
+    check (jsonb_typeof(state) = 'object'),
   constraint lambda_actor_instances_state_size_chk
     check (octet_length(state::text) <= 1048576),
   constraint lambda_actor_instances_state_version_chk
