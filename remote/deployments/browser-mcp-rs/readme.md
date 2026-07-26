@@ -200,7 +200,6 @@ active Fiducia credit-redemption, startup-application, and conference-CFP
 workstream:
 
 ```text
-benefactor.cc
 confluent.cloud
 confluent.io
 signoz.io
@@ -208,6 +207,11 @@ tailscale.com
 planetscale.com
 clerk.com
 algolia.com
+app.posthog.com
+elevenlabs.io
+www.together.ai
+support.snyk.io
+us.ovhcloud.com
 www.pulumi.com
 tally.so
 allthingsopen.org
@@ -225,9 +229,9 @@ fonts.googleapis.com
 fonts.gstatic.com
 ```
 
-Root vendor hostnames include that vendor's subdomains. The Wufoo, Pulumi,
-Google static-asset, and AWS CFP entries are intentionally exact hosts. Filing
-sites (`irs.gov`,
+Root vendor hostnames include that vendor's subdomains. The PostHog, Together
+AI, Snyk, OVHcloud, Wufoo, Pulumi, Google static-asset, and AWS CFP entries are
+intentionally exact hosts. Filing sites (`irs.gov`,
 `sos.state.co.us`, `dnb.com`), webmail, cloud metadata, and arbitrary target
 domains are not allowed. Keep the Rust MCP and Playwright worker values
 identical, and shrink or replace this profile when the workstream ends.
@@ -293,8 +297,8 @@ Start at a URL:
 
 ```json
 { "name": "browser_act", "arguments": {
-  "intent": "open the Benefactor site",
-  "actions": [{ "type": "start", "initial_url": "https://benefactor.cc/" }] } }
+  "intent": "open the All Things Open CFP",
+  "actions": [{ "type": "start", "initial_url": "https://allthingsopen.org/" }] } }
 ```
 
 Observe, then fill using refs:
