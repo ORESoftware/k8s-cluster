@@ -329,6 +329,66 @@ aliases = ["lambda-scraping-allow-robots-override"]
 type = "boolean"
 default = false
 
+[flags.lambda_actor_state_max_bytes]
+env = "LAMBDA_ACTOR_STATE_MAX_BYTES"
+aliases = ["lambda-actor-state-max-bytes"]
+type = "integer"
+default = 524288
+
+[flags.actor_engine_enabled]
+env = "ACTOR_ENGINE_ENABLED"
+aliases = ["actor-engine-enabled"]
+type = "boolean"
+default = true
+
+[flags.actor_idle_ms]
+env = "ACTOR_IDLE_MS"
+aliases = ["actor-idle-ms"]
+type = "integer"
+default = 60000
+
+[flags.actor_lease_ms]
+env = "ACTOR_LEASE_MS"
+aliases = ["actor-lease-ms"]
+type = "integer"
+default = 310000
+
+[flags.actor_queue_wait_ms]
+env = "ACTOR_QUEUE_WAIT_MS"
+aliases = ["actor-queue-wait-ms"]
+type = "integer"
+default = 30000
+
+[flags.actor_max_active_per_replica]
+env = "ACTOR_MAX_ACTIVE_PER_REPLICA"
+aliases = ["actor-max-active-per-replica"]
+type = "integer"
+default = 10000
+
+[flags.actor_max_queue_depth]
+env = "ACTOR_MAX_QUEUE_DEPTH"
+aliases = ["actor-max-queue-depth"]
+type = "integer"
+default = 100
+
+[flags.actor_alarm_poll_ms]
+env = "ACTOR_ALARM_POLL_MS"
+aliases = ["actor-alarm-poll-ms"]
+type = "integer"
+default = 1000
+
+[flags.actor_alarm_max_concurrency]
+env = "ACTOR_ALARM_MAX_CONCURRENCY"
+aliases = ["actor-alarm-max-concurrency"]
+type = "integer"
+default = 50
+
+[flags.actor_alarm_timeout_ms]
+env = "ACTOR_ALARM_TIMEOUT_MS"
+aliases = ["actor-alarm-timeout-ms"]
+type = "integer"
+default = 300000
+
 [flags.runtime_config_service_name]
 env = "RUNTIME_CONFIG_SERVICE_NAME"
 aliases = ["runtime-config-service-name"]

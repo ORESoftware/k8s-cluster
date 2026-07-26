@@ -15,6 +15,7 @@ const maxCompiledFunctions = positiveInt(env.LAMBDA_FUNCTION_CACHE_MAX, 128);
 const maxFunctionBodyBytes = positiveInt(env.LAMBDA_FUNCTION_BODY_MAX_BYTES, 262_144);
 const maxInputLineBytes = positiveInt(env.LAMBDA_CHILD_INPUT_MAX_BYTES, 6_291_456);
 const maxResultBytes = positiveInt(env.LAMBDA_RESULT_MAX_BYTES, 1_048_576);
+const maxActorStateBytes = positiveInt(env.LAMBDA_ACTOR_STATE_MAX_BYTES, 524_288);
 const maxStreamBytes = positiveInt(env.LAMBDA_STREAM_MAX_BYTES, 16_777_216);
 const maxStreamChunkBytes = Math.max(
   1_024,
@@ -330,12 +331,116 @@ function resolveDefinition(envelope) {
   return definition;
 }
 
+function actorStorageKey(value) {
+  const key = String(value ?? '');
+  const bytes = Buffer.byteLength(key, 'utf8');
+  if (bytes < 1 || bytes > 512) {
+    throw new Error('actor storage key must be between 1 and 512 bytes');
+  }
+  return key;
+}
+
+function jsonActorValue(value, label = 'actor storage value') {
+  if (value === undefined) {
+    throw new Error(`${label} must be JSON serializable`);
+  }
+  let encoded;
+  try {
+    encoded = JSON.stringify(value);
+  } catch {
+    throw new Error(`${label} must be JSON serializable`);
+  }
+  if (encoded === undefined) {
+    throw new Error(`${label} must be JSON serializable`);
+  }
+  return JSON.parse(encoded);
+}
+
+function normalizedAlarmAt(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const timestamp = value instanceof Date ? value.getTime() : new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) {
+    throw new Error('actor alarm must be a valid Date, epoch value, or timestamp string');
+  }
+  return new Date(timestamp).toISOString();
+}
+
+function createActorSession(actor) {
+  if (!actor || typeof actor !== 'object' || Array.isArray(actor)) {
+    throw new Error('actor context is required for actor invocation');
+  }
+  const actorId = String(actor.id || '');
+  const key = String(actor.key || '');
+  if (!actorId || !key) {
+    throw new Error('actor id and key are required');
+  }
+  const initialState =
+    actor.state && typeof actor.state === 'object' && !Array.isArray(actor.state)
+      ? jsonActorValue(actor.state, 'actor state')
+      : {};
+  const values = new Map(Object.entries(initialState));
+  let alarmAt = normalizedAlarmAt(actor.alarmAt);
+
+  const storage = Object.freeze({
+    get: async (storageKey) => {
+      const value = values.get(actorStorageKey(storageKey));
+      return value === undefined ? undefined : structuredClone(value);
+    },
+    put: async (storageKey, value) => {
+      values.set(actorStorageKey(storageKey), jsonActorValue(value));
+    },
+    delete: async (storageKey) => values.delete(actorStorageKey(storageKey)),
+    list: async (options = {}) => {
+      const prefix = String(options?.prefix || '');
+      const limit = Math.max(1, Math.min(positiveInt(options?.limit, 1_000), 1_000));
+      return Object.fromEntries(
+        [...values.entries()]
+          .filter(([entryKey]) => entryKey.startsWith(prefix))
+          .sort(([left], [right]) => left.localeCompare(right))
+          .slice(0, limit)
+          .map(([entryKey, value]) => [entryKey, structuredClone(value)]),
+      );
+    },
+  });
+  const alarm = Object.freeze({
+    get: async () => alarmAt,
+    set: async (value) => {
+      alarmAt = normalizedAlarmAt(value);
+      return alarmAt;
+    },
+    delete: async () => {
+      alarmAt = null;
+    },
+  });
+
+  return {
+    api: Object.freeze({
+      id: actorId,
+      key,
+      version: Number.isSafeInteger(actor.version) ? actor.version : 0,
+      storage,
+      alarm,
+    }),
+    snapshot: () => {
+      const state = Object.fromEntries(values);
+      const encoded = JSON.stringify(state);
+      if (Buffer.byteLength(encoded, 'utf8') > maxActorStateBytes) {
+        throw new Error('actor state exceeds configured byte limit');
+      }
+      return { state, alarmAt };
+    },
+  };
+}
+
 async function invoke(line) {
   const envelope = JSON.parse(line);
   const definition = resolveDefinition(envelope);
   const functionBody = String(definition.functionBody || '');
   const request = envelope.request || {};
   const browserAutomation = browserAutomationEnabled(definition);
+  const actorSession = envelope.mode === 'actor' ? createActorSession(envelope.actor) : null;
   const context = {
     id: definition.id,
     invocationId: envelope.invocationId,
@@ -347,6 +452,7 @@ async function invoke(line) {
     capabilities: Object.freeze({
       browserAutomation,
       browserEngines: browserAutomation ? Object.freeze(['playwright', 'puppeteer']) : Object.freeze([]),
+      durableActor: actorSession !== null,
     }),
     meta: {
       runtime: definition.runtime,
@@ -355,6 +461,9 @@ async function invoke(line) {
       ...(envelope.meta || {}),
     },
   };
+  if (actorSession) {
+    context.actor = actorSession.api;
+  }
 
   if (!functionBody.trim()) {
     throw new Error('functionBody is required');
@@ -384,6 +493,15 @@ async function invoke(line) {
     if (envelope.mode === 'stream') {
       await writeStreamingResult(result ?? null);
       return { streamHandled: true };
+    }
+    if (actorSession) {
+      return {
+        ok: true,
+        result: result ?? null,
+        actor: actorSession.snapshot(),
+        invocationId: context.invocationId,
+        cachedFunctions: compiledFunctions.size,
+      };
     }
     return {
       ok: true,
