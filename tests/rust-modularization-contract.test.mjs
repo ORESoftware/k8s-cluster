@@ -3,7 +3,7 @@
 // business logic quietly accumulating back in binary entrypoints.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -48,8 +48,16 @@ const seaOrmServices = [
   "fiducia-memory.rs",
 ];
 
-// Customer still imports the removed ../fiducia-payments.rs path, so Cargo
-// cannot resolve or validate its telemetry upgrade in this refactor pass.
+// These repositories are private. Automatic public CI cannot initialize them;
+// the token-gated fleet audit checks them from the complete submodule tree.
+const privateServices = new Set([
+  "fiducia-operations-control-plane",
+  "fiducia-ai-agent-control-plane",
+  "fiducia-ai-agent-bridge.rs",
+]);
+
+// Customer still uses the legacy telemetry initializer and is tracked as a
+// separate migration so the structural contract remains honest.
 const telemetryGuardServices = Object.keys(services).filter(
   (service) => service !== "fiducia-customer.rs",
 );
@@ -60,6 +68,14 @@ function appPath(service, relative = "") {
 
 function read(service, relative) {
   return readFileSync(appPath(service, relative), "utf8");
+}
+
+function serviceAvailable(service) {
+  return existsSync(appPath(service, "Cargo.toml"));
+}
+
+function availableServices() {
+  return Object.keys(services).filter(serviceAvailable);
 }
 
 function sourceFiles(service) {
@@ -75,8 +91,18 @@ function lineCount(text) {
   return text.split(/\r?\n/).length - (text.endsWith("\n") ? 1 : 0);
 }
 
+test("automatic CI initializes every public modularized service", () => {
+  for (const service of Object.keys(services)) {
+    if (!privateServices.has(service)) {
+      assert.ok(serviceAvailable(service), `${service} public submodule is not initialized`);
+    }
+  }
+});
+
 test("Rust services keep orchestration split across source modules", () => {
-  for (const [service, mainBudget] of Object.entries(services)) {
+  for (const [service, mainBudget] of Object.entries(services).filter(([service]) =>
+    serviceAvailable(service)
+  )) {
     const files = sourceFiles(service);
     const main = read(service, "src/main.rs");
     const totalLines = files.reduce((total, file) => total + lineCount(read(service, file)), 0);
@@ -92,7 +118,7 @@ test("Rust services keep orchestration split across source modules", () => {
 });
 
 test("library-backed services expose modules through lib.rs and retain thin binaries", () => {
-  for (const service of libraryBackedServices) {
+  for (const service of libraryBackedServices.filter(serviceAvailable)) {
     const library = read(service, "src/lib.rs");
     const main = read(service, "src/main.rs");
     const publicModules = library.match(/^pub mod [a-zA-Z0-9_]+;/gm) ?? [];
@@ -108,7 +134,7 @@ test("library-backed services expose modules through lib.rs and retain thin bina
 });
 
 test("extracted modules retain local behavior tests", () => {
-  for (const service of Object.keys(services)) {
+  for (const service of availableServices()) {
     const testedModules = sourceFiles(service).filter((file) => {
       if (file === "src/main.rs") {
         return false;
@@ -124,18 +150,18 @@ test("extracted modules retain local behavior tests", () => {
 });
 
 test("database services use SeaORM without a direct SQLx dependency", () => {
-  for (const service of Object.keys(services)) {
+  for (const service of availableServices()) {
     const manifest = read(service, "Cargo.toml");
     assert.doesNotMatch(manifest, /^sqlx\s*=/m, `${service} must not depend directly on SQLx`);
   }
 
-  for (const service of seaOrmServices) {
+  for (const service of seaOrmServices.filter(serviceAvailable)) {
     assert.match(read(service, "Cargo.toml"), /^sea-orm\s*=/m, `${service} must use SeaORM`);
   }
 });
 
 test("telemetry consumers keep the OTLP guard alive for the process lifetime", () => {
-  for (const service of telemetryGuardServices) {
+  for (const service of telemetryGuardServices.filter(serviceAvailable)) {
     const manifest = read(service, "Cargo.toml");
     if (!/^fiducia-telemetry\s*=/m.test(manifest)) {
       continue;
@@ -168,4 +194,4 @@ test("telemetry consumers keep the OTLP guard alive for the process lifetime", (
   assert.match(telemetry, /build_meter_provider/);
 });
 
-test.todo("customer telemetry guard after the removed fiducia-payments path is migrated");
+test.todo("customer telemetry initializer is upgraded to the guarded lifecycle contract");
