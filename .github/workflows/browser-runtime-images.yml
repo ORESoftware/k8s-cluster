@@ -42,23 +42,18 @@ jobs:
           - name: dd-web-scraper
             dockerfile: remote/deployments/web-scraper-service/Dockerfile
     steps:
-      - name: Require private-submodule read token
+      - name: Require private-submodule deploy key
         env:
-          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
-        run: test -n "$K8S_SUBMODULE_TOKEN"
+          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+        run: test -n "$K8S_LIBS_DEPLOY_KEY"
 
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
       - name: Initialize pinned shared libraries
-        env:
-          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
-        run: |
-          set -euo pipefail
-          token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
-          git config --global url."${token_url}".insteadOf "git@github.com:"
-          trap 'git config --global --unset-all url."${token_url}".insteadOf || true' EXIT
-          git submodule update --init --depth 1 -- remote/libs
+        run: git submodule update --init --depth 1 -- remote/libs
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
