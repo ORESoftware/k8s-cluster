@@ -34,7 +34,7 @@ two business tools above are model-visible; everything else is protocol plumbing
             ▼
   dd-browser-mcp-rs   :8092   (Rust / axum)     ← THIS SERVICE
     · JSON-RPC envelope + tools/list + tools/call
-    · optional bearer gate, per-caller session ownership
+    · OAuth 2.1 discovery, PKCE, scoped/audience-bound tokens
     · injects server-side domain allowlist, strips bodies from logs
             │  http + X-Server-Auth (private, NetworkPolicy-gated)
             ▼
@@ -106,10 +106,10 @@ Machine-readable error codes: `invalid_request`, `session_not_found`,
 `navigation_failed`, `secret_required`, `unsafe_download`, `too_many_sessions`,
 `worker_unavailable`, `internal_error`.
 
-## Hardening checklist before real public exposure
+## Public exposure checklist
 
-The service is intentionally shipped **public + unauthenticated** for now. Before
-leaning on it, confirm:
+The MCP surface is OAuth-protected; only OAuth discovery/authorization endpoints
+and `/healthz` are anonymous. Before relying on it, confirm:
 
 1. **Set a domain allowlist.** With an empty `BROWSER_MCP_ALLOWED_DOMAINS` /
    `BROWSER_AGENT_ALLOWED_DOMAINS` it is an open browser proxy to the whole
@@ -126,22 +126,27 @@ leaning on it, confirm:
    `{"value": "...", "domains": ["irs.gov"]}` — a bound secret is only typed
    into a matching origin, never an attacker page. Bare-string secrets have no
    domain binding.
-4. **DoS posture.** Anonymous callers share one `owner`, so per-owner caps are a
-   shared bucket; the gateway rate-limits per IP (300/min). Enable
-   `BROWSER_MCP_REQUIRE_AUTH` before heavy public use so sessions are
-   per-identity. Long-poll waiters are capped per session.
+4. **OAuth posture.** Keep `BROWSER_MCP_REQUIRE_AUTH=true`, rotate the signing
+   and operator secrets independently, retain short access-token lifetimes, and
+   keep Redis reachable for single-use authorization codes and rotating refresh
+   grants. The gateway separately rate-limits OAuth POSTs and MCP calls.
 5. **Webpage text is untrusted** and is only ever returned under
    `visible_text.untrusted_content`; page titles are kept out of the model's
    text/summary stream.
 
 ## Endpoints
 
-| Path       | Method        | Notes                                             |
-| ---------- | ------------- | ------------------------------------------------- |
-| `/mcp`     | POST (GET)    | MCP-over-HTTP JSON-RPC. GET returns metadata.     |
-| `/healthz` | GET           | Liveness.                                         |
-| `/readyz`  | GET           | Ready when the private worker answers.            |
-| `/metrics` | GET           | Prometheus counters.                              |
+| Path                                        | Method     | Notes                                      |
+| ------------------------------------------- | ---------- | ------------------------------------------ |
+| `/mcp`                                      | POST (GET) | OAuth-protected MCP-over-HTTP JSON-RPC.    |
+| `/.well-known/oauth-protected-resource`     | GET        | RFC 9728 resource metadata.                |
+| `/.well-known/oauth-authorization-server`   | GET        | RFC 8414 authorization-server metadata.    |
+| `/oauth/register`                           | POST       | Dynamic public-client registration.        |
+| `/oauth/authorize`                          | GET/POST   | Operator consent + authorization code.     |
+| `/oauth/token`                              | POST       | PKCE code and rotating refresh exchange.   |
+| `/healthz`                                  | GET        | Anonymous liveness.                        |
+| `/readyz`                                   | GET        | Worker and OAuth-state readiness.          |
+| `/metrics`                                  | GET        | Cluster-internal Prometheus counters.      |
 
 Public URLs:
 
@@ -150,18 +155,26 @@ Public URLs:
 
 ## Configuration (env)
 
-| Var                            | Default                                                  | Purpose                                             |
-| ------------------------------ | -------------------------------------------------------- | --------------------------------------------------- |
-| `PORT`                         | `8092`                                                   | Bind port.                                          |
-| `BROWSER_MCP_WORKER_URL`       | `http://dd-web-scraper.default.svc.cluster.local:8097`   | Private browser worker.                             |
-| `SERVER_AUTH_SECRET`           | —                                                        | Required shared secret for worker authentication.  |
-| `BROWSER_MCP_REQUIRE_AUTH`     | `false`                                                  | In-pod bearer gate on `/mcp` (off = public).        |
-| `BROWSER_MCP_AUTH_SECRET`      | —                                                        | Bearer value when the gate is on.                   |
-| `BROWSER_MCP_ALLOWED_DOMAINS`  | —                                                        | Required non-empty hostname ceiling in public mode. |
+| Var                                  | Default                                                | Purpose                                                |
+| ------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------ |
+| `PORT`                               | `8092`                                                 | Bind port.                                             |
+| `BROWSER_MCP_WORKER_URL`             | `http://dd-web-scraper.default.svc.cluster.local:8097` | Private browser worker.                                |
+| `SERVER_AUTH_SECRET`                 | —                                                      | Required worker credential.                            |
+| `BROWSER_MCP_REQUIRE_AUTH`           | `false` in code; `true` in production                  | Enable OAuth-protected MCP access.                     |
+| `BROWSER_MCP_PUBLIC_BASE_URLS`       | —                                                      | Trusted public MCP resource/issuer URLs.               |
+| `BROWSER_MCP_OAUTH_SIGNING_SECRET`   | —                                                      | Required 32+ byte token/signature key.                 |
+| `BROWSER_MCP_OAUTH_OPERATOR_SECRET`  | —                                                      | Required 20+ byte human consent secret.                |
+| `BROWSER_MCP_OAUTH_REDIS_URL`        | cluster Redis database 4                               | Single-use code and rotating refresh state.            |
+| `BROWSER_MCP_OAUTH_ACCESS_TTL_SECONDS` | `900`                                                | Short-lived access-token TTL.                          |
+| `BROWSER_MCP_OAUTH_CODE_TTL_SECONDS` | `300`                                                  | Authorization-code TTL.                                |
+| `BROWSER_MCP_OAUTH_REFRESH_TTL_SECONDS` | `2592000`                                           | Rotating refresh-token TTL.                            |
+| `BROWSER_MCP_ALLOWED_DOMAINS`        | —                                                      | Required non-empty hostname ceiling in every mode.     |
 
 Worker-side knobs live on `dd-web-scraper` (`BROWSER_AGENT_*`, see its deployment).
-Production currently sets both layers to `benefactor.cc`; caller-supplied
-domains are overwritten/intersected and cannot widen that ceiling.
+Production currently sets both layers to the reviewed, temporary Fiducia portal
+profile documented below; caller-supplied domains are overwritten/intersected
+and cannot widen that ceiling. The CLI has no implicit domain default, so local
+starts must also choose a non-empty allowlist explicitly.
 
 ## Run locally
 
@@ -175,10 +188,56 @@ SERVER_AUTH_SECRET=dev-secret BROWSER_AGENT_ALLOWED_DOMAINS='' \
 cd ../browser-mcp-rs
 HOST=127.0.0.1 PORT=8092 \
 BROWSER_MCP_WORKER_URL=http://127.0.0.1:8097 \
-BROWSER_MCP_ALLOWED_DOMAINS=benefactor.cc \
+BROWSER_MCP_ALLOWED_DOMAINS=example.com \
 SERVER_AUTH_SECRET=dev-secret \
   cargo run --release --locked                                                  # :8092
 ```
+
+## Temporary Fiducia portal profile
+
+The OAuth-protected production profile was explicitly widened on 2026-07-26 for the
+active Fiducia credit-redemption, startup-application, and conference-CFP
+workstream:
+
+```text
+benefactor.cc
+confluent.cloud
+confluent.io
+signoz.io
+tailscale.com
+planetscale.com
+clerk.com
+algolia.com
+www.pulumi.com
+tally.so
+allthingsopen.org
+allthingsopen.wufoo.com
+static.wufoo.com
+talks.devopsdays.org
+sessionize.com
+events.linuxfoundation.org
+cfp.awscommunitydaysoflo.com
+forms.gle
+docs.google.com
+www.gstatic.com
+ssl.gstatic.com
+fonts.googleapis.com
+fonts.gstatic.com
+```
+
+Root vendor hostnames include that vendor's subdomains. The Wufoo, Pulumi,
+Google static-asset, and AWS CFP entries are intentionally exact hosts. Filing
+sites (`irs.gov`,
+`sos.state.co.us`, `dnb.com`), webmail, cloud metadata, and arbitrary target
+domains are not allowed. Keep the Rust MCP and Playwright worker values
+identical, and shrink or replace this profile when the workstream ends.
+
+The public ChatGPT connector uses OAuth because ChatGPT custom apps cannot
+attach an arbitrary static operator bearer. An unauthenticated MCP request gets
+HTTP 401 with a `WWW-Authenticate: Bearer` challenge pointing at protected
+resource metadata. ChatGPT then registers as a public client, uses PKCE S256,
+shows the operator authorization page, and receives scoped tokens bound to the
+exact AWS or Hetzner MCP resource URL.
 
 Build / test / lint:
 
@@ -202,15 +261,15 @@ before connecting a real client.
 
 ## Connect an MCP client
 
-**ChatGPT (Business/Enterprise/Edu, web).** Enable Developer mode, create a
-custom app, and scan one of the public URLs above with `No authentication`.
-Verify exactly `browser_act` and `browser_observe`, and keep write-action
-approvals enabled. Full write MCP is not available to Pro; mobile does not
-support these custom apps.
+**ChatGPT (eligible Developer mode account, web).** Enable Developer mode,
+create a custom app, choose OAuth, and scan one of the public URLs above. Enter the
+operator authorization secret only on the server's HTTPS consent page. Verify
+exactly `browser_act` and `browser_observe`, and keep write-action approvals
+enabled.
 
 **Claude / API clients.** Point the client's MCP/tool configuration at the same
-URL as a Streamable-HTTP MCP server. When the in-pod bearer gate is enabled later,
-supply `Authorization: Bearer <token>` (never in a query string).
+URL as a Streamable-HTTP MCP server and follow its OAuth discovery metadata.
+Access tokens belong in `Authorization: Bearer`, never in a query string.
 
 ## Deploy
 
@@ -273,10 +332,13 @@ Close:
 
 ## Rotating credentials / revoking sessions
 
-* Flip `BROWSER_MCP_REQUIRE_AUTH=true`, provision
-  `BROWSER_MCP_AUTH_SECRET`, re-add the dormant ExternalSecret to the
-  kustomization, and reconcile to require a bearer. The process fails startup
-  rather than silently accepting a missing auth secret.
+* Rotate `BROWSER_MCP_OAUTH_SIGNING_SECRET` to invalidate all signed client IDs
+  and access tokens; users must reconnect and dynamically register again.
+* Rotate `BROWSER_MCP_OAUTH_OPERATOR_SECRET` to change only the human consent
+  credential. Existing access/refresh grants continue until their TTLs expire.
+* Delete the isolated `dd:browser-mcp:oauth:v1:*` Redis keys to revoke all
+  outstanding authorization codes and refresh grants. Existing access tokens
+  expire within 15 minutes.
 * Rotate `SERVER_AUTH_SECRET` in `dd-agent-secrets` to cut the gateway→worker
   and MCP→worker trust; restart both deployments.
 * Sessions self-expire (idle/absolute TTL); `browser_act` with a `close` action

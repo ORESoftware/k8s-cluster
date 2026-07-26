@@ -162,7 +162,10 @@ test('web scraper is deployed through Argo runtime manifests and gateway', async
   assert.match(deployment, /SCRAPER_ALLOW_PRIVATE_NETWORKS[\s\S]*value:\s*'false'/);
   assert.match(deployment, /SCRAPER_ALLOW_SENSITIVE_HEADERS[\s\S]*value:\s*'false'/);
   assert.match(deployment, /SCRAPER_ALLOW_URL_CREDENTIALS[\s\S]*value:\s*'false'/);
-  assert.match(deployment, /BROWSER_AGENT_ALLOWED_DOMAINS[\s\S]*value:\s*'benefactor\.cc'/);
+  assert.match(
+    deployment,
+    /BROWSER_AGENT_ALLOWED_DOMAINS[\s\S]*value:\s*'[^']*talks\.devopsdays\.org[^']*'/,
+  );
   assert.match(deployment, /SERVER_AUTH_SECRET[\s\S]*dd-agent-secrets[\s\S]*SERVER_AUTH_SECRET/);
   assert.match(deployment, /BROWSERLESS_TOKEN[\s\S]*optional:\s*true/);
   assert.match(deployment, /startupProbe:[\s\S]*path: \/healthz[\s\S]*port: http/);

@@ -8,9 +8,9 @@ import test from 'node:test';
 // on 2026-07-25.
 //
 // ChatGPT custom MCP apps cannot supply an operator's arbitrary static bearer.
-// This deployment is therefore anonymous until OAuth is implemented. The
-// process-level domain ceiling, worker-level ceiling, SSRF controls, quotas, and
-// gateway rate/connection limits are required compensating controls.
+// This deployment therefore implements OAuth discovery, dynamic public-client
+// registration, PKCE, scoped/audience-bound access tokens, and rotating refresh
+// grants while retaining the domain ceiling and browser safety controls.
 //
 // These are cheap file assertions on purpose: they must fail in CI *before*
 // anything reaches a cluster.
@@ -26,10 +26,36 @@ function findRepoRoot(): string {
 
 const repoRoot = findRepoRoot();
 const DEPLOYMENT = 'remote/deployments/browser-mcp-rs/k8s/ec2/dd-browser-mcp-rs.deployment.yaml';
+const WORKER_DEPLOYMENT = 'remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml';
 const GATEWAY = 'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml';
 const AWS_APPS = 'remote/argocd/clusters/aws/applications.yaml';
 const HETZNER_APPS = 'remote/argocd/clusters/hetzner/applications.yaml';
 const CLI_FLAGS = 'remote/deployments/browser-mcp-rs/.cli-flags.toml';
+const FIDUCIA_PORTAL_DOMAINS = [
+  'benefactor.cc',
+  'confluent.cloud',
+  'confluent.io',
+  'signoz.io',
+  'tailscale.com',
+  'planetscale.com',
+  'clerk.com',
+  'algolia.com',
+  'www.pulumi.com',
+  'tally.so',
+  'allthingsopen.org',
+  'allthingsopen.wufoo.com',
+  'static.wufoo.com',
+  'talks.devopsdays.org',
+  'sessionize.com',
+  'events.linuxfoundation.org',
+  'cfp.awscommunitydaysoflo.com',
+  'forms.gle',
+  'docs.google.com',
+  'www.gstatic.com',
+  'ssl.gstatic.com',
+  'fonts.googleapis.com',
+  'fonts.gstatic.com',
+];
 
 function readDeployment(): string {
   const path = resolve(repoRoot, DEPLOYMENT);
@@ -51,7 +77,16 @@ function envValue(manifest: string, name: string): string | null {
   return m[1].trim().replace(/^['"]|['"]$/g, '');
 }
 
-test('anonymous browser-mcp has a narrow, hostname-only domain ceiling', () => {
+function nginxLocation(source: string, declaration: string): string {
+  const marker = `      location ${declaration} {`;
+  const start = source.indexOf(marker);
+  assert.notEqual(start, -1, `missing nginx location: ${declaration}`);
+  const end = source.indexOf('\n      }', start);
+  assert.notEqual(end, -1, `unterminated nginx location: ${declaration}`);
+  return source.slice(start, end);
+}
+
+test('OAuth browser-mcp has a reviewed, hostname-only domain ceiling', () => {
   const manifest = readDeployment();
   if (!manifest) return;
 
@@ -69,15 +104,15 @@ test('anonymous browser-mcp has a narrow, hostname-only domain ceiling', () => {
   );
   assert.equal(
     envValue(manifest, 'BROWSER_MCP_REQUIRE_AUTH'),
-    'false',
-    'ChatGPT no-auth connectivity requires BROWSER_MCP_REQUIRE_AUTH=false until OAuth exists.',
+    'true',
+    'The public write-capable browser MCP must require OAuth.',
   );
 
   const domains = (value as string).split(',').map((domain) => domain.trim());
   assert.deepEqual(
     domains,
-    ['benefactor.cc'],
-    'The anonymous production endpoint must start with only Benefactor itself allowed.',
+    FIDUCIA_PORTAL_DOMAINS,
+    'The OAuth production endpoint must contain only the reviewed Fiducia portal profile.',
   );
   assert.ok(
     domains.every(
@@ -89,16 +124,48 @@ test('anonymous browser-mcp has a narrow, hostname-only domain ceiling', () => {
     ),
     `BROWSER_MCP_ALLOWED_DOMAINS must contain hostnames only: ${value}`,
   );
+  assert.ok(
+    ['irs.gov', 'sos.state.co.us', 'dnb.com'].every((domain) => !domains.includes(domain)),
+    'Filing and identity-registration sites must not be exposed by the Fiducia portal profile.',
+  );
+  assert.ok(
+    [
+      'gmail.com',
+      'mail.google.com',
+      'accounts.google.com',
+      'outlook.com',
+      'login.microsoftonline.com',
+    ].every((domain) => !domains.includes(domain)),
+    'Webmail and identity-provider login hosts must never be exposed by this browser profile.',
+  );
+
+  const worker = readFileSync(resolve(repoRoot, WORKER_DEPLOYMENT), 'utf8');
+  const workerValue = envValue(worker, 'BROWSER_AGENT_ALLOWED_DOMAINS');
+  assert.equal(
+    workerValue,
+    value,
+    'The MCP and Playwright worker hostname ceilings must stay byte-for-byte aligned.',
+  );
 });
 
-test('browser-mcp bearer is sourced from a secret, never inlined', () => {
+test('browser-mcp OAuth and worker credentials are sourced from Secrets', () => {
   const manifest = readDeployment();
   if (!manifest) return;
 
-  assert.match(
+  for (const secret of [
+    'BROWSER_MCP_OAUTH_SIGNING_SECRET',
+    'BROWSER_MCP_OAUTH_OPERATOR_SECRET',
+  ]) {
+    assert.match(
+      manifest,
+      new RegExp(`${secret}\\s*\\n\\s*valueFrom:\\s*\\n\\s*secretKeyRef:`),
+      `${secret} must come from a secretKeyRef, not a literal value.`,
+    );
+  }
+  assert.doesNotMatch(
     manifest,
-    /BROWSER_MCP_AUTH_SECRET\s*\n\s*valueFrom:\s*\n\s*secretKeyRef:/,
-    'BROWSER_MCP_AUTH_SECRET must come from a secretKeyRef, not a literal value.',
+    /BROWSER_MCP_AUTH_SECRET/,
+    'The obsolete static MCP bearer must not remain in the OAuth deployment.',
   );
   assert.match(
     manifest,
@@ -147,26 +214,72 @@ test('browser-mcp is registered in both cluster profiles', () => {
 test('public browser-mcp gateway has dedicated abuse limits and trusted client forwarding', () => {
   const gateway = readFileSync(resolve(repoRoot, GATEWAY), 'utf8');
 
-  assert.match(gateway, /limit_req_zone[\s\S]*zone=dd_browser_mcp:10m rate=60r\/m/);
-  assert.match(gateway, /limit_conn_zone[\s\S]*zone=dd_browser_mcp_conn:10m/);
-  assert.match(gateway, /location = \/browser-mcp[\s\S]*limit_req zone=dd_browser_mcp/);
-  assert.match(gateway, /location = \/browser-mcp[\s\S]*limit_conn dd_browser_mcp_conn 10/);
-  assert.match(gateway, /location = \/browser-mcp[\s\S]*proxy_set_header X-Real-IP \$remote_addr/);
   assert.match(
     gateway,
-    /location = \/browser-mcp[\s\S]*proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for/,
+    /limit_req_zone \$dd_browser_mcp_client_ip zone=dd_browser_mcp:10m rate=60r\/m/,
+  );
+  assert.match(
+    gateway,
+    /limit_conn_zone \$dd_browser_mcp_client_ip zone=dd_browser_mcp_conn:10m/,
+  );
+  assert.match(
+    gateway,
+    /limit_req_zone \$dd_browser_mcp_oauth_write_limit_key zone=dd_browser_mcp_oauth:10m rate=10r\/m/,
+  );
+
+  const mcp = nginxLocation(gateway, '= /browser-mcp');
+  assert.match(mcp, /limit_req zone=dd_browser_mcp burst=15 nodelay/);
+  assert.match(mcp, /limit_conn dd_browser_mcp_conn 10/);
+  assert.match(mcp, /client_max_body_size 1m/);
+  assert.match(mcp, /client_body_timeout 10s/);
+  assert.match(mcp, /proxy_buffering off/);
+  assert.match(mcp, /proxy_set_header X-Real-IP \$dd_browser_mcp_client_ip/);
+  assert.match(mcp, /proxy_set_header X-Forwarded-For \$dd_browser_mcp_client_ip/);
+  assert.doesNotMatch(mcp, /proxy_set_header Authorization ""/);
+  assert.match(mcp, /proxy_set_header Cookie ""/);
+
+  const health = nginxLocation(gateway, '= /browser-mcp/healthz');
+  assert.match(health, /proxy_pass http:\/\/\$dd_browser_mcp_upstream\/healthz/);
+  assert.match(gateway, /location ~ \^\/browser-mcp\/.*oauth.*limit_req zone=dd_browser_mcp_oauth/s);
+  for (const declaration of [
+    '= /.well-known/oauth-protected-resource/browser-mcp',
+    '= /.well-known/oauth-authorization-server/browser-mcp',
+  ]) {
+    const metadata = nginxLocation(gateway, declaration);
+    assert.match(metadata, /limit_req zone=dd_browser_mcp burst=15 nodelay/);
+    assert.match(metadata, /limit_conn dd_browser_mcp_conn 10/);
+    assert.match(metadata, /client_max_body_size 16k/);
+    assert.match(metadata, /proxy_set_header X-Real-IP \$dd_browser_mcp_client_ip/);
+    assert.match(metadata, /proxy_set_header Authorization ""/);
+    assert.match(metadata, /proxy_set_header Cookie ""/);
+  }
+  assert.match(nginxLocation(gateway, '/browser-mcp/'), /return 404/);
+
+  const accessLog = gateway
+    .split('\n')
+    .find((line) => line.includes('log_format dd_gateway_json'));
+  assert.ok(accessLog, 'missing redacted JSON gateway access log');
+  assert.match(accessLog, /"uri":"\$uri"/);
+  assert.doesNotMatch(
+    accessLog,
+    /\$request_uri|\$args|\$http_authorization|\$http_cookie|\$request_body/,
+    'Gateway access logs must not contain queries, credentials, cookies, or request bodies.',
   );
 });
 
-test('browser-mcp CLI contract has no credential defaults and matches production policy', () => {
+test('browser-mcp CLI contract has no credential or implicit navigation defaults', () => {
   const flags = readFileSync(resolve(repoRoot, CLI_FLAGS), 'utf8');
 
   assert.doesNotMatch(flags, /dummy-.*credential/);
-  assert.match(flags, /\[flags\.require_auth\][\s\S]*?default = "false"/);
-  assert.match(flags, /\[flags\.allowed_domains\][\s\S]*?default = "benefactor\.cc"/);
-  for (const section of ['worker_auth_secret', 'auth_secret']) {
+  assert.match(flags, /\[flags\.require_auth\][\s\S]*?default = "true"/);
+  for (const section of [
+    'worker_auth_secret',
+    'oauth_signing_secret',
+    'oauth_operator_secret',
+    'allowed_domains',
+  ]) {
     const body = flags.match(new RegExp(`\\[flags\\.${section}\\]([\\s\\S]*?)(?=\\n\\[|$)`))?.[1];
     assert.ok(body, `missing ${section} flag`);
-    assert.doesNotMatch(body, /\ndefault\s*=/, `${section} must not have a public default`);
+    assert.doesNotMatch(body, /\ndefault\s*=/, `${section} must not have an implicit default`);
   }
 });

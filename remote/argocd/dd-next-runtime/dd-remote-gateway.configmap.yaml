@@ -101,6 +101,13 @@ data:
       ~^1:([^,\s]+) $1;
     }
 
+    # OAuth credential/consent POSTs are deliberately slower than normal MCP
+    # calls so the human operator secret cannot be brute-forced at line speed.
+    map "$request_method:$uri" $dd_browser_mcp_oauth_write_limit_key {
+      default "";
+      ~^POST:/browser-mcp/oauth/(authorize|register|token)$ $dd_browser_mcp_client_ip;
+    }
+
     limit_req_zone $dd_fabrication_write_limit_key zone=dd_fabrication_write:10m rate=12r/m;
     limit_req_zone $dd_auth_write_limit_key zone=dd_auth_write:10m rate=10r/m;
     limit_req_zone $binary_remote_addr zone=dd_music_vote_write:10m rate=20r/m;
@@ -112,10 +119,14 @@ data:
     # directly and are unaffected. 300r/m + burst 60 is far above interactive
     # IDE use but bounds a runaway to ~5 req/s sustained.
     limit_req_zone $binary_remote_addr zone=dd_mcp:10m rate=300r/m;
-    # The anonymous browser MCP is substantially more expensive and
+    # Browser automation is substantially more expensive and
     # write-capable; give it a tighter budget than the read-only MCP endpoints.
-    limit_req_zone $binary_remote_addr zone=dd_browser_mcp:10m rate=60r/m;
-    limit_conn_zone $binary_remote_addr zone=dd_browser_mcp_conn:10m;
+    # Use the normalized address here as well as in the forwarded headers.
+    # Otherwise every Hetzner caller shares ingress-nginx's pod address and can
+    # exhaust one global bucket, while AWS happens to rate-limit per caller.
+    limit_req_zone $dd_browser_mcp_client_ip zone=dd_browser_mcp:10m rate=60r/m;
+    limit_req_zone $dd_browser_mcp_oauth_write_limit_key zone=dd_browser_mcp_oauth:10m rate=10r/m;
+    limit_conn_zone $dd_browser_mcp_client_ip zone=dd_browser_mcp_conn:10m;
 
     # Redacted path-only access logs make gateway guardrails observable without
     # writing Auth headers, cookies, or query strings into Loki.
@@ -950,20 +961,16 @@ data:
         proxy_pass http://dd-gleam-mcp-server.default.svc.cluster.local:8090/;
       }
 
-      # Public browser-automation MCP server (dd-browser-mcp-rs). Exposes the
-      # browser_act / browser_observe tools to external MCP clients (ChatGPT,
-      # Claude). DELIBERATELY PUBLIC for now: no $dd_mcp_auth_ok gate. To gate it
-      # later, add `if ($dd_mcp_auth_ok = 0) { return 401; }` (as the /mcp and
-      # /cluster-mcp blocks do) and switch to `proxy_set_header Authorization "";`.
-      #
-      # Anonymous session ownership is derived from the single normalized
-      # X-Forwarded-For address supplied by this trusted gateway. Caller-supplied
-      # Authorization is ignored while REQUIRE_AUTH=false. proxy_buffering is off
-      # so MCP-over-HTTP responses flush without gateway buffering.
+      # OAuth-protected browser automation MCP server. Authorization is enforced
+      # inside dd-browser-mcp-rs so its 401 includes RFC 9728 protected-resource
+      # discovery and the OAuth bearer reaches the resource server unchanged.
+      # The gateway owns TLS, abuse limits, and trusted client-IP forwarding.
       location = /browser-mcp {
         limit_req zone=dd_browser_mcp burst=15 nodelay;
         limit_req_status 429;
         limit_conn dd_browser_mcp_conn 10;
+        client_max_body_size 1m;
+        client_body_timeout 10s;
         proxy_http_version 1.1;
         proxy_read_timeout 900;
         proxy_send_timeout 900;
@@ -975,17 +982,44 @@ data:
         proxy_set_header X-Forwarded-For $dd_browser_mcp_client_ip;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Prefix /browser-mcp;
+        # The OAuth bearer must reach the resource server. Ambient browser
+        # cookies are not part of this trust boundary.
+        proxy_set_header Cookie "";
         set $dd_browser_mcp_upstream dd-browser-mcp-rs.default.svc.cluster.local:8092;
         proxy_pass http://$dd_browser_mcp_upstream/mcp;
       }
 
-      location /browser-mcp/ {
+      # The only anonymous application endpoint. Kubernetes readiness/metrics
+      # remain cluster-internal and are not reachable through this edge.
+      location = /browser-mcp/healthz {
         limit_req zone=dd_browser_mcp burst=15 nodelay;
         limit_req_status 429;
-        limit_conn dd_browser_mcp_conn 10;
+        client_max_body_size 1m;
+        client_body_timeout 10s;
         proxy_http_version 1.1;
-        proxy_read_timeout 900;
-        proxy_send_timeout 900;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $dd_browser_mcp_client_ip;
+        proxy_set_header X-Forwarded-For $dd_browser_mcp_client_ip;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /browser-mcp;
+        proxy_set_header Cookie "";
+        set $dd_browser_mcp_upstream dd-browser-mcp-rs.default.svc.cluster.local:8092;
+        proxy_pass http://$dd_browser_mcp_upstream/healthz;
+      }
+
+      # OAuth discovery, dynamic client registration, PKCE authorization, and
+      # token exchange. Exact path matching prevents metrics/readyz/runtime
+      # configuration from becoming public side effects of a broad prefix.
+      location ~ ^/browser-mcp/(?:\.well-known/oauth-(?:protected-resource|authorization-server)|oauth/(?:authorize|register|token))$ {
+        limit_req zone=dd_browser_mcp burst=15 nodelay;
+        limit_req zone=dd_browser_mcp_oauth burst=5 nodelay;
+        limit_req_status 429;
+        limit_conn dd_browser_mcp_conn 10;
+        client_max_body_size 1m;
+        client_body_timeout 10s;
+        proxy_http_version 1.1;
+        proxy_read_timeout 90;
+        proxy_send_timeout 90;
         proxy_buffering off;
         proxy_cache off;
         gzip off;
@@ -994,15 +1028,48 @@ data:
         proxy_set_header X-Forwarded-For $dd_browser_mcp_client_ip;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Prefix /browser-mcp;
+        proxy_set_header Cookie "";
         set $dd_browser_mcp_upstream dd-browser-mcp-rs.default.svc.cluster.local:8092;
-        # The variable upstream (used so nginx resolves the service lazily at
-        # request time instead of failing to start when it is absent) changes how
-        # nginx rewrites the URI: the location prefix was NOT being stripped, so
-        # every subpath silently landed on `/` and returned the root descriptor —
-        # `/browser-mcp/metrics` and `/browser-mcp/healthz` both did. Strip the
-        # prefix explicitly and pass proxy_pass with no URI part.
         rewrite ^/browser-mcp/(.*)$ /$1 break;
         proxy_pass http://$dd_browser_mcp_upstream;
+      }
+
+      # RFC 9728/RFC 8414 path-derived fallbacks for a resource/issuer whose
+      # canonical URL contains /browser-mcp.
+      location = /.well-known/oauth-protected-resource/browser-mcp {
+        limit_req zone=dd_browser_mcp burst=15 nodelay;
+        limit_req_status 429;
+        limit_conn dd_browser_mcp_conn 10;
+        client_max_body_size 16k;
+        client_body_timeout 10s;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $dd_browser_mcp_client_ip;
+        proxy_set_header X-Forwarded-For $dd_browser_mcp_client_ip;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Authorization "";
+        proxy_set_header Cookie "";
+        set $dd_browser_mcp_upstream dd-browser-mcp-rs.default.svc.cluster.local:8092;
+        proxy_pass http://$dd_browser_mcp_upstream/.well-known/oauth-protected-resource;
+      }
+
+      location = /.well-known/oauth-authorization-server/browser-mcp {
+        limit_req zone=dd_browser_mcp burst=15 nodelay;
+        limit_req_status 429;
+        limit_conn dd_browser_mcp_conn 10;
+        client_max_body_size 16k;
+        client_body_timeout 10s;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $dd_browser_mcp_client_ip;
+        proxy_set_header X-Forwarded-For $dd_browser_mcp_client_ip;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Authorization "";
+        proxy_set_header Cookie "";
+        set $dd_browser_mcp_upstream dd-browser-mcp-rs.default.svc.cluster.local:8092;
+        proxy_pass http://$dd_browser_mcp_upstream/.well-known/oauth-authorization-server;
+      }
+
+      location /browser-mcp/ {
+        return 404;
       }
 
       location = /gcs {

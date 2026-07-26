@@ -173,9 +173,11 @@ spec:
               value: 'false'
             # Process-level ceiling for persistent browser-agent navigation.
             # Per-call scopes are intersected with this list and cannot widen
-            # it. Root hostnames include subdomains.
+            # it. This must stay byte-for-byte aligned with the browser MCP's
+            # temporary Fiducia applications profile. Root hostnames include
+            # that vendor's subdomains; non-root entries are exact form hosts.
             - name: BROWSER_AGENT_ALLOWED_DOMAINS
-              value: 'benefactor.cc'
+              value: 'benefactor.cc,confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,www.pulumi.com,tally.so,allthingsopen.org,allthingsopen.wufoo.com,static.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com,www.gstatic.com,ssl.gstatic.com,fonts.googleapis.com,fonts.gstatic.com'
             # Optional JSON secret store for secret_ref resolution (never logged
             # or returned). Absent by default -> secret refs are rejected.
             - name: BROWSER_AGENT_SECRETS_FILE
