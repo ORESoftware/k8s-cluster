@@ -139,7 +139,11 @@ test('web scraper is deployed through Argo runtime manifests and gateway', async
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
 
   assert.match(deployment, /name:\s*dd-web-scraper/);
-  assert.match(deployment, /image:\s*ghcr\.io\/oresoftware\/dd-web-scraper:dev/);
+  assert.match(
+    deployment,
+    /image:\s*ghcr\.io\/oresoftware\/dd-web-scraper@sha256:[a-f0-9]{64}/,
+    'The browser worker must run an immutable dedicated image, not a mutable branch tag.',
+  );
   assert.doesNotMatch(deployment, /corepack enable/);
   assert.doesNotMatch(deployment, /pnpm install/);
   assert.doesNotMatch(deployment, /pnpm run build/);

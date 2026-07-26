@@ -147,7 +147,11 @@ test('browser-mcp is a prebuilt, non-root container without shared source mounts
   const manifest = readDeployment();
   if (!manifest) return;
 
-  assert.match(manifest, /image:\s*ghcr\.io\/oresoftware\/dd-browser-mcp-rs:dev/);
+  assert.match(
+    manifest,
+    /image:\s*ghcr\.io\/oresoftware\/dd-browser-mcp-rs@sha256:[a-f0-9]{64}/,
+    'The public MCP must run an immutable dedicated image, not a mutable branch tag.',
+  );
   assert.match(manifest, /replicas:\s*2/);
   assert.match(manifest, /readOnlyRootFilesystem:\s*true/);
   assert.match(manifest, /automountServiceAccountToken:\s*false/);
