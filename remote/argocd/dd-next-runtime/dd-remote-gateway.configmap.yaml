@@ -121,8 +121,9 @@ data:
     limit_req_zone $binary_remote_addr zone=dd_mcp:10m rate=300r/m;
     # Browser automation is substantially more expensive and
     # write-capable; give it a tighter budget than the read-only MCP endpoints.
-    # A 30-request burst accommodates OAuth discovery plus one reconnect while
-    # retaining the 60 requests/minute sustained ceiling.
+    # Allow 30 immediate requests, then pace a bounded second 30 instead of
+    # failing parallel OAuth setup/reconnect flows behind one NAT address. The
+    # sustained ceiling remains 60 requests/minute.
     # Use the normalized address here as well as in the forwarded headers.
     # Otherwise every Hetzner caller shares ingress-nginx's pod address and can
     # exhaust one global bucket, while AWS happens to rate-limit per caller.
@@ -974,7 +975,7 @@ data:
       # discovery and the OAuth bearer reaches the resource server unchanged.
       # The gateway owns TLS, abuse limits, and trusted client-IP forwarding.
       location = /browser-mcp {
-        limit_req zone=dd_browser_mcp burst=30 nodelay;
+        limit_req zone=dd_browser_mcp burst=60 delay=30;
         limit_req_status 429;
         limit_conn dd_browser_mcp_conn 10;
         client_max_body_size 1m;
@@ -1000,7 +1001,7 @@ data:
       # The only anonymous application endpoint. Kubernetes readiness/metrics
       # remain cluster-internal and are not reachable through this edge.
       location = /browser-mcp/healthz {
-        limit_req zone=dd_browser_mcp burst=30 nodelay;
+        limit_req zone=dd_browser_mcp burst=60 delay=30;
         limit_req_status 429;
         client_max_body_size 1m;
         client_body_timeout 10s;
@@ -1019,9 +1020,13 @@ data:
       # token exchange. Exact path matching prevents metrics/readyz/runtime
       # configuration from becoming public side effects of a broad prefix.
       location ~ ^/browser-mcp/(?:\.well-known/oauth-(?:protected-resource|authorization-server)|oauth/(?:authorize|register|token))$ {
-        limit_req zone=dd_browser_mcp burst=30 nodelay;
+        limit_req zone=dd_browser_mcp burst=60 delay=30;
         limit_req zone=dd_browser_mcp_oauth burst=5 nodelay;
         limit_req_status 429;
+        # OAuth authorize queries contain PKCE/state parameters. Access logging
+        # is path-only; suppress nginx request-line error records for this
+        # exact route family so those parameters cannot leak on throttling.
+        error_log /dev/stderr crit;
         limit_conn dd_browser_mcp_conn 10;
         client_max_body_size 1m;
         client_body_timeout 10s;
@@ -1045,7 +1050,7 @@ data:
       # RFC 9728/RFC 8414 path-derived fallbacks for a resource/issuer whose
       # canonical URL contains /browser-mcp.
       location = /.well-known/oauth-protected-resource/browser-mcp {
-        limit_req zone=dd_browser_mcp burst=30 nodelay;
+        limit_req zone=dd_browser_mcp burst=60 delay=30;
         limit_req_status 429;
         limit_conn dd_browser_mcp_conn 10;
         client_max_body_size 16k;
@@ -1061,7 +1066,7 @@ data:
       }
 
       location = /.well-known/oauth-authorization-server/browser-mcp {
-        limit_req zone=dd_browser_mcp burst=30 nodelay;
+        limit_req zone=dd_browser_mcp burst=60 delay=30;
         limit_req_status 429;
         limit_conn dd_browser_mcp_conn 10;
         client_max_body_size 16k;

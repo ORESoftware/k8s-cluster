@@ -236,7 +236,7 @@ test('public browser-mcp gateway has dedicated abuse limits and trusted client f
   );
 
   const mcp = nginxLocation(gateway, '= /browser-mcp');
-  assert.match(mcp, /limit_req zone=dd_browser_mcp burst=30 nodelay/);
+  assert.match(mcp, /limit_req zone=dd_browser_mcp burst=60 delay=30/);
   assert.match(mcp, /limit_conn dd_browser_mcp_conn 10/);
   assert.match(mcp, /client_max_body_size 1m/);
   assert.match(mcp, /client_body_timeout 10s/);
@@ -248,13 +248,18 @@ test('public browser-mcp gateway has dedicated abuse limits and trusted client f
 
   const health = nginxLocation(gateway, '= /browser-mcp/healthz');
   assert.match(health, /proxy_pass http:\/\/\$dd_browser_mcp_upstream\/healthz/);
-  assert.match(gateway, /location ~ \^\/browser-mcp\/.*oauth.*limit_req zone=dd_browser_mcp_oauth/s);
+  const oauth = nginxLocation(
+    gateway,
+    '~ ^/browser-mcp/(?:\\.well-known/oauth-(?:protected-resource|authorization-server)|oauth/(?:authorize|register|token))$',
+  );
+  assert.match(oauth, /limit_req zone=dd_browser_mcp_oauth burst=5 nodelay/);
+  assert.match(oauth, /error_log \/dev\/stderr crit/);
   for (const declaration of [
     '= /.well-known/oauth-protected-resource/browser-mcp',
     '= /.well-known/oauth-authorization-server/browser-mcp',
   ]) {
     const metadata = nginxLocation(gateway, declaration);
-    assert.match(metadata, /limit_req zone=dd_browser_mcp burst=30 nodelay/);
+    assert.match(metadata, /limit_req zone=dd_browser_mcp burst=60 delay=30/);
     assert.match(metadata, /limit_conn dd_browser_mcp_conn 10/);
     assert.match(metadata, /client_max_body_size 16k/);
     assert.match(metadata, /proxy_set_header X-Real-IP \$dd_browser_mcp_client_ip/);
