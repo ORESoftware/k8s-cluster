@@ -1,0 +1,15 @@
+{
+  "name": "dd-fab-e2e-selenium",
+  "private": true,
+  "type": "module",
+  "description": "Selenium WebDriver browser smoke tests for dd-fabrication-web-server",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "selenium-webdriver": "^4.27.0"
+  }
+}

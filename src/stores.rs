@@ -123,10 +123,14 @@ fn backend<E: std::fmt::Display>(error: E) -> StoreError {
 ///
 /// `displaced` is true when a row of the same id already existed — an upsert
 /// that *updated* rather than *inserted*. Job ids are deterministic in
-/// `(kind, request_id, generated_at_ms)`, so this is the expected shape of a
-/// NATS redelivery replaying the same request within the same millisecond; it
-/// is data loss if two genuinely different jobs collided. The store cannot tell
-/// those apart, so it reports the event and the caller counts it.
+/// `(kind, request_id)` alone, so this is the expected shape of a NATS
+/// redelivery replaying the same request — at any later time, not only within
+/// the same millisecond, which is the point of having dropped the timestamp
+/// from the id. Two genuinely different requests cannot land here by accident:
+/// a caller that supplies no request id is given a distinct `{prefix}-{uuid}`
+/// one. It is still data loss if two genuinely different jobs collided (two
+/// callers reusing one request id). The store cannot tell those apart, so it
+/// reports the event and the caller counts it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) struct InsertOutcome {
     pub(crate) displaced: bool,
@@ -192,6 +196,59 @@ fn sanitize_outcome(mut outcome: LearningOutcomeRecord) -> LearningOutcomeRecord
         outcome.reward = 0.0;
     }
     outcome
+}
+
+/// Replace every non-finite JSON number (NaN, +Inf, -Inf) anywhere in `value`
+/// with `0.0`, in place, recursing through objects and arrays.
+///
+/// # Why this exists
+///
+/// A [`StoredFabricationJob`] / [`LearningOutcomeRecord`] serialises to a
+/// `payload` JSONB column, and `serde_json` has **no representation for a
+/// non-finite `f64`**: it encodes `NaN`/`±Infinity` as the JSON literal `null`.
+/// A `null` then fails to decode back into the struct's `f64` field, so the row
+/// becomes permanently unreadable — a failure that is *invisible on the write
+/// path* and only surfaces on the next read (exactly the trap
+/// [`sanitize_outcome`] guards `reward` against, generalised to every one of the
+/// ~113 `f64`/`Option<f64>`/`Vec<f64>`/map-of-`f64` fields reachable from the
+/// serialized payload).
+///
+/// # Why `0.0` and not "drop the key"
+///
+/// Dropping the offending key would leave the payload *missing a field that the
+/// strongly-typed struct requires*, so `serde_json::from_value` would fail to
+/// decode — reintroducing the very unreadable-row failure this prevents. A
+/// neutral `0.0` keeps the payload structurally intact and decodable, matching
+/// the sentinel [`sanitize_outcome`] already uses for `reward`.
+///
+/// # Why here and not at input validation
+///
+/// The geometry engine rejects non-finite floats at request-validation time, so
+/// a non-finite value reaching this point is a **computed** one (an overflow or
+/// `0.0/0.0` deep in planning), not a supplied one. This is defence for that
+/// computed case, applied once at the single persistence chokepoint rather than
+/// on all ~113 fields individually.
+#[cfg(test)]
+fn sanitize_finite(value: &mut Value) {
+    match value {
+        Value::Number(number) => {
+            if number.as_f64().is_some_and(|float| !float.is_finite()) {
+                *value = Value::from(0.0_f64);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                sanitize_finite(item);
+            }
+        }
+        Value::Object(map) => {
+            for (_, entry) in map.iter_mut() {
+                sanitize_finite(entry);
+            }
+        }
+        // Bools, strings and null are always finite / representable.
+        _ => {}
+    }
 }
 
 /// Keep the newest `retain` rows of `table`, deleting at most
@@ -827,6 +884,54 @@ mod tests {
     use crate::FabricationJobRecord;
     use sea_orm::{DatabaseBackend, MockDatabase, MockExecResult};
     use std::collections::BTreeMap;
+
+    /// Pins the premise `sanitize_finite` was written for — and shows that the
+    /// premise does not survive serialization, which is why that function
+    /// cannot do its job where it currently sits.
+    ///
+    /// `serde_json` has no representation for a non-finite `f64`, so NaN and
+    /// ±Infinity become the JSON literal `null` *during serialization*. By the
+    /// time a payload is a [`Value`], the damage is already done and there is
+    /// no non-finite number left to find: `Number::from_f64` refuses to build
+    /// one. A `Value`-walking guard is therefore a no-op on real data — the
+    /// unreadable-row failure has to be prevented before or at serialization,
+    /// or detected as an unexpected `null` in a required float field.
+    #[test]
+    fn non_finite_floats_become_null_before_a_value_can_be_inspected() {
+        assert_eq!(serde_json::to_value(f64::NAN).unwrap(), Value::Null);
+        assert_eq!(serde_json::to_value(f64::INFINITY).unwrap(), Value::Null);
+        assert_eq!(
+            serde_json::to_value(f64::NEG_INFINITY).unwrap(),
+            Value::Null
+        );
+
+        // A `Value` cannot even hold a non-finite number.
+        assert!(serde_json::Number::from_f64(f64::NAN).is_none());
+
+        #[derive(serde::Serialize)]
+        struct Payload {
+            a: f64,
+            b: Option<f64>,
+            c: Vec<f64>,
+        }
+        let encoded = serde_json::to_value(Payload {
+            a: f64::INFINITY,
+            b: Some(f64::NEG_INFINITY),
+            c: vec![1.0, f64::NAN],
+        })
+        .unwrap();
+        assert_eq!(encoded["a"], Value::Null);
+        assert_eq!(encoded["b"], Value::Null);
+        assert_eq!(encoded["c"][1], Value::Null);
+
+        // Consequently the guard finds nothing to sanitize.
+        let mut walked = encoded.clone();
+        sanitize_finite(&mut walked);
+        assert_eq!(
+            walked, encoded,
+            "sanitize_finite is a no-op on serialized data"
+        );
+    }
 
     fn job(job_id: &str, request_id: &str, created_at_ms: u128) -> StoredFabricationJob {
         StoredFabricationJob {

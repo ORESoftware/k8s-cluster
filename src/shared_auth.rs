@@ -4,15 +4,20 @@
 //! enforcement, and auth spans. This module only translates service config and
 //! the shared identity contract into the small operator type used by handlers.
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
+#[cfg(test)]
+use axum::http::{header::AUTHORIZATION, HeaderValue};
 use axum::{
     extract::{FromRequestParts, Request, State},
-    http::request::Parts,
+    http::{request::Parts, HeaderMap},
     middleware::Next,
     response::Response,
 };
-use shared_auth_lib::{AuthGuard, AuthOutcome, Authority, AuthorityConfig, GuardConfig, Identity};
+use shared_auth_lib::{
+    AccessPolicy, AuthGuard, AuthGuardConfig, AuthOutcome, Authority, AuthorityConfig, GuardConfig,
+    Identity,
+};
 
 use crate::{config::AuthConfig, error::ServiceError, AppState};
 
@@ -24,36 +29,42 @@ pub(crate) struct Operator {
     pub(crate) authority: Authority,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 enum Backend {
-    Guard(AuthGuard),
+    Guard(Arc<AuthGuard>),
     #[cfg(test)]
     Fixed(Operator),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) struct SharedAuthVerifier {
     backend: Backend,
 }
 
 impl SharedAuthVerifier {
     pub(crate) fn from_config(config: &AuthConfig) -> Option<Self> {
-        let guard_config = GuardConfig {
-            authority: AuthorityConfig {
-                shared_auth_base: config.shared_auth_base.clone(),
-                issuer: config.issuer.clone(),
-                audience: config.audience.clone(),
-                supabase_url: config.supabase_url.clone(),
-                supabase_api_key: config.supabase_api_key.clone(),
-                arm_timeout: Duration::from_millis(config.arm_timeout_ms),
+        let auth_guard_config = AuthGuardConfig {
+            guard: GuardConfig {
+                authority: AuthorityConfig {
+                    shared_auth_base: config.shared_auth_base.clone(),
+                    issuer: config.issuer.clone(),
+                    audience: config.audience.clone(),
+                    supabase_url: config.supabase_url.clone(),
+                    supabase_api_key: config.supabase_api_key.clone(),
+                    introspect_secret: config.introspect_secret.clone(),
+                    arm_timeout: Duration::from_millis(config.arm_timeout_ms),
+                },
+                supabase_project: Some(config.provider_tenant.clone()),
+                race_deadline: Duration::from_millis(config.deadline_ms),
+                ..GuardConfig::default()
             },
-            provider_tenant: config.provider_tenant.clone(),
-            allowed_emails: config.allowed_emails.clone(),
-            allowed_roles: config.allowed_roles.clone(),
-            deadline: Duration::from_millis(config.deadline_ms),
+            policy: AccessPolicy {
+                allowed_emails: config.allowed_emails.clone(),
+                allowed_roles: config.allowed_roles.clone(),
+            },
         };
-        AuthGuard::from_config(&guard_config).map(|guard| Self {
-            backend: Backend::Guard(guard),
+        AuthGuard::from_config(&auth_guard_config).map(|guard| Self {
+            backend: Backend::Guard(Arc::new(guard)),
         })
     }
 
@@ -66,18 +77,20 @@ impl SharedAuthVerifier {
 
     #[tracing::instrument(
         name = "daedalus.auth.authorize",
-        skip(self, http, token),
-        fields(auth.token_bytes = token.len())
+        skip(self, headers),
+        fields(auth.header_count = headers.len())
     )]
-    pub(crate) async fn authorize(
-        &self,
-        http: &reqwest::Client,
-        token: &str,
-    ) -> Result<Operator, ServiceError> {
+    pub(crate) async fn authorize(&self, headers: &HeaderMap) -> Result<Operator, ServiceError> {
         match &self.backend {
-            Backend::Guard(guard) => operator_from_outcome(guard.authorize(http, token).await),
+            Backend::Guard(guard) => operator_from_outcome(guard.authorize(headers).await),
             #[cfg(test)]
-            Backend::Fixed(operator) if token.is_empty() || token.len() > 16 * 1024 => {
+            Backend::Fixed(operator)
+                if headers
+                    .get(AUTHORIZATION)
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(|value| bearer_token(Some(value)))
+                    .is_none() =>
+            {
                 let _ = operator;
                 Err(ServiceError::Unauthorized)
             }
@@ -87,9 +100,9 @@ impl SharedAuthVerifier {
     }
 }
 
+#[cfg(test)]
 pub(crate) async fn authorize_bearer(
     verifier: Option<&SharedAuthVerifier>,
-    http: &reqwest::Client,
     header: Option<&str>,
 ) -> Result<Operator, ServiceError> {
     let verifier = verifier.ok_or_else(|| {
@@ -98,7 +111,11 @@ pub(crate) async fn authorize_bearer(
         )
     })?;
     let token = bearer_token(header).ok_or(ServiceError::Unauthorized)?;
-    verifier.authorize(http, token).await
+    let mut headers = HeaderMap::new();
+    let value = HeaderValue::from_str(&format!("Bearer {token}"))
+        .map_err(|_| ServiceError::Unauthorized)?;
+    headers.insert(AUTHORIZATION, value);
+    verifier.authorize(&headers).await
 }
 
 #[axum::async_trait]
@@ -120,11 +137,12 @@ impl FromRequestParts<AppState> for Operator {
 
 impl Operator {
     async fn authorize(parts: &mut Parts, state: &AppState) -> Result<Self, ServiceError> {
-        let header = parts
-            .headers
-            .get(axum::http::header::AUTHORIZATION)
-            .and_then(|value| value.to_str().ok());
-        authorize_bearer(state.verifier.as_deref(), &state.http, header).await
+        let verifier = state.verifier.as_deref().ok_or_else(|| {
+            ServiceError::Unavailable(
+                "shared-auth is not configured; refusing to serve authenticated routes".to_string(),
+            )
+        })?;
+        verifier.authorize(&parts.headers).await
     }
 }
 
@@ -178,6 +196,7 @@ fn operator_from_identity(identity: Identity, authority: Authority) -> Operator 
 }
 
 /// Extract a bearer token from an `Authorization` header value.
+#[cfg(test)]
 pub(crate) fn bearer_token(header: Option<&str>) -> Option<&str> {
     let raw = header?.trim();
     let (scheme, token) = raw.split_once(' ')?;
@@ -252,20 +271,16 @@ mod tests {
     async fn fixed_test_verifier_exercises_the_same_bearer_boundary() {
         let operator = operator_from_identity(identity(), Authority::SharedAuth);
         let verifier = SharedAuthVerifier::for_test(operator.clone());
-        let verified = authorize_bearer(
-            Some(&verifier),
-            &reqwest::Client::new(),
-            Some("Bearer test-token"),
-        )
-        .await
-        .expect("fixed authorization");
+        let verified = authorize_bearer(Some(&verifier), Some("Bearer test-token"))
+            .await
+            .expect("fixed authorization");
         assert_eq!(verified.subject, operator.subject);
         assert!(matches!(
-            authorize_bearer(Some(&verifier), &reqwest::Client::new(), None).await,
+            authorize_bearer(Some(&verifier), None).await,
             Err(ServiceError::Unauthorized)
         ));
         assert!(matches!(
-            authorize_bearer(None, &reqwest::Client::new(), Some("Bearer test-token")).await,
+            authorize_bearer(None, Some("Bearer test-token")).await,
             Err(ServiceError::Unavailable(_))
         ));
     }

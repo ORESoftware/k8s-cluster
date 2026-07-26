@@ -95,7 +95,6 @@ mod tests {
             nats_enabled: true,
             supabase_enabled: true,
             verifier: None,
-            auth_http: reqwest::Client::new(),
         };
         let response = metrics(State(state)).await;
         let body = to_bytes(response.into_body(), 16 * 1024)

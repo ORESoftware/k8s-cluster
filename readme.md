@@ -39,6 +39,7 @@ an outage is never misreported as bad credentials. The service has no direct
 | `FABRICATION_SHARED_AUTH_AUDIENCE` | Shared token audience; defaults to `oresoftware`. |
 | `FABRICATION_SUPABASE_URL` | Supabase project URL used as the second authority. A legacy `FABRICATION_SUPABASE_ISSUER` ending in `/auth/v1` is converted for compatibility. |
 | `FABRICATION_SUPABASE_PUBLISHABLE_KEY` | Publishable/anon project key; a service-role key is not required. |
+| `FABRICATION_AUTH_INTROSPECT_SECRET` | Service credential for shared-auth introspection; inject it from the runtime secret manager and never log it. |
 | `FABRICATION_AUTH_PROVIDER_TENANT` | Provider tenant/project identity; derived from the Supabase URL when omitted. |
 | `FABRICATION_ALLOWED_EMAILS` | Comma-separated verified operator email policy. |
 | `FABRICATION_ALLOWED_ROLES` | Comma-separated shared role policy. At least an email or role policy is required. |

@@ -113,6 +113,7 @@ pub(crate) struct AuthConfig {
     pub(crate) audience: String,
     pub(crate) supabase_url: Option<String>,
     pub(crate) supabase_api_key: Option<String>,
+    pub(crate) introspect_secret: Option<String>,
     pub(crate) provider_tenant: String,
     pub(crate) allowed_emails: Vec<String>,
     pub(crate) allowed_roles: Vec<String>,
@@ -141,6 +142,7 @@ impl AuthConfig {
             supabase_url,
             supabase_api_key: optional_env("FABRICATION_SUPABASE_PUBLISHABLE_KEY")
                 .or_else(|| optional_env("FABRICATION_SUPABASE_ANON_KEY")),
+            introspect_secret: optional_env("FABRICATION_AUTH_INTROSPECT_SECRET"),
             allowed_emails: optional_env("FABRICATION_ALLOWED_EMAILS")
                 .map(|raw| normalized_csv(&raw, true))
                 .unwrap_or_default(),
@@ -285,6 +287,7 @@ mod tests {
             audience: "oresoftware".to_string(),
             supabase_url: Some("https://proj.supabase.co".to_string()),
             supabase_api_key: Some("publishable-test-key".to_string()),
+            introspect_secret: Some("introspect-test-secret".to_string()),
             provider_tenant: "proj".to_string(),
             allowed_emails: allowed.iter().map(|e| e.to_string()).collect(),
             allowed_roles: roles.iter().map(|role| role.to_string()).collect(),

@@ -138,12 +138,12 @@ fn shared_auth_owns_both_complete_fail_closed_http_gates() {
     assert!(!has_direct_dependency(MANIFEST, "jsonwebtoken"));
     assert!(SHARED_AUTH.contains("AuthGuard"));
     assert!(SHARED_AUTH.contains("AuthOutcome::Degraded"));
-    assert!(SHARED_AUTH.contains("async fn authorize_bearer"));
+    assert!(SHARED_AUTH.contains("async fn authorize(&self, headers: &HeaderMap)"));
     assert!(SHARED_AUTH.contains("async fn require_operator"));
     assert!(SHARED_AUTH.contains("impl FromRequestParts<AppState> for Operator"));
     assert!(SHARED_AUTH.contains("#[tracing::instrument("));
     assert!(SHARED_AUTH.contains("auth.authorization.succeeded"));
-    assert!(WEB_SERVER.contains("authorize_bearer"));
+    assert!(WEB_SERVER.contains("verifier.authorize(request.headers())"));
     assert!(WEB_SERVER.contains("async fn require_operator"));
     assert!(WEB_SERVER.contains("route_layer(middleware::from_fn_with_state"));
     assert!(WEB_SERVER.contains("auth.authorization.succeeded"));

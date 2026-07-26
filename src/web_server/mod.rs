@@ -16,7 +16,7 @@ use crate::{
     persistence::Persistence,
     realtime::{EventHub, ServiceSurface},
     secrets::SecretOverlay,
-    shared_auth::{authorize_bearer, SharedAuthVerifier},
+    shared_auth::SharedAuthVerifier,
     transport,
 };
 
@@ -34,7 +34,6 @@ pub(super) struct WebState {
     pub(super) nats_enabled: bool,
     pub(super) supabase_enabled: bool,
     verifier: Option<Arc<SharedAuthVerifier>>,
-    auth_http: reqwest::Client,
 }
 
 pub(crate) async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -102,9 +101,6 @@ pub(crate) async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
         nats_enabled,
         supabase_enabled,
         verifier,
-        auth_http: reqwest::Client::builder()
-            .timeout(Duration::from_secs(10))
-            .build()?,
     };
     let app = app(state, hub).merge(dd_runtime_config_client::router());
     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
@@ -157,11 +153,12 @@ async fn require_operator(
     request: Request,
     next: Next,
 ) -> Result<Response, ServiceError> {
-    let header = request
-        .headers()
-        .get(axum::http::header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok());
-    let operator = authorize_bearer(state.verifier.as_deref(), &state.auth_http, header).await?;
+    let verifier = state.verifier.as_deref().ok_or_else(|| {
+        ServiceError::Unavailable(
+            "shared-auth is not configured; refusing to serve authenticated routes".to_string(),
+        )
+    })?;
+    let operator = verifier.authorize(request.headers()).await?;
     tracing::debug!(
         auth.subject = %operator.subject,
         auth.email = ?operator.email,
@@ -204,7 +201,6 @@ mod tests {
             nats_enabled: false,
             supabase_enabled: false,
             verifier: Some(Arc::new(SharedAuthVerifier::for_test(test_operator()))),
-            auth_http: reqwest::Client::new(),
         };
         app(state, hub)
     }
