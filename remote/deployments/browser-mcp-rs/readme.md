@@ -208,7 +208,6 @@ The production hostname profile was explicitly set on 2026-07-26 for the active
 Fiducia credit-redemption, startup-application, and conference-CFP workstream:
 
 ```text
-benefactor.cc
 confluent.cloud
 confluent.io
 signoz.io
@@ -236,14 +235,16 @@ www.gstatic.com
 ssl.gstatic.com
 fonts.googleapis.com
 fonts.gstatic.com
-httpbingo.org
 ```
 
-The ceiling is divided into server-defined `fiducia-applications`,
-`benefactor-site`, and `smoke-test` workflow profiles. Callers select a
-`workflow_id`; they cannot define a profile or widen its hostnames.
-`httpbingo.org` is isolated in `smoke-test` for the reproducible harmless-form
-verification script and is not reachable from the application profiles.
+The ceiling is exposed only through the server-defined
+`fiducia-applications` workflow profile. Callers select its `workflow_id`; they
+cannot define a profile or widen its hostnames. Unrelated smoke-test and product
+domains are deliberately excluded while this endpoint is anonymous.
+
+When `BROWSER_MCP_REQUIRE_AUTH=false`, `tools/list` advertises the MCP
+`noauth` security scheme. Restoring the setting to `true` changes the same tool
+descriptors back to OAuth 2.0 with their least-privilege scopes.
 
 Root vendor hostnames include that vendor's subdomains. The PostHog, Together
 AI, Snyk, OVHcloud, Wufoo, Pulumi, Google static-asset, and AWS CFP entries are

@@ -320,18 +320,22 @@ test "$initialized_status" = '202'
 
 echo "checking tools/list"
 tools="$(rpc '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')"
-jq -e '
+jq -e --arg auth_mode "$auth_mode" '
   ([.result.tools[].name] | sort) ==
   ["browser_act", "browser_state"] and
   all(.result.tools[];
-    .securitySchemes[0].type == "oauth2" and
-    (.securitySchemes[0].scopes | index("mcp:tools"))
+    if $auth_mode == "oauth" then
+      .securitySchemes[0].type == "oauth2" and
+      (.securitySchemes[0].scopes | index("mcp:tools"))
+    else
+      .securitySchemes == [{"type":"noauth"}]
+    end
   )
 ' <<<"$tools" >/dev/null
 
-echo "checking browser_act against the isolated harmless form profile"
+echo "checking browser_act against the approved Tailscale application profile"
 start="$(
-  rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"browser_act","arguments":{"workflow_id":"smoke-test","intent":"open a harmless test form","actions":[{"type":"start","initial_url":"https://httpbingo.org/forms/post"}]}}}'
+  rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"browser_act","arguments":{"workflow_id":"fiducia-applications","intent":"open the approved startup form without submitting it","actions":[{"type":"start","initial_url":"https://tailscale.com/startup-program"}]}}}'
 )"
 jq -e '.result.isError == false' <<<"$start" >/dev/null
 session_id="$(jq -er '.result.structuredContent.session_id' <<<"$start")"
@@ -355,7 +359,7 @@ state_payload="$(
 state_result="$(rpc "$state_payload")"
 if ! jq -e '
   .result.isError == false and
-  (.result.structuredContent.page.url | startswith("https://httpbingo.org/forms/post")) and
+  (.result.structuredContent.page.url | startswith("https://tailscale.com/startup-program")) and
   (.result.structuredContent.page.title | type == "string") and
   (.result.structuredContent.accessibility_snapshot.role == "document") and
   (.result.structuredContent.forms | length > 0) and
@@ -414,7 +418,7 @@ fill_payload="$(
       name: "browser_act",
       arguments: {
         session_id: $session_id,
-        expected_revision: $revision,
+        expected_revision: $post_fill_revision,
         intent: "fill one harmless test field",
         actions: [{type: "type", target: {ref: $field_ref}, value: {literal: "Browser MCP smoke test"}, clear_first: true}]
       }
