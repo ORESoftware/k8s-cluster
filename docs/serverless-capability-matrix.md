@@ -34,8 +34,8 @@ and **gap** is not yet implemented.
 | Network isolation | **partial** | Hardened containers and Kubernetes NetworkPolicy; needs per-function egress policy |
 | Function revisions | **gap** | Immutable code/config snapshots with stable IDs |
 | Aliases and weighted traffic | **gap** | Named aliases, canary percentages, affinity, instant rollback |
-| Asynchronous invocation queue | **gap** | Durable acceptance response, status API, retention, and cancellation |
-| Retry policy and destinations / DLQ | **gap** | Per-trigger attempts, exponential backoff, success/failure destinations |
+| Asynchronous invocation queue | **partial** | Postgres-durable 202 acceptance, per-function idempotency, cross-replica leases, attempt history, status, cancellation, crash recovery, and maximum event age; retention policy and native event-source ack/replay remain |
+| Retry policy and destinations / DLQ | **partial** | Per-invocation bounded exponential retry plus success/failure/canceled/DLQ NATS subjects; destination publish is best effort until JetStream-backed |
 | Queue batching and partial acknowledgements | **gap** | Batch size/window, per-message ack/retry, visibility timeout |
 | Scheduled / cron triggers | **gap** | UTC cron discovery, overlap policy, retries, history |
 | CloudEvents trigger bindings and filters | **gap** | HTTP/NATS sources, attribute filters, fan-out, authenticated sinks |
@@ -82,10 +82,13 @@ CloudEvents routing, scale-to-zero, and Kubernetes-native traffic splitting.
 
 - Bound local per-function concurrency with exclusive worker leases, immediate
   overload rejection, abandoned-request cleanup, and old-generation draining.
-- Add durable invocation records with caller-supplied idempotency keys.
+- Persist async invocations through managed one-activity workflows with
+  caller-supplied idempotency keys, status, attempt history, and cancellation.
+- Enforce bounded retry, backoff, per-attempt timeout, and maximum event age;
+  emit terminal success/failure/canceled and DLQ events.
 - Support sync, async, and stream invocation modes.
-- Add attempts, exponential backoff with jitter, maximum event age, cancellation,
-  success/failure destinations, and DLQs.
+- Make destinations JetStream-durable and add configurable retry jitter and
+  retention.
 - Add queue consumer batching, visibility leases, partial acknowledgement, and
   concurrency/backpressure controls.
 

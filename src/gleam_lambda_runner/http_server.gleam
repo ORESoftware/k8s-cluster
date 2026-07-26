@@ -9,6 +9,7 @@ import gleam/int
 import gleam/list
 import gleam/string
 import gleam_lambda_runner/api_docs
+import gleam_lambda_runner/async_invocation
 import gleam_lambda_runner/child_process
 import gleam_lambda_runner/runtime_supervisor
 import gleam_lambda_runner/workflow
@@ -74,6 +75,12 @@ fn route(
     Post, ["check"] -> require_authenticated_post(req, fn() { check(req) })
     Post, ["destroy", reuse_key] ->
       require_authenticated_post(req, fn() { destroy(reuse_key) })
+    Post, ["async", "invoke", function_id] ->
+      require_authenticated_post(req, fn() { async_invoke(req, function_id) })
+    Get, ["async", "invocations", run_id] ->
+      require_authenticated(req, fn() { async_get(run_id) })
+    Post, ["async", "invocations", run_id, "cancel"] ->
+      require_authenticated_post(req, fn() { async_cancel(run_id) })
     Post, ["workflows", "start"] ->
       require_authenticated_post(req, fn() { workflow_start(req) })
     Get, ["workflows", "runs"] ->
@@ -93,6 +100,9 @@ fn route(
     _, ["invoke", _] -> method_not_allowed()
     _, ["check"] -> method_not_allowed()
     _, ["destroy", _] -> method_not_allowed()
+    _, ["async", "invoke", _] -> method_not_allowed()
+    _, ["async", "invocations", _] -> method_not_allowed()
+    _, ["async", "invocations", _, "cancel"] -> method_not_allowed()
     _, ["workflows", "start"] -> method_not_allowed()
     _, ["internal", "update-runtime-config"] -> method_not_allowed()
     _, ["internal", "runtime-config", "reset"] -> method_not_allowed()
@@ -198,6 +208,30 @@ fn child_error_status(error: String) -> Int {
   }
 }
 
+fn async_invoke(
+  req: request.Request(mist.Connection),
+  function_id: String,
+) -> response.Response(mist.ResponseData) {
+  with_body(req, fn(payload) {
+    workflow_result_response(
+      202,
+      "invocation",
+      async_invocation.start(function_id, payload),
+    )
+  })
+}
+
+fn async_get(run_id: String) -> response.Response(mist.ResponseData) {
+  case async_invocation.get(run_id) {
+    Ok(invocation) -> json_response(200, invocation)
+    Error(error) -> workflow_error_response(error)
+  }
+}
+
+fn async_cancel(run_id: String) -> response.Response(mist.ResponseData) {
+  workflow_result_response(200, "invocation", async_invocation.cancel(run_id))
+}
+
 fn workflow_start(
   req: request.Request(mist.Connection),
 ) -> response.Response(mist.ResponseData) {
@@ -264,23 +298,31 @@ fn workflow_error_response(
 }
 
 fn workflow_error_status(error: String) -> Int {
-  case string.contains(error, "not found") {
-    True -> 404
+  case
+    string.contains(error, "unavailable")
+    || string.contains(error, "LAMBDA_DATABASE_URL")
+    || string.contains(error, "psql executable")
+  {
+    True -> 503
     False ->
-      case
-        string.contains(error, "not cancelable")
-        || string.contains(error, "not running")
-      {
-        True -> 409
+      case string.contains(error, "not found") {
+        True -> 404
         False ->
           case
-            string.contains(error, "required")
-            || string.contains(error, "invalid")
-            || string.contains(error, "must")
-            || string.contains(error, "not active")
+            string.contains(error, "not cancelable")
+            || string.contains(error, "not running")
           {
-            True -> 400
-            False -> 502
+            True -> 409
+            False ->
+              case
+                string.contains(error, "required")
+                || string.contains(error, "invalid")
+                || string.contains(error, "must")
+                || string.contains(error, "not active")
+              {
+                True -> 400
+                False -> 502
+              }
           }
       }
   }

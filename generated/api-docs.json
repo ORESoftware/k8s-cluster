@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "gleam-lambda-runner",
   "language": "gleam",
-  "routeCount": 20,
+  "routeCount": 23,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 10,
+    "user-generated": 13,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -54,6 +54,51 @@
       "implementation": "service",
       "auth": "public",
       "purpose": "Machine-readable generated API route metadata.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/async/invocations/:run_id",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/async/invocations/:run_id/cancel",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/async/invoke/:function_id",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
       "handlers": [],
       "sourceFiles": [
         "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"

@@ -13,6 +13,7 @@
 
 -export([
     available/0,
+    ensure_async_definition/1,
     create_run/3,
     get_run/1,
     get_run_with_steps/1,
@@ -56,6 +57,94 @@ available() ->
     case database_url() of
         {ok, _} -> true;
         _ -> false
+    end.
+
+%% Ensure the internal one-step workflow used for durable async invocation
+%% exists for an active lambda. The workflow definition deliberately reuses the
+%% lambda UUID: the tables are separate namespaces, and this gives us a stable
+%% per-function idempotency scope without adding another schema/table. We only
+%% update a colliding definition when its metadata proves we created it.
+ensure_async_definition(FunctionRef0) ->
+    FunctionRef = to_binary(FunctionRef0),
+    case resolve_lambda_function(FunctionRef) of
+        {ok, FunctionId} ->
+            AsyncSlug = iolist_to_binary([
+                "async-",
+                binary:replace(FunctionId, <<"-">>, <<>>, [global])
+            ]),
+            Steps = json:encode([#{
+                <<"name">> => <<"invoke">>,
+                <<"type">> => <<"activity">>,
+                <<"functionId">> => FunctionId,
+                <<"payloadMode">> => <<"asyncPayload">>,
+                <<"asyncPolicy">> => true
+            }]),
+            Metadata = json:encode(#{
+                <<"kind">> => <<"lambdaAsync">>,
+                <<"functionId">> => FunctionId,
+                <<"managedBy">> => <<"dd-gleam-lambda-runner">>
+            }),
+            Sql = [
+                "insert into workflow_definitions ",
+                "(id, slug, display_name, description, steps, default_retry, ",
+                "status, labels, meta_data, is_soft_deleted) values (",
+                ":'id'::uuid, :'slug', :'name', ",
+                "'Managed durable asynchronous lambda invocation', ",
+                ":'steps'::jsonb, '{}'::jsonb, 'active', ",
+                "'[\"scintilla:system\",\"scintilla:async\"]'::jsonb, ",
+                ":'meta'::jsonb, false) ",
+                "on conflict (id) do update set ",
+                "slug = excluded.slug, display_name = excluded.display_name, ",
+                "description = excluded.description, steps = excluded.steps, ",
+                "default_retry = excluded.default_retry, status = 'active', ",
+                "labels = excluded.labels, meta_data = excluded.meta_data, ",
+                "is_soft_deleted = false, updated_at = now() ",
+                "where workflow_definitions.meta_data->>'kind' = 'lambdaAsync' ",
+                "returning slug"
+            ],
+            Vars = [
+                {"id", FunctionId},
+                {"slug", AsyncSlug},
+                {"name", iolist_to_binary(["Async invocation: ", FunctionId])},
+                {"steps", Steps},
+                {"meta", Metadata}
+            ],
+            case run_psql(Vars, Sql) of
+                {ok, <<>>} ->
+                    {error, <<"workflow definition UUID collision">>};
+                {ok, Slug} ->
+                    {ok, string:trim(Slug)};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+resolve_lambda_function(FunctionRef) ->
+    Where =
+        case identifier_kind(FunctionRef) of
+            uuid -> "id = :'ref'::uuid";
+            slug -> "slug = :'ref'";
+            invalid -> invalid
+        end,
+    case Where of
+        invalid ->
+            {error, <<"valid lambda function UUID or slug is required">>};
+        Clause ->
+            Sql = [
+                "select id::text from lambda_functions where ",
+                Clause,
+                " and is_soft_deleted = false and status = 'active' limit 1"
+            ],
+            case run_psql([{"ref", FunctionRef}], Sql) of
+                {ok, <<>>} ->
+                    {error, <<"lambda function not found or not active">>};
+                {ok, FunctionId} ->
+                    {ok, string:trim(FunctionId)};
+                {error, Reason} ->
+                    {error, Reason}
+            end
     end.
 
 %% ─── Reads ──────────────────────────────────────────────────────────────────
@@ -163,7 +252,7 @@ get_run_with_steps(RunId0) ->
             Sql = [
                 "select jsonb_build_object(",
                 "'ok', true,",
-                "'run', (select ", run_json("workflow_runs"),
+                "'run', (select ", run_json_object("workflow_runs"),
                 " from workflow_runs where id = :'rid'::uuid),",
                 "'steps', coalesce((select jsonb_agg(s order by s.step_index, s.attempt) ",
                 "from (select step_index, step_name, step_type, function_ref, attempt, status, ",
@@ -231,6 +320,7 @@ claim_due(Limit0, LeaseMs0) ->
         "  'waitDeadlineMs', case when u.wait_deadline is null then null",
         "     else (extract(epoch from u.wait_deadline) * 1000)::bigint end,",
         "  'nowMs', (extract(epoch from now()) * 1000)::bigint,",
+        "  'createdAtMs', (extract(epoch from u.created_at) * 1000)::bigint,",
         "  'steps', d.steps, 'defaultRetry', d.default_retry",
         ")), '[]'::jsonb)::text ",
         "from upd u join workflow_definitions d on d.id = u.definition_id"
@@ -348,8 +438,7 @@ cancel_run(RunId0) ->
             Set = [
                 {"status = 'canceled'", []},
                 {"finished_at = now()", []},
-                {"wake_at = null", []},
-                {"lease_until = null", []}
+                {"wake_at = null", []}
             ],
             commit(RunId, Set, undefined);
         _ ->

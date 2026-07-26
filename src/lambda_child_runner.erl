@@ -1490,7 +1490,11 @@ demonitor_lease(Worker) ->
 
 close_port(Port) ->
     case port_alive(Port) of
-        true -> catch port_close(Port);
+        true ->
+            try port_close(Port)
+            catch
+                _:_ -> ok
+            end;
         false -> ok
     end.
 

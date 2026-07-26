@@ -7,8 +7,16 @@
 //// exactly Gleam's `Result(String, String)` at runtime, so the HTTP layer can
 //// bind them directly. Request bodies are parsed in Erlang (OTP `json`).
 
+import gleam/dynamic
+import gleam/erlang/process
+import gleam/otp/actor
+import gleam/otp/supervision
+
 @external(erlang, "workflow_engine", "start_for_gleam")
 fn engine_start() -> Nil
+
+@external(erlang, "workflow_engine", "start_link")
+fn start_erlang_engine() -> Result(process.Pid, dynamic.Dynamic)
 
 @external(erlang, "workflow_engine", "enabled")
 pub fn enabled() -> Bool
@@ -35,4 +43,18 @@ pub fn metrics() -> String
 /// when no database is configured: the engine stays disabled and idle.
 pub fn start() -> Nil {
   engine_start()
+}
+
+fn start_supervised() -> actor.StartResult(Nil) {
+  case start_erlang_engine() {
+    Ok(pid) -> Ok(actor.Started(pid: pid, data: Nil))
+    Error(_) ->
+      Error(actor.InitFailed("could not start the durable workflow engine"))
+  }
+}
+
+/// Keep the durable scheduler inside the application's static OTP tree. Its
+/// Postgres state survives a restart and expired leases are reclaimed.
+pub fn supervised() {
+  supervision.worker(start_supervised)
 }

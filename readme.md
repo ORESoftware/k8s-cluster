@@ -25,6 +25,9 @@ Deno Deploy, and Knative lives in
 - `POST /check` compiles or syntax-checks a posted lambda definition without executing the
   function body.
 - `POST /destroy/:reuse_key` closes a cached child process.
+- `POST /async/invoke/:function_id` durably accepts an invocation and returns 202.
+- `GET /async/invocations/:run_id` returns durable status and attempt history.
+- `POST /async/invocations/:run_id/cancel` cancels queued/retrying work.
 - `POST /workflows/start` starts a durable workflow run.
 - `GET /workflows/runs` lists recent runs (optional `?definition=<id|slug>&limit=N`).
 - `GET /workflows/runs/:run_id` returns one run plus its step-run history.
@@ -190,6 +193,56 @@ workers from the new generation.
 The limit is local to a runner replica. Fleet-wide reserved concurrency and a
 durable overflow queue remain control-plane work; multiplying this value by
 replica count is the current upper-bound estimate for one revision.
+
+## Durable asynchronous invocation
+
+The async API reuses the Postgres-backed workflow scheduler instead of creating
+a second queue. Each active lambda gets one internal, managed, one-activity
+workflow definition. An accepted invocation therefore has:
+
+- atomic per-function idempotency keys;
+- cross-replica `FOR UPDATE SKIP LOCKED` leasing;
+- at-least-once crash recovery after lease expiry;
+- bounded exponential retry and maximum event age;
+- status, per-attempt history, output/error, and cancellation;
+- automatic retry when a local runtime pool answers with concurrency
+  backpressure.
+
+Submit:
+
+```json
+{
+  "payload": { "orderId": "ord-123" },
+  "idempotencyKey": "checkout-ord-123",
+  "retry": {
+    "maxAttempts": 5,
+    "backoffMs": 1000,
+    "backoffFactor": 2,
+    "maxBackoffMs": 60000
+  },
+  "maxEventAgeMs": 21600000,
+  "timeoutMs": 30000
+}
+```
+
+`maxAttempts` is 1–1000, `maxEventAgeMs` is 1 second–7 days, and
+`timeoutMs` is 1–300 seconds. The user function receives only `payload`; queue
+policy is never mixed into its request. Reusing the same non-empty
+`idempotencyKey` for the same function returns the existing run.
+
+Terminal results are also emitted to NATS:
+
+| Env | Default |
+| --- | --- |
+| `NATS_ASYNC_SUCCESS_SUBJECT` | `dd.remote.lambda.async.success` |
+| `NATS_ASYNC_FAILURE_SUBJECT` | `dd.remote.lambda.async.failure` |
+| `NATS_ASYNC_DLQ_SUBJECT` | `dd.remote.lambda.async.dlq` |
+| `NATS_ASYNC_CANCELED_SUBJECT` | `dd.remote.lambda.async.canceled` |
+
+Postgres is authoritative for invocation state. These NATS destination
+publishes are currently best effort; bind the subjects to JetStream for durable
+downstream retention. Native acknowledgements, replay, and partial batch
+failure remain part of the queue/event-source wave.
 
 ### Playwright and Puppeteer as Node.js lambda capabilities
 
@@ -373,7 +426,8 @@ short-lived worker process; orphaned (leased-but-dead) runs are reclaimed once t
 which is the engine's automatic crash recovery. `workflow_step_runs` is the append-only per-attempt
 history surfaced by `GET /workflows/runs/:run_id`.
 
-The engine is enabled automatically when `LAMBDA_DATABASE_URL` is set (set
+The scheduler is a permanent worker in the application OTP tree and is enabled
+automatically when `LAMBDA_DATABASE_URL` is set (set
 `WORKFLOW_ENGINE_ENABLED=0` to disable). All workflow HTTP routes require the same `X-Server-Auth`
 secret as `/invoke`. Run lifecycle events are best-effort published to NATS
 `dd.remote.workflows.events`; runs can also be started and signalled over NATS
