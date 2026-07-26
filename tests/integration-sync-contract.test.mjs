@@ -71,7 +71,16 @@ test("interfaces customer.sql declares the version/updated_at sync contract", { 
   // The trigger that advances BOTH monotonically on every write.
   assert.match(sql, /bump_row_version/, "customer.sql must define/use the bump_row_version trigger");
   assert.match(sql, /new\.version\s*:=\s*old\.version\s*\+\s*1/, "bump_row_version must increment version");
-  assert.match(sql, /new\.updated_at\s*:=\s*now\(\)/, "bump_row_version must stamp updated_at");
+  assert.match(
+    sql,
+    /new\.updated_at\s*:=\s*greatest\(\s*clock_timestamp\(\),\s*old\.updated_at\s*\+\s*interval\s+'1 microsecond'\s*\)/s,
+    "bump_row_version must advance updated_at strictly on updates",
+  );
+  assert.match(
+    sql,
+    /new\.updated_at\s*:=\s*clock_timestamp\(\)/,
+    "bump_row_version must stamp updated_at on inserts",
+  );
 
   // The documented change-event shape the sync engine ships.
   assert.match(
