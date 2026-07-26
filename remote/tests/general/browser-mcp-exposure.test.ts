@@ -251,7 +251,7 @@ test('public browser-mcp gateway has dedicated abuse limits and trusted client f
   );
 
   const mcp = nginxLocation(gateway, '= /browser-mcp');
-  assert.match(mcp, /limit_req zone=dd_browser_mcp burst=15 nodelay/);
+  assert.match(mcp, /limit_req zone=dd_browser_mcp burst=30 nodelay/);
   assert.match(mcp, /limit_conn dd_browser_mcp_conn 10/);
   assert.match(mcp, /client_max_body_size 1m/);
   assert.match(mcp, /client_body_timeout 10s/);
@@ -269,7 +269,7 @@ test('public browser-mcp gateway has dedicated abuse limits and trusted client f
     '= /.well-known/oauth-authorization-server/browser-mcp',
   ]) {
     const metadata = nginxLocation(gateway, declaration);
-    assert.match(metadata, /limit_req zone=dd_browser_mcp burst=15 nodelay/);
+    assert.match(metadata, /limit_req zone=dd_browser_mcp burst=30 nodelay/);
     assert.match(metadata, /limit_conn dd_browser_mcp_conn 10/);
     assert.match(metadata, /client_max_body_size 16k/);
     assert.match(metadata, /proxy_set_header X-Real-IP \$dd_browser_mcp_client_ip/);
@@ -287,6 +287,11 @@ test('public browser-mcp gateway has dedicated abuse limits and trusted client f
     accessLog,
     /\$request_uri|\$args|\$http_authorization|\$http_cookie|\$request_body/,
     'Gateway access logs must not contain queries, credentials, cookies, or request bodies.',
+  );
+  assert.equal(
+    gateway.match(/^\s{6}access_log \/dev\/stdout dd_gateway_json;$/gm)?.length,
+    2,
+    'Both HTTP and HTTPS servers must override the image inherited combined log.',
   );
 });
 

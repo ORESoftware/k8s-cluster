@@ -37,7 +37,7 @@ const CAPTCHA = `<!doctype html><html><head><title>Verify</title></head><body>
 
 const STARTUP_FORM = `<!doctype html><html><head><title>Startup application</title></head><body>
   <h1>Startup application</h1>
-  <p>Our product supports multi-factor authentication for customer accounts.</p>
+  <p>Our product is designed for startups and supports multi-factor authentication for customer accounts.</p>
   <p>No payment method is required to submit this application.</p>
   <form>
     <label for="first-name">First name</label><input id="first-name" name="first_name" />

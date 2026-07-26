@@ -459,7 +459,8 @@ function EXTRACT_FN(opts: { maxElements: number; maxTextChars: number }): RawSna
     /(two|multi).?factor|2fa|mfa|authenticator|verification code|one.?time (code|password)|enter the code/i;
   const PAYMENT_RE =
     /card number|credit card|payment method|cardholder|expiration date|billing address|\bcvv\b|\bcvc\b/i;
-  const SIGNATURE_RE = /e-?sign|electronic signature|sign here|draw your signature|docusign/i;
+  const SIGNATURE_RE =
+    /\be-?sign\b|electronic signature|sign here|draw your signature|docusign/i;
   const LEGAL_RE =
     /under penalty of perjury|i (hereby )?certify|sworn (statement|declaration)|i attest|legally binding|i declare under/i;
 
