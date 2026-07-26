@@ -54,7 +54,7 @@ spec:
               app: dd-browser-mcp-rs
       containers:
         - name: browser-mcp-rs
-          image: ghcr.io/oresoftware/dd-browser-mcp-rs:dev
+          image: ghcr.io/oresoftware/dd-browser-mcp-rs@sha256:75615468d5be89b69d9990d8132b7f3d57b74b1bd48eb041361e0b95ce7369af
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false

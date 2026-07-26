@@ -35,7 +35,7 @@ try {
 }
 
 test(
-  'full observe/act loop: validation, refs, revisions, confirmation, captcha blocker',
+  'full observe/act loop: validation, refs, revisions, confirmation, and safety blockers',
   { skip: launchBrowser === null },
   async () => {
     const browser = launchBrowser!;
@@ -170,10 +170,53 @@ test(
       const reload = stoppedResults.find((r) => r.type === 'reload');
       assert.equal(reload?.status, 'skipped', 'reload skipped after stop_when satisfied');
 
-      // 8) navigate to the CAPTCHA page -> blocker is detected and interaction is refused.
+      // 8) Marketing copy that mentions MFA must not block a normal,
+      // multi-field startup application.
+      const beforeStartup = await observe({ session_id: sessionId, include: ['summary'] });
+      const startupNav = await act({
+        request_id: 'r7',
+        session_id: sessionId,
+        expected_revision: beforeStartup.revision,
+        intent: 'open a normal startup application',
+        actions: [{ type: 'goto', url: `${fixture.url}/startup` }],
+      });
+      assert.equal(startupNav.status, 'completed', JSON.stringify(startupNav));
+      const obsStartup = await observe({ session_id: sessionId, include: ['summary', 'interactive_elements'] });
+      assert.equal(obsStartup.blocker, undefined, JSON.stringify(obsStartup.blocker));
+      const startupFill = await act({
+        request_id: 'r8',
+        session_id: sessionId,
+        expected_revision: obsStartup.revision,
+        intent: 'verify the normal form remains fillable',
+        actions: [{ type: 'fill', target: { label: 'First name' }, value: { literal: 'Test' } }],
+      });
+      assert.equal(startupFill.status, 'completed', JSON.stringify(startupFill));
+
+      // 9) A compact verification-code page is still blocked as MFA.
+      const beforeMfa = await observe({ session_id: sessionId, include: ['summary'] });
+      const mfaNav = await act({
+        request_id: 'r9',
+        session_id: sessionId,
+        expected_revision: beforeMfa.revision,
+        intent: 'open a verification challenge',
+        actions: [{ type: 'goto', url: `${fixture.url}/mfa` }],
+      });
+      assert.equal(mfaNav.status, 'completed', JSON.stringify(mfaNav));
+      const obsMfa = await observe({ session_id: sessionId, include: ['summary'] });
+      assert.equal((obsMfa.blocker as { type: string }).type, 'mfa');
+      const blockedMfaFill = await act({
+        request_id: 'r10',
+        session_id: sessionId,
+        expected_revision: obsMfa.revision,
+        intent: 'verify code entry remains blocked',
+        actions: [{ type: 'fill', target: { label: 'One-time code' }, value: { literal: '123456' } }],
+      });
+      assert.equal(blockedMfaFill.status, 'blocked', JSON.stringify(blockedMfaFill));
+
+      // 10) navigate to the CAPTCHA page -> blocker is detected and interaction is refused.
       const obsBeforeNav = await observe({ session_id: sessionId, include: ['summary'] });
       const nav = await act({
-        request_id: 'r7',
+        request_id: 'r11',
         session_id: sessionId,
         expected_revision: obsBeforeNav.revision,
         intent: 'go to the verify page',
@@ -184,9 +227,9 @@ test(
       assert.ok(obsCaptcha.blocker, 'captcha blocker surfaced on observe');
       assert.equal((obsCaptcha.blocker as { type: string }).type, 'captcha');
 
-      // 9) close the session.
+      // 11) close the session.
       const closed = await act({
-        request_id: 'r8',
+        request_id: 'r12',
         session_id: sessionId,
         intent: 'done',
         actions: [{ type: 'close' }],

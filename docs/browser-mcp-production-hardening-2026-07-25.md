@@ -75,7 +75,9 @@ the authoritative health source.
 It also emits immutable `sha-<commit>` tags, provenance, and SBOMs. Builds use
 the pinned `remote/libs` submodule and a dedicated read-only deploy key scoped
 only to `ORESoftware/k8s-libs-and-shared-defs`. Pull requests build without
-pushing; pushes to `dev` or `main` publish.
+pushing; pushes to `dev` or `main` publish. Production manifests pin the
+successful 2026-07-26 images by immutable OCI digest instead of following the
+mutable branch tags.
 
 The browser MCP runtime is distroless and starts the already-built Rust binary
 directly. The Playwright worker image starts compiled JavaScript directly.
