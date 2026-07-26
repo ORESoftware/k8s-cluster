@@ -60,7 +60,7 @@ const REVIEWED_BROWSER_CEILING_DOMAINS = [
   'ssl.gstatic.com',
   'fonts.googleapis.com',
   'fonts.gstatic.com',
-  'httpbin.org',
+  'httpbingo.org',
 ];
 
 function readDeployment(): string {
@@ -154,7 +154,7 @@ test('OAuth browser-mcp has reviewed, server-defined workflow domain ceilings', 
   );
   assert.match(
     manifest,
-    /"smoke-test":\["httpbin\.org"\]/,
+    /"smoke-test":\["httpbingo\.org"\]/,
   );
 
   const worker = readFileSync(resolve(repoRoot, WORKER_DEPLOYMENT), 'utf8');

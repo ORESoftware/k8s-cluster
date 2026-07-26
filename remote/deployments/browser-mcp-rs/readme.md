@@ -229,13 +229,13 @@ www.gstatic.com
 ssl.gstatic.com
 fonts.googleapis.com
 fonts.gstatic.com
-httpbin.org
+httpbingo.org
 ```
 
 The ceiling is divided into server-defined `fiducia-applications`,
 `benefactor-site`, and `smoke-test` workflow profiles. Callers select a
 `workflow_id`; they cannot define a profile or widen its hostnames.
-`httpbin.org` is isolated in `smoke-test` for the reproducible harmless-form
+`httpbingo.org` is isolated in `smoke-test` for the reproducible harmless-form
 verification script and is not reachable from the application profiles.
 
 Root vendor hostnames include that vendor's subdomains. The PostHog, Together

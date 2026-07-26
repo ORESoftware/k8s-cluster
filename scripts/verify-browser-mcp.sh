@@ -218,7 +218,14 @@ cleanup() {
   )"
   rpc "$cleanup_payload" >/dev/null 2>&1 || true
 }
-trap cleanup EXIT
+
+on_exit() {
+  exit_status=$?
+  trap - EXIT
+  cleanup
+  exit "$exit_status"
+}
+trap on_exit EXIT
 
 echo "checking public health"
 curl --fail-with-body --silent --show-error \
@@ -290,7 +297,7 @@ jq -e '
 
 echo "checking browser_act against the isolated harmless form profile"
 start="$(
-  rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"browser_act","arguments":{"workflow_id":"smoke-test","intent":"open a harmless test form","actions":[{"type":"start","initial_url":"https://httpbin.org/forms/post"}]}}}'
+  rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"browser_act","arguments":{"workflow_id":"smoke-test","intent":"open a harmless test form","actions":[{"type":"start","initial_url":"https://httpbingo.org/forms/post"}]}}}'
 )"
 jq -e '.result.isError == false' <<<"$start" >/dev/null
 session_id="$(jq -er '.result.structuredContent.session_id' <<<"$start")"
@@ -312,9 +319,9 @@ state_payload="$(
   }'
 )"
 state_result="$(rpc "$state_payload")"
-jq -e '
+if ! jq -e '
   .result.isError == false and
-  (.result.structuredContent.page.url | startswith("https://httpbin.org/forms/post")) and
+  (.result.structuredContent.page.url | startswith("https://httpbingo.org/forms/post")) and
   (.result.structuredContent.page.title | type == "string") and
   (.result.structuredContent.accessibility_snapshot.role == "document") and
   (.result.structuredContent.forms | length > 0) and
@@ -323,16 +330,45 @@ jq -e '
   (.result.structuredContent.links | type == "array") and
   (.result.structuredContent.validation_errors | type == "array") and
   (.result.structuredContent.downloads | type == "array")
-' <<<"$state_result" >/dev/null
+' <<<"$state_result" >/dev/null; then
+  jq '{
+    is_error: .result.isError,
+    page: .result.structuredContent.page,
+    accessibility_role: .result.structuredContent.accessibility_snapshot.role,
+    form_count: (.result.structuredContent.forms // [] | length),
+    field_count: (.result.structuredContent.fields // [] | length),
+    button_count: (.result.structuredContent.buttons // [] | length),
+    link_count: (.result.structuredContent.links // [] | length),
+    validation_error_count: (.result.structuredContent.validation_errors // [] | length),
+    downloads_type: (.result.structuredContent.downloads | type)
+  }' <<<"$state_result" >&2
+  echo "browser_state response is missing required page-state fields" >&2
+  exit 1
+fi
 
 revision="$(jq -er '.result.structuredContent.revision' <<<"$state_result")"
 field_ref="$(
-  jq -er '
-    .result.structuredContent.fields[]
-    | select(.role == "textbox" and .value_state != "redacted")
-    | .ref
-  ' <<<"$state_result" | head -1
+  jq -r '
+    (
+      first(
+      .result.structuredContent.fields[]
+      | select(.role == "textbox")
+      | .ref
+      )
+    ) // empty
+  ' <<<"$state_result"
 )"
+if [[ -z "$field_ref" ]]; then
+  jq '{
+    page: .result.structuredContent.page,
+    fields: [
+      .result.structuredContent.fields[]?
+      | {ref, role, name, label, type, value_state}
+    ]
+  }' <<<"$state_result" >&2
+  echo "browser_state did not return a usable textbox ref" >&2
+  exit 1
+fi
 
 echo "checking harmless form fill"
 fill_payload="$(
