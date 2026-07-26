@@ -5,4 +5,5 @@ resources:
   - dd-gleam-lambda-runner-rbac.yaml
   - dd-gleam-lambda-runner.deployment.yaml
   - dd-gleam-lambda-runner.networkpolicy.yaml
+  - dd-gleam-lambda-runner.pdb.yaml
   - dd-gleam-lambda-runner.service.yaml

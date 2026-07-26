@@ -11,8 +11,16 @@
 Gleam HTTP service for running user-defined lambda functions in reusable child processes and
 optional non-root containers.
 
+The platform benchmark and implementation roadmap against AWS Lambda, Google
+Cloud Run functions, Cloudflare Workers, Azure Functions, Vercel Functions,
+Deno Deploy, and Knative lives in
+[`docs/serverless-capability-matrix.md`](docs/serverless-capability-matrix.md).
+
 - `GET /healthz` returns service health.
+- `GET /readyz` returns traffic readiness and turns non-ready while the pod drains.
 - `GET /metrics` exposes Prometheus counters and gauges.
+- `GET /internal/runtime-processes` returns authenticated, source-free OTP
+  supervisor and dynamic-worker state.
 - `POST /invoke/:function_id` forwards one request envelope to a child process.
 - `POST /check` compiles or syntax-checks a posted lambda definition without executing the
   function body.
@@ -26,7 +34,27 @@ optional non-root containers.
 `POST /invoke/:function_id`, `POST /check`, and `POST /destroy/:reuse_key` fail closed unless
 `LAMBDA_SERVER_AUTH_SECRET`, `SERVER_AUTH_SECRET`, or `REMOTE_DEV_SERVER_SECRET` is configured.
 Callers must present the secret in `X-Server-Auth`, `X-Lambda-Runner-Auth`, or `X-Agent-Auth`.
-`GET /healthz` and `GET /metrics` remain unauthenticated for Kubernetes probes and scraping.
+`GET /healthz`, `GET /readyz`, and `GET /metrics` remain unauthenticated for Kubernetes probes
+and scraping. `GET /internal/runtime-processes` requires the same service authentication as invoke.
+
+## BEAM supervision and zero-downtime evolution
+
+The runtime manager and every warm runtime worker are ordinary Erlang processes under an OTP
+supervision tree. Workers are temporary dynamic children: the running server can add one whenever
+new capacity or a new reuse key is needed, and one failed language runtime is removed without
+taking down unrelated workers or the HTTP server. The manager owns the ETS routing generation.
+If the manager or its factory supervisor fails, a `one_for_all` boundary drains that generation
+and rebuilds both together so stale or orphaned workers cannot survive.
+
+This is intentionally separate from loading customer code into the server VM. Trusted platform
+capabilities can evolve as supervised Gleam/Erlang processes; untrusted functions stay behind the
+child-process or hardened-container boundary.
+
+Kubernetes rollout safety mirrors the in-VM model. The deployment runs two replicas, uses
+`maxUnavailable: 0`, and has a `minAvailable: 1` disruption budget. A pre-stop hook marks the pod
+draining; `/readyz` then returns 503 before termination while `/healthz` remains a liveness probe.
+The termination grace covers the longest accepted invocation, so in-flight work can finish while
+new traffic moves to another ready replica.
 
 The runner also starts an in-process NATS singleton when `NATS_URL` is configured. The Gleam module
 `gleam_lambda_runner/nats.gleam` owns the app-facing interface and delegates the raw TCP protocol to

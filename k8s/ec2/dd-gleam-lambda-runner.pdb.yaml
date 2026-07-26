@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-gleam-lambda-runner
+  namespace: default
+  labels:
+    app: dd-gleam-lambda-runner
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-gleam-lambda-runner

@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "gleam-lambda-runner",
   "language": "gleam",
-  "routeCount": 18,
+  "routeCount": 20,
   "routeTypeCounts": {
-    "service": 6,
-    "user-generated": 9,
+    "service": 7,
+    "user-generated": 10,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -170,6 +170,21 @@
       "notes": ""
     },
     {
+      "path": "/internal/runtime-processes",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/internal/update-runtime-config",
       "methods": [
         "POST"
@@ -210,6 +225,21 @@
       "implementation": "service",
       "auth": "public",
       "purpose": "Prometheus metrics.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/readyz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Readiness check.",
       "handlers": [],
       "sourceFiles": [
         "remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/http_server.gleam"

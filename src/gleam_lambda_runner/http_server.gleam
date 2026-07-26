@@ -10,6 +10,7 @@ import gleam/list
 import gleam/string
 import gleam_lambda_runner/api_docs
 import gleam_lambda_runner/child_process
+import gleam_lambda_runner/runtime_supervisor
 import gleam_lambda_runner/workflow
 import mist
 
@@ -64,7 +65,10 @@ fn route(
     Get, ["api", "docs"] -> api_docs.html()
     Get, ["api", "docs.json"] -> api_docs.json()
     Get, ["healthz"] -> healthz()
+    Get, ["readyz"] -> readyz()
     Get, ["metrics"] -> metrics()
+    Get, ["internal", "runtime-processes"] ->
+      require_authenticated(req, runtime_processes)
     Post, ["invoke", function_id] ->
       require_authenticated_post(req, fn() { invoke(req, function_id) })
     Post, ["check"] -> require_authenticated_post(req, fn() { check(req) })
@@ -324,8 +328,31 @@ fn healthz() -> response.Response(mist.ResponseData) {
       <> bool_json(env_get("NATS_URL") != "")
       <> ",\"workflowEngineEnabled\":"
       <> bool_json(workflow.enabled())
+      <> ",\"runtimeSupervisorHealthy\":"
+      <> bool_json(runtime_supervisor.healthy())
       <> "}",
   )
+}
+
+fn readyz() -> response.Response(mist.ResponseData) {
+  let ready = runtime_supervisor.healthy() && !runtime_supervisor.draining()
+  json_response(
+    case ready {
+      True -> 200
+      False -> 503
+    },
+    "{\"ok\":"
+      <> bool_json(ready)
+      <> ",\"runtimeSupervisorHealthy\":"
+      <> bool_json(runtime_supervisor.healthy())
+      <> ",\"draining\":"
+      <> bool_json(runtime_supervisor.draining())
+      <> "}",
+  )
+}
+
+fn runtime_processes() -> response.Response(mist.ResponseData) {
+  json_response(200, runtime_supervisor.snapshot())
 }
 
 fn metrics() -> response.Response(mist.ResponseData) {
@@ -336,7 +363,11 @@ fn metrics() -> response.Response(mist.ResponseData) {
   )
   |> response.set_body(
     mist.Bytes(bytes_tree.from_string(
-      child_process.metrics() <> "\n" <> workflow.metrics(),
+      child_process.metrics()
+      <> "\n"
+      <> runtime_supervisor.metrics()
+      <> "\n"
+      <> workflow.metrics(),
     )),
   )
 }
@@ -469,4 +500,4 @@ fn request_payload(request_payload: String) -> String {
   }
 }
 
-const home_html = "<!doctype html><html><head><meta charset=\"utf-8\"/><title>dd gleam lambda runner</title><style>body{font-family:system-ui;margin:24px;line-height:1.45}code{background:#f1f5f9;padding:2px 5px;border-radius:4px}pre{max-height:50vh;overflow:auto;background:#111827;color:#d1fae5;padding:12px;border-radius:8px}</style></head><body><h1>dd gleam lambda runner</h1><p>Health: <code>/healthz</code></p><p>Metrics: <code>/metrics</code></p><p>Invocation endpoint: <code>POST /invoke/:function_id</code>. Gateway invocation traffic lands here directly; the child runner loads the active function definition from Postgres and Gleam manages reusable child processes.</p></body></html>"
+const home_html = "<!doctype html><html><head><meta charset=\"utf-8\"/><title>dd gleam lambda runner</title><style>body{font-family:system-ui;margin:24px;line-height:1.45}code{background:#f1f5f9;padding:2px 5px;border-radius:4px}pre{max-height:50vh;overflow:auto;background:#111827;color:#d1fae5;padding:12px;border-radius:8px}</style></head><body><h1>dd gleam lambda runner</h1><p>Liveness: <code>/healthz</code> · readiness/draining: <code>/readyz</code></p><p>Metrics: <code>/metrics</code></p><p>Invocation endpoint: <code>POST /invoke/:function_id</code>. Gateway invocation traffic lands here directly; the child runner loads the active function definition from Postgres and Gleam manages reusable child processes under an OTP supervision tree.</p></body></html>"
