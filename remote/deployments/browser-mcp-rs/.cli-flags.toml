@@ -16,12 +16,13 @@
 # operator. The Rust process independently refuses to start without the private
 # worker secret, or with public bearer auth enabled but no bearer secret.
 #
-# CHATGPT NO-AUTH CONTRACT
-# ------------------------
+# CHATGPT OAUTH CONTRACT
+# ----------------------
 # ChatGPT custom MCP apps cannot present an arbitrary operator bearer. The
-# public surface therefore defaults to no-auth, but this no longer fails open:
-# Rust startup requires a non-empty valid hostname list, always overwrites the
-# caller's list, and the worker enforces the same process-level ceiling.
+# public surface therefore uses OAuth 2.1 discovery, dynamic public-client
+# registration, PKCE S256, short-lived audience-bound access tokens, and
+# rotating refresh tokens. Rust startup requires both OAuth secrets and a
+# non-empty hostname ceiling.
 
 [help]
 url = "https://github.com/ORESoftware/k8s-cluster/blob/main/docs/browser-mcp-chatgpt-2026-07-25.md"
@@ -73,14 +74,55 @@ help = "Required shared secret sent as X-Server-Auth to the worker. CREDENTIAL -
 env = "BROWSER_MCP_REQUIRE_AUTH"
 aliases = ["require-auth", "auth-required"]
 type = "bool"
-default = "false"
-help = "Require a bearer on POST /mcp. ChatGPT uses false; anonymous startup is rejected unless the hostname ceiling is non-empty and valid."
+default = "true"
+help = "Require an OAuth access token on the MCP endpoint. Production uses true; false is only for isolated local development."
 
-[flags.auth_secret]
-env = "BROWSER_MCP_AUTH_SECRET"
-aliases = ["auth-secret", "bearer", "bearer-token"]
+[flags.public_base_urls]
+env = "BROWSER_MCP_PUBLIC_BASE_URLS"
+aliases = ["public-base-urls", "oauth-issuers", "resources"]
 type = "string"
-help = "Bearer that gates POST /mcp when require_auth is on. CREDENTIAL - supply it from dd-browser-mcp-rs-secrets; startup fails when required but absent."
+default = "https://98.90.186.114/browser-mcp,https://hello.95-217-171-250.sslip.io/browser-mcp"
+help = "Comma-separated trusted public HTTPS MCP endpoint URLs. Host matching selects the OAuth issuer/resource and audience."
+
+[flags.oauth_signing_secret]
+env = "BROWSER_MCP_OAUTH_SIGNING_SECRET"
+aliases = ["oauth-signing-secret"]
+type = "string"
+help = "Required 32+ byte HMAC key for signed client IDs, authorization requests, and access tokens. CREDENTIAL - supply from dd-browser-mcp-rs-secrets."
+
+[flags.oauth_operator_secret]
+env = "BROWSER_MCP_OAUTH_OPERATOR_SECRET"
+aliases = ["oauth-operator-secret"]
+type = "string"
+help = "Required 20+ byte human authorization secret used by the OAuth consent page. CREDENTIAL - supply from dd-browser-mcp-rs-secrets."
+
+[flags.oauth_redis_url]
+env = "BROWSER_MCP_OAUTH_REDIS_URL"
+aliases = ["oauth-redis-url"]
+type = "string"
+default = "redis://dd-redis-cache.default.svc.cluster.local:6379/4"
+help = "Redis database for single-use authorization codes and rotating refresh grants."
+
+[flags.oauth_access_ttl_seconds]
+env = "BROWSER_MCP_OAUTH_ACCESS_TTL_SECONDS"
+aliases = ["oauth-access-ttl-seconds"]
+type = "integer"
+default = 900
+help = "Access-token lifetime in seconds, clamped to 3600."
+
+[flags.oauth_code_ttl_seconds]
+env = "BROWSER_MCP_OAUTH_CODE_TTL_SECONDS"
+aliases = ["oauth-code-ttl-seconds"]
+type = "integer"
+default = 300
+help = "Single-use authorization-code lifetime in seconds, clamped to 600."
+
+[flags.oauth_refresh_ttl_seconds]
+env = "BROWSER_MCP_OAUTH_REFRESH_TTL_SECONDS"
+aliases = ["oauth-refresh-ttl-seconds"]
+type = "integer"
+default = 2592000
+help = "Rotating refresh-token lifetime in seconds, clamped to 90 days."
 
 # ---- navigation policy ----------------------------------------------------
 

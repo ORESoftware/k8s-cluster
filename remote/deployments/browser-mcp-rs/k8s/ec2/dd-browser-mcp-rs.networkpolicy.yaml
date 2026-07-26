@@ -67,3 +67,11 @@ spec:
       ports:
         - protocol: TCP
           port: 8110
+    # Shared OAuth authorization-code and rotating refresh-token state.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: dd-redis-cache
+      ports:
+        - protocol: TCP
+          port: 6379

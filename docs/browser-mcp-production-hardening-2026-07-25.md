@@ -10,11 +10,10 @@ EC2 node checkout at runtime. The browser MCP is declared in both cluster
 profiles, has rolling availability, health checks, a Prometheus readiness
 signal, alerts, a narrower public rate limit, and an end-to-end verifier.
 
-The public ChatGPT mode remains intentionally anonymous because ChatGPT custom
-MCP apps do not accept the existing static operator bearer. Anonymous mode now
-fails closed unless a non-empty hostname allowlist is configured. The initial
-production ceiling was only `benefactor.cc` and its subdomains; see the
-2026-07-26 Fiducia profile update below.
+The initial ChatGPT-compatible rollout was intentionally anonymous because a
+custom app cannot attach an arbitrary fixed resource-server bearer. On
+2026-07-26 it was superseded by the OAuth 2.1 profile described below. The
+hostname ceiling remains mandatory in every auth mode.
 
 The change was deployed to AWS and Hetzner on 2026-07-25. Both public edges
 passed the repository verifier through `initialize`, `tools/list`, a real
@@ -102,16 +101,18 @@ PDB of one. The private browser worker remains one replica because browser
 sessions are process-local and the Service does not yet provide sticky routing
 or a shared session store.
 
-## Anonymous endpoint controls
+## OAuth and browser controls
 
-The current no-auth posture exists only for ChatGPT custom-app compatibility.
-It is not equivalent to authorization.
+The public MCP endpoint now returns a deliberate 401 with RFC 9728
+protected-resource discovery. Its in-process OAuth server supports dynamic
+public-client registration, authorization code plus PKCE S256, audience-bound
+scoped access tokens, and single-use authorization/rotating refresh grants in
+Redis. Only OAuth discovery/authorization routes and `/healthz` are anonymous.
 
 Controls now enforced:
 
-- Startup fails when anonymous mode has an empty or malformed allowlist.
-- Both the Rust MCP and Node worker started with the same `benefactor.cc`
-  ceiling.
+- Startup fails in every auth mode when the allowlist is empty or malformed.
+- The Rust MCP and Node worker use byte-identical hostname ceilings.
 - The Rust layer always overwrites caller-supplied `owner` and
   `allowed_domains`; it no longer accepts a caller's wider list.
 - The worker intersects any per-call list with its process-level ceiling.
@@ -119,13 +120,14 @@ Controls now enforced:
   redirect, iframe, subresource, fetch/XHR, and WebSocket—not only explicit
   model-authored `goto` actions. URL credentials and non-default ports are
   denied.
-- The trusted gateway normalizes anonymous session identity before forwarding:
-  direct AWS traffic uses the socket peer, while traffic from the `10.244/16`
-  cluster pod CIDR uses the outer ingress address. This prevents Hetzner
-  ingress pod changes from invalidating a browser session. Direct Internet
-  callers cannot inject the trusted value.
+- OAuth token subjects isolate browser ownership. The trusted gateway also
+  normalizes client identity for per-client throttling across direct AWS and
+  ingress-proxied Hetzner traffic.
 - Gateway limit: 60 requests/minute per source, burst 15, at most 10 concurrent
-  connections.
+  connections. OAuth POSTs have a second 10 requests/minute limiter.
+- Gateway request bodies are capped at 1 MiB with a 10-second body timeout.
+- Access logs contain method, path, status, sizes, timing, and upstream state,
+  but never query strings, authorization headers, cookies, or request bodies.
 - MCP body, worker response, action-count, timeout, session, idle, and absolute
   TTL limits remain enforced.
 - Only HTTPS/WSS network traffic to the approved hostname tree is accepted.
@@ -134,25 +136,21 @@ Controls now enforced:
 - CAPTCHA, MFA, payment, signature, legal attestation, secret entry, and
   consequential submission boundaries remain in the browser worker.
 - The prebuilt MCP pod has no general Internet egress; it can reach only DNS,
-  the browser worker, the telemetry collector, and runtime config.
+  the browser worker, Redis, the telemetry collector, and runtime config.
 
 ### Remaining risks
 
-- Anonymous users are not strongly identified. Several users behind one OpenAI
-  egress IP may share quotas and an owner namespace.
-- An attacker can still spend browser/CPU capacity and interact with public
+- The local authorization server authenticates one operator secret; it is not a
+  multi-user identity provider or an enterprise SSO integration.
+- An authorized token can spend browser/CPU capacity and interact with public
   pages in the active hostname profile.
-- IP rate limits are not a substitute for user authorization and are weak
-  against distributed traffic.
-- Tool-call audit metrics are aggregate, not durable per-user authorization
-  records.
+- Tool-call audit metrics are aggregate rather than durable compliance records.
 - A broad list of CFP, government, webmail, or arbitrary prospect domains would
-  materially expand the anonymous endpoint's power. Do not add such a list as a
-  permanent global setting.
-- The correct long-term control is OAuth/OIDC with user identity and scopes,
-  or OpenAI's secure MCP tunnel/private-network route. After OAuth, separate
-  `browser:observe`, `browser:act`, and `browser:approve` scopes and retain the
-  server-side domain ceiling.
+  materially expand the endpoint's power. Do not add such a list as a permanent
+  global setting.
+- A managed OAuth/OIDC provider with per-user identity, revocation, and audit
+  should replace the local operator-secret issuer if this becomes a shared
+  production service.
 
 ### 2026-07-26 Fiducia portal profile
 
@@ -169,22 +167,28 @@ tailscale.com
 planetscale.com
 clerk.com
 algolia.com
+www.pulumi.com
+tally.so
 allthingsopen.org
 allthingsopen.wufoo.com
+static.wufoo.com
 talks.devopsdays.org
 sessionize.com
 events.linuxfoundation.org
 cfp.awscommunitydaysoflo.com
 forms.gle
 docs.google.com
+www.gstatic.com
+ssl.gstatic.com
+fonts.googleapis.com
+fonts.gstatic.com
 ```
 
 `confluent.cloud` is the current Confluent console hostname; the older
 `app.confluent.cloud` route does not resolve. `confluent.io` admits the
 vendor-owned login and static asset hosts. Root vendor entries include that
-vendor's subdomains. `allthingsopen.wufoo.com` and
-`cfp.awscommunitydaysoflo.com` are exact tenant/event hosts rather than broad
-provider wildcards.
+vendor's subdomains. The Pulumi, Wufoo, Google static-asset, and AWS CFP entries
+are exact hosts rather than broad provider wildcards.
 
 The filing profile remains disabled: `irs.gov`, `sos.state.co.us`, and
 `dnb.com` are absent. Webmail, cloud metadata, arbitrary prospect domains, and
@@ -198,17 +202,16 @@ hostname for that run, every redirect is revalidated, only navigation/GET is
 allowed, and HubSpot/Postgres remain read-only until the staged 25-record
 mapping and suppression review is approved.
 
-ChatGPT full MCP write actions currently require Business, Enterprise, or Edu
-on the web. Pro supports only read/fetch custom-MCP access. Search/fetch tools
-are no longer mandatory for a custom app, although company knowledge uses only
-search/fetch capabilities:
+Current ChatGPT developer mode supports read and write MCP tools for eligible
+Pro, Plus, Business, Enterprise, and Education accounts on the web:
 
-- <https://help.openai.com/en/articles/12584461-developer-mode-and-mcp-apps-in-chatgpt>
+- <https://developers.openai.com/api/docs/guides/developer-mode>
 
 ## Health and observability
 
 - `/healthz`: process liveness.
-- `/readyz`: succeeds only when `dd-web-scraper /agent/healthz` succeeds.
+- `/readyz`: succeeds only when `dd-web-scraper /agent/healthz` and the OAuth
+  Redis state store succeed.
 - `/metrics`: counters plus `dd_browser_mcp_worker_ready` and build/config info.
 - Prometheus jobs scrape the MCP and worker.
 - Alerts cover MCP target down, worker target down, worker-not-ready, worker
@@ -242,10 +245,11 @@ The final public checks were:
      https://hello.95-217-171-250.sslip.io/browser-mcp
    ```
 
-The verifier checks health, correct SSE refusal, `initialize`,
-`notifications/initialized`, exact `tools/list`, a real `browser_act` navigation
-to Benefactor, `browser_observe`, denial of an off-allowlist host, and session
-cleanup.
+The verifier checks the initial 401, RFC 9728/RFC 8414 discovery, dynamic client
+registration, PKCE authorization, token exchange, authenticated SSE refusal,
+`initialize`, `notifications/initialized`, exact `tools/list`, a real
+`browser_act` navigation to All Things Open, `browser_observe`, denial of an
+off-allowlist host, and session cleanup.
 
 The broader `dd-next-runtime` Application still reports the historical
 `Degraded` aggregate health state (its transition timestamp predates this
@@ -259,8 +263,7 @@ In an eligible ChatGPT workspace on the web:
 
 1. Enable Developer mode.
 2. Create a custom app with the stable public HTTPS MCP URL.
-3. Choose no authentication only while this narrow anonymous configuration is
-   in force.
+3. Choose OAuth and complete the operator-secret consent screen.
 4. Scan and verify exactly `browser_act` and `browser_observe`.
 5. Keep write-action approvals enabled.
 6. Recreate or refresh the app after tool-schema changes; ChatGPT uses a frozen

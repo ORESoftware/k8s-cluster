@@ -24,12 +24,13 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-07-25-browser-mcp-containerized'
+        dd.dev/telemetry-revision: '2026-07-26-browser-mcp-oauth'
       labels:
         app: dd-browser-mcp-rs
         app.kubernetes.io/name: dd-browser-mcp-rs
         app.kubernetes.io/component: browser-control-plane
         app.kubernetes.io/part-of: dd-next-runtime
+        dd.dev/redis-cache-client: 'true'
     spec:
       # No Kubernetes API access is needed (this service only proxies to the
       # in-cluster browser worker), so the SA token is not mounted.
@@ -87,19 +88,36 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
-            # ChatGPT custom MCP apps support OAuth or no-auth, not a static
-            # operator bearer. Keep this anonymous only while the server and
-            # worker enforce the non-empty domain ceiling below, SSRF blocking,
-            # session quotas, consequential-action confirmation, and the public
-            # gateway rate limit. Move to OAuth before broadening the allowlist.
+            # ChatGPT custom MCP apps discover the in-process OAuth 2.1
+            # authorization server from the 401 Bearer challenge. A static
+            # operator bearer is deliberately not accepted on this public path.
             - name: BROWSER_MCP_REQUIRE_AUTH
-              value: 'false'
-            - name: BROWSER_MCP_AUTH_SECRET
+              value: 'true'
+            # Both trusted public edges serve the same GitOps workload. Host
+            # matching selects the exact issuer/resource and binds each access
+            # token to the edge where its flow started.
+            - name: BROWSER_MCP_PUBLIC_BASE_URLS
+              value: 'https://98.90.186.114/browser-mcp,https://hello.95-217-171-250.sslip.io/browser-mcp'
+            - name: BROWSER_MCP_OAUTH_SIGNING_SECRET
               valueFrom:
                 secretKeyRef:
                   name: dd-browser-mcp-rs-secrets
-                  key: BROWSER_MCP_AUTH_SECRET
-                  optional: true
+                  key: BROWSER_MCP_OAUTH_SIGNING_SECRET
+            - name: BROWSER_MCP_OAUTH_OPERATOR_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-browser-mcp-rs-secrets
+                  key: BROWSER_MCP_OAUTH_OPERATOR_SECRET
+            # Shared, TTL-bound authorization-code and rotating-refresh-token
+            # state. Access tokens remain locally verifiable and audience-bound.
+            - name: BROWSER_MCP_OAUTH_REDIS_URL
+              value: redis://dd-redis-cache.default.svc.cluster.local:6379/4
+            - name: BROWSER_MCP_OAUTH_ACCESS_TTL_SECONDS
+              value: '900'
+            - name: BROWSER_MCP_OAUTH_CODE_TTL_SECONDS
+              value: '300'
+            - name: BROWSER_MCP_OAUTH_REFRESH_TTL_SECONDS
+              value: '2592000'
             # Server-side domain allowlist injected into every browser_act call so
             # navigation policy is enforced centrally regardless of what the model
             # sends. Empty would permit ANY public https host; start narrow and
@@ -110,7 +128,7 @@ spec:
             # and AWS Community Day CFP host. Filing sites, webmail, cloud
             # metadata, and arbitrary prospect domains remain blocked.
             - name: BROWSER_MCP_ALLOWED_DOMAINS
-              value: 'benefactor.cc,confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,allthingsopen.org,allthingsopen.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com'
+              value: 'benefactor.cc,confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,www.pulumi.com,tally.so,allthingsopen.org,allthingsopen.wufoo.com,static.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com,www.gstatic.com,ssl.gstatic.com,fonts.googleapis.com,fonts.gstatic.com'
             - name: OTEL_SERVICE_NAME
               value: dd-browser-mcp-rs
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
