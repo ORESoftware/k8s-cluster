@@ -15,6 +15,7 @@ the component repository.
 | `apps/shared-auth-clients` | Hardened application clients |
 | `apps/shared-auth-infra` | Cloudflare Worker and AWS/Kubernetes integration guidance |
 | `apps/shared-auth-mcp-server.rs` | Read-only Rust MCP server |
+| `apps/shared-auth-nats-bridge.rs` | Rust bridge for auth lifecycle events over NATS |
 | `apps/shared-auth-e2e` | Independent Playwright, Puppeteer, and Selenium suites |
 | `apps/shared-auth-sync` | Offline-first client queues and Postgres/Supabase reconciliation |
 

@@ -25,6 +25,7 @@ jobs:
             apps/shared-auth-interfaces
             apps/shared-auth-lib
             apps/shared-auth-mcp-server.rs
+            apps/shared-auth-nats-bridge.rs
             apps/shared-auth-server.rs
             apps/shared-auth-sync
           )
