@@ -1485,6 +1485,112 @@ export class LambdaFunctionEntity {
 
 }
 
+@Index("lambda_function_revisions_function_number_uq", ["functionId", "revisionNumber"], { unique: true })
+@Index("lambda_function_revisions_function_id_uq", ["functionId", "id"], { unique: true })
+// lambda_function_revisions_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "lambda_function_revisions" })
+export class LambdaFunctionRevisionEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "function_id", type: "uuid" })
+  functionId!: string;
+
+  @Column({ name: "revision_number", type: "bigint" })
+  revisionNumber!: number;
+
+  @Column({ name: "definition_digest", type: "varchar", length: 64 })
+  definitionDigest!: string;
+
+  @Column({ name: "description", type: "text", default: () => "''" })
+  description!: string;
+
+  @Column({ name: "runtime", type: "varchar", length: 40 })
+  runtime!: string;
+
+  @Column({ name: "entry_command", type: "text", default: () => "''" })
+  entryCommand!: string;
+
+  @Column({ name: "function_body", type: "text" })
+  functionBody!: string;
+
+  @Column({ name: "reuse_key", type: "varchar", length: 200, nullable: true })
+  reuseKey!: string | null;
+
+  @Column({ name: "idle_timeout_seconds", type: "integer" })
+  idleTimeoutSeconds!: number;
+
+  @Column({ name: "max_run_ms", type: "integer" })
+  maxRunMs!: number;
+
+  @Column({ name: "containerized", type: "boolean" })
+  containerized!: boolean;
+
+  @Column({ name: "container_image", type: "text", nullable: true })
+  containerImage!: string | null;
+
+  @Column({ name: "container_build_status", type: "varchar", length: 32 })
+  containerBuildStatus!: string;
+
+  @Column({ name: "container_build_error", type: "text", nullable: true })
+  containerBuildError!: string | null;
+
+  @Column({ name: "container_built_at", type: "timestamptz", nullable: true })
+  containerBuiltAt!: Date | null;
+
+  @Column({ name: "env", type: "jsonb" })
+  env!: Record<string, unknown>;
+
+  @Column({ name: "labels", type: "jsonb" })
+  labels!: unknown[];
+
+  @Column({ name: "meta_data", type: "jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+}
+
+@Index("lambda_function_aliases_function_name_uq", ["functionId", "name"], { unique: true })
+// lambda_function_aliases_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "lambda_function_aliases" })
+export class LambdaFunctionAliasEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "function_id", type: "uuid" })
+  functionId!: string;
+
+  @Column({ name: "name", type: "varchar", length: 64 })
+  name!: string;
+
+  @Column({ name: "description", type: "text", default: () => "''" })
+  description!: string;
+
+  @Column({ name: "traffic", type: "jsonb" })
+  traffic!: Record<string, unknown>;
+
+  @Column({ name: "routing_version", type: "bigint", default: () => "1" })
+  routingVersion!: number;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
 @Index("lambda_actor_instances_function_key_uq", ["functionId", "actorKey"], { unique: true })
 @Index("lambda_actor_instances_alarm_due_idx", ["alarmAt"], { where: "alarm_at is not null" })
 @Index("lambda_actor_instances_lease_expiry_idx", ["leaseUntil"], { where: "lease_until is not null" })

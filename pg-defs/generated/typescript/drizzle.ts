@@ -2315,6 +2315,170 @@ export type LambdaFunctionRow = z.infer<typeof lambdaFunctionRowSchema>;
 export type LambdaFunctionInsert = z.infer<typeof lambdaFunctionInsertSchema>;
 export type LambdaFunctionUpdate = z.infer<typeof lambdaFunctionUpdateSchema>;
 
+export const lambdaFunctionRevisionRuntimeValues = ["nodejs","javascript","typescript","python3","python","ruby","bash","shell","golang","go","dart","erlang","erl","elixir","ex","java","jvm","gleam","gleamlang","rust","rs","browser"] as const;
+export const lambdaFunctionRevisionRuntimeSchema = z.enum(lambdaFunctionRevisionRuntimeValues);
+export type LambdaFunctionRevisionRuntime = z.infer<typeof lambdaFunctionRevisionRuntimeSchema>;
+
+export const lambdaFunctionRevisionContainerBuildStatusValues = ["not_requested","pending","building","built","failed","skipped"] as const;
+export const lambdaFunctionRevisionContainerBuildStatusSchema = z.enum(lambdaFunctionRevisionContainerBuildStatusValues);
+export type LambdaFunctionRevisionContainerBuildStatus = z.infer<typeof lambdaFunctionRevisionContainerBuildStatusSchema>;
+
+export const lambdaFunctionRevisions = pgTable(
+  "lambda_function_revisions",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    functionId: uuid("function_id").notNull(),
+    revisionNumber: bigint("revision_number", { mode: "number" }).notNull(),
+    definitionDigest: varchar("definition_digest", { length: 64 }).notNull(),
+    description: text("description").default(sql`''`).notNull(),
+    runtime: varchar("runtime", { length: 40 }).notNull(),
+    entryCommand: text("entry_command").default(sql`''`).notNull(),
+    functionBody: text("function_body").notNull(),
+    reuseKey: varchar("reuse_key", { length: 200 }),
+    idleTimeoutSeconds: integer("idle_timeout_seconds").notNull(),
+    maxRunMs: integer("max_run_ms").notNull(),
+    containerized: boolean("containerized").notNull(),
+    containerImage: text("container_image"),
+    containerBuildStatus: varchar("container_build_status", { length: 32 }).notNull(),
+    containerBuildError: text("container_build_error"),
+    containerBuiltAt: timestamp("container_built_at", { withTimezone: true, mode: "string" }),
+    env: jsonb("env").notNull(),
+    labels: jsonb("labels").notNull(),
+    metaData: jsonb("meta_data").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+  },
+  (table) => ({
+    lambdaFunctionRevisionsNumberChk: check("lambda_function_revisions_number_chk", sql.raw("revision_number > 0")),
+    lambdaFunctionRevisionsDigestChk: check("lambda_function_revisions_digest_chk", sql.raw("definition_digest ~ '^[a-f0-9]{64}$'")),
+    lambdaFunctionRevisionsDescriptionSizeChk: check("lambda_function_revisions_description_size_chk", sql.raw("octet_length(description) <= 4096")),
+    lambdaFunctionRevisionsBodySizeChk: check("lambda_function_revisions_body_size_chk", sql.raw("octet_length(function_body) <= 262144")),
+    lambdaFunctionRevisionsEntryCommandChk: check("lambda_function_revisions_entry_command_chk", sql.raw("octet_length(entry_command) <= 512")),
+    lambdaFunctionRevisionsReuseKeyChk: check("lambda_function_revisions_reuse_key_chk", sql.raw("reuse_key is null or octet_length(reuse_key) <= 200")),
+    lambdaFunctionRevisionsIdleTimeoutChk: check("lambda_function_revisions_idle_timeout_chk", sql.raw("idle_timeout_seconds between 1 and 3600")),
+    lambdaFunctionRevisionsMaxRunChk: check("lambda_function_revisions_max_run_chk", sql.raw("max_run_ms between 1000 and 300000")),
+    lambdaFunctionRevisionsContainerImageSizeChk: check("lambda_function_revisions_container_image_size_chk", sql.raw("container_image is null or octet_length(container_image) <= 512")),
+    lambdaFunctionRevisionsContainerBuildErrorSizeChk: check("lambda_function_revisions_container_build_error_size_chk", sql.raw("container_build_error is null or octet_length(container_build_error) <= 8192")),
+    lambdaFunctionRevisionsEnvObjectChk: check("lambda_function_revisions_env_object_chk", sql.raw("jsonb_typeof(env) = 'object'")),
+    lambdaFunctionRevisionsLabelsArrayChk: check("lambda_function_revisions_labels_array_chk", sql.raw("jsonb_typeof(labels) = 'array'")),
+    lambdaFunctionRevisionsMetaObjectChk: check("lambda_function_revisions_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    lambdaFunctionRevisionsRuntimeChk: check("lambda_function_revisions_runtime_chk", sql.raw("runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm', 'gleam', 'gleamlang', 'rust', 'rs', 'browser')")),
+    lambdaFunctionRevisionsContainerBuildStatusChk: check("lambda_function_revisions_container_build_status_chk", sql.raw("container_build_status in ('not_requested', 'pending', 'building', 'built', 'failed', 'skipped')")),
+    lambdaFunctionRevisionsFunctionNumberUq: uniqueIndex("lambda_function_revisions_function_number_uq").on(table.functionId, table.revisionNumber),
+    lambdaFunctionRevisionsFunctionIdUq: uniqueIndex("lambda_function_revisions_function_id_uq").on(table.functionId, table.id),
+    lambdaFunctionRevisionsCreatedAtIdx: index("lambda_function_revisions_created_at_idx").on(table.functionId, table.createdAt.desc()),
+  }),
+);
+
+export const lambdaFunctionRevisionRowSchema = z.object({
+  id: z.string().uuid(),
+  functionId: z.string().uuid(),
+  revisionNumber: z.number().int().min(1),
+  definitionDigest: z.string().min(64).max(64).regex(new RegExp("^[a-f0-9]{64}$")),
+  description: z.string().max(4096).refine((value) => byteLength(value) <= 4096, "Must be at most 4096 bytes"),
+  runtime: lambdaFunctionRevisionRuntimeSchema,
+  entryCommand: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  functionBody: z.string().min(1).refine((value) => byteLength(value) <= 262144, "Must be at most 262144 bytes"),
+  reuseKey: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable(),
+  idleTimeoutSeconds: z.number().int().min(1).max(3600),
+  maxRunMs: z.number().int().min(1000).max(300000),
+  containerized: z.boolean(),
+  containerImage: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").nullable(),
+  containerBuildStatus: lambdaFunctionRevisionContainerBuildStatusSchema,
+  containerBuildError: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").nullable(),
+  containerBuiltAt: z.string().datetime().nullable(),
+  env: jsonObjectSchema,
+  labels: jsonArraySchema,
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+});
+
+export const lambdaFunctionRevisionInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  functionId: z.string().uuid(),
+  revisionNumber: z.number().int().min(1),
+  definitionDigest: z.string().min(64).max(64).regex(new RegExp("^[a-f0-9]{64}$")),
+  description: z.string().max(4096).refine((value) => byteLength(value) <= 4096, "Must be at most 4096 bytes").optional().default(""),
+  runtime: lambdaFunctionRevisionRuntimeSchema,
+  entryCommand: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").optional().default(""),
+  functionBody: z.string().min(1).refine((value) => byteLength(value) <= 262144, "Must be at most 262144 bytes"),
+  reuseKey: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable().optional(),
+  idleTimeoutSeconds: z.number().int().min(1).max(3600),
+  maxRunMs: z.number().int().min(1000).max(300000),
+  containerized: z.boolean(),
+  containerImage: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").nullable().optional(),
+  containerBuildStatus: lambdaFunctionRevisionContainerBuildStatusSchema,
+  containerBuildError: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").nullable().optional(),
+  containerBuiltAt: z.string().datetime().nullable().optional(),
+  env: jsonObjectSchema,
+  labels: jsonArraySchema,
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+});
+
+export const lambdaFunctionRevisionUpdateSchema = lambdaFunctionRevisionInsertSchema.partial();
+export type LambdaFunctionRevisionRow = z.infer<typeof lambdaFunctionRevisionRowSchema>;
+export type LambdaFunctionRevisionInsert = z.infer<typeof lambdaFunctionRevisionInsertSchema>;
+export type LambdaFunctionRevisionUpdate = z.infer<typeof lambdaFunctionRevisionUpdateSchema>;
+
+export const lambdaFunctionAliases = pgTable(
+  "lambda_function_aliases",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    functionId: uuid("function_id").notNull(),
+    name: varchar("name", { length: 64 }).notNull(),
+    description: text("description").default(sql`''`).notNull(),
+    traffic: jsonb("traffic").notNull(),
+    routingVersion: bigint("routing_version", { mode: "number" }).default(sql`1`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+    updatedBy: uuid("updated_by"),
+  },
+  (table) => ({
+    lambdaFunctionAliasesNameChk: check("lambda_function_aliases_name_chk", sql.raw("name ~ '^[a-z][a-z0-9._-]{0,63}$' and name <> 'latest'")),
+    lambdaFunctionAliasesDescriptionSizeChk: check("lambda_function_aliases_description_size_chk", sql.raw("octet_length(description) <= 4096")),
+    lambdaFunctionAliasesTrafficObjectChk: check("lambda_function_aliases_traffic_object_chk", sql.raw("jsonb_typeof(traffic) = 'object'")),
+    lambdaFunctionAliasesTrafficSizeChk: check("lambda_function_aliases_traffic_size_chk", sql.raw("octet_length(traffic::text) <= 8192")),
+    lambdaFunctionAliasesRoutingVersionChk: check("lambda_function_aliases_routing_version_chk", sql.raw("routing_version > 0")),
+    lambdaFunctionAliasesFunctionNameUq: uniqueIndex("lambda_function_aliases_function_name_uq").on(table.functionId, table.name),
+    lambdaFunctionAliasesUpdatedAtIdx: index("lambda_function_aliases_updated_at_idx").on(table.functionId, table.updatedAt.desc()),
+  }),
+);
+
+export const lambdaFunctionAliasRowSchema = z.object({
+  id: z.string().uuid(),
+  functionId: z.string().uuid(),
+  name: z.string().min(1).max(64).regex(new RegExp("^[a-z][a-z0-9._-]{0,63}$")),
+  description: z.string().max(4096).refine((value) => byteLength(value) <= 4096, "Must be at most 4096 bytes"),
+  traffic: jsonObjectSchema,
+  routingVersion: z.number().int().min(1),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+  updatedBy: z.string().uuid().nullable(),
+});
+
+export const lambdaFunctionAliasInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  functionId: z.string().uuid(),
+  name: z.string().min(1).max(64).regex(new RegExp("^[a-z][a-z0-9._-]{0,63}$")),
+  description: z.string().max(4096).refine((value) => byteLength(value) <= 4096, "Must be at most 4096 bytes").optional().default(""),
+  traffic: jsonObjectSchema,
+  routingVersion: z.number().int().min(1).optional().default(1),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+  updatedBy: z.string().uuid().nullable().optional(),
+});
+
+export const lambdaFunctionAliasUpdateSchema = lambdaFunctionAliasInsertSchema.partial();
+export type LambdaFunctionAliasRow = z.infer<typeof lambdaFunctionAliasRowSchema>;
+export type LambdaFunctionAliasInsert = z.infer<typeof lambdaFunctionAliasInsertSchema>;
+export type LambdaFunctionAliasUpdate = z.infer<typeof lambdaFunctionAliasUpdateSchema>;
+
 export const lambdaActorInstances = pgTable(
   "lambda_actor_instances",
   {

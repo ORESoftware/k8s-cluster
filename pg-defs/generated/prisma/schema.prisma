@@ -680,6 +680,52 @@ model LambdaFunction {
   @@map("lambda_functions")
 }
 
+model LambdaFunctionRevision {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  functionId String @map("function_id") @db.Uuid
+  revisionNumber BigInt @map("revision_number") @db.BigInt
+  definitionDigest String @map("definition_digest") @db.VarChar(64)
+  description String @default("") @db.Text
+  runtime String @db.VarChar(40)
+  entryCommand String @map("entry_command") @default("") @db.Text
+  functionBody String @map("function_body") @db.Text
+  reuseKey String? @map("reuse_key") @db.VarChar(200)
+  idleTimeoutSeconds Int @map("idle_timeout_seconds")
+  maxRunMs Int @map("max_run_ms")
+  containerized Boolean
+  containerImage String? @map("container_image") @db.Text
+  containerBuildStatus String @map("container_build_status") @db.VarChar(32)
+  containerBuildError String? @map("container_build_error") @db.Text
+  containerBuiltAt DateTime? @map("container_built_at") @db.Timestamptz(6)
+  env Json
+  labels Json
+  metaData Json @map("meta_data")
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  @@unique([functionId, revisionNumber], map: "lambda_function_revisions_function_number_uq")
+  @@unique([functionId, id], map: "lambda_function_revisions_function_id_uq")
+  @@index([functionId, createdAt], map: "lambda_function_revisions_created_at_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("lambda_function_revisions")
+}
+
+model LambdaFunctionAlias {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  functionId String @map("function_id") @db.Uuid
+  name String @db.VarChar(64)
+  description String @default("") @db.Text
+  traffic Json
+  routingVersion BigInt @map("routing_version") @default(1) @db.BigInt
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  createdBy String? @map("created_by") @db.Uuid
+  updatedBy String? @map("updated_by") @db.Uuid
+  @@unique([functionId, name], map: "lambda_function_aliases_function_name_uq")
+  @@index([functionId, updatedAt], map: "lambda_function_aliases_updated_at_idx")
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("lambda_function_aliases")
+}
+
 model LambdaActorInstance {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   functionId String @map("function_id") @db.Uuid

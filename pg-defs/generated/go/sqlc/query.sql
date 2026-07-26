@@ -466,6 +466,36 @@ update lambda_functions set slug = $2, display_name = $3, description = $4, runt
 -- name: DeleteLambdaFunctions :exec
 delete from lambda_functions where id = $1;
 
+-- name: ListLambdaFunctionRevisions :many
+select id, function_id, revision_number, definition_digest, description, runtime, entry_command, function_body, reuse_key, idle_timeout_seconds, max_run_ms, containerized, container_image, container_build_status, container_build_error, container_built_at, env, labels, meta_data, created_at, created_by from lambda_function_revisions;
+
+-- name: GetLambdaFunctionRevisions :one
+select id, function_id, revision_number, definition_digest, description, runtime, entry_command, function_body, reuse_key, idle_timeout_seconds, max_run_ms, containerized, container_image, container_build_status, container_build_error, container_built_at, env, labels, meta_data, created_at, created_by from lambda_function_revisions where id = $1 limit 1;
+
+-- name: CreateLambdaFunctionRevisions :one
+insert into lambda_function_revisions (id, function_id, revision_number, definition_digest, description, runtime, entry_command, function_body, reuse_key, idle_timeout_seconds, max_run_ms, containerized, container_image, container_build_status, container_build_error, container_built_at, env, labels, meta_data, created_at, created_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) returning id, function_id, revision_number, definition_digest, description, runtime, entry_command, function_body, reuse_key, idle_timeout_seconds, max_run_ms, containerized, container_image, container_build_status, container_build_error, container_built_at, env, labels, meta_data, created_at, created_by;
+
+-- name: UpdateLambdaFunctionRevisions :one
+update lambda_function_revisions set function_id = $2, revision_number = $3, definition_digest = $4, description = $5, runtime = $6, entry_command = $7, function_body = $8, reuse_key = $9, idle_timeout_seconds = $10, max_run_ms = $11, containerized = $12, container_image = $13, container_build_status = $14, container_build_error = $15, container_built_at = $16, env = $17, labels = $18, meta_data = $19, created_by = $20 where id = $1 returning id, function_id, revision_number, definition_digest, description, runtime, entry_command, function_body, reuse_key, idle_timeout_seconds, max_run_ms, containerized, container_image, container_build_status, container_build_error, container_built_at, env, labels, meta_data, created_at, created_by;
+
+-- name: DeleteLambdaFunctionRevisions :exec
+delete from lambda_function_revisions where id = $1;
+
+-- name: ListLambdaFunctionAliases :many
+select id, function_id, name, description, traffic, routing_version, created_at, updated_at, created_by, updated_by from lambda_function_aliases;
+
+-- name: GetLambdaFunctionAliases :one
+select id, function_id, name, description, traffic, routing_version, created_at, updated_at, created_by, updated_by from lambda_function_aliases where id = $1 limit 1;
+
+-- name: CreateLambdaFunctionAliases :one
+insert into lambda_function_aliases (id, function_id, name, description, traffic, routing_version, created_at, updated_at, created_by, updated_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id, function_id, name, description, traffic, routing_version, created_at, updated_at, created_by, updated_by;
+
+-- name: UpdateLambdaFunctionAliases :one
+update lambda_function_aliases set function_id = $2, name = $3, description = $4, traffic = $5, routing_version = $6, updated_at = $7, created_by = $8, updated_by = $9 where id = $1 returning id, function_id, name, description, traffic, routing_version, created_at, updated_at, created_by, updated_by;
+
+-- name: DeleteLambdaFunctionAliases :exec
+delete from lambda_function_aliases where id = $1;
+
 -- name: ListLambdaActorInstances :many
 select id, function_id, actor_key, state, state_version, alarm_at, alarm_attempt, lease_owner, lease_until, last_invoked_at, last_error, created_at, updated_at from lambda_actor_instances;
 

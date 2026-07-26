@@ -2451,6 +2451,212 @@ let validate_lambda_functions_max_run_ms (value : int) : (int, string) result =
   else if value > 300000 then Error "lambda_functions.max_run_ms is above the maximum"
   else Ok value
 
+let lambda_function_revisions_table = "lambda_function_revisions"
+
+let lambda_function_revisions_columns = ["id"; "function_id"; "revision_number"; "definition_digest"; "description"; "runtime"; "entry_command"; "function_body"; "reuse_key"; "idle_timeout_seconds"; "max_run_ms"; "containerized"; "container_image"; "container_build_status"; "container_build_error"; "container_built_at"; "env"; "labels"; "meta_data"; "created_at"; "created_by"]
+
+let lambda_function_revisions_select_sql = "select\n      id::text as id,\n      function_id::text as function_id,\n      revision_number,\n      definition_digest,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      created_by::text as created_by\n    from lambda_function_revisions"
+
+type lambda_function_revisions_runtime = [ `Nodejs | `Javascript | `Typescript | `Python3 | `Python | `Ruby | `Bash | `Shell | `Golang | `Go | `Dart | `Erlang | `Erl | `Elixir | `Ex | `Java | `Jvm | `Gleam | `Gleamlang | `Rust | `Rs | `Browser ]
+
+let lambda_function_revisions_runtime_to_string (value : lambda_function_revisions_runtime) : string =
+  match value with
+  | `Nodejs -> "nodejs"
+  | `Javascript -> "javascript"
+  | `Typescript -> "typescript"
+  | `Python3 -> "python3"
+  | `Python -> "python"
+  | `Ruby -> "ruby"
+  | `Bash -> "bash"
+  | `Shell -> "shell"
+  | `Golang -> "golang"
+  | `Go -> "go"
+  | `Dart -> "dart"
+  | `Erlang -> "erlang"
+  | `Erl -> "erl"
+  | `Elixir -> "elixir"
+  | `Ex -> "ex"
+  | `Java -> "java"
+  | `Jvm -> "jvm"
+  | `Gleam -> "gleam"
+  | `Gleamlang -> "gleamlang"
+  | `Rust -> "rust"
+  | `Rs -> "rs"
+  | `Browser -> "browser"
+
+let parse_lambda_function_revisions_runtime (value : string) : (lambda_function_revisions_runtime, string) result =
+  match value with
+  | "nodejs" -> Ok `Nodejs
+  | "javascript" -> Ok `Javascript
+  | "typescript" -> Ok `Typescript
+  | "python3" -> Ok `Python3
+  | "python" -> Ok `Python
+  | "ruby" -> Ok `Ruby
+  | "bash" -> Ok `Bash
+  | "shell" -> Ok `Shell
+  | "golang" -> Ok `Golang
+  | "go" -> Ok `Go
+  | "dart" -> Ok `Dart
+  | "erlang" -> Ok `Erlang
+  | "erl" -> Ok `Erl
+  | "elixir" -> Ok `Elixir
+  | "ex" -> Ok `Ex
+  | "java" -> Ok `Java
+  | "jvm" -> Ok `Jvm
+  | "gleam" -> Ok `Gleam
+  | "gleamlang" -> Ok `Gleamlang
+  | "rust" -> Ok `Rust
+  | "rs" -> Ok `Rs
+  | "browser" -> Ok `Browser
+  | _ -> Error ("unsupported lambda_function_revisions.runtime: " ^ value)
+
+type lambda_function_revisions_container_build_status = [ `NotRequested | `Pending | `Building | `Built | `Failed | `Skipped ]
+
+let lambda_function_revisions_container_build_status_to_string (value : lambda_function_revisions_container_build_status) : string =
+  match value with
+  | `NotRequested -> "not_requested"
+  | `Pending -> "pending"
+  | `Building -> "building"
+  | `Built -> "built"
+  | `Failed -> "failed"
+  | `Skipped -> "skipped"
+
+let parse_lambda_function_revisions_container_build_status (value : string) : (lambda_function_revisions_container_build_status, string) result =
+  match value with
+  | "not_requested" -> Ok `NotRequested
+  | "pending" -> Ok `Pending
+  | "building" -> Ok `Building
+  | "built" -> Ok `Built
+  | "failed" -> Ok `Failed
+  | "skipped" -> Ok `Skipped
+  | _ -> Error ("unsupported lambda_function_revisions.container_build_status: " ^ value)
+
+type lambda_function_revisions_row = {
+  lambda_function_revisions_id : string;
+  lambda_function_revisions_function_id : string;
+  lambda_function_revisions_revision_number : int64;
+  lambda_function_revisions_definition_digest : string;
+  lambda_function_revisions_description : string;
+  lambda_function_revisions_runtime : string;
+  lambda_function_revisions_entry_command : string;
+  lambda_function_revisions_function_body : string;
+  lambda_function_revisions_reuse_key : string option;
+  lambda_function_revisions_idle_timeout_seconds : int;
+  lambda_function_revisions_max_run_ms : int;
+  lambda_function_revisions_containerized : bool;
+  lambda_function_revisions_container_image : string option;
+  lambda_function_revisions_container_build_status : string;
+  lambda_function_revisions_container_build_error : string option;
+  lambda_function_revisions_container_built_at : string option;
+  lambda_function_revisions_env : string;
+  lambda_function_revisions_labels : string;
+  lambda_function_revisions_meta_data : string;
+  lambda_function_revisions_created_at : string;
+  lambda_function_revisions_created_by : string option;
+}
+
+let lambda_function_revisions_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : lambda_function_revisions_row =
+  {
+    lambda_function_revisions_id = get 0;
+    lambda_function_revisions_function_id = get 1;
+    lambda_function_revisions_revision_number = Int64.of_string (get 2);
+    lambda_function_revisions_definition_digest = get 3;
+    lambda_function_revisions_description = get 4;
+    lambda_function_revisions_runtime = get 5;
+    lambda_function_revisions_entry_command = get 6;
+    lambda_function_revisions_function_body = get 7;
+    lambda_function_revisions_reuse_key = (if is_null 8 then None else Some (get 8));
+    lambda_function_revisions_idle_timeout_seconds = int_of_string (get 9);
+    lambda_function_revisions_max_run_ms = int_of_string (get 10);
+    lambda_function_revisions_containerized = (get 11 = "t");
+    lambda_function_revisions_container_image = (if is_null 12 then None else Some (get 12));
+    lambda_function_revisions_container_build_status = get 13;
+    lambda_function_revisions_container_build_error = (if is_null 14 then None else Some (get 14));
+    lambda_function_revisions_container_built_at = (if is_null 15 then None else Some (get 15));
+    lambda_function_revisions_env = get 16;
+    lambda_function_revisions_labels = get 17;
+    lambda_function_revisions_meta_data = get 18;
+    lambda_function_revisions_created_at = get 19;
+    lambda_function_revisions_created_by = (if is_null 20 then None else Some (get 20));
+  }
+
+let validate_lambda_function_revisions_revision_number (value : int64) : (int64, string) result =
+  if Int64.compare value 1L < 0 then Error "lambda_function_revisions.revision_number is below the minimum"
+  else Ok value
+
+let validate_lambda_function_revisions_definition_digest (value : string) : (string, string) result =
+  if String.length value < 64 then Error "lambda_function_revisions.definition_digest must be at least 64 characters"
+  else if String.length value > 64 then Error "lambda_function_revisions.definition_digest must be at most 64 characters"
+  else Ok value
+
+let validate_lambda_function_revisions_description (value : string) : (string, string) result =
+  if String.length value > 4096 then Error "lambda_function_revisions.description must be at most 4096 characters"
+  else Ok value
+
+let validate_lambda_function_revisions_function_body (value : string) : (string, string) result =
+  if String.length value < 1 then Error "lambda_function_revisions.function_body must be at least 1 characters"
+  else Ok value
+
+let validate_lambda_function_revisions_reuse_key (value : string) : (string, string) result =
+  if String.length value > 200 then Error "lambda_function_revisions.reuse_key must be at most 200 characters"
+  else Ok value
+
+let validate_lambda_function_revisions_idle_timeout_seconds (value : int) : (int, string) result =
+  if value < 1 then Error "lambda_function_revisions.idle_timeout_seconds is below the minimum"
+  else if value > 3600 then Error "lambda_function_revisions.idle_timeout_seconds is above the maximum"
+  else Ok value
+
+let validate_lambda_function_revisions_max_run_ms (value : int) : (int, string) result =
+  if value < 1000 then Error "lambda_function_revisions.max_run_ms is below the minimum"
+  else if value > 300000 then Error "lambda_function_revisions.max_run_ms is above the maximum"
+  else Ok value
+
+let lambda_function_aliases_table = "lambda_function_aliases"
+
+let lambda_function_aliases_columns = ["id"; "function_id"; "name"; "description"; "traffic"; "routing_version"; "created_at"; "updated_at"; "created_by"; "updated_by"]
+
+let lambda_function_aliases_select_sql = "select\n      id::text as id,\n      function_id::text as function_id,\n      name,\n      description,\n      traffic::text as traffic_json,\n      routing_version,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_function_aliases"
+
+type lambda_function_aliases_row = {
+  lambda_function_aliases_id : string;
+  lambda_function_aliases_function_id : string;
+  lambda_function_aliases_name : string;
+  lambda_function_aliases_description : string;
+  lambda_function_aliases_traffic : string;
+  lambda_function_aliases_routing_version : int64;
+  lambda_function_aliases_created_at : string;
+  lambda_function_aliases_updated_at : string;
+  lambda_function_aliases_created_by : string option;
+  lambda_function_aliases_updated_by : string option;
+}
+
+let lambda_function_aliases_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : lambda_function_aliases_row =
+  {
+    lambda_function_aliases_id = get 0;
+    lambda_function_aliases_function_id = get 1;
+    lambda_function_aliases_name = get 2;
+    lambda_function_aliases_description = get 3;
+    lambda_function_aliases_traffic = get 4;
+    lambda_function_aliases_routing_version = Int64.of_string (get 5);
+    lambda_function_aliases_created_at = get 6;
+    lambda_function_aliases_updated_at = get 7;
+    lambda_function_aliases_created_by = (if is_null 8 then None else Some (get 8));
+    lambda_function_aliases_updated_by = (if is_null 9 then None else Some (get 9));
+  }
+
+let validate_lambda_function_aliases_name (value : string) : (string, string) result =
+  if String.length value < 1 then Error "lambda_function_aliases.name must be at least 1 characters"
+  else if String.length value > 64 then Error "lambda_function_aliases.name must be at most 64 characters"
+  else Ok value
+
+let validate_lambda_function_aliases_description (value : string) : (string, string) result =
+  if String.length value > 4096 then Error "lambda_function_aliases.description must be at most 4096 characters"
+  else Ok value
+
+let validate_lambda_function_aliases_routing_version (value : int64) : (int64, string) result =
+  if Int64.compare value 1L < 0 then Error "lambda_function_aliases.routing_version is below the minimum"
+  else Ok value
+
 let lambda_actor_instances_table = "lambda_actor_instances"
 
 let lambda_actor_instances_columns = ["id"; "function_id"; "actor_key"; "state"; "state_version"; "alarm_at"; "alarm_attempt"; "lease_owner"; "lease_until"; "last_invoked_at"; "last_error"; "created_at"; "updated_at"]

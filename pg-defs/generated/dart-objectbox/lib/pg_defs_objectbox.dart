@@ -2746,6 +2746,203 @@ class LambdaFunctionObjectBox {
 }
 
 @Entity()
+class LambdaFunctionRevisionObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String functionId;
+
+  int revisionNumber;
+
+  String definitionDigest;
+
+  String description;
+
+  String runtime;
+
+  String entryCommand;
+
+  String functionBody;
+
+  String? reuseKey;
+
+  int idleTimeoutSeconds;
+
+  int maxRunMs;
+
+  bool containerized;
+
+  String? containerImage;
+
+  String containerBuildStatus;
+
+  String? containerBuildError;
+
+  String? containerBuiltAt;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String env;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String labels;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String? createdBy;
+
+
+  LambdaFunctionRevisionObjectBox({
+    required this.id,
+    required this.functionId,
+    required this.revisionNumber,
+    required this.definitionDigest,
+    required this.description,
+    required this.runtime,
+    required this.entryCommand,
+    required this.functionBody,
+    this.reuseKey,
+    required this.idleTimeoutSeconds,
+    required this.maxRunMs,
+    required this.containerized,
+    this.containerImage,
+    required this.containerBuildStatus,
+    this.containerBuildError,
+    this.containerBuiltAt,
+    required this.env,
+    required this.labels,
+    required this.metaData,
+    required this.createdAt,
+    this.createdBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "functionId": functionId,
+    "revisionNumber": revisionNumber,
+    "definitionDigest": definitionDigest,
+    "description": description,
+    "runtime": runtime,
+    "entryCommand": entryCommand,
+    "functionBody": functionBody,
+    "reuseKey": reuseKey,
+    "idleTimeoutSeconds": idleTimeoutSeconds,
+    "maxRunMs": maxRunMs,
+    "containerized": containerized,
+    "containerImage": containerImage,
+    "containerBuildStatus": containerBuildStatus,
+    "containerBuildError": containerBuildError,
+    "containerBuiltAt": containerBuiltAt,
+    "env": jsonDecode(env),
+    "labels": jsonDecode(labels),
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "createdBy": createdBy,
+  };
+
+  static LambdaFunctionRevisionObjectBox fromJson(Map<String, Object?> json) {
+    return LambdaFunctionRevisionObjectBox(
+      id: json["id"] as String,
+      functionId: json["functionId"] as String,
+      revisionNumber: (json["revisionNumber"] as num).toInt(),
+      definitionDigest: json["definitionDigest"] as String,
+      description: json["description"] as String,
+      runtime: json["runtime"] as String,
+      entryCommand: json["entryCommand"] as String,
+      functionBody: json["functionBody"] as String,
+      reuseKey: json["reuseKey"] as String?,
+      idleTimeoutSeconds: (json["idleTimeoutSeconds"] as num).toInt(),
+      maxRunMs: (json["maxRunMs"] as num).toInt(),
+      containerized: json["containerized"] as bool,
+      containerImage: json["containerImage"] as String?,
+      containerBuildStatus: json["containerBuildStatus"] as String,
+      containerBuildError: json["containerBuildError"] as String?,
+      containerBuiltAt: json["containerBuiltAt"] as String?,
+      env: json["env"] is String ? json["env"] as String : jsonEncode(json["env"]),
+      labels: json["labels"] is String ? json["labels"] as String : jsonEncode(json["labels"]),
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      createdBy: json["createdBy"] as String?,
+    );
+  }
+}
+
+@Entity()
+class LambdaFunctionAliasObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String functionId;
+
+  String name;
+
+  String description;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String traffic;
+
+  int routingVersion;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String? createdBy;
+
+  String? updatedBy;
+
+
+  LambdaFunctionAliasObjectBox({
+    required this.id,
+    required this.functionId,
+    required this.name,
+    required this.description,
+    required this.traffic,
+    required this.routingVersion,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "functionId": functionId,
+    "name": name,
+    "description": description,
+    "traffic": jsonDecode(traffic),
+    "routingVersion": routingVersion,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  static LambdaFunctionAliasObjectBox fromJson(Map<String, Object?> json) {
+    return LambdaFunctionAliasObjectBox(
+      id: json["id"] as String,
+      functionId: json["functionId"] as String,
+      name: json["name"] as String,
+      description: json["description"] as String,
+      traffic: json["traffic"] is String ? json["traffic"] as String : jsonEncode(json["traffic"]),
+      routingVersion: (json["routingVersion"] as num).toInt(),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      createdBy: json["createdBy"] as String?,
+      updatedBy: json["updatedBy"] as String?,
+    );
+  }
+}
+
+@Entity()
 class LambdaActorInstanceObjectBox {
   @Id()
   int obxId = 0;

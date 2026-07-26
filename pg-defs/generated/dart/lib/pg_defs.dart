@@ -3147,6 +3147,222 @@ class LambdaFunctionRow {
   }
 }
 
+const lambdaFunctionRevisionTable = "lambda_function_revisions";
+const lambdaFunctionRevisionSelectSql = "select\n      id::text as id,\n      function_id::text as function_id,\n      revision_number,\n      definition_digest,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      created_by::text as created_by\n    from lambda_function_revisions";
+
+const lambdaFunctionRevisionRuntimeValues = <String>["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"];
+const lambdaFunctionRevisionContainerBuildStatusValues = <String>["not_requested", "pending", "building", "built", "failed", "skipped"];
+
+class LambdaFunctionRevisionRow {
+  const LambdaFunctionRevisionRow({
+    required this.id,
+    required this.functionId,
+    required this.revisionNumber,
+    required this.definitionDigest,
+    required this.description,
+    required this.runtime,
+    required this.entryCommand,
+    required this.functionBody,
+    this.reuseKey,
+    required this.idleTimeoutSeconds,
+    required this.maxRunMs,
+    required this.containerized,
+    this.containerImage,
+    required this.containerBuildStatus,
+    this.containerBuildError,
+    this.containerBuiltAt,
+    required this.env,
+    required this.labels,
+    required this.metaData,
+    required this.createdAt,
+    this.createdBy,
+  });
+
+  final String id;
+  final String functionId;
+  final int revisionNumber;
+  final String definitionDigest;
+  final String description;
+  final String runtime;
+  final String entryCommand;
+  final String functionBody;
+  final String? reuseKey;
+  final int idleTimeoutSeconds;
+  final int maxRunMs;
+  final bool containerized;
+  final String? containerImage;
+  final String containerBuildStatus;
+  final String? containerBuildError;
+  final String? containerBuiltAt;
+  final Map<String, Object?> env;
+  final List<Object?> labels;
+  final Map<String, Object?> metaData;
+  final String createdAt;
+  final String? createdBy;
+
+  factory LambdaFunctionRevisionRow.fromJson(Map<String, Object?> json) {
+    return LambdaFunctionRevisionRow(
+      id: _readRequiredString(json, "id"),
+      functionId: _readRequiredString(json, "functionId"),
+      revisionNumber: _readRequiredInt(json, "revisionNumber"),
+      definitionDigest: _readRequiredString(json, "definitionDigest"),
+      description: _readRequiredString(json, "description"),
+      runtime: _readRequiredString(json, "runtime"),
+      entryCommand: _readRequiredString(json, "entryCommand"),
+      functionBody: _readRequiredString(json, "functionBody"),
+      reuseKey: _readOptionalString(json, "reuseKey"),
+      idleTimeoutSeconds: _readRequiredInt(json, "idleTimeoutSeconds"),
+      maxRunMs: _readRequiredInt(json, "maxRunMs"),
+      containerized: _readRequiredBool(json, "containerized"),
+      containerImage: _readOptionalString(json, "containerImage"),
+      containerBuildStatus: _readRequiredString(json, "containerBuildStatus"),
+      containerBuildError: _readOptionalString(json, "containerBuildError"),
+      containerBuiltAt: _readOptionalString(json, "containerBuiltAt"),
+      env: _readRequiredObject(json, "env"),
+      labels: _readRequiredArray(json, "labels"),
+      metaData: _readRequiredObject(json, "metaData"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "functionId": functionId,
+    "revisionNumber": revisionNumber,
+    "definitionDigest": definitionDigest,
+    "description": description,
+    "runtime": runtime,
+    "entryCommand": entryCommand,
+    "functionBody": functionBody,
+    "reuseKey": reuseKey,
+    "idleTimeoutSeconds": idleTimeoutSeconds,
+    "maxRunMs": maxRunMs,
+    "containerized": containerized,
+    "containerImage": containerImage,
+    "containerBuildStatus": containerBuildStatus,
+    "containerBuildError": containerBuildError,
+    "containerBuiltAt": containerBuiltAt,
+    "env": env,
+    "labels": labels,
+    "metaData": metaData,
+    "createdAt": createdAt,
+    "createdBy": createdBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[a-f0-9]{64}$').hasMatch(definitionDigest)) {
+      errors.add("lambda_function_revisions.definition_digest does not match the required pattern");
+    }
+    if (utf8.encode(description).length > 4096) {
+      errors.add("lambda_function_revisions.description exceeds 4096 bytes");
+    }
+    if (!lambdaFunctionRevisionRuntimeValues.contains(runtime)) {
+      errors.add("unsupported lambda_function_revisions.runtime");
+    }
+    if (utf8.encode(entryCommand).length > 512) {
+      errors.add("lambda_function_revisions.entry_command exceeds 512 bytes");
+    }
+    if (utf8.encode(functionBody).length > 262144) {
+      errors.add("lambda_function_revisions.function_body exceeds 262144 bytes");
+    }
+    if (reuseKey != null && utf8.encode(reuseKey!).length > 200) {
+      errors.add("lambda_function_revisions.reuse_key exceeds 200 bytes");
+    }
+    if (idleTimeoutSeconds < 1) {
+      errors.add("lambda_function_revisions.idle_timeout_seconds is below the minimum");
+    }
+    if (idleTimeoutSeconds > 3600) {
+      errors.add("lambda_function_revisions.idle_timeout_seconds is above the maximum");
+    }
+    if (maxRunMs < 1000) {
+      errors.add("lambda_function_revisions.max_run_ms is below the minimum");
+    }
+    if (maxRunMs > 300000) {
+      errors.add("lambda_function_revisions.max_run_ms is above the maximum");
+    }
+    if (containerImage != null && utf8.encode(containerImage!).length > 512) {
+      errors.add("lambda_function_revisions.container_image exceeds 512 bytes");
+    }
+    if (!lambdaFunctionRevisionContainerBuildStatusValues.contains(containerBuildStatus)) {
+      errors.add("unsupported lambda_function_revisions.container_build_status");
+    }
+    if (containerBuildError != null && utf8.encode(containerBuildError!).length > 8192) {
+      errors.add("lambda_function_revisions.container_build_error exceeds 8192 bytes");
+    }
+    return errors;
+  }
+}
+
+const lambdaFunctionAliasTable = "lambda_function_aliases";
+const lambdaFunctionAliasSelectSql = "select\n      id::text as id,\n      function_id::text as function_id,\n      name,\n      description,\n      traffic::text as traffic_json,\n      routing_version,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_function_aliases";
+
+class LambdaFunctionAliasRow {
+  const LambdaFunctionAliasRow({
+    required this.id,
+    required this.functionId,
+    required this.name,
+    required this.description,
+    required this.traffic,
+    required this.routingVersion,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  final String id;
+  final String functionId;
+  final String name;
+  final String description;
+  final Map<String, Object?> traffic;
+  final int routingVersion;
+  final String createdAt;
+  final String updatedAt;
+  final String? createdBy;
+  final String? updatedBy;
+
+  factory LambdaFunctionAliasRow.fromJson(Map<String, Object?> json) {
+    return LambdaFunctionAliasRow(
+      id: _readRequiredString(json, "id"),
+      functionId: _readRequiredString(json, "functionId"),
+      name: _readRequiredString(json, "name"),
+      description: _readRequiredString(json, "description"),
+      traffic: _readRequiredObject(json, "traffic"),
+      routingVersion: _readRequiredInt(json, "routingVersion"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+      createdBy: _readOptionalString(json, "createdBy"),
+      updatedBy: _readOptionalString(json, "updatedBy"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "functionId": functionId,
+    "name": name,
+    "description": description,
+    "traffic": traffic,
+    "routingVersion": routingVersion,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^[a-z][a-z0-9._-]{0,63}$').hasMatch(name)) {
+      errors.add("lambda_function_aliases.name does not match the required pattern");
+    }
+    if (utf8.encode(description).length > 4096) {
+      errors.add("lambda_function_aliases.description exceeds 4096 bytes");
+    }
+    return errors;
+  }
+}
+
 const lambdaActorInstanceTable = "lambda_actor_instances";
 const lambdaActorInstanceSelectSql = "select\n      id::text as id,\n      function_id::text as function_id,\n      actor_key,\n      state::text as state_json,\n      state_version,\n      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as alarm_at,\n      alarm_attempt,\n      lease_owner,\n      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_until,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from lambda_actor_instances";
 

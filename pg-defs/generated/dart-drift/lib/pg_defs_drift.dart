@@ -824,6 +824,63 @@ class LambdaFunctionTable extends Table {
   };
 }
 
+@DataClassName("LambdaFunctionRevisionData")
+class LambdaFunctionRevisionTable extends Table {
+  @override String get tableName => "lambda_function_revisions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get functionId => text().named("function_id").customConstraint("UUID")();
+  Int64Column get revisionNumber => int64().named("revision_number")();
+  TextColumn get definitionDigest => text().named("definition_digest").withLength(max: 64)();
+  TextColumn get description => text().named("description").clientDefault(() => '')();
+  TextColumn get runtime => text().named("runtime")();
+  TextColumn get entryCommand => text().named("entry_command").clientDefault(() => '')();
+  TextColumn get functionBody => text().named("function_body")();
+  TextColumn get reuseKey => text().named("reuse_key").withLength(max: 200).nullable()();
+  IntColumn get idleTimeoutSeconds => integer().named("idle_timeout_seconds")();
+  IntColumn get maxRunMs => integer().named("max_run_ms")();
+  BoolColumn get containerized => boolean().named("containerized")();
+  TextColumn get containerImage => text().named("container_image").nullable()();
+  TextColumn get containerBuildStatus => text().named("container_build_status")();
+  TextColumn get containerBuildError => text().named("container_build_error").nullable()();
+  DateTimeColumn get containerBuiltAt => dateTime().named("container_built_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get env => text().named("env").customConstraint("JSONB")();
+  TextColumn get labels => text().named("labels").customConstraint("JSONB")();
+  TextColumn get metaData => text().named("meta_data").customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("LambdaFunctionAliasData")
+class LambdaFunctionAliasTable extends Table {
+  @override String get tableName => "lambda_function_aliases";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get functionId => text().named("function_id").customConstraint("UUID")();
+  TextColumn get name => text().named("name").withLength(max: 64)();
+  TextColumn get description => text().named("description").clientDefault(() => '')();
+  TextColumn get traffic => text().named("traffic").customConstraint("JSONB")();
+  Int64Column get routingVersion => int64().named("routing_version").clientDefault(() => 1)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
 @DataClassName("LambdaActorInstanceData")
 class LambdaActorInstanceTable extends Table {
   @override String get tableName => "lambda_actor_instances";
@@ -4318,6 +4375,8 @@ const List<Type> registeredDriftTables = <Type>[
   MipSolverJobsTable,
   MipSolverEventsTable,
   LambdaFunctionTable,
+  LambdaFunctionRevisionTable,
+  LambdaFunctionAliasTable,
   LambdaActorInstanceTable,
   WorkflowDefinitionsTable,
   WorkflowRunsTable,

@@ -42,6 +42,8 @@ defmodule DdPgDefs do
     DdPgDefs.MipSolverJobs,
     DdPgDefs.MipSolverEvents,
     DdPgDefs.LambdaFunctions,
+    DdPgDefs.LambdaFunctionRevisions,
+    DdPgDefs.LambdaFunctionAliases,
     DdPgDefs.LambdaActorInstances,
     DdPgDefs.WorkflowDefinitions,
     DdPgDefs.WorkflowRuns,

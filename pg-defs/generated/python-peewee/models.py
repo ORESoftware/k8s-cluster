@@ -645,6 +645,51 @@ class LambdaFunction(BaseModel):
         table_name = "lambda_functions"
 
 
+class LambdaFunctionRevision(BaseModel):
+    # Immutable published snapshots of lambda function code and runtime configuration.
+    id = UUIDField(primary_key=True)
+    function_id = UUIDField()
+    revision_number = BigIntegerField()
+    definition_digest = CharField(max_length=64)
+    description = TextField()
+    runtime = CharField(max_length=40)
+    entry_command = TextField()
+    function_body = TextField()
+    reuse_key = CharField(max_length=200, null=True)
+    idle_timeout_seconds = IntegerField()
+    max_run_ms = IntegerField()
+    containerized = BooleanField()
+    container_image = TextField(null=True)
+    container_build_status = CharField(max_length=32)
+    container_build_error = TextField(null=True)
+    container_built_at = DateTimeField(null=True)
+    env = BinaryJSONField()
+    labels = BinaryJSONField()
+    meta_data = BinaryJSONField()
+    created_at = DateTimeField()
+    created_by = UUIDField(null=True)
+
+    class Meta:
+        table_name = "lambda_function_revisions"
+
+
+class LambdaFunctionAlias(BaseModel):
+    # Named weighted routing policies over immutable lambda function revisions.
+    id = UUIDField(primary_key=True)
+    function_id = UUIDField()
+    name = CharField(max_length=64)
+    description = TextField()
+    traffic = BinaryJSONField()
+    routing_version = BigIntegerField()
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+    created_by = UUIDField(null=True)
+    updated_by = UUIDField(null=True)
+
+    class Meta:
+        table_name = "lambda_function_aliases"
+
+
 class LambdaActorInstance(BaseModel):
     # Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
     id = UUIDField(primary_key=True)

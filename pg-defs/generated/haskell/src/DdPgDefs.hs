@@ -2274,6 +2274,197 @@ validateLambdaFunctionMaxRunMs value
   | value > 300000 = Left "lambda_functions.max_run_ms is above the maximum"
   | otherwise = Right value
 
+lambdaFunctionRevisionsTable :: Text
+lambdaFunctionRevisionsTable = "lambda_function_revisions"
+
+lambdaFunctionRevisionsColumns :: [Text]
+lambdaFunctionRevisionsColumns = ["id", "function_id", "revision_number", "definition_digest", "description", "runtime", "entry_command", "function_body", "reuse_key", "idle_timeout_seconds", "max_run_ms", "containerized", "container_image", "container_build_status", "container_build_error", "container_built_at", "env", "labels", "meta_data", "created_at", "created_by"]
+
+lambdaFunctionRevisionsSelectSql :: Text
+lambdaFunctionRevisionsSelectSql = "select\n      id::text as id,\n      function_id::text as function_id,\n      revision_number,\n      definition_digest,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      created_by::text as created_by\n    from lambda_function_revisions"
+
+data LambdaFunctionRevisionRuntime = LambdaFunctionRevisionRuntimeNodejs | LambdaFunctionRevisionRuntimeJavascript | LambdaFunctionRevisionRuntimeTypescript | LambdaFunctionRevisionRuntimePython3 | LambdaFunctionRevisionRuntimePython | LambdaFunctionRevisionRuntimeRuby | LambdaFunctionRevisionRuntimeBash | LambdaFunctionRevisionRuntimeShell | LambdaFunctionRevisionRuntimeGolang | LambdaFunctionRevisionRuntimeGo | LambdaFunctionRevisionRuntimeDart | LambdaFunctionRevisionRuntimeErlang | LambdaFunctionRevisionRuntimeErl | LambdaFunctionRevisionRuntimeElixir | LambdaFunctionRevisionRuntimeEx | LambdaFunctionRevisionRuntimeJava | LambdaFunctionRevisionRuntimeJvm | LambdaFunctionRevisionRuntimeGleam | LambdaFunctionRevisionRuntimeGleamlang | LambdaFunctionRevisionRuntimeRust | LambdaFunctionRevisionRuntimeRs | LambdaFunctionRevisionRuntimeBrowser
+  deriving (Eq, Show)
+
+lambdaFunctionRevisionRuntimeToText :: LambdaFunctionRevisionRuntime -> Text
+lambdaFunctionRevisionRuntimeToText value = case value of
+  LambdaFunctionRevisionRuntimeNodejs -> "nodejs"
+  LambdaFunctionRevisionRuntimeJavascript -> "javascript"
+  LambdaFunctionRevisionRuntimeTypescript -> "typescript"
+  LambdaFunctionRevisionRuntimePython3 -> "python3"
+  LambdaFunctionRevisionRuntimePython -> "python"
+  LambdaFunctionRevisionRuntimeRuby -> "ruby"
+  LambdaFunctionRevisionRuntimeBash -> "bash"
+  LambdaFunctionRevisionRuntimeShell -> "shell"
+  LambdaFunctionRevisionRuntimeGolang -> "golang"
+  LambdaFunctionRevisionRuntimeGo -> "go"
+  LambdaFunctionRevisionRuntimeDart -> "dart"
+  LambdaFunctionRevisionRuntimeErlang -> "erlang"
+  LambdaFunctionRevisionRuntimeErl -> "erl"
+  LambdaFunctionRevisionRuntimeElixir -> "elixir"
+  LambdaFunctionRevisionRuntimeEx -> "ex"
+  LambdaFunctionRevisionRuntimeJava -> "java"
+  LambdaFunctionRevisionRuntimeJvm -> "jvm"
+  LambdaFunctionRevisionRuntimeGleam -> "gleam"
+  LambdaFunctionRevisionRuntimeGleamlang -> "gleamlang"
+  LambdaFunctionRevisionRuntimeRust -> "rust"
+  LambdaFunctionRevisionRuntimeRs -> "rs"
+  LambdaFunctionRevisionRuntimeBrowser -> "browser"
+
+parseLambdaFunctionRevisionRuntime :: Text -> Either Text LambdaFunctionRevisionRuntime
+parseLambdaFunctionRevisionRuntime value = case value of
+  "nodejs" -> Right LambdaFunctionRevisionRuntimeNodejs
+  "javascript" -> Right LambdaFunctionRevisionRuntimeJavascript
+  "typescript" -> Right LambdaFunctionRevisionRuntimeTypescript
+  "python3" -> Right LambdaFunctionRevisionRuntimePython3
+  "python" -> Right LambdaFunctionRevisionRuntimePython
+  "ruby" -> Right LambdaFunctionRevisionRuntimeRuby
+  "bash" -> Right LambdaFunctionRevisionRuntimeBash
+  "shell" -> Right LambdaFunctionRevisionRuntimeShell
+  "golang" -> Right LambdaFunctionRevisionRuntimeGolang
+  "go" -> Right LambdaFunctionRevisionRuntimeGo
+  "dart" -> Right LambdaFunctionRevisionRuntimeDart
+  "erlang" -> Right LambdaFunctionRevisionRuntimeErlang
+  "erl" -> Right LambdaFunctionRevisionRuntimeErl
+  "elixir" -> Right LambdaFunctionRevisionRuntimeElixir
+  "ex" -> Right LambdaFunctionRevisionRuntimeEx
+  "java" -> Right LambdaFunctionRevisionRuntimeJava
+  "jvm" -> Right LambdaFunctionRevisionRuntimeJvm
+  "gleam" -> Right LambdaFunctionRevisionRuntimeGleam
+  "gleamlang" -> Right LambdaFunctionRevisionRuntimeGleamlang
+  "rust" -> Right LambdaFunctionRevisionRuntimeRust
+  "rs" -> Right LambdaFunctionRevisionRuntimeRs
+  "browser" -> Right LambdaFunctionRevisionRuntimeBrowser
+  _ -> Left (T.append "unsupported lambda_function_revisions.runtime: " value)
+
+data LambdaFunctionRevisionContainerBuildStatus = LambdaFunctionRevisionContainerBuildStatusNotRequested | LambdaFunctionRevisionContainerBuildStatusPending | LambdaFunctionRevisionContainerBuildStatusBuilding | LambdaFunctionRevisionContainerBuildStatusBuilt | LambdaFunctionRevisionContainerBuildStatusFailed | LambdaFunctionRevisionContainerBuildStatusSkipped
+  deriving (Eq, Show)
+
+lambdaFunctionRevisionContainerBuildStatusToText :: LambdaFunctionRevisionContainerBuildStatus -> Text
+lambdaFunctionRevisionContainerBuildStatusToText value = case value of
+  LambdaFunctionRevisionContainerBuildStatusNotRequested -> "not_requested"
+  LambdaFunctionRevisionContainerBuildStatusPending -> "pending"
+  LambdaFunctionRevisionContainerBuildStatusBuilding -> "building"
+  LambdaFunctionRevisionContainerBuildStatusBuilt -> "built"
+  LambdaFunctionRevisionContainerBuildStatusFailed -> "failed"
+  LambdaFunctionRevisionContainerBuildStatusSkipped -> "skipped"
+
+parseLambdaFunctionRevisionContainerBuildStatus :: Text -> Either Text LambdaFunctionRevisionContainerBuildStatus
+parseLambdaFunctionRevisionContainerBuildStatus value = case value of
+  "not_requested" -> Right LambdaFunctionRevisionContainerBuildStatusNotRequested
+  "pending" -> Right LambdaFunctionRevisionContainerBuildStatusPending
+  "building" -> Right LambdaFunctionRevisionContainerBuildStatusBuilding
+  "built" -> Right LambdaFunctionRevisionContainerBuildStatusBuilt
+  "failed" -> Right LambdaFunctionRevisionContainerBuildStatusFailed
+  "skipped" -> Right LambdaFunctionRevisionContainerBuildStatusSkipped
+  _ -> Left (T.append "unsupported lambda_function_revisions.container_build_status: " value)
+
+data LambdaFunctionRevisionRow = LambdaFunctionRevisionRow
+  { lambdaFunctionRevisionId :: Text
+  , lambdaFunctionRevisionFunctionId :: Text
+  , lambdaFunctionRevisionRevisionNumber :: Int
+  , lambdaFunctionRevisionDefinitionDigest :: Text
+  , lambdaFunctionRevisionDescription :: Text
+  , lambdaFunctionRevisionRuntime :: Text
+  , lambdaFunctionRevisionEntryCommand :: Text
+  , lambdaFunctionRevisionFunctionBody :: Text
+  , lambdaFunctionRevisionReuseKey :: (Maybe Text)
+  , lambdaFunctionRevisionIdleTimeoutSeconds :: Int
+  , lambdaFunctionRevisionMaxRunMs :: Int
+  , lambdaFunctionRevisionContainerized :: Bool
+  , lambdaFunctionRevisionContainerImage :: (Maybe Text)
+  , lambdaFunctionRevisionContainerBuildStatus :: Text
+  , lambdaFunctionRevisionContainerBuildError :: (Maybe Text)
+  , lambdaFunctionRevisionContainerBuiltAt :: (Maybe Text)
+  , lambdaFunctionRevisionEnv :: Text
+  , lambdaFunctionRevisionLabels :: Text
+  , lambdaFunctionRevisionMetaData :: Text
+  , lambdaFunctionRevisionCreatedAt :: Text
+  , lambdaFunctionRevisionCreatedBy :: (Maybe Text)
+  } deriving (Eq, Show)
+
+instance FromRow LambdaFunctionRevisionRow where
+  fromRow = LambdaFunctionRevisionRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateLambdaFunctionRevisionRevisionNumber :: Int -> Either Text Int
+validateLambdaFunctionRevisionRevisionNumber value
+  | value < 1 = Left "lambda_function_revisions.revision_number is below the minimum"
+  | otherwise = Right value
+
+validateLambdaFunctionRevisionDefinitionDigest :: Text -> Either Text Text
+validateLambdaFunctionRevisionDefinitionDigest value
+  | T.length value < 64 = Left "lambda_function_revisions.definition_digest must be at least 64 characters"
+  | T.length value > 64 = Left "lambda_function_revisions.definition_digest must be at most 64 characters"
+  | otherwise = Right value
+
+validateLambdaFunctionRevisionDescription :: Text -> Either Text Text
+validateLambdaFunctionRevisionDescription value
+  | T.length value > 4096 = Left "lambda_function_revisions.description must be at most 4096 characters"
+  | otherwise = Right value
+
+validateLambdaFunctionRevisionFunctionBody :: Text -> Either Text Text
+validateLambdaFunctionRevisionFunctionBody value
+  | T.length value < 1 = Left "lambda_function_revisions.function_body must be at least 1 characters"
+  | otherwise = Right value
+
+validateLambdaFunctionRevisionReuseKey :: Text -> Either Text Text
+validateLambdaFunctionRevisionReuseKey value
+  | T.length value > 200 = Left "lambda_function_revisions.reuse_key must be at most 200 characters"
+  | otherwise = Right value
+
+validateLambdaFunctionRevisionIdleTimeoutSeconds :: Int -> Either Text Int
+validateLambdaFunctionRevisionIdleTimeoutSeconds value
+  | value < 1 = Left "lambda_function_revisions.idle_timeout_seconds is below the minimum"
+  | value > 3600 = Left "lambda_function_revisions.idle_timeout_seconds is above the maximum"
+  | otherwise = Right value
+
+validateLambdaFunctionRevisionMaxRunMs :: Int -> Either Text Int
+validateLambdaFunctionRevisionMaxRunMs value
+  | value < 1000 = Left "lambda_function_revisions.max_run_ms is below the minimum"
+  | value > 300000 = Left "lambda_function_revisions.max_run_ms is above the maximum"
+  | otherwise = Right value
+
+lambdaFunctionAliasesTable :: Text
+lambdaFunctionAliasesTable = "lambda_function_aliases"
+
+lambdaFunctionAliasesColumns :: [Text]
+lambdaFunctionAliasesColumns = ["id", "function_id", "name", "description", "traffic", "routing_version", "created_at", "updated_at", "created_by", "updated_by"]
+
+lambdaFunctionAliasesSelectSql :: Text
+lambdaFunctionAliasesSelectSql = "select\n      id::text as id,\n      function_id::text as function_id,\n      name,\n      description,\n      traffic::text as traffic_json,\n      routing_version,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_function_aliases"
+
+data LambdaFunctionAliasRow = LambdaFunctionAliasRow
+  { lambdaFunctionAliasId :: Text
+  , lambdaFunctionAliasFunctionId :: Text
+  , lambdaFunctionAliasName :: Text
+  , lambdaFunctionAliasDescription :: Text
+  , lambdaFunctionAliasTraffic :: Text
+  , lambdaFunctionAliasRoutingVersion :: Int
+  , lambdaFunctionAliasCreatedAt :: Text
+  , lambdaFunctionAliasUpdatedAt :: Text
+  , lambdaFunctionAliasCreatedBy :: (Maybe Text)
+  , lambdaFunctionAliasUpdatedBy :: (Maybe Text)
+  } deriving (Eq, Show)
+
+instance FromRow LambdaFunctionAliasRow where
+  fromRow = LambdaFunctionAliasRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateLambdaFunctionAliasName :: Text -> Either Text Text
+validateLambdaFunctionAliasName value
+  | T.length value < 1 = Left "lambda_function_aliases.name must be at least 1 characters"
+  | T.length value > 64 = Left "lambda_function_aliases.name must be at most 64 characters"
+  | otherwise = Right value
+
+validateLambdaFunctionAliasDescription :: Text -> Either Text Text
+validateLambdaFunctionAliasDescription value
+  | T.length value > 4096 = Left "lambda_function_aliases.description must be at most 4096 characters"
+  | otherwise = Right value
+
+validateLambdaFunctionAliasRoutingVersion :: Int -> Either Text Int
+validateLambdaFunctionAliasRoutingVersion value
+  | value < 1 = Left "lambda_function_aliases.routing_version is below the minimum"
+  | otherwise = Right value
+
 lambdaActorInstancesTable :: Text
 lambdaActorInstancesTable = "lambda_actor_instances"
 

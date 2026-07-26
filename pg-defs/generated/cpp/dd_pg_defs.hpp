@@ -2996,6 +2996,251 @@ inline std::optional<std::string> validate_lambda_functions_max_run_ms(int32_t v
     return std::nullopt;
 }
 
+// Immutable published snapshots of lambda function code and runtime configuration.
+inline const char* lambda_function_revisions_table = "lambda_function_revisions";
+inline const std::vector<std::string> lambda_function_revisions_columns = { "id", "function_id", "revision_number", "definition_digest", "description", "runtime", "entry_command", "function_body", "reuse_key", "idle_timeout_seconds", "max_run_ms", "containerized", "container_image", "container_build_status", "container_build_error", "container_built_at", "env", "labels", "meta_data", "created_at", "created_by" };
+inline const char* lambda_function_revisions_select_sql = R"SQL(select
+      id::text as id,
+      function_id::text as function_id,
+      revision_number,
+      definition_digest,
+      description,
+      runtime,
+      entry_command,
+      function_body,
+      reuse_key,
+      idle_timeout_seconds,
+      max_run_ms,
+      containerized,
+      container_image,
+      container_build_status,
+      container_build_error,
+      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as container_built_at,
+      env::text as env_json,
+      labels::text as labels_json,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      created_by::text as created_by
+    from lambda_function_revisions)SQL";
+
+enum class LambdaFunctionRevisionRuntime { Nodejs, Javascript, Typescript, Python3, Python, Ruby, Bash, Shell, Golang, Go, Dart, Erlang, Erl, Elixir, Ex, Java, Jvm, Gleam, Gleamlang, Rust, Rs, Browser };
+inline std::string lambda_function_revisions_runtime_to_string(LambdaFunctionRevisionRuntime value) {
+    switch (value) {
+        case LambdaFunctionRevisionRuntime::Nodejs: return "nodejs";
+        case LambdaFunctionRevisionRuntime::Javascript: return "javascript";
+        case LambdaFunctionRevisionRuntime::Typescript: return "typescript";
+        case LambdaFunctionRevisionRuntime::Python3: return "python3";
+        case LambdaFunctionRevisionRuntime::Python: return "python";
+        case LambdaFunctionRevisionRuntime::Ruby: return "ruby";
+        case LambdaFunctionRevisionRuntime::Bash: return "bash";
+        case LambdaFunctionRevisionRuntime::Shell: return "shell";
+        case LambdaFunctionRevisionRuntime::Golang: return "golang";
+        case LambdaFunctionRevisionRuntime::Go: return "go";
+        case LambdaFunctionRevisionRuntime::Dart: return "dart";
+        case LambdaFunctionRevisionRuntime::Erlang: return "erlang";
+        case LambdaFunctionRevisionRuntime::Erl: return "erl";
+        case LambdaFunctionRevisionRuntime::Elixir: return "elixir";
+        case LambdaFunctionRevisionRuntime::Ex: return "ex";
+        case LambdaFunctionRevisionRuntime::Java: return "java";
+        case LambdaFunctionRevisionRuntime::Jvm: return "jvm";
+        case LambdaFunctionRevisionRuntime::Gleam: return "gleam";
+        case LambdaFunctionRevisionRuntime::Gleamlang: return "gleamlang";
+        case LambdaFunctionRevisionRuntime::Rust: return "rust";
+        case LambdaFunctionRevisionRuntime::Rs: return "rs";
+        case LambdaFunctionRevisionRuntime::Browser: return "browser";
+    }
+    return "";
+}
+inline std::optional<LambdaFunctionRevisionRuntime> parse_lambda_function_revisions_runtime(const std::string& value) {
+    if (value == "nodejs") return LambdaFunctionRevisionRuntime::Nodejs;
+    if (value == "javascript") return LambdaFunctionRevisionRuntime::Javascript;
+    if (value == "typescript") return LambdaFunctionRevisionRuntime::Typescript;
+    if (value == "python3") return LambdaFunctionRevisionRuntime::Python3;
+    if (value == "python") return LambdaFunctionRevisionRuntime::Python;
+    if (value == "ruby") return LambdaFunctionRevisionRuntime::Ruby;
+    if (value == "bash") return LambdaFunctionRevisionRuntime::Bash;
+    if (value == "shell") return LambdaFunctionRevisionRuntime::Shell;
+    if (value == "golang") return LambdaFunctionRevisionRuntime::Golang;
+    if (value == "go") return LambdaFunctionRevisionRuntime::Go;
+    if (value == "dart") return LambdaFunctionRevisionRuntime::Dart;
+    if (value == "erlang") return LambdaFunctionRevisionRuntime::Erlang;
+    if (value == "erl") return LambdaFunctionRevisionRuntime::Erl;
+    if (value == "elixir") return LambdaFunctionRevisionRuntime::Elixir;
+    if (value == "ex") return LambdaFunctionRevisionRuntime::Ex;
+    if (value == "java") return LambdaFunctionRevisionRuntime::Java;
+    if (value == "jvm") return LambdaFunctionRevisionRuntime::Jvm;
+    if (value == "gleam") return LambdaFunctionRevisionRuntime::Gleam;
+    if (value == "gleamlang") return LambdaFunctionRevisionRuntime::Gleamlang;
+    if (value == "rust") return LambdaFunctionRevisionRuntime::Rust;
+    if (value == "rs") return LambdaFunctionRevisionRuntime::Rs;
+    if (value == "browser") return LambdaFunctionRevisionRuntime::Browser;
+    return std::nullopt;
+}
+
+enum class LambdaFunctionRevisionContainerBuildStatus { NotRequested, Pending, Building, Built, Failed, Skipped };
+inline std::string lambda_function_revisions_container_build_status_to_string(LambdaFunctionRevisionContainerBuildStatus value) {
+    switch (value) {
+        case LambdaFunctionRevisionContainerBuildStatus::NotRequested: return "not_requested";
+        case LambdaFunctionRevisionContainerBuildStatus::Pending: return "pending";
+        case LambdaFunctionRevisionContainerBuildStatus::Building: return "building";
+        case LambdaFunctionRevisionContainerBuildStatus::Built: return "built";
+        case LambdaFunctionRevisionContainerBuildStatus::Failed: return "failed";
+        case LambdaFunctionRevisionContainerBuildStatus::Skipped: return "skipped";
+    }
+    return "";
+}
+inline std::optional<LambdaFunctionRevisionContainerBuildStatus> parse_lambda_function_revisions_container_build_status(const std::string& value) {
+    if (value == "not_requested") return LambdaFunctionRevisionContainerBuildStatus::NotRequested;
+    if (value == "pending") return LambdaFunctionRevisionContainerBuildStatus::Pending;
+    if (value == "building") return LambdaFunctionRevisionContainerBuildStatus::Building;
+    if (value == "built") return LambdaFunctionRevisionContainerBuildStatus::Built;
+    if (value == "failed") return LambdaFunctionRevisionContainerBuildStatus::Failed;
+    if (value == "skipped") return LambdaFunctionRevisionContainerBuildStatus::Skipped;
+    return std::nullopt;
+}
+
+struct LambdaFunctionRevisionRow {
+    std::string id;
+    std::string function_id;
+    int64_t revision_number;
+    std::string definition_digest;
+    std::string description;
+    std::string runtime;
+    std::string entry_command;
+    std::string function_body;
+    std::optional<std::string> reuse_key;
+    int32_t idle_timeout_seconds;
+    int32_t max_run_ms;
+    bool containerized;
+    std::optional<std::string> container_image;
+    std::string container_build_status;
+    std::optional<std::string> container_build_error;
+    std::optional<std::string> container_built_at;
+    std::string env;
+    std::string labels;
+    std::string meta_data;
+    std::string created_at;
+    std::optional<std::string> created_by;
+};
+
+inline LambdaFunctionRevisionRow lambda_function_revisions_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    LambdaFunctionRevisionRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.function_id = get(1);
+    row.revision_number = std::stoll(get(2));
+    row.definition_digest = get(3);
+    row.description = get(4);
+    row.runtime = get(5);
+    row.entry_command = get(6);
+    row.function_body = get(7);
+    row.reuse_key = is_null(8) ? std::nullopt : std::optional<std::string>(get(8));
+    row.idle_timeout_seconds = std::stoi(get(9));
+    row.max_run_ms = std::stoi(get(10));
+    row.containerized = (get(11) == "t");
+    row.container_image = is_null(12) ? std::nullopt : std::optional<std::string>(get(12));
+    row.container_build_status = get(13);
+    row.container_build_error = is_null(14) ? std::nullopt : std::optional<std::string>(get(14));
+    row.container_built_at = is_null(15) ? std::nullopt : std::optional<std::string>(get(15));
+    row.env = get(16);
+    row.labels = get(17);
+    row.meta_data = get(18);
+    row.created_at = get(19);
+    row.created_by = is_null(20) ? std::nullopt : std::optional<std::string>(get(20));
+    return row;
+}
+inline std::optional<std::string> validate_lambda_function_revisions_revision_number(int64_t value) {
+    if (value < 1) return std::string("lambda_function_revisions.revision_number is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_function_revisions_definition_digest(const std::string& value) {
+    if (value.size() < 64) return std::string("lambda_function_revisions.definition_digest must be at least 64 characters");
+    if (value.size() > 64) return std::string("lambda_function_revisions.definition_digest must be at most 64 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[a-f0-9]{64}$)RX"))) return std::string("lambda_function_revisions.definition_digest does not match the required pattern");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_function_revisions_description(const std::string& value) {
+    if (value.size() > 4096) return std::string("lambda_function_revisions.description must be at most 4096 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_function_revisions_function_body(const std::string& value) {
+    if (value.size() < 1) return std::string("lambda_function_revisions.function_body must be at least 1 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_function_revisions_reuse_key(const std::string& value) {
+    if (value.size() > 200) return std::string("lambda_function_revisions.reuse_key must be at most 200 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_function_revisions_idle_timeout_seconds(int32_t value) {
+    if (value < 1) return std::string("lambda_function_revisions.idle_timeout_seconds is below the minimum");
+    if (value > 3600) return std::string("lambda_function_revisions.idle_timeout_seconds is above the maximum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_function_revisions_max_run_ms(int32_t value) {
+    if (value < 1000) return std::string("lambda_function_revisions.max_run_ms is below the minimum");
+    if (value > 300000) return std::string("lambda_function_revisions.max_run_ms is above the maximum");
+    return std::nullopt;
+}
+
+// Named weighted routing policies over immutable lambda function revisions.
+inline const char* lambda_function_aliases_table = "lambda_function_aliases";
+inline const std::vector<std::string> lambda_function_aliases_columns = { "id", "function_id", "name", "description", "traffic", "routing_version", "created_at", "updated_at", "created_by", "updated_by" };
+inline const char* lambda_function_aliases_select_sql = R"SQL(select
+      id::text as id,
+      function_id::text as function_id,
+      name,
+      description,
+      traffic::text as traffic_json,
+      routing_version,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from lambda_function_aliases)SQL";
+
+struct LambdaFunctionAliasRow {
+    std::string id;
+    std::string function_id;
+    std::string name;
+    std::string description;
+    std::string traffic;
+    int64_t routing_version;
+    std::string created_at;
+    std::string updated_at;
+    std::optional<std::string> created_by;
+    std::optional<std::string> updated_by;
+};
+
+inline LambdaFunctionAliasRow lambda_function_aliases_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    LambdaFunctionAliasRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.function_id = get(1);
+    row.name = get(2);
+    row.description = get(3);
+    row.traffic = get(4);
+    row.routing_version = std::stoll(get(5));
+    row.created_at = get(6);
+    row.updated_at = get(7);
+    row.created_by = is_null(8) ? std::nullopt : std::optional<std::string>(get(8));
+    row.updated_by = is_null(9) ? std::nullopt : std::optional<std::string>(get(9));
+    return row;
+}
+inline std::optional<std::string> validate_lambda_function_aliases_name(const std::string& value) {
+    if (value.size() < 1) return std::string("lambda_function_aliases.name must be at least 1 characters");
+    if (value.size() > 64) return std::string("lambda_function_aliases.name must be at most 64 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[a-z][a-z0-9._-]{0,63}$)RX"))) return std::string("lambda_function_aliases.name does not match the required pattern");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_function_aliases_description(const std::string& value) {
+    if (value.size() > 4096) return std::string("lambda_function_aliases.description must be at most 4096 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_function_aliases_routing_version(int64_t value) {
+    if (value < 1) return std::string("lambda_function_aliases.routing_version is below the minimum");
+    return std::nullopt;
+}
+
 // Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
 inline const char* lambda_actor_instances_table = "lambda_actor_instances";
 inline const std::vector<std::string> lambda_actor_instances_columns = { "id", "function_id", "actor_key", "state", "state_version", "alarm_at", "alarm_attempt", "lease_owner", "lease_until", "last_invoked_at", "last_error", "created_at", "updated_at" };
