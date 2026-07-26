@@ -274,8 +274,8 @@ The passing sequence covered:
 - authenticated `GET` with `Accept: text/event-stream` returning `405`;
 - `initialize`, `notifications/initialized` returning `202`, and `tools/list`;
 - a harmless `browser_act` start on Tailscale's allowlisted startup-program
-  page, observation of one form with 12 required fields, enforcement of its
-  human-only electronic-signature blocker, and session cleanup; and
+  page, observation of one form with 12 required fields and no false signature
+  blocker, and session cleanup; and
 - rejection of navigation to a hostname outside the deployment allowlist.
 
 AWS Security Group ingress exposes only public HTTP/HTTPS plus administrator

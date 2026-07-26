@@ -277,7 +277,7 @@ jq '{
 }' <<<"$observe"
 if ! jq -e '
   .result.isError == false and
-  .result.structuredContent.blocker.type == "signature" and
+  (.result.structuredContent.blocker // null) == null and
   (.result.structuredContent.forms | length) >= 1 and
   ([.result.structuredContent.interactive_elements[] | select(.required == true)] | length) >= 10
 ' <<<"$observe" >/dev/null; then
