@@ -13,12 +13,26 @@ fi
 
 auth_mode="${SUBMODULE_AUTH_MODE:-https-token}"
 report_path="${SUBMODULE_REPORT_PATH:-}"
+report_mode="${SUBMODULE_REPORT_MODE:-truncate}"
 askpass_file=""
 declare -a git_config=()
 
 if [[ -n "$report_path" ]]; then
   mkdir -p "$(dirname "$report_path")"
-  printf 'status\trepository\tpath\tcategory\tcommit\n' >"$report_path"
+  case "$report_mode" in
+    truncate)
+      printf 'status\trepository\tpath\tcategory\tcommit\n' >"$report_path"
+      ;;
+    append)
+      if [[ ! -s "$report_path" ]]; then
+        printf 'status\trepository\tpath\tcategory\tcommit\n' >"$report_path"
+      fi
+      ;;
+    *)
+      echo "::error title=Invalid submodule report mode::SUBMODULE_REPORT_MODE must be truncate or append"
+      exit 64
+      ;;
+  esac
 fi
 
 record_result() {
@@ -94,7 +108,7 @@ for requested in "$@"; do
     fi
   done
   if [[ "$matched" != true ]]; then
-    echo "::error title=Unknown submodule path::$requested is not a declared submodule or submodule prefix"
+    echo "::error title=Unknown submodule path::${requested} is not a declared submodule or submodule prefix"
     exit 64
   fi
 done
@@ -134,7 +148,7 @@ for path in "${selected_paths[@]}"; do
     category="clone-failed"
     if grep -Eqi 'repository not found|not found' "$log_file"; then
       category="repository-missing-or-inaccessible"
-    elif grep -Eqi 'authentication failed|could not read Username|terminal prompts disabled' "$log_file"; then
+    elif grep -Eqi 'authentication failed|invalid username or token|bad credentials|could not read Username|terminal prompts disabled' "$log_file"; then
       category="authentication-failed"
     elif grep -Eqi 'permission denied|access denied|403|write access.*not granted' "$log_file"; then
       category="permission-denied"
