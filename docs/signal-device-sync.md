@@ -1,6 +1,6 @@
-# Signal-family multi-device sync backend
+# Signal Protocol multi-device sync backend
 
-Tracking issue: [DEN-150](https://linear.app/denman/issue/DEN-150/3fa-implement-signal-style-encrypted-multi-device-account-sync)
+Tracking issue: [DEN-150](https://linear.app/denman/issue/DEN-150/3fa-implement-signal-protocol-encrypted-multi-device-account-sync)
 
 ## Security boundary
 
@@ -14,7 +14,7 @@ The backend is an authenticated but cryptographically untrusted relay. It stores
 
 It never stores or receives private key material, Double Ratchet state, vault keys, OTP seeds, decrypted vault records, recovery secrets, or plaintext device-control messages.
 
-RSA is not part of this design. Flutter devices use PQXDH-compatible asynchronous session setup, Double Ratchet sessions, and Sesame-style multi-device/session management through a reviewed Signal protocol implementation.
+RSA is not part of this design. Flutter devices use the **Signal Protocol**. PQXDH/X3DH, Double Ratchet, and Sesame are the relevant key-agreement, ratcheting, and asynchronous multi-device/session-management components.
 
 ## Schema
 
