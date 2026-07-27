@@ -4,17 +4,22 @@ on:
   push:
     branches:
       - agent/den-408-web-home-static-contracts
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-den-408-web-home-contract-fix.yml'
 
 permissions:
   contents: write
 
 concurrency:
-  group: apply-den-408-web-home-contract-fix
+  group: apply-den-408-web-home-contract-fix-${{ github.event_name }}
   cancel-in-progress: false
 
 jobs:
   patch-and-verify:
-    if: github.actor == 'ORESoftware'
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
