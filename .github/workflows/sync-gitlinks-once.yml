@@ -1,0 +1,51 @@
+name: sync-final-main-gitlinks-once
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'agent/sync-final-main-gitlinks' &&
+      github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          submodules: recursive
+      - name: Check out reviewed child main commits
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          checkout_gitlink() {
+            local path=$1
+            local sha=$2
+            git -C "$path" fetch --no-tags origin main
+            git -C "$path" checkout --detach "$sha"
+            test "$(git -C "$path" rev-parse HEAD)" = "$sha"
+          }
+
+          checkout_gitlink apps/cliptown-interfaces e4e957b5372dc363fe6a52559c8959f0de781efb
+          checkout_gitlink apps/cliptown-clients ed8611e0408466bc74bf57510d6acc601a38373a
+          checkout_gitlink apps/cliptown-rust-backend.rs 1bd76994a150ef1aa1c83c0cddfb23c275088b14
+          checkout_gitlink apps/cliptown-cli ed05e61b9b2d4ac326f54f8e43e7e9b0a4bbe8fe
+          checkout_gitlink apps/cliptown-flutter 3501eb09d14d3b8a767fd974939c7eca99a83ebf
+          checkout_gitlink apps/cliptown-extension e8797fced0b7b2071125c8483fe082c0b4010057
+          checkout_gitlink apps/cliptown-infra 70f6ab51a9517c013fd10314d3e7ad07128565d8
+
+          rm .github/workflows/sync-gitlinks-once.yml
+          git add apps release/source-manifest.json .github/workflows/sync-gitlinks-once.yml
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-41 sync child gitlinks to reviewed main commits'
+          git push origin HEAD:${GITHUB_HEAD_REF}
