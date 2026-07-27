@@ -34,10 +34,7 @@ pub fn fingerprint_target(target: &PushTarget) -> TargetFingerprint {
     }
 
     let digest = hex::encode(hasher.finalize());
-    TargetFingerprint(format!(
-        "{provider}:{}",
-        &digest[..FINGERPRINT_HEX_LENGTH]
-    ))
+    TargetFingerprint(format!("{provider}:{}", &digest[..FINGERPRINT_HEX_LENGTH]))
 }
 
 /// Truncate text on a UTF-8 boundary to keep provider errors bounded and safe.

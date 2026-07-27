@@ -67,7 +67,10 @@ mod tests {
     fn parses_http_dates() {
         let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
         let value = httpdate::fmt_http_date(now + Duration::from_secs(45));
-        assert_eq!(parse_retry_after(&value, now), Some(Duration::from_secs(45)));
+        assert_eq!(
+            parse_retry_after(&value, now),
+            Some(Duration::from_secs(45))
+        );
     }
 
     #[test]

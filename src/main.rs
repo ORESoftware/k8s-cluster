@@ -1,15 +1,16 @@
 use std::{env, net::SocketAddr};
 
-use axum::{routing::get, Json, Router};
-use serde_json::{json, Value};
+use axum::{Json, Router, routing::get};
+use serde_json::{Value, json};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("push_notification_server=info,tower_http=info")),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                EnvFilter::new("push_notification_server=info,tower_http=info")
+            }),
         )
         .init();
 
@@ -63,7 +64,7 @@ async fn shutdown_signal() {
 
     #[cfg(unix)]
     let terminate = async {
-        use tokio::signal::unix::{signal, SignalKind};
+        use tokio::signal::unix::{SignalKind, signal};
         if let Ok(mut stream) = signal(SignalKind::terminate()) {
             let _ = stream.recv().await;
         }
