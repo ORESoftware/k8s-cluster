@@ -1,13 +1,43 @@
 ---
-// Reusable App Store + Google Play badge row (used by Hero and Download).
-// `align` controls left vs. center alignment. Until each listing URL is injected
-// at build time, render an honest non-clickable "Coming to" badge.
+// Reusable App Store + Google Play badge row. The final download section may
+// also render desktop installers. Every URL is build-time configuration so the
+// static site never guesses a store listing or serves an unverified artifact.
 interface Props {
   align?: "start" | "center";
+  desktop?: boolean;
 }
-const { align = "start" } = Astro.props;
+
+const { align = "start", desktop = false } = Astro.props;
 const APPLE_URL = import.meta.env.PUBLIC_APP_STORE_URL?.trim();
 const GOOGLE_URL = import.meta.env.PUBLIC_PLAY_STORE_URL?.trim();
+const DOWNLOAD_BASE_URL = import.meta.env.PUBLIC_DOWNLOAD_BASE_URL?.trim().replace(/\/+$/, "");
+
+const desktopUrl = (explicitValue: string | undefined, relativePath: string) => {
+  const explicit = explicitValue?.trim();
+  if (explicit) return explicit;
+  return DOWNLOAD_BASE_URL ? `${DOWNLOAD_BASE_URL}/${relativePath}` : undefined;
+};
+
+const desktopDownloads = [
+  {
+    label: "Windows",
+    detail: "64-bit installer",
+    icon: "⊞",
+    url: desktopUrl(import.meta.env.PUBLIC_DOWNLOAD_WINDOWS_URL, "latest/sonus-auris-windows-x64.exe"),
+  },
+  {
+    label: "macOS",
+    detail: "Universal DMG",
+    icon: "⌘",
+    url: desktopUrl(import.meta.env.PUBLIC_DOWNLOAD_MACOS_URL, "latest/sonus-auris-macos-universal.dmg"),
+  },
+  {
+    label: "Linux",
+    detail: "x86-64 Debian package",
+    icon: "🐧",
+    url: desktopUrl(import.meta.env.PUBLIC_DOWNLOAD_LINUX_URL, "latest/sonus-auris-linux-x86_64.deb"),
+  },
+];
 ---
 
 <div class={`store-row ${align}`}>
@@ -53,16 +83,38 @@ const GOOGLE_URL = import.meta.env.PUBLIC_PLAY_STORE_URL?.trim();
   )}
 </div>
 
+{desktop && (
+  <div class={`desktop-downloads ${align}`} aria-label="Desktop downloads">
+    <p>Desktop installers</p>
+    <div class="desktop-row">
+      {desktopDownloads.map((download) => download.url ? (
+        <a class="desktop-badge" href={download.url} rel="noopener noreferrer">
+          <span class="platform-icon" aria-hidden="true">{download.icon}</span>
+          <span><strong>{download.label}</strong><small>{download.detail}</small></span>
+        </a>
+      ) : (
+        <span class="desktop-badge is-coming" aria-label={`${download.label} installer coming soon`}>
+          <span class="platform-icon" aria-hidden="true">{download.icon}</span>
+          <span><strong>{download.label}</strong><small>Installer coming soon</small></span>
+        </span>
+      ))}
+    </div>
+  </div>
+)}
+
 <style>
-  .store-row {
+  .store-row,
+  .desktop-row {
     display: flex;
     flex-wrap: wrap;
     gap: 14px;
   }
-  .store-row.center {
+  .store-row.center,
+  .desktop-downloads.center .desktop-row {
     justify-content: center;
   }
-  .store-badge {
+  .store-badge,
+  .desktop-badge {
     display: inline-flex;
     align-items: center;
     gap: 11px;
@@ -73,32 +125,63 @@ const GOOGLE_URL = import.meta.env.PUBLIC_PLAY_STORE_URL?.trim();
     box-shadow: var(--shadow-sm);
     transition: transform 0.15s ease, box-shadow 0.15s ease;
   }
-  .store-badge:hover {
+  .store-badge:hover,
+  .desktop-badge:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-md);
   }
-  .store-badge.is-coming {
+  .store-badge.is-coming,
+  .desktop-badge.is-coming {
     cursor: default;
-    opacity: 0.88;
+    opacity: 0.72;
   }
-  .store-badge.is-coming:hover {
+  .store-badge.is-coming:hover,
+  .desktop-badge.is-coming:hover {
     transform: none;
     box-shadow: var(--shadow-sm);
   }
-  .store-badge span {
+  .store-badge span,
+  .desktop-badge > span:last-child {
     display: flex;
     flex-direction: column;
     line-height: 1.1;
     text-align: left;
   }
-  .store-badge small {
+  .store-badge small,
+  .desktop-badge small {
     font-size: 0.62rem;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
     opacity: 0.8;
   }
-  .store-badge strong {
+  .store-badge strong,
+  .desktop-badge strong {
     font-size: 1.05rem;
     font-weight: 800;
+  }
+  .desktop-downloads {
+    width: 100%;
+    margin-top: 24px;
+  }
+  .desktop-downloads > p {
+    margin: 0 0 10px;
+    color: rgba(255, 253, 248, 0.8);
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .desktop-downloads.center > p {
+    text-align: center;
+  }
+  .desktop-badge {
+    min-width: 175px;
+    background: rgba(255, 253, 248, 0.12);
+    border: 1px solid rgba(255, 253, 248, 0.22);
+  }
+  .platform-icon {
+    width: 28px;
+    text-align: center;
+    font-size: 1.4rem;
   }
 </style>
