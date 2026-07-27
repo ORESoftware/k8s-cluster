@@ -6,7 +6,7 @@ import {
   assertSensitiveFieldWriteAllowed,
   classifySensitiveField,
   decideSensitiveFieldWrite,
-} from '../src/sensitive-field-policy.js';
+} from '../src/sensitive-field-policy.ts';
 
 test('government identifiers are always blocked', () => {
   for (const field of [
