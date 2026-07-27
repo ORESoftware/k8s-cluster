@@ -87,6 +87,7 @@ jobs:
             general/fsharp-ws-server-config.test.ts
             general/gateway-service-directory.test.ts
             general/gcs-chat-config.test.ts
+            general/github-app-submodule-token.test.ts
             general/gleam-lambda-runner-config.test.ts
             general/gleam-mcp-server-config.test.ts
             general/gleam-mcp-server-observability.test.ts
@@ -129,10 +130,13 @@ jobs:
           K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
         run: test -n "$K8S_LIBS_DEPLOY_KEY"
 
-      - name: Require cross-organization submodule read token
+      - name: Require cross-organization read-only GitHub App credentials
         env:
-          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
-        run: test -n "$K8S_SUBMODULE_TOKEN"
+          K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+        run: |
+          test -n "$K8S_SUBMODULE_APP_ID"
+          test -n "$K8S_SUBMODULE_APP_PRIVATE_KEY"
 
       - name: Checkout
         uses: actions/checkout@v7
@@ -144,14 +148,15 @@ jobs:
           SUBMODULE_AUTH_MODE: ssh
         run: bash scripts/ci/init-submodules-with-report.sh remote/libs
 
-      - name: Initialize pinned backend repositories
+      - name: Initialize pinned backend repositories with owner-scoped installation tokens
         id: backend-submodules
         continue-on-error: true
         env:
-          SUBMODULE_AUTH_MODE: https-token
           SUBMODULE_REPORT_PATH: ${{ runner.temp }}/backend-submodule-access.tsv
-          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
-        run: bash scripts/ci/init-submodules-with-report.sh remote/deployments
+          K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+          K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+          GITHUB_API_VERSION: '2026-03-10'
+        run: bash scripts/ci/init-submodules-with-github-app.sh remote/deployments
 
       - name: Upload sanitized backend submodule access report
         if: always()
