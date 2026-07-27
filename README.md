@@ -20,11 +20,11 @@ The repository contains:
 - an FCM HTTP v1 adapter with server-side service-account OAuth, single-flight access-token caching, data-string coercion, mockable endpoints, and normalized result classes
 - an APNs HTTP/2 adapter with `.p8` token authentication, single-flight ES256 provider-token caching, strict sandbox/production isolation, alert/background payloads, mockable endpoints, and normalized Apple error reasons
 - an Expo adapter with optional project bearer authentication, batched push tickets, HTTP-200 ticket-error parsing, receipt follow-up, mockable endpoints, and normalized receipt outcomes
-- a Web Push/VAPID adapter with encrypted payloads, redirect blocking, strict push-service allowlisting, private-address rejection, optional DNS-vetted open mode, endpoint redaction, and normalized outcomes
+- a Web Push adapter with direct RFC 8291 ECE encryption, ES256 VAPID signing, strict SSRF controls, redirect blocking, endpoint redaction, and normalized push-service outcomes
 - centralized validation, target fingerprinting/redaction, bounded UTF-8 errors, and retry classification
 - CI, dependency auditing, secret scanning, and a non-root container build
 
-Authenticated HTTP/NATS transport ingestion is implemented in the next DEN-261 child issue.
+Authenticated HTTP and NATS ingestion is implemented in DEN-329.
 
 ## Run
 
@@ -101,21 +101,22 @@ Detailed ticket, receipt, retry, and test behavior is documented in [`docs/expo.
 
 ## Web Push configuration
 
-Create `WebPushConfig` using a secret-backed VAPID EC private key, a `mailto:` or HTTPS subject, and a `WebPushHostPolicy`. The default policy permits only known browser push-service hosts and real subdomains.
+Create `WebPushConfig` from a P-256 VAPID private key, VAPID subject, and host policy, then construct `WebPushProvider`.
 
 The adapter:
 
-- encrypts JSON payloads using `aes128gcm`
-- signs requests using VAPID
-- requires HTTPS on port 443 without embedded credentials or fragments
-- disables HTTP redirects
-- rejects localhost, private, link-local, CGNAT, documentation, benchmarking, reserved, multicast, and mapped internal addresses
-- offers an explicitly weaker any-public-host mode with preflight DNS vetting
-- maps TTL, urgency, and a hashed 32-character collapse topic
-- classifies expired subscriptions, invalid payloads, throttling, transient failures, and permanent VAPID/provider rejection
-- redacts endpoint paths and query strings
+- encrypts payloads directly with Mozilla ECE using `aes128gcm`
+- signs VAPID tokens with ES256 and derives the public key from the configured P-256 private key
+- avoids an unused RSA dependency path with an unresolved security advisory
+- defaults to known browser push-service hosts
+- requires HTTPS port 443 without embedded credentials or fragments
+- disables redirects and rejects internal, private, loopback, link-local, CGNAT, documentation, benchmarking, reserved, multicast, unique-local, site-local, and mapped internal addresses
+- offers a weaker opt-in any-public-host mode with DNS vetting and documented rebinding limitations
+- validates decoded subscription key lengths
+- maps TTL, urgency, and hashed collapse topics
+- redacts endpoint paths and subscription key material
 
-Detailed SSRF controls, residual DNS-rebinding risk, payload behavior, and tests are documented in [`docs/web-push.md`](docs/web-push.md).
+Detailed cryptographic, SSRF, retry, and test behavior is documented in [`docs/web-push.md`](docs/web-push.md).
 
 ## Contracts
 
@@ -135,4 +136,4 @@ cargo test --locked --all-features
 
 Linear project: `github.com/ORESoftware/push-notification-server.rs`
 
-DEN-324 established the contracts and safety boundary. DEN-325 through DEN-328 implement FCM, APNs, Expo, and Web Push. DEN-329 adds versioned authenticated HTTP/NATS ingestion.
+DEN-324 established the contracts and safety boundary. DEN-325 through DEN-328 implement all four provider adapters. DEN-329 adds authenticated HTTP and NATS ingestion.
