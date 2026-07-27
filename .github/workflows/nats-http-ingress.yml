@@ -22,7 +22,7 @@ concurrency:
 jobs:
   rust:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -40,10 +40,11 @@ jobs:
       - name: Run unit tests
         working-directory: remote/nats-bridge
         run: cargo test --locked --bin nats_http_ingress
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked --version 0.21.2
       - name: Audit dependency advisories
-        uses: rustsec/audit-check@b31ae87eb41758f88c3b5f7b7f66c337eed48a77 # v2.0.0
-        with:
-          working-directory: remote/nats-bridge
+        working-directory: remote/nats-bridge
+        run: cargo audit
 
   contracts:
     runs-on: ubuntu-latest
