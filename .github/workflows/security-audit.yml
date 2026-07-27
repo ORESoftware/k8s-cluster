@@ -135,6 +135,12 @@ jobs:
             user_id uuid not null default auth.uid(),
             kind text not null
           );
+          create table public.client_telemetry (
+            id uuid primary key,
+            user_id uuid not null default auth.uid(),
+            level text not null,
+            event text not null
+          );
           create table public.user_consents (
             id uuid primary key,
             user_id uuid not null default auth.uid(),
@@ -145,6 +151,7 @@ jobs:
             settings jsonb not null default '{}'::jsonb
           );
           alter table public.acoustic_events enable row level security;
+          alter table public.client_telemetry enable row level security;
           alter table public.user_consents enable row level security;
           alter table public.user_settings enable row level security;
 
@@ -152,6 +159,8 @@ jobs:
           create policy acoustic_insert on public.acoustic_events for insert to authenticated with check (auth.uid() = user_id);
           create policy acoustic_update on public.acoustic_events for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
           create policy acoustic_delete on public.acoustic_events for delete to authenticated using (auth.uid() = user_id);
+          create policy telemetry_select on public.client_telemetry for select to authenticated using (auth.uid() = user_id);
+          create policy telemetry_insert on public.client_telemetry for insert to authenticated with check (auth.uid() = user_id);
           create policy consent_select on public.user_consents for select to authenticated using (auth.uid() = user_id);
           create policy consent_insert on public.user_consents for insert to authenticated with check (auth.uid() = user_id);
           create policy settings_select on public.user_settings for select to authenticated using (auth.uid() = user_id);
