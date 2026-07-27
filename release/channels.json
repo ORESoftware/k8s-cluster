@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "versioning": "semver",
+  "channels": [
+    {
+      "id": "cli-github-releases",
+      "status": "dry-run",
+      "owner_repository": "cliptown/cliptown-cli",
+      "public_url": null,
+      "required_evidence": [
+        "immutable-semver-tag",
+        "locked-release-build",
+        "sha256-checksum",
+        "sbom",
+        "provenance-attestation",
+        "platform-signing-decision"
+      ]
+    },
+    {
+      "id": "cli-homebrew",
+      "status": "blocked",
+      "owner_repository": "cliptown/homebrew-cliptown",
+      "public_url": null,
+      "required_evidence": [
+        "verified-cli-release-assets",
+        "immutable-download-url",
+        "sha256-checksum",
+        "brew-style",
+        "brew-audit"
+      ]
+    },
+    {
+      "id": "desktop-macos",
+      "status": "blocked",
+      "owner_repository": "cliptown/cliptown-flutter",
+      "public_url": null,
+      "required_evidence": [
+        "developer-id-signing",
+        "hardened-runtime",
+        "notarization",
+        "stapling-verification",
+        "permission-disclosure"
+      ]
+    },
+    {
+      "id": "desktop-windows",
+      "status": "blocked",
+      "owner_repository": "cliptown/cliptown-flutter",
+      "public_url": null,
+      "required_evidence": [
+        "authenticode-signing",
+        "installer-policy",
+        "signature-verification",
+        "permission-disclosure"
+      ]
+    },
+    {
+      "id": "desktop-linux",
+      "status": "blocked",
+      "owner_repository": "cliptown/cliptown-flutter",
+      "public_url": null,
+      "required_evidence": [
+        "package-format-decision",
+        "reproducible-build",
+        "sha256-checksum",
+        "sbom"
+      ]
+    },
+    {
+      "id": "mobile-ios",
+      "status": "blocked",
+      "owner_repository": "cliptown/cliptown-flutter",
+      "public_url": null,
+      "required_evidence": [
+        "distribution-signing",
+        "privacy-manifest",
+        "store-metadata",
+        "review-track",
+        "permission-disclosure"
+      ]
+    },
+    {
+      "id": "mobile-android",
+      "status": "blocked",
+      "owner_repository": "cliptown/cliptown-flutter",
+      "public_url": null,
+      "required_evidence": [
+        "app-signing-policy",
+        "data-safety-metadata",
+        "store-metadata",
+        "internal-test-track",
+        "permission-disclosure"
+      ]
+    },
+    {
+      "id": "browser-chrome",
+      "status": "blocked",
+      "owner_repository": "cliptown/cliptown-extension",
+      "public_url": null,
+      "required_evidence": [
+        "store-package",
+        "permission-disclosure",
+        "privacy-policy",
+        "review-artifacts",
+        "encrypted-persistence-implementation"
+      ]
+    }
+  ],
+  "support": {
+    "status": "unverified",
+    "public_url": null,
+    "environment_variable": "PUBLIC_PATREON_URL"
+  }
+}
