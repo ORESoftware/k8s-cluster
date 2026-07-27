@@ -4,7 +4,7 @@ node = "22"
 java = "temurin-17"
 python = "3.12"
 dart = "3.12.2"
-helm = "3.14.0"
+helm = "3.17.3"
 
 [env]
 CLIPTOWN_ANDROID_API = "35"
