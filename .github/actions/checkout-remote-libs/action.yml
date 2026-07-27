@@ -1,0 +1,66 @@
+name: Checkout pinned remote libs
+description: Check out ORESoftware/k8s-libs-and-shared-defs at the exact remote/libs gitlink with the narrow deploy key.
+
+inputs:
+  ssh-key:
+    description: Read-only deploy key dedicated to ORESoftware/k8s-libs-and-shared-defs.
+    required: true
+
+outputs:
+  sha:
+    description: Exact remote/libs gitlink commit checked out.
+    value: ${{ steps.pin.outputs.sha }}
+
+runs:
+  using: composite
+  steps:
+    - name: Require the narrow deploy key
+      shell: bash
+      env:
+        REMOTE_LIBS_SSH_KEY: ${{ inputs.ssh-key }}
+      run: |
+        set -euo pipefail
+        if [[ -z "$REMOTE_LIBS_SSH_KEY" ]]; then
+          echo 'K8S_LIBS_DEPLOY_KEY is required for the private remote/libs checkout.' >&2
+          exit 2
+        fi
+
+    - name: Resolve the superproject gitlink
+      id: pin
+      shell: bash
+      run: |
+        set -euo pipefail
+        pin="$(git ls-files --stage -- remote/libs | awk '$1 == 160000 { print $2; exit }')"
+        if [[ ! "$pin" =~ ^[0-9a-f]{40}$ ]]; then
+          echo 'remote/libs does not resolve to exactly one mode-160000 gitlink.' >&2
+          exit 1
+        fi
+        echo "sha=$pin" >>"$GITHUB_OUTPUT"
+        echo "Resolved remote/libs gitlink ${pin:0:12}."
+
+    - name: Check out the private library at the exact gitlink
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: ORESoftware/k8s-libs-and-shared-defs
+        ref: ${{ steps.pin.outputs.sha }}
+        path: remote/libs
+        ssh-key: ${{ inputs.ssh-key }}
+        persist-credentials: false
+        fetch-depth: 1
+
+    - name: Verify the nested checkout is pinned
+      shell: bash
+      env:
+        EXPECTED_REMOTE_LIBS_SHA: ${{ steps.pin.outputs.sha }}
+      run: |
+        set -euo pipefail
+        actual="$(git -C remote/libs rev-parse HEAD)"
+        if [[ "$actual" != "$EXPECTED_REMOTE_LIBS_SHA" ]]; then
+          echo 'remote/libs checkout does not match the superproject gitlink.' >&2
+          exit 1
+        fi
+        if [[ -n "$(git -C remote/libs status --porcelain)" ]]; then
+          echo 'remote/libs checkout is unexpectedly dirty.' >&2
+          exit 1
+        fi
+        echo "Verified remote/libs at ${actual:0:12}."

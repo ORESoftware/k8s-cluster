@@ -26,7 +26,12 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store,sharing=locked \
     pnpm install --frozen-lockfile
 
 COPY remote/deployments/web-scraper-service/src ./src
+COPY remote/deployments/web-scraper-service/tests ./tests
 RUN pnpm run build \
+ && node --import tsx --test \
+      tests/sensitive-field-policy.test.ts \
+      tests/sensitive-field-wiring.test.ts \
+      tests/sensitive-field-policy.integration-plan.test.ts \
  && pnpm prune --prod
 
 FROM mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-noble AS runtime
