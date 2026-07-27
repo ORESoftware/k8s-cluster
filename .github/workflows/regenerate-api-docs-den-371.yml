@@ -107,7 +107,6 @@ jobs:
             done
 
             pnpm --dir remote/tests run check:api-docs
-            pnpm --dir remote/tests run check:observability-coverage
           } 2>&1 | tee "${RUNNER_TEMP}/api-doc-generation.log"
       - name: Upload failure-only generator diagnostics
         if: failure() && steps.generate.outcome == 'failure'
@@ -152,3 +151,5 @@ jobs:
           git commit -m 'Regenerate deterministic API documentation'
           git remote set-url origin https://github.com/ORESoftware/k8s-cluster.git
           git push origin HEAD:agent/den-371-regenerate-api-docs
+      - name: Verify observability coverage separately
+        run: pnpm --dir remote/tests run check:observability-coverage
