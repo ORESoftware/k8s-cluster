@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# jq programs are intentionally single-quoted so Bash never expands jq variables.
+# shellcheck disable=SC2016
+
 GH_BIN="${GH_BIN:-gh}"
 JQ_BIN="${JQ_BIN:-jq}"
 output_dir="nix-fleet-audit"
@@ -327,7 +330,7 @@ for owner in "${owners[@]}"; do
 			    supply_chain_workflow: $has_supply_chain_workflow
 			  }
 			}' >>"$jsonl"
-	done < <("$JQ_BIN" -c '.[] | sort_by(.nameWithOwner)? // .' "$repositories_json" 2>/dev/null || "$JQ_BIN" -c '.[]' "$repositories_json")
+	done < <("$JQ_BIN" -c 'sort_by(.nameWithOwner)[]' "$repositories_json")
 done
 
 "$JQ_BIN" -s 'sort_by(.repository)' "$jsonl" >"$output_dir/report.json"
