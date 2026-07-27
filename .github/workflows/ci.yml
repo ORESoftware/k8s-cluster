@@ -109,3 +109,48 @@ jobs:
           persist-credentials: false
           show-progress: false
       - run: cargo fmt --all --check
+
+  container-flags:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          show-progress: false
+      - name: Build final runtime image
+        run: docker build -f deploy/Dockerfile -t threefa-backend:flags-test .
+      - name: Verify self-contained parser and packaged contract
+        run: |
+          docker run --rm threefa-backend:flags-test sh -lc '
+            test -r /app/.cli-flags.toml
+            if ldd /usr/local/bin/threefa-sync-server 2>/dev/null | grep -qi flags2env; then
+              echo "runtime binary unexpectedly depends on a flags2env shared library" >&2
+              exit 1
+            fi
+          '
+      - name: Reject secret-bearing flags in the final image
+        run: |
+          set +e
+          output=$(docker run --rm threefa-backend:flags-test \
+            /usr/local/bin/threefa-sync-server \
+            --database-url=postgres://must-remain-environment-only 2>&1)
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$status" -eq 2
+          grep -q 'unknown command-line option' <<<"$output"
+      - name: Accept declared operational flags before typed config
+        run: |
+          set +e
+          output=$(docker run --rm threefa-backend:flags-test \
+            /usr/local/bin/threefa-sync-server \
+            --bind-addr=127.0.0.1:18080 2>&1)
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          test "$status" -eq 1
+          if grep -q 'invalid command-line configuration' <<<"$output"; then
+            echo 'declared bind flag was rejected before typed config' >&2
+            exit 1
+          fi
