@@ -10,6 +10,8 @@ pub enum ApiError {
     Unauthorized,
     #[error("bad request")]
     BadRequest,
+    #[error("conflict")]
+    Conflict,
     #[error("too many requests")]
     TooManyRequests,
     // Returned when human-identity enrollment is disabled because shared-auth
@@ -86,6 +88,7 @@ impl IntoResponse for ApiError {
         let code = match self {
             ApiError::Unauthorized => StatusCode::UNAUTHORIZED,
             ApiError::BadRequest => StatusCode::BAD_REQUEST,
+            ApiError::Conflict => StatusCode::CONFLICT,
             ApiError::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
             ApiError::NotImplemented => StatusCode::NOT_IMPLEMENTED,
             ApiError::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
@@ -105,6 +108,7 @@ mod tests {
         let cases = [
             (ApiError::Unauthorized, StatusCode::UNAUTHORIZED),
             (ApiError::BadRequest, StatusCode::BAD_REQUEST),
+            (ApiError::Conflict, StatusCode::CONFLICT),
             (ApiError::TooManyRequests, StatusCode::TOO_MANY_REQUESTS),
             (ApiError::NotImplemented, StatusCode::NOT_IMPLEMENTED),
             (ApiError::Unavailable, StatusCode::SERVICE_UNAVAILABLE),
