@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 /// Ask a device to replenish before its public one-time-prekey pool reaches zero.
 pub const LOW_PREKEY_THRESHOLD: i64 = 20;
+const _: () = assert!(LOW_PREKEY_THRESHOLD > 0 && LOW_PREKEY_THRESHOLD < 1_000);
 
 const CLAIM_BUNDLE_SQL: &str = r#"
 WITH bundle AS (
@@ -231,11 +232,5 @@ mod tests {
     fn revision_read_requires_an_active_authenticated_device() {
         assert!(DEVICE_REVISION_SQL.contains("requester.revoked = false"));
         assert!(DEVICE_REVISION_SQL.contains("requester.lifecycle_state = 'active'"));
-    }
-
-    #[test]
-    fn low_prekey_threshold_is_positive_and_bounded() {
-        assert!(LOW_PREKEY_THRESHOLD > 0);
-        assert!(LOW_PREKEY_THRESHOLD < 1_000);
     }
 }
