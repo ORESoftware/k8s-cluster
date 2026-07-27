@@ -10,12 +10,20 @@ cd "$repo_root"
 
 cache_root="${NIX_AGENT_CACHE_ROOT:-$repo_root/.cache/nix-agent}"
 rust_toolchain="1.88.0"
+cargo_audit_version="0.22.2"
 export CARGO_HOME="${CARGO_HOME:-$cache_root/cargo-home}"
+export CARGO_INSTALL_ROOT="${CARGO_INSTALL_ROOT:-$cache_root/cargo-tools}"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$cache_root/target}"
 export RUSTUP_HOME="${RUSTUP_HOME:-$cache_root/rustup}"
 export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-$rust_toolchain}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$cache_root/xdg}"
-mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR" "$RUSTUP_HOME" "$XDG_CACHE_HOME"
+export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
+mkdir -p \
+  "$CARGO_HOME" \
+  "$CARGO_INSTALL_ROOT" \
+  "$CARGO_TARGET_DIR" \
+  "$RUSTUP_HOME" \
+  "$XDG_CACHE_HOME"
 
 ensure_rust_toolchain() {
   if ! rustup toolchain list | grep -Eq '^1\.88\.0(-|[[:space:]])'; then
@@ -24,10 +32,21 @@ ensure_rust_toolchain() {
   rustup component add --toolchain "$rust_toolchain" clippy rustfmt
 }
 
+ensure_cargo_audit() {
+  local installed_version
+  installed_version="$(cargo audit --version 2>/dev/null || true)"
+  if [[ "$installed_version" != "cargo-audit $cargo_audit_version" ]]; then
+    cargo install cargo-audit \
+      --version "$cargo_audit_version" \
+      --locked \
+      --root "$CARGO_INSTALL_ROOT" >&2
+  fi
+}
+
 run_stage() {
   local stage="$1"
 
-  printf '\n==> agent-check stage: %s\n' "$stage"
+  printf '\n==> agent-check stage: %s\n' "$stage" >&2
   ensure_rust_toolchain
   case "$stage" in
     preflight)
@@ -53,7 +72,12 @@ run_stage() {
       cargo test --locked --all-features
       ;;
     audit)
+      ensure_cargo_audit
       cargo audit
+      ;;
+    audit-json)
+      ensure_cargo_audit
+      cargo audit --json
       ;;
     *)
       printf 'unknown agent-check stage: %s\n' "$stage" >&2
@@ -68,11 +92,11 @@ case "${1:-all}" in
       run_stage "$stage"
     done
     ;;
-  preflight | fmt | check | clippy | test | audit)
+  preflight | fmt | check | clippy | test | audit | audit-json)
     run_stage "$1"
     ;;
   *)
-    printf 'usage: %s [all|preflight|fmt|check|clippy|test|audit]\n' "$0" >&2
+    printf 'usage: %s [all|preflight|fmt|check|clippy|test|audit|audit-json]\n' "$0" >&2
     exit 64
     ;;
 esac
