@@ -19,7 +19,7 @@ a standalone VM, Apps Script, or a third-party worker platform.
 
 ```http
 POST /v1/queues/vapi-task HTTP/1.1
-Authorization: Bearer <client-scoped random token>
+Authorization: Bearer <client-scoped-token>
 X-Bridge-Client: external-vapi
 Idempotency-Key: 7bf5d73d-74e4-46f3-b652-7a024dbeb0be
 Content-Type: application/json
@@ -53,16 +53,18 @@ Client configuration is secret JSON mounted at
 ```json
 {
   "external-vapi": {
-    "token": "generate-at-least-32-random-bytes",
+    "token": "<redacted>",
     "routes": ["vapi-task"]
   }
 }
 ```
 
-Tokens must be unique. Rotate one client independently by changing its token,
-waiting for External Secrets and the Deployment rollout, updating the producer,
-and removing the old credential. Never paste client JSON or token values into
-Git, Linear, logs, shell history, support tickets, or chat.
+The redacted value above is not valid configuration. Generate at least 32 random
+bytes directly in the secret manager and never commit the result. Tokens must be
+unique. Rotate one client independently by changing its token, waiting for
+External Secrets and the Deployment rollout, updating the producer, and removing
+the old credential. Never paste client JSON or token values into Git, Linear,
+logs, shell history, support tickets, or chat.
 
 ## Durability and idempotency
 
