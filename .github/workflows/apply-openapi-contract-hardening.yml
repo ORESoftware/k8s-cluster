@@ -1,0 +1,52 @@
+name: apply OpenAPI contract hardening
+
+on:
+  push:
+    branches:
+      - agent/openapi-contract-hardening
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-openapi-contract-hardening
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Apply source patch
+        run: node scripts/api-contract/apply-openapi-hardening.mjs
+
+      - name: Regenerate available service contracts
+        run: node remote/tools/generate-api-docs.mjs
+
+      - name: Validate generated OpenAPI contracts
+        run: node remote/tools/validate-openapi-contracts.mjs
+
+      - name: Verify scripts and patch cleanliness
+        run: |
+          node --check scripts/api-contract/apply-openapi-hardening.mjs
+          node --check remote/tools/generate-api-docs.mjs
+          node --check remote/tools/validate-openapi-contracts.mjs
+          git diff --check
+
+      - name: Commit generated migration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No migration changes to commit"
+            exit 0
+          fi
+          git commit -m "Harden fleet API docs as OpenAPI 3.1 [api-contract-generated]"
+          git push origin HEAD:agent/openapi-contract-hardening
