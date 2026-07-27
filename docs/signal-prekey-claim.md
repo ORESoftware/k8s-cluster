@@ -20,7 +20,9 @@ The PostgreSQL statement:
 - reports the current account device-list revision;
 - reports `low_prekeys` when the remaining public pool is below the replenishment threshold.
 
-A missing/expired bundle, self-target, cross-account target, suspended device, or revoked device fails closed without revealing whether another account owns the identifier.
+A claimed one-time public prekey is never returned to a second requester. Retrying the HTTP request therefore claims a different available prekey or returns the signed bundle without one-time material when the pool is exhausted; callers must treat the returned bundle as fresh session-setup material rather than expecting HTTP replay identity.
+
+A missing or expired bundle, self-target, cross-account target, suspended device, or revoked device fails closed without revealing whether another account owns the identifier.
 
 ### `GET /v1/signal/device-revision`
 
