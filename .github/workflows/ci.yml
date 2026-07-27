@@ -22,27 +22,58 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout superproject
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - name: Require private-submodule credential
+      - name: Validate declared submodule gitlinks
+        run: |
+          set -euo pipefail
+          fail=0
+          while read -r path; do
+            entry="$(git ls-tree HEAD -- "$path")"
+            mode="$(awk '{print $1}' <<<"$entry")"
+            type="$(awk '{print $2}' <<<"$entry")"
+            object="$(awk '{print $3}' <<<"$entry")"
+            if [[ "$mode" != 160000 || "$type" != commit || ! "$object" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::$path is not a valid pinned gitlink: $entry"
+              fail=1
+            else
+              echo "$path -> $object"
+            fi
+          done < <(git config -f .gitmodules --get-regexp '^submodule\..*\.path$' | awk '{print $2}')
+          exit "$fail"
+
+      - name: Detect private-submodule credential
+        id: private_submodules
         env:
           SUBMODULE_TOKEN: ${{ secrets.SONUS_SUBMODULE_TOKEN }}
         run: |
-          if [[ -z "$SUBMODULE_TOKEN" ]]; then
-            echo "::error::Add SONUS_SUBMODULE_TOKEN: a read-only credential with Contents access to the monorepo's private submodules. See docs/MOBILE_RELEASES.md."
-            exit 1
+          if [[ -n "$SUBMODULE_TOKEN" ]]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo "::warning::SONUS_SUBMODULE_TOKEN is not configured; cross-repository integration tests are skipped after gitlink validation."
+            {
+              echo '### Private submodule integration skipped'
+              echo
+              echo 'Configure `SONUS_SUBMODULE_TOKEN` with read-only Contents access to the private submodules. Prefer a short-lived GitHub App installation token.'
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Checkout with submodules
-        uses: actions/checkout@v7
+        if: steps.private_submodules.outputs.available == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           submodules: recursive
           # GITHUB_TOKEN is scoped to this repo and cannot read sibling private
           # repos. Prefer a GitHub App token; a minimal fine-grained PAT is the
           # interim option. Do not use a broadly-scoped personal token.
           token: ${{ secrets.SONUS_SUBMODULE_TOKEN }}
+          persist-credentials: false
 
-      - uses: actions/setup-node@v7
+      - if: steps.private_submodules.outputs.available == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: npm
@@ -51,18 +82,21 @@ jobs:
             apps/sonusauris-app-proxy/package-lock.json
 
       - name: Interfaces contract is self-consistent
+        if: steps.private_submodules.outputs.available == 'true'
         working-directory: apps/sonus-auris-interfaces
         run: |
           npm test
           node src/generate.mjs --check
 
       - name: Proxy worker tests
+        if: steps.private_submodules.outputs.available == 'true'
         working-directory: apps/sonusauris-app-proxy
         run: |
           npm ci
           npm test
 
       - name: Vendored interfaces copies match the generator output
+        if: steps.private_submodules.outputs.available == 'true'
         run: |
           set -euo pipefail
           src=apps/sonus-auris-interfaces/generated/dart/lib/sonus_auris_interfaces.dart
