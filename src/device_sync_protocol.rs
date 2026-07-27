@@ -54,11 +54,7 @@ impl SignalEnvelopeMetadata {
         if self.version != SIGNAL_ENVELOPE_VERSION {
             return Err(SignalProtocolValidationError::UnsupportedVersion);
         }
-        require_identifier(
-            &self.envelope_id,
-            "envelope_id",
-            MAX_SIGNAL_IDENTIFIER_LEN,
-        )?;
+        require_identifier(&self.envelope_id, "envelope_id", MAX_SIGNAL_IDENTIFIER_LEN)?;
         require_identifier(&self.account_id, "account_id", MAX_SIGNAL_IDENTIFIER_LEN)?;
         require_identifier(
             &self.sender_device_id,
@@ -78,10 +74,7 @@ impl SignalEnvelopeMetadata {
             .expires_at_ms
             .checked_sub(self.created_at_ms)
             .ok_or(SignalProtocolValidationError::InvalidTimestamps)?;
-        if self.created_at_ms < 0
-            || lifetime <= 0
-            || lifetime > MAX_SIGNAL_ENVELOPE_LIFETIME_MS
-        {
+        if self.created_at_ms < 0 || lifetime <= 0 || lifetime > MAX_SIGNAL_ENVELOPE_LIFETIME_MS {
             return Err(SignalProtocolValidationError::InvalidTimestamps);
         }
         Ok(())
@@ -158,7 +151,12 @@ impl SignalDevicePreKeyBundle {
         if self.registration_id == 0 {
             return Err(SignalProtocolValidationError::InvalidPreKeyIdentifier);
         }
-        require_byte_len(&self.identity_key, "identity_key", 32, MAX_SIGNAL_PUBLIC_KEY_LEN)?;
+        require_byte_len(
+            &self.identity_key,
+            "identity_key",
+            32,
+            MAX_SIGNAL_PUBLIC_KEY_LEN,
+        )?;
         require_byte_len(
             &self.signed_pre_key,
             "signed_pre_key",
@@ -308,13 +306,18 @@ mod tests {
     fn malformed_routing_and_bounds_are_rejected() {
         let mut value = metadata();
         value.recipient_device_id = value.sender_device_id.clone();
-        assert_eq!(value.validate(), Err(SignalProtocolValidationError::SelfDelivery));
+        assert_eq!(
+            value.validate(),
+            Err(SignalProtocolValidationError::SelfDelivery)
+        );
 
         let mut value = metadata();
         value.envelope_id = "bad id".into();
         assert!(matches!(
             value.validate(),
-            Err(SignalProtocolValidationError::InvalidIdentifier { field: "envelope_id" })
+            Err(SignalProtocolValidationError::InvalidIdentifier {
+                field: "envelope_id"
+            })
         ));
 
         let mut value = metadata();
