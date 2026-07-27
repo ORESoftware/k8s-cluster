@@ -36,15 +36,41 @@ jobs:
           persist-credentials: true
 
       - name: Initialize canonical shared Rust libraries
+        id: shared-libs
+        continue-on-error: true
         env:
           K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
         run: |
-          set -euo pipefail
-          test -n "$K8S_SUBMODULE_TOKEN"
-          token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
-          git config --global url."${token_url}".insteadOf "git@github.com:"
-          trap 'git config --global --unset-all url."${token_url}".insteadOf || true' EXIT
-          git submodule update --init --depth 1 -- remote/libs
+          set +e
+          log="${RUNNER_TEMP}/den-445-submodule.log"
+          {
+            set -x
+            test -n "$K8S_SUBMODULE_TOKEN"
+            token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
+            git config --global url."${token_url}".insteadOf "git@github.com:"
+            git config --global --add url."${token_url}".insteadOf "ssh://git@github.com/"
+            git submodule sync -- remote/libs
+            git submodule update --init --depth 1 -- remote/libs
+          } >"$log" 2>&1
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          sed -E 's#https://x-access-token:[^@]+@github.com/#https://x-access-token:***@github.com/#g' "$log" | tail -120
+          exit 0
+
+      - name: Upload shared-library checkout diagnostics
+        if: steps.shared-libs.outputs.status != '0'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-445-submodule-diagnostics
+          path: ${{ runner.temp }}/den-445-submodule.log
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Require canonical shared-library checkout
+        if: steps.shared-libs.outputs.status != '0'
+        run: |
+          echo 'remote/libs could not be initialized; see den-445-submodule-diagnostics.' >&2
+          exit 1
 
       - name: Reconstruct and verify the reviewed migration
         shell: bash
