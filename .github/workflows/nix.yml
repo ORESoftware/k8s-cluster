@@ -58,7 +58,7 @@ jobs:
         run: nix develop -c shellcheck .nix/agent-check.sh
 
       - name: Check agent shell formatting
-        run: nix develop -c shfmt -d .nix/agent-check.sh
+        run: nix develop -c shfmt -i 2 -d .nix/agent-check.sh
 
       - name: Check GitHub Actions
         run: nix develop -c actionlint .github/workflows/ci.yml .github/workflows/nix.yml
