@@ -20,10 +20,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.17.3
       - name: Lint monorepo-owned Markdown
         run: |
           npm install --global markdownlint-cli@0.45.0
           find . -path './apps' -prune -o -name '*.md' -print0 | xargs -0 markdownlint
+      - name: Validate toolchain scripts and contract
+        run: |
+          bash -n scripts/bootstrap.sh scripts/preflight.sh scripts/validate-workspace.sh
+          bash scripts/preflight.sh --contract-only
       - name: Validate submodule policy
         run: |
           test "$(git config --file .gitmodules --get-regexp '^submodule\..*\.branch$' | wc -l)" -eq 7
@@ -36,6 +43,8 @@ jobs:
             echo 'submodule pointers must resolve exactly' >&2
             exit 1
           fi
+      - name: Run low-risk cross-repository validation
+        run: bash scripts/validate-workspace.sh --quick
       - name: Enforce encryption architecture
         run: |
           grep -Fiq 'cryptographically random account master key' README.md
