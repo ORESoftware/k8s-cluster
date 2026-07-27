@@ -1,0 +1,121 @@
+name: Diagnose DEN-255 static contracts
+
+on:
+  push:
+    branches:
+      - agent/den-255-submodule-ci-diagnostics
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-den-255-static-contracts
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out the exact PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-255-submodule-ci-diagnostics
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          persist-credentials: false
+      - name: Initialize the pinned shared-library source
+        env:
+          SUBMODULE_AUTH_MODE: ssh
+        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - name: Install test dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Run the exact static contract set with bounded diagnostics
+        id: static-contracts
+        shell: bash
+        working-directory: remote/tests
+        run: |
+          set +e
+          static_tests=(
+            general/agent-breadcrumb-pipeline.test.ts
+            general/ai-ml-platform-config.test.ts
+            general/athleto-app-routing.test.ts
+            general/bastion-config.test.ts
+            general/browser-job-runner-config.test.ts
+            general/browser-mcp-exposure.test.ts
+            general/browser-test-server-config.test.ts
+            general/build-server-config.test.ts
+            general/canonical-cloud-gitops.test.ts
+            general/cluster-doctor-cron.test.ts
+            general/cluster-hardening.test.ts
+            general/container-pool-config.test.ts
+            general/contract-service-config.test.ts
+            general/des-simulator-config.test.ts
+            general/dev-server-container-pool-config.test.ts
+            general/fabrication-cad-source-intake.test.ts
+            general/fsharp-ws-server-config.test.ts
+            general/gateway-service-directory.test.ts
+            general/gcs-chat-config.test.ts
+            general/github-app-submodule-token.test.ts
+            general/gleam-lambda-runner-config.test.ts
+            general/gleam-mcp-server-config.test.ts
+            general/gleam-mcp-server-observability.test.ts
+            general/gleam-websocket-nats-fanout.test.ts
+            general/live-mutex-config.test.ts
+            general/local-k8s-cleanup.test.ts
+            general/mdp-optimizer-config.test.ts
+            general/nats-config.test.ts
+            general/nats-connect-resilience.test.ts
+            general/nats-shadow-handoff.test.ts
+            general/observability-config.test.ts
+            general/private-submodule-ci-contract.test.ts
+            general/redis-cache-config.test.ts
+            general/remote-libs-submodule-contract.test.ts
+            general/remote-dev-worker-git-hardening.test.ts
+            general/runtime-split-config.test.ts
+            general/selenium-server-config.test.ts
+            general/thread-fleet-exporter-go-config.test.ts
+            general/thread-operator-go-config.test.ts
+            general/trading-server-config.test.ts
+            general/vpn-config.test.ts
+            general/web-home-agents-tasks-links.test.ts
+            general/web-home-agents-threads-container-state.test.ts
+            general/web-home-lambda-highlighter.test.ts
+            general/web-home-shared-header.test.ts
+            general/web-scraper-config.test.ts
+            general/webrtc-signaling-service.test.ts
+            general/ws-loadtest-config.test.ts
+          )
+          log="${RUNNER_TEMP}/den-255-static-contracts.log"
+          summary="${RUNNER_TEMP}/den-255-static-contracts-summary.txt"
+          pnpm exec tsx --test "${static_tests[@]}" >"$log" 2>&1
+          status=$?
+          {
+            echo "exit_status=${status}"
+            echo
+            echo "Failure markers:"
+            grep -E -i 'not ok|ERR_ASSERTION|AssertionError|Error:|FAIL|expected|actual' "$log" | tail -240 || true
+            echo
+            echo "Final output:"
+            tail -500 "$log"
+          } >"$summary"
+          cat "$summary"
+          exit "$status"
+      - name: Upload sanitized static-contract diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-255-static-contract-diagnostics
+          path: |
+            ${{ runner.temp }}/den-255-static-contracts.log
+            ${{ runner.temp }}/den-255-static-contracts-summary.txt
+          retention-days: 1
+          if-no-files-found: error
