@@ -172,11 +172,14 @@ jobs:
           done
           test -x "$PROFILE_TARGET/.nix/agent-check.sh"
 
-      - name: Check generated shell
-        run: |
-          nix develop -c bash -n "$PROFILE_TARGET/.nix/agent-check.sh"
-          nix develop -c shellcheck "$PROFILE_TARGET/.nix/agent-check.sh"
-          nix develop -c shfmt -i 2 -ci -d "$PROFILE_TARGET/.nix/agent-check.sh"
+      - name: Check generated shell syntax
+        run: nix develop -c bash -n "$PROFILE_TARGET/.nix/agent-check.sh"
+
+      - name: Lint generated shell
+        run: nix develop -c shellcheck "$PROFILE_TARGET/.nix/agent-check.sh"
+
+      - name: Check generated shell formatting
+        run: nix develop -c shfmt -i 2 -ci -d "$PROFILE_TARGET/.nix/agent-check.sh"
 
       - name: Check generated Nix formatting
         run: |
