@@ -9,6 +9,7 @@ yanked = "deny"
 confidence-threshold = 0.8
 allow = [
   "Apache-2.0",
+  "BSD-3-Clause",
   "MIT",
   "Unicode-3.0",
 ]
