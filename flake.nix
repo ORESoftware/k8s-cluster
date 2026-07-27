@@ -23,7 +23,6 @@
               actionlint
               bash
               cacert
-              cargo-audit
               git
               gnugrep
               nixfmt-rfc-style
