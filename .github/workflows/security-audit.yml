@@ -48,6 +48,7 @@ jobs:
           auth = Path('src/supabase_auth.rs').read_text()
           service = Path('src/service.rs').read_text()
           database = Path('src/database.rs').read_text()
+          cargo = Path('Cargo.toml').read_text()
           required_auth = {
               'audience pin': 'set_audience',
               'issuer pin': 'set_issuer',
@@ -69,21 +70,35 @@ jobs:
               'bound SQL construction': 'from_sql_and_values',
               'SQL logging disabled': 'sqlx_logging(false)',
           }
+          required_cargo = {
+              'SeaORM defaults disabled': 'sea-orm = { version = "1.1.20", default-features = false',
+              'Postgres-only SQLx feature': '"sqlx-postgres"',
+          }
+          forbidden_cargo = {
+              'SQLx MySQL feature': '"sqlx-mysql"',
+              'SQLx all-databases feature': '"all"',
+          }
           missing = [name for name, marker in required_auth.items() if marker not in auth]
           missing += [name for name, marker in required_service.items() if marker not in service]
           missing += [name for name, marker in required_database.items() if marker not in database]
+          missing += [name for name, marker in required_cargo.items() if marker not in cargo]
+          forbidden = [name for name, marker in forbidden_cargo.items() if marker in cargo]
           if missing:
               raise SystemExit('missing security invariants: ' + ', '.join(missing))
+          if forbidden:
+              raise SystemExit('forbidden database features enabled: ' + ', '.join(forbidden))
           PY
 
       - name: Audit locked Rust dependency vulnerabilities
         run: |
           cargo install cargo-audit --locked
-          # Default cargo-audit behavior fails on vulnerabilities. Maintenance,
-          # unmaintained, yanked, and unsoundness warnings remain visible but are
-          # tracked separately so a transitive warning without an upgrade path
-          # does not silently disable the whole security workflow.
-          cargo audit
+          # RUSTSEC-2023-0071 affects private-key RSA operations. `rsa` appears in
+          # Cargo.lock only through SQLx's MySQL package; this service disables
+          # SeaORM defaults and enables only sqlx-postgres. The invariant above
+          # fails if a MySQL/all-databases feature is introduced. RustSec still
+          # has no patched rsa release, so keep this one explicit exception and
+          # fail on every other vulnerability.
+          cargo audit --ignore RUSTSEC-2023-0071
 
   postgres-policy-audit:
     runs-on: ubuntu-latest
