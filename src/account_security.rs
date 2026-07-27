@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
@@ -99,7 +100,7 @@ impl LocalUnlockPolicy {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DeviceSummary {
     pub device_id: Uuid,
@@ -119,11 +120,39 @@ pub struct DeviceSummary {
     pub revoked_at: Option<OffsetDateTime>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+impl fmt::Debug for DeviceSummary {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("DeviceSummary")
+            .field("device_id", &"<redacted>")
+            .field("device_name", &"<redacted>")
+            .field("platform", &self.platform)
+            .field("state", &self.state)
+            .field("device_list_revision", &self.device_list_revision)
+            .field("identity_key_fingerprint_base64", &"<redacted>")
+            .field("local_unlock", &self.local_unlock)
+            .field("verified", &self.verified_at.is_some())
+            .field("seen", &self.last_seen_at.is_some())
+            .field("revoked", &self.revoked_at.is_some())
+            .finish()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct UpsertRecoveryChannelRequest {
     pub kind: RecoveryChannelKind,
     pub destination: String,
+}
+
+impl fmt::Debug for UpsertRecoveryChannelRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UpsertRecoveryChannelRequest")
+            .field("kind", &self.kind)
+            .field("destination", &"<redacted>")
+            .finish()
+    }
 }
 
 impl UpsertRecoveryChannelRequest {
@@ -139,7 +168,7 @@ impl UpsertRecoveryChannelRequest {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct RecoveryChannelSummary {
     pub channel_id: Uuid,
@@ -153,7 +182,20 @@ pub struct RecoveryChannelSummary {
     pub disabled_at: Option<OffsetDateTime>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+impl fmt::Debug for RecoveryChannelSummary {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RecoveryChannelSummary")
+            .field("channel_id", &"<redacted>")
+            .field("kind", &self.kind)
+            .field("masked_destination", &"<redacted>")
+            .field("verified", &self.verified_at.is_some())
+            .field("disabled", &self.disabled_at.is_some())
+            .finish()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct RecoveryChallenge {
     pub challenge_id: Uuid,
@@ -164,11 +206,33 @@ pub struct RecoveryChallenge {
     pub remaining_attempts: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+impl fmt::Debug for RecoveryChallenge {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("RecoveryChallenge")
+            .field("challenge_id", &"<redacted>")
+            .field("channel_id", &"<redacted>")
+            .field("purpose", &self.purpose)
+            .field("remaining_attempts", &self.remaining_attempts)
+            .finish()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct VerifyRecoveryChallengeRequest {
     pub challenge_id: Uuid,
     pub code: String,
+}
+
+impl fmt::Debug for VerifyRecoveryChallengeRequest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("VerifyRecoveryChallengeRequest")
+            .field("challenge_id", &"<redacted>")
+            .field("code", &"<redacted>")
+            .finish()
+    }
 }
 
 impl VerifyRecoveryChallengeRequest {
@@ -186,16 +250,8 @@ impl VerifyRecoveryChallengeRequest {
 mod tests {
     use super::*;
 
-    #[test]
-    fn revoked_is_terminal_but_suspension_is_reversible() {
-        assert!(DeviceLifecycleState::Active.can_transition_to(DeviceLifecycleState::Suspended));
-        assert!(DeviceLifecycleState::Suspended.can_transition_to(DeviceLifecycleState::Active));
-        assert!(!DeviceLifecycleState::Revoked.can_transition_to(DeviceLifecycleState::Active));
-    }
-
-    #[test]
-    fn pin_policy_never_contains_a_pin_and_is_bounded() {
-        let policy = LocalUnlockPolicy {
+    fn local_unlock() -> LocalUnlockPolicy {
+        LocalUnlockPolicy {
             pin_enabled: true,
             biometric_enabled: true,
             passkey_enabled: true,
@@ -207,7 +263,19 @@ mod tests {
                 max_attempts: 10,
                 lockout_seconds: 60,
             }),
-        };
+        }
+    }
+
+    #[test]
+    fn revoked_is_terminal_but_suspension_is_reversible() {
+        assert!(DeviceLifecycleState::Active.can_transition_to(DeviceLifecycleState::Suspended));
+        assert!(DeviceLifecycleState::Suspended.can_transition_to(DeviceLifecycleState::Active));
+        assert!(!DeviceLifecycleState::Revoked.can_transition_to(DeviceLifecycleState::Active));
+    }
+
+    #[test]
+    fn pin_policy_never_contains_a_pin_and_is_bounded() {
+        let policy = local_unlock();
         assert_eq!(policy.validate(), Ok(()));
         let serialized = serde_json::to_string(&policy).unwrap();
         assert!(!serialized.contains("123456"));
@@ -226,5 +294,74 @@ mod tests {
             ..request
         };
         assert!(malformed.validate().is_err());
+    }
+
+    #[test]
+    fn debug_output_redacts_device_recovery_destinations_codes_and_identifiers() {
+        let device_id = Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap();
+        let device = DeviceSummary {
+            device_id,
+            device_name: "Alex private phone".into(),
+            platform: "android".into(),
+            state: DeviceLifecycleState::Active,
+            device_list_revision: 9,
+            identity_key_fingerprint_base64: "secret-fingerprint-base64".into(),
+            local_unlock: local_unlock(),
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            verified_at: Some(OffsetDateTime::UNIX_EPOCH),
+            last_seen_at: Some(OffsetDateTime::UNIX_EPOCH),
+            revoked_at: None,
+        };
+        let debug = format!("{device:?}");
+        for secret in [
+            &device_id.to_string(),
+            "Alex private phone",
+            "secret-fingerprint-base64",
+        ] {
+            assert!(!debug.contains(secret), "debug output leaked {secret}: {debug}");
+        }
+        assert!(debug.contains("device_list_revision: 9"));
+        assert!(debug.contains("<redacted>"));
+
+        let destination = UpsertRecoveryChannelRequest {
+            kind: RecoveryChannelKind::Email,
+            destination: "alex.private@example.com".into(),
+        };
+        let debug = format!("{destination:?}");
+        assert!(!debug.contains("alex.private@example.com"));
+
+        let channel_id = Uuid::parse_str("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").unwrap();
+        let channel = RecoveryChannelSummary {
+            channel_id,
+            kind: RecoveryChannelKind::Phone,
+            masked_destination: "+1******0123".into(),
+            created_at: OffsetDateTime::UNIX_EPOCH,
+            verified_at: Some(OffsetDateTime::UNIX_EPOCH),
+            disabled_at: None,
+        };
+        let debug = format!("{channel:?}");
+        assert!(!debug.contains(&channel_id.to_string()));
+        assert!(!debug.contains("+1******0123"));
+
+        let challenge_id = Uuid::parse_str("01234567-89ab-cdef-0123-456789abcdef").unwrap();
+        let challenge = RecoveryChallenge {
+            challenge_id,
+            channel_id,
+            purpose: RecoveryPurpose::AccountRecovery,
+            expires_at: OffsetDateTime::UNIX_EPOCH,
+            remaining_attempts: 3,
+        };
+        let debug = format!("{challenge:?}");
+        assert!(!debug.contains(&challenge_id.to_string()));
+        assert!(!debug.contains(&channel_id.to_string()));
+
+        let request = VerifyRecoveryChallengeRequest {
+            challenge_id,
+            code: "654321".into(),
+        };
+        let debug = format!("{request:?}");
+        assert!(!debug.contains(&challenge_id.to_string()));
+        assert!(!debug.contains("654321"));
+        assert!(debug.contains("code: \"<redacted>\""));
     }
 }
