@@ -4,16 +4,26 @@ on:
   push:
     branches:
       - agent/den-255-submodule-ci-diagnostics
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/diagnose-den-255-static-contracts.yml'
+      - '.github/workflows/repo-checks.yml'
+      - 'remote/tests/general/**'
+      - 'scripts/ci/**'
+      - 'config/ci/**'
 
 permissions:
   contents: read
 
 concurrency:
-  group: diagnose-den-255-static-contracts
+  group: diagnose-den-255-static-contracts-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
   diagnose:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
