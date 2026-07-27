@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "gitlinks_status": "applied",
+  "repositories": {
+    "apps/cliptown-interfaces": {
+      "repository": "cliptown/cliptown-interfaces",
+      "branch": "main",
+      "commit": "e4e957b5372dc363fe6a52559c8959f0de781efb"
+    },
+    "apps/cliptown-clients": {
+      "repository": "cliptown/cliptown-clients",
+      "branch": "main",
+      "commit": "ed8611e0408466bc74bf57510d6acc601a38373a"
+    },
+    "apps/cliptown-rust-backend.rs": {
+      "repository": "cliptown/cliptown-rust-backend.rs",
+      "branch": "main",
+      "commit": "1bd76994a150ef1aa1c83c0cddfb23c275088b14"
+    },
+    "apps/cliptown-cli": {
+      "repository": "cliptown/cliptown-cli",
+      "branch": "main",
+      "commit": "ed05e61b9b2d4ac326f54f8e43e7e9b0a4bbe8fe"
+    },
+    "apps/cliptown-flutter": {
+      "repository": "cliptown/cliptown-flutter",
+      "branch": "main",
+      "commit": "3501eb09d14d3b8a767fd974939c7eca99a83ebf"
+    },
+    "apps/cliptown-extension": {
+      "repository": "cliptown/cliptown-extension",
+      "branch": "main",
+      "commit": "e8797fced0b7b2071125c8483fe082c0b4010057"
+    },
+    "apps/cliptown-infra": {
+      "repository": "cliptown/cliptown-infra",
+      "branch": "main",
+      "commit": "70f6ab51a9517c013fd10314d3e7ad07128565d8"
+    }
+  }
+}

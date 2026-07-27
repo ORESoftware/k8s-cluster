@@ -47,6 +47,10 @@ jobs:
             echo 'submodule pointers must resolve exactly' >&2
             exit 1
           fi
+      - name: Validate source manifest against exact gitlinks
+        run: |
+          python3 -m py_compile scripts/validate-source-manifest.py
+          python3 scripts/validate-source-manifest.py
       - name: Run low-risk cross-repository validation
         run: bash scripts/validate-workspace.sh --quick
       - name: Enforce encryption architecture
