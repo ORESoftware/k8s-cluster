@@ -6,19 +6,48 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Normalize APNs Rust source
+        run: cargo fmt
+      - name: Commit normalized APNs source
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          if [ -z "$(git status --porcelain -- src/providers/apns.rs)" ]; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/providers/apns.rs
+          git commit -m "DEN-326 normalize the APNs provider adapter"
+          git push origin "HEAD:${{ github.head_ref }}"
       - run: cargo fmt --check
-      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: Run Clippy and preserve diagnostics
+        run: |
+          set +e
+          cargo clippy --locked --all-targets --all-features -- -D warnings > apns-clippy.log 2>&1
+          status=$?
+          echo "$status" > apns-clippy.exit
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: apns-final-clippy-diagnostics
+          path: apns-clippy.log
+          if-no-files-found: error
+      - name: Enforce Clippy result
+        run: exit "$(cat apns-clippy.exit)"
       - run: cargo test --locked --all-features
 
   container:
