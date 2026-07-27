@@ -15,17 +15,57 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
-          rust-version: "1.85.0"
+          cache-bin: true
+      - name: Install cargo-deny
+        run: cargo install --locked cargo-deny
+      - name: Run cargo-deny and preserve diagnostics
+        run: |
+          set +e
+          cargo deny --all-features check > cargo-deny.log 2>&1
+          status=$?
+          echo "$status" > cargo-deny.exit
+          exit 0
+      - name: Upload cargo-deny diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-deny-diagnostics
+          path: cargo-deny.log
+          if-no-files-found: error
+      - name: Enforce cargo-deny result
+        run: exit "$(cat cargo-deny.exit)"
 
   audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          cache-bin: true
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+      - name: Run RustSec audit and preserve diagnostics
+        run: |
+          set +e
+          cargo audit --json > rustsec-audit.json 2> rustsec-audit.stderr
+          status=$?
+          echo "$status" > rustsec-audit.exit
+          exit 0
+      - name: Upload RustSec diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustsec-audit-diagnostics
+          path: |
+            rustsec-audit.json
+            rustsec-audit.stderr
+          if-no-files-found: error
+      - name: Enforce RustSec result
+        run: exit "$(cat rustsec-audit.exit)"
 
   secrets:
     runs-on: ubuntu-latest
@@ -35,7 +75,24 @@ jobs:
           fetch-depth: 0
       - name: Scan repository history with Gitleaks
         run: |
+          set +e
+          touch gitleaks-report.json
           docker run --rm \
             --volume "$PWD:/repo" \
             ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
-            git --redact --no-banner --verbose /repo
+            git --redact --no-banner --report-format json --report-path /repo/gitleaks-report.json /repo \
+            > gitleaks.log 2>&1
+          status=$?
+          echo "$status" > gitleaks.exit
+          exit 0
+      - name: Upload Gitleaks diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-diagnostics
+          path: |
+            gitleaks-report.json
+            gitleaks.log
+          if-no-files-found: error
+      - name: Enforce Gitleaks result
+        run: exit "$(cat gitleaks.exit)"
