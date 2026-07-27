@@ -1,11 +1,19 @@
 //! 3FA zero-knowledge sync server library.
 
+#[expect(
+    dead_code,
+    reason = "account recovery and local-unlock contracts are validated now but their authenticated HTTP workflow is tracked separately"
+)]
 mod account_security;
 mod accounts;
 mod app;
 mod auth;
 mod config;
 mod db;
+#[expect(
+    dead_code,
+    reason = "associated-data and validation helpers are shared protocol fixtures; some remain client-consumed until the public Rust SDK is split out"
+)]
 mod device_sync_protocol;
 mod devices;
 mod entity;
@@ -17,6 +25,10 @@ mod protocol;
 mod server;
 mod shared_auth;
 mod signal_api;
+#[expect(
+    dead_code,
+    reason = "terminal Signal revocation is transactionally implemented and tested but the live device endpoint still uses the legacy revocation path"
+)]
 mod signal_store;
 mod state;
 mod supabase_auth;
