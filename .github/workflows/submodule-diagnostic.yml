@@ -1,0 +1,41 @@
+name: submodule diagnostic
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose-remote-libs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Capture scrubbed remote/libs bootstrap result
+        id: diagnose
+        continue-on-error: true
+        env:
+          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
+        run: |
+          set +e
+          bash scripts/ci/init-required-submodules.sh --recursive remote/libs \
+            > submodule-diagnostic.log 2>&1
+          status=$?
+          printf 'exit_code=%s\n' "$status" >> submodule-diagnostic.log
+          printf 'status=%s\n' "$status" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Upload scrubbed diagnostic
+        uses: actions/upload-artifact@v4
+        with:
+          name: submodule-diagnostic
+          path: submodule-diagnostic.log
+          if-no-files-found: error
+          retention-days: 1
+      - name: Preserve failure status
+        env:
+          STATUS: ${{ steps.diagnose.outputs.status }}
+        run: test "$STATUS" = 0
