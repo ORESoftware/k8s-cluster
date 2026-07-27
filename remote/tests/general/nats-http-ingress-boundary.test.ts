@@ -68,7 +68,7 @@ test('external ingress is JetStream-only, acknowledged, and idempotent', () => {
 
 test('client credentials are scoped by route and mounted as a secret file', () => {
   assert.match(source, /BRIDGE_CLIENTS_FILE/);
-  assert.match(source, /client\s*\.routes\s*\.contains\(route\)/);
+  assert.match(source, /client\s*\.routes\s*\.contains\(route_name\)/);
   assert.match(source, /client tokens must be unique/);
   assert.match(source, /MIN_TOKEN_BYTES: usize = 32/);
   assert.match(deployment, /--bin nats_http_ingress/);
@@ -103,7 +103,7 @@ test('public ingress remains inert until TLS and secrets are reviewed', () => {
 });
 
 test('deployment and runbook prohibit direct NATS for external servers', () => {
-  assert.match(runbook, /must not receive NATS credentials or network access/);
+  assert.match(runbook, /must not receive NATS\s+credentials or network access/);
   assert.match(runbook, /import a NATS\s+client library/);
   assert.match(runbook, /remove the NATS library, `NATS_\*` variables/);
   assert.match(source, /invalid_json_object/);
