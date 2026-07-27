@@ -133,8 +133,7 @@ fn validate_project_id(project_id: &str) -> Result<(), FcmConfigError> {
     if project_id.is_empty()
         || project_id.len() > 128
         || project_id.chars().any(|character| {
-            !(character.is_ascii_alphanumeric()
-                || matches!(character, '-' | '_' | '.' | ':'))
+            !(character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.' | ':'))
         })
     {
         return Err(FcmConfigError::InvalidProjectId);
@@ -207,8 +206,9 @@ impl FcmProvider {
 
         let now = unix_now()?;
         let claims = build_oauth_claims(client_email, token_uri.as_str(), now);
-        let key = EncodingKey::from_rsa_pem(private_key.as_bytes())
-            .map_err(|_| ProviderError::not_configured("FCM service-account private key is invalid"))?;
+        let key = EncodingKey::from_rsa_pem(private_key.as_bytes()).map_err(|_| {
+            ProviderError::not_configured("FCM service-account private key is invalid")
+        })?;
         let assertion = encode(&Header::new(Algorithm::RS256), &claims, &key)
             .map_err(|_| ProviderError::internal("FCM OAuth assertion signing failed"))?;
 
@@ -498,10 +498,7 @@ fn build_send_body(job: &PushJob, device_token: &str) -> Value {
         }),
     );
     if let Some(ttl_seconds) = job.options.ttl_seconds {
-        android.insert(
-            "ttl".to_owned(),
-            Value::String(format!("{ttl_seconds}s")),
-        );
+        android.insert("ttl".to_owned(), Value::String(format!("{ttl_seconds}s")));
     }
     if let Some(collapse_key) = &job.options.collapse_key {
         android.insert(
@@ -593,9 +590,7 @@ mod tests {
     use axum::{Json, Router};
     use serde_json::json;
 
-    use crate::contracts::{
-        Notification, PushOptions, TraceMetadata,
-    };
+    use crate::contracts::{Notification, PushOptions, TraceMetadata};
 
     fn service_account_json(token_uri: &str) -> String {
         json!({
@@ -640,11 +635,9 @@ mod tests {
 
     #[test]
     fn parses_service_account_without_exposing_secrets() {
-        let config = FcmConfig::from_service_account_json(
-            &service_account_json(DEFAULT_TOKEN_URI),
-            None,
-        )
-        .expect("valid service account");
+        let config =
+            FcmConfig::from_service_account_json(&service_account_json(DEFAULT_TOKEN_URI), None)
+                .expect("valid service account");
         assert_eq!(config.project_id(), "test-project");
     }
 
@@ -667,11 +660,7 @@ mod tests {
 
     #[test]
     fn oauth_claims_match_fcm_scope_and_audience() {
-        let claims = build_oauth_claims(
-            "push-test@example.invalid",
-            DEFAULT_TOKEN_URI,
-            1_000,
-        );
+        let claims = build_oauth_claims("push-test@example.invalid", DEFAULT_TOKEN_URI, 1_000);
         let encoded = serde_json::to_value(claims).expect("serialize claims");
         assert_eq!(encoded["iss"], "push-test@example.invalid");
         assert_eq!(encoded["scope"], FCM_SCOPE);
@@ -762,11 +751,9 @@ mod tests {
             axum::serve(listener, app).await.expect("mock server");
         });
 
-        let mut config = FcmConfig::from_service_account_json(
-            &service_account_json(DEFAULT_TOKEN_URI),
-            None,
-        )
-        .expect("config");
+        let mut config =
+            FcmConfig::from_service_account_json(&service_account_json(DEFAULT_TOKEN_URI), None)
+                .expect("config");
         config.api_base_url = Url::parse(&format!("http://{address}/")).expect("mock URL");
         let provider = FcmProvider::new(config).expect("provider");
         *provider.token.lock().await = Some(CachedAccessToken {
@@ -781,8 +768,7 @@ mod tests {
             Some("Bearer test-access")
         );
         assert_eq!(
-            capture.body.lock().await.as_ref().expect("captured body")["message"]["data"]
-                ["enabled"],
+            capture.body.lock().await.as_ref().expect("captured body")["message"]["data"]["enabled"],
             "true"
         );
 
