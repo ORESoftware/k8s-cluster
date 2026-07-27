@@ -37,7 +37,10 @@ jobs:
       - name: Initialize pinned shared libraries
         run: |
           set -euo pipefail
-          git submodule update --init --recursive --depth 1 -- remote/libs
+          # The API-doc generator consumes files in the top-level remote/libs
+          # gitlink. Do not recurse into remote/libs/async-java: that unrelated
+          # upstream repository is not part of this generator input or deploy key.
+          git submodule update --init --depth 1 -- remote/libs
           expected="$(git ls-files --stage remote/libs | awk '$1 == 160000 { print $2 }')"
           actual="$(git -C remote/libs rev-parse HEAD)"
           test -n "$expected"
