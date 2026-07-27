@@ -4,17 +4,22 @@ on:
   push:
     branches:
       - agent/den-371-regenerate-api-docs
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/regenerate-api-docs-den-371.yml'
 
 permissions:
   contents: write
 
 concurrency:
-  group: regenerate-api-docs-den-371
+  group: regenerate-api-docs-den-371-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
   regenerate:
-    if: github.actor == 'ORESoftware'
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -83,6 +88,7 @@ jobs:
           pnpm --dir remote/tests run check:api-docs
           pnpm --dir remote/tests run check:observability-coverage
       - name: Commit deterministic generated outputs
+        if: github.event_name == 'push'
         shell: bash
         run: |
           set -euo pipefail
