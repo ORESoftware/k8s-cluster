@@ -37,7 +37,7 @@ Production scheduling remains disabled until the canonical pg-defs schema, opera
 
 The dedicated CI job runs the ignored transaction suite serially against an isolated PostgreSQL 17 service database. Each test recreates the minimal service-owned schema it needs so timing and lock behavior are deterministic and do not depend on developer-local state.
 
-The ordinary unit suite is also serialized while diagnosing any shared global-state interaction. A test is not considered reliable merely because a rerun passes: the permanent suite must pass repeatedly without retained-output timing effects, and any flake must be traced to its assertion or isolation boundary before merge.
+The concurrent-claim test shares one SeaORM connection pool through `Arc<DatabaseConnection>` and starts two tasks behind a three-party barrier. The pool remains responsible for independent database connections; the test does not clone or serialize one connection object. This exercises the production `FOR UPDATE ... SKIP LOCKED` behavior under genuinely overlapping requests.
 
 The suite proves:
 
