@@ -19,10 +19,11 @@ The repository contains:
 - provider traits for FCM, APNs, Expo, and Web Push adapters
 - an FCM HTTP v1 adapter with server-side service-account OAuth, single-flight access-token caching, data-string coercion, mockable endpoints, and normalized result classes
 - an APNs HTTP/2 adapter with `.p8` token authentication, single-flight ES256 provider-token caching, strict sandbox/production isolation, alert/background payloads, mockable endpoints, and normalized Apple error reasons
+- an Expo adapter with optional project bearer authentication, batched push tickets, HTTP-200 ticket-error parsing, receipt follow-up, mockable endpoints, and normalized receipt outcomes
 - centralized validation, target fingerprinting/redaction, bounded UTF-8 errors, and retry classification
 - CI, dependency auditing, secret scanning, and a non-root container build
 
-Expo, Web Push, and transport ingestion are implemented in subsequent DEN-261 child issues.
+Web Push and transport ingestion are implemented in subsequent DEN-261 child issues.
 
 ## Run
 
@@ -79,6 +80,24 @@ The adapter:
 
 Detailed APNs protocol, safety, and test behavior is documented in [`docs/apns.md`](docs/apns.md).
 
+## Expo configuration
+
+Create `ExpoConfig` with an optional project access token and construct `ExpoProvider`. The token is required only when enhanced Expo push security is enabled and must come from an external server-side secret.
+
+The adapter:
+
+- sends between 1 and 100 messages per push-ticket request
+- validates Expo capability-token shape without logging the complete token
+- maps title, body, data, image, TTL, priority, and collapse ID
+- parses every per-message ticket, including errors returned with HTTP 200
+- retains accepted ticket IDs for receipt processing
+- looks up between 1 and 1,000 receipts per request
+- treats missing receipts as retryable
+- classifies invalid devices, invalid payloads, throttling, sender mismatch, and invalid credentials
+- returns target fingerprints rather than complete Expo device tokens
+
+Detailed ticket, receipt, retry, and test behavior is documented in [`docs/expo.md`](docs/expo.md).
+
 ## Contracts
 
 The shared v1 contract is documented in [`docs/contracts-v1.md`](docs/contracts-v1.md). Example payloads live under [`examples/`](examples/).
@@ -97,4 +116,4 @@ cargo test --locked --all-features
 
 Linear project: `github.com/ORESoftware/push-notification-server.rs`
 
-DEN-324 established the contracts and safety boundary. DEN-325 and DEN-326 implement FCM and APNs; DEN-327 and DEN-328 cover Expo and Web Push.
+DEN-324 established the contracts and safety boundary. DEN-325 and DEN-326 implement FCM and APNs; DEN-327 implements Expo, while DEN-328 covers Web Push.
