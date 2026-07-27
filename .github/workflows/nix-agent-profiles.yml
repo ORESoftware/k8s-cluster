@@ -40,6 +40,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          show-progress: false
 
       - name: Install Nix
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342
@@ -52,17 +53,17 @@ jobs:
         with:
           args: ./.github/workflows/nix-agent-profiles.yml
 
-      - name: Lint renderer and fixtures
-        run: |
-          nix develop -c shellcheck \
-            scripts/render-nix-agent-profile.sh \
-            scripts/tests/render-nix-agent-profile-test.sh
+      - name: Lint profile renderer
+        run: nix develop -c shellcheck scripts/render-nix-agent-profile.sh
 
-      - name: Check shell formatting
-        run: |
-          nix develop -c shfmt -i 2 -ci -d \
-            scripts/render-nix-agent-profile.sh \
-            scripts/tests/render-nix-agent-profile-test.sh
+      - name: Lint profile fixtures
+        run: nix develop -c shellcheck scripts/tests/render-nix-agent-profile-test.sh
+
+      - name: Check renderer formatting
+        run: nix develop -c shfmt -i 2 -ci -d scripts/render-nix-agent-profile.sh
+
+      - name: Check fixture formatting
+        run: nix develop -c shfmt -i 2 -ci -d scripts/tests/render-nix-agent-profile-test.sh
 
       - name: Render and validate every profile
         run: nix develop -c bash scripts/tests/render-nix-agent-profile-test.sh
