@@ -52,23 +52,5 @@ jobs:
       - name: Check shell formatting
         run: nix develop -c shfmt -d scripts/nix-fleet-audit.sh scripts/tests/nix-fleet-audit-test.sh
 
-      - name: Capture fixture test
-        run: |
-          set +e
-          nix develop -c bash scripts/tests/nix-fleet-audit-test.sh > fixture-test.txt 2>&1
-          printf '%s\n' "$?" > fixture-test.status
-          exit 0
-
-      - name: Upload fixture test transcript
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: fixture-test
-          path: |
-            fixture-test.txt
-            fixture-test.status
-          retention-days: 1
-
-      - name: Enforce fixture test
-        run: |
-          cat fixture-test.txt
-          test "$(cat fixture-test.status)" = "0"
+      - name: Run fixture test
+        run: nix develop -c bash scripts/tests/nix-fleet-audit-test.sh
