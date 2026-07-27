@@ -15,7 +15,21 @@ jobs:
           bad=$(git ls-files | grep -E '(^|/)(target/|\.direnv/|\.env$|result$)' || true)
           if [ -n "$bad" ]; then echo "forbidden tracked files:"; echo "$bad"; exit 1; fi
       - run: cargo check
-      - run: cargo test
+      - name: Run unit tests
+        id: unit_tests
+        continue-on-error: true
+        run: cargo test -- --test-threads=1 2>&1 | tee cargo-test.txt
+      - name: Upload unit-test diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-280-cargo-test
+          path: cargo-test.txt
+          if-no-files-found: error
+          retention-days: 1
+      - name: Enforce unit tests
+        if: steps.unit_tests.outcome == 'failure'
+        run: exit 1
   fmt:
     runs-on: ubuntu-latest
     steps:
@@ -42,4 +56,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run real Signal transaction and retention tests
-        run: cargo test signal_postgres_tests -- --ignored --test-threads=1
+        id: signal_tests
+        continue-on-error: true
+        run: cargo test signal_postgres_tests -- --ignored --test-threads=1 2>&1 | tee signal-postgres.txt
+      - name: Upload PostgreSQL diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-280-signal-postgres
+          path: signal-postgres.txt
+          if-no-files-found: error
+          retention-days: 1
+      - name: Enforce PostgreSQL tests
+        if: steps.signal_tests.outcome == 'failure'
+        run: exit 1
