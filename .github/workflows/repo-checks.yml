@@ -130,14 +130,6 @@ jobs:
           K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
         run: test -n "$K8S_LIBS_DEPLOY_KEY"
 
-      - name: Require cross-organization read-only GitHub App credentials
-        env:
-          K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
-          K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
-        run: |
-          test -n "$K8S_SUBMODULE_APP_ID"
-          test -n "$K8S_SUBMODULE_APP_PRIVATE_KEY"
-
       - name: Checkout
         uses: actions/checkout@v7
         with:
