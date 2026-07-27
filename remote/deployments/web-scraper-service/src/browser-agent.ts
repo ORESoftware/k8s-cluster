@@ -442,6 +442,7 @@ export type BlockerType =
   | 'domain_not_allowed'
   | 'unsafe_download'
   | 'ambiguous_target'
+  | 'sensitive_field_blocked'
   | 'other';
 
 // ---------------------------------------------------------------------------
@@ -1794,14 +1795,19 @@ async function runActions(
     } catch (e) {
       if (
         e instanceof AgentError &&
-        (e.code === 'ambiguous_target' || e.code === 'target_not_found' || e.code === 'domain_not_allowed')
+        (e.code === 'ambiguous_target' ||
+          e.code === 'target_not_found' ||
+          e.code === 'domain_not_allowed' ||
+          e.code === 'sensitive_field_blocked')
       ) {
         const type: BlockerType =
           e.code === 'ambiguous_target'
             ? 'ambiguous_target'
             : e.code === 'domain_not_allowed'
               ? 'domain_not_allowed'
-              : 'other';
+              : e.code === 'sensitive_field_blocked'
+                ? 'sensitive_field_blocked'
+                : 'other';
         const blocker: { type: BlockerType; message: string } = { type, message: e.message };
         results.push({ index: i, type: action.type, status: 'blocked', message: e.message });
         return { status: 'blocked', results, blocker, pending: null, changed };
