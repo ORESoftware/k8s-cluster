@@ -21,13 +21,12 @@
           runtimeInputs = with pkgs; [
             actionlint
             bash
-            cargo
+            cacert
             cargo-audit
-            clippy
             git
+            gnugrep
             nixfmt-rfc-style
-            rustc
-            rustfmt
+            rustup
             shellcheck
             shfmt
           ];
