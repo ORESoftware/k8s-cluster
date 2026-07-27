@@ -34,8 +34,8 @@ jobs:
           python3 <<'PY'
           from pathlib import Path
 
-          path = Path('remote/tests/general/remote-dev-worker-git-hardening.test.ts')
-          text = path.read_text(encoding='utf-8')
+          test_path = Path('remote/tests/general/remote-dev-worker-git-hardening.test.ts')
+          text = test_path.read_text(encoding='utf-8')
 
           replacements = {
               r"/name:\s*AGENT_MCP_URL[\s\S]*dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\/mcp/":
@@ -162,7 +162,20 @@ jobs:
               else:
                   raise SystemExit(f'expected one thread-renderer negative assertion, found {count}')
 
-          path.write_text(text, encoding='utf-8')
+          test_path.write_text(text, encoding='utf-8')
+
+          agents_path = Path('AGENTS.md')
+          agents = agents_path.read_text(encoding='utf-8')
+          access_sentence = (
+              "Reach the cluster MCP through the WireGuard VPN plus `dd-bastion` "
+              "authenticated gateway flow; never expose the read-only MCP service directly to the public internet.\n\n"
+          )
+          insertion_marker = "## canonical-mcp (canonical.cloud stack)\n"
+          if access_sentence not in agents:
+              if agents.count(insertion_marker) != 1:
+                  raise SystemExit('expected one canonical-mcp section marker in AGENTS.md')
+              agents = agents.replace(insertion_marker, access_sentence + insertion_marker, 1)
+              agents_path.write_text(agents, encoding='utf-8')
           PY
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
@@ -202,6 +215,7 @@ jobs:
           grep -qF "AGENT_MCP_URL: '$expected'" remote/k8s/01-configmap.yaml
           grep -qF "value: $expected" remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml
           grep -qF '"AGENT_MCP_URL", "value": "http://dd-cluster-mcp-rs.default.svc.cluster.local:8091/mcp"' remote/deployments/rest-api-rs/src/threads.rs
+          grep -qF 'WireGuard VPN plus `dd-bastion`' AGENTS.md
           if git grep -nF 'dd-gleam-mcp-server.default.svc.cluster.local:8090/mcp' -- \
             remote/k8s/01-configmap.yaml \
             remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml \
@@ -221,7 +235,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git add -- remote/tests/general/remote-dev-worker-git-hardening.test.ts
+          git add -- AGENTS.md remote/tests/general/remote-dev-worker-git-hardening.test.ts
           if git diff --cached --quiet; then
             echo 'DEN-419 worker MCP contract already aligned.'
             exit 0
