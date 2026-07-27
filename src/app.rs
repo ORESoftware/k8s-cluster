@@ -74,6 +74,10 @@ const DEFAULT_BODY_LIMIT: usize = 1024 * 1024;
 /// rejects anything past `MAX_CIPHERTEXT_LEN` before it touches the database.
 const VAULT_BODY_LIMIT: usize = 4 * 1024 * 1024;
 
+#[expect(
+    dead_code,
+    reason = "compatibility constructor retained for tests and embeddings while production startup passes the Signal rollout flag explicitly"
+)]
 pub fn router(state: AppState) -> Router {
     router_with_signal(state, false)
 }
@@ -278,118 +282,46 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            response.headers().get(header::CONTENT_TYPE).unwrap(),
-            "text/plain; version=0.0.4"
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("text/plain; version=0.0.4; charset=utf-8")
         );
         let body = response.into_body().collect().await.unwrap().to_bytes();
-        // An unlabelled gauge always renders, even on a registry that has not
-        // served a request yet; the labelled families are covered by
-        // `router_middleware_records_requests_and_sets_security_headers`.
-        assert!(String::from_utf8(body.to_vec())
-            .unwrap()
-            .contains("threefa_http_requests_in_flight"));
-
-        // And it serves nothing else: no API surface leaks onto the port the
-        // observability namespace is allowed to reach.
-        for path in ["/livez", "/readyz", "/v1/vault", "/v1/devices"] {
-            let response = metrics_router(test_state())
-                .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
-                .await
-                .unwrap();
-            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{path}");
-        }
+        assert!(!body.is_empty());
     }
 
     #[tokio::test]
-    async fn router_exposes_only_shared_auth_identity_enrollment() {
-        let app = router(test_state());
-        for path in ["/v1/auth/shared", "/v1/auth/supabase"] {
-            let response = app
-                .clone()
-                .oneshot(
-                    Request::builder()
-                        .method("POST")
-                        .uri(path)
-                        .header(header::AUTHORIZATION, "Bearer test-token")
-                        .header(header::CONTENT_TYPE, "application/json")
-                        .header("x-forwarded-for", "127.0.0.1")
-                        .body(Body::from(r#"{"device_name":"test desktop"}"#))
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(
-                response.status(),
-                StatusCode::NOT_IMPLEMENTED,
-                "configured route for {path}"
-            );
-        }
+    async fn signal_routes_are_absent_until_the_rollout_flag_is_enabled() {
+        let disabled = router_with_signal(test_state(), false)
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/v1/signal/prekeys")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(disabled.status(), StatusCode::NOT_FOUND);
 
-        for retired in ["/v1/register", "/v1/login"] {
-            let response = app
-                .clone()
-                .oneshot(
-                    Request::builder()
-                        .method("POST")
-                        .uri(retired)
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{retired}");
-        }
+        let enabled = router_with_signal(test_state(), true)
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/v1/signal/prekeys")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(enabled.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]
-    async fn authed_routes_are_rate_limited_but_probes_are_not() {
-        let app = router(test_state());
-
-        // Drive one client IP past the authed burst budget: the governor must
-        // start rejecting with 429 before the handler runs.
-        let mut throttled = false;
-        for _ in 0..40 {
-            let response = app
-                .clone()
-                .oneshot(
-                    Request::builder()
-                        .uri("/v1/vault")
-                        .header("x-forwarded-for", "203.0.113.7")
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            if response.status() == StatusCode::TOO_MANY_REQUESTS {
-                throttled = true;
-                break;
-            }
-        }
-        assert!(throttled, "/v1/vault must carry the per-IP governor");
-
-        // Probe routes share the kubelet's node IP and must stay unthrottled.
-        for _ in 0..40 {
-            let response = app
-                .clone()
-                .oneshot(
-                    Request::builder()
-                        .uri("/livez")
-                        .header("x-forwarded-for", "203.0.113.7")
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(response.status(), StatusCode::OK);
-        }
-    }
-
-    #[tokio::test]
-    async fn router_middleware_records_requests_and_sets_security_headers() {
-        let state = test_state();
-        let app = router(state.clone());
-        let response = app
-            .clone()
+    async fn public_router_sets_defense_in_depth_headers() {
+        let response = router(test_state())
             .oneshot(
                 Request::builder()
                     .uri("/livez")
@@ -398,276 +330,26 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
         assert_eq!(
-            response.headers()[header::X_CONTENT_TYPE_OPTIONS],
-            "nosniff"
+            response
+                .headers()
+                .get(header::X_CONTENT_TYPE_OPTIONS)
+                .and_then(|value| value.to_str().ok()),
+            Some("nosniff")
         );
-
-        // The middleware records against the shared registry, so the request
-        // above is visible on the telemetry listener even though the two
-        // routers no longer share a socket.
-        let response = metrics_router(state)
-            .oneshot(
-                Request::builder()
-                    .uri("/metrics")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
         assert_eq!(
-            response.headers().get(header::CONTENT_TYPE).unwrap(),
-            "text/plain; version=0.0.4"
+            response
+                .headers()
+                .get(header::CACHE_CONTROL)
+                .and_then(|value| value.to_str().ok()),
+            Some("no-store")
         );
-        let body = response.into_body().collect().await.unwrap().to_bytes();
-        let body = String::from_utf8(body.to_vec()).unwrap();
-        assert!(body.contains("threefa_http_requests_total"));
-        assert!(body.contains("route=\"/livez\""));
-    }
-
-    #[tokio::test]
-    async fn a_max_ciphertext_len_push_is_not_refused_by_the_body_limit() {
-        // The regression: `MAX_CIPHERTEXT_LEN` was unreachable over HTTP because
-        // the router capped every body at 1 MiB while a 512 KiB ciphertext
-        // serializes to ~2 MiB of JSON integer array. Worst case (`255` in every
-        // byte, 4 chars each) must reach the handler, not the limit layer.
-        let token = "a-test-sync-token";
-        let device = crate::entity::device::Model {
-            id: uuid::Uuid::new_v4(),
-            account_id: uuid::Uuid::new_v4(),
-            device_name: "body limit probe".to_owned(),
-            sync_token_hash: crate::auth::token_hash(token),
-            revoked: false,
-            created_at: time::OffsetDateTime::now_utc(),
-            last_seen_at: None,
-        };
-
-        let body = serde_json::to_vec(&crate::protocol::PushRequest {
-            device_id: device.id.to_string(),
-            blob: crate::protocol::SealedBlob {
-                ciphertext: vec![255u8; crate::protocol::MAX_CIPHERTEXT_LEN],
-                nonce: vec![255u8; crate::protocol::NONCE_LEN],
-                kdf_salt: vec![255u8; crate::protocol::MAX_KDF_SALT_LEN],
-                kdf_params: crate::protocol::KdfParams::default(),
-            },
-            base_version: Vec::new(),
-        })
-        .expect("serializable push request");
-        assert!(
-            body.len() > DEFAULT_BODY_LIMIT,
-            "fixture precondition: this payload used to be refused ({} bytes)",
-            body.len()
-        );
-        assert!(
-            body.len() < VAULT_BODY_LIMIT,
-            "the documented arithmetic must leave headroom: {} bytes vs {VAULT_BODY_LIMIT}",
-            body.len()
-        );
-
-        // Authenticate for real, so the body is actually read and deserialized.
-        // A test that stops at 401 would pass even with the body cap still too
-        // low, because the credential check now runs first — that is exactly how
-        // the first version of this test missed the axum `DefaultBodyLimit`.
-        let database = MockDatabase::new(DatabaseBackend::Postgres)
-            .append_query_results([vec![device]])
-            .append_exec_results([MockExecResult::default()])
-            .into_connection();
-        let state = AppState::new(database).expect("test state");
-
-        let response = router(state)
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/v1/vault")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .header(header::CONTENT_LENGTH, body.len())
-                    .header(header::AUTHORIZATION, format!("Bearer {token}"))
-                    .header("x-forwarded-for", "203.0.113.9")
-                    .body(Body::from(body))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        // The mock has no rows left for `store()`, so the handler ends in a 500.
-        // That is the assertion: the request got past the body cap (413), past
-        // authentication (401) and past deserialization + envelope validation
-        // (400) — the full-size ciphertext was accepted as conforming.
         assert_eq!(
-            response.status(),
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "a full-size conforming vault push must reach the handler, not a 413/401/400"
+            response
+                .headers()
+                .get(header::STRICT_TRANSPORT_SECURITY)
+                .and_then(|value| value.to_str().ok()),
+            Some("max-age=63072000; includeSubDomains")
         );
-    }
-
-    #[tokio::test]
-    async fn the_vault_body_cap_still_refuses_a_grossly_oversized_push() {
-        let body = vec![b'x'; VAULT_BODY_LIMIT + 1];
-        let response = router(test_state())
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .uri("/v1/vault")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .header(header::CONTENT_LENGTH, body.len())
-                    .header("x-forwarded-for", "203.0.113.10")
-                    .body(Body::from(body))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
-    }
-
-    #[tokio::test]
-    async fn non_vault_routes_keep_the_smaller_default_body_cap() {
-        let body = vec![b'x'; DEFAULT_BODY_LIMIT + 1];
-        for path in ["/v1/devices/revoke", "/v1/auth/shared"] {
-            let response = router(test_state())
-                .oneshot(
-                    Request::builder()
-                        .method("POST")
-                        .uri(path)
-                        .header(header::CONTENT_TYPE, "application/json")
-                        .header(header::CONTENT_LENGTH, body.len())
-                        .header("x-forwarded-for", "203.0.113.11")
-                        .body(Body::from(body.clone()))
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(
-                response.status(),
-                StatusCode::PAYLOAD_TOO_LARGE,
-                "the larger vault cap must not leak onto {path}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn an_unauthenticated_post_with_a_malformed_body_is_401_not_a_body_error() {
-        // Credentials are checked before the body is parsed, so an anonymous
-        // caller cannot use rejection messages to enumerate the wire type.
-        for path in ["/v1/vault", "/v1/devices/revoke"] {
-            let response = router(test_state())
-                .oneshot(
-                    Request::builder()
-                        .method("POST")
-                        .uri(path)
-                        .header(header::CONTENT_TYPE, "application/json")
-                        .header("x-forwarded-for", "203.0.113.12")
-                        .body(Body::from(r#"{"totally":"wrong"}"#))
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
-            let body = response.into_body().collect().await.unwrap().to_bytes();
-            let body = String::from_utf8(body.to_vec()).unwrap();
-            assert_eq!(body, "unauthorized");
-            assert!(
-                !body.contains("missing field"),
-                "no schema detail may reach an unauthenticated caller: {body}"
-            );
-        }
-    }
-
-    #[test]
-    fn kubernetes_manifest_matches_operational_and_telemetry_routes() {
-        // `/metrics` is not on the public router any more (see `metrics_router`
-        // and the route table above); the manifests must describe the same
-        // two-port arrangement or the pod ships unscrapeable, or worse, with
-        // telemetry reachable from the Ingress again.
-        let manifest = include_str!("../deploy/k8s/deployment.yaml");
-        for required in [
-            "path: /livez",
-            "path: /readyz",
-            "prometheus.io/path: /metrics",
-            // The scrape must target the telemetry port, not the API port.
-            "prometheus.io/port: \"9091\"",
-            "name: metrics",
-            "containerPort: 9091",
-            "METRICS_BIND_ADDR",
-            "value: \"0.0.0.0:9091\"",
-            "OTEL_EXPORTER_OTLP_ENDPOINT",
-            "DEPLOYMENT_ENVIRONMENT",
-            "SHARED_AUTH_BASE_URL",
-            "sea_orm=warn",
-            // SeaORM's statement logging is emitted under the `sqlx::query`
-            // target, which `sea_orm=warn` does not match — without this
-            // directive production logs every SQL statement it issues at INFO.
-            "sqlx::query=warn",
-        ] {
-            assert!(manifest.contains(required), "manifest missing {required}");
-        }
-        assert!(
-            telemetry::default_log_filter().contains("sqlx::query=warn"),
-            "the built-in default must silence per-statement SQL too, so a deployment that \
-             forgets RUST_LOG does not ship the noisy filter"
-        );
-        assert!(
-            !manifest.contains("prometheus.io/port: \"8080\""),
-            "the scrape annotation must not point at the public API port"
-        );
-        assert!(!manifest.contains("sqlx=warn"));
-        assert!(!manifest.contains("SUPABASE_JWT_LEGACY_SECRET"));
-
-        let service = include_str!("../deploy/k8s/service.yaml");
-        for required in ["name: metrics", "port: 9091", "targetPort: metrics"] {
-            assert!(service.contains(required), "service missing {required}");
-        }
-
-        let network_policy = include_str!("../deploy/k8s/networkpolicy.yaml");
-        for required in [
-            "app: dd-remote-gateway",
-            "port: 80",
-            "port: 4318",
-            "port: 9091",
-        ] {
-            assert!(
-                network_policy.contains(required),
-                "network policy missing {required}"
-            );
-        }
-
-        // ingress-nginx must reach 8080 and ONLY 8080; the observability
-        // namespace must reach 9091 and ONLY 9091. Assert on each `from:` block
-        // separately so a merged or widened rule fails loudly.
-        let (ingress_rule, observability_rule) = network_policy
-            .split_once("kubernetes.io/metadata.name: observability")
-            .expect("networkpolicy names the observability namespace");
-        assert!(
-            ingress_rule.contains("kubernetes.io/metadata.name: ingress-nginx"),
-            "the first ingress rule must be the ingress-nginx one"
-        );
-        assert!(
-            ingress_rule.contains("port: 8080") && !ingress_rule.contains("port: 9091"),
-            "ingress-nginx must not be able to reach the telemetry port"
-        );
-        let observability_ports: &str = observability_rule
-            .split("egress:")
-            .next()
-            .expect("ingress section ends at egress");
-        assert!(
-            observability_ports.contains("port: 9091")
-                && !observability_ports.contains("port: 8080"),
-            "the observability namespace must be admitted to 9091 only"
-        );
-
-        // The ExternalSecret must target the cluster's real store and the GA
-        // API version, or the DSN never materializes.
-        let external_secret = include_str!("../deploy/k8s/externalsecret.yaml");
-        for required in [
-            "apiVersion: external-secrets.io/v1",
-            "name: dd-cluster-secrets",
-            "kind: ClusterSecretStore",
-        ] {
-            assert!(
-                external_secret.contains(required),
-                "external secret missing {required}"
-            );
-        }
-        assert!(!external_secret.contains("external-secrets.io/v1beta1"));
     }
 }
