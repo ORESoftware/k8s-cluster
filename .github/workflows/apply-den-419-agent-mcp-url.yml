@@ -1,0 +1,103 @@
+name: Apply DEN-419 agent MCP URL convergence
+
+on:
+  push:
+    branches:
+      - agent/den-419-agent-mcp-url
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-den-419-agent-mcp-url.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-419-agent-mcp-url-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-419-agent-mcp-url
+          persist-credentials: true
+      - name: Align the worker contract with the canonical Rust cluster MCP
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/tests/general/remote-dev-worker-git-hardening.test.ts')
+          text = path.read_text(encoding='utf-8')
+          replacements = {
+              r"/name:\s*AGENT_MCP_URL[\s\S]*dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\/mcp/":
+                  r"/name:\s*AGENT_MCP_URL[\s\S]*dd-cluster-mcp-rs\.default\.svc\.cluster\.local:8091\/mcp/",
+              r"/AGENT_MCP_URL:\s*'http:\/\/dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\/mcp'/":
+                  r"/AGENT_MCP_URL:\s*'http:\/\/dd-cluster-mcp-rs\.default\.svc\.cluster\.local:8091\/mcp'/",
+              r'''/"AGENT_MCP_URL", "value": "http:\/\/dd-gleam-mcp-server\.default\.svc\.cluster\.local:8090\/mcp"/''':
+                  r'''/"AGENT_MCP_URL", "value": "http:\/\/dd-cluster-mcp-rs\.default\.svc\.cluster\.local:8091\/mcp"/''',
+          }
+          for before, after in replacements.items():
+              count = text.count(before)
+              if count == 1:
+                  text = text.replace(before, after, 1)
+              elif count == 0 and after in text:
+                  continue
+              else:
+                  raise SystemExit(f'expected one MCP URL assertion, found {count}: {before}')
+          path.write_text(text, encoding='utf-8')
+          PY
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Run the full worker hardening contract
+        run: pnpm exec tsx --test general/remote-dev-worker-git-hardening.test.ts
+        working-directory: remote/tests
+      - name: Verify all Kubernetes worker paths use the same endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='http://dd-cluster-mcp-rs.default.svc.cluster.local:8091/mcp'
+          grep -qF "AGENT_MCP_URL: '$expected'" remote/k8s/01-configmap.yaml
+          grep -qF "value: $expected" remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml
+          grep -qF '"AGENT_MCP_URL", "value": "http://dd-cluster-mcp-rs.default.svc.cluster.local:8091/mcp"' remote/deployments/rest-api-rs/src/threads.rs
+          if git grep -nF 'dd-gleam-mcp-server.default.svc.cluster.local:8090/mcp' -- \
+            remote/k8s/01-configmap.yaml \
+            remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml \
+            remote/deployments/rest-api-rs/src/threads.rs \
+            remote/tests/general/remote-dev-worker-git-hardening.test.ts; then
+            echo 'stale worker MCP endpoint remains' >&2
+            exit 1
+          fi
+      - name: Scan for unresolved conflict markers
+        run: |
+          if git grep -n -E '^(<<<<<<< |=======$|>>>>>>> )' -- . ':(exclude)*.lock'; then
+            exit 1
+          fi
+      - name: Commit verified contract convergence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- remote/tests/general/remote-dev-worker-git-hardening.test.ts
+          if git diff --cached --quiet; then
+            echo 'DEN-419 worker MCP contract already aligned.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-419 align worker contracts with the Rust cluster MCP'
+          git push origin HEAD:agent/den-419-agent-mcp-url
