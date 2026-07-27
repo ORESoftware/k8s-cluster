@@ -45,6 +45,30 @@ npm run build    # outputs to ./dist
 npm run preview  # preview the production build
 ```
 
+## Release links
+
+The site is static and never proxies installer bytes. Mobile store URLs and
+desktop installer URLs are injected at build time:
+
+```sh
+cp .env.example .env
+# Set PUBLIC_APP_STORE_URL / PUBLIC_PLAY_STORE_URL after listings are public.
+# Set PUBLIC_DOWNLOAD_BASE_URL to the Cloudflare R2 custom domain.
+npm run build
+```
+
+`PUBLIC_DOWNLOAD_BASE_URL` expands to these stable aliases:
+
+- `latest/sonus-auris-windows-x64.exe`
+- `latest/sonus-auris-macos-universal.dmg`
+- `latest/sonus-auris-linux-x86_64.deb`
+
+A per-platform `PUBLIC_DOWNLOAD_*_URL` overrides its alias. The release pipeline
+must upload immutable, versioned objects first, then replace the `/latest`
+aliases with `Cache-Control: no-store`. Large binaries go directly from the R2
+custom domain to the user; the Rust server may expose release metadata or issue
+redirects, but it must not become a bandwidth proxy for public installers.
+
 ## Structure
 
 ```
@@ -64,7 +88,7 @@ src/
     NoSpooks.astro          # tongue-in-cheek "no spooks" / warrant-canary band
     Footer.astro            # link columns + Partners row
     Partners.astro          # neutral capability badges (footer)
-    StoreButtons.astro      # App Store + Google Play badges
+    StoreButtons.astro      # mobile stores + optional desktop installers
     Logo.astro
   pages/
     index.astro             # single-page marketing assembly
@@ -78,7 +102,8 @@ Each directory also has its own `README.md` describing what lives there.
 
 ## Things to wire up before launch
 
-- `StoreButtons.astro` — replace `APPLE_URL` / `GOOGLE_URL` with real listings.
+- Configure the store listing URLs and R2 custom-domain base URL in the site
+  deployment environment; never link to unsigned or unreviewed artifacts.
 - GitHub links point to `github.com/sonus-auris/sonus-auris` — update if the
   org/repo name differs.
 - `astro.config.mjs` `site` — set to the real production domain.

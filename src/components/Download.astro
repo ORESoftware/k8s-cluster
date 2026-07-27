@@ -1,6 +1,7 @@
 ---
-// Final download call-to-action section (#download). A centered gradient card
-// with the store buttons and floating emoji doodles.
+// Final download call-to-action section (#download). Store listing and desktop
+// installer URLs are injected at build time so unpublished or unsigned builds
+// are never presented as production downloads.
 import StoreButtons from "./StoreButtons.astro";
 ---
 
@@ -12,11 +13,13 @@ import StoreButtons from "./StoreButtons.astro";
     <span class="eyebrow">⬇️ Free to start</span>
     <h2>Stop losing the good stuff.</h2>
     <p>
-      Sonus Auris is preparing for TestFlight and Play testing. Your next great riff — and your peace
-      of mind — are one tap away.
+      Install Sonus Auris on your phone or desktop. Store badges and installer
+      buttons become active only after a reviewed production release is available.
     </p>
-    <StoreButtons align="center" />
-    <p class="dl-fine">Built for iPhone &amp; Android · Open-source app · Encrypted end-to-end</p>
+    <StoreButtons align="center" desktop={true} />
+    <p class="dl-fine">
+      iPhone · Android · Windows · macOS · Linux · Open source · End-to-end encrypted
+    </p>
   </div>
 </section>
 
@@ -29,7 +32,7 @@ import StoreButtons from "./StoreButtons.astro";
     overflow: hidden;
   }
   .dl-card {
-    max-width: 720px;
+    max-width: 880px;
     text-align: center;
     background: linear-gradient(135deg, var(--green-700), var(--green-900));
     color: #fffdf8;
@@ -53,13 +56,13 @@ import StoreButtons from "./StoreButtons.astro";
   .dl-card > p {
     color: rgba(255, 253, 248, 0.85);
     font-size: 1.12rem;
-    max-width: 460px;
+    max-width: 620px;
     margin-bottom: 22px;
   }
   .dl-fine {
     margin-top: 20px;
-    font-size: 0.86rem;
-    color: rgba(255, 253, 248, 0.7);
+    font-size: 0.86rem !important;
+    color: rgba(255, 253, 248, 0.7) !important;
   }
   .doodle {
     position: absolute;
