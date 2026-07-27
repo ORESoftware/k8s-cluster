@@ -10,13 +10,7 @@ columns = ["options", "env", "type", "default", "description"]
 allow_unknown = false
 
 [env]
-ignore = [
-  "DATABASE_URL",
-  "OTEL_EXPORTER_OTLP_ENDPOINT",
-  "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
-  "OTEL_EXPORTER_OTLP_HEADERS",
-  "OTEL_EXPORTER_OTLP_TRACES_HEADERS",
-]
+ignore = ["DATABASE_URL", "OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_HEADERS", "OTEL_EXPORTER_OTLP_TRACES_HEADERS"]
 
 [flags.bind-addr]
 env = "BIND_ADDR"
