@@ -18,10 +18,11 @@ The repository contains:
 - versioned provider-neutral `PushJob` and `PushOutcome` contracts
 - provider traits for FCM, APNs, Expo, and Web Push adapters
 - an FCM HTTP v1 adapter with server-side service-account OAuth, single-flight access-token caching, data-string coercion, mockable endpoints, and normalized result classes
+- an APNs HTTP/2 adapter with `.p8` token authentication, single-flight ES256 provider-token caching, strict sandbox/production isolation, alert/background payloads, mockable endpoints, and normalized Apple error reasons
 - centralized validation, target fingerprinting/redaction, bounded UTF-8 errors, and retry classification
 - CI, dependency auditing, secret scanning, and a non-root container build
 
-APNs, Expo, Web Push, and transport ingestion are implemented in subsequent DEN-261 child issues.
+Expo, Web Push, and transport ingestion are implemented in subsequent DEN-261 child issues.
 
 ## Run
 
@@ -58,6 +59,26 @@ The adapter:
 - classifies invalid tokens, invalid payloads, throttling, transient failures, and permanent provider/authentication failures
 - returns only the target fingerprint in result events
 
+## APNs configuration
+
+Create a distinct `ApnsConfig` for production or sandbox using the Apple key ID, Team ID, bundle/topic, `.p8` private key, and `ProviderEnvironment`. A provider instance rejects targets from the other environment instead of silently routing them to the wrong Apple host.
+
+Credentials belong in Kubernetes External Secrets. Never commit the `.p8` key, provider token, or complete device token.
+
+The adapter:
+
+- signs ES256 provider tokens containing the Apple Team ID and issue time
+- reuses each provider token for 50 minutes behind a single refresh lock
+- selects `api.push.apple.com` or `api.sandbox.push.apple.com` from the configured environment
+- maps alert and data-only jobs to the corresponding APNs push type and priority
+- sends topic, expiration, collapse ID, and canonical UUID request IDs
+- keeps custom data beside the reserved `aps` dictionary and rejects producer attempts to replace `aps`
+- enforces the 4 KiB APNs payload ceiling
+- classifies invalid tokens, invalid payloads, throttling, transient failures, and provider/authentication failures from Apple response reasons
+- returns only the target fingerprint and Apple request ID/reason in result events
+
+Detailed APNs protocol, safety, and test behavior is documented in [`docs/apns.md`](docs/apns.md).
+
 ## Contracts
 
 The shared v1 contract is documented in [`docs/contracts-v1.md`](docs/contracts-v1.md). Example payloads live under [`examples/`](examples/).
@@ -76,4 +97,4 @@ cargo test --locked --all-features
 
 Linear project: `github.com/ORESoftware/push-notification-server.rs`
 
-DEN-324 established the contracts and safety boundary. DEN-325 implements FCM; DEN-326 through DEN-328 cover APNs, Expo, and Web Push.
+DEN-324 established the contracts and safety boundary. DEN-325 and DEN-326 implement FCM and APNs; DEN-327 and DEN-328 cover Expo and Web Push.
