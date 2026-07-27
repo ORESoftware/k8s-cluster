@@ -36,3 +36,17 @@ test('browser worker accepts only domain-bound secret entries', () => {
   assert.match(source, /secret entries must be domain-bound objects/);
   assert.match(source, /secret entry must declare at least one permitted domain/);
 });
+
+test('sensitive-field policy errors are returned as human-completion blockers', () => {
+  assert.match(source, /export type BlockerType =[\s\S]*?'sensitive_field_blocked'/);
+  assert.match(
+    source,
+    /e\.code === 'sensitive_field_blocked'/,
+    'runActions must recognize the policy error as a blocked outcome',
+  );
+  assert.match(
+    source,
+    /\? 'sensitive_field_blocked'/,
+    'the blocker response must preserve the stable machine-readable type',
+  );
+});
