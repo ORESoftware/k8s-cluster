@@ -6,29 +6,34 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Generate deterministic lockfile and formatting patch
+      - name: Generate lockfile and normalize Rust formatting
         run: |
           cargo generate-lockfile
           cargo fmt
-          git add -N Cargo.lock
-          git diff --binary > ci-generated.patch
-      - name: Upload CI-generated patch
-        uses: actions/upload-artifact@v4
-        with:
-          name: ci-generated-patch
-          path: ci-generated.patch
-          if-no-files-found: error
+      - name: Commit generated Rust files to same-repository PR branch
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          if [ -z "$(git status --porcelain -- Cargo.lock src)" ]; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.lock src
+          git commit -m "DEN-322 normalize generated Rust files"
+          git push origin "HEAD:${{ github.head_ref }}"
       - name: Verify generated files are committed
         run: git diff --exit-code
       - run: cargo clippy --all-targets --all-features -- -D warnings
