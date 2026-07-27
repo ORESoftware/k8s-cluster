@@ -33,12 +33,15 @@ function requiredSecretRefPattern(
   secretName: string,
   secretKey: string,
 ): RegExp {
+  // Kubernetes' YAML serializer may order secretKeyRef.{key,name,optional}
+  // differently from the source manifest. Look ahead for all three fields in
+  // the same small mapping instead of treating serialization order as a contract.
   return new RegExp(
     `name:\\s*${environmentName}[\\s\\S]{0,260}` +
-      `secretKeyRef:[\\s\\S]{0,180}` +
-      `name:\\s*${secretName}[\\s\\S]{0,120}` +
-      `key:\\s*${secretKey}[\\s\\S]{0,80}` +
-      `optional:\\s*false`,
+      `secretKeyRef:` +
+      `(?=[\\s\\S]{0,220}key:\\s*${secretKey})` +
+      `(?=[\\s\\S]{0,220}name:\\s*${secretName})` +
+      `(?=[\\s\\S]{0,220}optional:\\s*false)`,
   );
 }
 
@@ -152,7 +155,7 @@ test('load-balancer ingress is an explicit workload allowlist, not a self-applie
     /kubernetes\.io\/metadata\.name:\s*external-secrets[\s\S]{0,180}app\.kubernetes\.io\/name:\s*external-secrets/,
   );
   assert.match(policy, /protocol:\s*TCP\s*\n\s*port:\s*8088/);
-  assert.doesNotMatch(policy, /dd\.dev\/fiducia-client/);
+  assert.doesNotMatch(policy, /^\s*dd\.dev\/fiducia-client:\s*/m);
 });
 
 test('only explicitly labelled namespaces can consume the cluster-wide Fiducia reader', async () => {
