@@ -243,12 +243,13 @@ async fn metrics(State(state): State<Arc<AppState>>) -> Response {
             "# TYPE nats_http_ingress_upstream_failed_total counter\n",
             "nats_http_ingress_upstream_failed_total {}\n",
             "# TYPE nats_http_ingress_in_flight gauge\n",
-            "nats_http_ingress_in_flight {in_flight}\n"
+            "nats_http_ingress_in_flight {}\n"
         ),
         state.counters.accepted.load(Ordering::Relaxed),
         state.counters.rejected.load(Ordering::Relaxed),
         state.counters.overloaded.load(Ordering::Relaxed),
         state.counters.upstream_failed.load(Ordering::Relaxed),
+        in_flight,
     );
     (
         StatusCode::OK,
