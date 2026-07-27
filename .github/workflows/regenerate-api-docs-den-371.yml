@@ -1,0 +1,98 @@
+name: Regenerate API docs DEN-371
+
+on:
+  push:
+    branches:
+      - agent/den-371-regenerate-api-docs
+
+permissions:
+  contents: write
+
+concurrency:
+  group: regenerate-api-docs-den-371
+  cancel-in-progress: true
+
+jobs:
+  regenerate:
+    if: github.actor == 'ORESoftware'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: agent/den-371-regenerate-api-docs
+      - name: Initialize pinned API-doc source library
+        shell: bash
+        env:
+          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$K8S_LIBS_DEPLOY_KEY"
+          key_file="$(mktemp "${RUNNER_TEMP}/k8s-libs-key.XXXXXX")"
+          cleanup() { rm -f "$key_file"; }
+          trap cleanup EXIT
+          printf '%s' "$K8S_LIBS_DEPLOY_KEY" >"$key_file"
+          chmod 600 "$key_file"
+          GIT_SSH_COMMAND="ssh -i ${key_file} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
+            git submodule update --init --recursive --depth 1 -- remote/libs
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - name: Install generator dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Generate and prove idempotence
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm run generate:api-docs
+          first_hash="$(git diff --binary -- remote/deployments | sha256sum | awk '{print $1}')"
+          pnpm run generate:api-docs
+          second_hash="$(git diff --binary -- remote/deployments | sha256sum | awk '{print $1}')"
+          test "$first_hash" = "$second_hash"
+
+          mapfile -t changed < <(git diff --name-only -- remote/deployments)
+          if (( ${#changed[@]} == 0 )); then
+            echo 'Generated API docs are already current.'
+            exit 0
+          fi
+
+          printf 'Generated output changes:\n'
+          printf '  - %s\n' "${changed[@]}"
+          for path in "${changed[@]}"; do
+            case "$path" in
+              remote/deployments/generated-api-docs-index.json|\
+              remote/deployments/generated-api-docs-index.html|\
+              remote/deployments/*/generated/*.json|\
+              remote/deployments/*/generated/*.html|\
+              remote/deployments/*/api_docs.gleam|\
+              remote/deployments/*/*/api_docs.gleam)
+                ;;
+              *)
+                echo "unexpected generator output path: $path" >&2
+                exit 1
+                ;;
+            esac
+          done
+
+          pnpm run check:api-docs
+          pnpm run check:observability-coverage
+        working-directory: remote/tests
+      - name: Commit deterministic generated outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$(git status --porcelain -- remote/deployments)" ]]; then
+            echo 'No generated outputs require a commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- remote/deployments
+          git commit -m 'Regenerate deterministic API documentation'
+          git push origin HEAD:agent/den-371-regenerate-api-docs
