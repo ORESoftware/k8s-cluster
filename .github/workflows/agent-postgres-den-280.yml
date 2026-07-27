@@ -1,0 +1,50 @@
+name: agent-postgres-den-280
+
+on:
+  push:
+    branches:
+      - agent/den-280-batch-ack-postgres
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: threefa_signal_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      THREEFA_SIGNAL_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/threefa_signal_test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/den-280-batch-ack-postgres
+          fetch-depth: 0
+      - run: cargo fmt --all
+      - name: Capture PostgreSQL test output
+        run: |
+          set +e
+          cargo test signal_postgres_tests -- --ignored --test-threads=1 > agent-den-280-postgres.txt 2>&1
+          status=$?
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src agent-den-280-postgres.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "Format DEN-280 slice and capture PostgreSQL diagnostics"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+          exit "$status"
