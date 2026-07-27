@@ -39,13 +39,17 @@ jobs:
       - name: Reject malformed diffs
         run: git diff --check
 
-      - name: Test sensitive-field policy and source wiring
+      - name: Test sensitive-field classifier
         working-directory: remote/deployments/web-scraper-service
-        run: >-
-          node --test
-          tests/sensitive-field-policy.test.ts
-          tests/sensitive-field-wiring.test.ts
-          tests/sensitive-field-policy.integration-plan.test.ts
+        run: node --test tests/sensitive-field-policy.test.ts
+
+      - name: Test source wiring order
+        working-directory: remote/deployments/web-scraper-service
+        run: node --test tests/sensitive-field-wiring.test.ts
+
+      - name: Test runtime integration markers
+        working-directory: remote/deployments/web-scraper-service
+        run: node --test tests/sensitive-field-policy.integration-plan.test.ts
 
       - name: Remove one-shot patch machinery
         run: |
