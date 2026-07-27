@@ -51,8 +51,25 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Preflight the agent contract
-        run: nix develop -c agent-check preflight
+      - name: Check Nix formatting
+        run: nix develop -c nixfmt --check flake.nix .nix/devshell.nix
+
+      - name: Lint the agent shell
+        run: nix develop -c shellcheck .nix/agent-check.sh
+
+      - name: Check agent shell formatting
+        run: nix develop -c shfmt -d .nix/agent-check.sh
+
+      - name: Check GitHub Actions
+        run: nix develop -c actionlint .github/workflows/ci.yml .github/workflows/nix.yml
+
+      - name: Evaluate and build flake checks
+        run: nix flake check --show-trace
+
+      - name: Report pinned toolchains
+        run: |
+          nix develop -c rustc --version
+          nix develop -c cargo --version
 
       - name: Check Rust formatting
         run: nix develop -c agent-check fmt
