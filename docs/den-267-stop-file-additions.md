@@ -1,1 +1,0 @@
-No additional scope should be added to this branch before CI and review.
