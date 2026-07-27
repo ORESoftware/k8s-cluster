@@ -117,6 +117,7 @@ jobs:
             assert.match(handlers, /async fn presence_test_page\(\)[\s\S]*inline_ui_document\([\s\S]*"presence"/);
             assert.match(handlers, /async fn wss_test_page\(\)[\s\S]*inline_ui_document\([\s\S]*"wss"/);
 
+            const normalizedMain = main.replace(/\s+/g, ' ');
             for (const [path, handler] of [
               ['/agents/tasks', 'agents_tasks_page'],
               ['/agents/threads', 'agents_threads_page'],
@@ -124,8 +125,10 @@ jobs:
               ['/presence-test', 'presence_test_page'],
               ['/wss-test', 'wss_test_page'],
             ] as const) {
-              const escapedPath = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              assert.match(main, new RegExp(`\\.route\\("${escapedPath}",\\s*get\\(${handler}\\)\\)`));
+              assert.ok(
+                normalizedMain.includes(`.route("${path}", get(${handler}))`),
+                `main.rs must route ${path} to ${handler}`,
+              );
             }
 
             assert.match(agents, /pub\(crate\) const AGENTS_TASKS_CSS: &str/);
