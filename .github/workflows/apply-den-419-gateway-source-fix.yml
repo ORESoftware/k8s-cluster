@@ -1,0 +1,116 @@
+name: Apply DEN-419 gateway source fix
+
+on:
+  push:
+    branches:
+      - agent/den-419-gateway-modular-source
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-den-419-gateway-source-fix.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-419-gateway-source-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-419-gateway-modular-source
+          persist-credentials: true
+      - name: Align gateway contracts with registered web-home modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/tests/general/gateway-service-directory.test.ts')
+          text = path.read_text(encoding='utf-8')
+          anchor = """async function readRepoFile(relativePath: string): Promise<string> {
+            return readFile(resolve(repoRoot, relativePath), 'utf8');
+          }
+          """
+          helper = """
+          async function readWebHomeSource(): Promise<string> {
+            const modules = [
+              'agents',
+              'container_pool',
+              'grafana',
+              'handlers',
+              'home',
+              'jello',
+              'labs',
+              'lambda',
+              'metrics',
+              'shared',
+              'state',
+            ];
+            const main = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+            for (const moduleName of modules) {
+              assert.match(main, new RegExp(`mod ${moduleName};`), `main.rs must register ${moduleName}.rs`);
+            }
+            const moduleSources = await Promise.all(
+              modules.map((moduleName) =>
+                readRepoFile(`remote/deployments/web-home-rs/src/${moduleName}.rs`),
+              ),
+            );
+            return [main, ...moduleSources].join('\n');
+          }
+          """
+          if 'async function readWebHomeSource()' not in text:
+              if text.count(anchor) != 1:
+                  raise SystemExit(f'expected one readRepoFile anchor, found {text.count(anchor)}')
+              text = text.replace(anchor, anchor + helper, 1)
+
+          old = "await readRepoFile('remote/deployments/web-home-rs/src/main.rs')"
+          count = text.count(old)
+          if count == 0 and 'await readWebHomeSource()' not in text:
+              raise SystemExit('no web-home source reads found')
+          text = text.replace(old, 'await readWebHomeSource()')
+          path.write_text(text, encoding='utf-8')
+          print(f'aligned {count} direct main.rs read(s) with the registered module bundle')
+          PY
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Run the source-location gateway contracts
+        run: >-
+          pnpm exec tsx --test
+          --test-name-pattern='rust homepage|rust agent tasks|rust agent threads|rust thread chat'
+          general/gateway-service-directory.test.ts
+        working-directory: remote/tests
+      - name: Scan for unresolved conflict markers
+        run: |
+          if git grep -n -E '^(<<<<<<< |=======$|>>>>>>> )' -- . ':(exclude)*.lock'; then
+            exit 1
+          fi
+      - name: Commit verified source-aware contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- remote/tests/general/gateway-service-directory.test.ts
+          if git diff --cached --quiet; then
+            echo 'DEN-419 gateway source repair already applied.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-419 align gateway contracts with web-home modules'
+          git push origin HEAD:agent/den-419-gateway-modular-source
