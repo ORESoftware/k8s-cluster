@@ -1,0 +1,10 @@
+/target/
+.env
+.env.*
+!.env.example
+*.pem
+*.p8
+*service-account*.json
+.DS_Store
+.idea/
+.vscode/
