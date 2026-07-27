@@ -1,1 +1,0 @@
-Feature branch scope is frozen pending pull-request checks.
