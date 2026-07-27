@@ -1,31 +1,31 @@
-name: capture rustfmt output (temporary)
+name: apply rustfmt output (temporary)
 
 on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   rustfmt:
+    if: github.actor == 'ORESoftware' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          persist-credentials: false
-      - name: Capture source before formatting
-        run: |
-          mkdir -p "$RUNNER_TEMP/rustfmt/original" "$RUNNER_TEMP/rustfmt/formatted"
-          cp src/device_sync_protocol.rs "$RUNNER_TEMP/rustfmt/original/"
-          cp src/account_security.rs "$RUNNER_TEMP/rustfmt/original/"
+          ref: agent/den-304-redacted-debug
+          fetch-depth: 0
+          persist-credentials: true
       - run: cargo fmt
-      - name: Capture source after formatting
+      - name: Commit only formatted Rust sources
         run: |
-          cp src/device_sync_protocol.rs "$RUNNER_TEMP/rustfmt/formatted/"
-          cp src/account_security.rs "$RUNNER_TEMP/rustfmt/formatted/"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: rustfmt-before-after
-          path: ${{ runner.temp }}/rustfmt
-          if-no-files-found: error
-          retention-days: 1
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/device_sync_protocol.rs src/account_security.rs
+          if git diff --cached --quiet; then
+            echo 'Rust sources already formatted.'
+            exit 0
+          fi
+          git diff --cached --check
+          git commit -m 'style: apply rustfmt to redaction tests'
+          git push origin HEAD:agent/den-304-redacted-debug
