@@ -69,3 +69,5 @@ The adapter's test suite covers:
 - a mock APNs endpoint that verifies authorization, topic, push type, request ID, device-token path, and JSON payload
 
 No real Apple key or device token is required for these tests. The mock delivery test seeds a synthetic cached provider token and uses a loopback HTTP endpoint that is inaccessible through public configuration APIs.
+
+The merge gate requires locked formatting, Clippy with warnings denied, all tests, the Rust 1.88 container build, cargo-deny, RustSec, and full-history Gitleaks to pass on the same reviewed commit.
