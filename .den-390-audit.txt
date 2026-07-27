@@ -1,3 +1,0 @@
-{"ok":true,"errorCount":0,"warningCount":0,"errors":[],"warnings":[]}
-
-exit_status=0
