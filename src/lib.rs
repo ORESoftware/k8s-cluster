@@ -17,6 +17,7 @@ mod protocol;
 mod server;
 mod shared_auth;
 mod signal_api;
+mod signal_bundle_store;
 mod signal_store;
 mod state;
 mod supabase_auth;
