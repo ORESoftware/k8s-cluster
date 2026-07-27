@@ -1,0 +1,143 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-ai-agent-runner
+  namespace: default
+  labels:
+    app: dd-ai-agent-runner
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+spec:
+  # Activation is deliberately explicit. Create the AWS Secrets Manager bundle
+  # documented by dd-ai-agent-runner.externalsecret.yaml, then scale to exactly 1.
+  # Multiple replicas may duplicate non-file provider calls until distributed
+  # assignment claims are implemented; file-scoped work is still Fiducia-fenced.
+  replicas: 0
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: dd-ai-agent-runner
+  template:
+    metadata:
+      labels:
+        app: dd-ai-agent-runner
+      annotations:
+        dd.dev/ai-agent-runner-revision: 'provider-worker+workflow-polling+fiducia-fencing'
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      containers:
+        - name: ai-agent-runner
+          image: docker.io/library/rust:1.95-bookworm
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          command:
+            - /bin/bash
+            - -lc
+          args:
+            - |
+              set -euo pipefail
+              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+              build_root=""
+              mounted="/opt/dd-next-1"
+              if [ -f "${mounted}/remote/deployments/ai-agent-bridge/Cargo.toml" ] \
+                 && [ -f "${mounted}/remote/libs/pg-defs/generated/rust/Cargo.toml" ]; then
+                build_root="${mounted}"
+                echo "[dd-ai-agent-runner] using mounted superproject at ${mounted}"
+              else
+                git_auth_args=()
+                if [ -n "${GH_PAT:-}" ]; then
+                  authhdr="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_PAT" | base64 | tr -d '\n')"
+                  git_auth_args=(-c "http.https://github.com/.extraheader=${authhdr}")
+                  git config --global url."https://github.com/".insteadOf "git@github.com:"
+                fi
+                clone="$(mktemp -d /tmp/ai-agent-runner-src.XXXXXX)"
+                echo "[dd-ai-agent-runner] mounted source absent; cloning k8s-cluster@${K8S_GIT_REF:-dev}"
+                git clone --depth 1 --branch "${K8S_GIT_REF:-dev}" "${git_auth_args[@]}" \
+                  "${K8S_GIT_URL:-https://github.com/ORESoftware/k8s-cluster.git}" "${clone}"
+                git -C "${clone}" "${git_auth_args[@]}" submodule update --init --depth 1 \
+                  remote/libs remote/deployments/ai-agent-bridge
+                build_root="${clone}"
+              fi
+
+              cd "${build_root}/remote/deployments/ai-agent-bridge"
+              echo "[dd-ai-agent-runner] building ($(git rev-parse --short HEAD 2>/dev/null || echo '?'))"
+              cargo build --release --locked --bin fiducia-ai-agent-runner
+              exec "${CARGO_TARGET_DIR:-target}/release/fiducia-ai-agent-runner"
+          envFrom:
+            - secretRef:
+                name: dd-ai-agent-runner-secrets
+          env:
+            - name: AI_AGENT_RUNNER_BRIDGE_URL
+              value: http://dd-ai-agent-bridge.default.svc.cluster.local:8142/
+            - name: AI_AGENT_RUNNER_BRIDGE_BEARER
+              valueFrom:
+                secretKeyRef:
+                  name: dd-ai-agent-bridge-secrets
+                  key: inbox_token
+            - name: AI_AGENT_RUNNER_POLL_INTERVAL_MS
+              value: '5000'
+            - name: AI_AGENT_RUNNER_MAX_CONCURRENCY
+              value: '4'
+            - name: AI_AGENT_RUNNER_MAX_OUTPUT_TOKENS
+              value: '4096'
+            - name: AI_AGENT_RUNNER_LEASE_SAFETY_MARGIN_MS
+              value: '15000'
+            - name: LOG_FORMAT
+              value: json
+            - name: RUST_LOG
+              value: info,ai_agent_bridge=info,reqwest=warn,hyper=warn
+            - name: RUST_BACKTRACE
+              value: '0'
+            - name: K8S_GIT_URL
+              value: https://github.com/ORESoftware/k8s-cluster.git
+            - name: K8S_GIT_REF
+              value: dev
+            - name: GH_PAT
+              valueFrom:
+                secretKeyRef:
+                  name: dd-git-clone-token
+                  key: token
+                  optional: true
+            - name: HOME
+              value: /tmp
+            - name: CARGO_HOME
+              value: /tmp/cargo
+            - name: CARGO_TARGET_DIR
+              value: /tmp/ai-agent-runner-target
+          resources:
+            requests:
+              cpu: '50m'
+              memory: 256Mi
+            limits:
+              cpu: '2'
+              memory: 2Gi
+          volumeMounts:
+            - name: repo
+              mountPath: /opt/dd-next-1
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: repo
+          hostPath:
+            path: /home/ec2-user/codes/dd/dd-next-1
+            type: DirectoryOrCreate
+        - name: tmp
+          emptyDir:
+            sizeLimit: 8Gi
