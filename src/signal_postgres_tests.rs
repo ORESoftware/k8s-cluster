@@ -92,8 +92,8 @@ fn required_i64(row: &QueryResult, column: &str) -> i64 {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "requires THREEFA_SIGNAL_TEST_DATABASE_URL"]
 async fn concurrent_prekey_claims_return_distinct_one_time_keys() {
-    let db = database().await;
-    reset_schema(&db).await;
+    let db = Arc::new(database().await);
+    reset_schema(db.as_ref()).await;
 
     let account_id = Uuid::new_v4();
     let target_id = Uuid::new_v4();
@@ -103,7 +103,7 @@ async fn concurrent_prekey_claims_return_distinct_one_time_keys() {
     let signature = BASE64.encode([8_u8; 64]);
 
     execute(
-        &db,
+        db.as_ref(),
         format!(
             "INSERT INTO threefa.accounts (id, signal_device_revision) VALUES ('{account_id}', 12);"
         ),
@@ -111,7 +111,7 @@ async fn concurrent_prekey_claims_return_distinct_one_time_keys() {
     .await;
     for device_id in [target_id, requester_a, requester_b] {
         execute(
-            &db,
+            db.as_ref(),
             format!(
                 "INSERT INTO threefa.devices (id, account_id) VALUES ('{device_id}', '{account_id}');"
             ),
@@ -119,7 +119,7 @@ async fn concurrent_prekey_claims_return_distinct_one_time_keys() {
         .await;
     }
     execute(
-        &db,
+        db.as_ref(),
         format!(
             "INSERT INTO threefa.device_prekey_bundles (device_id, bundle_revision, protocol_version, registration_id, identity_key_base64, signed_prekey_id, signed_prekey_base64, signed_prekey_signature_base64, pq_signed_prekey_id, pq_signed_prekey_base64, pq_signed_prekey_signature_base64, expires_at) VALUES ('{target_id}', 1, 1, 42, '{public_key}', 1, '{public_key}', '{signature}', 2, '{public_key}', '{signature}', clock_timestamp() + interval '1 day');"
         ),
@@ -127,7 +127,7 @@ async fn concurrent_prekey_claims_return_distinct_one_time_keys() {
     .await;
     for prekey_id in [101, 102] {
         execute(
-            &db,
+            db.as_ref(),
             format!(
                 "INSERT INTO threefa.device_one_time_prekeys (device_id, prekey_id, public_key_base64) VALUES ('{target_id}', {prekey_id}, '{public_key}');"
             ),
@@ -137,11 +137,11 @@ async fn concurrent_prekey_claims_return_distinct_one_time_keys() {
 
     let barrier = Arc::new(Barrier::new(3));
     let task = |requester_id: Uuid| {
-        let db = db.clone();
+        let db = Arc::clone(&db);
         let barrier = Arc::clone(&barrier);
         tokio::spawn(async move {
             barrier.wait().await;
-            claim_prekey_bundle(&db, account_id, target_id, requester_id)
+            claim_prekey_bundle(db.as_ref(), account_id, target_id, requester_id)
                 .await
                 .expect("claim public bundle")
         })
