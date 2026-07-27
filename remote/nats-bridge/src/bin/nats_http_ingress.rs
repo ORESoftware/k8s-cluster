@@ -1,31 +1,29 @@
 //! Hardened external HTTP -> JetStream queue ingress.
 //!
-//! External callers never choose NATS subjects or streams. They authenticate as
-//! a configured client and POST JSON to a named route. The bridge resolves that
-//! route to an exact subject + expected stream, applies `Nats-Msg-Id` for
-//! deduplication, waits for the JetStream publish acknowledgement, and returns a
-//! stable transport-neutral response.
+//! External callers authenticate as a configured client and POST JSON to a
+//! named queue route. They never choose or receive NATS subjects, stream names,
+//! server URLs, credentials, or raw upstream errors.
 
 use async_nats::{HeaderMap as NatsHeaders, HeaderValue};
 use axum::{
-    body::Bytes,
-    extract::{DefaultBodyLimit, Path, State},
-    http::{header, HeaderMap as HttpHeaders, StatusCode},
+    Json, Router,
+    body::to_bytes,
+    extract::{Path, Request, State},
+    http::{HeaderMap as HttpHeaders, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet, HashSet},
     fs,
     net::SocketAddr,
-    path::PathBuf,
+    path::{Path as FsPath, PathBuf},
     str::FromStr,
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -38,10 +36,10 @@ const ABSOLUTE_MAX_BODY_BYTES: usize = 1024 * 1024;
 const DEFAULT_MAX_IN_FLIGHT: usize = 128;
 const DEFAULT_PUBLISH_TIMEOUT_MS: u64 = 5_000;
 const MIN_TOKEN_BYTES: usize = 32;
+const MAX_TOKEN_BYTES: usize = 4096;
 const MIN_IDEMPOTENCY_BYTES: usize = 8;
 const MAX_IDEMPOTENCY_BYTES: usize = 128;
 const MAX_IDENTIFIER_BYTES: usize = 32;
-const MAX_TOKEN_BYTES: usize = 4096;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -79,6 +77,7 @@ struct AppState {
     routes: Routes,
     clients: Clients,
     in_flight: Arc<Semaphore>,
+    max_in_flight: usize,
     publish_timeout: Duration,
     counters: Counters,
 }
@@ -121,18 +120,14 @@ async fn main() {
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "nats_http_ingress=info,info".into()),
         )
-        .with(tracing_subscriber::fmt::layer().json())
+        .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let routes_path = env_path(
-        "BRIDGE_ROUTES_FILE",
-        "/etc/nats-bridge/routes.json",
-    );
+    let routes_path = env_path("BRIDGE_ROUTES_FILE", "/etc/nats-bridge/routes.json");
     let clients_path = env_path(
         "BRIDGE_CLIENTS_FILE",
         "/var/run/secrets/nats-bridge/clients.json",
     );
-
     let routes: Routes = load_json_file(&routes_path, "route configuration");
     let clients: Clients = load_json_file(&clients_path, "client configuration");
     if let Err(error) = validate_configuration(&routes, &clients) {
@@ -141,26 +136,25 @@ async fn main() {
 
     let nats_url =
         std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".to_string());
-    let mut options = async_nats::ConnectOptions::new()
+    let mut connect_options = async_nats::ConnectOptions::new()
         .name("dd-nats-http-ingress")
         .retry_on_initial_connect()
         .max_reconnects(None);
     if let Ok(token) = std::env::var("NATS_TOKEN") {
         if !token.trim().is_empty() {
-            options = options.token(token.trim().to_string());
+            connect_options = connect_options.token(token.trim().to_string());
         }
     } else if let (Ok(user), Ok(password)) =
         (std::env::var("NATS_USER"), std::env::var("NATS_PASSWORD"))
     {
-        options = options.user_and_password(user, password);
+        connect_options = connect_options.user_and_password(user, password);
     }
 
-    let nats = options
+    let nats = connect_options
         .connect(&nats_url)
         .await
-        .unwrap_or_else(|error| fatal_value(&format!("could not connect to internal NATS: {error}")));
+        .unwrap_or_else(|_| fatal("could not connect to internal NATS"));
     let jetstream = async_nats::jetstream::new(nats.clone());
-
     let max_in_flight = env_usize("BRIDGE_MAX_IN_FLIGHT", DEFAULT_MAX_IN_FLIGHT, 1, 4096);
     let timeout_ms = env_u64(
         "BRIDGE_PUBLISH_TIMEOUT_MS",
@@ -168,12 +162,6 @@ async fn main() {
         100,
         60_000,
     );
-    let absolute_body_limit = routes
-        .values()
-        .map(|route| route.max_body_bytes)
-        .max()
-        .unwrap_or(DEFAULT_MAX_BODY_BYTES)
-        .min(ABSOLUTE_MAX_BODY_BYTES);
 
     let state = Arc::new(AppState {
         nats,
@@ -181,6 +169,7 @@ async fn main() {
         routes,
         clients,
         in_flight: Arc::new(Semaphore::new(max_in_flight)),
+        max_in_flight,
         publish_timeout: Duration::from_millis(timeout_ms),
         counters: Counters {
             accepted: AtomicU64::new(0),
@@ -203,43 +192,46 @@ async fn main() {
         .route("/readyz", get(readyz))
         .route("/metrics", get(metrics))
         .route("/v1/queues/:route", post(enqueue))
-        .layer(DefaultBodyLimit::max(absolute_body_limit))
         .with_state(state);
 
     let port = env_u16("PORT", DEFAULT_PORT);
     let address = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(address)
         .await
-        .unwrap_or_else(|error| fatal_value(&format!("could not bind HTTP listener: {error}")));
+        .unwrap_or_else(|error| fatal(&format!("could not bind HTTP listener: {error}")));
     tracing::info!(port, "nats HTTP ingress listening");
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await
-        .unwrap_or_else(|error| fatal_value(&format!("HTTP server failed: {error}")));
+        .unwrap_or_else(|error| fatal(&format!("HTTP server failed: {error}")));
 }
 
 async fn healthz(State(state): State<Arc<AppState>>) -> Json<Value> {
     Json(json!({
         "ok": true,
-        "nats_connected": matches!(
-            state.nats.connection_state(),
-            async_nats::connection::State::Connected
-        ),
+        "nats_connected": nats_connected(&state),
     }))
 }
 
 async fn readyz(State(state): State<Arc<AppState>>) -> Result<&'static str, StatusCode> {
-    if matches!(
-        state.nats.connection_state(),
-        async_nats::connection::State::Connected
-    ) {
+    if nats_connected(&state) {
         Ok("ok")
     } else {
         Err(StatusCode::SERVICE_UNAVAILABLE)
     }
 }
 
+fn nats_connected(state: &AppState) -> bool {
+    matches!(
+        state.nats.connection_state(),
+        async_nats::connection::State::Connected
+    )
+}
+
 async fn metrics(State(state): State<Arc<AppState>>) -> Response {
+    let in_flight = state
+        .max_in_flight
+        .saturating_sub(state.in_flight.available_permits());
     let body = format!(
         concat!(
             "# TYPE nats_http_ingress_accepted_total counter\n",
@@ -251,13 +243,12 @@ async fn metrics(State(state): State<Arc<AppState>>) -> Response {
             "# TYPE nats_http_ingress_upstream_failed_total counter\n",
             "nats_http_ingress_upstream_failed_total {}\n",
             "# TYPE nats_http_ingress_in_flight gauge\n",
-            "nats_http_ingress_in_flight {}\n"
+            "nats_http_ingress_in_flight {in_flight}\n"
         ),
         state.counters.accepted.load(Ordering::Relaxed),
         state.counters.rejected.load(Ordering::Relaxed),
         state.counters.overloaded.load(Ordering::Relaxed),
         state.counters.upstream_failed.load(Ordering::Relaxed),
-        state.in_flight.available_permits().saturating_sub(state.in_flight.available_permits())
     );
     (
         StatusCode::OK,
@@ -270,12 +261,11 @@ async fn metrics(State(state): State<Arc<AppState>>) -> Response {
 async fn enqueue(
     Path(route_name): Path<String>,
     State(state): State<Arc<AppState>>,
-    headers: HttpHeaders,
-    body: Bytes,
+    request: Request,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    let result = enqueue_inner(&route_name, &state, &headers, body).await;
+    let result = enqueue_inner(&route_name, &state, request).await;
     match result {
-        Ok(message_id) => {
+        Ok(public_message_id) => {
             state.counters.accepted.fetch_add(1, Ordering::Relaxed);
             tracing::info!(route = %route_name, "queue message accepted");
             Ok((
@@ -283,7 +273,7 @@ async fn enqueue(
                 Json(json!({
                     "ok": true,
                     "route": route_name,
-                    "message_id": message_id,
+                    "message_id": public_message_id,
                 })),
             ))
         }
@@ -307,9 +297,10 @@ async fn enqueue(
 async fn enqueue_inner(
     route_name: &str,
     state: &Arc<AppState>,
-    headers: &HttpHeaders,
-    body: Bytes,
+    request: Request,
 ) -> Result<String, ApiError> {
+    let (parts, body) = request.into_parts();
+    let (client_id, client) = authenticate_client(&parts.headers, &state.clients)?;
     if !valid_identifier(route_name) {
         return Err(ApiError::new(StatusCode::NOT_FOUND, "route_not_found"));
     }
@@ -317,60 +308,52 @@ async fn enqueue_inner(
         .routes
         .get(route_name)
         .ok_or_else(|| ApiError::new(StatusCode::NOT_FOUND, "route_not_found"))?;
-    let client_id = authenticate(headers, route_name, &state.clients)?;
-
-    if !json_content_type(headers) {
+    if !client.routes.contains(route_name) {
+        return Err(ApiError::new(StatusCode::FORBIDDEN, "route_forbidden"));
+    }
+    if !json_content_type(&parts.headers) {
         return Err(ApiError::new(
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
             "content_type_required",
         ));
     }
+
+    let idempotency_key = required_header(
+        &parts.headers,
+        "idempotency-key",
+        StatusCode::BAD_REQUEST,
+        "missing_idempotency_key",
+    )?;
+    validate_idempotency_key(idempotency_key)?;
+    let body = to_bytes(body, route.max_body_bytes)
+        .await
+        .map_err(|_| ApiError::new(StatusCode::PAYLOAD_TOO_LARGE, "body_too_large"))?;
     if body.is_empty() {
         return Err(ApiError::new(StatusCode::BAD_REQUEST, "empty_body"));
     }
-    if body.len() > route.max_body_bytes {
-        return Err(ApiError::new(StatusCode::PAYLOAD_TOO_LARGE, "body_too_large"));
-    }
     if !matches!(serde_json::from_slice::<Value>(&body), Ok(Value::Object(_))) {
-        return Err(ApiError::new(StatusCode::BAD_REQUEST, "invalid_json_object"));
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "invalid_json_object",
+        ));
     }
-
-    let idempotency_key = required_header(headers, "idempotency-key")?;
-    validate_idempotency_key(idempotency_key)?;
-    let message_id = format!("{client_id}:{route_name}:{idempotency_key}");
 
     let _permit = state
         .in_flight
         .clone()
         .try_acquire_owned()
         .map_err(|_| ApiError::new(StatusCode::TOO_MANY_REQUESTS, "overloaded"))?;
-
-    let mut nats_headers = NatsHeaders::new();
-    nats_headers.insert(
-        "Nats-Msg-Id",
-        HeaderValue::from_str(&message_id)
-            .map_err(|_| ApiError::new(StatusCode::BAD_REQUEST, "invalid_idempotency_key"))?,
-    );
-    nats_headers.insert(
-        "Nats-Expected-Stream",
-        HeaderValue::from_str(&route.stream)
-            .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "configuration_error"))?,
-    );
-    nats_headers.insert(
-        "X-Bridge-Client",
-        HeaderValue::from_str(client_id)
-            .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "configuration_error"))?,
-    );
-    nats_headers.insert(
-        "X-Bridge-Route",
-        HeaderValue::from_str(route_name)
-            .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "configuration_error"))?,
-    );
+    let internal_message_id = format!("{client_id}:{route_name}:{idempotency_key}");
+    let mut headers = NatsHeaders::new();
+    insert_nats_header(&mut headers, "Nats-Msg-Id", &internal_message_id)?;
+    insert_nats_header(&mut headers, "Nats-Expected-Stream", &route.stream)?;
+    insert_nats_header(&mut headers, "X-Bridge-Client", client_id)?;
+    insert_nats_header(&mut headers, "X-Bridge-Route", route_name)?;
 
     let publish = async {
         let acknowledgement = state
             .jetstream
-            .publish_with_headers(route.subject.clone(), nats_headers, body)
+            .publish_with_headers(route.subject.clone(), headers, body)
             .await
             .map_err(|_| ApiError::new(StatusCode::BAD_GATEWAY, "publish_failed"))?;
         acknowledgement
@@ -378,7 +361,6 @@ async fn enqueue_inner(
             .map_err(|_| ApiError::new(StatusCode::BAD_GATEWAY, "publish_failed"))?;
         Ok::<(), ApiError>(())
     };
-
     tokio::time::timeout(state.publish_timeout, publish)
         .await
         .map_err(|_| ApiError::new(StatusCode::GATEWAY_TIMEOUT, "publish_timeout"))??;
@@ -386,12 +368,16 @@ async fn enqueue_inner(
     Ok(idempotency_key.to_string())
 }
 
-fn authenticate<'a>(
+fn authenticate_client<'a>(
     headers: &'a HttpHeaders,
-    route: &str,
     clients: &'a Clients,
-) -> Result<&'a str, ApiError> {
-    let client_id = required_header(headers, "x-bridge-client")?;
+) -> Result<(&'a str, &'a ClientConfig), ApiError> {
+    let client_id = required_header(
+        headers,
+        "x-bridge-client",
+        StatusCode::UNAUTHORIZED,
+        "unauthorized",
+    )?;
     if !valid_identifier(client_id) {
         return Err(ApiError::new(StatusCode::UNAUTHORIZED, "unauthorized"));
     }
@@ -405,22 +391,24 @@ fn authenticate<'a>(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| ApiError::new(StatusCode::UNAUTHORIZED, "unauthorized"))?;
-    if !constant_time_eq(token, &client.token) {
+    if !constant_time_eq(token, client.token.as_str()) {
         return Err(ApiError::new(StatusCode::UNAUTHORIZED, "unauthorized"));
     }
-    if !client.routes.contains(route) {
-        return Err(ApiError::new(StatusCode::FORBIDDEN, "route_forbidden"));
-    }
-    Ok(client_id)
+    Ok((client_id, client))
 }
 
-fn required_header<'a>(headers: &'a HttpHeaders, name: &str) -> Result<&'a str, ApiError> {
+fn required_header<'a>(
+    headers: &'a HttpHeaders,
+    name: &str,
+    status: StatusCode,
+    code: &'static str,
+) -> Result<&'a str, ApiError> {
     headers
         .get(name)
         .and_then(|value| value.to_str().ok())
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "missing_required_header"))
+        .ok_or_else(|| ApiError::new(status, code))
 }
 
 fn json_content_type(headers: &HttpHeaders) -> bool {
@@ -429,6 +417,17 @@ fn json_content_type(headers: &HttpHeaders) -> bool {
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.split(';').next())
         .is_some_and(|value| value.trim().eq_ignore_ascii_case("application/json"))
+}
+
+fn insert_nats_header(
+    headers: &mut NatsHeaders,
+    name: &'static str,
+    value: &str,
+) -> Result<(), ApiError> {
+    let value = HeaderValue::from_str(value)
+        .map_err(|_| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "configuration_error"))?;
+    headers.insert(name, value);
+    Ok(())
 }
 
 fn validate_configuration(routes: &Routes, clients: &Clients) -> Result<(), String> {
@@ -445,7 +444,7 @@ fn validate_configuration(routes: &Routes, clients: &Clients) -> Result<(), Stri
         }
         validate_subject(&route.subject)?;
         validate_stream(&route.stream)?;
-        if route.max_body_bytes == 0 || route.max_body_bytes > ABSOLUTE_MAX_BODY_BYTES {
+        if !(1..=ABSOLUTE_MAX_BODY_BYTES).contains(&route.max_body_bytes) {
             return Err(format!(
                 "route {name:?} max_body_bytes must be 1-{ABSOLUTE_MAX_BODY_BYTES}"
             ));
@@ -457,8 +456,7 @@ fn validate_configuration(routes: &Routes, clients: &Clients) -> Result<(), Stri
         if !valid_identifier(name) {
             return Err(format!("client name {name:?} is invalid"));
         }
-        let token_len = client.token.as_bytes().len();
-        if !(MIN_TOKEN_BYTES..=MAX_TOKEN_BYTES).contains(&token_len) {
+        if !(MIN_TOKEN_BYTES..=MAX_TOKEN_BYTES).contains(&client.token.len()) {
             return Err(format!(
                 "client {name:?} token must be {MIN_TOKEN_BYTES}-{MAX_TOKEN_BYTES} bytes"
             ));
@@ -469,9 +467,11 @@ fn validate_configuration(routes: &Routes, clients: &Clients) -> Result<(), Stri
         if client.routes.is_empty() {
             return Err(format!("client {name:?} must have at least one route"));
         }
-        for route in &client.routes {
-            if !routes.contains_key(route) {
-                return Err(format!("client {name:?} references unknown route {route:?}"));
+        for route_name in &client.routes {
+            if !routes.contains_key(route_name) {
+                return Err(format!(
+                    "client {name:?} references unknown route {route_name:?}"
+                ));
             }
         }
     }
@@ -486,9 +486,9 @@ fn validate_subject(subject: &str) -> Result<(), String> {
         if token.is_empty()
             || token == "*"
             || token == ">"
-            || !token
-                .chars()
-                .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
+            || !token.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '_' | '-')
+            })
         {
             return Err("route subject contains an invalid token".into());
         }
@@ -509,11 +509,10 @@ fn validate_stream(stream: &str) -> Result<(), String> {
 }
 
 fn validate_idempotency_key(key: &str) -> Result<(), ApiError> {
-    let length = key.as_bytes().len();
-    if !(MIN_IDEMPOTENCY_BYTES..=MAX_IDEMPOTENCY_BYTES).contains(&length)
-        || !key
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.' | ':'))
+    if !(MIN_IDEMPOTENCY_BYTES..=MAX_IDEMPOTENCY_BYTES).contains(&key.len())
+        || !key.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.' | ':')
+        })
     {
         return Err(ApiError::new(
             StatusCode::BAD_REQUEST,
@@ -528,9 +527,9 @@ fn valid_identifier(value: &str) -> bool {
     !bytes.is_empty()
         && bytes.len() <= MAX_IDENTIFIER_BYTES
         && bytes[0].is_ascii_lowercase()
-        && bytes
-            .iter()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_'))
+        && bytes.iter().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_')
+        })
 }
 
 fn constant_time_eq(left: &str, right: &str) -> bool {
@@ -545,11 +544,15 @@ fn constant_time_eq(left: &str, right: &str) -> bool {
         == 0
 }
 
-fn load_json_file<T: for<'de> Deserialize<'de>>(path: &PathBuf, label: &str) -> T {
-    let contents = fs::read_to_string(path)
-        .unwrap_or_else(|error| fatal_value(&format!("could not read {label} at {}: {error}", path.display())));
+fn load_json_file<T: for<'de> Deserialize<'de>>(path: &FsPath, label: &str) -> T {
+    let contents = fs::read_to_string(path).unwrap_or_else(|error| {
+        fatal(&format!(
+            "could not read {label} at {}: {error}",
+            path.display()
+        ))
+    });
     serde_json::from_str(&contents)
-        .unwrap_or_else(|error| fatal_value(&format!("could not parse {label}: {error}")))
+        .unwrap_or_else(|error| fatal(&format!("could not parse {label}: {error}")))
 }
 
 fn env_path(name: &str, default: &str) -> PathBuf {
@@ -590,16 +593,13 @@ fn fatal(message: &str) -> ! {
     std::process::exit(1)
 }
 
-fn fatal_value<T>(message: &str) -> T {
-    fatal(message)
-}
-
 async fn shutdown_signal() {
     let ctrl_c = tokio::signal::ctrl_c();
     #[cfg(unix)]
     {
-        let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("install SIGTERM handler");
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("install SIGTERM handler");
         tokio::select! {
             _ = ctrl_c => {},
             _ = terminate.recv() => {},
@@ -693,8 +693,17 @@ mod tests {
 
     #[test]
     fn token_comparison_is_exact() {
-        assert!(constant_time_eq("abcdefghijklmnopqrstuvwxyz123456", "abcdefghijklmnopqrstuvwxyz123456"));
-        assert!(!constant_time_eq("abcdefghijklmnopqrstuvwxyz123456", "abcdefghijklmnopqrstuvwxyz123457"));
-        assert!(!constant_time_eq("short", "abcdefghijklmnopqrstuvwxyz123456"));
+        assert!(constant_time_eq(
+            "abcdefghijklmnopqrstuvwxyz123456",
+            "abcdefghijklmnopqrstuvwxyz123456"
+        ));
+        assert!(!constant_time_eq(
+            "abcdefghijklmnopqrstuvwxyz123456",
+            "abcdefghijklmnopqrstuvwxyz123457"
+        ));
+        assert!(!constant_time_eq(
+            "short",
+            "abcdefghijklmnopqrstuvwxyz123456"
+        ));
     }
 }
