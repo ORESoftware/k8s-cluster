@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "gitlinks_status": "pending-application",
+  "gitlinks_status": "applied-awaiting-ci",
   "repositories": {
     "apps/cliptown-interfaces": {
       "repository": "cliptown/cliptown-interfaces",
