@@ -1,0 +1,302 @@
+[1m[92m   Compiling[0m thiserror-impl v1.0.69
+[1m[92m   Compiling[0m num-integer v0.1.46
+[1m[92m   Compiling[0m atomic-waker v1.1.2
+[1m[92m   Compiling[0m heck v0.5.0
+[1m[92m   Compiling[0m untrusted v0.9.0
+[1m[92m   Compiling[0m try-lock v0.2.5
+[1m[92m   Compiling[0m dotenvy v0.15.7
+[1m[92m   Compiling[0m httpdate v1.0.3
+[1m[92m   Compiling[0m fnv v1.0.7
+[1m[92m   Compiling[0m h2 v0.4.15
+[1m[92m   Compiling[0m want v0.3.1
+[1m[92m   Compiling[0m futures-intrusive v0.5.0
+[1m[92m   Compiling[0m async-trait v0.1.89
+[1m[92m   Compiling[0m hashbrown v0.16.1
+[1m[92m   Compiling[0m sync_wrapper v1.0.2
+[1m[92m   Compiling[0m cpufeatures v0.3.0
+[1m[92m   Compiling[0m regex-syntax v0.8.11
+[1m[92m   Compiling[0m rustls v0.23.41
+[1m[92m   Compiling[0m hashlink v0.11.1
+[1m[92m   Compiling[0m rustls-webpki v0.103.13
+[1m[92m   Compiling[0m http-body-util v0.1.3
+[1m[92m   Compiling[0m aho-corasick v1.1.4
+[1m[92m   Compiling[0m mime v0.3.17
+[1m[92m   Compiling[0m hyper v1.10.1
+[1m[92m   Compiling[0m data-encoding v2.11.0
+[1m[92m   Compiling[0m ipnet v2.12.0
+[1m[92m   Compiling[0m rustversion v1.0.22
+[1m[92m   Compiling[0m hyper-util v0.1.20
+[1m[92m   Compiling[0m regex-automata v0.4.14
+[1m[92m   Compiling[0m chacha20 v0.10.1
+[1m[92m   Compiling[0m num-iter v0.1.46
+[1m[92m   Compiling[0m hmac v0.13.0
+[1m[92m   Compiling[0m webpki-roots v1.0.8
+[1m[92m   Compiling[0m atoi v2.0.0
+[1m[92m   Compiling[0m anyhow v1.0.103
+[1m[92m   Compiling[0m base64ct v1.8.3
+[1m[92m   Compiling[0m pem-rfc7468 v0.7.0
+[1m[92m   Compiling[0m hkdf v0.13.0
+[1m[92m   Compiling[0m rand v0.10.2
+[1m[92m   Compiling[0m sha2 v0.11.0
+[1m[92m   Compiling[0m tower v0.5.3
+[1m[92m   Compiling[0m md-5 v0.11.0
+[1m[92m   Compiling[0m der_derive v0.7.3
+[1m[92m   Compiling[0m sha1 v0.10.6
+[1m[92m   Compiling[0m indexmap v1.9.3
+[1m[92m   Compiling[0m flagset v0.4.7
+[1m[92m   Compiling[0m getrandom v0.3.4
+[1m[92m   Compiling[0m whoami v2.1.2
+[1m[92m   Compiling[0m utf-8 v0.7.6
+[1m[92m   Compiling[0m foldhash v0.1.5
+[1m[92m   Compiling[0m ryu v1.0.23
+[1m[92m   Compiling[0m hashbrown v0.15.5
+[1m[92m   Compiling[0m sqlx-core v0.9.0
+[1m[92m   Compiling[0m serde_urlencoded v0.7.1
+[1m[92m   Compiling[0m der v0.7.10
+[1m[92m   Compiling[0m tungstenite v0.24.0
+[1m[92m   Compiling[0m axum-core v0.4.5
+[1m[92m   Compiling[0m num-bigint v0.4.8
+[1m[92m   Compiling[0m itertools v0.14.0
+[1m[92m   Compiling[0m pin-project-internal v1.1.13
+[1m[92m   Compiling[0m async-stream-impl v0.3.6
+[1m[92m   Compiling[0m hmac v0.12.1
+[1m[92m   Compiling[0m syn v3.0.3
+[1m[92m   Compiling[0m ahash v0.8.12
+[1m[92m   Compiling[0m hashbrown v0.12.3
+[1m[92m   Compiling[0m ref-cast v1.0.26
+[1m[92m   Compiling[0m pin-project v1.1.13
+[1m[92m   Compiling[0m sqlx-postgres v0.9.0
+[1m[92m   Compiling[0m async-stream v0.3.6
+[1m[92m   Compiling[0m prost-derive v0.13.5
+[1m[92m   Compiling[0m num-rational v0.4.2
+[1m[92m   Compiling[0m spki v0.7.3
+[1m[92m   Compiling[0m tokio-tungstenite v0.24.0
+[1m[92m   Compiling[0m hashlink v0.10.0
+[1m[92m   Compiling[0m webpki-roots v0.26.11
+[1m[92m   Compiling[0m opentelemetry v0.27.1
+[1m[92m   Compiling[0m futures-executor v0.3.32
+[1m[92m   Compiling[0m ref-cast-impl v1.0.26
+[1m[92m   Compiling[0m num-complex v0.4.6
+[1m[92m   Compiling[0m serde_path_to_error v0.1.20
+[1m[92m   Compiling[0m proc-macro-error-attr v1.0.4
+[1m[92m   Compiling[0m proc-macro2-diagnostics v0.10.1
+[1m[92m   Compiling[0m glob v0.3.3
+[1m[92m   Compiling[0m heck v0.4.1
+[1m[92m   Compiling[0m matchit v0.7.3
+[1m[92m   Compiling[0m axum v0.7.9
+[1m[92m   Compiling[0m opentelemetry_sdk v0.27.1
+[1m[92m   Compiling[0m num v0.4.3
+[1m[92m   Compiling[0m sqlx-core v0.8.6
+[1m[92m   Compiling[0m sqlx-macros-core v0.9.0
+[1m[92m   Compiling[0m prost v0.13.5
+[1m[92m   Compiling[0m tower v0.4.13
+[1m[92m   Compiling[0m hkdf v0.12.4
+[1m[92m   Compiling[0m hyper-timeout v0.5.2
+[1m[92m   Compiling[0m md-5 v0.10.6
+[1m[92m   Compiling[0m socket2 v0.5.10
+[1m[92m   Compiling[0m proc-macro-error-attr2 v2.0.0
+[1m[92m   Compiling[0m proc-macro-error v1.0.4
+[1m[92m   Compiling[0m bit-vec v0.8.0
+[1m[92m   Compiling[0m unicase v2.9.0
+[1m[92m   Compiling[0m num-bigint-dig v0.8.6
+[1m[92m   Compiling[0m yansi v1.0.1
+[1m[92m   Compiling[0m home v0.5.12
+[1m[92m   Compiling[0m unicode-general-category v1.1.0
+[1m[92m   Compiling[0m borrow-or-share v0.2.4
+[1m[92m   Compiling[0m whoami v1.6.1
+[1m[92m   Compiling[0m sqlx-postgres v0.8.6
+[1m[92m   Compiling[0m fluent-uri v0.4.1
+[1m[92m   Compiling[0m mime_guess v2.0.5
+[1m[92m   Compiling[0m bit-set v0.8.0
+[1m[92m   Compiling[0m proc-macro-error2 v2.0.1
+[1m[92m   Compiling[0m tonic v0.12.3
+[1m[92m   Compiling[0m sqlx-macros v0.9.0
+[1m[92m   Compiling[0m fraction v0.15.4
+[1m[92m   Compiling[0m pkcs8 v0.10.2
+[1m[92m   Compiling[0m matchers v0.2.0
+[1m[92m   Compiling[0m strum_macros v0.28.0
+[1m[92m   Compiling[0m sharded-slab v0.1.7
+[1m[92m   Compiling[0m tracing-serde v0.2.0
+[1m[92m   Compiling[0m inherent v1.0.13
+[1m[92m   Compiling[0m ordered-float v4.6.0
+[1m[92m   Compiling[0m tracing-log v0.2.0
+[1m[92m   Compiling[0m thread_local v1.1.9
+[1m[92m   Compiling[0m crc32fast v1.5.0
+[1m[92m   Compiling[0m vsimd v0.8.0
+[1m[92m   Compiling[0m micromap v0.3.0
+[1m[92m   Compiling[0m num-cmp v0.1.0
+[1m[92m   Compiling[0m unicode-xid v0.2.6
+[1m[92m   Compiling[0m outref v0.5.2
+[1m[92m   Compiling[0m bytecount v0.6.9
+[1m[92m   Compiling[0m nu-ansi-term v0.50.3
+[1m[92m   Compiling[0m jsonschema-value v0.48.5
+[1m[92m   Compiling[0m tracing-subscriber v0.3.23
+[1m[92m   Compiling[0m uuid-simd v0.8.0
+[1m[92m   Compiling[0m derive_more-impl v2.1.1
+[1m[92m   Compiling[0m referencing v0.48.5
+[1m[92m   Compiling[0m sea-query v0.32.7
+[1m[92m   Compiling[0m strum v0.28.0
+[1m[92m   Compiling[0m sqlx v0.9.0
+[1m[92m   Compiling[0m sqlx v0.8.6
+[1m[92m   Compiling[0m pkcs1 v0.7.5
+[1m[92m   Compiling[0m opentelemetry-proto v0.27.0
+[1m[92m   Compiling[0m sea-bae v0.2.1
+[1m[92m   Compiling[0m fancy-regex v0.18.0
+[1m[92m   Compiling[0m ouroboros_macro v0.18.5
+[1m[92m   Compiling[0m tokio-rustls v0.26.4
+[1m[92m   Compiling[0m regex v1.13.0
+[1m[92m   Compiling[0m jsonschema-regex v0.48.5
+[1m[92m   Compiling[0m signature v2.2.0
+[1m[92m   Compiling[0m email_address v0.2.9
+[1m[92m   Compiling[0m static_assertions v1.1.0
+[1m[92m   Compiling[0m aliasable v0.1.3
+[1m[92m   Compiling[0m jsonschema v0.48.5
+[1m[92m   Compiling[0m rsa v0.9.10
+[1m[92m   Compiling[0m hyper-rustls v0.27.9
+[1m[92m   Compiling[0m opentelemetry-otlp v0.27.0
+[1m[92m   Compiling[0m ouroboros v0.18.5
+[1m[92m   Compiling[0m sea-orm-macros v1.1.20
+[1m[92m   Compiling[0m sea-query-binder v0.7.0
+[1m[92m   Compiling[0m maud_macros v0.26.0
+[1m[92m   Compiling[0m pgvector v0.4.2
+[1m[92m   Compiling[0m derive_more v2.1.1
+[1m[92m   Compiling[0m tracing-opentelemetry v0.28.0
+[1m[92m   Compiling[0m x509-cert v0.2.5
+[1m[92m   Compiling[0m tower-http v0.6.11
+[1m[92m   Compiling[0m fiducia-interfaces v0.1.0 (https://github.com/fiducia-cloud/fiducia-interfaces?rev=e3dba39566e036ad61de91e2e6c1d625ec2b5411#e3dba395)
+[1m[92m   Compiling[0m strum v0.26.3
+[1m[92m   Compiling[0m http-range-header v0.4.2
+[1m[92m   Compiling[0m tower-http v0.5.2
+[1m[92m   Compiling[0m fiducia-payments v0.1.0 (/home/runner/work/fiducia-customer.rs/fiducia-customer.rs/fiducia-payments.rs)
+[1m[92m   Compiling[0m sea-orm v1.1.20
+[1m[92m   Compiling[0m fiducia-telemetry v0.2.1 (https://github.com/fiducia-cloud/fiducia-telemetry.rs?tag=v0.2.1#716853f4)
+[1m[92m   Compiling[0m fiducia-interfaces v0.1.0 (/home/runner/work/fiducia-customer.rs/fiducia-customer.rs/fiducia-interfaces/generated/rust)
+[1m[92m   Compiling[0m reqwest v0.12.28
+[1m[92m   Compiling[0m maud v0.26.0
+[1m[92m   Compiling[0m fiducia-interfaces-db v0.1.0 (/home/runner/work/fiducia-customer.rs/fiducia-customer.rs/fiducia-interfaces/generated/rust-db)
+[1m[92m   Compiling[0m fiducia-backend v0.1.0 (/home/runner/work/fiducia-customer.rs/fiducia-customer.rs/repo)
+[1m[92m    Finished[0m `test` profile [unoptimized + debuginfo] target(s) in 1m 19s
+[1m[33mwarning[0m: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+[1m[92mnote[0m: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
+[1m[92m     Running[0m unittests src/main.rs (target/debug/deps/fiducia_backend-d0d4be191a2c1c57)
+
+running 92 tests
+test auth::tests::duplicate_authorization_headers_are_rejected ... ok
+test auth::tests::duplicate_customer_cookies_are_rejected ... ok
+test auth::tests::customer_cookie_is_isolated_from_admin_cookie ... ok
+test auth::tests::explicit_bearer_beats_ambient_cookie ... ok
+test auth::tests::malformed_authorization_never_downgrades_to_cookie ... ok
+test auth::tests::malformed_or_inconsistent_authorization_contracts_fail_closed ... ok
+test auth::tests::identity_outage_denies_instead_of_falling_through ... ok
+test auth::tests::raw_role_without_versioned_authorization_is_not_a_customer_contract ... ok
+test auth::tests::release_cookie_names_are_host_only ... ok
+test auth::tests::valid_admin_only_context_is_the_wrong_surface ... ok
+test auth::tests::admin_only_identity_is_rejected_by_customer_surface ... ok
+test auth::tests::old_auth_response_without_context_is_rejected_as_bad_gateway ... ok
+test auth::tests::empty_org_membership_is_forbidden ... ok
+test auth::tests::valid_customer_and_explicit_dual_surface_contexts_authorize ... ok
+test interface_contract_tests::generated_interfaces_are_importable ... ok
+test request_security::tests::exact_customer_origin_is_accepted ... ok
+test request_security::tests::duplicate_security_authorities_are_rejected ... ok
+test request_security::tests::origin_paths_and_short_secrets_are_rejected ... ok
+test request_security::tests::csrf_token_is_bound_to_the_verified_credential ... ok
+test request_security::tests::same_site_fetch_metadata_is_rejected ... ok
+test request_security::tests::sibling_origin_is_rejected_even_though_it_is_same_site ... skip ensure_user_is_idempotent: TEST_DATABASE_URL unset
+ok
+skip notifications_are_user_scoped...: TEST_DATABASE_URL unset
+skip preferences_persist_and_bump_version: TEST_DATABASE_URL unset
+skip sessions_are_user_scoped: TEST_DATABASE_URL unset
+test store::tests::ensure_user_is_idempotent ... ok
+test store::tests::notifications_are_user_scoped_and_read_marking_is_idempotent ... ok
+test store::tests::preferences_persist_and_bump_version ... ok
+test store::tests::sessions_are_user_scoped ... ok
+test supabase_auth::tests::channel_maps_to_supabase_fields ... ok
+test supabase_auth::tests::email_validation_accepts_real_and_rejects_garbage ... ok
+test supabase_auth::tests::enroll_body_omits_blank_friendly_name ... ok
+test supabase_auth::tests::error_message_extraction_prefers_gotrue_fields ... ok
+test supabase_auth::tests::endpoint_join_is_slash_safe ... ok
+test supabase_auth::tests::otp_code_must_be_six_to_eight_digits ... ok
+test supabase_auth::tests::otp_request_body_carries_channel_field_and_signup_flag ... ok
+test supabase_auth::tests::parse_enrollment_pulls_qr_secret_uri ... ok
+test supabase_auth::tests::phone_validation_is_e164_and_strips_spacing ... ok
+test supabase_auth::tests::parse_session_requires_access_token ... ok
+test supabase_auth::tests::verify_body_uses_sms_type_for_phone ... ok
+test supabase_auth::tests::step_up_requires_a_verified_totp_factor ... ok
+test tests::api_key_table_exposes_csrf_protected_rotation_and_revocation ... ok
+test tests::api_info_describes_the_website_tier ... ok
+
+thread 'tests::aal1_session_with_a_verified_factor_is_rejected_on_customer_routes' (7709) panicked at src/tests.rs:1015:5:
+assertion `left == right` failed
+  left: 502
+ right: 401
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test tests::app_host_root_serves_the_customer_portal ... ok
+test tests::api_docs_json_is_machine_readable ... ok
+test tests::aal1_session_with_a_verified_factor_is_rejected_on_customer_routes ... FAILED
+test tests::auth_key_sanitizer_checks_org_wire_shape_and_scopes ... ok
+test tests::app_route_serves_the_customer_portal ... ok
+test tests::authenticated_customer_without_database_fails_closed ... ok
+test tests::cookie_mutations_require_exact_origin_and_bound_csrf ... ok
+test tests::billing_webhook_fails_closed ... ok
+test tests::customer_activity_requires_database ... ok
+test tests::cors_allows_only_the_configured_customer_origin_and_headers ... ok
+test tests::customer_api_key_creation_validates_input ... ok
+test tests::customer_asset_served_with_correct_mime ... ok
+test tests::customer_api_keys_require_database ... ok
+test tests::customer_dynamic_responses_are_never_cacheable ... ok
+test tests::customer_origin_validation_accepts_one_exact_http_origin ... ok
+
+thread 'tests::customer_login_is_server_mediated_and_issues_only_customer_cookie' (7727) panicked at src/tests.rs:825:5:
+assertion `left == right` failed
+  left: 502
+ right: 303
+test tests::customer_login_is_server_mediated_and_issues_only_customer_cookie ... FAILED
+test tests::customer_account_routes_render_customer_controls ... ok
+test tests::customer_pages_redirect_missing_sessions_to_customer_login ... ok
+test tests::customer_password_login_with_verified_totp_factor_forces_step_up ... ok
+test tests::customer_sse_stream_is_available ... ok
+test tests::customer_security_sessions_require_database ... ok
+test tests::customer_sync_is_read_only ... ok
+test tests::customer_preferences_require_database_and_validate_before_io ... ok
+test tests::customer_websocket_route_requires_upgrade ... ok
+test tests::diagram_route_serves_html ... ok
+test tests::docs_api_and_alias_serve_html ... ok
+test tests::healthz_and_api_health_report_ok ... ok
+test tests::mfa_activation_rotates_the_app_cookie_to_the_stepped_up_session ... ok
+test tests::customer_key_bff_is_org_scoped_sanitized_and_forwards_idempotency ... ok
+test tests::mfa_disable_never_unenrolls_without_a_fresh_totp_verification ... ok
+test tests::mfa_disable_requires_aal2_at_the_handler_boundary ... ok
+test tests::org_selection_is_explicit_and_membership_checked ... ok
+test tests::mfa_disable_uses_the_freshly_verified_session_for_unenrollment ... ok
+test tests::release_cookie_policy_ignores_the_insecure_escape_hatch ... ok
+test tests::multi_org_portal_propagates_only_validated_selection ... ok
+test tests::portal_served_at_root_on_app_host_is_hardened_like_app ... ok
+test tests::root_serves_the_static_index ... ok
+test tests::server_managed_customer_cookie_is_forwarded_to_the_key_authority ... ok
+test tests::static_asset_served_with_correct_mime ... ok
+test tests::unknown_path_falls_back_to_the_404_page ... ok
+test tests::unauthenticated_customer_mutations_fail_closed ... ok
+test throttle::tests::a_spoofed_forwarded_prefix_cannot_reset_the_bucket ... ok
+test throttle::tests::allows_up_to_the_budget_then_denies ... ok
+test throttle::tests::brute_force_budgets_are_tight_enough_to_matter ... ok
+test tests::operator_pages_are_absent_from_the_customer_app ... ok
+test throttle::tests::buckets_are_independent ... ok
+test throttle::tests::client_key_takes_the_last_forwarded_hop ... ok
+test throttle::tests::distinct_keys_do_not_share_a_budget ... ok
+test throttle::tests::identifiers_are_case_and_space_insensitive ... ok
+test throttle::tests::the_window_slides_so_a_real_user_recovers ... ok
+test throttle::tests::unattributable_clients_share_one_bucket_not_unlimited_ones ... ok
+test tests::websocket_rejects_same_site_sibling_origin ... ok
+test tests::user_controlled_customer_fields_are_bounded_before_io ... ok
+
+failures:
+
+failures:
+    tests::aal1_session_with_a_verified_factor_is_rejected_on_customer_routes
+    tests::customer_login_is_server_mediated_and_issues_only_customer_cookie
+
+test result: FAILED. 90 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+[1m[91merror[0m: test failed, to rerun pass `--bin fiducia-backend`
+
+exit_status=101
