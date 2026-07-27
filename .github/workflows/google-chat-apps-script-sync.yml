@@ -1,6 +1,10 @@
 name: Google Chat Apps Script sync
 
 on:
+  pull_request:
+    paths:
+      - tools/google-chat-space-export/**
+      - .github/workflows/google-chat-apps-script-sync.yml
   push:
     branches:
       - main
@@ -22,7 +26,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: google-chat-apps-script-sync
+  group: google-chat-apps-script-sync-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -82,7 +86,7 @@ jobs:
   deploy:
     name: push, version, and redeploy Apps Script
     needs: validate
-    if: github.event_name == 'push' || inputs.operation == 'deploy'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.operation == 'deploy')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: google-chat-apps-script
@@ -135,11 +139,10 @@ jobs:
         run: |
           set -euo pipefail
           clasp show-authorized-user --json >/dev/null
-          status="$(clasp show-file-status --json)"
-          jq -e '
-            ([.[] | select(.status == "PUSH")] | length) >= 3
-          ' <<<"$status" >/dev/null
-          jq -r '.[] | select(.status == "PUSH") | .name' <<<"$status"
+          test -f App.gs
+          test -f EmailExport.gs
+          test -f appsscript.json
+          clasp show-file-status
 
       - name: Push repository source to Apps Script
         working-directory: tools/google-chat-space-export
