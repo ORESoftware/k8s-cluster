@@ -1,6 +1,7 @@
 name: Google Chat bridge smoke test
 
 on:
+  pull_request:
   push:
     branches:
       - agent/google-chat-space-export
