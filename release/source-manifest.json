@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "gitlinks_status": "applied",
-  "rollout": "extension-background-privacy-policy",
+  "rollout": "extension-background-privacy-policy-final-validation",
   "repositories": {
     "apps/cliptown-interfaces": {
       "repository": "cliptown/cliptown-interfaces",
