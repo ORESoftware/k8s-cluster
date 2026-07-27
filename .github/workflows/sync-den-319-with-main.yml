@@ -1,0 +1,50 @@
+name: Sync DEN-319 with main
+
+on:
+  push:
+    branches:
+      - agent/den-319-register-coordinator
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-den-319-with-main
+  cancel-in-progress: false
+
+jobs:
+  merge-main:
+    if: github.actor == 'ORESoftware'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the coordinator registration branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-319-register-coordinator
+          fetch-depth: 0
+      - name: Merge current main without rebasing
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          if git merge-base --is-ancestor origin/main HEAD; then
+            echo 'Branch already contains current main.'
+            exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if ! git merge --no-ff --no-edit origin/main; then
+            echo 'Semantic merge required. Conflicted paths:' >&2
+            git diff --name-only --diff-filter=U >&2
+            echo 'No side was selected automatically.' >&2
+            exit 1
+          fi
+
+          if git grep -n -E '^(<<<<<<< |=======$|>>>>>>> )' -- . ':(exclude)*.lock'; then
+            echo 'Unresolved Git conflict markers remain.' >&2
+            exit 1
+          fi
+
+          git push origin HEAD:agent/den-319-register-coordinator
