@@ -64,7 +64,7 @@ repo_file_raw() {
 }
 
 json_bool() {
-	if "$@"; then
+	if "$@" >/dev/null 2>&1; then
 		printf 'true'
 	else
 		printf 'false'
