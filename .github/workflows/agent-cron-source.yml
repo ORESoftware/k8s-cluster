@@ -1,9 +1,6 @@
 name: agent cron source export
 
 on:
-  push:
-    branches:
-      - agent/cron-customer-control-plane
   pull_request:
     branches:
       - main
@@ -20,9 +17,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tar --exclude=.git -czf customer-source.tgz .
+          tar --exclude=.git -czf /tmp/customer-source.tgz .
       - uses: actions/upload-artifact@v4
         with:
-          name: customer-source
-          path: customer-source.tgz
+          name: customer-source-${{ github.run_id }}
+          path: /tmp/customer-source.tgz
           if-no-files-found: error
