@@ -47,8 +47,8 @@ test('external callers use named HTTP routes and cannot choose NATS subjects', (
   assert.match(source, /route\("\/v1\/queues\/:route", post\(enqueue\)\)/);
   assert.doesNotMatch(source, /\/publish\/:subject/);
   assert.doesNotMatch(source, /Path\(subject\)/);
-  assert.match(source, /routes\.get\(route_name\)/);
-  assert.match(source, /route\.subject\.clone\(\)/);
+  assert.match(source, /routes\s*\.get\(route_name\)/);
+  assert.match(source, /route\s*\.subject\s*\.clone\(\)/);
   assert.match(source, /validate_subject\(&route\.subject\)/);
   assert.match(source, /subject\.starts_with\('\$'\)/);
   assert.match(source, /token == "\*"/);
@@ -68,7 +68,7 @@ test('external ingress is JetStream-only, acknowledged, and idempotent', () => {
 
 test('client credentials are scoped by route and mounted as a secret file', () => {
   assert.match(source, /BRIDGE_CLIENTS_FILE/);
-  assert.match(source, /client\.routes\.contains\(route\)/);
+  assert.match(source, /client\s*\.routes\s*\.contains\(route\)/);
   assert.match(source, /client tokens must be unique/);
   assert.match(source, /MIN_TOKEN_BYTES: usize = 32/);
   assert.match(deployment, /--bin nats_http_ingress/);
