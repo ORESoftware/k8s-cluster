@@ -247,22 +247,14 @@ jobs:
             echo "===== ${name} ====="
             echo "status=${code}"
             echo "final_url_host=$(python -c 'import sys,urllib.parse; print(urllib.parse.urlparse(sys.argv[1]).hostname)' "$final_url")"
-            python - "$name" "$body" <<'PY'
-import json
-import pathlib
-import sys
+            echo "body=$(tr '\n' ' ' < "$body" | head -c 4000)"
 
-name = sys.argv[1]
-text = pathlib.Path(sys.argv[2]).read_text(errors='replace')
-print('body=' + text[:4000].replace('\n', '\\n'))
-obj = json.loads(text)
-if name == 'health':
-    assert obj.get('ok') is True, obj
-    assert obj.get('service') == 'google-chat-linear-bridge', obj
-else:
-    assert obj.get('ok') is False, obj
-    assert obj.get('error', {}).get('code') in {'unauthorized', 'bridge_not_configured'}, obj
-PY
+            test "$code" = "200"
+            if [ "$name" = "health" ]; then
+              jq -e '.ok == true and .service == "google-chat-linear-bridge"' "$body" >/dev/null
+            else
+              jq -e '.ok == false and (.error.code == "unauthorized" or .error.code == "bridge_not_configured")' "$body" >/dev/null
+            fi
           }
 
           probe health "${BASE_URL}?action=health"
