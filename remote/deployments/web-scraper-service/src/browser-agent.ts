@@ -22,6 +22,10 @@ import { isIP } from 'node:net';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { z } from 'zod';
+import {
+  SensitiveFieldPolicyError,
+  assertSensitiveFieldWriteAllowed,
+} from './sensitive-field-policy.js';
 import type {
   Browser as PlaywrightBrowser,
   BrowserContext,
@@ -414,6 +418,7 @@ export type ErrorCode =
   | 'too_many_sessions'
   | 'upload_not_supported'
   | 'browser_crashed'
+  | 'sensitive_field_blocked'
   | 'internal_error';
 
 export class AgentError extends Error {
@@ -1019,16 +1024,21 @@ async function resolveSecret(ref: string, currentHost: string): Promise<string> 
   if (entry === undefined) {
     throw new AgentError('secret_required', 'no secret bound to that reference');
   }
-  if (typeof entry === 'string') return entry;
+  if (typeof entry === 'string') {
+    throw new AgentError('secret_required', 'secret entries must be domain-bound objects');
+  }
   if (typeof entry.value !== 'string') {
     throw new AgentError('secret_required', 'malformed secret entry');
   }
-  if (entry.domains && entry.domains.length > 0) {
-    const host = currentHost.toLowerCase();
-    const permitted = entry.domains.some((d) => host === d.toLowerCase() || host.endsWith('.' + d.toLowerCase()));
-    if (!permitted) {
-      throw new AgentError('secret_required', 'secret is not permitted on the current page domain');
-    }
+  if (!entry.domains || entry.domains.length === 0) {
+    throw new AgentError('secret_required', 'secret entry must declare at least one permitted domain');
+  }
+  const host = currentHost.toLowerCase();
+  const permitted = entry.domains.some(
+    (domain) => host === domain.toLowerCase() || host.endsWith('.' + domain.toLowerCase()),
+  );
+  if (!permitted) {
+    throw new AgentError('secret_required', 'secret is not permitted on the current page domain');
   }
   return entry.value;
 }
@@ -1454,6 +1464,39 @@ async function fillValue(session: Session, value: z.infer<typeof ValueSchema>): 
   return resolveSecret(value.secret_ref, host);
 }
 
+async function assertResolvedFieldWriteAllowed(
+  loc: Locator,
+  value: z.infer<typeof ValueSchema>,
+): Promise<void> {
+  const field = await loc.evaluate((element) => {
+    const id = element.getAttribute('id') ?? '';
+    const explicitLabel = id
+      ? element.ownerDocument.querySelector(`label[for="${CSS.escape(id)}"]`)
+      : null;
+    const containingLabel = element.closest('label');
+    return {
+      tagName: element.tagName,
+      type: element.getAttribute('type'),
+      name: element.getAttribute('name'),
+      id,
+      autocomplete: element.getAttribute('autocomplete'),
+      ariaLabel: element.getAttribute('aria-label'),
+      label: (explicitLabel?.textContent ?? containingLabel?.textContent ?? '').trim(),
+      placeholder: element.getAttribute('placeholder'),
+      title: element.getAttribute('title'),
+    };
+  });
+
+  try {
+    assertSensitiveFieldWriteAllowed(field, 'literal' in value ? 'literal' : 'secret_ref');
+  } catch (error) {
+    if (error instanceof SensitiveFieldPolicyError) {
+      throw new AgentError('sensitive_field_blocked', error.message);
+    }
+    throw error;
+  }
+}
+
 // Returns true if the batch produced a state change.
 async function runActions(
   session: Session,
@@ -1519,6 +1562,7 @@ async function runActions(
         }
         case 'fill': {
           const loc = await resolveTarget(session, action.target);
+          await assertResolvedFieldWriteAllowed(loc, action.value);
           if (action.clear_first) await loc.fill('', { timeout: remaining() });
           const value = await fillValue(session, action.value);
           await loc.fill(value, { timeout: remaining() });
@@ -1528,6 +1572,7 @@ async function runActions(
         }
         case 'type': {
           const loc = await resolveTarget(session, action.target);
+          await assertResolvedFieldWriteAllowed(loc, action.value);
           if (action.clear_first) await loc.fill('', { timeout: remaining() });
           const value = await fillValue(session, action.value);
           await loc.pressSequentially(value, {
@@ -1541,6 +1586,7 @@ async function runActions(
         case 'fill_form': {
           for (const field of action.fields) {
             const loc = await resolveTarget(session, field.target);
+            await assertResolvedFieldWriteAllowed(loc, field.value);
             const value = await fillValue(session, field.value);
             await loc.fill(value, { timeout: remaining() });
           }
