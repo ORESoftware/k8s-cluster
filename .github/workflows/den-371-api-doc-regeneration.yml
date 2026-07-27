@@ -36,6 +36,11 @@ jobs:
       - name: Initialize pinned shared libraries
         run: |
           set -euo pipefail
+          # actions/checkout stores the scoped deploy-key command in local Git
+          # config. Export it so the child clone uses exactly that credential.
+          ssh_command="$(git config --local core.sshCommand)"
+          test -n "$ssh_command"
+          export GIT_SSH_COMMAND="$ssh_command"
           # The API-doc generator consumes files in the top-level remote/libs
           # gitlink. Do not recurse into remote/libs/async-java: that unrelated
           # upstream repository is not part of this generator input or deploy key.
