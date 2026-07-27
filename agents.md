@@ -8,7 +8,10 @@ Resolve `$PWD`, then walk upward through every parent directory to the filesyste
 
 ## Synchronize with the remote
 
-Before editing, inspect `git status`, the current branch, remotes, and the default branch; run `git fetch --all --prune`; and cut the feature branch from the latest remote default branch rather than a stale local copy. Fetch again before pushing and incorporate upstream changes with the repository's normal rebase or merge policy. Do not force-push, discard remote commits, rewrite shared history, bypass review, or bypass required CI unless explicitly authorized.
+Before editing, inspect `git status`, the current branch, remotes, and the default branch; run `git fetch --all --prune`; and cut the feature branch from the latest remote default branch rather than a stale local copy. Fetch again before pushing and incorporate upstream changes with `git merge` or `git pull` on a clean working tree.
+
+- avoid git rebase in favor of git merge.
+- Do not force-push, discard remote commits, rewrite shared history, bypass review, or bypass required CI unless explicitly authorized.
 
 ## Resolve conflicts semantically
 
