@@ -25,23 +25,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Require private-submodule read token
+      - name: Require private libraries deploy key
         env:
-          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
-        run: test -n "$K8S_SUBMODULE_TOKEN"
+          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+        run: test -n "$K8S_LIBS_DEPLOY_KEY"
 
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
       - name: Initialize required contract submodule
         env:
-          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
-        run: |
-          set -euo pipefail
-          token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
-          git config --global url."${token_url}".insteadOf "git@github.com:"
-          trap 'git config --global --unset-all url."${token_url}".insteadOf || true' EXIT
-          git submodule update --init --recursive --depth 1 -- remote/libs
+          SUBMODULE_AUTH_MODE: ssh
+        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -101,6 +98,7 @@ jobs:
             general/nats-connect-resilience.test.ts
             general/nats-shadow-handoff.test.ts
             general/observability-config.test.ts
+            general/private-submodule-ci-contract.test.ts
             general/redis-cache-config.test.ts
             general/remote-libs-submodule-contract.test.ts
             general/remote-dev-worker-git-hardening.test.ts
@@ -126,23 +124,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Require private-submodule read token
+      - name: Require private libraries deploy key
+        env:
+          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+        run: test -n "$K8S_LIBS_DEPLOY_KEY"
+
+      - name: Require cross-organization submodule read token
         env:
           K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
         run: test -n "$K8S_SUBMODULE_TOKEN"
 
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
-      - name: Initialize pinned libraries and backend repositories
+      - name: Initialize pinned shared libraries
         env:
+          SUBMODULE_AUTH_MODE: ssh
+        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
+
+      - name: Initialize pinned backend repositories
+        env:
+          SUBMODULE_AUTH_MODE: https-token
           K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
-        run: |
-          set -euo pipefail
-          token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
-          git config --global url."${token_url}".insteadOf "git@github.com:"
-          trap 'git config --global --unset-all url."${token_url}".insteadOf || true' EXIT
-          git submodule update --init --depth 1 -- remote/libs remote/deployments
+        run: bash scripts/ci/init-submodules-with-report.sh remote/deployments
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
