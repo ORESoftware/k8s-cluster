@@ -95,21 +95,45 @@ if [[ "$list_only" == true ]]; then
 fi
 
 : "${K8S_SUBMODULE_TOKEN:?K8S_SUBMODULE_TOKEN is required}"
-auth_header="$(printf 'x-access-token:%s' "$K8S_SUBMODULE_TOKEN" | base64 | tr -d '\n')"
-if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-  echo "::add-mask::$auth_header"
-fi
 
-# These process-local Git config entries are inherited by every nested Git
-# process. checkout uses persist-credentials:false, so this is the sole auth
-# header and cannot conflict with the repository-scoped GITHUB_TOKEN.
-export GIT_CONFIG_COUNT=3
+# Use a private, ephemeral askpass helper rather than embedding credentials in a
+# URL, Git config, command argument, or derived masking command. The token stays
+# in the existing secret environment variable and is returned only to Git's
+# credential prompt. Every nested Git process inherits this environment.
+auth_dir="$(mktemp -d)"
+chmod 700 "$auth_dir"
+askpass="$auth_dir/git-askpass.sh"
+cat > "$askpass" <<'ASKPASS'
+#!/usr/bin/env bash
+case "${1:-}" in
+  *Username*|*username*)
+    printf '%s\n' 'x-access-token'
+    ;;
+  *Password*|*password*)
+    printf '%s\n' "${K8S_SUBMODULE_TOKEN:?K8S_SUBMODULE_TOKEN is required}"
+    ;;
+  *)
+    printf '\n'
+    ;;
+esac
+ASKPASS
+chmod 700 "$askpass"
+cleanup_auth() {
+  rm -rf "$auth_dir"
+}
+trap cleanup_auth EXIT
+export GIT_ASKPASS="$askpass"
+export GIT_ASKPASS_REQUIRE=force
+export GIT_TERMINAL_PROMPT=0
+export GCM_INTERACTIVE=never
+
+# These process-local URL rewrites are inherited by every nested Git process.
+# checkout uses persist-credentials:false, so askpass is the sole auth source.
+export GIT_CONFIG_COUNT=2
 export GIT_CONFIG_KEY_0='url.https://github.com/.insteadOf'
 export GIT_CONFIG_VALUE_0='git@github.com:'
 export GIT_CONFIG_KEY_1='url.https://github.com/.insteadOf'
 export GIT_CONFIG_VALUE_1='ssh://git@github.com/'
-export GIT_CONFIG_KEY_2='http.https://github.com/.extraheader'
-export GIT_CONFIG_VALUE_2="AUTHORIZATION: basic ${auth_header}"
 
 scrub_output() {
   sed -E \
