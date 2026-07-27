@@ -1,0 +1,50 @@
+name: DEN-255 merge current main
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/den-255-sync-main.yml'
+  push:
+    branches:
+      - agent/den-255-submodule-ci-diagnostics
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-255-sync-main
+  cancel-in-progress: false
+
+jobs:
+  merge-main:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+          ref: agent/den-255-submodule-ci-diagnostics
+
+      - name: Merge main without rebasing
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+          if git merge-base --is-ancestor origin/main HEAD; then
+            echo 'Current main is already an ancestor of this branch.'
+            exit 0
+          fi
+          if ! git merge --no-ff --no-edit origin/main; then
+            echo 'Semantic conflict resolution is required in:'
+            git diff --name-only --diff-filter=U
+            grep -RInE '^(<<<<<<<|=======|>>>>>>>)' -- . --exclude-dir=.git || true
+            exit 1
+          fi
+          if grep -RInE '^(<<<<<<<|=======|>>>>>>>)' -- . --exclude-dir=.git; then
+            echo 'Conflict markers remain after merge.'
+            exit 1
+          fi
+          git push origin HEAD:agent/den-255-submodule-ci-diagnostics
