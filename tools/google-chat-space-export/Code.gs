@@ -37,10 +37,11 @@ function startGoogleChatExport() {
       totalMessages: 0,
       startedAt: startedAt.toISOString(),
       completedAt: null,
+      cancelledAt: null,
     };
 
     saveState_(state);
-    writeJsonFile_(folder, 'export-config.json', {
+    replaceJsonFile_(folder, 'export-config.json', {
       version: state.version,
       runId: state.runId,
       spaceName: GOOGLE_CHAT_EXPORT.spaceName,
@@ -62,8 +63,8 @@ function startGoogleChatExport() {
 
 /**
  * Exports one page and schedules the next page when needed.
- * Safe to rerun: each part number is written only after the previous state is
- * persisted, and concurrent invocations are serialized with a script lock.
+ * Safe to rerun: part files are deterministically replaced before state advances,
+ * and concurrent invocations are serialized with a script lock.
  */
 function continueGoogleChatExport() {
   const lock = LockService.getScriptLock();
@@ -76,6 +77,10 @@ function continueGoogleChatExport() {
     const state = loadState_();
     if (!state) {
       throw new Error('No export is active. Run startGoogleChatExport() first.');
+    }
+    if (state.cancelledAt) {
+      console.log(`Export was cancelled at ${state.cancelledAt}. Drive folder: ${state.folderUrl}`);
+      return;
     }
     if (state.completedAt) {
       console.log(`Export already completed. Drive folder: ${state.folderUrl}`);
@@ -93,7 +98,7 @@ function continueGoogleChatExport() {
         showDeleted: true,
       });
     } catch (error) {
-      writeJsonFile_(folder, 'export-error.json', {
+      replaceJsonFile_(folder, 'export-error.json', {
         failedAt: new Date().toISOString(),
         message: String(error && error.message ? error.message : error),
         guidance:
@@ -106,7 +111,7 @@ function continueGoogleChatExport() {
     const nextPartNumber = Number(state.partNumber) + 1;
     const partName = `messages-part-${String(nextPartNumber).padStart(5, '0')}.json`;
 
-    writeJsonFile_(folder, partName, {
+    replaceJsonFile_(folder, partName, {
       version: 1,
       runId: state.runId,
       spaceName: GOOGLE_CHAT_EXPORT.spaceName,
@@ -135,7 +140,7 @@ function continueGoogleChatExport() {
 
     state.completedAt = new Date().toISOString();
     saveState_(state);
-    writeJsonFile_(folder, 'export-summary.json', {
+    replaceJsonFile_(folder, 'export-summary.json', {
       version: 1,
       runId: state.runId,
       spaceName: GOOGLE_CHAT_EXPORT.spaceName,
@@ -163,13 +168,14 @@ function getGoogleChatExportStatus() {
   const state = loadState_();
   if (!state) return { active: false };
   return {
-    active: !state.completedAt,
+    active: !state.completedAt && !state.cancelledAt,
     runId: state.runId,
     folderUrl: state.folderUrl,
     parts: state.partNumber,
     totalMessages: state.totalMessages,
     startedAt: state.startedAt,
     completedAt: state.completedAt,
+    cancelledAt: state.cancelledAt,
   };
 }
 
@@ -208,17 +214,25 @@ function normalizeMessage_(message) {
       ? {
           name: threadName,
           sourceKey: `google-chat:${GOOGLE_CHAT_EXPORT.spaceId}:${threadName}`,
-          threadReply: Boolean(message.thread && message.thread.threadReply),
         }
       : null,
+    threadReply: Boolean(message.threadReply),
+    silent: Boolean(message.silent),
     annotations: message.annotations || [],
     attachments: message.attachment || [],
+    matchedUrl: message.matchedUrl || null,
     emojiReactionSummaries: message.emojiReactionSummaries || [],
+    deletionMetadata: message.deletionMetadata || null,
     quotedMessageMetadata: message.quotedMessageMetadata || null,
+    attachedGifs: message.attachedGifs || [],
   };
 }
 
-function writeJsonFile_(folder, filename, value) {
+function replaceJsonFile_(folder, filename, value) {
+  const existing = folder.getFilesByName(filename);
+  while (existing.hasNext()) {
+    existing.next().setTrashed(true);
+  }
   const json = JSON.stringify(value, null, 2);
   const blob = Utilities.newBlob(json, 'application/json', filename);
   folder.createFile(blob);
