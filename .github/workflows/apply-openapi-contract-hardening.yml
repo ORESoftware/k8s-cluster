@@ -43,6 +43,20 @@ jobs:
       - name: Apply source patch
         run: node scripts/api-contract/apply-openapi-hardening.mjs
 
+      - name: Make operation IDs route-stable
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'remote/tools/generate-api-docs.mjs';
+          const before = 'const token = `${service}_${method}_${handler}`';
+          const after = 'const token = `${service}_${method}_${handler}_${route.path}`';
+          const source = fs.readFileSync(path, 'utf8');
+          if (!source.includes(before) && !source.includes(after)) {
+            throw new Error('operation-id source expression not found');
+          }
+          fs.writeFileSync(path, source.replace(before, after));
+          NODE
+
       - name: Regenerate available service contracts
         run: node remote/tools/generate-api-docs.mjs
 
