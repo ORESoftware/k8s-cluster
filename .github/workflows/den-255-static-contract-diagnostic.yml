@@ -53,7 +53,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
         working-directory: remote/tests
 
-      - name: Run static contracts with compact failure report
+      - name: Run static contracts
+        id: static-contracts
+        continue-on-error: true
         working-directory: remote/tests
         run: |
           set +e
@@ -107,15 +109,31 @@ jobs:
             general/webrtc-signaling-service.test.ts
             general/ws-loadtest-config.test.ts
           )
-          log="${RUNNER_TEMP}/static-contracts.log"
-          pnpm exec tsx --test "${static_tests[@]}" >"$log" 2>&1
+          out="${RUNNER_TEMP}/den-255-static-diagnostic"
+          mkdir -p "$out"
+          pnpm exec tsx --test "${static_tests[@]}" >"$out/full.log" 2>&1
           status=$?
-          if (( status != 0 )); then
+          {
             echo '--- failing TAP entries ---'
-            grep -nE '^(not ok|# fail|# error|.*AssertionError|.*ERR_)' "$log" | tail -n 100 || true
+            grep -nE '^(not ok|# fail|# error|.*AssertionError|.*ERR_)' "$out/full.log" | tail -n 100 || true
             echo '--- final context ---'
-            tail -n 250 "$log"
-          else
-            tail -n 40 "$log"
-          fi
+            tail -n 300 "$out/full.log"
+          } >"$out/diagnostic.txt"
+          printf '%s\n' "$status" >"$out/exit-status.txt"
+          cat "$out/diagnostic.txt"
           exit "$status"
+
+      - name: Upload compact diagnostic
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: den-255-static-contract-diagnostic
+          path: ${{ runner.temp }}/den-255-static-diagnostic
+          if-no-files-found: error
+          retention-days: 2
+
+      - name: Enforce static contracts
+        if: steps.static-contracts.outcome == 'failure'
+        run: |
+          echo 'Static contracts failed; inspect the compact diagnostic artifact.'
+          exit 1
