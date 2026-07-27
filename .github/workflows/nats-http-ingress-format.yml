@@ -1,5 +1,6 @@
 name: DEN-440 format NATS ingress
 
+# One-use feature-branch formatter; delete after the source commit lands.
 on:
   push:
     branches:
