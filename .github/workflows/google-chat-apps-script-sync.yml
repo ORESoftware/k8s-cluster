@@ -50,9 +50,13 @@ jobs:
         run: |
           set -euo pipefail
           jq -e '
-            .runtimeVersion == "V8" and
-            .dependencies.enabledAdvancedServices[] |
-            select(.serviceId == "chat" and .version == "v1")
+            (.runtimeVersion == "V8") and
+            any(
+              .dependencies.enabledAdvancedServices[];
+              .serviceId == "chat" and .version == "v1"
+            ) and
+            (.webapp.executeAs == "USER_DEPLOYING") and
+            (.webapp.access == "ANYONE_ANONYMOUS")
           ' "${APPS_SCRIPT_DIR}/appsscript.json" >/dev/null
 
           for source in "${APPS_SCRIPT_DIR}"/*.gs; do
@@ -62,15 +66,18 @@ jobs:
             rm -f "$temp_file"
           done
 
-      - name: Verify fixed safety boundaries
+      - name: Verify fixed safety boundaries and absence of credentials
         shell: bash
         run: |
           set -euo pipefail
           grep -Fq "spaces/AAQAoHKdzvI" "${APPS_SCRIPT_DIR}/App.gs"
           grep -Fq "2026-05-10T04:00:00.000Z" "${APPS_SCRIPT_DIR}/App.gs"
           grep -Fq "alexander.d.mills@gmail.com" "${APPS_SCRIPT_DIR}/EmailExport.gs"
-          ! grep -RInE '(CHAT_BRIDGE_TOKEN=|refresh_token|client_secret)' "${APPS_SCRIPT_DIR}" \
-            --exclude='README.md'
+          if grep -RInE '(refresh_token|client_secret|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|ghp_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{20,})' \
+            "${APPS_SCRIPT_DIR}" --exclude='README.md'; then
+            echo 'Potential credential material found in Apps Script source.' >&2
+            exit 1
+          fi
 
   deploy:
     name: push, version, and redeploy Apps Script
@@ -104,7 +111,8 @@ jobs:
             exit 1
           }
           jq -e 'type == "object"' <<<"$CLASPRC_JSON" >/dev/null
-          jq -e '.scriptId | type == "string" and length > 10' <<<"$CLASP_JSON" >/dev/null
+          jq -e '(.scriptId | type == "string") and (.scriptId | length > 10)' \
+            <<<"$CLASP_JSON" >/dev/null
 
       - name: Install pinned clasp
         run: npm install --global "@google/clasp@${CLASP_VERSION}"
@@ -121,9 +129,17 @@ jobs:
           jq '.rootDir = "."' <<<"$CLASP_JSON" > "${APPS_SCRIPT_DIR}/.clasp.json"
           chmod 600 "${HOME}/.clasprc.json" "${APPS_SCRIPT_DIR}/.clasp.json"
 
-      - name: Show files selected for upload
+      - name: Verify clasp identity and upload set
         working-directory: tools/google-chat-space-export
-        run: clasp show-file-status
+        shell: bash
+        run: |
+          set -euo pipefail
+          clasp show-authorized-user --json >/dev/null
+          status="$(clasp show-file-status --json)"
+          jq -e '
+            ([.[] | select(.status == "PUSH")] | length) >= 3
+          ' <<<"$status" >/dev/null
+          jq -r '.[] | select(.status == "PUSH") | .name' <<<"$status"
 
       - name: Push repository source to Apps Script
         working-directory: tools/google-chat-space-export
@@ -135,7 +151,6 @@ jobs:
         run: |
           set -euo pipefail
           description="GitHub ${GITHUB_SHA} from ${GITHUB_REF_NAME}"
-          clasp create-version "$description"
           clasp create-deployment \
             --deploymentId "$APPS_SCRIPT_DEPLOYMENT_ID" \
             --description "$description"
@@ -192,8 +207,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$CLASPRC_JSON"
-          test -n "$CLASP_JSON"
+          test -n "$CLASPRC_JSON" || {
+            echo 'Missing GitHub environment secret CLASPRC_JSON.' >&2
+            exit 1
+          }
+          test -n "$CLASP_JSON" || {
+            echo 'Missing GitHub environment secret CLASP_JSON.' >&2
+            exit 1
+          }
+          jq -e 'type == "object"' <<<"$CLASPRC_JSON" >/dev/null
+          jq -e '(.scriptId | type == "string") and (.scriptId | length > 10)' \
+            <<<"$CLASP_JSON" >/dev/null
           umask 077
           printf '%s' "$CLASPRC_JSON" > "${HOME}/.clasprc.json"
           mkdir -p "${RUNNER_TEMP}/google-chat-apps-script-remote"
