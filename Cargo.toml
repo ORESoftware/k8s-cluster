@@ -19,6 +19,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 thiserror = "2"
+# jsonwebtoken -> simple_asn1 permits any time 0.3 release. Pin the newest
+# line compatible with this crate's Rust 1.85 MSRV instead of silently raising it.
+time = "=0.3.41"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
