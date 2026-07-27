@@ -6,100 +6,17 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Apply compiler-guided FCM fixes
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          path = Path("src/providers/fcm.rs")
-          text = path.read_text()
-
-          # Test-only imports belong inside the test module.
-          text = text.replace("use std::collections::BTreeMap;\n", "", 1)
-          text = text.replace(
-              "use serde_json::{Map, Value, json};",
-              "use serde_json::{Map, Value};",
-              1,
-          )
-          test_anchor = "mod tests {\n    use super::*;\n"
-          if "mod tests {\n    use super::*;\n    use std::collections::BTreeMap;\n" not in text:
-              if test_anchor not in text:
-                  raise SystemExit("test module import anchor not found")
-              text = text.replace(
-                  test_anchor,
-                  test_anchor + "    use std::collections::BTreeMap;\n",
-                  1,
-              )
-
-          # Keep parsed OAuth details owned so the error code can be cloned safely.
-          text, detail_count = re.subn(
-              r'(\.unwrap_or\("FCM OAuth token endpoint rejected the request"\))\s*;\s*'
-              r'let provider_code = parsed\s*\.and_then\(\|error\| error\.error\)',
-              r'\1\n                .to_owned();\n            let provider_code = parsed\n'
-              r'                .as_ref()\n'
-              r'                .and_then(|error| error.error.clone())',
-              text,
-              count=1,
-          )
-          if detail_count == 0 and ".and_then(|error| error.error.clone())" not in text:
-              raise SystemExit("OAuth ownership fix anchor not found")
-
-          # Do not derive Debug for a secret-bearing configuration just to use expect_err.
-          text, test_count = re.subn(
-              r'let error = FcmConfig::from_service_account_json\(\s*'
-              r'&service_account_json\("http://oauth\.example\.invalid/token"\),\s*'
-              r'None,\s*\)\s*\.expect_err\("non-HTTPS token URI must fail"\);',
-              'let error = match FcmConfig::from_service_account_json(\n'
-              '            &service_account_json("http://oauth.example.invalid/token"),\n'
-              '            None,\n'
-              '        ) {\n'
-              '            Err(error) => error,\n'
-              '            Ok(_) => panic!("non-HTTPS token URI must fail"),\n'
-              '        };',
-              text,
-              count=1,
-          )
-          if test_count == 0 and 'Ok(_) => panic!("non-HTTPS token URI must fail")' not in text:
-              raise SystemExit("negative config test anchor not found")
-
-          required = [
-              "use serde_json::{Map, Value};",
-              "use std::collections::BTreeMap;",
-              ".and_then(|error| error.error.clone())",
-              'Ok(_) => panic!("non-HTTPS token URI must fail")',
-          ]
-          for fragment in required:
-              if fragment not in text:
-                  raise SystemExit(f"postcondition missing: {fragment}")
-
-          path.write_text(text)
-          PY
-          cargo fmt
-      - name: Commit compiler-guided fixes
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        run: |
-          if [ -z "$(git status --porcelain -- src/providers/fcm.rs)" ]; then
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/providers/fcm.rs
-          git commit -m "DEN-325 fix FCM compiler findings"
-          git push origin "HEAD:${{ github.head_ref }}"
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-features
