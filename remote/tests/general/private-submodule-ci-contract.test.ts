@@ -10,8 +10,15 @@ function repoRoot(): string {
   throw new Error(`Unable to locate repository root from ${process.cwd()}`);
 }
 
+type AppAllowlist = {
+  schema_version: number;
+  required_permissions: Record<string, string>;
+  repositories_by_owner: Record<string, string[]>;
+};
+
 const root = repoRoot();
 const workflow = readFileSync(resolve(root, '.github/workflows/repo-checks.yml'), 'utf8');
+const gitmodules = readFileSync(resolve(root, '.gitmodules'), 'utf8');
 const helper = readFileSync(resolve(root, 'scripts/ci/init-submodules-with-report.sh'), 'utf8');
 const appInitializer = readFileSync(
   resolve(root, 'scripts/ci/init-submodules-with-github-app.sh'),
@@ -21,6 +28,37 @@ const tokenMinter = readFileSync(
   resolve(root, 'scripts/ci/mint-github-app-installation-token.sh'),
   'utf8',
 );
+const allowlist = JSON.parse(
+  readFileSync(resolve(root, 'config/ci/k8s-submodule-github-app-allowlist.json'), 'utf8'),
+) as AppAllowlist;
+
+function normalizeRepository(url: string): string {
+  return url
+    .trim()
+    .replace(/^git@github\.com:/, '')
+    .replace(/^ssh:\/\/git@github\.com\//, '')
+    .replace(/^https:\/\/github\.com\//, '')
+    .replace(/\.git$/, '');
+}
+
+function deploymentRepositories(): string[] {
+  const repositories: string[] = [];
+  const blocks = gitmodules.split(/^\[submodule /m).slice(1);
+  for (const block of blocks) {
+    const path = block.match(/^\s*path\s*=\s*(\S+)\s*$/m)?.[1];
+    const url = block.match(/^\s*url\s*=\s*(\S+)\s*$/m)?.[1];
+    if (path?.startsWith('remote/deployments/') && url) {
+      repositories.push(normalizeRepository(url));
+    }
+  }
+  return repositories.sort();
+}
+
+function allowlistedRepositories(): string[] {
+  return Object.entries(allowlist.repositories_by_owner)
+    .flatMap(([owner, repositories]) => repositories.map((repository) => `${owner}/${repository}`))
+    .sort();
+}
 
 test('repo checks never place private-submodule credentials in Git URLs', () => {
   assert.doesNotMatch(workflow, /REMOTE_DEV_GH_PAT/);
@@ -65,6 +103,39 @@ test('the cross-org backend job requires a GitHub App and produces a sanitized r
   assert.match(backendJob, /name:\s*backend-submodule-access-report/);
   assert.match(backendJob, /steps\.backend-submodules\.outcome == 'failure'/);
   assert.doesNotMatch(backendJob, /K8S_SUBMODULE_TOKEN:\s*\$\{\{ secrets\./);
+});
+
+test('the App repository allowlist exactly matches every deployment gitlink', () => {
+  assert.equal(allowlist.schema_version, 1);
+  assert.deepEqual(allowlist.required_permissions, {
+    contents: 'read',
+    metadata: 'read',
+  });
+
+  for (const [owner, repositories] of Object.entries(allowlist.repositories_by_owner)) {
+    assert.ok(owner.length > 0);
+    assert.ok(repositories.length > 0, `${owner} must include at least one repository`);
+    assert.deepEqual(
+      repositories,
+      [...new Set(repositories)].sort(),
+      `${owner} repositories must be sorted and unique`,
+    );
+    for (const repository of repositories) {
+      assert.doesNotMatch(repository, /\//, `${owner}/${repository} must be an owner-local name`);
+    }
+  }
+
+  const declared = deploymentRepositories();
+  const approved = allowlistedRepositories();
+  assert.equal(declared.length, 30, 'expected the complete pinned deployment fleet');
+  assert.deepEqual(
+    approved,
+    declared,
+    'Update the reviewed GitHub App allowlist in the same PR as any deployment gitlink change.',
+  );
+  assert.match(appInitializer, /K8S_SUBMODULE_ALLOWLIST/);
+  assert.match(appInitializer, /Repository not allowlisted/);
+  assert.match(appInitializer, /required_permissions/);
 });
 
 test('installation tokens are owner-scoped, repository-restricted, and revoked', () => {
