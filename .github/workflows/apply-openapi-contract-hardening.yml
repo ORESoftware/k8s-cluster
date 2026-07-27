@@ -43,18 +43,40 @@ jobs:
       - name: Apply source patch
         run: node scripts/api-contract/apply-openapi-hardening.mjs
 
-      - name: Make operation IDs route-stable
+      - name: Make operation IDs collision resistant
         run: |
           node <<'NODE'
           const fs = require('node:fs');
           const path = 'remote/tools/generate-api-docs.mjs';
-          const before = 'const token = `${service}_${method}_${handler}`';
-          const after = 'const token = `${service}_${method}_${handler}_${route.path}`';
-          const source = fs.readFileSync(path, 'utf8');
-          if (!source.includes(before) && !source.includes(after)) {
-            throw new Error('operation-id source expression not found');
+          let source = fs.readFileSync(path, 'utf8');
+          const importLine = "import { createHash } from 'node:crypto';";
+          if (!source.includes(importLine)) {
+            const anchor = "import { execFileSync } from 'node:child_process';";
+            if (!source.includes(anchor)) {
+              throw new Error('generator child_process import was not found');
+            }
+            source = source.replace(anchor, `${anchor}\n${importLine}`);
           }
-          fs.writeFileSync(path, source.replace(before, after));
+
+          const replacement = `function openApiOperationId(service, route, method) {
+            const handler = route.handlers?.[0] ?? route.path;
+            const identity = [service, method, route.path, handler].join('\\0');
+            const digest = createHash('sha256').update(identity).digest('hex').slice(0, 12);
+            const stem = [service, method, handler, route.path]
+              .join('_')
+              .replace(/[^a-zA-Z0-9]+/g, '_')
+              .replace(/^_+|_+$/g, '')
+              .toLowerCase();
+            return \`${'${stem || \'operation\'}'}_${'${digest}'}\`;
+          }
+
+          function openApiVisibility`;
+          const pattern = /function openApiOperationId\(service, route, method\) \{[\s\S]*?\n\}\n\nfunction openApiVisibility/;
+          if (!pattern.test(source)) {
+            throw new Error('generated OpenAPI operation-id function was not found');
+          }
+          source = source.replace(pattern, replacement);
+          fs.writeFileSync(path, source);
           NODE
 
       - name: Regenerate available service contracts
@@ -91,11 +113,10 @@ jobs:
           node --check remote/tools/validate-openapi-contracts.mjs
           git diff --check
 
-      - name: Remove one-shot migration helpers
+      - name: Remove one-shot migration files
         if: env.OPENAPI_VALIDATION_STATUS == '0'
         run: >-
           node -e "for (const path of [
-          '.github/workflows/apply-openapi-contract-hardening.yml',
           'scripts/api-contract/apply-openapi-hardening.mjs',
           'docs/openapi-validation-diagnostic.txt'
           ]) if (require('node:fs').existsSync(path)) require('node:fs').unlinkSync(path)"
@@ -105,7 +126,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add -A AGENTS.md docs remote scripts
           git diff --cached --exit-code && exit 1 || true
           git commit -m "Harden fleet API docs as OpenAPI 3.1 [api-contract-generated]"
           git push origin HEAD:agent/openapi-contract-hardening
