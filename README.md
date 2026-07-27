@@ -77,6 +77,8 @@ The adapter:
 - classifies invalid tokens, invalid payloads, throttling, transient failures, and provider/authentication failures from Apple response reasons
 - returns only the target fingerprint and Apple request ID/reason in result events
 
+Detailed APNs protocol, safety, and test behavior is documented in [`docs/apns.md`](docs/apns.md).
+
 ## Contracts
 
 The shared v1 contract is documented in [`docs/contracts-v1.md`](docs/contracts-v1.md). Example payloads live under [`examples/`](examples/).
