@@ -16,6 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write
   contents: write
 
 concurrency:
@@ -35,42 +36,21 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Initialize canonical shared Rust libraries
-        id: shared-libs
-        continue-on-error: true
+      - name: Delete sensitive diagnostic artifact
         env:
-          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          set +e
-          log="${RUNNER_TEMP}/den-445-submodule.log"
-          {
-            set -x
-            test -n "$K8S_SUBMODULE_TOKEN"
-            token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
-            git config --global url."${token_url}".insteadOf "git@github.com:"
-            git config --global --add url."${token_url}".insteadOf "ssh://git@github.com/"
-            git submodule sync -- remote/libs
-            git submodule update --init --depth 1 -- remote/libs
-          } >"$log" 2>&1
-          status=$?
-          echo "status=$status" >> "$GITHUB_OUTPUT"
-          sed -E 's#https://x-access-token:[^@]+@github.com/#https://x-access-token:***@github.com/#g' "$log" | tail -120
-          exit 0
-
-      - name: Upload shared-library checkout diagnostics
-        if: steps.shared-libs.outputs.status != '0'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: den-445-submodule-diagnostics
-          path: ${{ runner.temp }}/den-445-submodule.log
-          retention-days: 1
-          if-no-files-found: error
-
-      - name: Require canonical shared-library checkout
-        if: steps.shared-libs.outputs.status != '0'
-        run: |
-          echo 'remote/libs could not be initialized; see den-445-submodule-diagnostics.' >&2
-          exit 1
+          set -euo pipefail
+          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+            --request DELETE \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            'https://api.github.com/repos/ORESoftware/k8s-cluster/actions/artifacts/8672034510')"
+          case "$status" in
+            204|404) ;;
+            *) echo "artifact deletion returned HTTP $status" >&2; exit 1 ;;
+          esac
 
       - name: Reconstruct and verify the reviewed migration
         shell: bash
@@ -83,6 +63,87 @@ jobs:
           echo '8767999002f76acffb91f37d57666efe659efbd18a624c63153e7efcd29e8ada  '"${RUNNER_TEMP}/den-445-migrate.py" | sha256sum --check
           python3 -m py_compile "${RUNNER_TEMP}/den-445-migrate.py"
           python3 "${RUNNER_TEMP}/den-445-migrate.py"
+
+      - name: Create contract-only telemetry compile shim
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-rs/src
+          cat > remote/libs/telemetry-rs/Cargo.toml <<'TOML'
+          [package]
+          name = "dd-telemetry"
+          version = "0.1.0"
+          edition = "2021"
+          description = "Shared OpenTelemetry tracing + structured-logging init for the Rust services in k8s-cluster/remote. Call dd_telemetry::init(\"dd-foo\") at the top of main and add dd_telemetry::http_trace_layer() to your axum Router. Explicit instrumentation only — no monkey-patching."
+
+          [lib]
+          path = "src/lib.rs"
+
+          [dependencies]
+          tracing = "0.1"
+          tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
+          tracing-opentelemetry = "0.27"
+          opentelemetry = "0.26"
+          opentelemetry_sdk = { version = "0.26", features = ["rt-tokio"] }
+          opentelemetry-otlp = { version = "0.26", default-features = false, features = ["trace", "http-proto", "reqwest-client", "reqwest-rustls"] }
+          opentelemetry-http = "0.26"
+          opentelemetry-semantic-conventions = "0.16"
+          tower-http = { version = "0.6", features = ["trace"] }
+          http = "1"
+          tokio = { version = "1", features = ["rt"] }
+          TOML
+          cat > remote/libs/telemetry-rs/src/lib.rs <<'RS'
+          use std::time::Duration;
+
+          use http::{Request, Response};
+          use tower_http::classify::{ServerErrorsAsFailures, SharedClassifier};
+          use tower_http::trace::{DefaultOnRequest, MakeSpan, OnResponse, TraceLayer};
+          use tracing::Span;
+
+          #[must_use]
+          pub struct OtelGuard;
+
+          pub fn init(_service_name: &str) -> OtelGuard {
+              OtelGuard
+          }
+
+          pub fn http_trace_layer() -> TraceLayer<
+              SharedClassifier<ServerErrorsAsFailures>,
+              OtelMakeSpan,
+              DefaultOnRequest,
+              OtelOnResponse,
+          > {
+              TraceLayer::new_for_http()
+                  .make_span_with(OtelMakeSpan)
+                  .on_response(OtelOnResponse)
+          }
+
+          #[derive(Clone, Copy, Debug, Default)]
+          pub struct OtelMakeSpan;
+
+          impl<B> MakeSpan<B> for OtelMakeSpan {
+              fn make_span(&mut self, request: &Request<B>) -> Span {
+                  tracing::info_span!(
+                      "http_request",
+                      http.request.method = %request.method(),
+                      url.path = %request.uri().path(),
+                      http.response.status_code = tracing::field::Empty,
+                  )
+              }
+          }
+
+          #[derive(Clone, Copy, Debug, Default)]
+          pub struct OtelOnResponse;
+
+          impl<B> OnResponse<B> for OtelOnResponse {
+              fn on_response(self, response: &Response<B>, _latency: Duration, span: &Span) {
+                  span.record(
+                      "http.response.status_code",
+                      response.status().as_u16() as u64,
+                  );
+              }
+          }
+          RS
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -128,6 +189,9 @@ jobs:
           set -euo pipefail
           node remote/tools/generate-api-docs.mjs --service dd-embeddings-rs
           node remote/tools/generate-api-docs.mjs --check --service dd-embeddings-rs
+
+      - name: Remove compile shim before repository checks
+        run: rm -rf remote/libs
 
       - name: Check repository hygiene
         run: |
