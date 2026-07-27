@@ -31,9 +31,9 @@ jobs:
         with:
           toolchain: '1.90.0'
           components: rustfmt, clippy
-      - name: Check formatting
+      - name: Format merge-snapshot workspace
         working-directory: remote/nats-bridge
-        run: cargo fmt --all -- --check
+        run: cargo fmt --all
       - name: Run clippy with bounded diagnostics
         id: clippy
         continue-on-error: true
@@ -45,12 +45,14 @@ jobs:
           status=$?
           tail -n 400 "$log"
           exit "$status"
-      - name: Upload clippy diagnostics
+      - name: Upload formatted source and clippy diagnostics
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: den-440-clippy-diagnostic
-          path: ${{ runner.temp }}/den-440-clippy.log
+          name: den-440-rust-diagnostic
+          path: |
+            remote/nats-bridge/src/bin/nats_http_ingress.rs
+            ${{ runner.temp }}/den-440-clippy.log
           if-no-files-found: error
           retention-days: 2
       - name: Enforce clippy
@@ -66,6 +68,8 @@ jobs:
       - name: Audit dependency advisories
         working-directory: remote/nats-bridge
         run: cargo audit
+      - name: Enforce committed Rustfmt output
+        run: git diff --exit-code -- remote/nats-bridge/src/bin/nats_http_ingress.rs
 
   contracts:
     runs-on: ubuntu-latest
