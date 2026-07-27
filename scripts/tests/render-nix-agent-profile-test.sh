@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# jq variables are deliberately passed with --arg and referenced inside
+# single-quoted jq programs; shell interpolation would be incorrect.
+# shellcheck disable=SC2016
+
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 renderer="$repo_root/scripts/render-nix-agent-profile.sh"
 profiles_file="$repo_root/nix-agent-profiles/profiles.json"
