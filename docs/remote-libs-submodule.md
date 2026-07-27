@@ -43,11 +43,16 @@ superproject gitlink; never replace it with the current head of `main` during CI
 `K8S_LIBS_DEPLOY_KEY`, limited to that repository. It is deliberately separate
 from the cross-organization GitHub App used for `remote/deployments/*`.
 
-- **Repository checks** — `actions/checkout` installs the narrow deploy key and
-  `SUBMODULE_AUTH_MODE=ssh bash scripts/ci/init-submodules-with-report.sh
-  remote/libs` recursively initializes the exact mode-`160000` gitlink. The
-  helper verifies the checkout SHA against the superproject pin and reports a
-  mismatch without printing credentials.
+- **Repository checks** — `actions/checkout` installs the narrow deploy key, then
+  runs this exact helper command:
+
+  ```bash
+  SUBMODULE_AUTH_MODE=ssh bash scripts/ci/init-submodules-with-report.sh remote/libs
+  ```
+
+  The helper recursively initializes the exact mode-`160000` gitlink, verifies
+  the checkout SHA against the superproject pin, and reports a mismatch without
+  printing credentials.
 - **pg-defs checks** — `.github/actions/checkout-remote-libs` resolves the exact
   gitlink SHA, checks out `ORESoftware/k8s-libs-and-shared-defs` at that commit
   with `persist-credentials: false`, and verifies a clean checkout. A caller that
