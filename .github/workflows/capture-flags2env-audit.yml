@@ -1,0 +1,48 @@
+name: Capture flags2env contract audit (temporary)
+
+on:
+  pull_request:
+    types: [synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'feat/den-390-flags2env' &&
+      github.actor == 'ORESoftware'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.head_ref }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ORESoftware/flags-2-env
+          ref: 377bff1a4e7424eb98377997a232ddc0fc700f59
+          path: flags2env
+          persist-credentials: false
+      - name: Build the canonical audit CLI
+        run: make -C flags2env cli
+      - name: Capture the exact contract audit
+        shell: bash
+        run: |
+          set +e
+          flags2env/build/flags2env audit source/.cli-flags.toml > source/.den-390-audit.txt 2>&1
+          status=$?
+          printf '\nexit_status=%s\n' "$status" >> source/.den-390-audit.txt
+          exit 0
+      - name: Commit diagnostic
+        working-directory: source
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .den-390-audit.txt
+          git commit -m 'chore: capture backend flags2env contract audit'
+          git push origin HEAD:feat/den-390-flags2env
