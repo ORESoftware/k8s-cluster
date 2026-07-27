@@ -1,0 +1,28 @@
+name: agent cron source export
+
+on:
+  push:
+    branches:
+      - agent/cron-customer-control-plane
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar --exclude=.git -czf customer-source.tgz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: customer-source
+          path: customer-source.tgz
+          if-no-files-found: error
