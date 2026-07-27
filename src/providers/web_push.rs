@@ -3,12 +3,12 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine as _;
-use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
+use p256::SecretKey;
 use p256::elliptic_curve::sec1::{DecodeEcPrivateKey, ToEncodedPoint};
 use p256::pkcs8::{DecodePrivateKey, EncodePrivateKey};
-use p256::SecretKey;
 use reqwest::header::RETRY_AFTER;
 use reqwest::redirect::Policy as RedirectPolicy;
 use reqwest::{Client, StatusCode};
@@ -149,7 +149,8 @@ impl WebPushConfig {
             required(vapid_private_key_pem.into(), "vapid_private_key_pem")?;
         let vapid_subject = required(vapid_subject.into(), "vapid_subject")?;
         validate_vapid_subject(&vapid_subject)?;
-        let (vapid_signing_key, vapid_public_key) = parse_vapid_private_key(&vapid_private_key_pem)?;
+        let (vapid_signing_key, vapid_public_key) =
+            parse_vapid_private_key(&vapid_private_key_pem)?;
         Ok(Self {
             vapid_signing_key: Arc::new(vapid_signing_key),
             vapid_public_key,
@@ -337,10 +338,7 @@ fn vapid_authorization(
         config.vapid_signing_key.as_ref(),
     )
     .map_err(|_| ProviderError::not_configured("VAPID ES256 token could not be created"))?;
-    Ok(format!(
-        "vapid t={token}, k={}",
-        config.vapid_public_key
-    ))
+    Ok(format!("vapid t={token}, k={}", config.vapid_public_key))
 }
 
 fn unix_now() -> Result<u64, ProviderError> {
@@ -377,7 +375,10 @@ fn encrypt_subscription_payload(
     })
 }
 
-fn decode_subscription_component(value: &str, name: &'static str) -> Result<Vec<u8>, ProviderError> {
+fn decode_subscription_component(
+    value: &str,
+    name: &'static str,
+) -> Result<Vec<u8>, ProviderError> {
     URL_SAFE_NO_PAD.decode(value).map_err(|_| {
         invalid_payload(
             format!("Web Push {name} is not unpadded URL-safe base64"),
