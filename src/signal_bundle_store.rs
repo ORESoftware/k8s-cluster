@@ -5,15 +5,11 @@
 //! Private keys, ratchet state, vault keys, PINs, OTP codes, biometric templates,
 //! recovery keys, and plaintext mutations are never represented here.
 
-use crate::device_sync_protocol::{
-    SignalDevicePreKeyBundle, SignalProtocolValidationError,
-};
+use crate::device_sync_protocol::{SignalDevicePreKeyBundle, SignalProtocolValidationError};
 use crate::signal_store::SignalStoreError;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
-use sea_orm::{
-    ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, Value,
-};
+use sea_orm::{ConnectionTrait, DatabaseBackend, DatabaseConnection, Statement, Value};
 use uuid::Uuid;
 
 /// Ask a device to replenish before its public one-time-prekey pool reaches zero.
@@ -143,8 +139,7 @@ pub async fn claim_prekey_bundle(
     let signed_prekey_id: i64 = row.try_get("", "signed_prekey_id")?;
     let pq_signed_prekey_id: i64 = row.try_get("", "pq_signed_prekey_id")?;
     let one_time_prekey_id: Option<i64> = row.try_get("", "one_time_prekey_id")?;
-    let one_time_prekey_base64: Option<String> =
-        row.try_get("", "one_time_prekey_base64")?;
+    let one_time_prekey_base64: Option<String> = row.try_get("", "one_time_prekey_base64")?;
 
     if one_time_prekey_id.is_some() != one_time_prekey_base64.is_some() {
         return Err(SignalStoreError::Validation(
@@ -161,10 +156,7 @@ pub async fn claim_prekey_bundle(
         identity_key: decode_required(&row, "identity_key_base64")?,
         signed_pre_key_id: to_u32(signed_prekey_id)?,
         signed_pre_key: decode_required(&row, "signed_prekey_base64")?,
-        signed_pre_key_signature: decode_required(
-            &row,
-            "signed_prekey_signature_base64",
-        )?,
+        signed_pre_key_signature: decode_required(&row, "signed_prekey_signature_base64")?,
         pq_signed_pre_key_id: to_u32(pq_signed_prekey_id)?,
         pq_signed_pre_key: decode_required(&row, "pq_signed_prekey_base64")?,
         pq_signed_pre_key_signature: decode_required(
@@ -179,8 +171,12 @@ pub async fn claim_prekey_bundle(
     bundle.validate()?;
 
     let remaining_before_claim: i64 = row.try_get("", "remaining_before_claim")?;
-    let remaining_after_claim = remaining_before_claim
-        - i64::from(bundle.one_time_pre_key_id.is_some());
+    let claimed_count = if bundle.one_time_pre_key_id.is_some() {
+        1
+    } else {
+        0
+    };
+    let remaining_after_claim = remaining_before_claim.saturating_sub(claimed_count);
 
     Ok(ClaimedPreKeyBundle {
         device_revision: row.try_get("", "signal_device_revision")?,
