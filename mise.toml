@@ -1,0 +1,11 @@
+[tools]
+rust = "1.88.0"
+node = "22"
+java = "temurin-17"
+python = "3.12"
+dart = "3.12.2"
+helm = "3.14.0"
+
+[env]
+CLIPTOWN_ANDROID_API = "35"
+CLIPTOWN_MARKDOWNLINT_VERSION = "0.45.0"
