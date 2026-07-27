@@ -19,7 +19,9 @@ const TEST_DATABASE_ENV: &str = "THREEFA_SIGNAL_TEST_DATABASE_URL";
 async fn database() -> DatabaseConnection {
     let url = std::env::var(TEST_DATABASE_ENV)
         .unwrap_or_else(|_| panic!("{TEST_DATABASE_ENV} is required for ignored PostgreSQL tests"));
-    Database::connect(url).await.expect("connect test PostgreSQL")
+    Database::connect(url)
+        .await
+        .expect("connect test PostgreSQL")
 }
 
 async fn reset_schema(db: &DatabaseConnection) {
@@ -78,7 +80,9 @@ CREATE TABLE threefa.device_mailbox (
 }
 
 async fn execute(db: &DatabaseConnection, sql: String) {
-    db.execute_unprepared(&sql).await.expect("execute fixture SQL");
+    db.execute_unprepared(&sql)
+        .await
+        .expect("execute fixture SQL");
 }
 
 fn required_i64(row: &QueryResult, column: &str) -> i64 {

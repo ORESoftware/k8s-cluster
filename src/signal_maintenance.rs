@@ -6,8 +6,7 @@
 //! opaque mailbox rows; it never handles client private keys or plaintext.
 
 use sea_orm::{
-    ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
-    Value,
+    ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait, Value,
 };
 use std::collections::HashSet;
 use thiserror::Error;

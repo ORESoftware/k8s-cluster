@@ -34,10 +34,7 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/v1/signal/device-revision", get(device_revision_handler))
         .route("/v1/signal/envelopes", post(enqueue_envelope_handler))
         .route("/v1/signal/mailbox", get(pull_mailbox_handler))
-        .route(
-            "/v1/signal/mailbox/ack",
-            post(acknowledge_batch_handler),
-        )
+        .route("/v1/signal/mailbox/ack", post(acknowledge_batch_handler))
         .route(
             "/v1/signal/mailbox/{envelope_id}/ack",
             post(acknowledge_envelope_handler),
