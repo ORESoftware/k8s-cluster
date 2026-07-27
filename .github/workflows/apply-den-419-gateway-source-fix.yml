@@ -27,7 +27,7 @@ jobs:
         with:
           ref: agent/den-419-gateway-modular-source
           persist-credentials: true
-      - name: Align gateway contracts with registered web-home modules
+      - name: Align gateway contracts with registered Rust modules
         shell: bash
         run: |
           set -euo pipefail
@@ -40,7 +40,7 @@ jobs:
             return readFile(resolve(repoRoot, relativePath), 'utf8');
           }
           """
-          helper = r"""
+          helpers = r"""
           async function readWebHomeSource(): Promise<string> {
             const modules = [
               'agents',
@@ -66,27 +66,93 @@ jobs:
             );
             return [main, ...moduleSources].join('\n');
           }
-          """
-          old = "await readRepoFile('remote/deployments/web-home-rs/src/main.rs')"
-          replacement = 'await readWebHomeSource()'
 
-          if 'async function readWebHomeSource()' not in text:
-              count = text.count(old)
-              if count == 0:
-                  raise SystemExit('no direct web-home main.rs reads found')
-              # Rewrite the existing test call sites before inserting the helper,
-              # so its authoritative direct main.rs read cannot become recursive.
-              text = text.replace(old, replacement)
+          async function readRestApiSource(): Promise<string> {
+            const modules = [
+              'api_docs',
+              'container_pool_routes',
+              'context',
+              'db',
+              'db_routes',
+              'dispatch',
+              'events',
+              'graphql_routes',
+              'handlers',
+              'k8s',
+              'lambdas',
+              'metrics',
+              'pg_contract',
+              'shared',
+              'state',
+              'threads',
+              'types',
+            ];
+            const main = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+            for (const moduleName of modules) {
+              assert.match(main, new RegExp(`mod ${moduleName};`), `rest-api-rs main.rs must register ${moduleName}.rs`);
+            }
+            const moduleSources = await Promise.all(
+              modules.map((moduleName) =>
+                readRepoFile(`remote/deployments/rest-api-rs/src/${moduleName}.rs`),
+              ),
+            );
+            return [main, ...moduleSources].join('\n');
+          }
+          """
+          old_web = "await readRepoFile('remote/deployments/web-home-rs/src/main.rs')"
+          old_rest = "await readRepoFile('remote/deployments/rest-api-rs/src/main.rs')"
+
+          helpers_present = (
+              'async function readWebHomeSource()' in text
+              and 'async function readRestApiSource()' in text
+          )
+          if not helpers_present:
+              web_count = text.count(old_web)
+              rest_count = text.count(old_rest)
+              if web_count == 0 or rest_count == 0:
+                  raise SystemExit(
+                      f'expected direct source reads before migration: web={web_count}, rest={rest_count}'
+                  )
+              # Rewrite call sites before inserting the helper bodies, preserving
+              # each helper's one authoritative direct read of main.rs.
+              text = text.replace(old_web, 'await readWebHomeSource()')
+              text = text.replace(old_rest, 'await readRestApiSource()')
               if text.count(anchor) != 1:
                   raise SystemExit(f'expected one readRepoFile anchor, found {text.count(anchor)}')
-              text = text.replace(anchor, anchor + helper, 1)
+              text = text.replace(anchor, anchor + helpers, 1)
           else:
-              count = 0
-              if text.count(old) != 1:
-                  raise SystemExit('source bundle must retain exactly one authoritative main.rs read')
+              web_count = 0
+              rest_count = 0
+              if text.count(old_web) != 1 or text.count(old_rest) != 1:
+                  raise SystemExit('each source bundle must retain one authoritative main.rs read')
+
+          old_docker_assertion = """  assert.match(
+              dockerfile,
+              /COPY --from=build \/app\/deployments\/web-home-rs\/target\/release\/dd-remote-web-home/,
+            );
+          """
+          new_docker_assertions = """  assert.match(
+              dockerfile,
+              /cp target\/release\/dd-remote-web-home \/usr\/local\/bin\/dd-remote-web-home/,
+            );
+            assert.match(
+              dockerfile,
+              /COPY --from=build \/usr\/local\/bin\/dd-remote-web-home \/usr\/local\/bin\/dd-remote-web-home/,
+            );
+          """
+          docker_count = text.count(old_docker_assertion)
+          if docker_count == 1:
+              text = text.replace(old_docker_assertion, new_docker_assertions, 1)
+          elif docker_count == 0 and new_docker_assertions in text:
+              pass
+          else:
+              raise SystemExit(f'expected one Docker copy assertion, found {docker_count}')
 
           path.write_text(text, encoding='utf-8')
-          print(f'aligned {count} direct main.rs test read(s) with the registered module bundle')
+          print(
+              f'aligned source reads: web={web_count}, rest={rest_count}; '
+              f'Docker assertion migrated={docker_count}'
+          )
           PY
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
@@ -138,5 +204,5 @@ jobs:
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'DEN-419 align gateway contracts with web-home modules'
+          git commit -m 'DEN-419 align gateway contracts with modular Rust sources'
           git push origin HEAD:agent/den-419-gateway-modular-source
