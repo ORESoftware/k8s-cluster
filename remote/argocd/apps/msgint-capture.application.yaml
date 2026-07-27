@@ -1,25 +1,22 @@
-# Catalog entry only. Apply or wire this Application into a cluster app-of-apps
-# after messaging-intel/msgint-monorepo PR #1 is merged. The overlay itself
-# keeps the capture CronJob suspended and collection disabled.
+# Catalog entry only. Platform tenancy and the dedicated AppProject must be
+# applied before this Application. Capture remains inert: the all-zero revision
+# is a deliberate non-deployable sentinel until an approved immutable commit SHA
+# is selected after the release gates in DEN-32 are satisfied.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: msgint-capture
   namespace: argocd
 spec:
-  project: default
+  project: msgint-research
   source:
-    repoURL: https://github.com/messaging-intel/msgint-monorepo.git
-    targetRevision: main
+    repoURL: git@github.com:messaging-intel/msgint-monorepo.git
+    targetRevision: "0000000000000000000000000000000000000000"
     path: deploy/k8s
   destination:
     server: https://kubernetes.default.svc
     namespace: msgint-research
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
     syncOptions:
-      - CreateNamespace=true
       - ServerSideApply=true
       - PruneLast=true
