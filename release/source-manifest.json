@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "gitlinks_status": "applied",
+  "rollout": "extension-background-privacy-policy-final-validation",
   "repositories": {
     "apps/cliptown-interfaces": {
       "repository": "cliptown/cliptown-interfaces",
@@ -30,7 +31,7 @@
     "apps/cliptown-extension": {
       "repository": "cliptown/cliptown-extension",
       "branch": "main",
-      "commit": "e8797fced0b7b2071125c8483fe082c0b4010057"
+      "commit": "ea4b4eaf8de50d56bba81cbd6b4c47e1f393b437"
     },
     "apps/cliptown-infra": {
       "repository": "cliptown/cliptown-infra",
