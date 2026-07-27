@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: read
-  checks: write
 
 jobs:
   dependency-policy:
@@ -24,9 +23,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          cache-bin: true
+      - name: Install cargo-audit with the current stable toolchain
+        run: cargo +stable install --locked cargo-audit
+      - name: Audit locked dependencies against RustSec
+        run: cargo audit
 
   secrets:
     runs-on: ubuntu-latest
