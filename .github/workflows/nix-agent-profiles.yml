@@ -32,6 +32,73 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  fixture-lint-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      diagnostics: ${{ steps.diagnostics.outputs.matrix }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Collect fixture ShellCheck diagnostics
+        id: diagnostics
+        run: |
+          set +e
+          nix develop -c shellcheck -f json1 scripts/tests/render-nix-agent-profile-test.sh >shellcheck.json
+          shellcheck_status=$?
+          set -e
+          python3 - <<'PY' >shellcheck-matrix.json
+          import json
+
+          with open("shellcheck.json", encoding="utf-8") as stream:
+              findings = json.load(stream)
+          diagnostics = []
+          seen = set()
+          for finding in findings:
+              item = {
+                  "code": f"SC{finding['code']}",
+                  "line": finding["line"],
+              }
+              key = (item["code"], item["line"])
+              if key not in seen:
+                  seen.add(key)
+                  diagnostics.append(item)
+          if not diagnostics:
+              diagnostics.append({"code": "clean", "line": 0})
+          print(json.dumps({"include": diagnostics}, separators=(",", ":")))
+          PY
+          printf 'matrix=%s\n' "$(cat shellcheck-matrix.json)" >>"$GITHUB_OUTPUT"
+          if [ "$shellcheck_status" -ne 0 ] && grep -qv '"code":"clean"' shellcheck-matrix.json; then
+            exit 0
+          fi
+          exit "$shellcheck_status"
+
+  fixture-lint-diagnostics:
+    needs: fixture-lint-scan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.fixture-lint-scan.outputs.diagnostics) }}
+    name: Fixture ${{ matrix.code }} at line ${{ matrix.line }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce diagnostic
+        env:
+          SHELLCHECK_CODE: ${{ matrix.code }}
+        run: |
+          if [ "$SHELLCHECK_CODE" != clean ]; then
+            exit 1
+          fi
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -55,9 +122,6 @@ jobs:
 
       - name: Lint profile renderer
         run: nix develop -c shellcheck scripts/render-nix-agent-profile.sh
-
-      - name: Lint profile fixtures
-        run: nix develop -c shellcheck scripts/tests/render-nix-agent-profile-test.sh
 
       - name: Check renderer formatting
         run: nix develop -c shfmt -i 2 -ci -d scripts/render-nix-agent-profile.sh
