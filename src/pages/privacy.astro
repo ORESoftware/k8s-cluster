@@ -1,18 +1,11 @@
 ---
 // /privacy — the app-store-required privacy policy, rendered in the Legal
 // layout. Explains what Sonus Auris collects, on-device encryption, and user
-// rights. Publisher/contact details below are placeholders to fill before launch.
+// rights.
+import { publisher } from "../data/publisher";
 import Legal from "../layouts/Legal.astro";
 
-// ---------------------------------------------------------------------------
-// FILL THESE IN BEFORE SUBMITTING TO THE STORES. The store consoles require a
-// real legal entity name and a monitored contact address on the hosted policy.
-const ENTITY = "<LEGAL ENTITY NAME>";
-const CONTACT_EMAIL = "<privacy@yourdomain>";
-const POSTAL = "<postal address>";
-const LAST_UPDATED = "2026-07-12";
-const NEEDS_FILL = ENTITY.startsWith("<") || CONTACT_EMAIL.startsWith("<");
-// ---------------------------------------------------------------------------
+const LAST_UPDATED = "2026-07-27";
 ---
 
 <Legal
@@ -20,14 +13,10 @@ const NEEDS_FILL = ENTITY.startsWith("<") || CONTACT_EMAIL.startsWith("<");
   description="How Sonus Auris handles your recordings and data. Privacy-first, end-to-end encrypted."
 >
   <h1>Sonus Auris — Privacy Policy</h1>
-  <p class="updated">Last updated: {LAST_UPDATED}. Publisher: {ENTITY}, contact: {CONTACT_EMAIL}.</p>
-
-  {NEEDS_FILL && (
-    <p class="todo">
-      <strong>Before publishing:</strong> replace the legal-entity name, contact
-      email, and postal address placeholders in <code>src/pages/privacy.astro</code>.
-    </p>
-  )}
+  <p class="updated">
+    Last updated: {LAST_UPDATED}. Publisher: {publisher.name}, contact:
+    <a href={`mailto:${publisher.contactEmail}`}>{publisher.contactEmail}</a>.
+  </p>
 
   <h2>Summary</h2>
   <p>
@@ -135,5 +124,9 @@ const NEEDS_FILL = ENTITY.startsWith("<") || CONTACT_EMAIL.startsWith("<");
   <p>We will update this policy as the app evolves and revise the "Last updated" date.</p>
 
   <h2>Contact</h2>
-  <p>{ENTITY}, {POSTAL}, {CONTACT_EMAIL}.</p>
+  <address>
+    {publisher.name}<br />
+    {publisher.postalAddress}<br />
+    <a href={`mailto:${publisher.contactEmail}`}>{publisher.contactEmail}</a>
+  </address>
 </Legal>
