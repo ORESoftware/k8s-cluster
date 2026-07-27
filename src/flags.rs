@@ -6,6 +6,8 @@ use flags2env::BundledFlags2Env;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CliFlagError {
+    #[error("cannot resolve command-line configuration: {0}")]
+    Configuration(String),
     #[error("flags-2-env configuration audit failed: {0}")]
     Audit(String),
     #[error("flags-2-env parse failed: {0}")]
@@ -43,8 +45,14 @@ pub fn parse_cli_flags(
 /// Call this before telemetry initialization, Tokio worker threads, or typed
 /// configuration reads. Secrets are not declared as flags in `.cli-flags.toml`.
 pub fn apply_cli_flags() -> Result<(), CliFlagError> {
+    let config_path = std::env::current_dir()
+        .map_err(|error| CliFlagError::Configuration(error.to_string()))?
+        .join(".cli-flags.toml");
+    let config_path = config_path.to_str().ok_or_else(|| {
+        CliFlagError::Configuration(".cli-flags.toml path is not valid UTF-8".to_string())
+    })?;
     let argv = std::env::args().collect::<Vec<_>>();
-    for (key, value) in parse_cli_flags(&argv, None)? {
+    for (key, value) in parse_cli_flags(&argv, Some(config_path))? {
         std::env::set_var(key, value);
     }
     Ok(())
