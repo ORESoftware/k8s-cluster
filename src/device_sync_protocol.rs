@@ -381,7 +381,10 @@ mod tests {
             "session-secret-345",
             "211, 8, 92, 177",
         ] {
-            assert!(!debug.contains(secret), "debug output leaked {secret}: {debug}");
+            assert!(
+                !debug.contains(secret),
+                "debug output leaked {secret}: {debug}"
+            );
         }
         assert!(debug.contains("ciphertext_len: 4"));
         assert!(debug.contains("<redacted>"));
@@ -404,7 +407,10 @@ mod tests {
             "144, 144",
             "133, 133",
         ] {
-            assert!(!debug.contains(secret), "debug output leaked {secret}: {debug}");
+            assert!(
+                !debug.contains(secret),
+                "debug output leaked {secret}: {debug}"
+            );
         }
         assert!(debug.contains("identity_key_len: 32"));
         assert!(debug.contains("one_time_pre_key_len: Some(32)"));

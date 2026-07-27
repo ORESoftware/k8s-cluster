@@ -318,7 +318,10 @@ mod tests {
             "Alex private phone",
             "secret-fingerprint-base64",
         ] {
-            assert!(!debug.contains(secret), "debug output leaked {secret}: {debug}");
+            assert!(
+                !debug.contains(secret),
+                "debug output leaked {secret}: {debug}"
+            );
         }
         assert!(debug.contains("device_list_revision: 9"));
         assert!(debug.contains("<redacted>"));
