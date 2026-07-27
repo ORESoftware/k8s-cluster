@@ -27,32 +27,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Check out the exact PR branch
+      - name: Check out the exact PR branch with the production deploy-key path
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: agent/den-255-submodule-ci-diagnostics
-          persist-credentials: false
-      - name: Resolve the pinned shared-library source
-        id: libs-pin
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+      - name: Initialize the pinned shared-library submodule exactly as repo checks do
+        env:
+          SUBMODULE_AUTH_MODE: ssh
+        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
+      - name: Verify shared-library checkout and gitlink registration
         shell: bash
         run: |
           set -euo pipefail
-          pin="$(git ls-files --stage -- remote/libs | awk '$1 == 160000 { print $2; exit }')"
-          test "${#pin}" = 40
-          echo "sha=$pin" >>"$GITHUB_OUTPUT"
-      - name: Check out shared-library source at the exact gitlink
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: ORESoftware/k8s-libs-and-shared-defs
-          ref: ${{ steps.libs-pin.outputs.sha }}
-          path: remote/libs
-          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
-          persist-credentials: false
-          fetch-depth: 1
-      - name: Verify shared-library checkout
-        env:
-          EXPECTED_LIBS_SHA: ${{ steps.libs-pin.outputs.sha }}
-        run: test "$(git -C remote/libs rev-parse HEAD)" = "$EXPECTED_LIBS_SHA"
+          pinned="$(git ls-files --stage -- remote/libs | awk '$1 == 160000 { print $2; exit }')"
+          actual="$(git -C remote/libs rev-parse HEAD)"
+          test "$actual" = "$pinned"
+          git submodule status --recursive -- remote/libs
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 10.33.0
