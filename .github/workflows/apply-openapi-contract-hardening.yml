@@ -47,8 +47,8 @@ jobs:
         run: |
           node <<'NODE'
           const fs = require('node:fs');
-          const path = 'remote/tools/generate-api-docs.mjs';
-          let source = fs.readFileSync(path, 'utf8');
+          const generatorPath = 'remote/tools/generate-api-docs.mjs';
+          let source = fs.readFileSync(generatorPath, 'utf8');
 
           const buildServerOverride = "  ['build-server-rs', 'src/http.rs'],";
           if (!source.includes(buildServerOverride)) {
@@ -68,25 +68,246 @@ jobs:
             source = source.replace(importAnchor, `${importAnchor}\n${importLine}`);
           }
 
-          const replacement = `function openApiOperationId(service, route, method) {
-            const handler = route.handlers?.[0] ?? route.path;
-            const identity = [service, method, route.path, handler].join('\\0');
-            const digest = createHash('sha256').update(identity).digest('hex').slice(0, 12);
-            const stem = [service, method, handler, route.path]
-              .join('_')
-              .replace(/[^a-zA-Z0-9]+/g, '_')
-              .replace(/^_+|_+$/g, '')
-              .toLowerCase();
-            return \`${'${stem || \'operation\'}'}_${'${digest}'}\`;
+          const parameterHelpers = [
+            'function openApiPathParameters(path) {',
+            "  return [...path.matchAll(/\\{([^}]+)\\}/g)].map((match) => ({",
+            '    name: match[1],',
+            "    in: 'path',",
+            '    required: true,',
+            "    schema: { type: 'string' },",
+            '  }));',
+            '}',
+            '',
+            'function openApiQueryParameters(sourcePath) {',
+            "  const query = sourcePath.split('?', 2)[1];",
+            '  if (!query) {',
+            '    return [];',
+            '  }',
+            '  const names = query',
+            "    .split('&')",
+            "    .map((part) => part.split('=', 1)[0])",
+            '    .filter(Boolean);',
+            '  return [...new Set(names)].sort().map((name) => ({',
+            '    name,',
+            "    in: 'query',",
+            '    required: false,',
+            "    schema: { type: 'string' },",
+            '  }));',
+            '}',
+            '',
+            'function mergeOpenApiParameters(...groups) {',
+            '  const byKey = new Map();',
+            '  for (const parameter of groups.flat()) {',
+            "    const key = `${parameter.in}:${parameter.name}`;",
+            '    const current = byKey.get(key);',
+            '    if (!current) {',
+            '      byKey.set(key, structuredClone(parameter));',
+            '      continue;',
+            '    }',
+            "    current.required = current.in === 'path' ? true : current.required === true && parameter.required === true;",
+            '  }',
+            '  return [...byKey.values()].sort((left, right) => {',
+            "    return `${left.in}:${left.name}`.localeCompare(`${right.in}:${right.name}`);",
+            '  });',
+            '}',
+            '',
+            'function openApiOperationId',
+          ].join('\n');
+          const parameterPattern = /function openApiPathParameters\(path\) \{[\s\S]*?\n\}\n\nfunction openApiOperationId/;
+          if (!parameterPattern.test(source)) {
+            throw new Error('OpenAPI parameter helper block was not found');
           }
+          source = source.replace(parameterPattern, parameterHelpers);
 
-          function openApiVisibility`;
-          const pattern = /function openApiOperationId\(service, route, method\) \{[\s\S]*?\n\}\n\nfunction openApiVisibility/;
-          if (!pattern.test(source)) {
+          const operationIdFunction = [
+            'function openApiOperationId(service, route, method) {',
+            '  const path = openApiPathFromSource(route.path);',
+            "  const identity = [service, method, path].join('\\0');",
+            "  const digest = createHash('sha256').update(identity).digest('hex').slice(0, 12);",
+            '  const stem = [service, method, path]',
+            "    .join('_')",
+            "    .replace(/[^a-zA-Z0-9]+/g, '_')",
+            "    .replace(/^_+|_+$/g, '')",
+            '    .toLowerCase();',
+            "  return `${stem || 'operation'}_${digest}`;",
+            '}',
+            '',
+            'function openApiVisibility',
+          ].join('\n');
+          const operationIdPattern = /function openApiOperationId\(service, route, method\) \{[\s\S]*?\n\}\n\nfunction openApiVisibility/;
+          if (!operationIdPattern.test(source)) {
             throw new Error('generated OpenAPI operation-id function was not found');
           }
-          source = source.replace(pattern, replacement);
-          fs.writeFileSync(path, source);
+          source = source.replace(operationIdPattern, operationIdFunction);
+
+          const buildOpenApi = [
+            'function buildOpenApi(docs) {',
+            '  const paths = {};',
+            '  const tags = new Set();',
+            '  let operationCount = 0;',
+            '  for (const route of docs.routes) {',
+            '    const path = openApiPathFromSource(route.path);',
+            '    const pathItem = paths[path] ?? {};',
+            '    tags.add(route.routeType);',
+            '    for (const method of route.methods) {',
+            '      if (!OPENAPI_METHODS.has(method)) {',
+            '        continue;',
+            '      }',
+            '      const methodName = method.toLowerCase();',
+            '      const visibility = openApiVisibility(route);',
+            '      const existing = pathItem[methodName];',
+            '      if (existing) {',
+            "        if (existing['x-dd-auth'] !== route.auth || existing['x-dd-visibility'] !== visibility || existing['x-dd-route-type'] !== route.routeType) {",
+            "          throw new Error(`ambiguous OpenAPI merge for ${docs.service} ${method} ${path}: query/path variants must share auth, visibility, and route type`);",
+            '        }',
+            '        existing.parameters = mergeOpenApiParameters(',
+            '          existing.parameters ?? [],',
+            '          openApiQueryParameters(route.path),',
+            '        );',
+            "        existing['x-dd-handlers'] = [...new Set([...(existing['x-dd-handlers'] ?? []), ...(route.handlers ?? [])])].sort();",
+            "        existing['x-dd-source-files'] = [...new Set([...(existing['x-dd-source-files'] ?? []), ...(route.sourceFiles ?? [])])].sort();",
+            "        existing['x-dd-source-paths'] = [...new Set([...(existing['x-dd-source-paths'] ?? []), route.path])].sort();",
+            '        continue;',
+            '      }',
+            '      const security = openApiSecurity(route);',
+            '      const operation = {',
+            '        operationId: openApiOperationId(docs.service, route, method),',
+            '        summary: route.purpose,',
+            '        description: route.notes || route.purpose,',
+            '        tags: [route.routeType],',
+            '        parameters: mergeOpenApiParameters(',
+            '          openApiPathParameters(path),',
+            '          openApiQueryParameters(route.path),',
+            '        ),',
+            '        responses: {',
+            '          default: {',
+            "            description: 'Response produced by the registered service handler.',",
+            '          },',
+            '        },',
+            "        'x-dd-auth': route.auth,",
+            "        'x-dd-handlers': route.handlers,",
+            "        'x-dd-implementation': route.implementation,",
+            "        'x-dd-route-type': route.routeType,",
+            "        'x-dd-source-files': route.sourceFiles,",
+            "        'x-dd-source-path': route.path,",
+            "        'x-dd-source-paths': [route.path],",
+            "        'x-dd-visibility': visibility,",
+            '      };',
+            '      if (security !== undefined) {',
+            '        operation.security = security;',
+            '      }',
+            '      pathItem[methodName] = operation;',
+            '      operationCount += 1;',
+            '    }',
+            '    paths[path] = pathItem;',
+            '  }',
+            '',
+            '  return {',
+            "    openapi: '3.1.0',",
+            "    jsonSchemaDialect: 'https://json-schema.org/draft/2020-12/schema',",
+            '    info: {',
+            "      title: `${docs.service} API`,",
+            "      version: '0.1.0',",
+            '      description:',
+            "        'Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter.',",
+            '    },',
+            '    tags: [...tags].sort().map((name) => ({ name })),',
+            '    paths,',
+            '    components: {',
+            '      securitySchemes: {',
+            '        serverAuth: {',
+            "          type: 'apiKey',",
+            "          in: 'header',",
+            "          name: 'X-Server-Auth',",
+            '        },',
+            '        operatorSecret: {',
+            "          type: 'apiKey',",
+            "          in: 'header',",
+            "          name: 'X-Operator-Secret',",
+            '        },',
+            '        webhookSignature: {',
+            "          type: 'apiKey',",
+            "          in: 'header',",
+            "          name: 'X-Webhook-Signature',",
+            '        },',
+            '      },',
+            '    },',
+            "    'x-dd-contract-scope': 'internal',",
+            "    'x-dd-generated-by': docs.generatedBy,",
+            "    'x-dd-language': docs.language,",
+            "    'x-dd-operation-count': operationCount,",
+            "    'x-dd-route-count': docs.routeCount,",
+            "    'x-dd-service': docs.service,",
+            "    'x-dd-standard-docs-routes': docs.standardDocsRoutes,",
+            '  };',
+            '}',
+            '',
+            'function buildPublicOpenApi',
+          ].join('\n');
+          const buildPattern = /function buildOpenApi\(docs\) \{[\s\S]*?\n\}\n\nfunction buildPublicOpenApi/;
+          if (!buildPattern.test(source)) {
+            throw new Error('OpenAPI builder function was not found');
+          }
+          source = source.replace(buildPattern, buildOpenApi);
+          fs.writeFileSync(generatorPath, source);
+
+          const validatorPath = 'remote/tools/validate-openapi-contracts.mjs';
+          let validator = fs.readFileSync(validatorPath, 'utf8');
+          const sourceKeyFunctions = [
+            'function operationSourceKeys(entry) {',
+            "  const sourcePaths = entry.operation['x-dd-source-paths'] ?? [entry.operation['x-dd-source-path']];",
+            '  assert(',
+            '    Array.isArray(sourcePaths) && sourcePaths.length > 0,',
+            "    `${entry.operation.operationId ?? `${entry.method} ${entry.path}`} is missing x-dd-source-paths`,",
+            '  );',
+            '  for (const sourcePath of sourcePaths) {',
+            '    assert(',
+            "      typeof sourcePath === 'string' && sourcePath.startsWith('/'),",
+            "      `${entry.operation.operationId ?? `${entry.method} ${entry.path}`} has an invalid source path`,",
+            '    );',
+            '  }',
+            '  return [...new Set(sourcePaths)].sort().map((sourcePath) => `${entry.method} ${sourcePath}`);',
+            '}',
+            '',
+            'function operationDocumentKey(entry) {',
+            '  return `${entry.method} ${entry.path}`;',
+            '}',
+            '',
+            'function expectedRouteKeys',
+          ].join('\n');
+          const sourceKeyPattern = /function operationSourceKey\(entry\) \{[\s\S]*?\n\}\n\nfunction expectedRouteKeys/;
+          if (!sourceKeyPattern.test(validator)) {
+            throw new Error('validator source-key helper was not found');
+          }
+          validator = validator.replace(sourceKeyPattern, sourceKeyFunctions);
+          validator = validator.replace(
+            '  const actualKeys = fullEntries.map(operationSourceKey).sort();',
+            '  const actualKeys = fullEntries.flatMap(operationSourceKeys).sort();',
+          );
+          validator = validator.replace(
+            '  const fullByKey = new Map(fullEntries.map((entry) => [operationSourceKey(entry), entry]));',
+            '  const fullByKey = new Map(fullEntries.map((entry) => [operationDocumentKey(entry), entry]));',
+          );
+          validator = validator.replace(
+            '    const key = operationSourceKey(entry);',
+            '    const key = operationDocumentKey(entry);',
+          );
+          validator = validator.replace(
+            "    assert(fullByKey.has(key), `${item.service}: public OpenAPI contains non-canonical operation ${key}`);",
+            "    assert(fullByKey.has(key), `${item.service}: public OpenAPI contains non-canonical operation ${key}`);\n    assert(\n      JSON.stringify(operationSourceKeys(entry)) === JSON.stringify(operationSourceKeys(fullByKey.get(key))),\n      `${item.service}: public OpenAPI source-path set drifted for ${key}`,\n    );",
+          );
+          validator = validator.replace(
+            "    .map(operationSourceKey)",
+            "    .map(operationDocumentKey)",
+          );
+          validator = validator.replace(
+            '  const actualPublicKeys = publicEntries.map(operationSourceKey).sort();',
+            '  const actualPublicKeys = publicEntries.map(operationDocumentKey).sort();',
+          );
+          if (validator.includes('operationSourceKey(')) {
+            throw new Error('validator still references the singular operationSourceKey helper');
+          }
+          fs.writeFileSync(validatorPath, validator);
           NODE
 
       - name: Regenerate available service contracts
