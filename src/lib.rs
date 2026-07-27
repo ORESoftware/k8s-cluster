@@ -6,17 +6,23 @@
 )]
 mod account_security;
 mod accounts;
-#[expect(
-    dead_code,
-    reason = "the compatibility router is retained for tests and embeddings while production startup passes the Signal rollout flag explicitly"
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the compatibility router is retained for tests and embeddings while production startup passes the Signal rollout flag explicitly"
+    )
 )]
 mod app;
 mod auth;
 mod config;
 mod db;
-#[expect(
-    dead_code,
-    reason = "associated-data and validation helpers are shared protocol fixtures; some remain client-consumed until the public Rust SDK is split out"
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "associated-data and validation helpers are shared protocol fixtures; some remain client-consumed until the public Rust SDK is split out"
+    )
 )]
 mod device_sync_protocol;
 mod devices;
