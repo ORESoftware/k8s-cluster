@@ -611,7 +611,7 @@ fn classify_request_failure(
     if let Some(error) = parsed
         .as_ref()
         .and_then(|document| document.errors.as_deref())
-        .and_then(first_request_error)
+        .and_then(|errors| first_request_error(Some(errors)))
     {
         return error;
     }
