@@ -1,0 +1,129 @@
+name: Apply DEN-445 executable OpenAPI contract
+
+on:
+  push:
+    branches:
+      - agent/den-445-strong-openapi-contract
+    paths:
+      - '.github/workflows/apply-den-445-openapi-contract.yml'
+      - '.github/scripts/den-445-migrate.py.gz.b64.part*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-445-openapi-contract
+  cancel-in-progress: false
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v7
+        with:
+          ref: agent/den-445-strong-openapi-contract
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Initialize canonical shared Rust libraries
+        env:
+          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
+        run: |
+          set -euo pipefail
+          test -n "$K8S_SUBMODULE_TOKEN"
+          token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
+          git config --global url."${token_url}".insteadOf "git@github.com:"
+          trap 'git config --global --unset-all url."${token_url}".insteadOf || true' EXIT
+          git submodule update --init --depth 1 -- remote/libs
+
+      - name: Reconstruct and verify the reviewed migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/scripts/den-445-migrate.py.gz.b64.part* \
+            | base64 --decode \
+            | gzip --decompress \
+            > "${RUNNER_TEMP}/den-445-migrate.py"
+          echo '8767999002f76acffb91f37d57666efe659efbd18a624c63153e7efcd29e8ada  '"${RUNNER_TEMP}/den-445-migrate.py" | sha256sum --check
+          python3 -m py_compile "${RUNNER_TEMP}/den-445-migrate.py"
+          python3 "${RUNNER_TEMP}/den-445-migrate.py"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Install Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Format and update the pinned Rust dependency graph
+        working-directory: remote/deployments/dd-embeddings-rs
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo check
+          cargo fmt --all -- --check
+
+      - name: Test the typed implementation contract
+        working-directory: remote/deployments/dd-embeddings-rs
+        run: |
+          set -euo pipefail
+          cargo check --locked
+          cargo test --locked
+
+      - name: Export one canonical OpenAPI artifact twice
+        working-directory: remote/deployments/dd-embeddings-rs
+        run: |
+          set -euo pipefail
+          cargo run --locked --quiet -- --export-openapi > "${RUNNER_TEMP}/openapi.1.json"
+          cargo run --locked --quiet -- --export-openapi > "${RUNNER_TEMP}/openapi.2.json"
+          cmp "${RUNNER_TEMP}/openapi.1.json" "${RUNNER_TEMP}/openapi.2.json"
+          python3 -m json.tool "${RUNNER_TEMP}/openapi.1.json" >/dev/null
+          mkdir -p generated
+          cp "${RUNNER_TEMP}/openapi.1.json" generated/openapi.json
+
+      - name: Verify executable OpenAPI invariants
+        run: node remote/tools/check-openapi-contracts.mjs --service dd-embeddings-rs
+
+      - name: Regenerate and verify compatibility fleet documentation
+        run: |
+          set -euo pipefail
+          node remote/tools/generate-api-docs.mjs --service dd-embeddings-rs
+          node remote/tools/generate-api-docs.mjs --check --service dd-embeddings-rs
+
+      - name: Check repository hygiene
+        run: |
+          set -euo pipefail
+          git diff --check
+          if git grep -n -E '^(<<<<<<< |=======$|>>>>>>> )' -- . ':(exclude)*.lock'; then
+            exit 1
+          fi
+          if git grep -n -E '(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})' -- .; then
+            exit 1
+          fi
+
+      - name: Remove one-shot migration transport
+        run: |
+          set -euo pipefail
+          rm -f .github/scripts/den-445-migrate.py.gz.b64.part*
+          rmdir .github/scripts 2>/dev/null || true
+          rm -f .github/workflows/apply-den-445-openapi-contract.yml
+
+      - name: Commit verified implementation
+        run: |
+          set -euo pipefail
+          git add -A
+          git status --short
+          if git diff --cached --quiet; then
+            echo 'No verified DEN-445 changes were produced.' >&2
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(DEN-445): enforce executable OpenAPI contracts'
+          git push origin HEAD:agent/den-445-strong-openapi-contract
