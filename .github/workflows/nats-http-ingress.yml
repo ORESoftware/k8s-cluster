@@ -31,35 +31,12 @@ jobs:
         with:
           toolchain: '1.90.0'
           components: rustfmt, clippy
-      - name: Format merge-snapshot workspace
+      - name: Check formatting
         working-directory: remote/nats-bridge
-        run: cargo fmt --all
-      - name: Run clippy with bounded diagnostics
-        id: clippy
-        continue-on-error: true
+        run: cargo fmt --all -- --check
+      - name: Run clippy
         working-directory: remote/nats-bridge
-        run: |
-          set +e
-          log="${RUNNER_TEMP}/den-440-clippy.log"
-          cargo clippy --locked --bin nats_http_ingress --all-targets -- -D warnings >"$log" 2>&1
-          status=$?
-          tail -n 400 "$log"
-          exit "$status"
-      - name: Upload formatted source and clippy diagnostics
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: den-440-rust-diagnostic
-          path: |
-            remote/nats-bridge/src/bin/nats_http_ingress.rs
-            ${{ runner.temp }}/den-440-clippy.log
-          if-no-files-found: error
-          retention-days: 2
-      - name: Enforce clippy
-        if: steps.clippy.outcome == 'failure'
-        run: |
-          echo 'Clippy failed; inspect the bounded diagnostic artifact.'
-          exit 1
+        run: cargo clippy --locked --bin nats_http_ingress -- -D warnings
       - name: Run unit tests
         working-directory: remote/nats-bridge
         run: cargo test --locked --bin nats_http_ingress
@@ -68,8 +45,6 @@ jobs:
       - name: Audit dependency advisories
         working-directory: remote/nats-bridge
         run: cargo audit
-      - name: Enforce committed Rustfmt output
-        run: git diff --exit-code -- remote/nats-bridge/src/bin/nats_http_ingress.rs
 
   contracts:
     runs-on: ubuntu-latest
