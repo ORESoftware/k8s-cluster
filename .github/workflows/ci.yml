@@ -20,7 +20,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: cargo fmt --check
+      - name: Check Rust formatting
+        id: rustfmt
+        continue-on-error: true
+        run: cargo fmt --check 2>&1 | tee rustfmt.txt
+      - name: Upload formatting diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-280-rustfmt
+          path: rustfmt.txt
+          if-no-files-found: error
+          retention-days: 1
+      - name: Enforce formatting
+        if: steps.rustfmt.outcome == 'failure'
+        run: exit 1
   signal-postgres:
     runs-on: ubuntu-latest
     services:
@@ -42,4 +56,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run real Signal transaction and retention tests
-        run: cargo test signal_postgres_tests -- --ignored --test-threads=1
+        id: signal_tests
+        continue-on-error: true
+        run: cargo test signal_postgres_tests -- --ignored --test-threads=1 2>&1 | tee signal-postgres.txt
+      - name: Upload PostgreSQL diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-280-signal-postgres
+          path: signal-postgres.txt
+          if-no-files-found: error
+          retention-days: 1
+      - name: Enforce PostgreSQL tests
+        if: steps.signal_tests.outcome == 'failure'
+        run: exit 1
