@@ -1,68 +1,67 @@
-# Google Chat space export helper
+# Google Chat HTTP bridge
 
-This is an account-side Google Apps Script fallback for exporting the Google Chat space:
+Account-side Google Apps Script bridge for one fixed Chat space:
 
 - display name: `alex-alex-me`
 - space resource: `spaces/AAQAoHKdzvI`
 - source: <https://chat.google.com/room/AAQAoHKdzvI?cls=5>
-- start date: **May 10, 2026 at 00:00 America/New_York**
+- earliest message: **May 10, 2026 at 00:00 America/New_York**
 
-It does not scrape the Chat web UI. It authenticates as the Google user running the script, calls the read-only Google Chat API, and writes private JSON files into that user's Drive.
+The bridge does not scrape Google Chat. It runs as the deploying Google user, calls the read-only Google Chat API, and returns paginated JSON through an Apps Script web-app endpoint.
 
-## Security properties
+## Security
 
-- Requests only `chat.messages.readonly` for Google Chat.
-- Never logs message text, OAuth tokens, or refresh tokens.
-- Stores pagination state without message content in Script Properties.
-- Writes export files to a newly created private Drive folder.
-- Does not call Linear or any third-party endpoint.
-- Does not download attachment binaries; it preserves attachment metadata only.
-- Uses deterministic source keys such as `google-chat:AAQAoHKdzvI:<message-resource-name>` for later Linear deduplication.
+- Fixed space and fixed earliest timestamp; HTTP callers cannot widen either boundary.
+- Only `chat.messages.readonly` and `chat.spaces.readonly` are requested.
+- A high-entropy bridge token gates every sensitive action.
+- Only the token's SHA-256 hash is stored in Script Properties.
+- POST is preferred. GET is available for restricted clients but query tokens can appear in URL logs, so rotate the token after an import.
+- Message text and Google OAuth credentials are not written to logs or Script Properties.
+- Attachment metadata is returned, but binaries are not downloaded.
+- Best-effort global rate limiting and script locks protect the endpoint.
 
-The full Drive scope is required because Apps Script's `DriveApp.createFolder`, `DriveApp.getFolderById`, and folder file-creation methods require it. The script does not enumerate unrelated Drive files.
+## Install
 
-## Run it in Google Apps Script
+1. Sign into the Google account that belongs to `alex-alex-me`.
+2. Open <https://script.new>.
+3. Replace the default file with [`App.gs`](./App.gs).
+4. In **Project Settings**, enable **Show `appsscript.json` manifest file in editor** and replace it with [`appsscript.json`](./appsscript.json).
+5. Link a standard Google Cloud project and enable the **Google Chat API**.
+6. In **Services**, add **Google Chat API v1** with identifier `Chat`.
+7. Run `setupBridge()` manually and approve access. Copy `CHAT_BRIDGE_TOKEN` from the execution log.
+8. Deploy as **Web app**:
+   - execute as: **Me**
+   - access: **Anyone**
+9. Keep the `/exec` deployment URL and bridge token private.
 
-1. Sign into the Google account that is a member of `alex-alex-me`.
-2. Open <https://script.new> and create a standalone Apps Script project.
-3. Replace `Code.gs` with [`Code.gs`](./Code.gs).
-4. In **Project Settings**, enable **Show `appsscript.json` manifest file in editor**.
-5. Replace the manifest with [`appsscript.json`](./appsscript.json).
-6. Link the script to a Google Cloud project in which the **Google Chat API** is enabled.
-7. In **Services**, confirm that the advanced **Google Chat API v1** service is enabled as `Chat`.
-8. Select `startGoogleChatExport` and click **Run**.
-9. Approve the requested scopes using the account that can read the space.
-10. Check the execution log for the private Drive folder URL. For long histories, the script creates a time-based continuation trigger and writes one API page per file.
-11. Run `getGoogleChatExportStatus` at any time to see counts and the folder URL without returning message contents.
+## HTTP API
 
-The completed folder contains:
+All responses are JSON. Apps Script ContentService returns HTTP 200 even for application-level failures, so check the top-level `ok` field.
 
-- `export-config.json`
-- `messages-part-00001.json`, `messages-part-00002.json`, ...
-- `export-summary.json`
+Public health check:
 
-If an API call fails, the folder also receives `export-error.json` with non-secret troubleshooting information.
+```text
+GET <EXEC_URL>?action=health
+```
 
-## Account compatibility
+Preferred authenticated POST:
 
-Google's current `spaces.messages.list` setup guide documents a Business or Enterprise Google Workspace account as a prerequisite. If the authenticated account is a personal `@gmail.com` account and the Chat API rejects the request, use Google Takeout instead. Google says a Chat export can include memberships, messages, and attachments for direct messages, group messages, and spaces, subject to restrictions for spaces created by work or school accounts.
+```bash
+curl -sS -X POST '<EXEC_URL>' \
+  -H 'content-type: application/json' \
+  --data '{"action":"messages","token":"<TOKEN>","pageSize":100}'
+```
 
-## Import into Linear
+GET fallback:
 
-Do not create one Linear issue per message. The importer should:
+```text
+GET <EXEC_URL>?action=messages&token=<TOKEN>&pageSize=100
+```
 
-1. Group messages by thread and semantic work item.
-2. Search all existing Linear issues, including completed and archived issues.
-3. Check deterministic message and thread source keys before creating anything.
-4. Route explicit GitHub organization/repository matches first, then use semantic project matching.
-5. Add subsequent context to an existing issue as comments when it represents the same work.
-6. Keep the original space, message, thread, timestamp, and author provenance.
+Use the returned `data.nextPageToken` as `pageToken` on the next request. Supported authenticated actions are `status`, `probe`, `space`, and `messages`. `messages` also accepts `metadataOnly`, `showDeleted`, and a validated `threadName` from this exact space.
 
-The tracking issue is `DEN-266` in the Linear project `github.com/ORESoftware`.
+After the import, run `rotateBridgeToken()` or `disableBridge()` from the editor.
 
-## Official references
+## Linear import rules
 
-- Google Chat API: list messages: <https://developers.google.com/workspace/chat/list-messages>
-- `spaces.messages.list` reference: <https://developers.google.com/workspace/chat/api/reference/rest/v1/spaces.messages/list>
-- Google Chat data export: <https://support.google.com/chat/answer/10126829>
-- Apps Script Drive authorization: <https://developers.google.com/apps-script/reference/drive/drive-app>
+The downstream importer should group messages by thread and work item, search completed and archived Linear issues, persist the deterministic `sourceKey`, and add context to existing issues instead of creating duplicates. Tracking issue: `DEN-266` in `github.com/ORESoftware`.
