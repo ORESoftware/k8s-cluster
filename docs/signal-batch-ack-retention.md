@@ -35,7 +35,9 @@ Production scheduling remains disabled until the canonical pg-defs schema, opera
 
 ## PostgreSQL evidence
 
-The dedicated CI job runs ignored tests against PostgreSQL 17 and proves:
+The dedicated CI job runs the ignored transaction suite serially against an isolated PostgreSQL 17 service database. Each test recreates the minimal service-owned schema it needs so timing and lock behavior are deterministic and do not depend on developer-local state.
+
+The suite proves:
 
 - concurrent sibling requests claim different one-time public prekeys;
 - claimed rows identify two distinct requesters;
