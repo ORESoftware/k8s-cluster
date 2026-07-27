@@ -1,0 +1,181 @@
+name: Apply DEN-408 web-home contract fix
+
+on:
+  push:
+    branches:
+      - agent/den-408-web-home-static-contracts
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-408-web-home-contract-fix
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    if: github.actor == 'ORESoftware'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out DEN-408 branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-408-web-home-static-contracts
+          persist-credentials: true
+      - name: Update tests to authoritative Rust modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          root = Path('.')
+          replacements = {
+              'remote/tests/general/web-home-agents-threads-container-state.test.ts': (
+                  "return readFile(resolve(repoRoot, 'remote/deployments/web-home-rs/src/main.rs'), 'utf8');",
+                  "return readFile(resolve(repoRoot, 'remote/deployments/web-home-rs/src/agents.rs'), 'utf8');",
+              ),
+              'remote/tests/general/web-home-agents-tasks-links.test.ts': (
+                  "return readFile(resolve(repoRoot, 'remote/deployments/web-home-rs/src/main.rs'), 'utf8');",
+                  "return readFile(resolve(repoRoot, 'remote/deployments/web-home-rs/src/agents.rs'), 'utf8');",
+              ),
+              'remote/tests/general/web-home-lambda-highlighter.test.ts': (
+                  "return readFile(resolve(repoRoot, 'remote/deployments/web-home-rs/src/main.rs'), 'utf8');",
+                  "return readFile(resolve(repoRoot, 'remote/deployments/web-home-rs/src/lambda.rs'), 'utf8');",
+              ),
+          }
+          for relative, (before, after) in replacements.items():
+              path = root / relative
+              text = path.read_text(encoding='utf-8')
+              count = text.count(before)
+              if count == 1:
+                  path.write_text(text.replace(before, after, 1), encoding='utf-8')
+              elif count == 0 and after in text:
+                  pass
+              else:
+                  raise SystemExit(f'{relative}: expected exactly one authoritative-source replacement, found {count}')
+
+          shared_test = root / 'remote/tests/general/web-home-shared-header.test.ts'
+          shared_test.write_text("""import assert from 'node:assert/strict';
+          import { existsSync } from 'node:fs';
+          import { readFile } from 'node:fs/promises';
+          import { resolve } from 'node:path';
+          import test from 'node:test';
+
+          function findRepoRoot(): string {
+            for (const candidate of [process.cwd(), resolve(process.cwd(), '..', '..')]) {
+              if (existsSync(resolve(candidate, 'remote/deployments/web-home-rs/Cargo.toml'))) {
+                return candidate;
+              }
+            }
+
+            throw new Error(`Unable to locate repo root from ${process.cwd()}`);
+          }
+
+          const repoRoot = findRepoRoot();
+          const sourceRoot = 'remote/deployments/web-home-rs/src';
+
+          async function readRepoFile(relativePath: string): Promise<string> {
+            return readFile(resolve(repoRoot, relativePath), 'utf8');
+          }
+
+          test('web-home-rs modular source preserves shared shells, handlers, and route wiring', async () => {
+            const [main, shared, home, handlers, agents, lambda] = await Promise.all([
+              readRepoFile(`${sourceRoot}/main.rs`),
+              readRepoFile(`${sourceRoot}/shared.rs`),
+              readRepoFile(`${sourceRoot}/home.rs`),
+              readRepoFile(`${sourceRoot}/handlers.rs`),
+              readRepoFile(`${sourceRoot}/agents.rs`),
+              readRepoFile(`${sourceRoot}/lambda.rs`),
+            ]);
+
+            for (const moduleName of ['agents', 'handlers', 'home', 'lambda', 'shared']) {
+              assert.match(main, new RegExp(`mod ${moduleName};`), `main.rs must register ${moduleName}.rs`);
+            }
+
+            assert.match(shared, /use maud::\{html, Markup, PreEscaped, DOCTYPE\}/);
+            assert.match(shared, /fn shared_header\(active_page: &'static str\) -> Markup/);
+            assert.match(shared, /fn ui_document\(/);
+            assert.match(shared, /fn inline_ui_document\(/);
+            assert.match(home, /fn home_document\(state: &AppState\) -> Html<String>/);
+
+            assert.match(home, /home_document[\s\S]*\(shared_header\("home"\)\)/);
+            assert.match(shared, /fn ui_document\([\s\S]*\(shared_header\(active_page\)\)/);
+            assert.match(shared, /fn inline_ui_document\([\s\S]*\(shared_header\(active_page\)\)/);
+
+            assert.match(handlers, /async fn agents_tasks_page\(\)[\s\S]*ui_document\([\s\S]*"tasks"/);
+            assert.match(handlers, /async fn agents_threads_page\(\)[\s\S]*ui_document\([\s\S]*"threads"/);
+            assert.match(handlers, /async fn lambda_functions_page\(\)[\s\S]*inline_ui_document\([\s\S]*"lambdas"/);
+            assert.match(handlers, /async fn presence_test_page\(\)[\s\S]*inline_ui_document\([\s\S]*"presence"/);
+            assert.match(handlers, /async fn wss_test_page\(\)[\s\S]*inline_ui_document\([\s\S]*"wss"/);
+
+            for (const [path, handler] of [
+              ['/agents/tasks', 'agents_tasks_page'],
+              ['/agents/threads', 'agents_threads_page'],
+              ['/lambdas/functions', 'lambda_functions_page'],
+              ['/presence-test', 'presence_test_page'],
+              ['/wss-test', 'wss_test_page'],
+            ] as const) {
+              const escapedPath = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              assert.match(main, new RegExp(`\\.route\\("${escapedPath}",\\s*get\\(${handler}\\)\\)`));
+            }
+
+            assert.match(agents, /pub\(crate\) const AGENTS_TASKS_CSS: &str/);
+            assert.match(agents, /pub\(crate\) const AGENTS_TASKS_JS: &str/);
+            assert.match(agents, /pub\(crate\) const AGENTS_THREADS_CSS: &str/);
+            assert.match(agents, /pub\(crate\) const AGENTS_THREADS_JS: &str/);
+            assert.match(lambda, /pub\(crate\) const LAMBDA_FUNCTIONS_CSS: &str/);
+            assert.match(lambda, /pub\(crate\) const LAMBDA_FUNCTIONS_JS: &str/);
+
+            const combined = [main, shared, home, handlers, agents, lambda].join('\n');
+            assert.doesNotMatch(combined, /static_page_with_shared_header/);
+            assert.doesNotMatch(combined, /const (?:LAMBDA_FUNCTIONS|PRESENCE_TEST|WSS_TEST)_HTML: &str/);
+            assert.doesNotMatch(shared + home, /<!doctype html>|<html lang="en">|<body>/);
+          });
+          """.replace(/^          /gm, ''), encoding='utf-8')
+          PY
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - name: Install test dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Install Chromium for behavioral contracts
+        run: pnpm exec playwright install --with-deps chromium
+        working-directory: remote/tests
+      - name: Run focused web-home contracts
+        run: |
+          pnpm exec tsx --test \
+            general/web-home-agents-threads-container-state.test.ts \
+            general/web-home-agents-tasks-links.test.ts \
+            general/web-home-lambda-highlighter.test.ts \
+            general/web-home-shared-header.test.ts
+        working-directory: remote/tests
+      - name: Verify no unresolved conflict markers
+        run: |
+          if git grep -n -E '^(<<<<<<< |=======$|>>>>>>> )' -- . ':(exclude)*.lock'; then
+            exit 1
+          fi
+      - name: Commit verified test repairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- \
+            remote/tests/general/web-home-agents-threads-container-state.test.ts \
+            remote/tests/general/web-home-agents-tasks-links.test.ts \
+            remote/tests/general/web-home-lambda-highlighter.test.ts \
+            remote/tests/general/web-home-shared-header.test.ts
+          if git diff --cached --quiet; then
+            echo 'DEN-408 test repairs already applied.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-408 align web-home contracts with modular Rust source'
+          git push origin HEAD:agent/den-408-web-home-static-contracts
