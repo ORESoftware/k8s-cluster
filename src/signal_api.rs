@@ -10,9 +10,7 @@ use crate::auth::AuthedDevice;
 use crate::device_sync_protocol::{SignalCiphertextEnvelope, SignalDevicePreKeyBundle};
 use crate::error::ApiError;
 use crate::json::JsonBody;
-use crate::signal_store::{
-    self, MailboxEnvelope, OneTimePreKey, PublishPreKeys, SignalStoreError,
-};
+use crate::signal_store::{self, MailboxEnvelope, OneTimePreKey, PublishPreKeys, SignalStoreError};
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -258,12 +256,14 @@ mod tests {
 
     #[test]
     fn query_bounds_fail_before_database_access() {
-        assert!(PullMailboxQuery {
-            after_mailbox_seq: -1,
-            limit: None,
-        }
-        .after_mailbox_seq
-            < 0);
+        assert!(
+            PullMailboxQuery {
+                after_mailbox_seq: -1,
+                limit: None,
+            }
+            .after_mailbox_seq
+                < 0
+        );
         assert_eq!(
             PullMailboxQuery {
                 after_mailbox_seq: 0,

@@ -7,6 +7,10 @@
 //!   POST /v1/devices/revoke  -> revoke a device   (auth)
 //!   GET  /v1/vault           -> pull sealed blob   (auth)
 //!   POST /v1/vault           -> push sealed blob   (auth)
+//!   PUT  /v1/signal/prekeys  -> publish public Signal prekeys (auth, flag)
+//!   POST /v1/signal/envelopes -> enqueue opaque recipient ciphertext (auth, flag)
+//!   GET  /v1/signal/mailbox  -> pull opaque recipient ciphertext (auth, flag)
+//!   POST /v1/signal/mailbox/{id}/ack -> acknowledge local apply (auth, flag)
 //!   GET  /livez              -> liveness (no DB)   (/healthz: back-compat alias)
 //!   GET  /readyz             -> readiness (DB ping)
 //!
@@ -18,7 +22,7 @@
 //! body-size capped and wrapped in a request timeout (see [`router`]).
 
 use crate::state::AppState;
-use crate::{devices, health, metrics, supabase_auth, telemetry, vault_blob};
+use crate::{devices, health, metrics, signal_api, supabase_auth, telemetry, vault_blob};
 use axum::extract::DefaultBodyLimit;
 use axum::http::{header, HeaderName, HeaderValue, StatusCode};
 use axum::middleware;
@@ -71,6 +75,12 @@ const DEFAULT_BODY_LIMIT: usize = 1024 * 1024;
 const VAULT_BODY_LIMIT: usize = 4 * 1024 * 1024;
 
 pub fn router(state: AppState) -> Router {
+    router_with_signal(state, false)
+}
+
+/// Compose the public router. Signal sync routes are absent unless startup
+/// explicitly enables the guarded rollout flag.
+pub fn router_with_signal(state: AppState, signal_sync_enabled: bool) -> Router {
     // GCRA: replenish ~1 request/s with a small burst. SmartIpKeyExtractor uses
     // trusted ingress forwarding headers and falls back to the socket peer.
     //
@@ -132,8 +142,19 @@ pub fn router(state: AppState) -> Router {
         .route_layer(DefaultBodyLimit::max(VAULT_BODY_LIMIT))
         .route_layer(RequestBodyLimitLayer::new(VAULT_BODY_LIMIT))
         .route_layer(GovernorLayer {
-            config: authed_governor,
+            config: Arc::clone(&authed_governor),
         });
+
+    let signal_routes = if signal_sync_enabled {
+        signal_api::routes()
+            .route_layer(DefaultBodyLimit::max(VAULT_BODY_LIMIT))
+            .route_layer(RequestBodyLimitLayer::new(VAULT_BODY_LIMIT))
+            .route_layer(GovernorLayer {
+                config: authed_governor,
+            })
+    } else {
+        Router::<AppState>::new()
+    };
 
     Router::new()
         // Liveness must not depend on the DB; readiness does. These stay
@@ -144,6 +165,7 @@ pub fn router(state: AppState) -> Router {
         .merge(auth_routes)
         .merge(device_routes)
         .merge(vault_routes)
+        .merge(signal_routes)
         // Inside the trace layer, so every access-log line inherits the request
         // span's trace/span ids; outside the routes, so a 404, a 405, and a
         // rate-limited 429 are logged like everything else.
