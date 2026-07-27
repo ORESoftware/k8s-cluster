@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
@@ -80,6 +81,7 @@ const RUST_DEPLOYMENT_ALLOWLIST = new Set([
 
 const RUST_ROUTE_SOURCE_OVERRIDES = new Map([
   ['billing-server-rs', 'src/api/mod.rs'],
+  ['build-server-rs', 'src/http.rs'],
   ['dd-compliance-rs', 'src/routes.rs'],
   ['formal-methods-service-rs', 'src/routes/mod.rs'],
   ['usacc-rest-api-backend-rs', 'src/routes/mod.rs'],
@@ -947,6 +949,228 @@ async function discoverExtraServices() {
   return services;
 }
 
+const OPENAPI_METHODS = new Set(['GET', 'PUT', 'POST', 'DELETE', 'OPTIONS', 'HEAD', 'PATCH', 'TRACE']);
+
+function openApiPathFromSource(sourcePath) {
+  const pathOnly = sourcePath.split('?', 1)[0] || '/';
+  let wildcardIndex = 0;
+  const normalized = pathOnly
+    .replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, '{$1}')
+    .replace(/<([a-zA-Z_][a-zA-Z0-9_]*)>/g, '{$1}')
+    .replace(/\*/g, () => {
+      const suffix = wildcardIndex === 0 ? '' : String(wildcardIndex + 1);
+      wildcardIndex += 1;
+      return `{wildcard${suffix}}`;
+    });
+  return normalized.startsWith('/') ? normalized : `/${normalized}`;
+}
+
+function openApiPathParameters(path) {
+  return [...path.matchAll(/\{([^}]+)\}/g)].map((match) => ({
+    name: match[1],
+    in: 'path',
+    required: true,
+    schema: { type: 'string' },
+  }));
+}
+
+function openApiQueryParameters(sourcePath) {
+  const query = sourcePath.split('?', 2)[1];
+  if (!query) {
+    return [];
+  }
+  const names = query
+    .split('&')
+    .map((part) => part.split('=', 1)[0])
+    .filter(Boolean);
+  return [...new Set(names)].sort().map((name) => ({
+    name,
+    in: 'query',
+    required: false,
+    schema: { type: 'string' },
+  }));
+}
+
+function mergeOpenApiParameters(...groups) {
+  const byKey = new Map();
+  for (const parameter of groups.flat()) {
+    const key = `${parameter.in}:${parameter.name}`;
+    const current = byKey.get(key);
+    if (!current) {
+      byKey.set(key, structuredClone(parameter));
+      continue;
+    }
+    current.required = current.in === 'path' ? true : current.required === true && parameter.required === true;
+  }
+  return [...byKey.values()].sort((left, right) => {
+    return `${left.in}:${left.name}`.localeCompare(`${right.in}:${right.name}`);
+  });
+}
+
+function openApiOperationId(service, route, method) {
+  const path = openApiPathFromSource(route.path);
+  const identity = [service, method, path].join('\0');
+  const digest = createHash('sha256').update(identity).digest('hex').slice(0, 12);
+  const stem = [service, method, path]
+    .join('_')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase();
+  return `${stem || 'operation'}_${digest}`;
+}
+
+function openApiVisibility(route) {
+  if (route.routeType === 'internal-db' || route.routeType === 'runtime-config') {
+    return 'internal';
+  }
+  return route.auth === 'public' ? 'public' : 'internal';
+}
+
+function openApiSecurity(route) {
+  if (openApiVisibility(route) === 'public') {
+    return [];
+  }
+  if (route.auth.includes('X-Server-Auth')) {
+    return [{ serverAuth: [] }];
+  }
+  if (route.auth.includes('operator secret')) {
+    return [{ operatorSecret: [] }];
+  }
+  if (route.auth.includes('webhook signature')) {
+    return [{ webhookSignature: [] }];
+  }
+  return undefined;
+}
+
+function buildOpenApi(docs) {
+  const paths = {};
+  const tags = new Set();
+  let operationCount = 0;
+  for (const route of docs.routes) {
+    const path = openApiPathFromSource(route.path);
+    const pathItem = paths[path] ?? {};
+    tags.add(route.routeType);
+    for (const method of route.methods) {
+      if (!OPENAPI_METHODS.has(method)) {
+        continue;
+      }
+      const methodName = method.toLowerCase();
+      const visibility = openApiVisibility(route);
+      const existing = pathItem[methodName];
+      if (existing) {
+        if (existing['x-dd-auth'] !== route.auth || existing['x-dd-visibility'] !== visibility || existing['x-dd-route-type'] !== route.routeType) {
+          throw new Error(`ambiguous OpenAPI merge for ${docs.service} ${method} ${path}: query/path variants must share auth, visibility, and route type`);
+        }
+        existing.parameters = mergeOpenApiParameters(
+          existing.parameters ?? [],
+          openApiQueryParameters(route.path),
+        );
+        existing['x-dd-handlers'] = [...new Set([...(existing['x-dd-handlers'] ?? []), ...(route.handlers ?? [])])].sort();
+        existing['x-dd-source-files'] = [...new Set([...(existing['x-dd-source-files'] ?? []), ...(route.sourceFiles ?? [])])].sort();
+        existing['x-dd-source-paths'] = [...new Set([...(existing['x-dd-source-paths'] ?? []), route.path])].sort();
+        continue;
+      }
+      const security = openApiSecurity(route);
+      const operation = {
+        operationId: openApiOperationId(docs.service, route, method),
+        summary: route.purpose,
+        description: route.notes || route.purpose,
+        tags: [route.routeType],
+        parameters: mergeOpenApiParameters(
+          openApiPathParameters(path),
+          openApiQueryParameters(route.path),
+        ),
+        responses: {
+          default: {
+            description: 'Response produced by the registered service handler.',
+          },
+        },
+        'x-dd-auth': route.auth,
+        'x-dd-handlers': route.handlers,
+        'x-dd-implementation': route.implementation,
+        'x-dd-route-type': route.routeType,
+        'x-dd-source-files': route.sourceFiles,
+        'x-dd-source-path': route.path,
+        'x-dd-source-paths': [route.path],
+        'x-dd-visibility': visibility,
+      };
+      if (security !== undefined) {
+        operation.security = security;
+      }
+      pathItem[methodName] = operation;
+      operationCount += 1;
+    }
+    paths[path] = pathItem;
+  }
+
+  return {
+    openapi: '3.1.0',
+    jsonSchemaDialect: 'https://json-schema.org/draft/2020-12/schema',
+    info: {
+      title: `${docs.service} API`,
+      version: '0.1.0',
+      description:
+        'Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter.',
+    },
+    tags: [...tags].sort().map((name) => ({ name })),
+    paths,
+    components: {
+      securitySchemes: {
+        serverAuth: {
+          type: 'apiKey',
+          in: 'header',
+          name: 'X-Server-Auth',
+        },
+        operatorSecret: {
+          type: 'apiKey',
+          in: 'header',
+          name: 'X-Operator-Secret',
+        },
+        webhookSignature: {
+          type: 'apiKey',
+          in: 'header',
+          name: 'X-Webhook-Signature',
+        },
+      },
+    },
+    'x-dd-contract-scope': 'internal',
+    'x-dd-generated-by': docs.generatedBy,
+    'x-dd-language': docs.language,
+    'x-dd-operation-count': operationCount,
+    'x-dd-route-count': docs.routeCount,
+    'x-dd-service': docs.service,
+    'x-dd-standard-docs-routes': docs.standardDocsRoutes,
+  };
+}
+
+function buildPublicOpenApi(openapi) {
+  const document = structuredClone(openapi);
+  for (const [path, pathItem] of Object.entries(document.paths)) {
+    for (const method of [...OPENAPI_METHODS].map((value) => value.toLowerCase())) {
+      if (pathItem[method]?.['x-dd-visibility'] !== 'public') {
+        delete pathItem[method];
+      }
+    }
+    if (Object.keys(pathItem).length === 0) {
+      delete document.paths[path];
+    }
+  }
+  document.info.title = `${document.info.title} (public)`;
+  document.info.description =
+    'Fail-closed public subset. Only operations explicitly marked public are included.';
+  document['x-dd-contract-scope'] = 'public';
+  document['x-dd-operation-count'] = Object.values(document.paths).reduce(
+    (count, pathItem) =>
+      count +
+      [...OPENAPI_METHODS]
+        .map((value) => value.toLowerCase())
+        .filter((method) => pathItem[method])
+        .length,
+    0,
+  );
+  return document;
+}
+
 function buildDocs(service) {
   const routes = service.routes;
   const routeTypeCounts = routes.reduce((acc, route) => {
@@ -1179,7 +1403,7 @@ function gleamString(value) {
   return JSON.stringify(value);
 }
 
-function gleamApiDocsModule(docs) {
+function gleamApiDocsModule(docs, openapi) {
   return `// Generated by remote/tools/generate-api-docs.mjs. Do not edit by hand.
 import gleam/bytes_tree
 import gleam/http/response
@@ -1187,7 +1411,7 @@ import mist
 
 const api_docs_html = ${gleamString(renderDocsHtml(docs))}
 
-const api_docs_json = ${gleamString(`${JSON.stringify(docs, null, 2)}\n`)}
+const api_docs_json = ${gleamString(`${JSON.stringify(openapi, null, 2)}\n`)}
 
 pub fn html() -> response.Response(mist.ResponseData) {
   response.new(200)
@@ -1233,18 +1457,29 @@ async function main() {
   for (const service of services) {
     assertStandardDocsRoutes(service);
     const docs = buildDocs(service);
+    const openapi = buildOpenApi(docs);
+    const publicOpenapi = buildPublicOpenApi(openapi);
     const outputBase = service.outputName ?? 'api-docs';
     const generatedDir = join(service.deploymentDir, 'generated');
-    const json = `${JSON.stringify(docs, null, 2)}\n`;
+    const json = `${JSON.stringify(openapi, null, 2)}\n`;
+    const publicJson = `${JSON.stringify(publicOpenapi, null, 2)}\n`;
+    const metadataJson = `${JSON.stringify(docs, null, 2)}\n`;
     const html = renderDocsHtml(docs);
     const generated = [
       relative(repoRoot, join(generatedDir, `${outputBase}.json`)).split(sep).join('/'),
       relative(repoRoot, join(generatedDir, `${outputBase}.html`)).split(sep).join('/'),
+      relative(repoRoot, join(generatedDir, `${outputBase}.public.json`)).split(sep).join('/'),
+      relative(repoRoot, join(generatedDir, `${outputBase}.metadata.json`)).split(sep).join('/'),
     ];
     await writeOrCheck(join(generatedDir, `${outputBase}.json`), json);
+    await writeOrCheck(join(generatedDir, `${outputBase}.public.json`), publicJson);
+    await writeOrCheck(join(generatedDir, `${outputBase}.metadata.json`), metadataJson);
     await writeOrCheck(join(generatedDir, `${outputBase}.html`), html);
     if (service.language === 'gleam' && outputBase === 'api-docs' && service.moduleDir) {
-      await writeOrCheck(join(service.moduleDir, 'api_docs.gleam'), gleamApiDocsModule(docs));
+      await writeOrCheck(
+        join(service.moduleDir, 'api_docs.gleam'),
+        gleamApiDocsModule(docs, openapi),
+      );
     }
     index.push({
       service: service.service,

@@ -70,13 +70,23 @@ function operationEntries(document) {
   return entries;
 }
 
-function operationSourceKey(entry) {
-  const sourcePath = entry.operation['x-dd-source-path'];
+function operationSourceKeys(entry) {
+  const sourcePaths = entry.operation['x-dd-source-paths'] ?? [entry.operation['x-dd-source-path']];
   assert(
-    typeof sourcePath === 'string' && sourcePath.startsWith('/'),
-    `${entry.operation.operationId ?? `${entry.method} ${entry.path}`} is missing x-dd-source-path`,
+    Array.isArray(sourcePaths) && sourcePaths.length > 0,
+    `${entry.operation.operationId ?? `${entry.method} ${entry.path}`} is missing x-dd-source-paths`,
   );
-  return `${entry.method} ${sourcePath}`;
+  for (const sourcePath of sourcePaths) {
+    assert(
+      typeof sourcePath === 'string' && sourcePath.startsWith('/'),
+      `${entry.operation.operationId ?? `${entry.method} ${entry.path}`} has an invalid source path`,
+    );
+  }
+  return [...new Set(sourcePaths)].sort().map((sourcePath) => `${entry.method} ${sourcePath}`);
+}
+
+function operationDocumentKey(entry) {
+  return `${entry.method} ${entry.path}`;
 }
 
 function expectedRouteKeys(metadata) {
@@ -139,7 +149,7 @@ function verifyService(item, gitlinks, fleetOperationIds) {
   );
 
   const fullEntries = operationEntries(openapi);
-  const actualKeys = fullEntries.map(operationSourceKey).sort();
+  const actualKeys = fullEntries.flatMap(operationSourceKeys).sort();
   const expectedKeys = expectedRouteKeys(metadata);
   assert(
     JSON.stringify(actualKeys) === JSON.stringify(expectedKeys),
@@ -177,10 +187,14 @@ function verifyService(item, gitlinks, fleetOperationIds) {
   }
 
   const publicEntries = operationEntries(publicOpenapi);
-  const fullByKey = new Map(fullEntries.map((entry) => [operationSourceKey(entry), entry]));
+  const fullByKey = new Map(fullEntries.map((entry) => [operationDocumentKey(entry), entry]));
   for (const entry of publicEntries) {
-    const key = operationSourceKey(entry);
+    const key = operationDocumentKey(entry);
     assert(fullByKey.has(key), `${item.service}: public OpenAPI contains non-canonical operation ${key}`);
+    assert(
+      JSON.stringify(operationSourceKeys(entry)) === JSON.stringify(operationSourceKeys(fullByKey.get(key))),
+      `${item.service}: public OpenAPI source-path set drifted for ${key}`,
+    );
     assert(
       entry.operation['x-dd-visibility'] === 'public',
       `${item.service}: internal operation leaked into public OpenAPI: ${key}`,
@@ -188,9 +202,9 @@ function verifyService(item, gitlinks, fleetOperationIds) {
   }
   const expectedPublicKeys = fullEntries
     .filter((entry) => entry.operation['x-dd-visibility'] === 'public')
-    .map(operationSourceKey)
+    .map(operationDocumentKey)
     .sort();
-  const actualPublicKeys = publicEntries.map(operationSourceKey).sort();
+  const actualPublicKeys = publicEntries.map(operationDocumentKey).sort();
   assert(
     JSON.stringify(expectedPublicKeys) === JSON.stringify(actualPublicKeys),
     `${item.service}: public OpenAPI is not the exact public subset`,
