@@ -1,0 +1,68 @@
+name: nix agent profiles
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - nix-agent-profiles/**
+      - scripts/render-nix-agent-profile.sh
+      - scripts/tests/render-nix-agent-profile-test.sh
+      - scripts/NIX_AGENT_PROFILES.md
+      - .github/workflows/nix-agent-profiles.yml
+      - flake.nix
+      - flake.lock
+      - .nix/**
+  pull_request:
+    paths:
+      - nix-agent-profiles/**
+      - scripts/render-nix-agent-profile.sh
+      - scripts/tests/render-nix-agent-profile-test.sh
+      - scripts/NIX_AGENT_PROFILES.md
+      - .github/workflows/nix-agent-profiles.yml
+      - flake.nix
+      - flake.lock
+      - .nix/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-agent-profiles-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
+        with:
+          args: ./.github/workflows/nix-agent-profiles.yml
+
+      - name: Lint renderer and fixtures
+        run: |
+          nix develop -c shellcheck \
+            scripts/render-nix-agent-profile.sh \
+            scripts/tests/render-nix-agent-profile-test.sh
+
+      - name: Check shell formatting
+        run: |
+          nix develop -c shfmt -i 2 -ci -d \
+            scripts/render-nix-agent-profile.sh \
+            scripts/tests/render-nix-agent-profile-test.sh
+
+      - name: Render and validate every profile
+        run: nix develop -c bash scripts/tests/render-nix-agent-profile-test.sh
