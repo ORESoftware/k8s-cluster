@@ -1,0 +1,79 @@
+name: DEN-440 format NATS ingress
+
+on:
+  push:
+    branches:
+      - agent/den-440-nats-http-ingress
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-440-format
+  cancel-in-progress: false
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-440-nats-http-ingress
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt
+      - name: Apply deterministic fixes and Rustfmt
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/nats-bridge/src/bin/nats_http_ingress.rs')
+          source = path.read_text()
+          replacements = [
+              (
+                  '.with(tracing_subscriber::fmt::layer().json())',
+                  '.with(tracing_subscriber::fmt::layer())',
+                  'tracing formatter feature',
+              ),
+              (
+                  '    publish_timeout: Duration,\n    counters: Counters,',
+                  '    publish_timeout: Duration,\n    max_in_flight: usize,\n    counters: Counters,',
+                  'max-in-flight state',
+              ),
+              (
+                  '        publish_timeout: Duration::from_millis(timeout_ms),\n        counters: Counters {',
+                  '        publish_timeout: Duration::from_millis(timeout_ms),\n        max_in_flight,\n        counters: Counters {',
+                  'max-in-flight initializer',
+              ),
+              (
+                  'state.in_flight.available_permits().saturating_sub(state.in_flight.available_permits())',
+                  'state\n            .max_in_flight\n            .saturating_sub(state.in_flight.available_permits())',
+                  'in-flight metric',
+              ),
+          ]
+          for old, new, label in replacements:
+              if old in source:
+                  source = source.replace(old, new, 1)
+              elif new not in source:
+                  raise SystemExit(f'{label}: expected old or new text')
+          path.write_text(source)
+          PY
+          cargo fmt --manifest-path remote/nats-bridge/Cargo.toml --all
+      - name: Commit formatted source
+        run: |
+          set -euo pipefail
+          git add remote/nats-bridge/src/bin/nats_http_ingress.rs
+          if git diff --cached --quiet; then
+            echo 'Source is already formatted.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-440 format and correct NATS HTTP ingress'
+          git push origin HEAD:agent/den-440-nats-http-ingress
