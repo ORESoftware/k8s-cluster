@@ -71,3 +71,7 @@ The adapter's test suite covers:
 No real Apple key or device token is required for these tests. The mock delivery test seeds a synthetic cached provider token and uses a loopback HTTP endpoint that is inaccessible through public configuration APIs.
 
 The merge gate requires locked formatting, Clippy with warnings denied, all tests, the Rust 1.88 container build, cargo-deny, RustSec, and full-history Gitleaks to pass on the same reviewed commit.
+
+## Delivery record
+
+PR #8 contains the implementation. The reviewed green source SHA and merge commit are recorded in Linear after the permanent gate completes.
