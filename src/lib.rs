@@ -1,5 +1,6 @@
 //! 3FA zero-knowledge sync server library.
 
+mod account_security;
 mod accounts;
 mod app;
 mod auth;
