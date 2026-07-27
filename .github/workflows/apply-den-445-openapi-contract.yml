@@ -7,6 +7,12 @@ on:
     paths:
       - '.github/workflows/apply-den-445-openapi-contract.yml'
       - '.github/scripts/den-445-migrate.py.gz.b64.part*'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-den-445-openapi-contract.yml'
+      - '.github/scripts/den-445-migrate.py.gz.b64.part*'
   workflow_dispatch:
 
 permissions:
@@ -14,10 +20,11 @@ permissions:
 
 concurrency:
   group: apply-den-445-openapi-contract
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   apply-and-verify:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
