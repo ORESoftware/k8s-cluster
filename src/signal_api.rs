@@ -10,6 +10,7 @@ use crate::auth::AuthedDevice;
 use crate::device_sync_protocol::{SignalCiphertextEnvelope, SignalDevicePreKeyBundle};
 use crate::error::ApiError;
 use crate::json::JsonBody;
+use crate::signal_bundle_store;
 use crate::signal_store::{self, MailboxEnvelope, OneTimePreKey, PublishPreKeys, SignalStoreError};
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
@@ -25,6 +26,11 @@ const MAX_PUBLISHED_ONE_TIME_PREKEYS: usize = 1_000;
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route("/v1/signal/prekeys", put(publish_prekeys_handler))
+        .route(
+            "/v1/signal/devices/{device_id}/prekey-bundle",
+            post(claim_prekey_bundle_handler),
+        )
+        .route("/v1/signal/device-revision", get(device_revision_handler))
         .route("/v1/signal/envelopes", post(enqueue_envelope_handler))
         .route("/v1/signal/mailbox", get(pull_mailbox_handler))
         .route(
@@ -90,6 +96,54 @@ pub(crate) async fn publish_prekeys_handler(
         device_list_revision: published.device_list_revision,
         inserted_one_time_prekeys: published.inserted_one_time_prekeys,
     }))
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct PreKeyBundleResponse {
+    device_revision: i64,
+    bundle: SignalDevicePreKeyBundle,
+    low_prekeys: bool,
+}
+
+pub(crate) async fn claim_prekey_bundle_handler(
+    State(state): State<AppState>,
+    who: AuthedDevice,
+    Path(target_device_id): Path<Uuid>,
+) -> Result<Json<PreKeyBundleResponse>, ApiError> {
+    require_sibling_target(target_device_id, who)?;
+    let claimed = signal_bundle_store::claim_prekey_bundle(
+        state.database(),
+        who.account_id,
+        target_device_id,
+        who.device_id,
+    )
+    .await
+    .map_err(map_store_error)?;
+
+    Ok(Json(PreKeyBundleResponse {
+        device_revision: claimed.device_revision,
+        bundle: claimed.bundle,
+        low_prekeys: claimed.low_prekeys,
+    }))
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct DeviceRevisionResponse {
+    device_revision: i64,
+}
+
+pub(crate) async fn device_revision_handler(
+    State(state): State<AppState>,
+    who: AuthedDevice,
+) -> Result<Json<DeviceRevisionResponse>, ApiError> {
+    let device_revision = signal_bundle_store::current_device_revision(
+        state.database(),
+        who.account_id,
+        who.device_id,
+    )
+    .await
+    .map_err(map_store_error)?;
+    Ok(Json(DeviceRevisionResponse { device_revision }))
 }
 
 #[derive(Debug, Serialize)]
@@ -173,6 +227,13 @@ pub(crate) async fn acknowledge_envelope_handler(
     .await
     .map_err(map_store_error)?;
     Ok(Json(AcknowledgeEnvelopeResponse { mailbox_seq }))
+}
+
+fn require_sibling_target(target_device_id: Uuid, who: AuthedDevice) -> Result<(), ApiError> {
+    if target_device_id == who.device_id {
+        return Err(ApiError::BadRequest);
+    }
+    Ok(())
 }
 
 fn require_authenticated_sender(
@@ -272,5 +333,18 @@ mod tests {
             .limit,
             Some(0)
         );
+    }
+
+    #[test]
+    fn a_device_cannot_claim_its_own_prekey_bundle() {
+        let who = AuthedDevice {
+            account_id: Uuid::new_v4(),
+            device_id: Uuid::new_v4(),
+        };
+        assert!(matches!(
+            require_sibling_target(who.device_id, who),
+            Err(ApiError::BadRequest)
+        ));
+        assert!(require_sibling_target(Uuid::new_v4(), who).is_ok());
     }
 }
