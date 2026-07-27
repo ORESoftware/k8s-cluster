@@ -1,0 +1,1 @@
+DEN-267 is intentionally isolated from the broader Browser MCP workflow-profile and provider-integration work.
