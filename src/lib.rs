@@ -6,6 +6,7 @@
 
 pub mod contracts;
 pub mod provider;
+pub mod providers;
 pub mod redaction;
 pub mod retry;
 pub mod validation;
@@ -15,6 +16,7 @@ pub use contracts::{
     PushOutcome, PushPriority, PushTarget, TraceMetadata,
 };
 pub use provider::{ProviderError, ProviderReadiness, PushProvider};
+pub use providers::fcm::{FcmConfig, FcmConfigError, FcmProvider};
 pub use redaction::{TargetFingerprint, fingerprint_target, truncate_utf8};
 pub use retry::{RetryDecision, classify_http_status, parse_retry_after};
 pub use validation::{ValidationError, validate_push_job};
