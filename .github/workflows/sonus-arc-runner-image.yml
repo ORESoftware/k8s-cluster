@@ -1,0 +1,61 @@
+name: Sonus Auris ARC runner image
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "remote/deployments/sonus-auris-ci-runner/**"
+      - ".github/workflows/sonus-arc-runner-image.yml"
+  push:
+    branches: [main]
+    paths:
+      - "remote/deployments/sonus-auris-ci-runner/**"
+      - ".github/workflows/sonus-arc-runner-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonus-arc-runner-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-without-publishing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Build the pinned runner image without publishing
+        run: |
+          docker build \
+            --pull \
+            --file remote/deployments/sonus-auris-ci-runner/Dockerfile \
+            --tag sonus-auris-ci-runner:ci \
+            .
+
+      - name: Verify non-root identity and required native tools
+        run: |
+          docker run --rm \
+            --entrypoint /bin/bash \
+            sonus-auris-ci-runner:ci \
+            -lc '
+              set -euo pipefail
+              test "$(id -u)" = 1001
+              test -x /usr/bin/git
+              test -x /usr/bin/curl
+              test -x /usr/bin/python3
+              test -x /usr/bin/cmake
+              test -x /usr/bin/ninja
+              test -x /usr/bin/java
+              pkg-config --exists gtk+-3.0
+              test ! -e /var/run/docker.sock
+              git --version
+              python3 --version
+              cmake --version | head -n 1
+              pkg-config --modversion gtk+-3.0
+              java -version
+            '
