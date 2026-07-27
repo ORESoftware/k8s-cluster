@@ -133,6 +133,35 @@ jobs:
               if text.count(old_web) != 1 or text.count(old_rest) != 1:
                   raise SystemExit('source bundles must retain one authoritative main.rs read each')
 
+          rest_server_declaration = "  const restServer = await readRestApiSource();\n"
+          rest_threads_declaration = (
+              "  const restThreads = await readRepoFile(\n"
+              "    'remote/deployments/rest-api-rs/src/threads.rs',\n"
+              "  );\n"
+          )
+          if 'const restThreads = await readRepoFile(' not in text:
+              if text.count(rest_server_declaration) != 1:
+                  raise SystemExit('expected one restServer declaration')
+              text = text.replace(
+                  rest_server_declaration,
+                  rest_server_declaration + rest_threads_declaration,
+                  1,
+              )
+
+          for before, after in {
+              "assert.doesNotMatch(restServer, /git .* clone --depth 1 --branch dev/);":
+                  "assert.doesNotMatch(restThreads, /git .* clone --depth 1 --branch dev/);",
+              "assert.doesNotMatch(restServer, /apt-get update/);":
+                  "assert.doesNotMatch(restThreads, /apt-get update/);",
+          }.items():
+              count = text.count(before)
+              if count == 1:
+                  text = text.replace(before, after, 1)
+              elif count == 0 and after in text:
+                  continue
+              else:
+                  raise SystemExit(f'expected one thread-renderer negative assertion, found {count}')
+
           path.write_text(text, encoding='utf-8')
           PY
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
