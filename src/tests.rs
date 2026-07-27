@@ -759,7 +759,13 @@ async fn customer_login_is_server_mediated_and_issues_only_customer_cookie() {
                     "user_id": "00000000-0000-4000-8000-000000000002",
                     "email": "customer@example.com",
                     "orgs": ["00000000-0000-4000-8000-000000000001"],
-                    "roles": []
+                    "roles": [],
+                    "authorization": {
+                        "version": 1,
+                        "surface_audiences": ["fiducia-customer"],
+                        "roles": [],
+                        "capabilities": ["customer:self-service"]
+                    }
                 }
             }))
         }),
@@ -979,6 +985,12 @@ async fn aal1_session_with_a_verified_factor_is_rejected_on_customer_routes() {
                     "email": "customer@example.com",
                     "orgs": [ORG_A],
                     "roles": [],
+                    "authorization": {
+                        "version": 1,
+                        "surface_audiences": ["fiducia-customer"],
+                        "roles": [],
+                        "capabilities": ["customer:self-service"]
+                    },
                     "aal": "aal1"
                 }
             }))
