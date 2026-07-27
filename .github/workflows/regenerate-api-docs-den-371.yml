@@ -50,9 +50,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          pnpm run generate:api-docs
+          pnpm --dir remote/tests run generate:api-docs
           first_hash="$(git diff --binary -- remote/deployments | sha256sum | awk '{print $1}')"
-          pnpm run generate:api-docs
+          pnpm --dir remote/tests run generate:api-docs
           second_hash="$(git diff --binary -- remote/deployments | sha256sum | awk '{print $1}')"
           test "$first_hash" = "$second_hash"
 
@@ -80,9 +80,8 @@ jobs:
             esac
           done
 
-          pnpm run check:api-docs
-          pnpm run check:observability-coverage
-        working-directory: remote/tests
+          pnpm --dir remote/tests run check:api-docs
+          pnpm --dir remote/tests run check:observability-coverage
       - name: Commit deterministic generated outputs
         shell: bash
         run: |
