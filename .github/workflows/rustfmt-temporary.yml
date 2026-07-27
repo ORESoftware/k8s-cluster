@@ -13,12 +13,19 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
+      - name: Capture source before formatting
+        run: |
+          mkdir -p "$RUNNER_TEMP/rustfmt/original" "$RUNNER_TEMP/rustfmt/formatted"
+          cp src/device_sync_protocol.rs "$RUNNER_TEMP/rustfmt/original/"
+          cp src/account_security.rs "$RUNNER_TEMP/rustfmt/original/"
       - run: cargo fmt
+      - name: Capture source after formatting
+        run: |
+          cp src/device_sync_protocol.rs "$RUNNER_TEMP/rustfmt/formatted/"
+          cp src/account_security.rs "$RUNNER_TEMP/rustfmt/formatted/"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: rustfmt-output
-          path: |
-            src/device_sync_protocol.rs
-            src/account_security.rs
+          name: rustfmt-before-after
+          path: ${{ runner.temp }}/rustfmt
           if-no-files-found: error
           retention-days: 1
