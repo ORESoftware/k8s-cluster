@@ -1,3 +1,3 @@
-{"ok":false,"errorCount":1,"warningCount":0,"errors":["env.ignore must be a list of env var names"],"warnings":[]}
+{"ok":true,"errorCount":0,"warningCount":0,"errors":[],"warnings":[]}
 
-exit_status=1
+exit_status=0
