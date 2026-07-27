@@ -26,6 +26,20 @@ jobs:
           ref: agent/openapi-contract-hardening
           fetch-depth: 0
 
+      - name: Correct one-shot repository root
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'scripts/api-contract/apply-openapi-hardening.mjs';
+          const before = "resolve(scriptDir, '..', '..', '..')";
+          const after = "resolve(scriptDir, '..', '..')";
+          const source = fs.readFileSync(path, 'utf8');
+          if (!source.includes(before) && !source.includes(after)) {
+            throw new Error('repository-root expression not found');
+          }
+          fs.writeFileSync(path, source.replace(before, after));
+          NODE
+
       - name: Apply source patch
         run: node scripts/api-contract/apply-openapi-hardening.mjs
 
