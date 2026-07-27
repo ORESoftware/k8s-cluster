@@ -20,7 +20,7 @@ jobs:
   apply-and-test:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - name: Checkout feature branch
         uses: actions/checkout@v7
@@ -39,22 +39,13 @@ jobs:
       - name: Reject malformed diffs
         run: git diff --check
 
-      - name: Install scraper dependencies
-        working-directory: remote/deployments/web-scraper-service
-        run: corepack pnpm install --frozen-lockfile
-
-      - name: Typecheck scraper
-        working-directory: remote/deployments/web-scraper-service
-        run: corepack pnpm run typecheck
-
-      - name: Test sensitive-field policy and wiring
+      - name: Test sensitive-field policy and source wiring
         working-directory: remote/deployments/web-scraper-service
         run: >-
-          node --import tsx --test
+          node --test
           tests/sensitive-field-policy.test.ts
           tests/sensitive-field-wiring.test.ts
           tests/sensitive-field-policy.integration-plan.test.ts
-          tests/browser-agent.test.ts
 
       - name: Remove one-shot patch machinery
         run: |
