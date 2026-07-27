@@ -26,20 +26,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: agent/den-371-regenerate-api-docs
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
       - name: Initialize pinned API-doc source library
         shell: bash
-        env:
-          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
         run: |
           set -euo pipefail
-          test -n "$K8S_LIBS_DEPLOY_KEY"
-          key_file="$(mktemp "${RUNNER_TEMP}/k8s-libs-key.XXXXXX")"
-          cleanup() { rm -f "$key_file"; }
-          trap cleanup EXIT
-          printf '%s' "$K8S_LIBS_DEPLOY_KEY" >"$key_file"
-          chmod 600 "$key_file"
-          GIT_SSH_COMMAND="ssh -i ${key_file} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
-            git submodule update --init --recursive --depth 1 -- remote/libs
+          ssh_command="$(git config --local core.sshCommand || true)"
+          test -n "$ssh_command"
+          export GIT_SSH_COMMAND="$ssh_command"
+          git submodule update --init --recursive --depth 1 -- remote/libs
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 10.33.0
@@ -90,14 +85,33 @@ jobs:
       - name: Commit deterministic generated outputs
         if: github.event_name == 'push'
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [[ -z "$(git status --porcelain -- remote/deployments)" ]]; then
             echo 'No generated outputs require a commit.'
             exit 0
           fi
+
+          askpass_file="$(mktemp "${RUNNER_TEMP}/github-push-askpass.XXXXXX")"
+          cleanup() { rm -f "$askpass_file"; }
+          trap cleanup EXIT
+          cat >"$askpass_file" <<'ASKPASS'
+          #!/usr/bin/env sh
+          case "${1:-}" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) printf '%s\n' "$GITHUB_TOKEN" ;;
+            *) printf '%s\n' '' ;;
+          esac
+          ASKPASS
+          chmod 700 "$askpass_file"
+          export GIT_ASKPASS="$askpass_file"
+          export GIT_TERMINAL_PROMPT=0
+
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -- remote/deployments
           git commit -m 'Regenerate deterministic API documentation'
+          git remote set-url origin https://github.com/ORESoftware/k8s-cluster.git
           git push origin HEAD:agent/den-371-regenerate-api-docs
