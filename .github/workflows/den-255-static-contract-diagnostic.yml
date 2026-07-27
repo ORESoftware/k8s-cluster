@@ -53,9 +53,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
         working-directory: remote/tests
 
-      - name: Run static contracts
+      - name: Run static contracts with compact failure report
         id: static-contracts
-        continue-on-error: true
         working-directory: remote/tests
         run: |
           set +e
@@ -120,8 +119,9 @@ jobs:
             tail -n 300 "$out/full.log"
           } >"$out/diagnostic.txt"
           printf '%s\n' "$status" >"$out/exit-status.txt"
+          echo "status=$status" >> "$GITHUB_OUTPUT"
           cat "$out/diagnostic.txt"
-          exit "$status"
+          exit 0
 
       - name: Upload compact diagnostic
         if: always()
@@ -133,7 +133,7 @@ jobs:
           retention-days: 2
 
       - name: Enforce static contracts
-        if: steps.static-contracts.outcome == 'failure'
+        if: steps.static-contracts.outputs.status != '0'
         run: |
           echo 'Static contracts failed; inspect the compact diagnostic artifact.'
           exit 1
