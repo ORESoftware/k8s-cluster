@@ -38,7 +38,7 @@ jobs:
           fi
       - name: Enforce encryption architecture
         run: |
-          grep -Fq 'cryptographically random account master key' README.md
+          grep -Fiq 'cryptographically random account master key' README.md
           grep -Fq 'The six-digit PIN is **not** the clipboard encryption key' README.md
           if grep -Eiq 'encryption key is derived.*(PIN|biometric)|raw (fingerprint|voice).*encryption' README.md; then
             echo 'unsafe key-derivation guidance found' >&2
