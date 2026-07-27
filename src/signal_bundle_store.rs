@@ -159,10 +159,7 @@ pub async fn claim_prekey_bundle(
         signed_pre_key_signature: decode_required(&row, "signed_prekey_signature_base64")?,
         pq_signed_pre_key_id: to_u32(pq_signed_prekey_id)?,
         pq_signed_pre_key: decode_required(&row, "pq_signed_prekey_base64")?,
-        pq_signed_pre_key_signature: decode_required(
-            &row,
-            "pq_signed_prekey_signature_base64",
-        )?,
+        pq_signed_pre_key_signature: decode_required(&row, "pq_signed_prekey_signature_base64")?,
         one_time_pre_key_id: one_time_prekey_id.map(to_u32).transpose()?,
         one_time_pre_key: one_time_prekey_base64
             .map(|value| BASE64.decode(value))
@@ -200,10 +197,7 @@ pub async fn current_device_revision(
     Ok(row.try_get("", "signal_device_revision")?)
 }
 
-fn decode_required(
-    row: &sea_orm::QueryResult,
-    column: &str,
-) -> Result<Vec<u8>, SignalStoreError> {
+fn decode_required(row: &sea_orm::QueryResult, column: &str) -> Result<Vec<u8>, SignalStoreError> {
     let encoded: String = row.try_get("", column)?;
     Ok(BASE64.decode(encoded)?)
 }

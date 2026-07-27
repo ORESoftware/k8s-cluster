@@ -30,10 +30,7 @@ pub(crate) fn routes() -> Router<AppState> {
             "/v1/signal/devices/{device_id}/prekey-bundle",
             post(claim_prekey_bundle_handler),
         )
-        .route(
-            "/v1/signal/device-revision",
-            get(device_revision_handler),
-        )
+        .route("/v1/signal/device-revision", get(device_revision_handler))
         .route("/v1/signal/envelopes", post(enqueue_envelope_handler))
         .route("/v1/signal/mailbox", get(pull_mailbox_handler))
         .route(
