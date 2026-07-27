@@ -47,41 +47,56 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: remote/tests
       - name: Generate and prove idempotence
+        id: generate
         shell: bash
         run: |
-          set -euo pipefail
-          pnpm --dir remote/tests run generate:api-docs
-          first_hash="$(git diff --binary -- remote/deployments | sha256sum | awk '{print $1}')"
-          pnpm --dir remote/tests run generate:api-docs
-          second_hash="$(git diff --binary -- remote/deployments | sha256sum | awk '{print $1}')"
-          test "$first_hash" = "$second_hash"
+          set -o pipefail
+          {
+            set -euo pipefail
+            pnpm --dir remote/tests run generate:api-docs
+            first_hash="$(git diff --binary -- remote/deployments | sha256sum | awk '{print $1}')"
+            pnpm --dir remote/tests run generate:api-docs
+            second_hash="$(git diff --binary -- remote/deployments | sha256sum | awk '{print $1}')"
+            test "$first_hash" = "$second_hash"
 
-          mapfile -t changed < <(git diff --name-only -- remote/deployments)
-          if (( ${#changed[@]} == 0 )); then
-            echo 'Generated API docs are already current.'
-            exit 0
-          fi
+            git diff --name-status -- remote/deployments | tee "${RUNNER_TEMP}/api-doc-generated-paths.txt"
+            mapfile -t changed < <(git diff --name-only -- remote/deployments)
+            if (( ${#changed[@]} == 0 )); then
+              echo 'Generated API docs are already current.'
+              exit 0
+            fi
 
-          printf 'Generated output changes:\n'
-          printf '  - %s\n' "${changed[@]}"
-          for path in "${changed[@]}"; do
-            case "$path" in
-              remote/deployments/generated-api-docs-index.json|\
-              remote/deployments/generated-api-docs-index.html|\
-              remote/deployments/*/generated/*.json|\
-              remote/deployments/*/generated/*.html|\
-              remote/deployments/*/api_docs.gleam|\
-              remote/deployments/*/*/api_docs.gleam)
-                ;;
-              *)
-                echo "unexpected generator output path: $path" >&2
-                exit 1
-                ;;
-            esac
-          done
+            printf 'Generated output changes:\n'
+            printf '  - %s\n' "${changed[@]}"
+            for path in "${changed[@]}"; do
+              case "$path" in
+                remote/deployments/generated-api-docs-index.json|\
+                remote/deployments/generated-api-docs-index.html|\
+                remote/deployments/*/generated/*.json|\
+                remote/deployments/*/generated/*.html|\
+                remote/deployments/*/api_docs.gleam|\
+                remote/deployments/*/*/api_docs.gleam)
+                  ;;
+                *)
+                  echo "unexpected generator output path: $path" >&2
+                  exit 1
+                  ;;
+              esac
+            done
 
-          pnpm --dir remote/tests run check:api-docs
-          pnpm --dir remote/tests run check:observability-coverage
+            pnpm --dir remote/tests run check:api-docs
+            pnpm --dir remote/tests run check:observability-coverage
+          } 2>&1 | tee "${RUNNER_TEMP}/api-doc-generation.log"
+      - name: Upload failure-only generator diagnostics
+        if: failure() && steps.generate.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: api-doc-generation-diagnostics
+          path: |
+            ${{ runner.temp }}/api-doc-generation.log
+            ${{ runner.temp }}/api-doc-generated-paths.txt
+          retention-days: 1
+          if-no-files-found: warn
       - name: Commit deterministic generated outputs
         if: github.event_name == 'push'
         shell: bash
