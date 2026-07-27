@@ -8,7 +8,10 @@ Resolve `$PWD`, walk upward through every parent to the filesystem root, read ev
 
 ## Remote synchronization
 
-Before editing, inspect `git status`, the current branch, remotes, and the default branch. Run `git fetch --all --prune` and create the feature branch from the latest remote default branch, not a stale local copy. Fetch again before pushing and incorporate upstream changes using the repository's normal merge or rebase policy. Never discard remote commits, rewrite shared history, force-push, bypass review, or bypass required CI unless explicitly authorized.
+Before editing, inspect `git status`, the current branch, remotes, and the default branch. Run `git fetch --all --prune` and create the feature branch from the latest remote default branch, not a stale local copy. Fetch again before pushing and incorporate upstream changes with `git merge` or `git pull` on a clean working tree.
+
+- avoid git rebase in favor of git merge.
+- Never discard remote commits, rewrite shared history, force-push, bypass review, or bypass required CI unless explicitly authorized.
 
 ## Semantic conflict resolution
 
