@@ -40,7 +40,7 @@ jobs:
             return readFile(resolve(repoRoot, relativePath), 'utf8');
           }
           """
-          helper = """
+          helper = r"""
           async function readWebHomeSource(): Promise<string> {
             const modules = [
               'agents',
