@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve, sep } from 'node:path';
@@ -135,6 +136,42 @@ async function pathExists(path) {
 
 async function readUtf8(path) {
   return readFile(path, 'utf8');
+}
+
+function deploymentGitlinks() {
+  const output = execFileSync(
+    'git',
+    ['ls-files', '--stage', '--', 'remote/deployments'],
+    { cwd: repoRoot, encoding: 'utf8' },
+  );
+  return new Set(
+    output
+      .split(/\r?\n/)
+      .map((line) => line.match(/^160000 [0-9a-f]{40} \d+\t(.+)$/)?.[1])
+      .filter(Boolean),
+  );
+}
+
+async function unavailableIndexedGitlinkServices(indexPath) {
+  if (!existsSync(indexPath)) return [];
+  const gitlinks = deploymentGitlinks();
+  const current = JSON.parse(await readUtf8(indexPath));
+  return (current.services ?? [])
+    .filter((service) => {
+      const generatedPath = service.generated?.[0];
+      if (typeof generatedPath !== 'string') return false;
+      const marker = '/generated/';
+      const markerIndex = generatedPath.indexOf(marker);
+      if (markerIndex < 0) return false;
+      const deploymentPath = generatedPath.slice(0, markerIndex);
+      return (
+        gitlinks.has(deploymentPath) &&
+        !existsSync(resolve(repoRoot, deploymentPath, '.git'))
+      );
+    })
+    .map((service) => service.service)
+    .filter((service) => typeof service === 'string')
+    .sort();
 }
 
 function sortMethods(methods) {
@@ -1226,14 +1263,33 @@ async function main() {
     services: index,
   };
   if (!serviceFilter) {
-    await writeOrCheck(
-      resolve(repoRoot, 'remote/deployments/generated-api-docs-index.json'),
-      `${JSON.stringify(indexPayload, null, 2)}\n`,
+    const centralIndexJson = resolve(
+      repoRoot,
+      'remote/deployments/generated-api-docs-index.json',
     );
-    await writeOrCheck(
-      resolve(repoRoot, 'remote/deployments/generated-api-docs-index.html'),
-      renderDocsIndexHtml(indexItems),
+    const centralIndexHtml = resolve(
+      repoRoot,
+      'remote/deployments/generated-api-docs-index.html',
     );
+    const unavailableServices = await unavailableIndexedGitlinkServices(centralIndexJson);
+    if (unavailableServices.length > 0) {
+      for (const path of [centralIndexJson, centralIndexHtml]) {
+        if (!existsSync(path)) {
+          throw new Error(
+            `missing central API docs index during partial checkout: ${relative(repoRoot, path)}`,
+          );
+        }
+      }
+      console.log(
+        `preserved central API docs index because ${unavailableServices.length} indexed gitlink service(s) are not initialized: ${unavailableServices.join(', ')}`,
+      );
+    } else {
+      await writeOrCheck(
+        centralIndexJson,
+        `${JSON.stringify(indexPayload, null, 2)}\n`,
+      );
+      await writeOrCheck(centralIndexHtml, renderDocsIndexHtml(indexItems));
+    }
   }
   console.log(`${checkOnly ? 'checked' : 'generated'} API docs for ${services.length} service(s)`);
 }
