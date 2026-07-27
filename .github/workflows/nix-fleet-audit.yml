@@ -43,8 +43,26 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Lint shell scripts
-        run: nix develop -c shellcheck scripts/nix-fleet-audit.sh scripts/tests/nix-fleet-audit-test.sh
+      - name: Capture ShellCheck findings
+        run: |
+          set +e
+          nix develop -c shellcheck -f gcc scripts/nix-fleet-audit.sh scripts/tests/nix-fleet-audit-test.sh > shellcheck.txt 2>&1
+          printf '%s\n' "$?" > shellcheck.status
+          exit 0
+
+      - name: Upload ShellCheck findings
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: shellcheck-findings
+          path: |
+            shellcheck.txt
+            shellcheck.status
+          retention-days: 1
+
+      - name: Enforce ShellCheck
+        run: |
+          cat shellcheck.txt
+          test "$(cat shellcheck.status)" = "0"
 
       - name: Check shell formatting
         run: nix develop -c shfmt -d scripts/nix-fleet-audit.sh scripts/tests/nix-fleet-audit-test.sh
