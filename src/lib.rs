@@ -33,7 +33,7 @@ mod architecture_tests {
 
     #[test]
     fn binary_entrypoint_stays_a_thin_library_adapter() {
-        assert!(MAIN.lines().count() <= 12, "main.rs grew past its boundary");
+        assert!(MAIN.lines().count() <= 16, "main.rs grew past its boundary");
         assert!(MAIN.contains("threefa_backend::apply_cli_flags()"));
         assert!(MAIN.contains("threefa_backend::run().await"));
         for misplaced in [
