@@ -1,0 +1,23 @@
+name: Signal store format preview
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Format Rust sources
+        run: cargo fmt --all
+      - name: Archive formatted sources
+        run: zip -r signal-store-formatted.zip src/signal_store.rs src/lib.rs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signal-store-formatted
+          path: signal-store-formatted.zip
+          if-no-files-found: error
