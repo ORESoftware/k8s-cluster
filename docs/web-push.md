@@ -85,6 +85,6 @@ The adapter test suite covers:
 - rejection before signing/network work
 - invalid VAPID key handling without contacting a provider
 
-The `web-push` dependency graph is committed in `Cargo.lock`; CI and container builds must use the locked graph rather than resolving dependencies during validation.
+The `web-push` dependency graph is committed in `Cargo.lock`; CI and container builds must use the locked graph rather than resolving dependencies during validation. Advisory and license findings must be remediated or narrowly justified from exact diagnostic evidence; broad security-policy exclusions are not acceptable.
 
 The merge gate requires locked formatting, Clippy with warnings denied, all tests, the Rust 1.88 container build, cargo-deny, RustSec, and full-history Gitleaks to pass on the same reviewed commit.
