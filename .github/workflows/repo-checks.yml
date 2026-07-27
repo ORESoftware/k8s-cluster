@@ -215,3 +215,56 @@ jobs:
             test -s "${output}"
             echo "::endgroup::"
           done
+
+  google-chat-bridge-smoke:
+    name: deployed Google Chat bridge smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe public health and auth boundary
+        shell: bash
+        env:
+          BASE_URL: https://script.google.com/macros/s/AKfycbzIMOO0eQ12WjgRvLmYAdn3zryB57Ush6uWfQWc-iHNvVu6X0ULbPfPv7WMaYdMp2Tq/exec
+        run: |
+          set -euo pipefail
+
+          probe() {
+            local name="$1"
+            local url="$2"
+            local body code final_url
+            body="$(mktemp)"
+            code="$(curl --location --silent --show-error \
+              --connect-timeout 15 --max-time 45 \
+              --output "$body" \
+              --write-out '%{http_code}' \
+              "$url")"
+            final_url="$(curl --location --silent --show-error \
+              --connect-timeout 15 --max-time 45 \
+              --output /dev/null \
+              --write-out '%{url_effective}' \
+              "$url")"
+
+            echo "===== ${name} ====="
+            echo "status=${code}"
+            echo "final_url_host=$(python -c 'import sys,urllib.parse; print(urllib.parse.urlparse(sys.argv[1]).hostname)' "$final_url")"
+            python - "$name" "$body" <<'PY'
+import json
+import pathlib
+import sys
+
+name = sys.argv[1]
+text = pathlib.Path(sys.argv[2]).read_text(errors='replace')
+print('body=' + text[:4000].replace('\n', '\\n'))
+obj = json.loads(text)
+if name == 'health':
+    assert obj.get('ok') is True, obj
+    assert obj.get('service') == 'google-chat-linear-bridge', obj
+else:
+    assert obj.get('ok') is False, obj
+    assert obj.get('error', {}).get('code') in {'unauthorized', 'bridge_not_configured'}, obj
+PY
+          }
+
+          probe health "${BASE_URL}?action=health"
+          probe unauthenticated_status "${BASE_URL}?action=status"
+          probe unauthenticated_messages "${BASE_URL}?action=messages&pageSize=1"
