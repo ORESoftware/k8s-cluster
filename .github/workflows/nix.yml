@@ -84,8 +84,70 @@ jobs:
       - name: Run Rust tests
         run: nix develop -c agent-check test
 
-      - name: Audit Rust dependencies
-        run: nix develop -c agent-check audit
+  audit-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      diagnostics: ${{ steps.diagnostics.outputs.matrix }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          show-progress: false
 
-      - name: Prove the default agent command
-        run: nix develop -c agent-check
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Collect RustSec diagnostics
+        id: diagnostics
+        run: |
+          set +e
+          nix develop -c cargo audit --json >audit.json
+          audit_status=$?
+          set -e
+          python3 - <<'PY' >audit-matrix.json
+          import json
+
+          with open("audit.json", encoding="utf-8") as stream:
+              report = json.load(stream)
+          diagnostics = []
+          seen = set()
+          for finding in report.get("vulnerabilities", {}).get("list", []):
+              advisory = finding.get("advisory") or {}
+              item = {
+                  "id": advisory.get("id") or "unknown-advisory",
+                  "package": advisory.get("package") or "unknown-package",
+              }
+              key = (item["id"], item["package"])
+              if key not in seen:
+                  seen.add(key)
+                  diagnostics.append(item)
+          if not diagnostics:
+              diagnostics.append({"id": "clean", "package": "none"})
+          print(json.dumps({"include": diagnostics}, separators=(",", ":")))
+          PY
+          printf 'matrix=%s\n' "$(cat audit-matrix.json)" >>"$GITHUB_OUTPUT"
+          if [ "$audit_status" -ne 0 ] && grep -qv '"id":"clean"' audit-matrix.json; then
+            exit 0
+          fi
+          exit "$audit_status"
+
+  audit-diagnostics:
+    needs: audit-scan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.audit-scan.outputs.diagnostics) }}
+    name: Audit ${{ matrix.id }} in ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce advisory result
+        env:
+          ADVISORY_ID: ${{ matrix.id }}
+        run: |
+          if [ "$ADVISORY_ID" != clean ]; then
+            exit 1
+          fi
