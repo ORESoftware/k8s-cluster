@@ -1,4 +1,4 @@
-name: Lint Docs
+name: Monorepo contract CI
 
 on:
   push:
@@ -6,16 +6,45 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
-  lint-markdown:
+  docs-and-submodules:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
         with:
-          node-version: 20
-      - name: Install MarkdownLint
-        run: npm install -g markdownlint-cli
-      - name: Run MarkdownLint
-        run: markdownlint '**/*.md'
+          fetch-depth: 0
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Lint monorepo-owned Markdown
+        run: |
+          npm install --global markdownlint-cli@0.45.0
+          find . -path './apps' -prune -o -name '*.md' -print0 | xargs -0 markdownlint
+      - name: Validate submodule policy
+        run: |
+          test "$(git config --file .gitmodules --get-regexp '^submodule\..*\.branch$' | wc -l)" -eq 7
+          if git config --file .gitmodules --get-regexp '^submodule\..*\.branch$' | grep -v ' main$'; then
+            echo 'all ClipTown submodules must track main' >&2
+            exit 1
+          fi
+          git submodule status --recursive
+          if git submodule status --recursive | grep -E '^[+-]'; then
+            echo 'submodule pointers must resolve exactly' >&2
+            exit 1
+          fi
+      - name: Enforce encryption architecture
+        run: |
+          grep -Fiq 'cryptographically random account master key' README.md
+          grep -Fq 'The six-digit PIN is **not** the clipboard encryption key' README.md
+          if grep -Fiq "encryption key is derived locally from the user's 6-digit PIN" README.md; then
+            echo 'PIN-derived clipboard encryption key guidance is forbidden' >&2
+            exit 1
+          fi
+          if grep -Eiq 'biometric(s| data)? (is|are|becomes?|derive[sd]?) (the )?encryption key' README.md; then
+            echo 'raw biometric encryption-key guidance is forbidden' >&2
+            exit 1
+          fi
