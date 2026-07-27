@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -7,7 +6,7 @@ use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use reqwest::header::RETRY_AFTER;
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 use thiserror::Error;
 use tokio::sync::Mutex;
 use url::Url;
@@ -250,9 +249,11 @@ impl FcmProvider {
             let detail = parsed
                 .as_ref()
                 .and_then(|error| error.error_description.as_deref())
-                .unwrap_or("FCM OAuth token endpoint rejected the request");
+                .unwrap_or("FCM OAuth token endpoint rejected the request")
+                .to_owned();
             let provider_code = parsed
-                .and_then(|error| error.error)
+                .as_ref()
+                .and_then(|error| error.error.clone())
                 .or_else(|| Some(format!("oauth_http_{}", status.as_u16())));
             let decision = classify_http_status(status.as_u16(), retry_after);
             let class = if status == StatusCode::TOO_MANY_REQUESTS {
@@ -582,6 +583,7 @@ fn duration_to_millis(duration: Duration) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
     use std::sync::Arc;
 
     use axum::extract::State;
@@ -650,11 +652,13 @@ mod tests {
         .expect("valid override");
         assert_eq!(config.project_id(), "override-project");
 
-        let error = FcmConfig::from_service_account_json(
+        let error = match FcmConfig::from_service_account_json(
             &service_account_json("http://oauth.example.invalid/token"),
             None,
-        )
-        .expect_err("non-HTTPS token URI must fail");
+        ) {
+            Err(error) => error,
+            Ok(_) => panic!("non-HTTPS token URI must fail"),
+        };
         assert!(matches!(error, FcmConfigError::InvalidTokenUri));
     }
 
