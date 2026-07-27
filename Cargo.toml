@@ -1,0 +1,22 @@
+[package]
+name = "push-notification-server"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+description = "Provider-neutral Rust push notification delivery service for FCM, APNs, Expo, and Web Push"
+repository = "https://github.com/ORESoftware/push-notification-server.rs"
+publish = false
+
+[dependencies]
+axum = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
