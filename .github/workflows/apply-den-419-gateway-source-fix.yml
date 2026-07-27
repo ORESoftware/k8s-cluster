@@ -90,18 +90,36 @@ jobs:
           cache-dependency-path: remote/tests/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: remote/tests
-      - name: Run the source-location gateway contracts
-        run: >-
-          pnpm exec tsx --test
-          --test-name-pattern='rust homepage|rust agent tasks|rust agent threads|rust thread chat'
-          general/gateway-service-directory.test.ts
+      - name: Run the source-location gateway contracts with bounded diagnostics
+        id: gateway-contracts
+        shell: bash
         working-directory: remote/tests
+        run: |
+          set +e
+          log="${RUNNER_TEMP}/den-419-gateway-source-contracts.log"
+          pnpm exec tsx --test \
+            --test-name-pattern='rust homepage|rust agent tasks|rust agent threads|rust thread chat' \
+            general/gateway-service-directory.test.ts \
+            >"$log" 2>&1
+          status=$?
+          tail -500 "$log"
+          exit "$status"
+      - name: Upload focused gateway diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-419-gateway-source-contract-diagnostics
+          path: ${{ runner.temp }}/den-419-gateway-source-contracts.log
+          retention-days: 1
+          if-no-files-found: error
       - name: Scan for unresolved conflict markers
+        if: success()
         run: |
           if git grep -n -E '^(<<<<<<< |=======$|>>>>>>> )' -- . ':(exclude)*.lock'; then
             exit 1
           fi
       - name: Commit verified source-aware contracts
+        if: success()
         shell: bash
         run: |
           set -euo pipefail
