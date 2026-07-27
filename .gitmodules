@@ -1,21 +1,28 @@
 [submodule "apps/cliptown-rust-backend.rs"]
 	path = apps/cliptown-rust-backend.rs
-	url = https://github.com/cliptown/cliptown-rust-backend.rs
+	url = https://github.com/cliptown/cliptown-rust-backend.rs.git
+	branch = main
 [submodule "apps/cliptown-flutter"]
 	path = apps/cliptown-flutter
-	url = https://github.com/cliptown/cliptown-flutter
+	url = https://github.com/cliptown/cliptown-flutter.git
+	branch = main
 [submodule "apps/cliptown-clients"]
 	path = apps/cliptown-clients
-	url = https://github.com/cliptown/cliptown-clients
+	url = https://github.com/cliptown/cliptown-clients.git
+	branch = main
 [submodule "apps/cliptown-interfaces"]
 	path = apps/cliptown-interfaces
-	url = https://github.com/cliptown/cliptown-interfaces
+	url = https://github.com/cliptown/cliptown-interfaces.git
+	branch = main
 [submodule "apps/cliptown-infra"]
 	path = apps/cliptown-infra
-	url = https://github.com/cliptown/cliptown-infra
+	url = https://github.com/cliptown/cliptown-infra.git
+	branch = main
 [submodule "apps/cliptown-cli"]
 	path = apps/cliptown-cli
-	url = https://github.com/cliptown/cliptown-cli
+	url = https://github.com/cliptown/cliptown-cli.git
+	branch = main
 [submodule "apps/cliptown-extension"]
 	path = apps/cliptown-extension
-	url = https://github.com/cliptown/cliptown-extension
+	url = https://github.com/cliptown/cliptown-extension.git
+	branch = main
