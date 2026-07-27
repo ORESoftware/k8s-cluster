@@ -4,9 +4,13 @@ on:
   push:
     branches:
       - agent/den-267-sensitive-field-write-guard
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
+  pull-requests: read
 
 concurrency:
   group: den-267-sensitive-field-write-guard
@@ -49,6 +53,7 @@ jobs:
           node --import tsx --test
           tests/sensitive-field-policy.test.ts
           tests/sensitive-field-wiring.test.ts
+          tests/sensitive-field-policy.integration-plan.test.ts
           tests/browser-agent.test.ts
 
       - name: Remove one-shot patch machinery
