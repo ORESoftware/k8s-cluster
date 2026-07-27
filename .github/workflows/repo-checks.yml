@@ -55,6 +55,11 @@ jobs:
           cache: pnpm
           cache-dependency-path: remote/tests/pnpm-lock.yaml
 
+      - name: Setup kubectl for rendered contract tests
+        uses: azure/setup-kubectl@v5
+        with:
+          version: v1.32.2
+
       - name: Install remote test dependencies
         run: pnpm install --frozen-lockfile
         working-directory: remote/tests
@@ -87,6 +92,7 @@ jobs:
             general/des-simulator-config.test.ts
             general/dev-server-container-pool-config.test.ts
             general/fabrication-cad-source-intake.test.ts
+            general/fiducia-secret-delivery.test.ts
             general/fsharp-ws-server-config.test.ts
             general/gateway-service-directory.test.ts
             general/gcs-chat-config.test.ts
