@@ -36,14 +36,9 @@ jobs:
       - name: Initialize pinned shared libraries
         run: |
           set -euo pipefail
-          # actions/checkout stores the scoped deploy-key command in local Git
-          # config. Export it so the child clone uses exactly that credential.
           ssh_command="$(git config --local core.sshCommand)"
           test -n "$ssh_command"
           export GIT_SSH_COMMAND="$ssh_command"
-          # The API-doc generator consumes files in the top-level remote/libs
-          # gitlink. Do not recurse into remote/libs/async-java: that unrelated
-          # upstream repository is not part of this generator input or deploy key.
           git submodule update --init --depth 1 -- remote/libs
           expected="$(git ls-files --stage remote/libs | awk '$1 == 160000 { print $2 }')"
           actual="$(git -C remote/libs rev-parse HEAD)"
@@ -67,16 +62,30 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Regenerate and prove idempotence
+        id: regenerate
+        continue-on-error: true
         run: |
-          set -euo pipefail
-          node remote/tools/generate-api-docs.mjs
-          git diff --binary --no-ext-diff > "${RUNNER_TEMP}/api-docs.first.patch"
+          set -uo pipefail
+          out="${RUNNER_TEMP}/den-371-api-docs"
+          mkdir -p "$out"
+          status=0
+
+          node remote/tools/generate-api-docs.mjs >"$out/first-generation.log" 2>&1 || status=$?
+          git diff --binary --no-ext-diff > "$out/generated.patch"
           git status --porcelain=v1 -z > "${RUNNER_TEMP}/api-docs.status.z"
 
-          node remote/tools/generate-api-docs.mjs
+          if (( status == 0 )); then
+            node remote/tools/generate-api-docs.mjs >"$out/second-generation.log" 2>&1 || status=$?
+          fi
           git diff --binary --no-ext-diff > "${RUNNER_TEMP}/api-docs.second.patch"
-          cmp "${RUNNER_TEMP}/api-docs.first.patch" "${RUNNER_TEMP}/api-docs.second.patch"
-          node remote/tools/generate-api-docs.mjs --check
+          if (( status == 0 )); then
+            cmp "$out/generated.patch" "${RUNNER_TEMP}/api-docs.second.patch" \
+              >"$out/idempotence.log" 2>&1 || status=$?
+          fi
+          if (( status == 0 )); then
+            node remote/tools/generate-api-docs.mjs --check \
+              >"$out/check.log" 2>&1 || status=$?
+          fi
 
           python3 <<'PY'
           from pathlib import Path
@@ -85,37 +94,42 @@ jobs:
 
           temp = Path(os.environ['RUNNER_TEMP'])
           out = temp / 'den-371-api-docs'
-          out.mkdir(parents=True, exist_ok=True)
-          raw = (temp / 'api-docs.status.z').read_bytes().split(b'\0')
+          status_file = temp / 'api-docs.status.z'
           changed = []
-          for entry in raw:
-              if not entry:
-                  continue
-              text = entry.decode('utf-8', errors='strict')
-              path_text = text[3:]
-              if ' -> ' in path_text:
-                  path_text = path_text.split(' -> ', 1)[1]
-              path = Path(path_text)
-              if not path.exists() or path.is_dir():
-                  continue
-              changed.append(path.as_posix())
-              destination = out / path
-              destination.parent.mkdir(parents=True, exist_ok=True)
-              shutil.copy2(path, destination)
-
+          if status_file.exists():
+              for entry in status_file.read_bytes().split(b'\0'):
+                  if not entry:
+                      continue
+                  text = entry.decode('utf-8', errors='strict')
+                  path_text = text[3:]
+                  if ' -> ' in path_text:
+                      path_text = path_text.split(' -> ', 1)[1]
+                  path = Path(path_text)
+                  if not path.exists() or path.is_dir():
+                      continue
+                  changed.append(path.as_posix())
+                  destination = out / path
+                  destination.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copy2(path, destination)
           (out / 'changed-files.txt').write_text(
               ''.join(f'{path}\n' for path in sorted(changed)),
               encoding='utf-8',
           )
-          if not changed:
-              raise SystemExit('generator produced no changed files; expected existing drift')
           PY
-          cp "${RUNNER_TEMP}/api-docs.first.patch" "${RUNNER_TEMP}/den-371-api-docs/generated.patch"
+          printf '%s\n' "$status" > "$out/exit-status.txt"
+          exit "$status"
 
-      - name: Upload generated outputs for semantic review
+      - name: Upload generated outputs and diagnostics
+        if: always()
         uses: actions/upload-artifact@v6
         with:
           name: den-371-api-docs-regeneration
           path: ${{ runner.temp }}/den-371-api-docs
           if-no-files-found: error
           retention-days: 2
+
+      - name: Enforce successful regeneration
+        if: steps.regenerate.outcome == 'failure'
+        run: |
+          echo 'API-doc regeneration failed; inspect the uploaded diagnostic artifact.'
+          exit 1
