@@ -17,20 +17,25 @@ const verifier = readFileSync(resolve(root, 'scripts/verify-browser-mcp.sh'), 'u
 test('pull requests run only credential-free workflow contracts', () => {
   assert.match(workflow, /pull_request:/);
   assert.match(workflow, /live:[\s\S]*if: github\.event_name != 'pull_request'/);
+  assert.match(workflow, /publish:[\s\S]*if: always\(\) && github\.event_name != 'pull_request'/);
   assert.match(workflow, /contract:[\s\S]*persist-credentials: false/);
   assert.match(workflow, /actionlint@sha256:[0-9a-f]{64}/);
   assert.match(workflow, /browser-mcp-public-e2e\.test\.ts/);
 });
 
 test('the live workflow uses OIDC and keeps the operator secret inside AWS', () => {
-  assert.match(workflow, /live:[\s\S]*id-token: write/);
-  assert.match(workflow, /aws-actions\/configure-aws-credentials@v6/);
-  assert.match(workflow, /aws ssm send-command/);
-  assert.match(workflow, /aws secretsmanager get-secret-value/);
-  assert.match(workflow, /BROWSER_MCP_OAUTH_OPERATOR_SECRET/);
-  assert.doesNotMatch(workflow, /secrets\.BROWSER_MCP_OAUTH_OPERATOR_SECRET/);
-  assert.doesNotMatch(workflow, /set -x/);
-  assert.doesNotMatch(workflow, /curl[^\n]*(?:--insecure|-k)\b/);
+  const live = workflow.slice(workflow.indexOf('  live:'), workflow.indexOf('  publish:'));
+  assert.match(live, /id-token: write/);
+  assert.match(live, /contents: read/);
+  assert.doesNotMatch(live, /contents: write/);
+  assert.match(live, /aws-actions\/configure-aws-credentials@v6/);
+  assert.match(live, /id: aws[\s\S]*continue-on-error: true/);
+  assert.match(live, /aws ssm send-command/);
+  assert.match(live, /aws secretsmanager get-secret-value/);
+  assert.match(live, /BROWSER_MCP_OAUTH_OPERATOR_SECRET/);
+  assert.doesNotMatch(live, /secrets\.BROWSER_MCP_OAUTH_OPERATOR_SECRET/);
+  assert.doesNotMatch(live, /set -x/);
+  assert.doesNotMatch(live, /curl[^\n]*(?:--insecure|-k)\b/);
 });
 
 test('both canonical public edges receive the full repository verifier', () => {
@@ -48,12 +53,37 @@ test('live certification checks the immutable GitOps image before browser action
   assert.match(workflow, /deployed worker image does not match the main GitOps pin/);
 });
 
+test('the live job always creates and uploads a sanitized result', () => {
+  const live = workflow.slice(workflow.indexOf('  live:'), workflow.indexOf('  publish:'));
+  assert.match(live, /Initialize sanitized result/);
+  assert.match(live, /workflow_precondition_failed/);
+  assert.match(live, /aws_outcome/);
+  assert.match(live, /smoke_outcome/);
+  assert.match(live, /actions\/upload-artifact@v7/);
+  assert.match(live, /if: always\(\)/);
+  assert.match(live, /retention-days: 14/);
+});
+
+test('credential-free publisher writes only the sanitized result branch', () => {
+  const publish = workflow.slice(workflow.indexOf('  publish:'));
+  assert.match(publish, /actions: read/);
+  assert.match(publish, /contents: write/);
+  assert.doesNotMatch(publish, /id-token: write/);
+  assert.doesNotMatch(publish, /aws-actions\/configure-aws-credentials/);
+  assert.doesNotMatch(publish, /secrets\./);
+  assert.match(publish, /actions\/download-artifact@v8/);
+  assert.match(publish, /automation\/browser-mcp-verification-results/);
+  assert.match(publish, /browser-mcp\/latest\.json/);
+  assert.match(publish, /Validate result contains no credentials/);
+  assert.doesNotMatch(publish, /HEAD:main/);
+});
+
 test('sanitized artifacts redact credentials and authorization codes', () => {
-  assert.match(workflow, /browser-mcp-public-oauth-e2e-result/);
   assert.match(workflow, /Bearer \[REDACTED\]/);
   assert.match(workflow, /access_token\|refresh_token\|operator_secret\|signing_secret/);
   assert.match(workflow, /\(\[\?&\]code=\)/);
-  assert.match(workflow, /retention-days: 14/);
+  assert.match(workflow, /BROWSER_MCP_OAUTH_OPERATOR_SECRET=\)\[\^\\s\]\+/);
+  assert.match(workflow, /BEGIN \(RSA \|EC \|OPENSSH \)\?PRIVATE KEY/);
 });
 
 test('the verifier covers OAuth, exact tools, harmless actions, and fail-closed boundaries', () => {
