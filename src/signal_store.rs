@@ -7,14 +7,13 @@
 //! templates, or plaintext vault mutations.
 
 use crate::device_sync_protocol::{
-    SignalCiphertextEnvelope, SignalDevicePreKeyBundle, SignalEnvelopeKind,
-    SignalEnvelopeMetadata, SignalProtocolValidationError, MAX_SIGNAL_PUBLIC_KEY_LEN,
+    SignalCiphertextEnvelope, SignalDevicePreKeyBundle, SignalEnvelopeKind, SignalEnvelopeMetadata,
+    SignalProtocolValidationError, MAX_SIGNAL_PUBLIC_KEY_LEN,
 };
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use sea_orm::{
-    ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait,
-    Value,
+    ConnectionTrait, DatabaseBackend, DatabaseConnection, DbErr, Statement, TransactionTrait, Value,
 };
 use thiserror::Error;
 use uuid::Uuid;
@@ -265,8 +264,13 @@ RETURNING id
 "#;
 
 const DELETE_REVOKED_PREKEYS_SQL: &str = r#"
-DELETE FROM threefa.device_prekey_bundles WHERE device_id = $1;
-DELETE FROM threefa.device_one_time_prekeys WHERE device_id = $1;
+WITH deleted_bundles AS (
+    DELETE FROM threefa.device_prekey_bundles
+    WHERE device_id = $1
+    RETURNING device_id
+)
+DELETE FROM threefa.device_one_time_prekeys
+WHERE device_id = $1
 "#;
 
 const DELETE_REVOKED_MAIL_SQL: &str = r#"
@@ -335,9 +339,7 @@ impl PublishPreKeys {
             ));
         }
         for prekey in &self.one_time_prekeys {
-            if prekey.public_key.len() < 32
-                || prekey.public_key.len() > MAX_SIGNAL_PUBLIC_KEY_LEN
-            {
+            if prekey.public_key.len() < 32 || prekey.public_key.len() > MAX_SIGNAL_PUBLIC_KEY_LEN {
                 return Err(SignalStoreError::Validation(
                     SignalProtocolValidationError::InvalidByteLength {
                         field: "one_time_prekey",
@@ -378,10 +380,7 @@ fn postgres(sql: &str, values: Vec<Value>) -> Statement {
     Statement::from_sql_and_values(DatabaseBackend::Postgres, sql, values)
 }
 
-fn required_i64(
-    row: &sea_orm::QueryResult,
-    column: &str,
-) -> Result<i64, SignalStoreError> {
+fn required_i64(row: &sea_orm::QueryResult, column: &str) -> Result<i64, SignalStoreError> {
     Ok(row.try_get("", column)?)
 }
 
@@ -426,10 +425,9 @@ pub async fn publish_prekeys(
 
     let mut inserted_one_time_prekeys = 0_u64;
     let mut all_prekeys = request.one_time_prekeys;
-    if let (Some(prekey_id), Some(public_key)) = (
-        bundle.one_time_pre_key_id,
-        bundle.one_time_pre_key.clone(),
-    ) {
+    if let (Some(prekey_id), Some(public_key)) =
+        (bundle.one_time_pre_key_id, bundle.one_time_pre_key.clone())
+    {
         all_prekeys.push(OneTimePreKey {
             prekey_id,
             public_key,
@@ -681,16 +679,10 @@ fn mailbox_row(row: sea_orm::QueryResult) -> Result<MailboxEnvelope, SignalStore
         })?,
         envelope_id: row.try_get::<Uuid>("", "envelope_id")?.to_string(),
         account_id: row.try_get::<Uuid>("", "account_id")?.to_string(),
-        sender_device_id: row
-            .try_get::<Uuid>("", "sender_device_id")?
-            .to_string(),
-        recipient_device_id: row
-            .try_get::<Uuid>("", "recipient_device_id")?
-            .to_string(),
+        sender_device_id: row.try_get::<Uuid>("", "sender_device_id")?.to_string(),
+        recipient_device_id: row.try_get::<Uuid>("", "recipient_device_id")?.to_string(),
         session_id: row.try_get("", "session_id")?,
-        message_number: row
-            .try_get::<String>("", "message_number_text")?
-            .parse()?,
+        message_number: row.try_get::<String>("", "message_number_text")?.parse()?,
         kind: parse_kind(&kind)?,
         created_at_ms: row.try_get("", "client_created_at_ms")?,
         expires_at_ms: row.try_get("", "expires_at_ms")?,
@@ -767,7 +759,10 @@ mod tests {
 
     #[test]
     fn store_types_cannot_represent_private_signal_or_recovery_material() {
-        let source = include_str!("signal_store.rs");
+        let source = include_str!("signal_store.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production source precedes tests");
         for forbidden in [
             "identity_private",
             "signed_prekey_private",
