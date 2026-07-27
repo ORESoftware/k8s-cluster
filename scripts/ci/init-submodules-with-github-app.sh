@@ -9,14 +9,6 @@ if [[ ! -f .gitmodules ]]; then
   echo "::error title=Submodule configuration missing::.gitmodules was not found in the repository root"
   exit 2
 fi
-if [[ -z "${K8S_SUBMODULE_APP_ID:-}" ]]; then
-  echo "::error title=GitHub App ID missing::K8S_SUBMODULE_APP_ID is required"
-  exit 2
-fi
-if [[ -z "${K8S_SUBMODULE_APP_PRIVATE_KEY:-}" ]]; then
-  echo "::error title=GitHub App private key missing::K8S_SUBMODULE_APP_PRIVATE_KEY is required"
-  exit 2
-fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mint_script="${script_dir}/mint-github-app-installation-token.sh"
@@ -85,6 +77,21 @@ done
 
 mkdir -p "$(dirname "$report_path")"
 printf 'status\trepository\tpath\tcategory\tcommit\n' >"$report_path"
+
+if [[ -z "${K8S_SUBMODULE_APP_ID:-}" || -z "${K8S_SUBMODULE_APP_PRIVATE_KEY:-}" ]]; then
+  while IFS=$'\t' read -r _ _ repository path; do
+    printf 'failure\t%s\t%s\tgithub-app-credentials-missing\t\n' "$repository" "$path" >>"$report_path"
+  done <"$records_file"
+  if [[ -z "${K8S_SUBMODULE_APP_ID:-}" ]]; then
+    echo "::error title=GitHub App ID missing::K8S_SUBMODULE_APP_ID is required"
+  fi
+  if [[ -z "${K8S_SUBMODULE_APP_PRIVATE_KEY:-}" ]]; then
+    echo "::error title=GitHub App private key missing::K8S_SUBMODULE_APP_PRIVATE_KEY is required"
+  fi
+  echo "Sanitized report written to ${report_path}." >&2
+  echo "No App JWT, installation token, private key, or credential-bearing URL was written to the report." >&2
+  exit 2
+fi
 
 mapfile -t owners < <(cut -f1 "$records_file" | LC_ALL=C sort -u)
 overall_status=0
