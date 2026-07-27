@@ -47,6 +47,7 @@ jobs:
 
           auth = Path('src/supabase_auth.rs').read_text()
           service = Path('src/service.rs').read_text()
+          database = Path('src/database.rs').read_text()
           required_auth = {
               'audience pin': 'set_audience',
               'issuer pin': 'set_issuer',
@@ -62,10 +63,15 @@ jobs:
               'required production auth switch': 'require_supabase',
               'service role isolated to admin operations': 'service_role_key',
               'caller JWT forwarded to Data API': 'authenticate_supabase_account',
+          }
+          required_database = {
               'parameterized database adapter': 'DbParam',
+              'bound SQL construction': 'from_sql_and_values',
+              'SQL logging disabled': 'sqlx_logging(false)',
           }
           missing = [name for name, marker in required_auth.items() if marker not in auth]
           missing += [name for name, marker in required_service.items() if marker not in service]
+          missing += [name for name, marker in required_database.items() if marker not in database]
           if missing:
               raise SystemExit('missing security invariants: ' + ', '.join(missing))
           PY
