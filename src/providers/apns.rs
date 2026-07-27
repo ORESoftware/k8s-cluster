@@ -102,11 +102,7 @@ impl ApnsConfig {
     }
 
     #[cfg(test)]
-    fn for_test(
-        topic: &str,
-        environment: ProviderEnvironment,
-        api_base_url: Url,
-    ) -> Self {
+    fn for_test(topic: &str, environment: ProviderEnvironment, api_base_url: Url) -> Self {
         Self {
             key_id: "KEY1234567".to_owned(),
             team_id: "TEAM123456".to_owned(),
@@ -129,7 +125,11 @@ fn required(value: String, field: &'static str) -> Result<String, ApnsConfigErro
 }
 
 fn validate_apple_identifier(value: &str, field: &'static str) -> Result<(), ApnsConfigError> {
-    if value.len() != 10 || !value.chars().all(|character| character.is_ascii_alphanumeric()) {
+    if value.len() != 10
+        || !value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric())
+    {
         return Err(ApnsConfigError::InvalidIdentifier(field));
     }
     Ok(())
@@ -244,14 +244,18 @@ impl ApnsProvider {
             builder = builder.header("apns-id", &job.idempotency_key);
         }
 
-        let response = builder.json(&request.payload).send().await.map_err(|error| {
-            ProviderError::delivery(
-                OutcomeClass::TransientProviderFailure,
-                format!("APNs send request failed: {error}"),
-                None,
-                Some("transport_error".to_owned()),
-            )
-        })?;
+        let response = builder
+            .json(&request.payload)
+            .send()
+            .await
+            .map_err(|error| {
+                ProviderError::delivery(
+                    OutcomeClass::TransientProviderFailure,
+                    format!("APNs send request failed: {error}"),
+                    None,
+                    Some("transport_error".to_owned()),
+                )
+            })?;
         let status = response.status();
         let apns_id = response
             .headers()
@@ -512,18 +516,9 @@ fn classify_apns_response(status: u16, reason: Option<&str>) -> OutcomeClass {
             OutcomeClass::InvalidToken
         }
         Some(
-            "BadCollapseId"
-            | "BadExpirationDate"
-            | "BadMessageId"
-            | "BadPath"
-            | "BadPriority"
-            | "BadTopic"
-            | "DuplicateHeaders"
-            | "MethodNotAllowed"
-            | "MissingDeviceToken"
-            | "MissingTopic"
-            | "PayloadEmpty"
-            | "TooManyTopics",
+            "BadCollapseId" | "BadExpirationDate" | "BadMessageId" | "BadPath" | "BadPriority"
+            | "BadTopic" | "DuplicateHeaders" | "MethodNotAllowed" | "MissingDeviceToken"
+            | "MissingTopic" | "PayloadEmpty" | "TooManyTopics",
         ) => OutcomeClass::InvalidPayload,
         Some("TooManyProviderTokenUpdates" | "TooManyRequests") => OutcomeClass::Throttled,
         Some("IdleTimeout" | "InternalServerError" | "ServiceUnavailable" | "Shutdown") => {
