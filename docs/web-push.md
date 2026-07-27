@@ -87,7 +87,7 @@ The adapter test suite covers:
 - IPv4, IPv6, mapped-address, CGNAT, benchmarking, documentation, and reserved ranges
 - VAPID subject, generated P-256 key, and custom allowlist validation
 - VAPID authorization construction
-- ECE encryption with generated receiver subscription key material
+- ECE encryption with generated receiver subscription key material and non-empty ciphertext overhead
 - invalid subscription key rejection
 - payload mapping and size limits
 - deterministic topic generation
