@@ -1,9 +1,9 @@
 name: apply OpenAPI contract hardening
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/openapi-contract-hardening
+      - main
 
 permissions:
   contents: write
@@ -14,14 +14,18 @@ concurrency:
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'agent/openapi-contract-hardening'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout branch
+      - name: Checkout writable feature branch
         uses: actions/checkout@v7
         with:
+          ref: agent/openapi-contract-hardening
           fetch-depth: 0
+          token: ${{ secrets.REMOTE_DEV_GH_PAT }}
 
       - name: Apply source patch
         run: node scripts/api-contract/apply-openapi-hardening.mjs
@@ -39,14 +43,18 @@ jobs:
           node --check remote/tools/validate-openapi-contracts.mjs
           git diff --check
 
+      - name: Remove one-shot migration helpers
+        run: >-
+          node -e "for (const path of [
+          '.github/workflows/apply-openapi-contract-hardening.yml',
+          'scripts/api-contract/apply-openapi-hardening.mjs'
+          ]) require('node:fs').unlinkSync(path)"
+
       - name: Commit generated migration
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          if git diff --cached --quiet; then
-            echo "No migration changes to commit"
-            exit 0
-          fi
+          git diff --cached --exit-code && exit 1 || true
           git commit -m "Harden fleet API docs as OpenAPI 3.1 [api-contract-generated]"
           git push origin HEAD:agent/openapi-contract-hardening
