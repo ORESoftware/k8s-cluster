@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 concurrency:
   group: apply-openapi-contract-hardening
@@ -61,7 +62,27 @@ jobs:
         run: node remote/tools/generate-api-docs.mjs
 
       - name: Validate generated OpenAPI contracts
-        run: node remote/tools/validate-openapi-contracts.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          output="$(node remote/tools/validate-openapi-contracts.mjs 2>&1)"
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ]; then
+            {
+              echo '<!-- openapi-contract-validation -->'
+              echo '### OpenAPI migration validation failure'
+              echo
+              echo '```text'
+              printf '%s\n' "$output" | tail -c 60000
+              echo '```'
+            } > /tmp/openapi-validation-comment.md
+            gh pr comment "${{ github.event.pull_request.number }}" \
+              --body-file /tmp/openapi-validation-comment.md
+            exit "$status"
+          fi
 
       - name: Verify scripts and patch cleanliness
         run: |
