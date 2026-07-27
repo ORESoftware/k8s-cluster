@@ -15,9 +15,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
-          rust-version: "1.85.0"
+          cache-bin: true
+      - name: Install cargo-deny
+        run: cargo +stable install --locked cargo-deny
+      - name: Run cargo-deny and preserve diagnostics
+        run: |
+          set +e
+          cargo deny --all-features check > cargo-deny.log 2>&1
+          status=$?
+          echo "$status" > cargo-deny.exit
+          exit 0
+      - name: Upload cargo-deny diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-deny-diagnostics
+          path: cargo-deny.log
+          if-no-files-found: error
+      - name: Enforce cargo-deny result
+        run: exit "$(cat cargo-deny.exit)"
 
   audit:
     runs-on: ubuntu-latest
@@ -27,10 +46,26 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-bin: true
-      - name: Install cargo-audit with the current stable toolchain
+      - name: Install cargo-audit
         run: cargo +stable install --locked cargo-audit
-      - name: Audit locked dependencies against RustSec
-        run: cargo audit
+      - name: Run RustSec audit and preserve diagnostics
+        run: |
+          set +e
+          cargo audit --json > rustsec-audit.json 2> rustsec-audit.stderr
+          status=$?
+          echo "$status" > rustsec-audit.exit
+          exit 0
+      - name: Upload RustSec diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustsec-audit-diagnostics
+          path: |
+            rustsec-audit.json
+            rustsec-audit.stderr
+          if-no-files-found: error
+      - name: Enforce RustSec result
+        run: exit "$(cat rustsec-audit.exit)"
 
   secrets:
     runs-on: ubuntu-latest
