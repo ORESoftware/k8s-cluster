@@ -24,7 +24,25 @@ jq -e '
   )
 ' "$profiles_file" >/dev/null
 
-while IFS= read -r profile; do
+profiles=()
+case "$#" in
+  0)
+    mapfile -t profiles < <(jq -r '.profiles | keys[]' "$profiles_file")
+    ;;
+  1)
+    if ! jq -e --arg profile "$1" '.profiles[$profile] != null' "$profiles_file" >/dev/null; then
+      printf 'unknown fixture profile: %s\n' "$1" >&2
+      exit 64
+    fi
+    profiles=("$1")
+    ;;
+  *)
+    printf 'usage: %s [profile]\n' "$0" >&2
+    exit 64
+    ;;
+esac
+
+for profile in "${profiles[@]}"; do
   target="$tmp_root/$profile"
   mkdir -p "$target"
   git -C "$target" init -q
@@ -78,11 +96,11 @@ while IFS= read -r profile; do
 
   bash "$renderer" --profile "$profile" --output-dir "$target" --skip-lock --force
   test "$(grep -Fc '# BEGIN managed nix-agent profile' "$target/.gitignore")" -eq 1
-done < <(jq -r '.profiles | keys[]' "$profiles_file")
+done
 
 if bash "$renderer" --profile unknown --output-dir "$tmp_root/unknown" --skip-lock; then
   printf '%s\n' 'unknown profile unexpectedly rendered' >&2
   exit 1
 fi
 
-printf '%s\n' 'all Nix agent profile fixtures passed'
+printf 'Nix agent profile fixtures passed: %s\n' "${profiles[*]}"
