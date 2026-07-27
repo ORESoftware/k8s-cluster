@@ -19,8 +19,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-bin: true
-      - name: Install cargo-deny
-        run: cargo install --locked cargo-deny
+      - name: Install cargo-deny with the current stable toolchain
+        run: cargo +stable install --locked cargo-deny
       - name: Run cargo-deny and preserve diagnostics
         run: |
           set +e
@@ -46,8 +46,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           cache-bin: true
-      - name: Install cargo-audit
-        run: cargo install --locked cargo-audit
+      - name: Install cargo-audit with the current stable toolchain
+        run: cargo +stable install --locked cargo-audit
       - name: Run RustSec audit and preserve diagnostics
         run: |
           set +e
