@@ -1,0 +1,29 @@
+{
+  "version": "v1",
+  "job_id": "job_01J6K5A0T6W8YH5JH9KJ7M2D1P",
+  "tenant_id": "tenant_acme",
+  "application_id": "com.acme.mobile",
+  "idempotency_key": "order_1234:shipped:user_5678",
+  "provider": "fcm",
+  "target": {
+    "type": "fcm",
+    "token": "REDACTED_EXAMPLE_TOKEN"
+  },
+  "notification": {
+    "title": "Order shipped",
+    "body": "Your order is on its way.",
+    "data": {
+      "order_id": "order_1234",
+      "screen": "order_details"
+    }
+  },
+  "options": {
+    "ttl_seconds": 3600,
+    "priority": "high",
+    "collapse_key": "order_1234_status",
+    "dry_run": false
+  },
+  "trace": {
+    "correlation_id": "request_01J6K5A5FQ4Y5V2Q0X1G8C7B9D"
+  }
+}
