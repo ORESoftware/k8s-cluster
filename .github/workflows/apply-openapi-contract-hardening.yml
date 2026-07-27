@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  issues: write
 
 concurrency:
   group: apply-openapi-contract-hardening
@@ -62,29 +61,30 @@ jobs:
         run: node remote/tools/generate-api-docs.mjs
 
       - name: Validate generated OpenAPI contracts
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set +e
-          output="$(node remote/tools/validate-openapi-contracts.mjs 2>&1)"
+          node remote/tools/validate-openapi-contracts.mjs > docs/openapi-validation-diagnostic.txt 2>&1
           status=$?
           set -e
-          printf '%s\n' "$output"
-          if [ "$status" -ne 0 ]; then
-            {
-              echo '<!-- openapi-contract-validation -->'
-              echo '### OpenAPI migration validation failure'
-              echo
-              echo '```text'
-              printf '%s\n' "$output" | tail -c 60000
-              echo '```'
-            } > /tmp/openapi-validation-comment.md
-            gh pr comment "${{ github.event.pull_request.number }}" \
-              --body-file /tmp/openapi-validation-comment.md
-            exit "$status"
+          cat docs/openapi-validation-diagnostic.txt
+          echo "OPENAPI_VALIDATION_STATUS=$status" >> "$GITHUB_ENV"
+
+      - name: Commit diagnostic state when validation fails
+        if: env.OPENAPI_VALIDATION_STATUS != '0'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "OpenAPI validation still fails, but the diagnostic state is already committed."
+            exit 1
           fi
+          git commit -m "Capture OpenAPI migration validation failure [openapi-diagnostic]"
+          git push origin HEAD:agent/openapi-contract-hardening
+          exit 1
 
       - name: Verify scripts and patch cleanliness
+        if: env.OPENAPI_VALIDATION_STATUS == '0'
         run: |
           node --check scripts/api-contract/apply-openapi-hardening.mjs
           node --check remote/tools/generate-api-docs.mjs
@@ -92,13 +92,16 @@ jobs:
           git diff --check
 
       - name: Remove one-shot migration helpers
+        if: env.OPENAPI_VALIDATION_STATUS == '0'
         run: >-
           node -e "for (const path of [
           '.github/workflows/apply-openapi-contract-hardening.yml',
-          'scripts/api-contract/apply-openapi-hardening.mjs'
-          ]) require('node:fs').unlinkSync(path)"
+          'scripts/api-contract/apply-openapi-hardening.mjs',
+          'docs/openapi-validation-diagnostic.txt'
+          ]) if (require('node:fs').existsSync(path)) require('node:fs').unlinkSync(path)"
 
       - name: Commit generated migration
+        if: env.OPENAPI_VALIDATION_STATUS == '0'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
