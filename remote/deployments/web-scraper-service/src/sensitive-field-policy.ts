@@ -28,13 +28,12 @@ export interface FieldWriteDecision {
 
 export class SensitiveFieldPolicyError extends Error {
   readonly code = 'sensitive_field_blocked' as const;
+  readonly kind: SensitiveFieldKind;
 
-  constructor(
-    readonly kind: SensitiveFieldKind,
-    message: string,
-  ) {
+  constructor(kind: SensitiveFieldKind, message: string) {
     super(message);
     this.name = 'SensitiveFieldPolicyError';
+    this.kind = kind;
   }
 }
 
