@@ -12,8 +12,26 @@ if [[ ! -f .gitmodules ]]; then
 fi
 
 auth_mode="${SUBMODULE_AUTH_MODE:-https-token}"
+report_path="${SUBMODULE_REPORT_PATH:-}"
 askpass_file=""
 declare -a git_config=()
+
+if [[ -n "$report_path" ]]; then
+  mkdir -p "$(dirname "$report_path")"
+  printf 'status\trepository\tpath\tcategory\tcommit\n' >"$report_path"
+fi
+
+record_result() {
+  local status="$1"
+  local repository="$2"
+  local path="$3"
+  local category="$4"
+  local commit="${5:-}"
+  if [[ -n "$report_path" ]]; then
+    printf '%s\t%s\t%s\t%s\t%s\n' \
+      "$status" "$repository" "$path" "$category" "$commit" >>"$report_path"
+  fi
+}
 
 cleanup() {
   if [[ -n "$askpass_file" ]]; then
@@ -106,8 +124,10 @@ for path in "${selected_paths[@]}"; do
     checkout="$(git -C "$path" rev-parse HEAD 2>/dev/null || true)"
     if [[ -z "$pinned" || "$checkout" != "$pinned" ]]; then
       failures+=("${repository}|${path}|pinned-commit-mismatch")
+      record_result failure "$repository" "$path" pinned-commit-mismatch "$checkout"
       echo "::error title=Submodule pin mismatch::${repository} at ${path} did not resolve to the superproject gitlink"
     else
+      record_result success "$repository" "$path" initialized "$checkout"
       echo "initialized ${repository} at pinned commit ${checkout:0:12}"
     fi
   else
@@ -122,6 +142,7 @@ for path in "${selected_paths[@]}"; do
       category="network-failure"
     fi
     failures+=("${repository}|${path}|${category}")
+    record_result failure "$repository" "$path" "$category"
     echo "::error title=Submodule unavailable::${repository} (${path}) category=${category}"
   fi
 
@@ -135,8 +156,14 @@ if (( ${#failures[@]} > 0 )); then
     IFS='|' read -r repository path category <<<"$failure"
     printf '  - %s (%s): %s\n' "$repository" "$path" "$category" >&2
   done
+  if [[ -n "$report_path" ]]; then
+    echo "Sanitized report written to ${report_path}." >&2
+  fi
   echo "No credential values or credential-bearing URLs were written to the report." >&2
   exit 1
 fi
 
 echo "Initialized ${#selected_paths[@]} submodule repository/repositories at their pinned commits."
+if [[ -n "$report_path" ]]; then
+  echo "Sanitized report written to ${report_path}."
+fi
