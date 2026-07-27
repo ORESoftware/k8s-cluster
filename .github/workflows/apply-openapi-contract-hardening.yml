@@ -25,7 +25,6 @@ jobs:
         with:
           ref: agent/openapi-contract-hardening
           fetch-depth: 0
-          token: ${{ secrets.REMOTE_DEV_GH_PAT }}
 
       - name: Apply source patch
         run: node scripts/api-contract/apply-openapi-hardening.mjs
