@@ -6,6 +6,10 @@
 )]
 mod account_security;
 mod accounts;
+#[expect(
+    dead_code,
+    reason = "the compatibility router is retained for tests and embeddings while production startup passes the Signal rollout flag explicitly"
+)]
 mod app;
 mod auth;
 mod config;
