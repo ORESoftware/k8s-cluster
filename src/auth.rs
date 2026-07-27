@@ -23,8 +23,7 @@ const AUTH_UPSTREAM_TIMEOUT_SECS: u64 = 10;
 const AUTHORIZATION_CONTEXT_VERSION: u16 = 1;
 const ADMIN_SURFACE_AUDIENCE: &str = "fiducia-admin";
 const CUSTOMER_SURFACE_AUDIENCE: &str = "fiducia-customer";
-const KNOWN_SURFACE_AUDIENCES: &[&str] =
-    &[ADMIN_SURFACE_AUDIENCE, CUSTOMER_SURFACE_AUDIENCE];
+const KNOWN_SURFACE_AUDIENCES: &[&str] = &[ADMIN_SURFACE_AUDIENCE, CUSTOMER_SURFACE_AUDIENCE];
 const KNOWN_ROLES: &[&str] = &["admin", "operator", "customer"];
 const KNOWN_CAPABILITIES: &[&str] = &[
     "admin:read",
@@ -223,9 +222,7 @@ impl Authenticator {
                             .await
                             .map_err(|_| deny(StatusCode::BAD_GATEWAY, "auth_bad_response"))?;
                         let user: AuthUser = serde_json::from_value(
-                            body.get("user")
-                                .cloned()
-                                .unwrap_or(serde_json::Value::Null),
+                            body.get("user").cloned().unwrap_or(serde_json::Value::Null),
                         )
                         .map_err(|_| deny(StatusCode::BAD_GATEWAY, "auth_bad_response"))?;
 
@@ -264,10 +261,7 @@ impl Authenticator {
                             email: user.email,
                             orgs: user.orgs,
                             aal: user.aal,
-                            credential_binding: format!(
-                                "{credential_kind}\0{}",
-                                credential.token
-                            ),
+                            credential_binding: format!("{credential_kind}\0{}", credential.token),
                             cookie_authenticated: credential.cookie_authenticated,
                         })
                     }
@@ -277,10 +271,7 @@ impl Authenticator {
                             StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
                         ) =>
                     {
-                        Err(deny(
-                            StatusCode::UNAUTHORIZED,
-                            "invalid_or_expired_session",
-                        ))
+                        Err(deny(StatusCode::UNAUTHORIZED, "invalid_or_expired_session"))
                     }
                     Ok(_) => Err(deny(StatusCode::SERVICE_UNAVAILABLE, "auth_unavailable")),
                     Err(_) => Err(deny(StatusCode::SERVICE_UNAVAILABLE, "auth_unreachable")),
@@ -294,10 +285,7 @@ fn validate_customer_authorization(
     authorization: &AuthorizationContext,
 ) -> Result<(), CustomerAuthorizationError> {
     if authorization.version != AUTHORIZATION_CONTEXT_VERSION
-        || !unique_known_values(
-            &authorization.surface_audiences,
-            KNOWN_SURFACE_AUDIENCES,
-        )
+        || !unique_known_values(&authorization.surface_audiences, KNOWN_SURFACE_AUDIENCES)
         || !unique_known_values(&authorization.roles, KNOWN_ROLES)
         || !unique_known_values(&authorization.capabilities, KNOWN_CAPABILITIES)
     {
@@ -333,13 +321,9 @@ fn validate_customer_authorization(
         return Err(CustomerAuthorizationError::InvalidContract);
     }
 
-    if !contains(
-        &authorization.surface_audiences,
-        CUSTOMER_SURFACE_AUDIENCE,
-    ) || !contains(
-        &authorization.capabilities,
-        "customer:self-service",
-    ) {
+    if !contains(&authorization.surface_audiences, CUSTOMER_SURFACE_AUDIENCE)
+        || !contains(&authorization.capabilities, "customer:self-service")
+    {
         return Err(CustomerAuthorizationError::WrongSurface);
     }
 
@@ -465,14 +449,8 @@ mod tests {
     ) -> AuthorizationContext {
         AuthorizationContext {
             version,
-            surface_audiences: audiences
-                .iter()
-                .map(|value| (*value).to_string())
-                .collect(),
-            roles: roles
-                .iter()
-                .map(|value| (*value).to_string())
-                .collect(),
+            surface_audiences: audiences.iter().map(|value| (*value).to_string()).collect(),
+            roles: roles.iter().map(|value| (*value).to_string()).collect(),
             capabilities: capabilities
                 .iter()
                 .map(|value| (*value).to_string())
@@ -502,9 +480,7 @@ mod tests {
             .expect_err("unconfigured auth must deny");
         assert_eq!(denied.status(), StatusCode::SERVICE_UNAVAILABLE);
 
-        let dead = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap();
+        let dead = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let dead_url = format!("http://{}", dead.local_addr().unwrap());
         drop(dead);
         let unreachable = Authenticator::AuthService(dead_url);
@@ -564,12 +540,7 @@ mod tests {
     #[test]
     fn malformed_or_inconsistent_authorization_contracts_fail_closed() {
         for context in [
-            authorization(
-                2,
-                &["fiducia-customer"],
-                &[],
-                &["customer:self-service"],
-            ),
+            authorization(2, &["fiducia-customer"], &[], &["customer:self-service"]),
             authorization(
                 1,
                 &["fiducia-customer", "future-surface"],
@@ -582,12 +553,7 @@ mod tests {
                 &["owner-from-browser"],
                 &["customer:self-service"],
             ),
-            authorization(
-                1,
-                &["fiducia-customer"],
-                &["customer"],
-                &["future:power"],
-            ),
+            authorization(1, &["fiducia-customer"], &["customer"], &["future:power"]),
             authorization(
                 1,
                 &["fiducia-customer", "fiducia-customer"],
@@ -687,9 +653,7 @@ mod tests {
                 }
             }),
         );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
@@ -729,9 +693,7 @@ mod tests {
                 }))
             }),
         );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
@@ -764,9 +726,7 @@ mod tests {
                 }))
             }),
         );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let server = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
