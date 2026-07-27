@@ -1,0 +1,3 @@
+{"ok":false,"errorCount":1,"warningCount":0,"errors":["env.ignore must be a list of env var names"],"warnings":[]}
+
+exit_status=1
