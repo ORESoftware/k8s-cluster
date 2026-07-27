@@ -86,7 +86,7 @@ jobs:
 
   audit-scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     outputs:
       diagnostics: ${{ steps.diagnostics.outputs.matrix }}
     steps:
@@ -106,7 +106,7 @@ jobs:
         id: diagnostics
         run: |
           set +e
-          nix develop -c cargo audit --json >audit.json 2>audit.stderr
+          nix develop -c agent-check audit-json >audit.json 2>audit.stderr
           audit_status=$?
           set -e
           AUDIT_STATUS="$audit_status" python3 - <<'PY' >audit-matrix.json
