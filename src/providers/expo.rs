@@ -150,7 +150,10 @@ impl ExpoProvider {
             .map(build_message)
             .collect::<Result<Vec<_>, _>>()?;
 
-        let mut request = self.client.post(self.config.send_url.clone()).json(&messages);
+        let mut request = self
+            .client
+            .post(self.config.send_url.clone())
+            .json(&messages);
         if let Some(access_token) = &self.config.access_token {
             request = request.bearer_auth(access_token);
         }
@@ -222,9 +225,7 @@ impl ExpoProvider {
     ) -> Result<Vec<PushOutcome>, ProviderError> {
         if requests.is_empty() || requests.len() > MAX_RECEIPT_IDS {
             return Err(invalid_payload(
-                format!(
-                    "Expo receipt lookup requires 1 to {MAX_RECEIPT_IDS} ticket IDs"
-                ),
+                format!("Expo receipt lookup requires 1 to {MAX_RECEIPT_IDS} ticket IDs"),
                 "invalid_receipt_batch_size",
             ));
         }
@@ -271,7 +272,11 @@ impl ExpoProvider {
             )
         })?;
         if !status.is_success() {
-            return Err(classify_request_failure(status, &response_body, retry_after));
+            return Err(classify_request_failure(
+                status,
+                &response_body,
+                retry_after,
+            ));
         }
 
         let document: ExpoReceiptResponse = serde_json::from_str(&response_body).map_err(|_| {
@@ -423,10 +428,7 @@ fn build_message(job: &PushJob) -> Result<Value, ProviderError> {
         }),
     );
     if let Some(collapse_key) = &job.options.collapse_key {
-        message.insert(
-            "collapseId".to_owned(),
-            Value::String(collapse_key.clone()),
-        );
+        message.insert("collapseId".to_owned(), Value::String(collapse_key.clone()));
     }
     Ok(Value::Object(message))
 }
@@ -438,9 +440,9 @@ fn valid_expo_push_token(token: &str) -> bool {
         .and_then(|value| value.strip_suffix(']'));
     inner.is_some_and(|value| {
         (8..=256).contains(&value.len())
-            && value
-                .chars()
-                .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+            && value.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '-' | '_')
+            })
     })
 }
 
@@ -551,9 +553,7 @@ fn outcome_for_expo_error(
         Some("DeviceNotRegistered") => OutcomeClass::InvalidToken,
         Some("MessageTooBig") => OutcomeClass::InvalidPayload,
         Some("MessageRateExceeded") => OutcomeClass::Throttled,
-        Some("MismatchSenderId" | "InvalidCredentials") => {
-            OutcomeClass::PermanentProviderFailure
-        }
+        Some("MismatchSenderId" | "InvalidCredentials") => OutcomeClass::PermanentProviderFailure,
         _ => OutcomeClass::InvalidPayload,
     };
     PushOutcome {
@@ -620,7 +620,10 @@ fn classify_request_failure(
         OutcomeClass::Throttled
     } else if decision.retryable {
         OutcomeClass::TransientProviderFailure
-    } else if matches!(status, StatusCode::BAD_REQUEST | StatusCode::PAYLOAD_TOO_LARGE) {
+    } else if matches!(
+        status,
+        StatusCode::BAD_REQUEST | StatusCode::PAYLOAD_TOO_LARGE
+    ) {
         OutcomeClass::InvalidPayload
     } else {
         OutcomeClass::PermanentProviderFailure
@@ -713,7 +716,10 @@ mod tests {
         assert_eq!(message["title"], "Hello");
         assert_eq!(message["body"], "World");
         assert_eq!(message["data"]["count"], 3);
-        assert_eq!(message["richContent"]["image"], "https://cdn.example.invalid/image.jpg");
+        assert_eq!(
+            message["richContent"]["image"],
+            "https://cdn.example.invalid/image.jpg"
+        );
         assert_eq!(message["ttl"], 120);
         assert_eq!(message["priority"], "high");
         assert_eq!(message["collapseId"], "inbox");
@@ -730,7 +736,10 @@ mod tests {
         .expect("ticket");
         let outcome = outcome_from_ticket(&job, ticket);
         assert_eq!(outcome.class, OutcomeClass::InvalidToken);
-        assert_eq!(outcome.provider_code.as_deref(), Some("DeviceNotRegistered"));
+        assert_eq!(
+            outcome.provider_code.as_deref(),
+            Some("DeviceNotRegistered")
+        );
     }
 
     #[test]
@@ -742,12 +751,9 @@ mod tests {
             ("MismatchSenderId", OutcomeClass::PermanentProviderFailure),
             ("InvalidCredentials", OutcomeClass::PermanentProviderFailure),
         ] {
-            let request = ExpoReceiptRequest::new(
-                "job-1",
-                test_job("one").target.fingerprint(),
-                "ticket-1",
-            )
-            .expect("request");
+            let request =
+                ExpoReceiptRequest::new("job-1", test_job("one").target.fingerprint(), "ticket-1")
+                    .expect("request");
             let receipt: ExpoReceipt = serde_json::from_value(json!({
                 "status": "error",
                 "message": "fixture error",
@@ -847,7 +853,12 @@ mod tests {
         assert_eq!(receipts[0].class, OutcomeClass::Accepted);
         assert_eq!(receipts[1].class, OutcomeClass::Throttled);
         assert_eq!(
-            capture.receipt_body.lock().await.as_ref().expect("receipt body")["ids"],
+            capture
+                .receipt_body
+                .lock()
+                .await
+                .as_ref()
+                .expect("receipt body")["ids"],
             json!(["ticket-one", "ticket-two"])
         );
 
