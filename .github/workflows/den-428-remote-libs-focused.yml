@@ -30,7 +30,7 @@ jobs:
         with:
           ref: agent/den-428-remote-libs-contract
           ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
-          persist-credentials: false
+          persist-credentials: true
       - name: Initialize remote/libs recursively at its exact gitlink
         env:
           SUBMODULE_AUTH_MODE: ssh
