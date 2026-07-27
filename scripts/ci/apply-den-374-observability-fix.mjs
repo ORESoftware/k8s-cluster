@@ -9,8 +9,8 @@ const files = {
 };
 
 function replaceExactlyOnce(text, before, after, label) {
+  if (text.includes(after)) return text;
   const count = text.split(before).length - 1;
-  if (count === 0 && text.includes(after)) return text;
   if (count !== 1) {
     throw new Error(`${label}: expected exactly one source match, found ${count}`);
   }
