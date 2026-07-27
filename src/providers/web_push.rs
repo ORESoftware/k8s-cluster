@@ -838,7 +838,7 @@ mod tests {
             .pub_as_raw()
             .expect("encode receiver public key");
         let p256dh = URL_SAFE_NO_PAD.encode(&receiver_public_key);
-        let auth = URL_SAFE_NO_PAD.encode(&auth_secret);
+        let auth = URL_SAFE_NO_PAD.encode(auth_secret);
         let plaintext = b"web push fixture";
         let encrypted =
             encrypt_subscription_payload(&p256dh, &auth, plaintext).expect("encrypt payload");
