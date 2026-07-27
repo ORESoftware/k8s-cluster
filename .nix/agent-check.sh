@@ -23,7 +23,7 @@ run_stage() {
       git diff --check
       nixfmt --check flake.nix .nix/devshell.nix
       shellcheck .nix/agent-check.sh
-      shfmt -i 2 -d .nix/agent-check.sh
+      shfmt -i 2 -ci -d .nix/agent-check.sh
       actionlint .github/workflows/ci.yml .github/workflows/nix.yml
       nix flake check --show-trace
       rustc --version
