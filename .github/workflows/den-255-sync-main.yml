@@ -1,6 +1,9 @@
 name: DEN-255 merge current main
 
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/den-255-sync-main.yml'
   push:
     branches:
       - agent/den-255-submodule-ci-diagnostics
@@ -22,6 +25,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: true
+          ref: agent/den-255-submodule-ci-diagnostics
 
       - name: Merge main without rebasing
         run: |
