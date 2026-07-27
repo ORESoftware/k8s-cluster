@@ -69,14 +69,14 @@ jobs:
           cat docs/openapi-validation-diagnostic.txt
           echo "OPENAPI_VALIDATION_STATUS=$status" >> "$GITHUB_ENV"
 
-      - name: Commit diagnostic state when validation fails
+      - name: Commit diagnostic report when validation fails
         if: env.OPENAPI_VALIDATION_STATUS != '0'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add docs/openapi-validation-diagnostic.txt
           if git diff --cached --quiet; then
-            echo "OpenAPI validation still fails, but the diagnostic state is already committed."
+            echo "OpenAPI validation still fails, but the diagnostic report is already committed."
             exit 1
           fi
           git commit -m "Capture OpenAPI migration validation failure [openapi-diagnostic]"
