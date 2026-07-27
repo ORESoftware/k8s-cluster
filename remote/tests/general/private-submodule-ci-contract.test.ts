@@ -41,12 +41,24 @@ test('the cross-org backend job reports every inaccessible repository safely', (
   );
   assert.match(backendJob, /K8S_SUBMODULE_TOKEN:\s*\$\{\{ secrets\.REMOTE_DEV_GH_PAT \}\}/);
   assert.match(backendJob, /SUBMODULE_AUTH_MODE:\s*https-token/);
+  assert.match(backendJob, /SUBMODULE_REPORT_PATH:\s*\$\{\{ runner\.temp \}\}\/backend-submodule-access\.tsv/);
   assert.match(backendJob, /init-submodules-with-report\.sh remote\/deployments/);
+  assert.match(backendJob, /continue-on-error:\s*true/);
+  assert.match(backendJob, /actions\/upload-artifact@v6/);
+  assert.match(backendJob, /name:\s*backend-submodule-access-report/);
+  assert.match(backendJob, /steps\.backend-submodules\.outcome == 'failure'/);
   assert.match(helper, /::error title=Submodule unavailable::/);
   assert.match(helper, /repository-missing-or-inaccessible/);
   assert.match(helper, /permission-denied/);
   assert.match(helper, /No credential values or credential-bearing URLs were written to the report/);
   assert.doesNotMatch(helper, /set -x/);
+});
+
+test('the sanitized report contains only repository metadata and commit state', () => {
+  assert.match(helper, /status\\trepository\\tpath\\tcategory\\tcommit/);
+  assert.match(helper, /record_result failure/);
+  assert.match(helper, /record_result success/);
+  assert.doesNotMatch(helper, /record_result[^\n]*K8S_SUBMODULE_TOKEN/);
 });
 
 test('the helper verifies checkout commits match superproject gitlinks', () => {
