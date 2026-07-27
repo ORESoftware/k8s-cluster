@@ -257,6 +257,7 @@ set -euo pipefail
 
 export CI="\${CI:-1}"
 export NO_COLOR="\${NO_COLOR:-1}"
+profile_requires_local_hook="$requires_local_hook"
 
 repo_root="\$(git rev-parse --show-toplevel)"
 cd "\$repo_root"
@@ -290,7 +291,7 @@ run_local_hook() {
     return
   fi
 
-  if [[ "$requires_local_hook" == "true" ]]; then
+  if [[ "\$profile_requires_local_hook" == "true" ]]; then
     printf '%s\n' 'this profile requires an executable .nix/agent-check.local.sh with repository-specific validation' >&2
     return 78
   fi
