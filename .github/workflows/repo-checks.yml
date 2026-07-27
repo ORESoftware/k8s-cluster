@@ -55,11 +55,6 @@ jobs:
           cache: pnpm
           cache-dependency-path: remote/tests/pnpm-lock.yaml
 
-      - name: Setup kubectl for rendered contract tests
-        uses: azure/setup-kubectl@v5
-        with:
-          version: v1.32.2
-
       - name: Install remote test dependencies
         run: pnpm install --frozen-lockfile
         working-directory: remote/tests
@@ -92,7 +87,6 @@ jobs:
             general/des-simulator-config.test.ts
             general/dev-server-container-pool-config.test.ts
             general/fabrication-cad-source-intake.test.ts
-            general/fiducia-secret-delivery.test.ts
             general/fsharp-ws-server-config.test.ts
             general/gateway-service-directory.test.ts
             general/gcs-chat-config.test.ts
@@ -125,6 +119,28 @@ jobs:
             general/ws-loadtest-config.test.ts
           )
           pnpm exec tsx --test "${static_tests[@]}"
+        working-directory: remote/tests
+
+  fiducia-secret-contract:
+    name: Fiducia KV secret-delivery contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v5
+        with:
+          version: v1.32.2
+
+      - name: Render and verify the hardened Fiducia secret contract
+        run: node --experimental-strip-types --test general/fiducia-secret-delivery.test.ts
         working-directory: remote/tests
 
   backend-contracts:
