@@ -68,13 +68,16 @@ for profile in "${profiles[@]}"; do
     "$target/flake.nix" \
     "$target/.nix/profile-packages.nix" \
     "$target/.nix/dev-shell.nix"
-  ruby -e 'require "yaml"; YAML.load_file(ARGV.fetch(0))' "$target/.github/workflows/nix.yml"
+  actionlint "$target/.github/workflows/nix.yml"
 
   grep -Fq 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' "$target/.github/workflows/nix.yml"
   grep -Fq 'cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342' "$target/.github/workflows/nix.yml"
   grep -Fq '.cache/nix-agent/' "$target/.gitignore"
-  ! grep -RInE 'AWS_PROFILE|GOOGLE_APPLICATION_CREDENTIALS|KUBECONFIG=' \
-    "$target/flake.nix" "$target/.nix" "$target/.github/workflows/nix.yml"
+  if grep -RInE 'AWS_PROFILE|GOOGLE_APPLICATION_CREDENTIALS|KUBECONFIG=' \
+    "$target/flake.nix" "$target/.nix" "$target/.github/workflows/nix.yml"; then
+    printf 'profile %s generated an implicit credential or cloud-profile binding\n' "$profile" >&2
+    exit 1
+  fi
 
   first_package="$(jq -r --arg profile "$profile" '.profiles[$profile].packages[0]' "$profiles_file")"
   grep -Fq "$first_package" "$target/.nix/profile-packages.nix"
