@@ -6,12 +6,18 @@ The Web Push adapter encrypts browser push payloads, signs requests with VAPID, 
 
 A provider requires:
 
-- an EC VAPID private key in PEM form
+- a P-256 VAPID private key in PKCS#8 or SEC1 PEM form
 - a VAPID subject using `mailto:` or HTTPS
 - a default TTL, normally 43,200 seconds
 - a host policy
 
-The private key belongs in an external secret. Complete subscription endpoints, `p256dh` values, and authentication secrets must never appear in logs or result events.
+The private key is parsed during configuration and belongs in an external secret. Complete subscription endpoints, `p256dh` values, authentication secrets, and VAPID key material must never appear in logs or result events.
+
+## Cryptographic boundary
+
+The adapter uses Mozilla ECE directly for RFC 8291 `aes128gcm` payload encryption. It builds the VAPID authorization token with the service's ES256 JWT implementation and derives the uncompressed public VAPID key from the configured P-256 private key.
+
+This deliberately avoids an unrelated RSA implementation. Web Push VAPID requires ES256; the dependency graph must not retain an unused RSA path with an unresolved security advisory.
 
 ## Default endpoint policy
 
@@ -48,8 +54,10 @@ DNS validation is defense in depth, not a complete DNS-rebinding solution, becau
 
 ## Payload and delivery behavior
 
+- Subscription `p256dh` and `auth` values must be unpadded URL-safe base64 and decode to the required P-256 public-key and 16-byte authentication-secret lengths.
 - Payloads use the `aes128gcm` Web Push content encoding.
 - Plaintext JSON is limited to 3,072 bytes to leave room for encryption overhead.
+- VAPID claims contain the endpoint origin as `aud`, the configured subject as `sub`, and a bounded expiration.
 - TTL is taken from `PushJob` or the configured default.
 - Normal/high priority maps to the Web Push `Urgency` header.
 - Collapse keys are SHA-256-derived into a fixed 32-character `Topic` header without exposing the original value.
@@ -77,14 +85,16 @@ The adapter test suite covers:
 - lookalike-host rejection
 - scheme, port, credential, fragment, localhost, and private-address rejection
 - IPv4, IPv6, mapped-address, CGNAT, benchmarking, documentation, and reserved ranges
-- VAPID subject and custom allowlist validation
+- VAPID subject, generated P-256 key, and custom allowlist validation
+- VAPID authorization construction
+- ECE encrypt/decrypt round trips with generated subscription key material
+- invalid subscription key rejection
 - payload mapping and size limits
 - deterministic topic generation
 - endpoint redaction
 - response classification
-- rejection before signing/network work
-- invalid VAPID key handling without contacting a provider
+- rejection before cryptographic or network work
 
-The `web-push` dependency graph is committed in `Cargo.lock`; CI and container builds must use the locked graph rather than resolving dependencies during validation. Advisory and license findings must be remediated or narrowly justified from exact diagnostic evidence; broad security-policy exclusions are not acceptable.
+The replacement dependency graph is committed in `Cargo.lock`; CI and container builds must use the locked graph rather than resolving dependencies during validation. Advisory and license findings must be remediated or narrowly justified from exact diagnostic evidence; broad security-policy exclusions are not acceptable.
 
 The merge gate requires locked formatting, Clippy with warnings denied, all tests, the Rust 1.88 container build, cargo-deny, RustSec, and full-history Gitleaks to pass on the same reviewed commit.
