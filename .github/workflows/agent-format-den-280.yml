@@ -1,0 +1,30 @@
+name: agent-format-den-280
+
+on:
+  push:
+    branches:
+      - agent/den-280-prekey-bundle-api
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/den-280-prekey-bundle-api
+          fetch-depth: 0
+      - run: cargo fmt --all
+      - name: Commit formatting and remove one-shot workflow
+        run: |
+          rm .github/workflows/agent-format-den-280.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src .github/workflows
+          if ! git diff --cached --quiet; then
+            git commit -m "Format DEN-280 prekey bundle API"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
