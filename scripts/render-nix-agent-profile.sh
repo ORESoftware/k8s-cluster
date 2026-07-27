@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# jq variables are deliberately passed with --arg and referenced inside
+# single-quoted jq programs; shell interpolation would be incorrect.
+# shellcheck disable=SC2016
+
 usage() {
   cat <<'USAGE'
 Usage:
@@ -243,6 +247,10 @@ NIX
 #!/usr/bin/env bash
 set -euo pipefail
 
+# jq variables are deliberately passed with --arg and referenced inside
+# single-quoted jq programs; optional local hooks may not exist yet.
+# shellcheck disable=SC1091,SC2016
+
 # Generated profile: $profile ($description)
 # Re-render from the central profile only after reviewing repository-specific
 # native dependencies and commands. Keep custom work in agent-check.local.sh.
@@ -266,13 +274,13 @@ mkdir -p "\$XDG_CACHE_HOME" "\$CARGO_HOME" "\$CARGO_TARGET_DIR" "\$GRADLE_USER_H
 run_package_script_if_present() {
   local script_name="\$1"
   if [[ ! -f package.json ]]; then
-    printf 'package.json is absent; skipping npm script %s\\n' "\$script_name"
+    printf 'package.json is absent; skipping npm script %s\n' "\$script_name"
     return 0
   fi
   if jq -e --arg name "\$script_name" '.scripts[\$name] != null' package.json >/dev/null; then
     pnpm run "\$script_name"
   else
-    printf 'package script %s is absent; skipping\\n' "\$script_name"
+    printf 'package script %s is absent; skipping\n' "\$script_name"
   fi
 }
 
@@ -283,17 +291,17 @@ run_local_hook() {
   fi
 
   if [[ "$requires_local_hook" == "true" ]]; then
-    printf '%s\\n' 'this profile requires an executable .nix/agent-check.local.sh with repository-specific validation' >&2
+    printf '%s\n' 'this profile requires an executable .nix/agent-check.local.sh with repository-specific validation' >&2
     return 78
   fi
 
-  printf '%s\\n' 'no repository-specific agent-check.local.sh; optional local stage skipped'
+  printf '%s\n' 'no repository-specific agent-check.local.sh; optional local stage skipped'
 }
 
 run_stage() {
   local stage="\$1"
 
-  printf '\\n==> agent-check stage: %s\\n' "\$stage"
+  printf '\n==> agent-check stage: %s\n' "\$stage"
   case "\$stage" in
     preflight)
       git diff --check
