@@ -15,9 +15,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: taiki-e/install-action@v2.79.11
         with:
-          rust-version: "1.88.0"
+          tool: cargo-deny
+          fallback: none
+      - name: Run cargo-deny and preserve diagnostics
+        run: |
+          set +e
+          cargo deny check > cargo-deny.log 2>&1
+          status=$?
+          echo "$status" > cargo-deny.exit
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-push-cargo-deny-diagnostics
+          path: cargo-deny.log
+          if-no-files-found: error
+      - name: Enforce cargo-deny result
+        run: exit "$(cat cargo-deny.exit)"
 
   audit:
     runs-on: ubuntu-latest
@@ -27,8 +43,23 @@ jobs:
         with:
           tool: cargo-audit
           fallback: none
-      - name: Audit locked dependencies against RustSec
-        run: cargo audit
+      - name: Run RustSec audit and preserve diagnostics
+        run: |
+          set +e
+          cargo audit --json > cargo-audit.json 2> cargo-audit.log
+          status=$?
+          echo "$status" > cargo-audit.exit
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-push-rustsec-diagnostics
+          path: |
+            cargo-audit.json
+            cargo-audit.log
+          if-no-files-found: error
+      - name: Enforce RustSec result
+        run: exit "$(cat cargo-audit.exit)"
 
   secrets:
     runs-on: ubuntu-latest
