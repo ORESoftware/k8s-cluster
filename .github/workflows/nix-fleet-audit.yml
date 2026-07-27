@@ -43,26 +43,11 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Capture ShellCheck findings
+      - name: Lint shell scripts
         run: |
-          set +e
-          nix develop -c shellcheck -f gcc scripts/nix-fleet-audit.sh scripts/tests/nix-fleet-audit-test.sh > shellcheck.txt 2>&1
-          printf '%s\n' "$?" > shellcheck.status
-          exit 0
-
-      - name: Upload ShellCheck findings
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: shellcheck-findings
-          path: |
-            shellcheck.txt
-            shellcheck.status
-          retention-days: 1
-
-      - name: Enforce ShellCheck
-        run: |
-          cat shellcheck.txt
-          test "$(cat shellcheck.status)" = "0"
+          # SC2016 is intentionally excluded: jq programs and jq assertions are
+          # single-quoted so Bash cannot expand jq variables.
+          nix develop -c shellcheck -e SC2016 scripts/nix-fleet-audit.sh scripts/tests/nix-fleet-audit-test.sh
 
       - name: Check shell formatting
         run: nix develop -c shfmt -d scripts/nix-fleet-audit.sh scripts/tests/nix-fleet-audit-test.sh
