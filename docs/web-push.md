@@ -17,7 +17,7 @@ The private key is parsed during configuration and belongs in an external secret
 
 The adapter uses Mozilla ECE directly for RFC 8291 `aes128gcm` payload encryption. It builds the VAPID authorization token with the service's ES256 JWT implementation and derives the uncompressed public VAPID key from the configured P-256 private key.
 
-This deliberately avoids an unrelated RSA implementation. Web Push VAPID requires ES256; the dependency graph must not retain an unused RSA path with an unresolved security advisory.
+This deliberately avoids an unrelated RSA implementation. Web Push VAPID requires ES256; the dependency graph must not retain an unused RSA path with an unresolved security advisory. The final locked dependency graph is verified by RustSec and cargo-deny in CI.
 
 ## Default endpoint policy
 
@@ -95,6 +95,6 @@ The adapter test suite covers:
 - response classification
 - rejection before cryptographic or network work
 
-The replacement dependency graph is committed in `Cargo.lock`; CI and container builds must use the locked graph rather than resolving dependencies during validation. Advisory and license findings must be remediated or narrowly justified from exact diagnostic evidence; broad security-policy exclusions are not acceptable.
+The replacement dependency graph is committed in `Cargo.lock`; CI and container builds use the locked graph rather than resolving dependencies during validation. Advisory and license findings must be remediated or narrowly justified from exact diagnostic evidence; broad security-policy exclusions are not acceptable.
 
 The merge gate requires locked formatting, Clippy with warnings denied, all tests, the Rust 1.88 container build, cargo-deny, RustSec, and full-history Gitleaks to pass on the same reviewed commit.
