@@ -23,66 +23,70 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path("src/providers/fcm.rs")
           text = path.read_text()
-          replacements = [
-              (
-                  "use std::collections::BTreeMap;\n",
-                  "",
-              ),
-              (
-                  "use serde_json::{Map, Value, json};",
-                  "use serde_json::{Map, Value};",
-              ),
-              (
-                  "    use super::*;\n    use std::sync::Arc;\n",
-                  "    use super::*;\n    use std::collections::BTreeMap;\n    use std::sync::Arc;\n",
-              ),
-              (
-                  '''            let detail = parsed
-                  .as_ref()
-                  .and_then(|error| error.error_description.as_deref())
-                  .unwrap_or("FCM OAuth token endpoint rejected the request");
-              let provider_code = parsed
-                  .and_then(|error| error.error)
-                  .or_else(|| Some(format!("oauth_http_{}", status.as_u16())));''',
-                  '''            let detail = parsed
-                  .as_ref()
-                  .and_then(|error| error.error_description.as_deref())
-                  .unwrap_or("FCM OAuth token endpoint rejected the request")
-                  .to_owned();
-              let provider_code = parsed
-                  .as_ref()
-                  .and_then(|error| error.error.clone())
-                  .or_else(|| Some(format!("oauth_http_{}", status.as_u16())));''',
-              ),
-              (
-                  '''        let error = FcmConfig::from_service_account_json(
-              &service_account_json("http://oauth.example.invalid/token"),
-              None,
+
+          # Test-only imports belong inside the test module.
+          text = text.replace("use std::collections::BTreeMap;\n", "", 1)
+          text = text.replace(
+              "use serde_json::{Map, Value, json};",
+              "use serde_json::{Map, Value};",
+              1,
           )
-          .expect_err("non-HTTPS token URI must fail");''',
-                  '''        let error = match FcmConfig::from_service_account_json(
-              &service_account_json("http://oauth.example.invalid/token"),
-              None,
-          ) {
-              Err(error) => error,
-              Ok(_) => panic!("non-HTTPS token URI must fail"),
-          };''',
-              ),
+          test_anchor = "mod tests {\n    use super::*;\n"
+          if "mod tests {\n    use super::*;\n    use std::collections::BTreeMap;\n" not in text:
+              if test_anchor not in text:
+                  raise SystemExit("test module import anchor not found")
+              text = text.replace(
+                  test_anchor,
+                  test_anchor + "    use std::collections::BTreeMap;\n",
+                  1,
+              )
+
+          # Keep parsed OAuth details owned so the error code can be cloned safely.
+          text, detail_count = re.subn(
+              r'(\.unwrap_or\("FCM OAuth token endpoint rejected the request"\))\s*;\s*'
+              r'let provider_code = parsed\s*\.and_then\(\|error\| error\.error\)',
+              r'\1\n                .to_owned();\n            let provider_code = parsed\n'
+              r'                .as_ref()\n'
+              r'                .and_then(|error| error.error.clone())',
+              text,
+              count=1,
+          )
+          if detail_count == 0 and ".and_then(|error| error.error.clone())" not in text:
+              raise SystemExit("OAuth ownership fix anchor not found")
+
+          # Do not derive Debug for a secret-bearing configuration just to use expect_err.
+          text, test_count = re.subn(
+              r'let error = FcmConfig::from_service_account_json\(\s*'
+              r'&service_account_json\("http://oauth\.example\.invalid/token"\),\s*'
+              r'None,\s*\)\s*\.expect_err\("non-HTTPS token URI must fail"\);',
+              'let error = match FcmConfig::from_service_account_json(\n'
+              '            &service_account_json("http://oauth.example.invalid/token"),\n'
+              '            None,\n'
+              '        ) {\n'
+              '            Err(error) => error,\n'
+              '            Ok(_) => panic!("non-HTTPS token URI must fail"),\n'
+              '        };',
+              text,
+              count=1,
+          )
+          if test_count == 0 and 'Ok(_) => panic!("non-HTTPS token URI must fail")' not in text:
+              raise SystemExit("negative config test anchor not found")
+
+          required = [
+              "use serde_json::{Map, Value};",
+              "use std::collections::BTreeMap;",
+              ".and_then(|error| error.error.clone())",
+              'Ok(_) => panic!("non-HTTPS token URI must fail")',
           ]
+          for fragment in required:
+              if fragment not in text:
+                  raise SystemExit(f"postcondition missing: {fragment}")
 
-          changed = False
-          for old, new in replacements:
-              if old in text:
-                  text = text.replace(old, new, 1)
-                  changed = True
-              elif new not in text:
-                  raise SystemExit(f"expected source fragment was not found:\n{old}")
-
-          if changed:
-              path.write_text(text)
+          path.write_text(text)
           PY
           cargo fmt
       - name: Commit compiler-guided fixes
