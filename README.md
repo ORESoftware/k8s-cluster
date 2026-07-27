@@ -20,10 +20,11 @@ The repository contains:
 - an FCM HTTP v1 adapter with server-side service-account OAuth, single-flight access-token caching, data-string coercion, mockable endpoints, and normalized result classes
 - an APNs HTTP/2 adapter with `.p8` token authentication, single-flight ES256 provider-token caching, strict sandbox/production isolation, alert/background payloads, mockable endpoints, and normalized Apple error reasons
 - an Expo adapter with optional project bearer authentication, batched push tickets, HTTP-200 ticket-error parsing, receipt follow-up, mockable endpoints, and normalized receipt outcomes
+- a Web Push/VAPID adapter with encrypted payloads, redirect blocking, strict push-service allowlisting, private-address rejection, optional DNS-vetted open mode, endpoint redaction, and normalized outcomes
 - centralized validation, target fingerprinting/redaction, bounded UTF-8 errors, and retry classification
 - CI, dependency auditing, secret scanning, and a non-root container build
 
-Web Push and transport ingestion are implemented in subsequent DEN-261 child issues.
+Authenticated HTTP/NATS transport ingestion is implemented in the next DEN-261 child issue.
 
 ## Run
 
@@ -98,6 +99,24 @@ The adapter:
 
 Detailed ticket, receipt, retry, and test behavior is documented in [`docs/expo.md`](docs/expo.md).
 
+## Web Push configuration
+
+Create `WebPushConfig` using a secret-backed VAPID EC private key, a `mailto:` or HTTPS subject, and a `WebPushHostPolicy`. The default policy permits only known browser push-service hosts and real subdomains.
+
+The adapter:
+
+- encrypts JSON payloads using `aes128gcm`
+- signs requests using VAPID
+- requires HTTPS on port 443 without embedded credentials or fragments
+- disables HTTP redirects
+- rejects localhost, private, link-local, CGNAT, documentation, benchmarking, reserved, multicast, and mapped internal addresses
+- offers an explicitly weaker any-public-host mode with preflight DNS vetting
+- maps TTL, urgency, and a hashed 32-character collapse topic
+- classifies expired subscriptions, invalid payloads, throttling, transient failures, and permanent VAPID/provider rejection
+- redacts endpoint paths and query strings
+
+Detailed SSRF controls, residual DNS-rebinding risk, payload behavior, and tests are documented in [`docs/web-push.md`](docs/web-push.md).
+
 ## Contracts
 
 The shared v1 contract is documented in [`docs/contracts-v1.md`](docs/contracts-v1.md). Example payloads live under [`examples/`](examples/).
@@ -116,4 +135,4 @@ cargo test --locked --all-features
 
 Linear project: `github.com/ORESoftware/push-notification-server.rs`
 
-DEN-324 established the contracts and safety boundary. DEN-325 and DEN-326 implement FCM and APNs; DEN-327 implements Expo, while DEN-328 covers Web Push.
+DEN-324 established the contracts and safety boundary. DEN-325 through DEN-328 implement FCM, APNs, Expo, and Web Push. DEN-329 adds versioned authenticated HTTP/NATS ingestion.
