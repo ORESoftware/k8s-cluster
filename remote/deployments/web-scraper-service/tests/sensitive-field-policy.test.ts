@@ -15,6 +15,7 @@ test('government identifiers are always blocked', () => {
     { id: 'taxpayer-identification-number' },
     { placeholder: 'EIN' },
     { ariaLabel: 'ITIN' },
+    { name: 'profile', label: 'Tax ID (optional)' },
   ]) {
     assert.equal(classifySensitiveField(field), 'government_identifier');
     assert.equal(decideSensitiveFieldWrite(field, 'literal').allowed, false);
@@ -26,7 +27,9 @@ test('bank and payment fields are always blocked', () => {
   for (const field of [
     { label: 'Routing number' },
     { label: 'Bank account number' },
+    { name: 'bank_account_number' },
     { autocomplete: 'cc-number' },
+    { autocomplete: 'cc-csc' },
     { name: 'cvv' },
     { placeholder: 'Expiration date' },
   ]) {
@@ -52,10 +55,15 @@ test('MFA, OTP, and PIN controls are always blocked', () => {
 });
 
 test('credentials reject literals and allow only secret references', () => {
-  const password = { type: 'password', label: 'Password' };
-  assert.equal(classifySensitiveField(password), 'credential');
-  assert.equal(decideSensitiveFieldWrite(password, 'literal').allowed, false);
-  assert.equal(decideSensitiveFieldWrite(password, 'secret_ref').allowed, true);
+  for (const field of [
+    { type: 'password', label: 'Password' },
+    { label: 'API key' },
+    { placeholder: 'Private key' },
+  ]) {
+    assert.equal(classifySensitiveField(field), 'credential');
+    assert.equal(decideSensitiveFieldWrite(field, 'literal').allowed, false);
+    assert.equal(decideSensitiveFieldWrite(field, 'secret_ref').allowed, true);
+  }
 });
 
 test('ordinary application fields remain writable', () => {
@@ -64,6 +72,7 @@ test('ordinary application fields remain writable', () => {
     { label: 'Full name' },
     { label: 'LinkedIn profile' },
     { label: 'Account manager title' },
+    { label: 'Security engineer experience' },
     { placeholder: 'Portfolio URL' },
   ]) {
     assert.equal(classifySensitiveField(field), 'ordinary');
