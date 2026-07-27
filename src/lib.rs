@@ -5,6 +5,7 @@ mod app;
 mod auth;
 mod config;
 mod db;
+mod device_sync_protocol;
 mod devices;
 mod entity;
 mod error;
