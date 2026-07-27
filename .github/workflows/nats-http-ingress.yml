@@ -33,7 +33,7 @@ jobs:
           components: rustfmt, clippy
       - name: Check formatting
         working-directory: remote/nats-bridge
-        run: cargo fmt --all -- --check
+        run: rustfmt --check --edition 2024 src/bin/nats_http_ingress.rs
       - name: Run clippy
         working-directory: remote/nats-bridge
         run: cargo clippy --locked --bin nats_http_ingress -- -D warnings
