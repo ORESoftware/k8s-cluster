@@ -42,3 +42,7 @@
 	path = apps/sonus-auris-web-desktop.dart
 	url = git@github.com:sonus-auris/sonus-auris-web-desktop.dart.git
 	branch = main
+[submodule "apps/sonus-auris-mcp-server.rs"]
+	path = apps/sonus-auris-mcp-server.rs
+	url = git@github.com:sonus-auris/sonus-auris-mcp-server.rs.git
+	branch = main
