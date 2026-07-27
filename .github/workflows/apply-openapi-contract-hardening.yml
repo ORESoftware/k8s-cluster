@@ -43,19 +43,29 @@ jobs:
       - name: Apply source patch
         run: node scripts/api-contract/apply-openapi-hardening.mjs
 
-      - name: Make operation IDs collision resistant
+      - name: Harden legacy OpenAPI bridge
         run: |
           node <<'NODE'
           const fs = require('node:fs');
           const path = 'remote/tools/generate-api-docs.mjs';
           let source = fs.readFileSync(path, 'utf8');
+
+          const buildServerOverride = "  ['build-server-rs', 'src/http.rs'],";
+          if (!source.includes(buildServerOverride)) {
+            const overrideAnchor = "  ['billing-server-rs', 'src/api/mod.rs'],";
+            if (!source.includes(overrideAnchor)) {
+              throw new Error('Rust route source override map anchor was not found');
+            }
+            source = source.replace(overrideAnchor, `${overrideAnchor}\n${buildServerOverride}`);
+          }
+
           const importLine = "import { createHash } from 'node:crypto';";
           if (!source.includes(importLine)) {
-            const anchor = "import { execFileSync } from 'node:child_process';";
-            if (!source.includes(anchor)) {
+            const importAnchor = "import { execFileSync } from 'node:child_process';";
+            if (!source.includes(importAnchor)) {
               throw new Error('generator child_process import was not found');
             }
-            source = source.replace(anchor, `${anchor}\n${importLine}`);
+            source = source.replace(importAnchor, `${importAnchor}\n${importLine}`);
           }
 
           const replacement = `function openApiOperationId(service, route, method) {
