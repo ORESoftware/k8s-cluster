@@ -1,9 +1,8 @@
 name: Apply signal store fixes
 
 on:
-  push:
-    branches:
-      - agent/den-280-transactional-signal-store
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
