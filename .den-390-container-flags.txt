@@ -1,0 +1,2 @@
+exit_status=2
+invalid command-line configuration: flags-2-env configuration audit failed: flags2env config audit failed with status 1
