@@ -13,7 +13,10 @@
   "runtimeVersion": "V8",
   "oauthScopes": [
     "https://www.googleapis.com/auth/chat.messages.readonly",
-    "https://www.googleapis.com/auth/drive",
-    "https://www.googleapis.com/auth/script.scriptapp"
-  ]
+    "https://www.googleapis.com/auth/chat.spaces.readonly"
+  ],
+  "webapp": {
+    "executeAs": "USER_DEPLOYING",
+    "access": "ANYONE_ANONYMOUS"
+  }
 }
