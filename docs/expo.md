@@ -50,3 +50,5 @@ The adapter test suite covers:
 - bounded safe details and target fingerprinting
 
 No real Expo access token or device token is required for tests. Mock endpoints are loopback-only and inaccessible through the public configuration API.
+
+The merge gate requires locked formatting, Clippy with warnings denied, all tests, the Rust 1.88 container build, cargo-deny, RustSec, and full-history Gitleaks to pass on the same reviewed commit.
