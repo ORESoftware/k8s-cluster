@@ -145,10 +145,28 @@ jobs:
         run: bash scripts/ci/init-submodules-with-report.sh remote/libs
 
       - name: Initialize pinned backend repositories
+        id: backend-submodules
+        continue-on-error: true
         env:
           SUBMODULE_AUTH_MODE: https-token
+          SUBMODULE_REPORT_PATH: ${{ runner.temp }}/backend-submodule-access.tsv
           K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
         run: bash scripts/ci/init-submodules-with-report.sh remote/deployments
+
+      - name: Upload sanitized backend submodule access report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: backend-submodule-access-report
+          path: ${{ runner.temp }}/backend-submodule-access.tsv
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Fail when backend submodules are unavailable
+        if: steps.backend-submodules.outcome == 'failure'
+        run: |
+          echo "One or more backend repositories are unavailable; inspect the sanitized access-report artifact."
+          exit 1
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
