@@ -23,12 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2.79.11
         with:
-          cache-bin: true
-      - name: Install cargo-audit with the current stable toolchain
-        run: cargo +stable install --locked cargo-audit
+          tool: cargo-audit
+          fallback: none
       - name: Audit locked dependencies against RustSec
         run: cargo audit
 
