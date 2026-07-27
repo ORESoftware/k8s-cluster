@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - agent/den-374-observability-coverage
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/den-374-observability-coverage.yml'
+      - 'scripts/ci/apply-den-374-observability-fix.mjs'
 
 permissions:
   contents: write
@@ -14,6 +20,7 @@ concurrency:
 
 jobs:
   repair:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
