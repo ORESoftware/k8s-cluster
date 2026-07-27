@@ -53,3 +53,19 @@ Apple response reasons are normalized into:
 - permanent provider/configuration failure: invalid, missing, or expired provider tokens; certificates; forbidden topics
 
 The Apple request ID or reason code may be retained as `provider_code`; target capability data is represented only by its fingerprint.
+
+## Test coverage
+
+The adapter's test suite covers:
+
+- key ID and Team ID validation
+- production and sandbox endpoint selection
+- ES256 JWT header and claim construction
+- provider-token cache reuse
+- alert and data-only payload construction
+- reserved `aps` rejection and payload-size enforcement
+- Apple reason-code classification
+- target-environment mismatch rejection
+- a mock APNs endpoint that verifies authorization, topic, push type, request ID, device-token path, and JSON payload
+
+No real Apple key or device token is required for these tests. The mock delivery test seeds a synthetic cached provider token and uses a loopback HTTP endpoint that is inaccessible through public configuration APIs.
