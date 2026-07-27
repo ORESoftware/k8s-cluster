@@ -1,6 +1,6 @@
-Error: build-server-rs: missing remote/deployments/build-server-rs/generated/api-docs.public.json
+Error: gleamlang-presence-server: OpenAPI route/method set drifted from generated route metadata
     at assert (file:///home/runner/work/k8s-cluster/k8s-cluster/remote/tools/validate-openapi-contracts.mjs:24:11)
-    at verifyService (file:///home/runner/work/k8s-cluster/k8s-cluster/remote/tools/validate-openapi-contracts.mjs:126:5)
+    at verifyService (file:///home/runner/work/k8s-cluster/k8s-cluster/remote/tools/validate-openapi-contracts.mjs:144:3)
     at main (file:///home/runner/work/k8s-cluster/k8s-cluster/remote/tools/validate-openapi-contracts.mjs:228:20)
     at file:///home/runner/work/k8s-cluster/k8s-cluster/remote/tools/validate-openapi-contracts.mjs:244:3
     at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
