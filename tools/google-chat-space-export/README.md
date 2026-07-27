@@ -38,8 +38,6 @@ The bridge does not scrape Google Chat. It runs as the deploying Google user, ca
 
 All responses are JSON. Apps Script ContentService returns HTTP 200 even for application-level failures, so check the top-level `ok` field.
 
-The deployment is smoke-tested from GitHub Actions so the public health route and unauthenticated boundary are verified from outside the local execution network. During rollout validation, that smoke test runs on each normal PR update.
-
 Public health check:
 
 ```text
