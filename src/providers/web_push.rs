@@ -10,9 +10,7 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::net::lookup_host;
 use url::Url;
-use web_push::{
-    ContentEncoding, SubscriptionInfo, VapidSignatureBuilder, WebPushMessageBuilder,
-};
+use web_push::{ContentEncoding, SubscriptionInfo, VapidSignatureBuilder, WebPushMessageBuilder};
 
 use crate::contracts::{
     ContractVersion, OutcomeClass, ProviderKind, PushJob, PushOutcome, PushPriority, PushTarget,
@@ -135,7 +133,8 @@ impl WebPushConfig {
         vapid_subject: impl Into<String>,
         host_policy: WebPushHostPolicy,
     ) -> Result<Self, WebPushConfigError> {
-        let vapid_private_key_pem = required(vapid_private_key_pem.into(), "vapid_private_key_pem")?;
+        let vapid_private_key_pem =
+            required(vapid_private_key_pem.into(), "vapid_private_key_pem")?;
         let vapid_subject = required(vapid_subject.into(), "vapid_subject")?;
         validate_vapid_subject(&vapid_subject)?;
         Ok(Self {
@@ -177,9 +176,9 @@ fn required(value: String, field: &'static str) -> Result<String, WebPushConfigE
 fn validate_vapid_subject(subject: &str) -> Result<(), WebPushConfigError> {
     let url = Url::parse(subject).map_err(|_| WebPushConfigError::InvalidSubject)?;
     let valid = match url.scheme() {
-        "mailto" => subject
-            .strip_prefix("mailto:")
-            .is_some_and(|address| address.contains('@') && !address.chars().any(char::is_whitespace)),
+        "mailto" => subject.strip_prefix("mailto:").is_some_and(|address| {
+            address.contains('@') && !address.chars().any(char::is_whitespace)
+        }),
         "https" => {
             url.host_str().is_some()
                 && url.username().is_empty()
@@ -459,9 +458,7 @@ fn ipv6_is_blocked(address: Ipv6Addr) -> bool {
         || (segments[0] & 0xffc0) == 0xfe80
         || (segments[0] & 0xffc0) == 0xfec0
         || (segments[0] == 0x2001 && segments[1] == 0x0db8)
-        || address
-            .to_ipv4_mapped()
-            .is_some_and(ipv4_is_blocked)
+        || address.to_ipv4_mapped().is_some_and(ipv4_is_blocked)
 }
 
 fn build_payload(job: &PushJob) -> Result<Vec<u8>, ProviderError> {
@@ -491,9 +488,7 @@ fn build_payload(job: &PushJob) -> Result<Vec<u8>, ProviderError> {
         .map_err(|_| ProviderError::internal("Web Push payload could not be serialized"))?;
     if payload.len() > MAX_PLAINTEXT_PAYLOAD_BYTES {
         return Err(invalid_payload(
-            format!(
-                "Web Push plaintext payload exceeds {MAX_PLAINTEXT_PAYLOAD_BYTES} bytes"
-            ),
+            format!("Web Push plaintext payload exceeds {MAX_PLAINTEXT_PAYLOAD_BYTES} bytes"),
             "payload_too_large",
         ));
     }
@@ -536,9 +531,7 @@ fn classify_response(
         StatusCode::NOT_FOUND | StatusCode::GONE => OutcomeClass::InvalidToken,
         StatusCode::PAYLOAD_TOO_LARGE | StatusCode::BAD_REQUEST => OutcomeClass::InvalidPayload,
         StatusCode::TOO_MANY_REQUESTS => OutcomeClass::Throttled,
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-            OutcomeClass::PermanentProviderFailure
-        }
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => OutcomeClass::PermanentProviderFailure,
         _ => {
             let decision = classify_http_status(status.as_u16(), retry_after);
             if decision.retryable {
@@ -556,16 +549,18 @@ fn classify_response(
         class,
         provider_code: Some(format!("http_{}", status.as_u16())),
         retry_after_ms: retry_after.map(duration_to_millis),
-        safe_detail: Some(match class {
-            OutcomeClass::InvalidToken => "Web Push subscription is expired or unavailable",
-            OutcomeClass::InvalidPayload => "Web Push service rejected the request payload",
-            OutcomeClass::Throttled => "Web Push service throttled the request",
-            OutcomeClass::TransientProviderFailure => {
-                "Web Push service returned a retryable failure"
+        safe_detail: Some(
+            match class {
+                OutcomeClass::InvalidToken => "Web Push subscription is expired or unavailable",
+                OutcomeClass::InvalidPayload => "Web Push service rejected the request payload",
+                OutcomeClass::Throttled => "Web Push service throttled the request",
+                OutcomeClass::TransientProviderFailure => {
+                    "Web Push service returned a retryable failure"
+                }
+                _ => "Web Push service permanently rejected the request",
             }
-            _ => "Web Push service permanently rejected the request",
-        }
-        .to_owned()),
+            .to_owned(),
+        ),
     })
 }
 
@@ -753,22 +748,27 @@ mod tests {
                 StatusCode::SERVICE_UNAVAILABLE,
                 OutcomeClass::TransientProviderFailure,
             ),
-            (StatusCode::FORBIDDEN, OutcomeClass::PermanentProviderFailure),
+            (
+                StatusCode::FORBIDDEN,
+                OutcomeClass::PermanentProviderFailure,
+            ),
         ] {
             let outcome = classify_response(&job, status, None).expect("outcome");
             assert_eq!(outcome.class, expected);
-            assert!(!outcome
-                .safe_detail
-                .as_deref()
-                .unwrap_or_default()
-                .contains("capability"));
+            assert!(
+                !outcome
+                    .safe_detail
+                    .as_deref()
+                    .unwrap_or_default()
+                    .contains("capability")
+            );
         }
     }
 
     #[tokio::test]
     async fn rejects_private_endpoint_before_vapid_or_network_work() {
-        let provider = WebPushProvider::new(test_config(WebPushHostPolicy::any_public()))
-            .expect("provider");
+        let provider =
+            WebPushProvider::new(test_config(WebPushHostPolicy::any_public())).expect("provider");
         let error = provider
             .send(&web_push_job("https://127.0.0.1/send/capability"))
             .await
@@ -787,9 +787,7 @@ mod tests {
         let provider = WebPushProvider::new(test_config(WebPushHostPolicy::strict_default()))
             .expect("provider");
         let error = provider
-            .send(&web_push_job(
-                "https://fcm.googleapis.com/send/capability",
-            ))
+            .send(&web_push_job("https://fcm.googleapis.com/send/capability"))
             .await
             .expect_err("invalid key must fail");
         assert!(matches!(error, ProviderError::NotConfigured { .. }));

@@ -7,6 +7,5 @@ pub use apns::{ApnsConfig, ApnsConfigError, ApnsProvider};
 pub use expo::{ExpoConfig, ExpoConfigError, ExpoProvider, ExpoReceiptRequest};
 pub use fcm::{FcmConfig, FcmConfigError, FcmProvider};
 pub use web_push::{
-    WebPushConfig, WebPushConfigError, WebPushHostPolicy, WebPushProvider,
-    redact_web_push_endpoint,
+    WebPushConfig, WebPushConfigError, WebPushHostPolicy, WebPushProvider, redact_web_push_endpoint,
 };
