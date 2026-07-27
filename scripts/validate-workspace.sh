@@ -25,9 +25,9 @@ if git submodule status --recursive | grep -Eq '^[+-]'; then
 fi
 
 step 'Validate interface wire invariants' \
-  python3 apps/cliptown-interfaces/scripts/check-wire-contract.py
+  bash -c 'cd apps/cliptown-interfaces && python3 scripts/check-wire-contract.py'
 step 'Validate client package layout' \
-  bash apps/cliptown-clients/scripts/validate-layout.sh
+  bash -c 'cd apps/cliptown-clients && bash scripts/validate-layout.sh'
 step 'Validate browser-extension privacy and tests' \
   bash -c 'cd apps/cliptown-extension && npm run check'
 step 'Lint and render ClipTown GitOps chart' \
