@@ -1,16 +1,23 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::time::{Duration, SystemTime};
+use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::Engine as _;
+use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use p256::elliptic_curve::sec1::{DecodeEcPrivateKey, ToEncodedPoint};
+use p256::pkcs8::{DecodePrivateKey, EncodePrivateKey};
+use p256::SecretKey;
 use reqwest::header::RETRY_AFTER;
 use reqwest::redirect::Policy as RedirectPolicy;
 use reqwest::{Client, StatusCode};
+use serde::Serialize;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tokio::net::lookup_host;
 use url::Url;
-use web_push::{ContentEncoding, SubscriptionInfo, VapidSignatureBuilder, WebPushMessageBuilder};
 
 use crate::contracts::{
     ContractVersion, OutcomeClass, ProviderKind, PushJob, PushOutcome, PushPriority, PushTarget,
@@ -21,6 +28,7 @@ use crate::validation::validate_push_job;
 
 const DEFAULT_TTL_SECONDS: u32 = 43_200;
 const MAX_TTL_SECONDS: u32 = 28 * 24 * 60 * 60;
+const VAPID_TOKEN_LIFETIME_SECONDS: u64 = 12 * 60 * 60;
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
 const MAX_PLAINTEXT_PAYLOAD_BYTES: usize = 3_072;
 const DEFAULT_ALLOWED_HOSTS: &[&str] = &[
@@ -37,6 +45,9 @@ pub enum WebPushConfigError {
 
     #[error("VAPID subject must be a mailto or HTTPS URI")]
     InvalidSubject,
+
+    #[error("VAPID private key must be a valid P-256 PKCS#8 or SEC1 PEM key")]
+    InvalidPrivateKey,
 
     #[error("Web Push TTL exceeds the 28-day service ceiling")]
     InvalidTtl,
@@ -120,7 +131,8 @@ fn normalize_allowed_host(value: &str) -> Result<String, WebPushConfigError> {
 
 #[derive(Clone)]
 pub struct WebPushConfig {
-    vapid_private_key_pem: String,
+    vapid_signing_key: Arc<EncodingKey>,
+    vapid_public_key: String,
     vapid_subject: String,
     default_ttl_seconds: u32,
     host_policy: WebPushHostPolicy,
@@ -137,8 +149,10 @@ impl WebPushConfig {
             required(vapid_private_key_pem.into(), "vapid_private_key_pem")?;
         let vapid_subject = required(vapid_subject.into(), "vapid_subject")?;
         validate_vapid_subject(&vapid_subject)?;
+        let (vapid_signing_key, vapid_public_key) = parse_vapid_private_key(&vapid_private_key_pem)?;
         Ok(Self {
-            vapid_private_key_pem,
+            vapid_signing_key: Arc::new(vapid_signing_key),
+            vapid_public_key,
             vapid_subject,
             default_ttl_seconds: DEFAULT_TTL_SECONDS,
             host_policy,
@@ -162,6 +176,21 @@ impl WebPushConfig {
     pub fn host_policy(&self) -> &WebPushHostPolicy {
         &self.host_policy
     }
+}
+
+fn parse_vapid_private_key(
+    private_key_pem: &str,
+) -> Result<(EncodingKey, String), WebPushConfigError> {
+    let secret_key = SecretKey::from_pkcs8_pem(private_key_pem)
+        .or_else(|_| SecretKey::from_sec1_pem(private_key_pem))
+        .map_err(|_| WebPushConfigError::InvalidPrivateKey)?;
+    let private_key_der = secret_key
+        .to_pkcs8_der()
+        .map_err(|_| WebPushConfigError::InvalidPrivateKey)?;
+    let signing_key = EncodingKey::from_ec_der(private_key_der.as_bytes());
+    let public_key = secret_key.public_key().to_encoded_point(false);
+    let public_key = URL_SAFE_NO_PAD.encode(public_key.as_bytes());
+    Ok((signing_key, public_key))
 }
 
 fn required(value: String, field: &'static str) -> Result<String, WebPushConfigError> {
@@ -235,40 +264,19 @@ impl WebPushProvider {
             verify_public_dns(&endpoint).await?;
         }
 
-        let subscription = SubscriptionInfo::new(
-            endpoint.as_str().to_owned(),
-            p256dh.to_owned(),
-            auth.to_owned(),
-        );
-        let mut signature_builder = VapidSignatureBuilder::from_pem(
-            self.config.vapid_private_key_pem.as_bytes(),
-            &subscription,
-        )
-        .map_err(|_| ProviderError::not_configured("VAPID private key is invalid"))?;
-        signature_builder.add_claim("sub", self.config.vapid_subject.clone());
-        let signature = signature_builder
-            .build()
-            .map_err(|_| ProviderError::not_configured("VAPID signature could not be created"))?;
-
         let payload = build_payload(job)?;
+        let encrypted_payload = encrypt_subscription_payload(p256dh, auth, &payload)?;
+        let authorization = vapid_authorization(&self.config, &endpoint, unix_now()?)?;
         let ttl = job
             .options
             .ttl_seconds
             .unwrap_or(self.config.default_ttl_seconds);
-        let mut message_builder = WebPushMessageBuilder::new(&subscription);
-        message_builder.set_ttl(ttl);
-        message_builder.set_payload(ContentEncoding::Aes128Gcm, &payload);
-        message_builder.set_vapid_signature(signature);
-        let message = message_builder.build().map_err(|_| {
-            invalid_payload(
-                "Web Push subscription keys or payload could not be encrypted",
-                "encryption_failed",
-            )
-        })?;
-
         let mut request = self
             .client
-            .post(endpoint.clone())
+            .post(endpoint)
+            .header("Authorization", authorization)
+            .header("Content-Encoding", "aes128gcm")
+            .header("Content-Type", "application/octet-stream")
             .header("TTL", ttl.to_string())
             .header(
                 "Urgency",
@@ -280,16 +288,12 @@ impl WebPushProvider {
         if let Some(collapse_key) = &job.options.collapse_key {
             request = request.header("Topic", topic_for_collapse_key(collapse_key));
         }
-        if let Some(encrypted) = message.payload {
-            for (name, value) in &encrypted.crypto_headers {
-                request = request.header(*name, value);
-            }
-            request = request
-                .header("Content-Encoding", encrypted.content_encoding.to_str())
-                .body(encrypted.content);
-        }
 
-        let response = request.send().await.map_err(classify_transport_error)?;
+        let response = request
+            .body(encrypted_payload)
+            .send()
+            .await
+            .map_err(classify_transport_error)?;
         classify_response(job, response.status(), response.headers().get(RETRY_AFTER))
     }
 }
@@ -307,6 +311,79 @@ impl PushProvider for WebPushProvider {
     async fn send(&self, job: &PushJob) -> Result<PushOutcome, ProviderError> {
         self.send_message(job).await
     }
+}
+
+#[derive(Serialize)]
+struct VapidClaims<'a> {
+    aud: &'a str,
+    exp: u64,
+    sub: &'a str,
+}
+
+fn vapid_authorization(
+    config: &WebPushConfig,
+    endpoint: &Url,
+    now: u64,
+) -> Result<String, ProviderError> {
+    let audience = endpoint.origin().ascii_serialization();
+    let claims = VapidClaims {
+        aud: &audience,
+        exp: now.saturating_add(VAPID_TOKEN_LIFETIME_SECONDS),
+        sub: &config.vapid_subject,
+    };
+    let token = encode(
+        &Header::new(Algorithm::ES256),
+        &claims,
+        config.vapid_signing_key.as_ref(),
+    )
+    .map_err(|_| ProviderError::not_configured("VAPID ES256 token could not be created"))?;
+    Ok(format!(
+        "vapid t={token}, k={}",
+        config.vapid_public_key
+    ))
+}
+
+fn unix_now() -> Result<u64, ProviderError> {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .map_err(|_| ProviderError::internal("system clock is before the Unix epoch"))
+}
+
+fn encrypt_subscription_payload(
+    p256dh: &str,
+    auth: &str,
+    payload: &[u8],
+) -> Result<Vec<u8>, ProviderError> {
+    let p256dh = decode_subscription_component(p256dh, "p256dh")?;
+    let auth = decode_subscription_component(auth, "auth")?;
+    if p256dh.len() != 65 || p256dh.first().copied() != Some(0x04) {
+        return Err(invalid_payload(
+            "Web Push p256dh must be an uncompressed P-256 public key",
+            "invalid_p256dh",
+        ));
+    }
+    if auth.len() != 16 {
+        return Err(invalid_payload(
+            "Web Push auth secret must decode to 16 bytes",
+            "invalid_auth_secret",
+        ));
+    }
+    ece::encrypt(&p256dh, &auth, payload).map_err(|_| {
+        invalid_payload(
+            "Web Push subscription keys or payload could not be encrypted",
+            "encryption_failed",
+        )
+    })
+}
+
+fn decode_subscription_component(value: &str, name: &'static str) -> Result<Vec<u8>, ProviderError> {
+    URL_SAFE_NO_PAD.decode(value).map_err(|_| {
+        invalid_payload(
+            format!("Web Push {name} is not unpadded URL-safe base64"),
+            "invalid_subscription_key",
+        )
+    })
 }
 
 fn validate_job(job: &PushJob) -> Result<(), ProviderError> {
@@ -612,6 +689,9 @@ pub fn redact_web_push_endpoint(endpoint: &str) -> String {
 mod tests {
     use std::collections::BTreeMap;
 
+    use ece::LocalKeyPair;
+    use p256::pkcs8::{EncodePrivateKey, LineEnding};
+    use rand_core::OsRng;
     use serde_json::json;
 
     use super::*;
@@ -646,13 +726,13 @@ mod tests {
         }
     }
 
-    fn test_config(policy: WebPushHostPolicy) -> WebPushConfig {
-        WebPushConfig::new(
-            "not-a-real-vapid-key",
-            "mailto:push@example.invalid",
-            policy,
-        )
-        .expect("test config")
+    fn generated_config(policy: WebPushHostPolicy) -> WebPushConfig {
+        let key = SecretKey::random(&mut OsRng);
+        let pem = key
+            .to_pkcs8_pem(LineEnding::LF)
+            .expect("encode test VAPID key");
+        WebPushConfig::new(pem.as_str(), "mailto:push@example.invalid", policy)
+            .expect("test config")
     }
 
     #[test]
@@ -717,14 +797,28 @@ mod tests {
     }
 
     #[test]
-    fn validates_subjects_allowlists_payloads_topics_and_redaction() {
+    fn validates_subjects_keys_allowlists_payloads_topics_and_redaction() {
         assert!(validate_vapid_subject("mailto:push@example.invalid").is_ok());
         assert!(validate_vapid_subject("https://example.invalid/contact").is_ok());
         assert!(validate_vapid_subject("http://example.invalid/contact").is_err());
         assert!(WebPushHostPolicy::allowlist(["push.example.invalid"]).is_ok());
         assert!(WebPushHostPolicy::allowlist(["localhost"]).is_err());
+        assert!(matches!(
+            WebPushConfig::new(
+                "not-a-real-vapid-key",
+                "mailto:push@example.invalid",
+                WebPushHostPolicy::strict_default()
+            ),
+            Err(WebPushConfigError::InvalidPrivateKey)
+        ));
 
-        let job = web_push_job("https://fcm.googleapis.com/send/capability");
+        let config = generated_config(WebPushHostPolicy::strict_default());
+        let endpoint = Url::parse("https://fcm.googleapis.com/send/capability").expect("URL");
+        let authorization = vapid_authorization(&config, &endpoint, 1_000).expect("VAPID token");
+        assert!(authorization.starts_with("vapid t="));
+        assert!(authorization.contains(", k="));
+
+        let job = web_push_job(endpoint.as_str());
         let payload = build_payload(&job).expect("payload");
         let document: Value = serde_json::from_slice(&payload).expect("JSON payload");
         assert_eq!(document["title"], "Hello");
@@ -734,6 +828,33 @@ mod tests {
             redact_web_push_endpoint("https://fcm.googleapis.com/send/capability?secret=value"),
             "https://fcm.googleapis.com/…"
         );
+    }
+
+    #[test]
+    fn encrypts_and_decrypts_subscription_payload() {
+        let (receiver_key, auth_secret) =
+            ece::generate_keypair_and_auth_secret().expect("receiver key material");
+        let p256dh = URL_SAFE_NO_PAD.encode(receiver_key.pub_as_raw());
+        let auth = URL_SAFE_NO_PAD.encode(&auth_secret);
+        let plaintext = b"web push fixture";
+        let encrypted =
+            encrypt_subscription_payload(&p256dh, &auth, plaintext).expect("encrypt payload");
+        let decrypted =
+            ece::decrypt(&receiver_key, &auth_secret, &encrypted).expect("decrypt payload");
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn rejects_invalid_subscription_key_material() {
+        let error = encrypt_subscription_payload("not-base64", "also-not-base64", b"fixture")
+            .expect_err("invalid subscription keys must fail");
+        assert!(matches!(
+            error,
+            ProviderError::Delivery {
+                class: OutcomeClass::InvalidPayload,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -766,9 +887,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_private_endpoint_before_vapid_or_network_work() {
-        let provider =
-            WebPushProvider::new(test_config(WebPushHostPolicy::any_public())).expect("provider");
+    async fn rejects_private_endpoint_before_crypto_or_network_work() {
+        let provider = WebPushProvider::new(generated_config(WebPushHostPolicy::any_public()))
+            .expect("provider");
         let error = provider
             .send(&web_push_job("https://127.0.0.1/send/capability"))
             .await
@@ -780,16 +901,5 @@ mod tests {
                 ..
             }
         ));
-    }
-
-    #[tokio::test]
-    async fn invalid_vapid_key_fails_without_contacting_provider() {
-        let provider = WebPushProvider::new(test_config(WebPushHostPolicy::strict_default()))
-            .expect("provider");
-        let error = provider
-            .send(&web_push_job("https://fcm.googleapis.com/send/capability"))
-            .await
-            .expect_err("invalid key must fail");
-        assert!(matches!(error, ProviderError::NotConfigured { .. }));
     }
 }
