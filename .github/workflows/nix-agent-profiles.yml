@@ -181,12 +181,14 @@ jobs:
       - name: Check generated shell formatting
         run: nix develop -c shfmt -i 2 -ci -d "$PROFILE_TARGET/.nix/agent-check.sh"
 
-      - name: Check generated Nix formatting
-        run: |
-          nix develop -c nixfmt --check \
-            "$PROFILE_TARGET/flake.nix" \
-            "$PROFILE_TARGET/.nix/profile-packages.nix" \
-            "$PROFILE_TARGET/.nix/dev-shell.nix"
+      - name: Check generated flake formatting
+        run: nix develop -c nixfmt --check "$PROFILE_TARGET/flake.nix"
+
+      - name: Check generated package-list formatting
+        run: nix develop -c nixfmt --check "$PROFILE_TARGET/.nix/profile-packages.nix"
+
+      - name: Check generated dev-shell formatting
+        run: nix develop -c nixfmt --check "$PROFILE_TARGET/.nix/dev-shell.nix"
 
       - name: Check generated workflow
         run: nix develop -c actionlint "$PROFILE_TARGET/.github/workflows/nix.yml"
