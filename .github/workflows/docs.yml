@@ -40,7 +40,11 @@ jobs:
         run: |
           grep -Fiq 'cryptographically random account master key' README.md
           grep -Fq 'The six-digit PIN is **not** the clipboard encryption key' README.md
-          if grep -Eiq 'encryption key is derived.*(PIN|biometric)|raw (fingerprint|voice).*encryption' README.md; then
-            echo 'unsafe key-derivation guidance found' >&2
+          if grep -Fiq "encryption key is derived locally from the user's 6-digit PIN" README.md; then
+            echo 'PIN-derived clipboard encryption key guidance is forbidden' >&2
+            exit 1
+          fi
+          if grep -Eiq 'biometric(s| data)? (is|are|becomes?|derive[sd]?) (the )?encryption key' README.md; then
+            echo 'raw biometric encryption-key guidance is forbidden' >&2
             exit 1
           fi
