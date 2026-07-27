@@ -26,7 +26,7 @@ require_contract_line '^node = "22"$' 'Node.js 22 contract'
 require_contract_line '^java = "temurin-17"$' 'Temurin Java 17 contract'
 require_contract_line '^python = "3\.12"$' 'Python 3.12 contract'
 require_contract_line '^dart = "3\.12\.2"$' 'Dart 3.12.2 contract'
-require_contract_line '^helm = "3\.14\.0"$' 'Helm 3.14.0 contract'
+require_contract_line '^helm = "3\.17\.3"$' 'Helm 3.17.3 contract'
 require_contract_line '^CLIPTOWN_ANDROID_API = "35"$' 'Android API 35 contract'
 
 SUBMODULE_BRANCH_COUNT=$(git config --file .gitmodules --get-regexp '^submodule\..*\.branch$' 2>/dev/null | wc -l | tr -d ' ')
@@ -74,7 +74,7 @@ check_version 'Node.js' '^v22\.' node --version
 check_version 'Dart' '^Dart SDK version: 3\.12\.2([[:space:]]|$)' dart --version
 check_version 'Java' 'version "17\.' java -version
 check_version 'Python' '^Python 3\.12\.' python3 --version
-check_version 'Helm' '^v3\.14\.0([+-]|$)' helm version --short
+check_version 'Helm' '^v3\.17\.3([+-]|$)' helm version --short
 
 for tool in flutter buf kubectl kustomize psql; do
   if command -v "$tool" >/dev/null 2>&1; then
