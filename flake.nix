@@ -18,18 +18,22 @@
         pkgs = nixpkgs.legacyPackages.${system};
         agentCheck = pkgs.writeShellApplication {
           name = "agent-check";
-          runtimeInputs = with pkgs; [
-            actionlint
-            bash
-            cacert
-            cargo-audit
-            git
-            gnugrep
-            nixfmt-rfc-style
-            rustup
-            shellcheck
-            shfmt
-          ];
+          runtimeInputs =
+            (with pkgs; [
+              actionlint
+              bash
+              cacert
+              cargo-audit
+              git
+              gnugrep
+              nixfmt-rfc-style
+              openssl
+              pkg-config
+              rustup
+              shellcheck
+              shfmt
+            ])
+            ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [ pkgs.libiconv ];
           text = builtins.readFile ./.nix/agent-check.sh;
         };
       in
