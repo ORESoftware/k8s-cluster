@@ -1,5 +1,6 @@
 name: DEN-255 static contract diagnostic
 
+# Temporary stacked diagnostic for PR #47; remove after identifying failures.
 on:
   pull_request:
     paths:
