@@ -113,9 +113,7 @@ pub(crate) async fn claim_prekey_bundle_handler(
     who: AuthedDevice,
     Path(target_device_id): Path<Uuid>,
 ) -> Result<Json<PreKeyBundleResponse>, ApiError> {
-    if target_device_id == who.device_id {
-        return Err(ApiError::BadRequest);
-    }
+    require_sibling_target(target_device_id, who)?;
     let claimed = signal_bundle_store::claim_prekey_bundle(
         state.database(),
         who.account_id,
@@ -234,6 +232,13 @@ pub(crate) async fn acknowledge_envelope_handler(
     Ok(Json(AcknowledgeEnvelopeResponse { mailbox_seq }))
 }
 
+fn require_sibling_target(target_device_id: Uuid, who: AuthedDevice) -> Result<(), ApiError> {
+    if target_device_id == who.device_id {
+        return Err(ApiError::BadRequest);
+    }
+    Ok(())
+}
+
 fn require_authenticated_sender(
     envelope: &SignalCiphertextEnvelope,
     who: AuthedDevice,
@@ -335,7 +340,14 @@ mod tests {
 
     #[test]
     fn a_device_cannot_claim_its_own_prekey_bundle() {
-        let device_id = Uuid::new_v4();
-        assert_eq!(device_id, device_id);
+        let who = AuthedDevice {
+            account_id: Uuid::new_v4(),
+            device_id: Uuid::new_v4(),
+        };
+        assert!(matches!(
+            require_sibling_target(who.device_id, who),
+            Err(ApiError::BadRequest)
+        ));
+        assert!(require_sibling_target(Uuid::new_v4(), who).is_ok());
     }
 }
