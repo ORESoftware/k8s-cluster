@@ -1,9 +1,6 @@
 name: DEN-374 observability coverage repair
 
 on:
-  push:
-    branches:
-      - agent/den-374-observability-coverage
   pull_request:
     branches:
       - main
@@ -15,12 +12,12 @@ permissions:
   contents: write
 
 concurrency:
-  group: den-374-observability-coverage
+  group: den-374-observability-coverage-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   repair:
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -53,6 +50,17 @@ jobs:
             remote/deployments/web-home-rs/src; then
             exit 1
           fi
+      - name: Retain validated coverage files
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-374-validated-coverage-files
+          path: |
+            remote/argocd/observability/k8s-resource-exporter.configmap.yaml
+            remote/argocd/observability/k8s-resource-exporter.deployment.yaml
+            remote/tools/check-observability-coverage.mjs
+          if-no-files-found: error
+          retention-days: 1
       - name: Commit repaired coverage files
         env:
           GITHUB_TOKEN: ${{ github.token }}
