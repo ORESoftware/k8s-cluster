@@ -1,0 +1,157 @@
+name: Repair observability DEN-371
+
+on:
+  push:
+    branches:
+      - agent/den-371-regenerate-api-docs
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-observability-den-371
+  cancel-in-progress: true
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-371-regenerate-api-docs
+      - name: Repair exporter inventory and web-home source coverage
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one occurrence, found {count}: {old}')
+              path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          config = Path('remote/argocd/observability/k8s-resource-exporter.configmap.yaml')
+          deployment = Path('remote/argocd/observability/k8s-resource-exporter.deployment.yaml')
+          checker = Path('remote/tools/check-observability-coverage.mjs')
+
+          for path in (config, deployment):
+              replace_once(
+                  path,
+                  'dd-browser-job-runner,dd-browser-test-server',
+                  'dd-browser-job-runner,dd-browser-mcp-rs,dd-browser-test-server',
+              )
+              replace_once(
+                  path,
+                  'dd-mdp-optimizer,dd-mlflow-postgresql,dd-music-rs,dd-nats,',
+                  'dd-mdp-optimizer,dd-mlflow-postgresql,dd-music-rs,dd-nats,dd-nats-bridge,',
+              )
+              replace_once(
+                  path,
+                  'dd-shared-auth-nats-bridge,dd-zed-api-server,dd-zed-web-server,',
+                  'dd-shared-auth-nats-bridge,dd-zed-api-server,zed-postgres,dd-zed-web-server,',
+              )
+
+          replace_once(
+              deployment,
+              'presence,scintilla,shared-auth,spark,threefa,vpn\n',
+              'presence,scintilla,shared-auth,spark,threefa,vpn,zed\n',
+          )
+
+          replace_once(
+              checker,
+              """const webHomeMainPath = path.join(
+            repoRoot,
+            'remote',
+            'deployments',
+            'web-home-rs',
+            'src',
+            'main.rs',
+          );
+          """,
+              """const webHomeMainPath = path.join(
+            repoRoot,
+            'remote',
+            'deployments',
+            'web-home-rs',
+            'src',
+            'main.rs',
+          );
+          const webHomeGrafanaPath = path.join(
+            repoRoot,
+            'remote',
+            'deployments',
+            'web-home-rs',
+            'src',
+            'grafana.rs',
+          );
+          """,
+          )
+          replace_once(
+              checker,
+              """const grafanaDashboards = fs.readFileSync(grafanaDashboardsPath, 'utf8');
+          const webHomeMain = fs.readFileSync(webHomeMainPath, 'utf8');
+          """,
+              """const grafanaDashboards = fs.readFileSync(grafanaDashboardsPath, 'utf8');
+          const webHomeMain = fs.readFileSync(webHomeMainPath, 'utf8');
+          const webHomeGrafana = fs.readFileSync(webHomeGrafanaPath, 'utf8');
+          const webHomeObservabilitySource = `${webHomeMain}\n${webHomeGrafana}`;
+          """,
+          )
+          replace_once(
+              checker,
+              'if (!pattern.test(webHomeMain)) {',
+              'if (!pattern.test(webHomeObservabilitySource)) {',
+          )
+          replace_once(
+              checker,
+              'failures.push(`Missing ${label} in ${path.relative(repoRoot, webHomeMainPath)}.`);',
+              'failures.push(`Missing ${label} in web-home route sources.`);',
+          )
+          PY
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - name: Install observability test dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Verify observability coverage and contracts
+        run: |
+          node remote/tools/check-observability-coverage.mjs
+          pnpm --dir remote/tests exec tsx --test general/observability-config.test.ts
+      - name: Commit observability coverage repair
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          askpass_file="$(mktemp "${RUNNER_TEMP}/github-push-askpass.XXXXXX")"
+          cleanup() { rm -f "$askpass_file"; }
+          trap cleanup EXIT
+          cat >"$askpass_file" <<'ASKPASS'
+          #!/usr/bin/env sh
+          case "${1:-}" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) printf '%s\n' "$GITHUB_TOKEN" ;;
+            *) printf '%s\n' '' ;;
+          esac
+          ASKPASS
+          chmod 700 "$askpass_file"
+          export GIT_ASKPASS="$askpass_file"
+          export GIT_TERMINAL_PROMPT=0
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- \
+            remote/argocd/observability/k8s-resource-exporter.configmap.yaml \
+            remote/argocd/observability/k8s-resource-exporter.deployment.yaml \
+            remote/tools/check-observability-coverage.mjs
+          git commit -m 'Restore complete observability workload coverage'
+          git remote set-url origin https://github.com/ORESoftware/k8s-cluster.git
+          git push origin HEAD:agent/den-371-regenerate-api-docs
