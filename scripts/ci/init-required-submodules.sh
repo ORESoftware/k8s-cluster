@@ -96,6 +96,20 @@ fi
 
 : "${K8S_SUBMODULE_TOKEN:?K8S_SUBMODULE_TOKEN is required}"
 
+# Fail closed on credentials known to have appeared in diagnostic output. Only
+# one-way fingerprints are stored here; the credential material is never logged.
+token_sha256="$(printf '%s' "$K8S_SUBMODULE_TOKEN" | sha256sum | awk '{print $1}')"
+revoked_token_sha256=(
+  fc315dce30048ea9efc260d3d76fb5939113bab4e62c449c30d573457c08f908
+)
+for revoked in "${revoked_token_sha256[@]}"; do
+  if [[ "$token_sha256" == "$revoked" ]]; then
+    echo "::error title=Rotate REMOTE_DEV_GH_PAT::The configured submodule token is revoked and must be replaced before repository access." >&2
+    exit 1
+  fi
+done
+unset token_sha256 revoked
+
 # Use a private, ephemeral askpass helper rather than embedding credentials in a
 # URL, Git config, command argument, or derived masking command. The token stays
 # in the existing secret environment variable and is returned only to Git's
