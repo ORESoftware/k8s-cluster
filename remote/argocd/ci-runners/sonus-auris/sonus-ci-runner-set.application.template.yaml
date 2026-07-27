@@ -1,0 +1,118 @@
+# INERT TEMPLATE: this file is intentionally outside remote/argocd/apps/.
+# Promotion requires replacing every REPLACE_* token, pinning the image by
+# digest, reconciling the ExternalSecret, and completing the checklist in
+# README.md. Keep the controller and runner-scale-set chart versions identical.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sonus-ci-runner-set
+  namespace: argocd
+  annotations:
+    sonus-auris.dev/promotion-state: template-only
+    sonus-auris.dev/linear-issue: DEN-381
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: ghcr.io/actions/actions-runner-controller-charts
+    chart: gha-runner-scale-set
+    # Matches the currently committed controller scaffold. Review an upgrade of
+    # controller + scale set together before activation; never drift versions.
+    targetRevision: 0.13.1
+    helm:
+      releaseName: sonus-ci
+      values: |
+        githubConfigUrl: https://github.com/sonus-auris
+        githubConfigSecret: sonus-auris-arc-github
+        runnerScaleSetName: sonus-ci
+        minRunners: 0
+        maxRunners: 2
+
+        controllerServiceAccount:
+          namespace: arc-systems
+          name: canonical-ci-gha-rs-controller
+
+        listenerTemplate:
+          spec:
+            containers:
+              - name: listener
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 128Mi
+                  limits:
+                    cpu: 500m
+                    memory: 512Mi
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: ["ALL"]
+                  runAsNonRoot: true
+                  seccompProfile:
+                    type: RuntimeDefault
+
+        template:
+          spec:
+            automountServiceAccountToken: false
+            restartPolicy: Never
+            securityContext:
+              fsGroup: 1001
+              runAsNonRoot: true
+              runAsUser: 1001
+              seccompProfile:
+                type: RuntimeDefault
+            containers:
+              - name: runner
+                # Build from remote/deployments/sonus-auris-ci-runner and
+                # replace with an immutable digest before promotion.
+                image: ghcr.io/oresoftware/sonus-auris-ci-runner@sha256:REPLACE_IMAGE_DIGEST
+                imagePullPolicy: IfNotPresent
+                command: ["/home/runner/run.sh"]
+                env:
+                  - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+                    value: "false"
+                resources:
+                  requests:
+                    cpu: "1"
+                    memory: 2Gi
+                    ephemeral-storage: 8Gi
+                  limits:
+                    cpu: "4"
+                    memory: 8Gi
+                    ephemeral-storage: 30Gi
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop: ["ALL"]
+                  readOnlyRootFilesystem: false
+                  runAsNonRoot: true
+                  runAsUser: 1001
+                  seccompProfile:
+                    type: RuntimeDefault
+                volumeMounts:
+                  - name: work
+                    mountPath: /home/runner/_work
+                  - name: tool-cache
+                    mountPath: /opt/hostedtoolcache
+                  - name: tmp
+                    mountPath: /tmp
+            volumes:
+              - name: work
+                emptyDir:
+                  sizeLimit: 20Gi
+              - name: tool-cache
+                emptyDir:
+                  sizeLimit: 10Gi
+              - name: tmp
+                emptyDir:
+                  sizeLimit: 5Gi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arc-runners
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
