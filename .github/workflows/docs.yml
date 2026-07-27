@@ -44,7 +44,19 @@ jobs:
             exit 1
           fi
       - name: Run low-risk cross-repository validation
-        run: bash scripts/validate-workspace.sh --quick
+        id: workspace_validation
+        continue-on-error: true
+        run: bash scripts/validate-workspace.sh --quick >workspace-validation.txt 2>&1
+      - name: Upload workspace validation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-validation
+          path: workspace-validation.txt
+          if-no-files-found: error
+      - name: Enforce workspace validation result
+        if: steps.workspace_validation.outcome == 'failure'
+        run: cat workspace-validation.txt && exit 1
       - name: Enforce encryption architecture
         run: |
           grep -Fiq 'cryptographically random account master key' README.md
