@@ -47,8 +47,8 @@ config = replaceExactlyOnce(
 let deployment = fs.readFileSync(files.deployment, 'utf8');
 deployment = replaceExactlyOnce(
   deployment,
-  'value: ai-ml,airbyte,anon-proxy,athleto,big-data,canonical-cloud,daedalus,default,fiducia,headlamp,kafka,messaging,observability,presence,scintilla,shared-auth,spark,threefa,vpn',
-  'value: ai-ml,airbyte,anon-proxy,athleto,big-data,canonical-cloud,daedalus,default,fiducia,headlamp,kafka,messaging,observability,presence,scintilla,shared-auth,spark,threefa,vpn,zed',
+  'value: ai-ml,airbyte,anon-proxy,athleto,big-data,canonical-cloud,daedalus,default,fiducia,headlamp,kafka,messaging,observability,presence,scintilla,shared-auth,spark,threefa,vpn\n',
+  'value: ai-ml,airbyte,anon-proxy,athleto,big-data,canonical-cloud,daedalus,default,fiducia,headlamp,kafka,messaging,observability,presence,scintilla,shared-auth,spark,threefa,vpn,zed\n',
   'deployment WATCH_NAMESPACES Zed',
 );
 deployment = replaceExactlyOnce(
@@ -86,7 +86,7 @@ checker = replaceExactlyOnce(
 checker = replaceExactlyOnce(
   checker,
   `  if (!pattern.test(webHomeMain)) {\n    failures.push(\`Missing ${'${label}'} in ${'${path.relative(repoRoot, webHomeMainPath)}'}.\`);\n  }`,
-  `  if (!pattern.test(webHomeRoutingSources)) {\n    failures.push(\n      \`Missing ${'${label}'} in web-home routing sources (${ '${path.relative(repoRoot, webHomeMainPath)}' }, ${ '${path.relative(repoRoot, webHomeGrafanaPath)}' }).\`,\n    );\n  }`,
+  `  if (!pattern.test(webHomeRoutingSources)) {\n    failures.push(\n      \`Missing ${'${label}'} in web-home routing sources (${'${path.relative(repoRoot, webHomeMainPath)}'}, ${'${path.relative(repoRoot, webHomeGrafanaPath)}'}).\`,\n    );\n  }`,
   'checker web-home route and target scan',
 );
 
