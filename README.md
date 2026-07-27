@@ -34,6 +34,17 @@ Clipboard content is encrypted on a trusted device before cloud or peer synchron
 
 The canonical wire and security invariants live in `cliptown-interfaces`. Material security changes must update that repository before dependent implementations.
 
+## Reproducible development
+
+The first shared local toolchain contract is in [`mise.toml`](mise.toml), with the compatibility and platform matrix documented in [`docs/toolchain.md`](docs/toolchain.md).
+
+```sh
+bash scripts/bootstrap.sh
+bash scripts/validate-workspace.sh
+```
+
+These commands initialize reviewed submodules and run non-production validation without requesting signing identities, production secrets, cloud credentials, or cluster access.
+
 ## Development workflow
 
 1. Cut feature branches from `main` in the standalone repository.
