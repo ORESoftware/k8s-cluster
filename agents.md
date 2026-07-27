@@ -17,7 +17,10 @@ Resolve `$PWD`, walk upward through every parent directory to the filesystem roo
 
 ## Synchronize with the remote
 
-Before editing, inspect `git status`, the current branch, configured remotes, and the default branch. Run `git fetch --all --prune` and create the feature branch from the latest remote default branch, not a stale local copy. Fetch again before pushing and incorporate upstream changes according to repository policy. Never discard remote commits, force-push, rewrite shared history, bypass review, or bypass required CI.
+Before editing, inspect `git status`, the current branch, configured remotes, and the default branch. Run `git fetch --all --prune` and create the feature branch from the latest remote default branch, not a stale local copy. Fetch again before pushing and incorporate upstream changes according to repository policy.
+
+- avoid git rebase in favor of git merge.
+- Never discard remote commits, force-push, rewrite shared history, bypass review, or bypass required CI.
 
 ## Resolve Git conflicts semantically
 
