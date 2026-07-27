@@ -6,62 +6,19 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Apply compiler-guided Expo fix
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("src/providers/expo.rs")
-          text = path.read_text()
-          old = ".and_then(first_request_error)"
-          new = ".and_then(|errors| first_request_error(Some(errors)))"
-          if old in text:
-              text = text.replace(old, new, 1)
-          elif new not in text:
-              raise SystemExit("Expo request-error adapter anchor not found")
-          path.write_text(text)
-          PY
-          cargo fmt
-      - name: Commit compiler-guided Expo fix
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        run: |
-          if [ -z "$(git status --porcelain -- src/providers/expo.rs)" ]; then
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/providers/expo.rs
-          git commit -m "DEN-327 fix Expo request-error classification"
-          git push origin "HEAD:${{ github.head_ref }}"
       - run: cargo fmt --check
-      - name: Run Clippy and preserve Expo diagnostics
-        run: |
-          set +e
-          cargo clippy --locked --all-targets --all-features -- -D warnings > expo-clippy.log 2>&1
-          status=$?
-          echo "$status" > expo-clippy.exit
-          exit 0
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: expo-clippy-diagnostics
-          path: expo-clippy.log
-          if-no-files-found: error
-      - name: Enforce Clippy result
-        run: exit "$(cat expo-clippy.exit)"
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-features
 
   container:
