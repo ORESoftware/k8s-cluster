@@ -34,6 +34,8 @@ run_stage() {
       ;;
     check)
       cargo check --locked --all-targets --all-features
+      ;;
+    clippy)
       cargo clippy --locked --all-targets --all-features -- -D warnings
       ;;
     test)
@@ -51,15 +53,15 @@ run_stage() {
 
 case "${1:-all}" in
   all)
-    for stage in preflight fmt check test audit; do
+    for stage in preflight fmt check clippy test audit; do
       run_stage "$stage"
     done
     ;;
-  preflight | fmt | check | test | audit)
+  preflight | fmt | check | clippy | test | audit)
     run_stage "$1"
     ;;
   *)
-    printf 'usage: %s [all|preflight|fmt|check|test|audit]\n' "$0" >&2
+    printf 'usage: %s [all|preflight|fmt|check|clippy|test|audit]\n' "$0" >&2
     exit 64
     ;;
 esac
