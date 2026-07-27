@@ -29,37 +29,70 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Require private-submodule credential
+      - name: Checkout superproject
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Validate pinned console gitlink
+        run: |
+          set -euo pipefail
+          entry="$(git ls-tree HEAD -- apps/sonus-auris-web-desktop.dart)"
+          mode="$(awk '{print $1}' <<<"$entry")"
+          type="$(awk '{print $2}' <<<"$entry")"
+          object="$(awk '{print $3}' <<<"$entry")"
+          [[ "$mode" == 160000 && "$type" == commit && "$object" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "::error::invalid console gitlink: $entry"
+            exit 1
+          }
+          echo "apps/sonus-auris-web-desktop.dart -> $object"
+
+      - name: Detect private console credential
+        id: private_console
         env:
           SUBMODULE_TOKEN: ${{ secrets.SONUS_SUBMODULE_TOKEN }}
         run: |
-          if [[ -z "$SUBMODULE_TOKEN" ]]; then
-            echo "::error::Add SONUS_SUBMODULE_TOKEN with read-only Contents access to the private console repo."
-            exit 1
+          if [[ -n "$SUBMODULE_TOKEN" ]]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo "::warning::SONUS_SUBMODULE_TOKEN is not configured; private console build and browser smokes are skipped after gitlink validation."
+            {
+              echo '### Private console build skipped'
+              echo
+              echo 'Configure `SONUS_SUBMODULE_TOKEN` with read-only Contents access to `sonus-auris/sonus-auris-web-desktop.dart`. Prefer a short-lived GitHub App token.'
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - uses: actions/checkout@v7
+      - name: Checkout with private-submodule credential
+        if: steps.private_console.outputs.available == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           token: ${{ secrets.SONUS_SUBMODULE_TOKEN }}
+          persist-credentials: false
 
       - name: Initialize the pinned console only
+        if: steps.private_console.outputs.available == 'true'
         run: >-
           git -c 'url.https://github.com/.insteadOf=git@github.com:'
           submodule update --init --depth 1 apps/sonus-auris-web-desktop.dart
 
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+      - if: steps.private_console.outputs.available == 'true'
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           channel: stable
           flutter-version: 3.44.2
           cache: true
 
-      - uses: actions/setup-node@v7
+      - if: steps.private_console.outputs.available == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/sonus-auris-web-desktop.dart/e2e/package-lock.json
 
       - name: Analyze, test, and build the pinned console
+        if: steps.private_console.outputs.available == 'true'
         working-directory: apps/sonus-auris-web-desktop.dart
         run: |
           flutter pub get
@@ -68,14 +101,15 @@ jobs:
           flutter build web --release
 
       - name: Run pinned Puppeteer and Playwright smokes
+        if: steps.private_console.outputs.available == 'true'
         working-directory: apps/sonus-auris-web-desktop.dart/e2e
         run: |
           npm ci
           npx playwright install --with-deps chromium
           npm test
 
-      - uses: actions/upload-artifact@v7
-        if: always()
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: ${{ always() && steps.private_console.outputs.available == 'true' }}
         with:
           name: pinned-console-browser-evidence
           path: apps/sonus-auris-web-desktop.dart/e2e/artifacts/*.png
