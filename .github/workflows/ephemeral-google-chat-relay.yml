@@ -49,7 +49,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Wait for encrypted relay payload
-        id: payload
         shell: bash
         run: |
           set -euo pipefail
@@ -164,14 +163,13 @@ jobs:
           done
 
           if [ -n "$first_time" ]; then
-            python - "$EXPECTED_START" "$first_time" <<'PY'
-          import datetime as dt
-          import sys
-          expected = dt.datetime.fromisoformat(sys.argv[1].replace('Z', '+00:00'))
-          observed = dt.datetime.fromisoformat(sys.argv[2].replace('Z', '+00:00'))
+            python -c '
+          import datetime as dt, sys
+          expected = dt.datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00"))
+          observed = dt.datetime.fromisoformat(sys.argv[2].replace("Z", "+00:00"))
           if observed < expected:
-              raise SystemExit(f'first message {observed.isoformat()} predates boundary {expected.isoformat()}')
-          PY
+              raise SystemExit(f"first message {observed.isoformat()} predates boundary {expected.isoformat()}")
+          ' "$EXPECTED_START" "$first_time"
           fi
 
           jq -n \
