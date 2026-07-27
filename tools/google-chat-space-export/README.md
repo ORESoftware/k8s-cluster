@@ -12,7 +12,7 @@ The bridge does not scrape Google Chat. It runs as the deploying Google user and
 ## Security
 
 - Fixed space and fixed earliest timestamp; callers cannot widen either boundary.
-- Only read-only Chat scopes plus Apps Script's send-mail scope are requested.
+- Only read-only Chat scopes plus Apps Script's send-mail and trigger-management scopes are requested.
 - A high-entropy bridge token gates every sensitive HTTP action.
 - Only the token's SHA-256 hash is stored in Script Properties.
 - POST is preferred. GET query tokens can appear in URL logs, so rotate the token after an import.
@@ -33,6 +33,36 @@ The bridge does not scrape Google Chat. It runs as the deploying Google user and
    - execute as: **Me**
    - access: **Anyone**
 9. Keep the `/exec` deployment URL and bridge token private.
+
+## Automatic clasp synchronization
+
+The workflow [`.github/workflows/google-chat-apps-script-sync.yml`](../../.github/workflows/google-chat-apps-script-sync.yml) makes GitHub `main` the source of truth.
+
+On changes under this directory, it:
+
+1. validates the Apps Script manifest, JavaScript syntax, and fixed safety boundaries;
+2. authenticates clasp without printing credentials;
+3. pushes `App.gs`, `EmailExport.gs`, and `appsscript.json` with `clasp push --force`;
+4. creates an immutable Apps Script version;
+5. redeploys the existing deployment ID;
+6. verifies the public `/exec?action=health` response.
+
+Configure the GitHub environment **`google-chat-apps-script`** with these secrets:
+
+- `CLASPRC_JSON`: complete contents of `~/.clasprc.json` produced by `clasp login` for the Google account that owns the Apps Script project.
+- `CLASP_JSON`: complete contents of `.clasp.json` for this project, including its **Script ID**. The Script ID is available in Apps Script under **Project Settings → IDs**.
+
+Before generating `CLASPRC_JSON`, enable the Apps Script API at <https://script.google.com/home/usersettings>. Treat the refresh token inside `CLASPRC_JSON` as a high-value credential and rotate it if exposed.
+
+The web-app deployment ID is intentionally pinned in the workflow:
+
+```text
+AKfycbzIMOO0eQ12WjgRvLmYAdn3zryB57Ush6uWfQWc-iHNvVu6X0ULbPfPv7WMaYdMp2Tq
+```
+
+A manual workflow run with operation `pull-artifact` executes `clasp pull` into an isolated directory and uploads the remote project snapshot as a seven-day GitHub Actions artifact. It never commits pulled code automatically and strips `.clasp.json` before upload.
+
+After the secrets are configured, avoid editing source directly in the Apps Script editor. Repository changes should flow through pull requests and `main`; manual remote edits can be inspected through `pull-artifact`.
 
 ## Preferred connected-Gmail export
 
@@ -59,7 +89,7 @@ Useful editor functions:
 
 A rare crash after sending but before state persistence can resend a part. Consumers must deduplicate by `runId`, `partNumber`, filename, and the attachment's `dedupeKey`; resending is safer than silently skipping messages.
 
-Adding the `script.send_mail` scope can cause Google to request one additional authorization approval. Updating editor functions does not require redeploying the web app unless the HTTP behavior changes.
+Adding scopes can cause Google to request additional authorization approval. A clasp redeployment updates the existing web-app deployment automatically.
 
 ## HTTP API
 
