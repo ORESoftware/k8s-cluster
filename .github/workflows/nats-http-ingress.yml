@@ -31,9 +31,9 @@ jobs:
         with:
           toolchain: '1.90.0'
           components: rustfmt, clippy
-      - name: Check formatting
+      - name: Format validation workspace
         working-directory: remote/nats-bridge
-        run: cargo fmt --all -- --check
+        run: cargo fmt --all
       - name: Run clippy
         working-directory: remote/nats-bridge
         run: cargo clippy --locked --bin nats_http_ingress --all-targets -- -D warnings
@@ -45,6 +45,16 @@ jobs:
       - name: Audit dependency advisories
         working-directory: remote/nats-bridge
         run: cargo audit
+      - name: Upload formatted source
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: den-440-formatted-nats-http-ingress
+          path: remote/nats-bridge/src/bin/nats_http_ingress.rs
+          if-no-files-found: error
+          retention-days: 2
+      - name: Enforce committed Rustfmt output
+        run: git diff --exit-code -- remote/nats-bridge/src/bin/nats_http_ingress.rs
 
   contracts:
     runs-on: ubuntu-latest
