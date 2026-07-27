@@ -81,19 +81,6 @@
       ]
     },
     {
-      "service": "billing-server-rs",
-      "language": "rust",
-      "routeCount": 49,
-      "routeTypeCounts": {
-        "service": 6,
-        "user-generated": 43
-      },
-      "generated": [
-        "remote/deployments/billing-server-rs/generated/api-docs.json",
-        "remote/deployments/billing-server-rs/generated/api-docs.html"
-      ]
-    },
-    {
       "service": "browser-test-server",
       "language": "node",
       "routeCount": 14,
@@ -104,20 +91,6 @@
       "generated": [
         "remote/deployments/browser-test-server/generated/api-docs.json",
         "remote/deployments/browser-test-server/generated/api-docs.html"
-      ]
-    },
-    {
-      "service": "build-server-rs",
-      "language": "rust",
-      "routeCount": 18,
-      "routeTypeCounts": {
-        "service": 7,
-        "user-generated": 8,
-        "runtime-config": 3
-      },
-      "generated": [
-        "remote/deployments/build-server-rs/generated/api-docs.json",
-        "remote/deployments/build-server-rs/generated/api-docs.html"
       ]
     },
     {
@@ -160,19 +133,6 @@
       "generated": [
         "remote/deployments/contract-service-rs/generated/api-docs.json",
         "remote/deployments/contract-service-rs/generated/api-docs.html"
-      ]
-    },
-    {
-      "service": "dart-server",
-      "language": "dart",
-      "routeCount": 21,
-      "routeTypeCounts": {
-        "service": 7,
-        "user-generated": 14
-      },
-      "generated": [
-        "remote/deployments/dart-server/generated/api-docs.json",
-        "remote/deployments/dart-server/generated/api-docs.html"
       ]
     },
     {
@@ -326,19 +286,6 @@
       ]
     },
     {
-      "service": "fiducia-customer.rs",
-      "language": "rust",
-      "routeCount": 59,
-      "routeTypeCounts": {
-        "service": 5,
-        "user-generated": 54
-      },
-      "generated": [
-        "remote/deployments/fiducia-customer.rs/generated/api-docs.json",
-        "remote/deployments/fiducia-customer.rs/generated/api-docs.html"
-      ]
-    },
-    {
       "service": "formal-methods-server-rs",
       "language": "rust",
       "routeCount": 15,
@@ -377,20 +324,6 @@
       "generated": [
         "remote/deployments/fsharp-ws-server/generated/api-docs.json",
         "remote/deployments/fsharp-ws-server/generated/api-docs.html"
-      ]
-    },
-    {
-      "service": "gleam-lambda-runner",
-      "language": "gleam",
-      "routeCount": 18,
-      "routeTypeCounts": {
-        "service": 6,
-        "user-generated": 9,
-        "runtime-config": 3
-      },
-      "generated": [
-        "remote/deployments/gleam-lambda-runner/generated/api-docs.json",
-        "remote/deployments/gleam-lambda-runner/generated/api-docs.html"
       ]
     },
     {
@@ -583,19 +516,6 @@
       "generated": [
         "remote/deployments/trading-server-rs/generated/api-docs.json",
         "remote/deployments/trading-server-rs/generated/api-docs.html"
-      ]
-    },
-    {
-      "service": "usacc-rest-api-backend-rs",
-      "language": "rust",
-      "routeCount": 21,
-      "routeTypeCounts": {
-        "service": 6,
-        "user-generated": 15
-      },
-      "generated": [
-        "remote/deployments/usacc-rest-api-backend-rs/generated/api-docs.json",
-        "remote/deployments/usacc-rest-api-backend-rs/generated/api-docs.html"
       ]
     },
     {
