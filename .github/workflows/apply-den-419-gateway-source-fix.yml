@@ -67,18 +67,26 @@ jobs:
             return [main, ...moduleSources].join('\n');
           }
           """
+          old = "await readRepoFile('remote/deployments/web-home-rs/src/main.rs')"
+          replacement = 'await readWebHomeSource()'
+
           if 'async function readWebHomeSource()' not in text:
+              count = text.count(old)
+              if count == 0:
+                  raise SystemExit('no direct web-home main.rs reads found')
+              # Rewrite the existing test call sites before inserting the helper,
+              # so its authoritative direct main.rs read cannot become recursive.
+              text = text.replace(old, replacement)
               if text.count(anchor) != 1:
                   raise SystemExit(f'expected one readRepoFile anchor, found {text.count(anchor)}')
               text = text.replace(anchor, anchor + helper, 1)
+          else:
+              count = 0
+              if text.count(old) != 1:
+                  raise SystemExit('source bundle must retain exactly one authoritative main.rs read')
 
-          old = "await readRepoFile('remote/deployments/web-home-rs/src/main.rs')"
-          count = text.count(old)
-          if count == 0 and 'await readWebHomeSource()' not in text:
-              raise SystemExit('no web-home source reads found')
-          text = text.replace(old, 'await readWebHomeSource()')
           path.write_text(text, encoding='utf-8')
-          print(f'aligned {count} direct main.rs read(s) with the registered module bundle')
+          print(f'aligned {count} direct main.rs test read(s) with the registered module bundle')
           PY
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
