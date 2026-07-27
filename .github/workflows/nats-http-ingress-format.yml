@@ -2,6 +2,10 @@ name: DEN-440 format NATS ingress
 
 # One-use feature-branch formatter; delete after the source commit lands.
 on:
+  pull_request:
+    paths:
+      - '.github/workflows/nats-http-ingress-format.yml'
+      - 'remote/nats-bridge/src/bin/nats_http_ingress.rs'
   push:
     branches:
       - agent/den-440-nats-http-ingress
@@ -11,11 +15,12 @@ permissions:
   contents: write
 
 concurrency:
-  group: den-440-format
+  group: den-440-format-${{ github.event_name }}
   cancel-in-progress: false
 
 jobs:
   format:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -43,6 +48,11 @@ jobs:
                   'tracing formatter feature',
               ),
               (
+                  '    path::PathBuf,',
+                  '    path::{Path as FsPath, PathBuf},',
+                  'filesystem Path import',
+              ),
+              (
                   '    publish_timeout: Duration,\n    counters: Counters,',
                   '    publish_timeout: Duration,\n    max_in_flight: usize,\n    counters: Counters,',
                   'max-in-flight state',
@@ -56,6 +66,36 @@ jobs:
                   'state.in_flight.available_permits().saturating_sub(state.in_flight.available_permits())',
                   'state\n            .max_in_flight\n            .saturating_sub(state.in_flight.available_permits())',
                   'in-flight metric',
+              ),
+              (
+                  'let token_len = client.token.as_bytes().len();',
+                  'let token_len = client.token.len();',
+                  'client-token length',
+              ),
+              (
+                  'let length = key.as_bytes().len();',
+                  'let length = key.len();',
+                  'idempotency-key length',
+              ),
+              (
+                  'constant_time_eq(token, &client.token)',
+                  'constant_time_eq(token, client.token.as_str())',
+                  'client-token borrow',
+              ),
+              (
+                  "fn load_json_file<T: for<'de> Deserialize<'de>>(path: &PathBuf, label: &str) -> T {",
+                  "fn load_json_file<T: for<'de> Deserialize<'de>>(path: &FsPath, label: &str) -> T {",
+                  'filesystem Path parameter',
+              ),
+              (
+                  '''    let nats = options.connect(&nats_url).await.unwrap_or_else(|error| {
+        fatal_value(&format!("could not connect to internal NATS: {error}"))
+    });''',
+                  '''    let nats = options
+        .connect(&nats_url)
+        .await
+        .unwrap_or_else(|_| fatal_value("could not connect to internal NATS"));''',
+                  'redacted NATS connection error',
               ),
           ]
           for old, new, label in replacements:
