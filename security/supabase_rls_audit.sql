@@ -6,6 +6,7 @@
 with expected_tables(table_schema, table_name) as (
     values
         ('public'::name, 'acoustic_events'::name),
+        ('public'::name, 'client_telemetry'::name),
         ('public'::name, 'user_consents'::name),
         ('public'::name, 'user_settings'::name)
 ),
@@ -15,6 +16,8 @@ expected_commands(table_schema, table_name, command) as (
         ('public'::name, 'acoustic_events'::name, 'INSERT'::text),
         ('public'::name, 'acoustic_events'::name, 'UPDATE'::text),
         ('public'::name, 'acoustic_events'::name, 'DELETE'::text),
+        ('public'::name, 'client_telemetry'::name, 'SELECT'::text),
+        ('public'::name, 'client_telemetry'::name, 'INSERT'::text),
         ('public'::name, 'user_consents'::name, 'SELECT'::text),
         ('public'::name, 'user_consents'::name, 'INSERT'::text),
         ('public'::name, 'user_settings'::name, 'SELECT'::text),
