@@ -1,0 +1,185 @@
+name: Repair API index DEN-371
+
+on:
+  push:
+    branches:
+      - agent/den-371-regenerate-api-docs
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-api-index-den-371
+  cancel-in-progress: true
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out generation branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-371-regenerate-api-docs
+      - name: Resolve pinned shared-library source
+        id: libs-pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin="$(git ls-files --stage -- remote/libs | awk '$1 == 160000 { print $2; exit }')"
+          test "${#pin}" = 40
+          echo "sha=$pin" >>"$GITHUB_OUTPUT"
+      - name: Check out shared-library source at exact gitlink
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/k8s-libs-and-shared-defs
+          ref: ${{ steps.libs-pin.outputs.sha }}
+          path: remote/libs
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Repair generator semantics and restore protected central indexes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/tools/generate-api-docs.mjs')
+          text = path.read_text(encoding='utf-8')
+
+          old_import = "import { existsSync } from 'node:fs';\n"
+          new_import = "import { execFileSync } from 'node:child_process';\nimport { existsSync } from 'node:fs';\n"
+          if text.count(old_import) != 1:
+              raise SystemExit('expected one node:fs import insertion point')
+          text = text.replace(old_import, new_import, 1)
+
+          old_helpers = """async function readUtf8(path) {
+            return readFile(path, 'utf8');
+          }
+
+          function sortMethods(methods) {
+          """
+          new_helpers = """async function readUtf8(path) {
+            return readFile(path, 'utf8');
+          }
+
+          function deploymentGitlinks() {
+            const output = execFileSync(
+              'git',
+              ['ls-files', '--stage', '--', 'remote/deployments'],
+              { cwd: repoRoot, encoding: 'utf8' },
+            );
+            return new Set(
+              output
+                .split(/\\r?\\n/)
+                .map((line) => line.match(/^160000 [0-9a-f]{40} \\d+\\t(.+)$/)?.[1])
+                .filter(Boolean),
+            );
+          }
+
+          async function unavailableIndexedGitlinkServices(indexPath) {
+            if (!existsSync(indexPath)) return [];
+            const gitlinks = deploymentGitlinks();
+            const current = JSON.parse(await readUtf8(indexPath));
+            return (current.services ?? [])
+              .filter((service) => {
+                const generatedPath = service.generated?.[0];
+                if (typeof generatedPath !== 'string') return false;
+                const deploymentPath = generatedPath.split('/generated/', 1)[0];
+                return (
+                  gitlinks.has(deploymentPath) &&
+                  !existsSync(resolve(repoRoot, deploymentPath, '.git'))
+                );
+              })
+              .map((service) => service.service)
+              .sort();
+          }
+
+          function sortMethods(methods) {
+          """
+          if text.count(old_helpers) != 1:
+              raise SystemExit('expected one helper insertion point')
+          text = text.replace(old_helpers, new_helpers, 1)
+
+          old_index_block = """  if (!serviceFilter) {
+            await writeOrCheck(
+              resolve(repoRoot, 'remote/deployments/generated-api-docs-index.json'),
+              `${JSON.stringify(indexPayload, null, 2)}\\n`,
+            );
+            await writeOrCheck(
+              resolve(repoRoot, 'remote/deployments/generated-api-docs-index.html'),
+              renderDocsIndexHtml(indexItems),
+            );
+          }
+          """
+          new_index_block = """  if (!serviceFilter) {
+            const centralIndexJson = resolve(
+              repoRoot,
+              'remote/deployments/generated-api-docs-index.json',
+            );
+            const centralIndexHtml = resolve(
+              repoRoot,
+              'remote/deployments/generated-api-docs-index.html',
+            );
+            const unavailableServices = await unavailableIndexedGitlinkServices(centralIndexJson);
+            if (unavailableServices.length > 0) {
+              console.log(
+                `preserved central API docs index because ${unavailableServices.length} indexed gitlink service(s) are not initialized: ${unavailableServices.join(', ')}`,
+              );
+            } else {
+              await writeOrCheck(
+                centralIndexJson,
+                `${JSON.stringify(indexPayload, null, 2)}\\n`,
+              );
+              await writeOrCheck(centralIndexHtml, renderDocsIndexHtml(indexItems));
+            }
+          }
+          """
+          if text.count(old_index_block) != 1:
+              raise SystemExit('expected one central-index write block')
+          text = text.replace(old_index_block, new_index_block, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          git fetch --no-tags --depth=1 origin main
+          git checkout origin/main -- \
+            remote/deployments/generated-api-docs-index.json \
+            remote/deployments/generated-api-docs-index.html
+
+          node remote/tools/generate-api-docs.mjs | tee "${RUNNER_TEMP}/generator-output.log"
+          grep -q 'preserved central API docs index because' "${RUNNER_TEMP}/generator-output.log"
+          git diff --exit-code -- \
+            remote/deployments/generated-api-docs-index.json \
+            remote/deployments/generated-api-docs-index.html
+          node remote/tools/generate-api-docs.mjs --check
+      - name: Commit reviewed generator behavior
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          askpass_file="$(mktemp "${RUNNER_TEMP}/github-push-askpass.XXXXXX")"
+          cleanup() { rm -f "$askpass_file"; }
+          trap cleanup EXIT
+          cat >"$askpass_file" <<'ASKPASS'
+          #!/usr/bin/env sh
+          case "${1:-}" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) printf '%s\n' "$GITHUB_TOKEN" ;;
+            *) printf '%s\n' '' ;;
+          esac
+          ASKPASS
+          chmod 700 "$askpass_file"
+          export GIT_ASKPASS="$askpass_file"
+          export GIT_TERMINAL_PROMPT=0
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- \
+            remote/tools/generate-api-docs.mjs \
+            remote/deployments/generated-api-docs-index.json \
+            remote/deployments/generated-api-docs-index.html
+          git commit -m 'Preserve API indexes for uninitialized deployment gitlinks'
+          git remote set-url origin https://github.com/ORESoftware/k8s-cluster.git
+          git push origin HEAD:agent/den-371-regenerate-api-docs
