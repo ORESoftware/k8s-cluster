@@ -35,6 +35,7 @@ mod protocol;
 mod server;
 mod shared_auth;
 mod signal_api;
+mod signal_bundle_store;
 #[expect(
     dead_code,
     reason = "terminal Signal revocation is transactionally implemented and tested but the live device endpoint still uses the legacy revocation path"
