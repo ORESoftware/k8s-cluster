@@ -19,7 +19,7 @@
 'use strict';
 
 const CHAT_BRIDGE = Object.freeze({
-  version: '1.0.0',
+  version: '1.0.1',
   spaceName: 'spaces/AAQAoHKdzvI',
   spaceId: 'AAQAoHKdzvI',
   expectedDisplayName: 'alex-alex-me',
@@ -225,7 +225,6 @@ function probeChatAccess_() {
   const page = Chat.Spaces.Messages.list(CHAT_BRIDGE.spaceName, {
     pageSize: 1,
     filter: CHAT_BRIDGE.baseFilter,
-    orderBy: 'ASC',
     showDeleted: true,
   });
 
@@ -258,7 +257,6 @@ function listMessagePage_(request) {
   const options = {
     pageSize,
     filter,
-    orderBy: 'ASC',
     showDeleted,
   };
   if (pageToken) options.pageToken = pageToken;
