@@ -18,12 +18,7 @@ const PUBLIC_OPENAPI_JSON: &str = include_str!("../generated/api-docs.json");
 const HTTP_METHODS: &[&str] = &[
     "get", "post", "put", "patch", "delete", "head", "options", "trace",
 ];
-const PUBLIC_PATHS: &[&str] = &[
-    "/openapi.json",
-    "/api/docs.json",
-    "/api/docs",
-    "/docs/api",
-];
+const PUBLIC_PATHS: &[&str] = &["/openapi.json", "/api/docs.json", "/api/docs", "/docs/api"];
 
 #[derive(Clone)]
 pub struct ApiDocs {
@@ -324,12 +319,7 @@ mod tests {
     fn public_paths_are_fail_closed() {
         assert_eq!(
             PUBLIC_PATHS,
-            [
-                "/openapi.json",
-                "/api/docs.json",
-                "/api/docs",
-                "/docs/api"
-            ]
+            ["/openapi.json", "/api/docs.json", "/api/docs", "/docs/api"]
         );
     }
 }

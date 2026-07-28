@@ -46,9 +46,7 @@ pub fn openapi_document() -> OpenApi {
 
 /// Construct the production router and compose the shared runtime-config
 /// router/contract pair without copying shared paths or schemas.
-pub fn app_router(
-    state: AppState,
-) -> Result<Router, Box<dyn std::error::Error + Send + Sync>> {
+pub fn app_router(state: AppState) -> Result<Router, Box<dyn std::error::Error + Send + Sync>> {
     let (shared_router, shared_openapi) = dd_runtime_config_client::router_and_openapi();
     let (local_router, local_openapi) = local_router().split_for_parts();
     let openapi = docs::compose(local_openapi, shared_openapi);

@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 pub const SDK_SCOPE: &str = "public";
-pub const CATALOG_SHA256: &str = "23a49b456e478b3498a905f8ee905adcc639ba25d867705ed69fee205d3c55c3";
+pub const CATALOG_SHA256: &str = "8606866ed2947b927ad029b6209a16b2e6327f54bba830abe7d9cf33dea015ec";
 pub const OPERATION_COUNT: usize = 279;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1645,7 +1645,7 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "68bb8cc8bb5a03232f92bd96d745562f87a449d25cf77483e52908449fa24fb8",
+        contract_sha256: "9f11ba6b9791d59a81701f0e54724aba75a25f94bbb667d6c1ed8b9692111419",
     },
     ApiOperation {
         service: "formal-methods-service-rs",
@@ -1656,7 +1656,7 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "c7766c32f1ef1e4406894574aa907763219c85387863e90345fb88bcce5c03d5",
+        contract_sha256: "ef44b1f7c798c0dda9f5ce197bba0057a1c900e897bdc6d274410150cbb40378",
     },
     ApiOperation {
         service: "formal-methods-service-rs",
@@ -1667,18 +1667,18 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "708edfb3a82ba42a1fb5f084c82bbfcff3327f5214f495eae5f6ae7da65c193d",
+        contract_sha256: "aab25c846450dba29d94663065a575de51b339c3b659385fa8731afc358cc45c",
     },
     ApiOperation {
         service: "formal-methods-service-rs",
-        operation_id: "formal_methods_service_rs_get_metrics_91fecfa1e3e9",
+        operation_id: "formal_methods_service_rs_get_openapi_json_c11fbd46dde8",
         method: "GET",
-        path: "/metrics",
+        path: "/openapi.json",
         path_parameters: &[],
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "a769ee84f88040ad7abe6ee52cf38db017e12d6d910f66bdb811f811f2121d56",
+        contract_sha256: "a03ee7e47e3ba38f3a0c2ae6b302c9a69dcb1f9ed3db4879276563e39421a1fc",
     },
     ApiOperation {
         service: "fsharp-ws-server",
@@ -3225,7 +3225,7 @@ mod tests {
     #[test]
     fn builds_canonical_docs_request() {
         assert_eq!(SDK_SCOPE, "public");
-        assert_eq!(CATALOG_SHA256, "23a49b456e478b3498a905f8ee905adcc639ba25d867705ed69fee205d3c55c3");
+        assert_eq!(CATALOG_SHA256, "8606866ed2947b927ad029b6209a16b2e6327f54bba830abe7d9cf33dea015ec");
         assert_eq!(OPERATIONS.len(), 279);
         let request = build_request(
             "https://example.test/",

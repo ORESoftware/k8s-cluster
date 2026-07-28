@@ -1,6 +1,6 @@
 const String sdkScope = "internal";
-const String catalogSha256 = "331bacb861a9309b41c9d5f6dc6f8bfa58b745c91bf44fdd49ba4ebc5822063a";
-const int operationCount = 941;
+const String catalogSha256 = "8bd3ddbda3bbf663edfd3bf887213540cfff2e7b5ae13692663a390cbf59c4b4";
+const int operationCount = 942;
 
 class ApiOperation {
   const ApiOperation({
@@ -5903,7 +5903,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "14f22d2bc88beb0f62cfc17c217bac6c7710f1c5dc5be60c4c3bbaf51ded4b1a",
+    contractSha256: "b82830e65301a15e3e4ab97ac405950b6d5b92c8b5c1e66f881d7d31b9be5783",
   ),
   ApiOperation(
     service: "formal-methods-service-rs",
@@ -5914,7 +5914,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "e6312608f561ed74c2288d5be2cd9df984e57ce4c9f024499c07505c29a96b3a",
+    contractSha256: "9b0aa9d0fe3cd1ba92794027271379bdb6bc51419ff1f4ca8032b3e325b89f4d",
   ),
   ApiOperation(
     service: "formal-methods-service-rs",
@@ -5925,7 +5925,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "066a5c966fe90b7f68e587f4289a44386cc3bfbfe52b3264444a9cc6f1fb4732",
+    contractSha256: "dc6c33aad030bea92ceec1308c88210b5e54c24d2bc9173354d1583edec757b9",
   ),
   ApiOperation(
     service: "formal-methods-service-rs",
@@ -5936,7 +5936,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "8eb397c155656f38a7435ea11d40d3ab59f3f15ea8b4b661f0a3899a147f17bb",
+    contractSha256: "469fe5fb585442bc75c97fb37dd70d09add4818b42ea7088b94d78d8ff359c60",
   ),
   ApiOperation(
     service: "formal-methods-service-rs",
@@ -5958,7 +5958,18 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "bc606b1e1575ec89cdf86739eda1a50b7171350f52a581420ca0775a60f67249",
+    contractSha256: "49389ef3b539a083aaf1d4350fe5a0ea8f97e3b9b5d5bbe428228019fb8dd78f",
+  ),
+  ApiOperation(
+    service: "formal-methods-service-rs",
+    operationId: "formal_methods_service_rs_get_openapi_json_c11fbd46dde8",
+    method: "GET",
+    path: "/openapi.json",
+    pathParameters: [],
+    requiredQueryParameters: [],
+    optionalQueryParameters: [],
+    requestBodyRequired: false,
+    contractSha256: "b4692b67d3344936055281ab030088acf273c731881776030fa019c02541a779",
   ),
   ApiOperation(
     service: "formal-methods-service-rs",
@@ -5969,7 +5980,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "ff7458daa377a9d0ec4dd34bc56479e2e95fb5b1d254791421247bb17a583a76",
+    contractSha256: "056ddb84bb240b0bc3f23101679a6233774fdfc5e36a5e85c1374e2e59219ce7",
   ),
   ApiOperation(
     service: "formal-methods-service-rs",
@@ -6002,7 +6013,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "d26170d9e2adc6f21b4068b6bc221efdbbb44cf9ca427444339263627e6abc36",
+    contractSha256: "1d788b0142619377ecd6b5476082120b83e4dff5a6eb9393b757368e1271cfa8",
   ),
   ApiOperation(
     service: "fsharp-ws-server",

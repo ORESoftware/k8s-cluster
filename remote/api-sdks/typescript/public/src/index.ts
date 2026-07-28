@@ -32,7 +32,7 @@ export interface ApiClientOptions {
 }
 
 export const SDK_SCOPE: SdkScope = "public";
-export const CATALOG_SHA256 = "23a49b456e478b3498a905f8ee905adcc639ba25d867705ed69fee205d3c55c3";
+export const CATALOG_SHA256 = "8606866ed2947b927ad029b6209a16b2e6327f54bba830abe7d9cf33dea015ec";
 export const OPERATION_COUNT = 279;
 export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
   {
@@ -1661,7 +1661,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "68bb8cc8bb5a03232f92bd96d745562f87a449d25cf77483e52908449fa24fb8"
+    "contractSha256": "9f11ba6b9791d59a81701f0e54724aba75a25f94bbb667d6c1ed8b9692111419"
   },
   {
     "service": "formal-methods-service-rs",
@@ -1672,7 +1672,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "c7766c32f1ef1e4406894574aa907763219c85387863e90345fb88bcce5c03d5"
+    "contractSha256": "ef44b1f7c798c0dda9f5ce197bba0057a1c900e897bdc6d274410150cbb40378"
   },
   {
     "service": "formal-methods-service-rs",
@@ -1683,18 +1683,18 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "708edfb3a82ba42a1fb5f084c82bbfcff3327f5214f495eae5f6ae7da65c193d"
+    "contractSha256": "aab25c846450dba29d94663065a575de51b339c3b659385fa8731afc358cc45c"
   },
   {
     "service": "formal-methods-service-rs",
-    "operationId": "formal_methods_service_rs_get_metrics_91fecfa1e3e9",
+    "operationId": "formal_methods_service_rs_get_openapi_json_c11fbd46dde8",
     "method": "GET",
-    "path": "/metrics",
+    "path": "/openapi.json",
     "pathParameters": [],
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "a769ee84f88040ad7abe6ee52cf38db017e12d6d910f66bdb811f811f2121d56"
+    "contractSha256": "a03ee7e47e3ba38f3a0c2ae6b302c9a69dcb1f9ed3db4879276563e39421a1fc"
   },
   {
     "service": "fsharp-ws-server",

@@ -405,10 +405,7 @@ mod tests {
                 let cfg = Config::from_env().unwrap();
                 assert_eq!(
                     cfg.allowed_repos,
-                    vec![
-                        "acme/widgets".to_string(),
-                        "acme/sandbox".to_string(),
-                    ]
+                    vec!["acme/widgets".to_string(), "acme/sandbox".to_string(),]
                 );
                 assert_eq!(
                     cfg.path_prefixes,

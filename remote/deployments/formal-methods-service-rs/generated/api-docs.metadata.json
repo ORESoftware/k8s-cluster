@@ -3,9 +3,9 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "formal-methods-service-rs",
   "language": "rust",
-  "routeCount": 10,
+  "routeCount": 11,
   "routeTypeCounts": {
-    "service": 4,
+    "service": 5,
     "user-generated": 3,
     "runtime-config": 3
   },
@@ -21,16 +21,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
+      "visibility": "public",
       "purpose": "Human-readable generated API documentation.",
       "handlers": [
-        "api_docs_html"
+        "getFormalMethodsPublicApiReference"
       ],
       "sourceFiles": [
-        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
       "path": "/api/docs.json",
@@ -38,16 +39,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
+      "visibility": "public",
       "purpose": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
       "handlers": [
-        "api_docs_json"
+        "getFormalMethodsPublicOpenApiCompatibilityAlias"
       ],
       "sourceFiles": [
-        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
       "path": "/docs/api",
@@ -55,16 +57,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
+      "visibility": "public",
       "purpose": "Human-readable generated API documentation.",
       "handlers": [
-        "api_docs_html"
+        "getFormalMethodsPublicApiReferenceCompatibilityAlias"
       ],
       "sourceFiles": [
-        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
       "path": "/health",
@@ -72,16 +75,17 @@
         "GET"
       ],
       "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "health"
+        "getFormalMethodsHealth"
       ],
       "sourceFiles": [
-        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
       "path": "/internal/runtime-config",
@@ -140,16 +144,35 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
       "purpose": "Prometheus metrics.",
       "handlers": [
-        "health"
+        "getFormalMethodsPrometheusMetrics"
       ],
       "sourceFiles": [
-        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+    },
+    {
+      "path": "/openapi.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+      "handlers": [
+        "getFormalMethodsPublicOpenApi"
+      ],
+      "sourceFiles": [
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
       "path": "/ready",
@@ -157,16 +180,17 @@
         "GET"
       ],
       "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "health"
+        "getFormalMethodsReadiness"
       ],
       "sourceFiles": [
-        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
       "path": "/webhook/github",
@@ -174,16 +198,17 @@
         "POST"
       ],
       "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
+      "implementation": "openapi-code-first",
+      "auth": "github-webhook-signature",
+      "visibility": "internal",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "webhook"
+        "receiveGitHubFormalMethodsWebhook"
       ],
       "sourceFiles": [
-        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     }
   ]
 }

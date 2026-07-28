@@ -135,10 +135,7 @@ pub async fn github(
 
     if event == "ping" {
         info!(delivery, "received ping");
-        return Ok((
-            StatusCode::OK,
-            Json(WebhookResponse::new("pong", delivery)),
-        ));
+        return Ok((StatusCode::OK, Json(WebhookResponse::new("pong", delivery))));
     }
 
     if event != "pull_request" {
