@@ -68,12 +68,30 @@ jobs:
       - name: Regenerate schema-owned cross-language interfaces
         shell: bash
         run: |
-          set -euo pipefail
-          node interfaces/shared/src/generate.mjs
-          node interfaces/shared/src/generate.mjs --check
-          node --test \
-            interfaces/shared/src/generate.test.mjs \
-            interfaces/shared/src/openapi-generation.test.mjs
+          set -uo pipefail
+          log="${RUNNER_TEMP}/den-482-generation.log"
+          {
+            node interfaces/shared/src/generate.mjs
+            node interfaces/shared/src/generate.mjs --check
+            node --test \
+              interfaces/shared/src/generate.test.mjs \
+              interfaces/shared/src/openapi-generation.test.mjs
+          } >"$log" 2>&1
+          status=$?
+          cat "$log"
+          if [ "$status" -ne 0 ]; then
+            mkdir -p docs
+            cp "$log" docs/den-482-runtime-config-openapi-diagnostic.txt
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add docs/den-482-runtime-config-openapi-diagnostic.txt
+            if ! git diff --cached --quiet; then
+              git commit -m 'chore(DEN-482): capture generator validation failure'
+              git push origin HEAD:agent/den-482-runtime-config-openapi
+            fi
+            exit "$status"
+          fi
+          rm -f docs/den-482-runtime-config-openapi-diagnostic.txt
 
       - name: Format Rust changes
         shell: bash
@@ -133,7 +151,7 @@ jobs:
           test "${#changed[@]}" -gt 0
           for path in "${changed[@]}"; do
             case "$path" in
-              interfaces/shared/schema/runtime-config.schema.json|interfaces/shared/src/generate.mjs|interfaces/shared/src/openapi-generation.test.mjs|interfaces/shared/generated/*|runtime-config-client-rs/Cargo.toml|runtime-config-client-rs/Cargo.lock|runtime-config-client-rs/src/lib.rs)
+              docs/den-482-runtime-config-openapi-diagnostic.txt|interfaces/shared/schema/runtime-config.schema.json|interfaces/shared/src/generate.mjs|interfaces/shared/src/openapi-generation.test.mjs|interfaces/shared/generated/*|runtime-config-client-rs/Cargo.toml|runtime-config-client-rs/Cargo.lock|runtime-config-client-rs/src/lib.rs)
                 ;;
               *)
                 echo "unexpected generated patch path: $path" >&2
@@ -148,7 +166,8 @@ jobs:
           set -euo pipefail
           rm -f \
             .github/workflows/apply-den-482-runtime-config-openapi.yml \
-            scripts/den-482-runtime-config-openapi.payload
+            scripts/den-482-runtime-config-openapi.payload \
+            docs/den-482-runtime-config-openapi-diagnostic.txt
 
       - name: Commit executable shared contract adapter
         shell: bash
