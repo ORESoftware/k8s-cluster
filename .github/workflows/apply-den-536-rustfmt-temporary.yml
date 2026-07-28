@@ -1,14 +1,14 @@
 name: apply DEN-536 rustfmt (temporary)
 
 on:
-  pull_request:
+  push:
+    branches: [agent/den-536-queue-pull-wire-parity]
 
 permissions:
   contents: write
 
 jobs:
   rustfmt:
-    if: github.actor == 'ORESoftware' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
