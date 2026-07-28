@@ -6,12 +6,16 @@ const port = Number.isInteger(requestedPort) && requestedPort >= 1 && requestedP
   ? requestedPort
   : 4321;
 
-// https://astro.build
+const productionSite = 'https://sonusauris.app';
+const requestedSite = process.env.SONUS_AURIS_SITE_URL?.trim();
+const requestedBase = process.env.SONUS_AURIS_SITE_BASE?.trim();
+
 export default defineConfig({
-  // GitHub Pages project site for the sonus-auris org.
-  // Served at https://sonus-auris.github.io/sonus-auris-site.web/
-  site: process.env.SONUS_AURIS_SITE_URL ?? 'https://sonus-auris.github.io',
-  base: process.env.SONUS_AURIS_SITE_BASE ?? '/sonus-auris-site.web',
+  // The public release surface is the custom-domain root. Preview builds may
+  // override both values, but production builds must never silently fall back
+  // to the old GitHub Pages project subpath.
+  site: requestedSite || productionSite,
+  base: requestedBase || '/',
   server: {
     port,
     host: process.env.SONUS_AURIS_SITE_HOST ?? true,
