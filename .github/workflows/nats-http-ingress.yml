@@ -43,8 +43,28 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked --version 0.21.2
       - name: Audit dependency advisories
+        id: audit
+        continue-on-error: true
         working-directory: remote/nats-bridge
-        run: cargo audit
+        run: |
+          set +e
+          cargo audit --json > "${RUNNER_TEMP}/den-440-cargo-audit.json"
+          status=$?
+          python3 -m json.tool "${RUNNER_TEMP}/den-440-cargo-audit.json" | tail -n 300
+          exit "$status"
+      - name: Upload RustSec report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: den-440-rustsec-report
+          path: ${{ runner.temp }}/den-440-cargo-audit.json
+          if-no-files-found: error
+          retention-days: 2
+      - name: Enforce RustSec audit
+        if: steps.audit.outcome == 'failure'
+        run: |
+          echo 'RustSec audit failed; inspect the exact JSON report.'
+          exit 1
 
   contracts:
     runs-on: ubuntu-latest
