@@ -112,7 +112,11 @@ git config user.name 'github-actions[bot]'
 git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 git add -A -- . ':(exclude)remote/libs'
 git diff --cached --check
-test -z "$(git diff --cached --name-only | grep -E 'den-483-(materialize-formal-openapi|materialize\.sh|last-run)' || true)"
+unexpected_bootstrap="$({
+  git diff --cached --name-status \
+    | awk '$1 != "D" && $2 ~ /den-483-(materialize-formal-openapi|materialize\.sh|last-run)/ {print}'
+} || true)"
+test -z "$unexpected_bootstrap"
 git diff --cached --name-status
 git commit -m 'feat(DEN-483): materialize formal-methods contracts and SDKs'
 git push origin HEAD:agent/den-483-formal-methods-executable-openapi
