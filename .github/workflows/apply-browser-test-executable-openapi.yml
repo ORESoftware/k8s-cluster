@@ -1,4 +1,4 @@
-# Explicit trigger after workflow registration.
+# Observable same-repository publisher; removed before the PR leaves draft.
 name: Apply browser-test executable OpenAPI migration
 
 on:
@@ -8,6 +8,16 @@ on:
     paths:
       - '.github/workflows/apply-browser-test-executable-openapi.yml'
       - '.github/scripts/apply-browser-test-executable-openapi.py'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-browser-test-executable-openapi.yml'
+      - '.github/scripts/apply-browser-test-executable-openapi.py'
+      - 'remote/deployments/browser-test-server/**'
+      - 'remote/api-contracts/**'
+      - 'remote/config/api-contracts.json'
+      - 'remote/tools/**'
   workflow_dispatch:
 
 permissions:
@@ -15,7 +25,7 @@ permissions:
 
 concurrency:
   group: apply-browser-test-executable-openapi
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
@@ -23,7 +33,7 @@ env:
 
 jobs:
   apply-test-and-publish:
-    if: github.repository == 'ORESoftware/k8s-cluster'
+    if: github.repository == 'ORESoftware/k8s-cluster' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
