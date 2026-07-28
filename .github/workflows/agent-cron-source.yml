@@ -18,28 +18,34 @@ jobs:
           ref: agent/cron-customer-control-plane
           fetch-depth: 0
           show-progress: false
-      - name: Record exact extracted source hashes
+      - name: Record exact payload diagnostics
         shell: bash
         run: |
-          set -euo pipefail
+          set -u
           work=/tmp/customer-cron-payload
+          diagnostic=.agent/cron-payload-diagnostic.txt
           rm -rf "$work"
           mkdir -p "$work"
-          cat .agent/cron-payload/part-* | base64 -d > "$work/payload.tgz"
-          tar -xzf "$work/payload.tgz" -C "$work"
-          {
-            sha256sum "$work/src/cron.rs"
-            sha256sum "$work/src/main.rs"
-            sha256sum "$work/src/views.rs"
-            sha256sum "$work/src/tests.rs"
-            sha256sum "$work/docs/cron-jobs.md"
-            printf 'archive  '
-            sha256sum "$work/payload.tgz" | awk '{print $1}'
-            printf 'bytes  '
-            wc -c < "$work/payload.tgz"
-          } | sed "s#${work}/##" > .agent/cron-payload-hashes.txt
+          : > "$diagnostic"
+          printf 'parts:\n' >> "$diagnostic"
+          find .agent/cron-payload -maxdepth 1 -type f -name 'part-*' -printf '%f %s bytes\n' | sort >> "$diagnostic"
+          cat .agent/cron-payload/part-* | base64 -d > "$work/payload.tgz" 2>"$work/base64.err"
+          base64_status=$?
+          printf 'base64_status=%s\n' "$base64_status" >> "$diagnostic"
+          cat "$work/base64.err" >> "$diagnostic"
+          if [ -f "$work/payload.tgz" ]; then
+            printf 'archive_bytes=' >> "$diagnostic"
+            wc -c < "$work/payload.tgz" >> "$diagnostic"
+            printf 'archive_sha256=' >> "$diagnostic"
+            sha256sum "$work/payload.tgz" | awk '{print $1}' >> "$diagnostic"
+          fi
+          tar -tzf "$work/payload.tgz" > "$work/tar.list" 2>"$work/tar.err"
+          tar_status=$?
+          printf 'tar_status=%s\n' "$tar_status" >> "$diagnostic"
+          cat "$work/tar.err" >> "$diagnostic"
+          cat "$work/tar.list" >> "$diagnostic"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .agent/cron-payload-hashes.txt
-          git commit -m 'chore: record customer cron payload hashes'
+          git add "$diagnostic"
+          git commit -m 'chore: record customer cron payload diagnostic'
           git push origin HEAD:agent/cron-customer-control-plane
