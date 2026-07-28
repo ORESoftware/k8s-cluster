@@ -31,6 +31,13 @@ const tokenMinter = readFileSync(
 const allowlist = JSON.parse(
   readFileSync(resolve(root, 'config/ci/k8s-submodule-github-app-allowlist.json'), 'utf8'),
 ) as AppAllowlist;
+const privateDeploymentTests = [
+  'general/cluster-hardening.test.ts',
+  'general/fabrication-cad-source-intake.test.ts',
+  'general/gateway-service-directory.test.ts',
+  'general/gleam-lambda-runner-config.test.ts',
+  'general/observability-config.test.ts',
+] as const;
 
 function normalizeRepository(url: string): string {
   return url
@@ -83,6 +90,27 @@ test('the narrow remote-libs job uses the dedicated read-only deploy key', () =>
   assert.match(staticJob, /SUBMODULE_AUTH_MODE:\s*ssh/);
   assert.match(staticJob, /init-submodules-with-report\.sh remote\/libs/);
   assert.doesNotMatch(staticJob, /K8S_SUBMODULE_APP_PRIVATE_KEY/);
+});
+
+test('private deployment source readers run only after the App-backed checkout', () => {
+  const staticJob = workflow.slice(
+    workflow.indexOf('  static-contracts:'),
+    workflow.indexOf('  backend-contracts:'),
+  );
+  const backendJob = workflow.slice(
+    workflow.indexOf('  backend-contracts:'),
+    workflow.indexOf('  kustomize-render:'),
+  );
+
+  for (const testFile of privateDeploymentTests) {
+    assert.ok(!staticJob.includes(testFile), `${testFile} must not run in the remote/libs-only job`);
+    assert.ok(backendJob.includes(testFile), `${testFile} must run in the App-backed job`);
+  }
+
+  const appCheckout = backendJob.indexOf('init-submodules-with-github-app.sh remote/deployments');
+  const privateTests = backendJob.indexOf('Verify contracts that read private deployment sources');
+  assert.ok(appCheckout >= 0, 'backend job must initialize private deployment gitlinks');
+  assert.ok(privateTests > appCheckout, 'private source tests must run only after App checkout');
 });
 
 test('the cross-org backend job requires a GitHub App and produces a sanitized report', () => {
