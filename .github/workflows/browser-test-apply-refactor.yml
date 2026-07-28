@@ -1,5 +1,6 @@
 name: Apply browser-test OpenAPI refactor
 
+# One-use, same-repository feature-branch migration. Removed after application.
 on:
   pull_request:
     branches:
