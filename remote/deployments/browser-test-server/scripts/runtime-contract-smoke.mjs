@@ -90,6 +90,22 @@ function assertScalarBootstrap(response, expectedSpecUrl, label) {
   );
 }
 
+async function assertAuthenticatedAliasParity(baseUrl, canonicalPath, aliasPath, headers) {
+  const [canonical, alias] = await Promise.all([
+    request(baseUrl, canonicalPath, { headers }),
+    request(baseUrl, aliasPath, { headers }),
+  ]);
+  assert.equal(canonical.status, 200, canonicalPath);
+  assert.equal(alias.status, canonical.status, `${aliasPath} status must match ${canonicalPath}`);
+  assert.equal(
+    alias.contentType,
+    canonical.contentType,
+    `${aliasPath} content type must match ${canonicalPath}`,
+  );
+  assert.equal(alias.body, canonical.body, `${aliasPath} body must match ${canonicalPath}`);
+  return canonical;
+}
+
 async function stopChild(child, logs) {
   if (child.exitCode !== null) return;
   child.kill('SIGTERM');
@@ -174,8 +190,11 @@ try {
 
   for (const path of [
     '/',
+    '/browser-test',
     '/tools',
+    '/browser-test/tools',
     '/status',
+    '/browser-test/status',
     '/run',
     '/browser-test/healthz',
     '/browser-test/metrics',
@@ -194,10 +213,16 @@ try {
     assert.deepEqual(parseJson(denied, path), { ok: false, error: 'unauthorized' });
   }
 
+  const wrongSameLengthSecret = `${authSecret.slice(0, -1)}${authSecret.endsWith('x') ? 'y' : 'x'}`;
+  assert.equal(wrongSameLengthSecret.length, authSecret.length);
   const wrongSecret = await request(baseUrl, '/internal/openapi.json', {
-    headers: { 'x-server-auth': `${authSecret}-wrong` },
+    headers: { 'x-server-auth': wrongSameLengthSecret },
   });
   assert.equal(wrongSecret.status, 401);
+  assert.deepEqual(parseJson(wrongSecret, 'wrong same-length secret'), {
+    ok: false,
+    error: 'unauthorized',
+  });
 
   for (const headers of [
     { 'x-server-auth': authSecret },
@@ -220,16 +245,56 @@ try {
   assert.doesNotMatch(internalDocs.body, /data-url=["']\/openapi\.json["']/);
   assert.doesNotMatch(internalDocs.body, /runBrowserScenario/);
 
-  const tools = await request(baseUrl, '/tools', {
-    headers: { authorization: `Bearer ${authSecret}` },
-  });
-  assert.equal(tools.status, 200);
+  const aliasHeaders = { authorization: `Bearer ${authSecret}` };
+  const descriptor = await assertAuthenticatedAliasParity(
+    baseUrl,
+    '/',
+    '/browser-test',
+    aliasHeaders,
+  );
+  const descriptorBody = parseJson(descriptor, 'service descriptor');
+  assert.equal(descriptorBody.endpoints.openapi, 'GET /openapi.json');
+  assert.equal(descriptorBody.endpoints.docs, 'GET /docs/api');
+
+  const tools = await assertAuthenticatedAliasParity(
+    baseUrl,
+    '/tools',
+    '/browser-test/tools',
+    aliasHeaders,
+  );
   const toolsBody = parseJson(tools, 'tools');
   assert.equal(toolsBody.default, 'playwright');
   assert.deepEqual(
     toolsBody.tools.map((tool) => tool.name),
     ['playwright', 'puppeteer', 'selenium'],
   );
+
+  const status = await assertAuthenticatedAliasParity(
+    baseUrl,
+    '/status',
+    '/browser-test/status',
+    aliasHeaders,
+  );
+  const statusBody = parseJson(status, 'status');
+  assert.equal(statusBody.ok, true);
+  assert.equal(statusBody.inFlight, 0);
+  assert.ok(statusBody.maxConcurrent > 0);
+
+  const authenticatedHealth = await assertAuthenticatedAliasParity(
+    baseUrl,
+    '/healthz',
+    '/browser-test/healthz',
+    aliasHeaders,
+  );
+  assert.equal(parseJson(authenticatedHealth, 'authenticated health').ok, true);
+
+  const authenticatedMetrics = await assertAuthenticatedAliasParity(
+    baseUrl,
+    '/metrics',
+    '/browser-test/metrics',
+    aliasHeaders,
+  );
+  assert.match(authenticatedMetrics.body, /browser_test_in_flight 0/);
 
   const invalidRun = await request(baseUrl, '/run', {
     method: 'POST',
