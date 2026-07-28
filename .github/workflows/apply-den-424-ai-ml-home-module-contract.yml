@@ -1,0 +1,135 @@
+name: Apply DEN-424 AI/ML home module contract
+
+on:
+  push:
+    branches:
+      - agent/den-424-ai-ml-home-module-contract
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-den-424-ai-ml-home-module-contract.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-424-ai-ml-home-module-contract-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-424-ai-ml-home-module-contract
+          persist-credentials: true
+      - name: Align AI/ML homepage contract with registered web-home modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/tests/general/ai-ml-platform-config.test.ts')
+          text = path.read_text(encoding='utf-8')
+          anchor = """async function readRepoFile(relativePath: string): Promise<string> {
+            return readFile(resolve(repoRoot, relativePath), 'utf8');
+          }
+          """
+          helper = r"""
+          async function readWebHomeSource(): Promise<string> {
+            const modules = [
+              'agents',
+              'container_pool',
+              'grafana',
+              'handlers',
+              'home',
+              'jello',
+              'labs',
+              'lambda',
+              'metrics',
+              'shared',
+              'state',
+            ];
+            const main = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+            for (const moduleName of modules) {
+              assert.match(main, new RegExp(`mod ${moduleName};`), `web-home-rs main.rs must register ${moduleName}.rs`);
+            }
+            const moduleSources = await Promise.all(
+              modules.map((moduleName) =>
+                readRepoFile(`remote/deployments/web-home-rs/src/${moduleName}.rs`),
+              ),
+            );
+            return [main, ...moduleSources].join('\n');
+          }
+          """
+          old_home = "await readRepoFile('remote/deployments/web-home-rs/src/main.rs')"
+          if 'async function readWebHomeSource()' not in text:
+              count = text.count(old_home)
+              if count != 1:
+                  raise SystemExit(f'expected one direct web-home source read, found {count}')
+              text = text.replace(old_home, 'await readWebHomeSource()', 1)
+              if text.count(anchor) != 1:
+                  raise SystemExit(f'expected one readRepoFile anchor, found {text.count(anchor)}')
+              text = text.replace(anchor, anchor + helper, 1)
+          elif text.count(old_home) != 1:
+              raise SystemExit('web-home source helper must retain one authoritative main.rs read')
+
+          path.write_text(text, encoding='utf-8')
+          PY
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Run the gateway, observability, and homepage contract
+        id: ai-ml-home-contract
+        shell: bash
+        working-directory: remote/tests
+        run: |
+          set +e
+          log="${RUNNER_TEMP}/den-424-ai-ml-home-contract.log"
+          pnpm exec tsx --test \
+            --test-name-pattern='gateway, observability, and homepage expose the ai/ml pipeline' \
+            general/ai-ml-platform-config.test.ts \
+            >"$log" 2>&1
+          status=$?
+          tail -500 "$log"
+          exit "$status"
+      - name: Upload focused diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-424-ai-ml-home-contract-diagnostics
+          path: ${{ runner.temp }}/den-424-ai-ml-home-contract.log
+          retention-days: 1
+          if-no-files-found: error
+      - name: Scan for unresolved conflict markers
+        if: success()
+        run: |
+          if git grep -n -E '^(<<<<<<< |=======$|>>>>>>> )' -- . ':(exclude)*.lock'; then
+            exit 1
+          fi
+      - name: Commit the verified module-aware contract
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- remote/tests/general/ai-ml-platform-config.test.ts
+          if git diff --cached --quiet; then
+            echo 'DEN-424 AI/ML home contract already aligned.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-424 align AI ML home contract with Rust modules'
+          git push origin HEAD:agent/den-424-ai-ml-home-module-contract
