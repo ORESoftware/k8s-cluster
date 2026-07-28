@@ -7,13 +7,19 @@ on:
     paths:
       - '.github/den-479/apply.py.gz.b64'
       - '.github/workflows/den-479-bootstrap.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/den-479/apply.py.gz.b64'
+      - '.github/workflows/den-479-bootstrap.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: den-479-bootstrap-${{ github.ref }}
+  group: den-479-bootstrap-agent-den-479
   cancel-in-progress: true
 
 env:
@@ -22,13 +28,14 @@ env:
 
 jobs:
   migrate:
-    if: github.ref == 'refs/heads/agent/den-479-fastify-zod-contract'
+    if: github.ref == 'refs/heads/agent/den-479-fastify-zod-contract' || github.head_ref == 'agent/den-479-fastify-zod-contract'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
       - name: Checkout feature branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
           persist-credentials: true
           show-progress: false
@@ -189,4 +196,5 @@ jobs:
           git config user.name 'oresoftware-api-contract-bot'
           git config user.email 'oresoftware-api-contract-bot@users.noreply.github.com'
           git commit -m 'feat(DEN-479): migrate browser-test server to executable OpenAPI'
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          target_branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          git push origin "HEAD:${target_branch}"
