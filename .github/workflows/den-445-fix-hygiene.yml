@@ -1,3 +1,4 @@
+# Triggered after workflow registration so GitHub evaluates the push hook.
 name: Fix DEN-445 hygiene gate
 
 on:
