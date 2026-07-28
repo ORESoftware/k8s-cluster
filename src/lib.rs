@@ -19,6 +19,7 @@ mod server;
 mod shared_auth;
 mod signal_api;
 mod signal_bundle_store;
+mod signal_maintenance;
 mod signal_store;
 mod state;
 mod supabase_auth;
@@ -27,6 +28,9 @@ mod vault_blob;
 
 pub use flags::apply_cli_flags;
 pub use server::run;
+
+#[cfg(test)]
+mod signal_postgres_tests;
 
 #[cfg(test)]
 mod architecture_tests {
