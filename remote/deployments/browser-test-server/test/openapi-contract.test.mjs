@@ -127,6 +127,11 @@ test('operational routes and aliases inherit auth from executable schema metadat
   assert.equal(descriptor.statusCode, 200);
   assert.equal(descriptor.json().endpoints.publicOpenApi, 'GET /openapi.json');
   assert.equal(descriptor.json().endpoints.internalOpenApi, 'GET /internal/openapi.json');
+
+  const tools = await app.inject({ method: 'GET', url: '/tools', headers: authorization });
+  assert.equal(tools.statusCode, 200);
+  assert.equal(tools.json().defaultTool, 'playwright');
+  assert.equal(Object.hasOwn(tools.json(), 'default'), false);
 });
 
 test('TypeBox rejects invalid run requests before any browser process starts', async () => {
@@ -148,6 +153,11 @@ test('TypeBox rejects invalid run requests before any browser process starts', a
 
 test('the full contract has unique operation IDs and fail-closed security', () => {
   const document = JSON.parse(internalContract);
+  const toolsResponseSchema =
+    document.paths['/tools'].get.responses['200'].content['application/json'].schema;
+  assert.ok(toolsResponseSchema.properties.defaultTool);
+  assert.equal(toolsResponseSchema.properties.default, undefined);
+
   const seen = new Set();
   for (const { path, method, operation } of operationEntries(document)) {
     assert.equal(typeof operation.operationId, 'string', `${method.toUpperCase()} ${path}`);
