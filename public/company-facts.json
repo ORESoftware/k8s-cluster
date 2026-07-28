@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "company": "Fiducia Cloud",
+  "official_contact": "hello@fiducia.cloud",
+  "website": "https://fiducia.cloud",
+  "github_organization": "https://github.com/fiducia-cloud",
+  "founder": {
+    "name": "Alexander Mills",
+    "linkedin": "https://linkedin.com/in/alexanderdmills"
+  },
+  "stage": "bootstrapped-active-public-implementation",
+  "positioning": "AI-native coordination and consensus control plane for distributed systems and autonomous-agent fleets",
+  "primitives": [
+    "distributed-locks",
+    "ttl-leases",
+    "fencing-tokens",
+    "semaphores",
+    "leader-election",
+    "service-discovery",
+    "strongly-consistent-work-claiming",
+    "rate-limiting",
+    "shared-configuration",
+    "fail-safe-scheduling"
+  ],
+  "architecture": [
+    "sharded-raft-groups",
+    "quorum-commit",
+    "multi-region-control-plane"
+  ],
+  "public_evidence": {
+    "investor_page": "/investors",
+    "source_repositories": "https://github.com/fiducia-cloud"
+  },
+  "disclaimer": "This file contains public, verified company facts only. It intentionally excludes private financial, customer, account, credential, and application data."
+}
