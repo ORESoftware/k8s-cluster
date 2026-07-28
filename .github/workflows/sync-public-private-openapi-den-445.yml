@@ -1,0 +1,675 @@
+# Branch-local one-shot integration and regeneration. The job removes itself before committing.
+name: Sync DEN-445 public and private OpenAPI contracts
+
+on:
+  push:
+    branches:
+      - agent/den-445-native-openapi-fresh
+    paths:
+      - '.github/workflows/sync-public-private-openapi-den-445.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/sync-public-private-openapi-den-445.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-public-private-openapi-den-445
+  cancel-in-progress: false
+
+jobs:
+  integrate:
+    if: github.repository == 'ORESoftware/k8s-cluster'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-445-native-openapi-fresh
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Merge current main without rebasing
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+          git merge --no-edit origin/main
+
+      - name: Patch public and private runtime contract policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > remote/deployments/dd-embeddings-rs/src/docs.rs <<'RS'
+          //! Executable OpenAPI contract support.
+          //!
+          //! Route registration and contract collection happen together in
+          //! `OpenApiRouter`. The complete typed contract is retained for private
+          //! SDKs and authenticated internal documentation. Standard unauthenticated
+          //! documentation routes serve only the generated fail-closed public subset.
+
+          use std::sync::Arc;
+
+          use axum::body::Bytes;
+          use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
+          use utoipa::openapi::{Components, OpenApi};
+          use utoipa_scalar::Scalar;
+
+          const PUBLIC_OPENAPI_JSON: &str = include_str!("../generated/api-docs.json");
+
+          #[derive(Clone)]
+          pub struct ApiDocs {
+              pub public_json: Bytes,
+              pub public_scalar_html: Bytes,
+              pub internal_json: Bytes,
+              pub internal_scalar_html: Bytes,
+          }
+
+          impl ApiDocs {
+              pub fn new(openapi: &OpenApi) -> anyhow::Result<Self> {
+                  let public_value: serde_json::Value = serde_json::from_str(PUBLIC_OPENAPI_JSON)?;
+                  anyhow::ensure!(
+                      public_value["x-dd-contract-scope"] == "public",
+                      "embedded runtime OpenAPI must be the fail-closed public contract"
+                  );
+                  anyhow::ensure!(
+                      public_value["info"]["title"] == "dd-embeddings-rs API (public)",
+                      "embedded runtime OpenAPI has unexpected service metadata"
+                  );
+                  let public_openapi: OpenApi = serde_json::from_value(public_value)?;
+                  let internal_json = canonical_json(openapi)?;
+                  Ok(Self {
+                      public_json: Bytes::from_static(PUBLIC_OPENAPI_JSON.as_bytes()),
+                      public_scalar_html: Bytes::from(Scalar::new(public_openapi).to_html()),
+                      internal_json: Bytes::from(internal_json),
+                      internal_scalar_html: Bytes::from(Scalar::new(openapi.clone()).to_html()),
+                  })
+              }
+          }
+
+          pub fn public_json() -> &'static str {
+              PUBLIC_OPENAPI_JSON
+          }
+
+          fn register_schema<T: utoipa::ToSchema>(components: &mut Components) {
+              let mut schemas = vec![(
+                  <T as utoipa::ToSchema>::name().into_owned(),
+                  <T as utoipa::PartialSchema>::schema(),
+              )];
+              <T as utoipa::ToSchema>::schemas(&mut schemas);
+              components.schemas.extend(schemas);
+          }
+
+          pub fn finalize(mut openapi: OpenApi) -> OpenApi {
+              openapi.info.title = "dd-embeddings-rs API".to_string();
+              openapi.info.version = env!("CARGO_PKG_VERSION").to_string();
+              openapi.info.description = Some(
+                  "Typed multi-provider embeddings, reranking, Qdrant RAG, and Postgres multi-signal search API. The document is generated from the same annotated handlers and Serde DTOs registered by the running Axum router."
+                      .to_string(),
+              );
+              // `OpenApiRouter::new()` currently inherits Utoipa crate metadata in its
+              // default `Info`. That metadata describes the generator dependency, not
+              // this service. Clear it explicitly so the exported contract never claims
+              // the tool author's contact details or license as API provenance.
+              openapi.info.contact = None;
+              openapi.info.license = None;
+
+              let components = openapi.components.get_or_insert_with(Components::new);
+              register_schema::<crate::error::ErrorResponse>(components);
+              components.add_security_scheme(
+                  "bearer_auth",
+                  SecurityScheme::Http(
+                      HttpBuilder::new()
+                          .scheme(HttpAuthScheme::Bearer)
+                          .bearer_format("opaque service token")
+                          .description(Some(
+                              "Set `Authorization: Bearer <token>`. Runtime enforcement is enabled with EMBEDDINGS_API_AUTH_BEARER and protected routes fail closed when it is absent."
+                                  .to_string(),
+                          ))
+                          .build(),
+                  ),
+              );
+              openapi
+          }
+
+          pub fn canonical_json(openapi: &OpenApi) -> Result<String, serde_json::Error> {
+              let mut json = serde_json::to_string_pretty(openapi)?;
+              json.push('\n');
+              Ok(json)
+          }
+
+          pub type SharedApiDocs = Arc<ApiDocs>;
+          RS
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/dd-embeddings-rs/src/main.rs')
+          text = path.read_text(encoding='utf-8')
+
+          def replace_once(old: str, new: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one replacement in {path}, found {count}: {old[:120]!r}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              '''    if cfg.api_auth_bearer.is_none() {
+                  tracing::warn!(
+                      "EMBEDDINGS_API_AUTH_BEARER is not set — the functional /api routes are UNAUTHENTICATED at this layer; rely on an upstream gateway or set the token"
+                  );
+              }
+          ''',
+              '''    if cfg.api_auth_bearer.is_none() {
+                  tracing::warn!(
+                      "EMBEDDINGS_API_AUTH_BEARER is not set — protected API and internal documentation routes will fail closed"
+                  );
+              }
+          ''',
+          )
+
+          replace_once(
+              '''fn protected_router() -> OpenApiRouter<AppState> {
+                  OpenApiRouter::new()
+                      .routes(routes!(list_providers))
+          ''',
+              '''fn protected_router() -> OpenApiRouter<AppState> {
+                  OpenApiRouter::new()
+                      .routes(routes!(internal_openapi_json))
+                      .routes(routes!(internal_api_docs_ui))
+                      .routes(routes!(list_providers))
+          ''',
+          )
+
+          replace_once(
+              '''    let Some(expected) = state.api_auth_bearer.as_ref() else {
+                  return next.run(request).await;
+              };
+          ''',
+              '''    let Some(expected) = state.api_auth_bearer.as_ref() else {
+                  return ApiError::Unauthorized.into_response();
+              };
+          ''',
+          )
+
+          old_docs = '''#[utoipa::path(
+              get,
+              path = "/openapi.json",
+              operation_id = "getOpenApiDocument",
+              tag = "documentation",
+              security(()),
+              responses((status = 200, description = "Canonical OpenAPI 3.1 contract", content_type = "application/vnd.oai.openapi+json;version=3.1"))
+          )]
+          async fn openapi_json(Extension(docs): Extension<SharedApiDocs>) -> Response {
+              openapi_response(docs)
+          }
+
+          #[utoipa::path(
+              get,
+              path = "/api/docs.json",
+              operation_id = "getOpenApiDocumentCompatibilityAlias",
+              tag = "documentation",
+              security(()),
+              responses((status = 200, description = "Compatibility alias for the canonical OpenAPI 3.1 contract", content_type = "application/vnd.oai.openapi+json;version=3.1"))
+          )]
+          async fn api_docs_json(Extension(docs): Extension<SharedApiDocs>) -> Response {
+              openapi_response(docs)
+          }
+
+          #[utoipa::path(
+              get,
+              path = "/api/docs",
+              operation_id = "getApiReference",
+              tag = "documentation",
+              security(()),
+              responses((status = 200, description = "Interactive Scalar API reference", body = String, content_type = "text/html"))
+          )]
+          async fn api_docs_ui(Extension(docs): Extension<SharedApiDocs>) -> Response {
+              scalar_response(docs)
+          }
+
+          #[utoipa::path(
+              get,
+              path = "/docs/api",
+              operation_id = "getApiReferenceCompatibilityAlias",
+              tag = "documentation",
+              security(()),
+              responses((status = 200, description = "Compatibility alias for the interactive Scalar API reference", body = String, content_type = "text/html"))
+          )]
+          async fn docs_api_ui(Extension(docs): Extension<SharedApiDocs>) -> Response {
+              scalar_response(docs)
+          }
+
+          fn openapi_response(docs: SharedApiDocs) -> Response {
+              (
+                  [(header::CONTENT_TYPE, OPENAPI_CONTENT_TYPE)],
+                  docs.json.clone(),
+              )
+                  .into_response()
+          }
+
+          fn scalar_response(docs: SharedApiDocs) -> Response {
+              (
+                  [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                  docs.scalar_html.clone(),
+              )
+                  .into_response()
+          }
+          '''
+
+          new_docs = '''#[utoipa::path(
+              get,
+              path = "/openapi.json",
+              operation_id = "getPublicOpenApiDocument",
+              tag = "documentation",
+              security(()),
+              responses((status = 200, description = "Fail-closed public OpenAPI 3.1 contract", content_type = "application/vnd.oai.openapi+json;version=3.1"))
+          )]
+          async fn openapi_json(Extension(docs): Extension<SharedApiDocs>) -> Response {
+              public_openapi_response(docs)
+          }
+
+          #[utoipa::path(
+              get,
+              path = "/api/docs.json",
+              operation_id = "getPublicOpenApiDocumentCompatibilityAlias",
+              tag = "documentation",
+              security(()),
+              responses((status = 200, description = "Compatibility alias for the fail-closed public OpenAPI 3.1 contract", content_type = "application/vnd.oai.openapi+json;version=3.1"))
+          )]
+          async fn api_docs_json(Extension(docs): Extension<SharedApiDocs>) -> Response {
+              public_openapi_response(docs)
+          }
+
+          #[utoipa::path(
+              get,
+              path = "/api/docs",
+              operation_id = "getPublicApiReference",
+              tag = "documentation",
+              security(()),
+              responses((status = 200, description = "Interactive Scalar reference for the fail-closed public contract", body = String, content_type = "text/html"))
+          )]
+          async fn api_docs_ui(Extension(docs): Extension<SharedApiDocs>) -> Response {
+              public_scalar_response(docs)
+          }
+
+          #[utoipa::path(
+              get,
+              path = "/docs/api",
+              operation_id = "getPublicApiReferenceCompatibilityAlias",
+              tag = "documentation",
+              security(()),
+              responses((status = 200, description = "Compatibility alias for the public Scalar API reference", body = String, content_type = "text/html"))
+          )]
+          async fn docs_api_ui(Extension(docs): Extension<SharedApiDocs>) -> Response {
+              public_scalar_response(docs)
+          }
+
+          #[utoipa::path(
+              get,
+              path = "/internal/openapi.json",
+              operation_id = "getInternalOpenApiDocument",
+              tag = "documentation",
+              security(("bearer_auth" = [])),
+              responses(
+                  (status = 200, description = "Complete typed OpenAPI 3.1 contract for trusted service-to-service callers", content_type = "application/vnd.oai.openapi+json;version=3.1"),
+                  ApiErrorResponses
+              )
+          )]
+          async fn internal_openapi_json(Extension(docs): Extension<SharedApiDocs>) -> Response {
+              internal_openapi_response(docs)
+          }
+
+          #[utoipa::path(
+              get,
+              path = "/internal/docs/api",
+              operation_id = "getInternalApiReference",
+              tag = "documentation",
+              security(("bearer_auth" = [])),
+              responses(
+                  (status = 200, description = "Interactive Scalar reference for the complete internal contract", body = String, content_type = "text/html"),
+                  ApiErrorResponses
+              )
+          )]
+          async fn internal_api_docs_ui(Extension(docs): Extension<SharedApiDocs>) -> Response {
+              internal_scalar_response(docs)
+          }
+
+          fn public_openapi_response(docs: SharedApiDocs) -> Response {
+              (
+                  [(header::CONTENT_TYPE, OPENAPI_CONTENT_TYPE)],
+                  docs.public_json.clone(),
+              )
+                  .into_response()
+          }
+
+          fn internal_openapi_response(docs: SharedApiDocs) -> Response {
+              (
+                  [(header::CONTENT_TYPE, OPENAPI_CONTENT_TYPE)],
+                  docs.internal_json.clone(),
+              )
+                  .into_response()
+          }
+
+          fn public_scalar_response(docs: SharedApiDocs) -> Response {
+              (
+                  [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                  docs.public_scalar_html.clone(),
+              )
+                  .into_response()
+          }
+
+          fn internal_scalar_response(docs: SharedApiDocs) -> Response {
+              (
+                  [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                  docs.internal_scalar_html.clone(),
+              )
+                  .into_response()
+          }
+          '''
+          replace_once(old_docs, new_docs)
+
+          replace_once(
+              '''        "/metrics",
+                  "/openapi.json",
+          ''',
+              '''        "/metrics",
+                  "/internal/docs/api",
+                  "/internal/openapi.json",
+                  "/openapi.json",
+          ''',
+          )
+
+          replace_once(
+              '''        assert_eq!(operation_ids.len(), 21);
+                  assert_eq!(operations_by_path.len(), 21);
+          ''',
+              '''        assert_eq!(operation_ids.len(), 23);
+                  assert_eq!(operations_by_path.len(), 23);
+          ''',
+          )
+
+          old_test = '''    #[tokio::test]
+              async fn runtime_docs_handlers_serve_the_exact_generated_artifact() {
+                  let openapi = openapi_document();
+                  let canonical = docs::canonical_json(&openapi).expect("canonical JSON");
+                  let shared = Arc::new(ApiDocs::new(&openapi).expect("runtime docs"));
+
+                  for response in [
+                      openapi_json(Extension(shared.clone())).await,
+                      api_docs_json(Extension(shared.clone())).await,
+                  ] {
+                      assert_eq!(response.status(), StatusCode::OK);
+                      assert_eq!(
+                          response.headers()[header::CONTENT_TYPE],
+                          OPENAPI_CONTENT_TYPE
+                      );
+                      let body = to_bytes(response.into_body(), usize::MAX)
+                          .await
+                          .expect("read OpenAPI body");
+                      assert_eq!(body.as_ref(), canonical.as_bytes());
+                  }
+
+                  for response in [
+                      api_docs_ui(Extension(shared.clone())).await,
+                      docs_api_ui(Extension(shared.clone())).await,
+                  ] {
+                      assert_eq!(response.status(), StatusCode::OK);
+                      let body = to_bytes(response.into_body(), usize::MAX)
+                          .await
+                          .expect("read Scalar body");
+                      let html = String::from_utf8(body.to_vec()).expect("UTF-8 Scalar HTML");
+                      assert!(html.to_ascii_lowercase().contains("scalar"));
+                      assert!(html.contains("dd-embeddings-rs API"));
+                  }
+              }
+          '''
+
+          new_test = '''    #[tokio::test]
+              async fn runtime_docs_separate_public_and_internal_contracts_exactly() {
+                  let openapi = openapi_document();
+                  let canonical = docs::canonical_json(&openapi).expect("canonical internal JSON");
+                  let public = docs::public_json();
+                  assert_ne!(public, canonical, "public and internal contracts must differ");
+
+                  let public_document: Value =
+                      serde_json::from_str(public).expect("parse public OpenAPI");
+                  assert_eq!(public_document["x-dd-contract-scope"], "public");
+                  assert!(public_document["paths"]["/api/embeddings"].is_null());
+                  assert!(public_document["components"]["schemas"]["EmbedApiRequest"].is_null());
+
+                  let shared = Arc::new(ApiDocs::new(&openapi).expect("runtime docs"));
+
+                  for response in [
+                      openapi_json(Extension(shared.clone())).await,
+                      api_docs_json(Extension(shared.clone())).await,
+                  ] {
+                      assert_eq!(response.status(), StatusCode::OK);
+                      assert_eq!(
+                          response.headers()[header::CONTENT_TYPE],
+                          OPENAPI_CONTENT_TYPE
+                      );
+                      let body = to_bytes(response.into_body(), usize::MAX)
+                          .await
+                          .expect("read public OpenAPI body");
+                      assert_eq!(body.as_ref(), public.as_bytes());
+                  }
+
+                  let response = internal_openapi_json(Extension(shared.clone())).await;
+                  assert_eq!(response.status(), StatusCode::OK);
+                  assert_eq!(response.headers()[header::CONTENT_TYPE], OPENAPI_CONTENT_TYPE);
+                  let body = to_bytes(response.into_body(), usize::MAX)
+                      .await
+                      .expect("read internal OpenAPI body");
+                  assert_eq!(body.as_ref(), canonical.as_bytes());
+
+                  for response in [
+                      api_docs_ui(Extension(shared.clone())).await,
+                      docs_api_ui(Extension(shared.clone())).await,
+                  ] {
+                      assert_eq!(response.status(), StatusCode::OK);
+                      let body = to_bytes(response.into_body(), usize::MAX)
+                          .await
+                          .expect("read public Scalar body");
+                      let html = String::from_utf8(body.to_vec()).expect("UTF-8 Scalar HTML");
+                      assert!(html.to_ascii_lowercase().contains("scalar"));
+                      assert!(html.contains("dd-embeddings-rs API (public)"));
+                  }
+
+                  let response = internal_api_docs_ui(Extension(shared)).await;
+                  assert_eq!(response.status(), StatusCode::OK);
+                  let body = to_bytes(response.into_body(), usize::MAX)
+                      .await
+                      .expect("read internal Scalar body");
+                  let html = String::from_utf8(body.to_vec()).expect("UTF-8 Scalar HTML");
+                  assert!(html.to_ascii_lowercase().contains("scalar"));
+                  assert!(html.contains("dd-embeddings-rs API"));
+                  assert!(!html.contains("dd-embeddings-rs API (public)"));
+              }
+          '''
+          replace_once(old_test, new_test)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path('remote/api-contracts/manifest.json')
+          document = json.loads(path.read_text(encoding='utf-8'))
+          service = document['services']['dd-embeddings-rs']
+          service['publicContract'] = 'remote/deployments/dd-embeddings-rs/generated/api-docs.json'
+          service['internalDocsRoutes'] = ['/internal/openapi.json', '/internal/docs/api']
+          service['runtimeContractPolicy'] = (
+              'Unauthenticated standard documentation routes serve only the fail-closed public contract; '
+              'the complete typed contract and Scalar reference require bearer authentication.'
+          )
+          path.write_text(json.dumps(document, indent=2) + '\n', encoding='utf-8')
+          PY
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('docs/executable-http-api-contract.md')
+          text = path.read_text(encoding='utf-8')
+          old = '''| Route | Contract |
+          | --- | --- |
+          | `GET /openapi.json` | Canonical OpenAPI 3.1 document. |
+          | `GET /api/docs.json` | Compatibility alias serving the same bytes. |
+          | `GET /api/docs` | Interactive Scalar API reference. |
+          | `GET /docs/api` | Compatibility alias for the same API reference. |
+
+          The OpenAPI JSON is generated once from the executable router, canonicalized,
+          and served as immutable bytes. Runtime docs never use a separate route list.
+          '''
+          new = '''| Route | Contract |
+          | --- | --- |
+          | `GET /openapi.json` | Fail-closed public OpenAPI 3.1 document. |
+          | `GET /api/docs.json` | Compatibility alias serving the exact same public bytes. |
+          | `GET /api/docs` | Interactive Scalar reference for the public contract. |
+          | `GET /docs/api` | Compatibility alias for the same public reference. |
+
+          Private services additionally expose authenticated internal documentation routes,
+          conventionally `GET /internal/openapi.json` and `GET /internal/docs/api`. Those
+          routes serve the complete typed contract used by trusted service-to-service SDKs.
+
+          The internal OpenAPI document is generated once from the executable router and
+          canonicalized. The public artifact is a deterministic fail-closed projection of
+          that exact document. Standard runtime routes embed and serve the committed public
+          artifact byte-for-byte; internal routes serve the canonical full document. CI
+          rejects exporter drift, projection drift, runtime-byte drift, or a public artifact
+          containing private operations or schemas.
+          '''
+          if text.count(old) != 1:
+              raise SystemExit('standard runtime routes section did not match exactly')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Install Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.95.0'
+          components: rustfmt
+
+      - name: Install Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Create contract-only telemetry compile shim
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-rs/src
+          cat > remote/libs/telemetry-rs/Cargo.toml <<'TOML'
+          [package]
+          name = "dd-telemetry"
+          version = "0.1.0"
+          edition = "2021"
+
+          [lib]
+          path = "src/lib.rs"
+
+          [dependencies]
+          tracing = "0.1"
+          tower-http = { version = "0.6", features = ["trace"] }
+          http = "1"
+          TOML
+          cat > remote/libs/telemetry-rs/src/lib.rs <<'RS'
+          use http::{Request, Response};
+          use std::time::Duration;
+          use tower_http::classify::{ServerErrorsAsFailures, SharedClassifier};
+          use tower_http::trace::{DefaultOnRequest, MakeSpan, OnResponse, TraceLayer};
+          use tracing::Span;
+
+          #[must_use]
+          pub struct OtelGuard;
+
+          pub fn init(_: &str) -> OtelGuard { OtelGuard }
+
+          pub fn http_trace_layer() -> TraceLayer<
+              SharedClassifier<ServerErrorsAsFailures>,
+              OtelMakeSpan,
+              DefaultOnRequest,
+              OtelOnResponse,
+          > {
+              TraceLayer::new_for_http().make_span_with(OtelMakeSpan).on_response(OtelOnResponse)
+          }
+
+          #[derive(Clone, Copy, Debug, Default)]
+          pub struct OtelMakeSpan;
+
+          impl<B> MakeSpan<B> for OtelMakeSpan {
+              fn make_span(&mut self, request: &Request<B>) -> Span {
+                  tracing::info_span!(
+                      "http_request",
+                      http.request.method = %request.method(),
+                      url.path = %request.uri().path(),
+                      http.response.status_code = tracing::field::Empty,
+                  )
+              }
+          }
+
+          #[derive(Clone, Copy, Debug, Default)]
+          pub struct OtelOnResponse;
+
+          impl<B> OnResponse<B> for OtelOnResponse {
+              fn on_response(self, response: &Response<B>, _: Duration, span: &Span) {
+                  span.record("http.response.status_code", response.status().as_u16() as u64);
+              }
+          }
+          RS
+
+      - name: Format, test, export, and regenerate all dependent artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          service=remote/deployments/dd-embeddings-rs
+          cargo fmt --all --manifest-path "$service/Cargo.toml"
+          cargo check --locked --manifest-path "$service/Cargo.toml"
+          cargo test --locked --manifest-path "$service/Cargo.toml"
+          cargo run --locked --quiet --manifest-path "$service/Cargo.toml" -- --export-openapi > "${RUNNER_TEMP}/openapi.1.json"
+          cargo run --locked --quiet --manifest-path "$service/Cargo.toml" -- --export-openapi > "${RUNNER_TEMP}/openapi.2.json"
+          cmp "${RUNNER_TEMP}/openapi.1.json" "${RUNNER_TEMP}/openapi.2.json"
+          cp "${RUNNER_TEMP}/openapi.1.json" "$service/generated/openapi.json"
+          node remote/tools/check-openapi-contracts.mjs --service dd-embeddings-rs
+          node remote/tools/generate-api-docs.mjs --service dd-embeddings-rs
+          node remote/tools/generate-api-docs.mjs --check --service dd-embeddings-rs
+          node remote/tools/validate-openapi-contracts.mjs
+          node remote/tools/generate-api-sdks.mjs
+          node remote/tools/generate-api-sdks.mjs --check
+          node remote/tools/validate-api-sdks.mjs
+
+      - name: Commit reviewed source and generated artifacts only
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          git rm .github/workflows/sync-public-private-openapi-den-445.yml
+          git add -A
+          mapfile -t changed < <(git diff --cached --name-only)
+          test "${#changed[@]}" -gt 5
+          for path in "${changed[@]}"; do
+            case "$path" in
+              .github/workflows/sync-public-private-openapi-den-445.yml|docs/executable-http-api-contract.md|remote/api-contracts/manifest.json|remote/deployments/dd-embeddings-rs/src/docs.rs|remote/deployments/dd-embeddings-rs/src/main.rs|remote/deployments/dd-embeddings-rs/generated/*|remote/deployments/generated-api-docs-index.json|remote/deployments/generated-api-docs-index.html|remote/api-sdks/*|remote/api-sdks/**)
+                ;;
+              *)
+                echo "unexpected staged path from DEN-445 integration: $path" >&2
+                exit 1
+                ;;
+            esac
+          done
+          git diff --cached --check
+          git commit -m 'fix(DEN-445): separate public and private runtime API docs'
+          git push origin HEAD:agent/den-445-native-openapi-fresh
