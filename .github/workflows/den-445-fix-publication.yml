@@ -1,0 +1,82 @@
+name: Fix DEN-445 publication guard
+
+on:
+  push:
+    branches:
+      - agent/den-445-native-openapi-fresh
+    paths:
+      - '.github/workflows/den-445-fix-publication.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/den-445-fix-publication.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-445-fix-publication
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    if: github.repository == 'ORESoftware/k8s-cluster'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-445-native-openapi-fresh
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Make publication gitlink-safe and idempotent
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/sync-public-private-openapi-den-445-v2.yml')
+          text = path.read_text(encoding='utf-8')
+          old = '''          rm -rf remote/libs
+          git rm \\
+            .github/workflows/sync-public-private-openapi-den-445.yml \\
+            .github/workflows/sync-public-private-openapi-den-445-v2.yml
+          git add -A
+'''
+          new = '''          rm -rf remote/libs
+          # `remote/libs` is a tracked gitlink. Never let the temporary telemetry
+          # compile shim turn into a staged submodule deletion.
+          git reset -- remote/libs || true
+          git rm -f --ignore-unmatch \\
+            .github/workflows/den-445-regenerate-fleet-sdks.yml \\
+            .github/workflows/sync-public-private-openapi-den-445.yml \\
+            .github/workflows/sync-public-private-openapi-den-445-v2.yml
+          git add -A
+          git reset -- remote/libs || true
+          test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'publication block: expected one match, found {text.count(old)}')
+          text = text.replace(old, new, 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          rm -f .github/workflows/den-445-fix-publication.yml
+
+      - name: Commit publisher repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add \
+            .github/workflows/sync-public-private-openapi-den-445-v2.yml \
+            .github/workflows/den-445-fix-publication.yml
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(DEN-445): preserve telemetry gitlink during publication'
+          git push origin HEAD:agent/den-445-native-openapi-fresh
