@@ -52,7 +52,7 @@ jobs:
               main.includes('for s in ["-n", &config.containerd_namespace, "run", "-d", "--name", &job.container_name]'),
             );
             assert.doesNotMatch(main, /"run", "-d", "--rm"/);
-            assert.ok(main.includes('nerdctl rejects `-d --rm` together'));
+            assert.match(main, /nerdctl[\s\S]*rejects `-d --rm` together/);
           '''
           count = text.count(old_assertion)
           if count == 1:
