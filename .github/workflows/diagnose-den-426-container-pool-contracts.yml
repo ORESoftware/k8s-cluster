@@ -1,0 +1,87 @@
+name: Diagnose DEN-426 container-pool contracts
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-den-426-container-pool-contracts.yml'
+      - '.github/workflows/diagnose-den-426-container-pool-contracts.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-den-426-container-pool-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-426-container-pool-contracts
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          persist-credentials: true
+      - name: Initialize the exact recursive shared-library gitlink
+        env:
+          SUBMODULE_AUTH_MODE: ssh
+        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
+      - name: Extract and execute the exact container-pool reconciliation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/apply-den-426-container-pool-contracts.yml').read_text(encoding='utf-8')
+          start = '      - name: Follow the registered container-pool modules and complete the seed contract\n'
+          end = '      - uses: pnpm/action-setup@'
+          if workflow.count(start) != 1 or workflow.count(end) != 1:
+              raise SystemExit('DEN-426 workflow markers are not unique')
+          block = workflow.split(start, 1)[1].split(end, 1)[0]
+          prefix = '        shell: bash\n        run: |\n'
+          if not block.startswith(prefix):
+              raise SystemExit('DEN-426 patch block shape changed')
+          lines = block[len(prefix):].splitlines()
+          if any(line and not line.startswith('          ') for line in lines):
+              raise SystemExit('DEN-426 patch indentation changed')
+          script = '\n'.join(line[10:] if line else '' for line in lines) + '\n'
+          output = Path('/tmp/den-426-container-pool-patch.sh')
+          output.write_text(script, encoding='utf-8')
+          output.chmod(0o700)
+          PY
+          bash -n /tmp/den-426-container-pool-patch.sh
+          /tmp/den-426-container-pool-patch.sh
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Run the complete container-pool contract
+        id: focused-contract
+        shell: bash
+        working-directory: remote/tests
+        run: |
+          set +e
+          log="${RUNNER_TEMP}/den-426-container-pool-contract.log"
+          pnpm exec tsx --test general/container-pool-config.test.ts >"$log" 2>&1
+          status=$?
+          tail -500 "$log"
+          exit "$status"
+      - name: Upload focused diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-426-container-pool-contract-diagnostics
+          path: ${{ runner.temp }}/den-426-container-pool-contract.log
+          retention-days: 1
+          if-no-files-found: warn
