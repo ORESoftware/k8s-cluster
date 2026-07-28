@@ -1,0 +1,204 @@
+name: DEN-479 normalize boolean literals for generated clients
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize]
+    paths:
+      - '.github/workflows/den-479-normalize-boolean-literals.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-479-boolean-literals-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  fix-and-validate:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.head_ref == 'agent/den-479-browser-test-openapi' &&
+      github.base_ref == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          persist-credentials: true
+          submodules: false
+
+      - name: Preserve runtime literals while avoiding broken boolean enum generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          schemas = Path('remote/deployments/browser-test-server/src/api-schemas.ts')
+          source = schemas.read_text(encoding='utf-8')
+          old = '    default: ToolSchema,\n'
+          new = "    default: z.string().regex(/^(playwright|puppeteer|selenium)$/),\n"
+          if source.count(old) != 1:
+              raise SystemExit(f'expected one tools default enum field, found {source.count(old)}')
+          schemas.write_text(source.replace(old, new, 1), encoding='utf-8')
+
+          contract = Path('remote/deployments/browser-test-server/src/api-contract.ts')
+          source = contract.read_text(encoding='utf-8')
+          old = '''function jsonSchema(schema: ZodType): JsonObject {
+            const converter = z.toJSONSchema as unknown as (
+              value: ZodType,
+              options?: { target?: 'draft-7' },
+            ) => JsonObject;
+            const result = structuredClone(converter(schema, { target: 'draft-7' }));
+            delete result.$schema;
+            return result;
+          }
+          '''
+          new = '''function normalizeGeneratorSchema(value: unknown): unknown {
+            if (Array.isArray(value)) return value.map(normalizeGeneratorSchema);
+            if (value === null || typeof value !== 'object') return value;
+
+            const result = Object.fromEntries(
+              Object.entries(value as JsonObject).map(([key, item]) => [
+                key,
+                normalizeGeneratorSchema(item),
+              ]),
+            ) as JsonObject;
+            if (Object.hasOwn(result, 'const')) {
+              const constant = result.const;
+              result['x-dd-constant-value'] = constant;
+              delete result.const;
+              if (typeof constant === 'boolean') {
+                result.type = 'boolean';
+                delete result.enum;
+              } else if (!Object.hasOwn(result, 'enum')) {
+                result.enum = [constant];
+              }
+            }
+            if (
+              Array.isArray(result.enum) &&
+              result.enum.length === 1 &&
+              typeof result.enum[0] === 'boolean'
+            ) {
+              result['x-dd-constant-value'] = result.enum[0];
+              result.type = 'boolean';
+              delete result.enum;
+            }
+            return result;
+          }
+
+          function jsonSchema(schema: ZodType): JsonObject {
+            const converter = z.toJSONSchema as unknown as (
+              value: ZodType,
+              options?: { target?: 'draft-7' },
+            ) => JsonObject;
+            const result = structuredClone(converter(schema, { target: 'draft-7' }));
+            delete result.$schema;
+            return normalizeGeneratorSchema(result) as JsonObject;
+          }
+          '''
+          if source.count(old) != 1:
+              raise SystemExit('api-contract jsonSchema function changed unexpectedly')
+          contract.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
+
+      - name: Create contract-only telemetry package shim
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-node
+          printf '%s\n' '{"name":"@dd/telemetry","version":"0.0.0-contract-shim","type":"module","exports":{".":{"types":"./index.d.ts","default":"./index.js"}}}' > remote/libs/telemetry-node/package.json
+          cat > remote/libs/telemetry-node/index.js <<'JS'
+          export function initTelemetry(){return {shutdown:async()=>undefined}}
+          export function instrumentFastify(){}
+          export function loggerMixin(){return {}}
+          JS
+          cat > remote/libs/telemetry-node/index.d.ts <<'TS'
+          export interface TelemetryGuard { shutdown(): Promise<void>; }
+          export function initTelemetry(service: string): TelemetryGuard;
+          export function instrumentFastify(app: unknown, options?: { service?: string }): void;
+          export function loggerMixin(): Record<string, unknown>;
+          TS
+
+      - name: Install language toolchains
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.95.0'
+      - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        with:
+          sdk: '3.12.2'
+
+      - name: Validate service and regenerate canonical contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@9.15.4 --activate
+          pnpm --dir remote/deployments/browser-test-server install --frozen-lockfile --ignore-workspace
+          pnpm --dir remote/deployments/browser-test-server run typecheck
+          pnpm --dir remote/deployments/browser-test-server run build
+          pnpm --dir remote/deployments/browser-test-server run test:contract
+          pnpm --dir remote/deployments/browser-test-server run --silent export:openapi > remote/deployments/browser-test-server/generated/openapi.json
+          pnpm --dir remote/deployments/browser-test-server run --silent export:openapi > "${RUNNER_TEMP}/browser-openapi.2.json"
+          cmp remote/deployments/browser-test-server/generated/openapi.json "${RUNNER_TEMP}/browser-openapi.2.json"
+          node remote/tools/generate-api-docs.mjs
+          node remote/tools/check-openapi-contracts.mjs --service browser-test-server
+          node remote/tools/generate-api-docs.mjs --check --service browser-test-server
+          node remote/tools/validate-openapi-contracts.mjs
+          node remote/tools/generate-api-sdks.mjs
+          node remote/tools/generate-api-sdks.mjs --check
+          node remote/tools/validate-api-sdks.mjs
+
+      - name: Generate and validate Rust, TypeScript, and Dart clients
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp/browser-test-sdk
+          node remote/tools/generate-openapi-sdks.mjs --service browser-test-server --output .tmp/browser-test-sdk
+          (
+            cd .tmp/browser-test-sdk/rust
+            cargo check
+            cargo check --locked
+          )
+          (
+            cd .tmp/browser-test-sdk/typescript
+            npm install --ignore-scripts --no-audit --no-fund
+            npm run build
+          )
+          (
+            cd .tmp/browser-test-sdk/dart
+            dart pub get
+            dart analyze
+          )
+
+      - name: Remove diagnostics and commit validated product output
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            DEN479_CONST_ENUM_DIAGNOSTIC.txt \
+            DEN479_MULTILANG_SDK_DIAGNOSTIC.txt \
+            DEN479_RUST_SDK_DIAGNOSTIC.txt \
+            .github/workflows/den-479-fix-rust-enum.yml \
+            .github/workflows/den-479-fix-dart-const.yml \
+            .github/workflows/den-479-normalize-boolean-literals.yml
+          rm -rf remote/libs .tmp remote/deployments/browser-test-server/node_modules remote/deployments/browser-test-server/dist
+          git add -A
+          git update-index --add --cacheinfo 160000,84d565eeb7e1e78ce0851a2e3c95966e5cc12e36,remote/libs
+          git diff --cached --check
+          test "$(git ls-files --stage remote/libs | awk '{print $1" "$2}')" = '160000 84d565eeb7e1e78ce0851a2e3c95966e5cc12e36'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-479 normalize boolean literals for generated clients'
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
