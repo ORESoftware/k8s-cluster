@@ -1,0 +1,265 @@
+name: apply compact customer cron validation errors
+
+on:
+  push:
+    branches:
+      - agent/cron-customer-control-plane-v2
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: agent/cron-customer-control-plane-v2
+          fetch-depth: 0
+          path: repo
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: "1.97.0"
+          components: rustfmt
+      - name: Replace response-sized validation errors with compact codes
+        working-directory: repo
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/cron.rs')
+          source = path.read_text()
+
+          replacements = [
+              (
+                  '''    let name = match take_schedule_name(&mut body) {
+                      Ok(name) => name,
+                      Err(response) => return response,
+                  };
+                  ''',
+                  '''    let name = match take_schedule_name(&mut body) {
+                      Ok(name) => name,
+                      Err(code) => return bad_request(code),
+                  };
+                  ''',
+                  1,
+              ),
+              (
+                  '''    let idempotency = match required_idempotency(&headers) {
+                      Ok(value) => value,
+                      Err(response) => return response,
+                  };
+                  ''',
+                  '''    let idempotency = match required_idempotency(&headers) {
+                      Ok(value) => value,
+                      Err(code) => return bad_request(code),
+                  };
+                  ''',
+                  2,
+              ),
+              (
+                  '''    let body = match validated_function_body(body) {
+                      Ok(body) => body,
+                      Err(response) => return response,
+                  };
+                  ''',
+                  '''    let body = match validated_function_body(body) {
+                      Ok(body) => body,
+                      Err(code) => return bad_request(code),
+                  };
+                  ''',
+                  2,
+              ),
+              (
+                  '''    let body = match validated_function_body(json!({
+                      "slug": form.slug.trim(),
+                      "displayName": form.display_name.trim(),
+                      "runtime": "nodejs",
+                      "functionBody": form.function_body,
+                      "maxRunMs": form.max_run_ms.unwrap_or(30_000),
+                      "labels": ["cron"]
+                  })) {
+                      Ok(body) => body,
+                      Err(response) => return response,
+                  };
+                  ''',
+                  '''    let body = match validated_function_body(json!({
+                      "slug": form.slug.trim(),
+                      "displayName": form.display_name.trim(),
+                      "runtime": "nodejs",
+                      "functionBody": form.function_body,
+                      "maxRunMs": form.max_run_ms.unwrap_or(30_000),
+                      "labels": ["cron"]
+                  })) {
+                      Ok(body) => body,
+                      Err(code) => return bad_request(code),
+                  };
+                  ''',
+                  1,
+              ),
+              (
+                  '''fn required_idempotency(headers: &HeaderMap) -> Result<HeaderValue, Response> {
+                      require_idempotency_key(headers).cloned()
+                  }
+                  ''',
+                  '''fn required_idempotency(headers: &HeaderMap) -> Result<HeaderValue, &'static str> {
+                      let value = headers
+                          .get(IDEMPOTENCY_KEY_HEADER)
+                          .ok_or("idempotency_key_required")?;
+                      let valid = value.to_str().is_ok_and(|value| {
+                          !value.is_empty()
+                              && value.len() <= 200
+                              && value.bytes().all(|byte| matches!(byte, 0x21..=0x7e))
+                      });
+                      if !valid {
+                          return Err("invalid_idempotency_key");
+                      }
+                      Ok(value.clone())
+                  }
+                  ''',
+                  1,
+              ),
+              (
+                  '''fn take_schedule_name(body: &mut Value) -> Result<String, Response> {
+                      let object = body
+                          .as_object_mut()
+                          .ok_or_else(|| bad_request("invalid_schedule"))?;
+                      let name = object
+                          .remove("name")
+                          .and_then(|value| value.as_str().map(str::to_string))
+                          .ok_or_else(|| bad_request("schedule_name_required"))?;
+                      if !valid_schedule_name(&name) {
+                          return Err(bad_request("invalid_schedule_name"));
+                      }
+                      Ok(name)
+                  }
+                  ''',
+                  '''fn take_schedule_name(body: &mut Value) -> Result<String, &'static str> {
+                      let object = body.as_object_mut().ok_or("invalid_schedule")?;
+                      let name = object
+                          .remove("name")
+                          .and_then(|value| value.as_str().map(str::to_string))
+                          .ok_or("schedule_name_required")?;
+                      if !valid_schedule_name(&name) {
+                          return Err("invalid_schedule_name");
+                      }
+                      Ok(name)
+                  }
+                  ''',
+                  1,
+              ),
+              (
+                  '''fn validated_function_body(mut body: Value) -> Result<Value, Response> {
+                      let object = body
+                          .as_object_mut()
+                          .ok_or_else(|| bad_request("invalid_function"))?;
+                      if let Some(runtime) = object.get("runtime").and_then(Value::as_str) {
+                          if runtime != "nodejs" {
+                              return Err(bad_request("unsupported_function_runtime"));
+                          }
+                      }
+                      object.insert("runtime".to_string(), Value::String("nodejs".to_string()));
+                      if object
+                          .get("entryCommand")
+                          .or_else(|| object.get("entry_command"))
+                          .is_some()
+                          || object.get("environment").is_some()
+                          || object.get("container").is_some()
+                      {
+                          return Err(bad_request("unsupported_function_configuration"));
+                      }
+                      let slug = object
+                          .get("slug")
+                          .and_then(Value::as_str)
+                          .unwrap_or_default();
+                      if !valid_slug(slug) {
+                          return Err(bad_request("invalid_function_slug"));
+                      }
+                      let source = object
+                          .get("functionBody")
+                          .or_else(|| object.get("function_body"))
+                          .and_then(Value::as_str)
+                          .unwrap_or_default();
+                      if source.is_empty() || source.len() > MAX_FUNCTION_SOURCE_BYTES {
+                          return Err(bad_request("invalid_function_source"));
+                      }
+                      let max_run_ms = object
+                          .get("maxRunMs")
+                          .or_else(|| object.get("max_run_ms"))
+                          .and_then(Value::as_u64)
+                          .unwrap_or(30_000);
+                      if max_run_ms == 0 || max_run_ms > MAX_RUN_MS {
+                          return Err(bad_request("invalid_function_timeout"));
+                      }
+                      Ok(body)
+                  }
+                  ''',
+                  '''fn validated_function_body(mut body: Value) -> Result<Value, &'static str> {
+                      let object = body.as_object_mut().ok_or("invalid_function")?;
+                      if let Some(runtime) = object.get("runtime").and_then(Value::as_str) {
+                          if runtime != "nodejs" {
+                              return Err("unsupported_function_runtime");
+                          }
+                      }
+                      object.insert("runtime".to_string(), Value::String("nodejs".to_string()));
+                      if object
+                          .get("entryCommand")
+                          .or_else(|| object.get("entry_command"))
+                          .is_some()
+                          || object.get("environment").is_some()
+                          || object.get("container").is_some()
+                      {
+                          return Err("unsupported_function_configuration");
+                      }
+                      let slug = object
+                          .get("slug")
+                          .and_then(Value::as_str)
+                          .unwrap_or_default();
+                      if !valid_slug(slug) {
+                          return Err("invalid_function_slug");
+                      }
+                      let source = object
+                          .get("functionBody")
+                          .or_else(|| object.get("function_body"))
+                          .and_then(Value::as_str)
+                          .unwrap_or_default();
+                      if source.is_empty() || source.len() > MAX_FUNCTION_SOURCE_BYTES {
+                          return Err("invalid_function_source");
+                      }
+                      let max_run_ms = object
+                          .get("maxRunMs")
+                          .or_else(|| object.get("max_run_ms"))
+                          .and_then(Value::as_u64)
+                          .unwrap_or(30_000);
+                      if max_run_ms == 0 || max_run_ms > MAX_RUN_MS {
+                          return Err("invalid_function_timeout");
+                      }
+                      Ok(body)
+                  }
+                  ''',
+                  1,
+              ),
+          ]
+
+          for old, new, expected in replacements:
+              count = source.count(old)
+              if count != expected:
+                  raise SystemExit(f'customer cron validation replacement count {count}, expected {expected}')
+              source = source.replace(old, new, expected)
+
+          path.write_text(source)
+          PY
+          cargo fmt --all
+          git fetch --no-tags origin main
+          git show origin/main:.github/workflows/ci.yml > .github/workflows/ci.yml
+          rm .github/workflows/agent-apply-customer-validation-errors.yml
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A src/cron.rs .github/workflows/ci.yml .github/workflows/agent-apply-customer-validation-errors.yml
+          git commit -m 'fix: use compact cron validation errors'
+          git push origin HEAD:agent/cron-customer-control-plane-v2
