@@ -1,0 +1,199 @@
+name: Apply DEN-419 cluster-doctor contracts
+
+on:
+  push:
+    branches:
+      - agent/den-419-cluster-doctor-contracts
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-den-419-cluster-doctor-contracts.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-419-cluster-doctor-contracts-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out focused branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-419-cluster-doctor-contracts
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Merge current main without rebasing
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor origin/main HEAD; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            if ! git merge --no-ff --no-edit origin/main; then
+              echo 'Semantic merge required. Conflicted paths:' >&2
+              git diff --name-only --diff-filter=U >&2
+              exit 1
+            fi
+          fi
+          if git grep -n -E '^(<<<<<<< |=======$|>>>>>>> )' -- . ':(exclude)*.lock'; then
+            exit 1
+          fi
+      - name: Align continuous tournament and modular REST contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/tests/general/cluster-doctor-cron.test.ts')
+          text = path.read_text(encoding='utf-8')
+
+          anchor = """async function readRepoFile(relativePath: string): Promise<string> {
+            return readFile(resolve(repoRoot, relativePath), 'utf8');
+          }
+          """
+          helper = r"""
+          async function readRestApiSource(): Promise<string> {
+            const modules = [
+              'api_docs',
+              'container_pool_routes',
+              'context',
+              'db',
+              'db_routes',
+              'dispatch',
+              'events',
+              'graphql_routes',
+              'handlers',
+              'k8s',
+              'lambdas',
+              'metrics',
+              'pg_contract',
+              'shared',
+              'state',
+              'threads',
+              'types',
+            ];
+            const main = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+            for (const moduleName of modules) {
+              assert.match(
+                main,
+                new RegExp(`mod ${moduleName};`),
+                `rest-api-rs main.rs must register ${moduleName}.rs`,
+              );
+            }
+            const moduleSources = await Promise.all(
+              modules.map((moduleName) =>
+                readRepoFile(`remote/deployments/rest-api-rs/src/${moduleName}.rs`),
+              ),
+            );
+            return [main, ...moduleSources].join('\n');
+          }
+          """
+          old_rest = "await readRepoFile('remote/deployments/rest-api-rs/src/main.rs')"
+          if 'async function readRestApiSource()' not in text:
+              if text.count(old_rest) != 1:
+                  raise SystemExit(f'expected one REST main.rs test read, found {text.count(old_rest)}')
+              text = text.replace(old_rest, 'await readRestApiSource()', 1)
+              if text.count(anchor) != 1:
+                  raise SystemExit(f'expected one readRepoFile helper, found {text.count(anchor)}')
+              text = text.replace(anchor, anchor + helper, 1)
+          elif text.count(old_rest) != 1:
+              raise SystemExit('REST bundle must retain one authoritative main.rs read')
+
+          replacements = {
+              r'/schedule:\s*["\']0 2 \* \* \*["\']/': r'/schedule:\s*["\']\*\/5 \* \* \* \*["\']/',
+              r'  assert.match(cron, /activeDeadlineSeconds:\s*28800/);\n':
+                  r'  assert.doesNotMatch(cron, /activeDeadlineSeconds:/);\n',
+              r'/SOCCER_TOURNAMENT_THREADS[\s\S]*value:\s*["\']2["\']/':
+                  r'/SOCCER_TOURNAMENT_THREADS[\s\S]*value:\s*["\']4["\']/',
+              r'/SOCCER_TOURNAMENT_SOFT_DEADLINE_SECONDS[\s\S]*value:\s*["\']25200["\']/':
+                  r'/SOCCER_TOURNAMENT_SOFT_DEADLINE_SECONDS[\s\S]*value:\s*["\']0["\']/',
+              r'/limits:[\s\S]*cpu:\s*["\']2["\'][\s\S]*memory:\s*14Gi/':
+                  r'/limits:[\s\S]*cpu:\s*["\']4["\'][\s\S]*memory:\s*14Gi/',
+          }
+          for before, after in replacements.items():
+              count = text.count(before)
+              if count == 1:
+                  text = text.replace(before, after, 1)
+              elif count == 0 and after in text:
+                  continue
+              else:
+                  raise SystemExit(f'expected one cluster-doctor assertion, found {count}: {before}')
+
+          schedule_anchor = "  assert.match(cron, /concurrencyPolicy:\\s*Forbid/);\n"
+          schedule_checks = (
+              "  assert.match(cron, /startingDeadlineSeconds:\\s*600/);\n"
+              "  assert.match(cron, /Continuous 128-team soccer learning tournament lane/);\n"
+              "  assert.match(cron, /a 24\\/7 tournament lane/);\n"
+          )
+          if 'a 24\\/7 tournament lane' not in text:
+              if text.count(schedule_anchor) < 1:
+                  raise SystemExit('soccer schedule assertion insertion point was not found')
+              # The file contains several concurrency assertions; target the one
+              # after the soccer schedule by inserting after the first occurrence
+              # following the soccer CronJob declaration.
+              soccer_pos = text.find("test('argocd runtime schedules the soccer tournament")
+              anchor_pos = text.find(schedule_anchor, soccer_pos)
+              if soccer_pos == -1 or anchor_pos == -1:
+                  raise SystemExit('could not locate the soccer concurrency assertion')
+              anchor_end = anchor_pos + len(schedule_anchor)
+              text = text[:anchor_end] + schedule_checks + text[anchor_end:]
+
+          path.write_text(text, encoding='utf-8')
+          PY
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Run the two affected cluster-doctor contracts
+        id: focused-contracts
+        shell: bash
+        working-directory: remote/tests
+        run: |
+          set -o pipefail
+          pnpm exec tsx --test \
+            --test-name-pattern='soccer tournament|dev-server can receive provider' \
+            general/cluster-doctor-cron.test.ts \
+            2>&1 | tee "${RUNNER_TEMP}/den-419-cluster-doctor-contracts.log"
+      - name: Upload focused diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-419-cluster-doctor-contract-diagnostics
+          path: ${{ runner.temp }}/den-419-cluster-doctor-contracts.log
+          retention-days: 1
+          if-no-files-found: warn
+      - name: Scan for unresolved conflict markers
+        if: success()
+        run: |
+          if git grep -n -E '^(<<<<<<< |=======$|>>>>>>> )' -- . ':(exclude)*.lock'; then
+            exit 1
+          fi
+      - name: Commit and push verified contract updates
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- remote/tests/general/cluster-doctor-cron.test.ts
+          if ! git diff --cached --quiet; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'DEN-419 align cluster-doctor contracts with continuous soccer and REST modules'
+          fi
+          if git rev-list --count origin/agent/den-419-cluster-doctor-contracts..HEAD | grep -vq '^0$'; then
+            git push origin HEAD:agent/den-419-cluster-doctor-contracts
+          fi
