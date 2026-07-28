@@ -53,8 +53,8 @@
     "/api/docs.json": {
       "get": {
         "operationId": "gleamlang_presence_server_get_api_docs_json_33894b4d682c",
-        "summary": "Machine-readable generated API route metadata.",
-        "description": "Machine-readable generated API route metadata.",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
         "tags": [
           "service"
         ],

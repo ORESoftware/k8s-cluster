@@ -34,8 +34,8 @@
     "/api/docs.json": {
       "get": {
         "operationId": "gleamlang_server_nats_bridge_get_api_docs_json_ee1f891057dd",
-        "summary": "Machine-readable generated API route metadata.",
-        "description": "Machine-readable generated API route metadata.",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
         "tags": [
           "service"
         ],

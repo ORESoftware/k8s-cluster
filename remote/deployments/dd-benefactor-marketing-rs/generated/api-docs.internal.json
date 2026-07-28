@@ -80,8 +80,8 @@
     "/api/docs.json": {
       "get": {
         "operationId": "dd_benefactor_marketing_rs_get_api_docs_json_b220dfc40f18",
-        "summary": "Machine-readable generated API route metadata.",
-        "description": "Machine-readable generated API route metadata.",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
         "tags": [
           "service"
         ],

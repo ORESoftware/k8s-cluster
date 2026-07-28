@@ -54,7 +54,7 @@
       "routeType": "service",
       "implementation": "service",
       "auth": "public",
-      "purpose": "Machine-readable generated API route metadata.",
+      "purpose": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
       "handlers": [],
       "sourceFiles": [
         "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"

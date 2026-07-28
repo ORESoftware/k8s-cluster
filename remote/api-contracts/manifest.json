@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "services": {
+    "dd-embeddings-rs": {
+      "contract": "remote/deployments/dd-embeddings-rs/generated/openapi.json",
+      "directory": "remote/deployments/dd-embeddings-rs",
+      "docsRoutes": [
+        "/openapi.json",
+        "/api/docs.json",
+        "/api/docs",
+        "/docs/api"
+      ],
+      "export": [
+        "cargo",
+        "run",
+        "--locked",
+        "--quiet",
+        "--manifest-path",
+        "remote/deployments/dd-embeddings-rs/Cargo.toml",
+        "--",
+        "--export-openapi"
+      ],
+      "implementation": "utoipa-axum",
+      "language": "rust",
+      "sdk": {
+        "dart": {
+          "generator": "dart",
+          "packageName": "dd_embeddings_client"
+        },
+        "rust": {
+          "generator": "rust",
+          "packageName": "dd_embeddings_client"
+        },
+        "sourceOfTruthRepository": "ORESoftware/k8s-libs-and-shared-defs",
+        "typescript": {
+          "generator": "typescript-fetch",
+          "packageName": "@oresoftware/dd-embeddings-client"
+        }
+      },
+      "visibility": "private",
+      "publicContract": "remote/deployments/dd-embeddings-rs/generated/api-docs.json",
+      "internalDocsRoutes": [
+        "/internal/openapi.json",
+        "/internal/docs/api"
+      ],
+      "runtimeContractPolicy": "Unauthenticated standard documentation routes serve only the fail-closed public contract; the complete typed contract and Scalar reference require bearer authentication."
+    }
+  }
+}

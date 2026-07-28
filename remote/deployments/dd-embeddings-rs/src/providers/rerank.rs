@@ -15,7 +15,7 @@ use super::ProviderError;
 use crate::config::Config;
 
 /// A rerank request: score each `documents[i]` against `query`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct RerankRequest {
     pub query: String,
     pub documents: Vec<String>,
@@ -27,13 +27,13 @@ pub struct RerankRequest {
 }
 
 /// One scored candidate, `index` referring to the input `documents`.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct Ranking {
     pub index: usize,
     pub score: f32,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct RerankResponse {
     pub provider: String,
     pub model: String,
@@ -57,13 +57,19 @@ impl RerankRegistry {
     pub fn from_config(cfg: &Config, http: reqwest::Client) -> Self {
         let mut providers: BTreeMap<String, Arc<dyn RerankProvider>> = BTreeMap::new();
         if let Some(key) = cfg.provider_key("COHERE_API_KEY") {
-            providers.insert("cohere".into(), Arc::new(CohereRerank::new(key, http.clone())));
+            providers.insert(
+                "cohere".into(),
+                Arc::new(CohereRerank::new(key, http.clone())),
+            );
         }
         if let Some(key) = cfg.provider_key("JINA_API_KEY") {
             providers.insert("jina".into(), Arc::new(JinaRerank::new(key, http.clone())));
         }
         if let Some(key) = cfg.provider_key("VOYAGE_API_KEY") {
-            providers.insert("voyage".into(), Arc::new(VoyageRerank::new(key, http.clone())));
+            providers.insert(
+                "voyage".into(),
+                Arc::new(VoyageRerank::new(key, http.clone())),
+            );
         }
         let mut aliases = BTreeMap::new();
         if providers.contains_key("voyage") {
@@ -112,11 +118,18 @@ async fn post_json(
         .json(&body)
         .send()
         .await
-        .map_err(|e| ProviderError::Transport { provider: provider.into(), source: e })?;
+        .map_err(|e| ProviderError::Transport {
+            provider: provider.into(),
+            source: e,
+        })?;
     let status = resp.status();
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
-        return Err(ProviderError::Upstream { provider: provider.into(), status: status.as_u16(), body });
+        return Err(ProviderError::Upstream {
+            provider: provider.into(),
+            status: status.as_u16(),
+            body,
+        });
     }
     Ok(resp)
 }
@@ -130,7 +143,13 @@ struct ScoredIndex {
 }
 
 fn to_rankings(items: Vec<ScoredIndex>) -> Vec<Ranking> {
-    items.into_iter().map(|r| Ranking { index: r.index, score: r.relevance_score }).collect()
+    items
+        .into_iter()
+        .map(|r| Ranking {
+            index: r.index,
+            score: r.relevance_score,
+        })
+        .collect()
 }
 
 // --- Cohere -----------------------------------------------------------------
@@ -159,20 +178,38 @@ impl RerankProvider for CohereRerank {
         "rerank-v3.5"
     }
     fn known_models(&self) -> &[&str] {
-        &["rerank-v3.5", "rerank-english-v3.0", "rerank-multilingual-v3.0"]
+        &[
+            "rerank-v3.5",
+            "rerank-english-v3.0",
+            "rerank-multilingual-v3.0",
+        ]
     }
     async fn rerank(&self, req: &RerankRequest) -> Result<RerankResponse, ProviderError> {
-        let model = req.model.clone().unwrap_or_else(|| self.default_model().to_string());
+        let model = req
+            .model
+            .clone()
+            .unwrap_or_else(|| self.default_model().to_string());
         let mut body = json!({ "model": model, "query": req.query, "documents": req.documents });
         if let Some(n) = req.top_n {
             body["top_n"] = json!(n);
         }
-        let resp = post_json(&self.http, "cohere", "https://api.cohere.com/v2/rerank", &self.api_key, body).await?;
+        let resp = post_json(
+            &self.http,
+            "cohere",
+            "https://api.cohere.com/v2/rerank",
+            &self.api_key,
+            body,
+        )
+        .await?;
         let parsed: CohereRerankResponse = resp
             .json()
             .await
             .map_err(|_| ProviderError::Decode("cohere".into(), "results[].relevance_score"))?;
-        Ok(RerankResponse { provider: "cohere".into(), model, results: to_rankings(parsed.results) })
+        Ok(RerankResponse {
+            provider: "cohere".into(),
+            model,
+            results: to_rankings(parsed.results),
+        })
     }
 }
 
@@ -205,17 +242,31 @@ impl RerankProvider for JinaRerank {
         &["jina-reranker-v2-base-multilingual", "jina-colbert-v2"]
     }
     async fn rerank(&self, req: &RerankRequest) -> Result<RerankResponse, ProviderError> {
-        let model = req.model.clone().unwrap_or_else(|| self.default_model().to_string());
+        let model = req
+            .model
+            .clone()
+            .unwrap_or_else(|| self.default_model().to_string());
         let mut body = json!({ "model": model, "query": req.query, "documents": req.documents });
         if let Some(n) = req.top_n {
             body["top_n"] = json!(n);
         }
-        let resp = post_json(&self.http, "jina", "https://api.jina.ai/v1/rerank", &self.api_key, body).await?;
+        let resp = post_json(
+            &self.http,
+            "jina",
+            "https://api.jina.ai/v1/rerank",
+            &self.api_key,
+            body,
+        )
+        .await?;
         let parsed: JinaRerankResponse = resp
             .json()
             .await
             .map_err(|_| ProviderError::Decode("jina".into(), "results[].relevance_score"))?;
-        Ok(RerankResponse { provider: "jina".into(), model, results: to_rankings(parsed.results) })
+        Ok(RerankResponse {
+            provider: "jina".into(),
+            model,
+            results: to_rankings(parsed.results),
+        })
     }
 }
 
@@ -248,16 +299,30 @@ impl RerankProvider for VoyageRerank {
         &["rerank-2", "rerank-2-lite"]
     }
     async fn rerank(&self, req: &RerankRequest) -> Result<RerankResponse, ProviderError> {
-        let model = req.model.clone().unwrap_or_else(|| self.default_model().to_string());
+        let model = req
+            .model
+            .clone()
+            .unwrap_or_else(|| self.default_model().to_string());
         let mut body = json!({ "model": model, "query": req.query, "documents": req.documents });
         if let Some(n) = req.top_n {
             body["top_k"] = json!(n); // Voyage calls it top_k
         }
-        let resp = post_json(&self.http, "voyage", "https://api.voyageai.com/v1/rerank", &self.api_key, body).await?;
+        let resp = post_json(
+            &self.http,
+            "voyage",
+            "https://api.voyageai.com/v1/rerank",
+            &self.api_key,
+            body,
+        )
+        .await?;
         let parsed: VoyageRerankResponse = resp
             .json()
             .await
             .map_err(|_| ProviderError::Decode("voyage".into(), "data[].relevance_score"))?;
-        Ok(RerankResponse { provider: "voyage".into(), model, results: to_rankings(parsed.data) })
+        Ok(RerankResponse {
+            provider: "voyage".into(),
+            model,
+            results: to_rankings(parsed.data),
+        })
     }
 }

@@ -24,6 +24,7 @@ const SERVICE_ROUTE_PATHS = new Set([
   '/livez',
   '/readyz',
   '/metrics',
+  '/openapi.json',
   '/docs/api',
   '/api/docs',
   '/api/docs.json',
@@ -53,6 +54,7 @@ const RUST_DEPLOYMENT_ALLOWLIST = new Set([
   'dd-compliance-rs',
   'dd-document-rs',
   'dd-escrow-rs',
+  'dd-embeddings-rs',
   'dd-git-rs',
   'des-simulator-rs',
   'fiducia-customer.rs',
@@ -223,6 +225,55 @@ function extractHandlerNames(call) {
     }
   }
   return [...new Set(handlers)].sort();
+}
+
+
+const OPENAPI_DOCUMENT_METHODS = new Set([
+  'get',
+  'post',
+  'put',
+  'patch',
+  'delete',
+  'head',
+  'options',
+  'trace',
+]);
+
+function extractOpenApiRoutes(document, sourceFile) {
+  if (typeof document !== 'object' || document === null || typeof document.paths !== 'object') {
+    throw new Error(`${relative(repoRoot, sourceFile)} is not an OpenAPI document with paths`);
+  }
+  if (typeof document.openapi !== 'string' || !document.openapi.startsWith('3.1.')) {
+    throw new Error(`${relative(repoRoot, sourceFile)} must use OpenAPI 3.1.x`);
+  }
+  const routes = [];
+  for (const [path, pathItem] of Object.entries(document.paths)) {
+    if (!pathItem || typeof pathItem !== 'object') continue;
+    for (const [method, operation] of Object.entries(pathItem)) {
+      if (!OPENAPI_DOCUMENT_METHODS.has(method)) continue;
+      if (!operation || typeof operation !== 'object') {
+        throw new Error(`${method.toUpperCase()} ${path} has no OpenAPI operation object`);
+      }
+      const operationId = operation.operationId;
+      if (typeof operationId !== 'string' || operationId.length === 0) {
+        throw new Error(`${method.toUpperCase()} ${path} has no stable operationId`);
+      }
+      routes.push({
+        path,
+        methods: [method.toUpperCase()],
+        handlers: [operationId],
+        sourceFile,
+        purposeHint:
+          typeof operation.summary === 'string'
+            ? operation.summary
+            : typeof operation.description === 'string'
+              ? operation.description
+              : '',
+        notes: 'Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.',
+      });
+    }
+  }
+  return mergeRoutes(routes);
 }
 
 function extractAxumRoutesFromSource(source, sourceFile, prefix = '') {
@@ -556,8 +607,8 @@ function routePurpose(routeType, route) {
   if (route.path === '/docs/api' || route.path === '/api/docs') {
     return 'Human-readable generated API documentation.';
   }
-  if (route.path === '/api/docs.json') {
-    return 'Machine-readable generated API route metadata.';
+  if (route.path === '/openapi.json' || route.path === '/api/docs.json') {
+    return 'Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.';
   }
   if (route.path === '/graphql' || route.path === '/api/graphql') {
     return 'GraphQL endpoint for typed remote REST API queries, guarded subservice calls, and the optional GraphiQL IDE on GET.';
@@ -621,6 +672,7 @@ function routeAuth(routeType, route) {
     route.path === '/docs/api' ||
     route.path === '/api/docs' ||
     route.path === '/api/docs.json' ||
+    route.path === '/openapi.json' ||
     route.path === '/api-docs' ||
     route.path === '/api-docs/' ||
     route.path === '/api-docs.json'
@@ -669,7 +721,13 @@ function normalizeRoutes(serviceName, rawRoutes) {
       path: route.path,
       methods: route.methods,
       routeType,
-      implementation: routeType === 'internal-db' ? 'internal-operator' : routeType === 'service' ? 'service' : 'code-first',
+      implementation: route.sourceFiles.some((file) => file.endsWith('/generated/openapi.json'))
+        ? 'openapi-code-first'
+        : routeType === 'internal-db'
+          ? 'internal-operator'
+          : routeType === 'service'
+            ? 'service'
+            : 'code-first',
       auth: routeAuth(routeType, route),
       purpose: routePurpose(routeType, route),
       handlers: route.handlers ?? [],
@@ -755,10 +813,15 @@ async function discoverRustServices() {
       continue;
     }
     const source = await readUtf8(main);
-    if (!source.includes('.route(')) {
+    const openapiFile = join(deploymentDir, 'generated/openapi.json');
+    const rawRoutes = (await pathExists(openapiFile))
+      ? extractOpenApiRoutes(JSON.parse(await readUtf8(openapiFile)), openapiFile)
+      : source.includes('.route(')
+        ? extractAxumRoutesFromSource(source, main)
+        : [];
+    if (rawRoutes.length === 0) {
       continue;
     }
-    const rawRoutes = extractAxumRoutesFromSource(source, main);
     if (entry.name === 'rest-api-rs') {
       const dbRoutes = join(deploymentDir, 'src/db_routes.rs');
       if ((await pathExists(dbRoutes)) && source.includes('/internal/db')) {

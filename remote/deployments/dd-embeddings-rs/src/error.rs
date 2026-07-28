@@ -10,10 +10,49 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use serde_json::json;
+use serde::Serialize;
 
 use crate::providers::ProviderError;
 use crate::rag::RagError;
+
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct ErrorDetail {
+    pub kind: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct ErrorResponse {
+    pub error: ErrorDetail,
+}
+
+/// Every stable error status that a functional endpoint can return.
+///
+/// Individual handlers reference this reusable response set so generated
+/// clients receive one typed error body rather than undocumented status codes.
+#[allow(dead_code)] // Variants are consumed as response metadata by utoipa.
+#[derive(utoipa::IntoResponses)]
+pub enum ApiErrorResponses {
+    #[response(status = 400, description = "Invalid request")]
+    BadRequest(ErrorResponse),
+    #[response(status = 401, description = "Missing or invalid bearer token")]
+    Unauthorized(ErrorResponse),
+    #[response(
+        status = 404,
+        description = "Requested provider or resource was not found"
+    )]
+    NotFound(ErrorResponse),
+    #[response(
+        status = 502,
+        description = "Upstream provider, vector store, or database failure"
+    )]
+    BadGateway(ErrorResponse),
+    #[response(
+        status = 503,
+        description = "Service dependency, configuration, or concurrency capacity is unavailable"
+    )]
+    ServiceUnavailable(ErrorResponse),
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum ApiError {
@@ -48,7 +87,9 @@ impl ApiError {
             ApiError::Provider(e) => provider_status_kind(e),
             ApiError::Rag(RagError::Provider(e)) => provider_status_kind(e),
             ApiError::Rag(RagError::NoDocuments) => (StatusCode::BAD_REQUEST, "no_documents"),
-            ApiError::Rag(RagError::CountMismatch { .. }) => (StatusCode::BAD_GATEWAY, "count_mismatch"),
+            ApiError::Rag(RagError::CountMismatch { .. }) => {
+                (StatusCode::BAD_GATEWAY, "count_mismatch")
+            }
             ApiError::Rag(RagError::Qdrant(_)) => (StatusCode::BAD_GATEWAY, "qdrant_error"),
         }
     }
@@ -60,18 +101,20 @@ impl ApiError {
         match self {
             ApiError::Unauthorized => "unauthorized".into(),
             ApiError::Overloaded => "service overloaded, retry later".into(),
-            ApiError::SearchDisabled => {
-                "search subsystem is not configured (no database)".into()
+            ApiError::SearchDisabled => "search subsystem is not configured (no database)".into(),
+            ApiError::Invalid(message) => message.clone(),
+            ApiError::Provider(ProviderError::Unknown(provider)) => {
+                format!("unknown provider `{provider}`")
             }
-            ApiError::Invalid(m) => m.clone(),
-            ApiError::Provider(ProviderError::Unknown(p)) => format!("unknown provider `{p}`"),
-            ApiError::Provider(ProviderError::NotConfigured(p)) => {
-                format!("provider `{p}` is not configured")
+            ApiError::Provider(ProviderError::NotConfigured(provider)) => {
+                format!("provider `{provider}` is not configured")
             }
             ApiError::Provider(ProviderError::EmptyInput) => {
                 "input must contain at least one non-empty string".into()
             }
-            ApiError::Provider(ProviderError::InvalidModel(_, m)) => format!("invalid model name: {m}"),
+            ApiError::Provider(ProviderError::InvalidModel(_, model)) => {
+                format!("invalid model name: {model}")
+            }
             ApiError::Rag(RagError::NoDocuments) => "at least one document is required".into(),
             // Upstream transport/decode/5xx, Qdrant, count mismatch: don't leak detail.
             _ => format!("{kind} (see server logs for detail)"),
@@ -82,15 +125,17 @@ impl ApiError {
 /// Database failures fold into `Db`: the driver detail is kept for server-side
 /// logging but never returned to the caller (see `client_message`).
 impl From<sea_orm::DbErr> for ApiError {
-    fn from(e: sea_orm::DbErr) -> Self {
-        ApiError::Db(e.to_string())
+    fn from(error: sea_orm::DbErr) -> Self {
+        ApiError::Db(error.to_string())
     }
 }
 
-fn provider_status_kind(e: &ProviderError) -> (StatusCode, &'static str) {
-    match e {
+fn provider_status_kind(error: &ProviderError) -> (StatusCode, &'static str) {
+    match error {
         ProviderError::Unknown(_) => (StatusCode::NOT_FOUND, "unknown_provider"),
-        ProviderError::NotConfigured(_) => (StatusCode::SERVICE_UNAVAILABLE, "provider_not_configured"),
+        ProviderError::NotConfigured(_) => {
+            (StatusCode::SERVICE_UNAVAILABLE, "provider_not_configured")
+        }
         ProviderError::InvalidModel(..) => (StatusCode::BAD_REQUEST, "invalid_model"),
         ProviderError::EmptyInput => (StatusCode::BAD_REQUEST, "empty_input"),
         ProviderError::Transport { .. } => (StatusCode::BAD_GATEWAY, "upstream_transport"),
@@ -102,14 +147,15 @@ fn provider_status_kind(e: &ProviderError) -> (StatusCode, &'static str) {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, kind) = self.status_kind();
-        // Log full internal detail (including any upstream body) server-side;
-        // 5xx are the actionable ones.
         if status.is_server_error() {
             tracing::warn!(error = %self, kind, "request failed");
         }
-        let body = Json(json!({
-            "error": { "kind": kind, "message": self.client_message(kind) }
-        }));
-        (status, body).into_response()
+        let body = ErrorResponse {
+            error: ErrorDetail {
+                kind: kind.to_string(),
+                message: self.client_message(kind),
+            },
+        };
+        (status, Json(body)).into_response()
     }
 }

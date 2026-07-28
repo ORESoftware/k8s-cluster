@@ -32,8 +32,8 @@ export interface ApiClientOptions {
 }
 
 export const SDK_SCOPE: SdkScope = "internal";
-export const CATALOG_SHA256 = "936fd83e3f4c565e871b07b4608d3191ab9a0235d5d4a970bf0d613854e18b94";
-export const OPERATION_COUNT = 914;
+export const CATALOG_SHA256 = "d20ebafb4afe13d8d63c370d4e0ad98262b17faffb751a756b6ca3b946b9030c";
+export const OPERATION_COUNT = 937;
 export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
   {
     "service": "agent-worker-broker-rs",
@@ -55,7 +55,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "a2c021bdb02442eeb9e9c4affda95633bdb82b40d43b8e4ce3181a5a664e39e5"
+    "contractSha256": "301b9f5b72b5f9ddeaebcac6911a670b6a47f3ce75cf82f34ced0bb4addfaad3"
   },
   {
     "service": "agent-worker-broker-rs",
@@ -178,7 +178,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "8c25d1a2bc7f33df8f32d8a7ad481003e9d132b3b007bd601bb1a574f0cf5468"
+    "contractSha256": "9ecce545726d28cb68d6357bf1ad90558a5c521854dab8b7a996cd4c5f047359"
   },
   {
     "service": "ai-ml-pipeline",
@@ -332,7 +332,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "2fb0644e7922f5323d8bb7ce67d01c0268bac7cd5cfac6ddd303f6e4ee46e7bf"
+    "contractSha256": "68dfde14568369ae30b1a9fc7c03f4541a50b99563b8b1bc2e242153bc156933"
   },
   {
     "service": "apostille-services-server-rs",
@@ -591,7 +591,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "3a400417e208d83fc301a1b491f1dc1de2fa3cb20e4d2bdd915c7ad238e177d8"
+    "contractSha256": "e05b1a9b49116f8f88949b1a9e937652f3eb4fcc08080eb6aae85e51a1ccb524"
   },
   {
     "service": "auth-server-rs",
@@ -734,7 +734,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "3c733f4e05d598299e580620d6f6679d2f4df5c831a1d5407c16c0e6164ccdce"
+    "contractSha256": "0367a2970977491e30bd48cd9e1edf78bf7e3563ad63a107c77629f6e0c31150"
   },
   {
     "service": "bastion-rs",
@@ -899,7 +899,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "1c947f1911652d308c87b24d5a2cbee12ed148370f19f799712fd2dc3fa452e7"
+    "contractSha256": "4731d47d17e183da52a485c97c39b6d071108dcb5f293884dab66a1ba900a72f"
   },
   {
     "service": "browser-test-server",
@@ -1064,7 +1064,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "871753c124fda75baeebb124de328961ef9b54c45d6fa0709cb9f3aac7fd57f7"
+    "contractSha256": "7499235db5ca1952328dadefdb9c7194213a26aee13b2f3077052687dc87332f"
   },
   {
     "service": "build-server-rs",
@@ -1279,7 +1279,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "06e29e6fb86b3dea4e4e0eef800f8840596efcfb47a062c47e731ed4de185c9f"
+    "contractSha256": "07ac2ead51a1ea083b8e9154f41dc9fd2084716027880a29bc563f16feea3940"
   },
   {
     "service": "cluster-mcp-rs",
@@ -1433,7 +1433,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "081e9d6cc427ed3f3b9b2cdd64f8c267d731b0cf1627c6e4011797f27fefcf9a"
+    "contractSha256": "92fa8983abad486f01640b9af3a8ab537d5c90779ba6044bfd16d960b347baca"
   },
   {
     "service": "container-pool-rs",
@@ -1593,7 +1593,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "d377f98d69646030850acbc372c87035ba86a73bf774733432728707d4d73747"
+    "contractSha256": "be193081e5c60c74c5af98e928044cdcfbca8c3dfd81766ada6a67e44b2b9209"
   },
   {
     "service": "contract-service-rs",
@@ -2261,7 +2261,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "9f71158e475723822d9a60c6ef06ae7a61393d8003249da965d4dc6c55832900"
+    "contractSha256": "2ff1ad55f99e7a87533b2b69455ad6b46c2a5c68c9fd989f1b1d3e44a02c9621"
   },
   {
     "service": "dataset-labeling-rs",
@@ -2459,7 +2459,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "05fffa886dbec2f439d661036013552c7952f53a1294bff29874f7733b72dc99"
+    "contractSha256": "2d34faa5ef50cf3a9a437eb364b0b11c8c718c0815c6c47d5f00e289f45858ce"
   },
   {
     "service": "dd-benefactor-marketing-rs",
@@ -3385,7 +3385,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "74fa1c1a304a4bb8b86bc8a16d50abe7d47eff1c2527d5d4aa5f3e99f8014e26"
+    "contractSha256": "e376c44d51c7debb5a42a27ce9db183c419d9e4ec8a42fb4ddb8dfd8e43d271c"
   },
   {
     "service": "dd-compliance-rs",
@@ -3796,7 +3796,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "c96143367eac10c5cbe084e50e823ac5abb787d2e553566c633ee91bc77ef26c"
+    "contractSha256": "01ec3d65382464bdb9d5d311466a386ca73f66c38c01804d8ab5a634d46ad78b"
   },
   {
     "service": "dd-document-rs",
@@ -4052,6 +4052,263 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "contractSha256": "a8a37479002e6eee5cbf095b0113670319cf25b03d764373be2f7ace9904c91c"
   },
   {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_delete_api_rag_collections_collection_fa32853eb919",
+    "method": "DELETE",
+    "path": "/api/rag/collections/{collection}",
+    "pathParameters": [
+      "collection"
+    ],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "5afa367f8ec0dbb531f7d317309bb79e9e1b7a3870bc90f70091867323750f75"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_delete_api_search_collections_collection_ca093876a7f5",
+    "method": "DELETE",
+    "path": "/api/search/collections/{collection}",
+    "pathParameters": [
+      "collection"
+    ],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "e51604d6b6fa2deebdc27b77a86878d8a70bcdc4ee7525105aed9dbd5e8efd42"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_api_docs_6d9a44ce91c7",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "d72a6c360831d5f976044ee2e48974fdd415246bd040e3d3c24491be2fe97fa3"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_api_docs_json_5b156aa49080",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "06670a121852fed6e88bb30a616e1700db926ad4841cdbca7e28d919ef0b98f9"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_api_providers_36cf90869dd9",
+    "method": "GET",
+    "path": "/api/providers",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "427db96d24e114b61c57cdc7ee145b0adaa5caaca255f535dd641a0ae82cd733"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_api_rag_collections_e0b7929b0df0",
+    "method": "GET",
+    "path": "/api/rag/collections",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "fc37d6288326e97d6bdf5ed4d08ff9026f43fed96abfa25d966368311821067f"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_api_search_collections_59d686771167",
+    "method": "GET",
+    "path": "/api/search/collections",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "daeb3d2101f0ea760a55e50655da0d062ac93d3663388fefa45e077e9ca90aa4"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_docs_api_dbf8547bbd66",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "d7293488c687f9b62afa92eb4a8cb9fed129695434b9e586fd10e3074d128e5a"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_healthz_c98b323dcfc7",
+    "method": "GET",
+    "path": "/healthz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "9d7279921dadbdf9cd9f61eca7e9f505b50ad91440599e7f0d968049b02898a1"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_internal_docs_api_d373fd1bbe62",
+    "method": "GET",
+    "path": "/internal/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "49a5a4ae100b41cdfc00ddbb83014769653ac50133508ced7202ccacde4e419a"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_internal_openapi_json_e9dd76675a9c",
+    "method": "GET",
+    "path": "/internal/openapi.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "c8731de7dbfb938e7cd4bab6e53b8540471c02e098e1a07e866c22cacf995562"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_metrics_b8de5715f91f",
+    "method": "GET",
+    "path": "/metrics",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "1dc791f40a5797eaed2911a67a3ee9c344159e3382f467b45827a94009ce09bb"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_openapi_json_e309ad71cb55",
+    "method": "GET",
+    "path": "/openapi.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "476e7b3bb5c13ef389f8257b4e4ef51b87857a8c50851b4a68086fc321c3ff06"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_get_readyz_1034976ffc04",
+    "method": "GET",
+    "path": "/readyz",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "4b2ef63d1fb8f8d5f1592a272858f1cc75912f8ce52c562d25eaf1dfa6d9c878"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_post_api_embeddings_6de87cc7d9b7",
+    "method": "POST",
+    "path": "/api/embeddings",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "bdc689f1b159d90be9c2d25d19ef4274ec56e238faf39652ef3390322b39c404"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_post_api_rag_delete_48e747c661f4",
+    "method": "POST",
+    "path": "/api/rag/delete",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "57a247552051d9284dc192c89bb1e1528b5b59b2288758ad0557e78812c5c698"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_post_api_rag_index_f2ca7c2fdaa6",
+    "method": "POST",
+    "path": "/api/rag/index",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "db474ba5c48975ec57f8f117cb62984ac85dfdf0dd0c9888a219fc82d6cb5383"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_post_api_rag_search_3fe44ec70b90",
+    "method": "POST",
+    "path": "/api/rag/search",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "ce2f08df71ec5e4d987c4fc754b0f55644c33ba8aaf66d5f235d503f7d81b78e"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_post_api_rerank_cd6798bbe163",
+    "method": "POST",
+    "path": "/api/rerank",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "238a47c35ff7df4f0362337bd29964ce9a460b032b3bc93a1cf96d3f68e33a1d"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_post_api_search_de4648e12ab4",
+    "method": "POST",
+    "path": "/api/search",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "6086f8ac4f2b7ca9d97da9eb6dd38514866cafbe2bd921c64cadb30c41fe5ac3"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_post_api_search_delete_8b548d112c2f",
+    "method": "POST",
+    "path": "/api/search/delete",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "2a338fea398daafa8e4f2e003defd8c2ccea0e6b2b89477b15e1fcdf460b1222"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_post_api_search_edges_282fcc3e6c76",
+    "method": "POST",
+    "path": "/api/search/edges",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "7b58453c265a43d000748b5eee0891e609dc6db76be1a4e1ebb8231c08759226"
+  },
+  {
+    "service": "dd-embeddings-rs",
+    "operationId": "dd_embeddings_rs_post_api_search_index_c03d7512df3f",
+    "method": "POST",
+    "path": "/api/search/index",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "d393f0a943c0d56a3189c46b49c22243afd7fff306b201ae84e661314a026128"
+  },
+  {
     "service": "dd-escrow-rs",
     "operationId": "dd_escrow_rs_get_0c8ff7399814",
     "method": "GET",
@@ -4082,7 +4339,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "19078a66748089ece12e2454c9f2763cefa8b6886fdfb018cc163e5949de1dc1"
+    "contractSha256": "5311527a65e50980de39665fc52a15c3daebc6c851948af5cb05a6d3d7b633cf"
   },
   {
     "service": "dd-escrow-rs",
@@ -4304,7 +4561,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "0fed43d9ae50ab646e82681cf076b2d016c68852070b140380e2ecba3617f0bf"
+    "contractSha256": "6b62037df721f1b21d00a8a2eb52778c2cfe03961ac3515685266d1b335c92e3"
   },
   {
     "service": "dd-git-rs",
@@ -4493,7 +4750,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "c55e9f5ea9b196212b71d7ab4f78a14271c7b9b3a3f3750d1710c33199fd2a90"
+    "contractSha256": "98f60dbcd42a3f3a928cdc6b53fe2fa7c04f9bb957513851c09c03efc604211a"
   },
   {
     "service": "dd-music-rs",
@@ -4653,7 +4910,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "7d819f648e24e71927e68c1a9b79a1ca38f46449c290f309e8f151a3008414cb"
+    "contractSha256": "c655f3f938a1874dcd1667b00dfa09fc75a78a5e13fcc738533ea5b43f104079"
   },
   {
     "service": "dd-ocr-rs",
@@ -4818,7 +5075,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "5ae85474d0809455776383b9b47768181a692e8e6417ad669a728b4e2134108e"
+    "contractSha256": "93b6851bc0f102d07e60d05bacbb24216e63dd95a515d4425b4f305a5d36300a"
   },
   {
     "service": "des-simulator-rs",
@@ -5033,7 +5290,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "919731d3c090aaabd7cc132c9038ecd29112b32160be52e411fdfef5be68bd8c"
+    "contractSha256": "fd0c139de836a77780110c5dde9a1c63553b3c7ed99690efaaaf60647cc28a84"
   },
   {
     "service": "dev-server",
@@ -5259,7 +5516,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "f7c4d297c592c26daadb18cb4e14065482134af9104891b95a01bf8482fa2bed"
+    "contractSha256": "ea60eb834f2727481948a87f38e305d301c7afcef9b50146fb29d1b2cd27bab8"
   },
   {
     "service": "economics-server-rs",
@@ -5637,7 +5894,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "8af51c8c0302230d1731bee39ee9101e43196c1c973ed1a5cd3bce211a27f8d5"
+    "contractSha256": "7b69cc4c007a74f5a5115f7c0e8499d19a0eb68222b055dae6ca0fd8f027c2a3"
   },
   {
     "service": "formal-methods-server-rs",
@@ -5784,7 +6041,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "f6e2a15ca68b6311248b54199bdd02025a68bcce117151c582055719c5ddc327"
+    "contractSha256": "e6312608f561ed74c2288d5be2cd9df984e57ce4c9f024499c07505c29a96b3a"
   },
   {
     "service": "formal-methods-service-rs",
@@ -5905,7 +6162,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "013aa623698221878318fad88e0b065de6693437b1ec239434c6ab37342d3a2b"
+    "contractSha256": "e628bd924744f7b7aed9882f94b83059688fbf806af76a8e93a70f50b4a10739"
   },
   {
     "service": "fsharp-ws-server",
@@ -6158,7 +6415,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "d9c4f371c5c274b0625106c1cecd076072022efc678d3892c95ac4eadce731d4"
+    "contractSha256": "6cba395224d85df9256af49d5c0688b7bfaa43c254c4bf4835692515da78eca8"
   },
   {
     "service": "gleam-mcp-server",
@@ -6326,7 +6583,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "d7796a1904fdb37dd348eebb6ae17cf4cfc3ebc119978591a1a29e9cf7baef85"
+    "contractSha256": "ab7fff20c2c3de2a83c211efd95cdee398dcb28b27ed50115f4772dcb1c860d7"
   },
   {
     "service": "gleamlang-presence-server",
@@ -6506,7 +6763,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "2ae7f9bda3e6b9adb53206e0036e72a0f2a9e4f401f2d03ae114be61cbdcfdaf"
+    "contractSha256": "db3bab525e2b36010612257c52ce98691e3050045d89e684be75792a33ca077d"
   },
   {
     "service": "gleamlang-server",
@@ -6640,7 +6897,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "81ae101cced865447e73fa603c6529dade33871420dcc3e85ceb34236c24ae78"
+    "contractSha256": "bdd23948014d3ab5639ad3a7787cbb4da03c1ac852e716b31cb047d1f3fabb6e"
   },
   {
     "service": "gleamlang-server-nats-bridge",
@@ -6720,7 +6977,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "f9c254a646d1799775f518cb05a969457512f1cd8dfc55e2b0342c81d13ee7ed"
+    "contractSha256": "c90db8ff7f2e67461fd6bc54e8e0dc8149722bdede38adb5b6655bda3dd85f42"
   },
   {
     "service": "gleamlang-ws-server",
@@ -6946,7 +7203,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "2d102c32a54266612c45dfb86a71d7fdfec237ba0b4e704301336e49e0d39a81"
+    "contractSha256": "9d6bb1e91903843e7b19482bd7ab8159e554299507fd574d7248ceeb7d8b285a"
   },
   {
     "service": "knowledge-graph-builder-rs",
@@ -7144,7 +7401,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "fd31cbbd89c5a87ef261e44f63506ca0a6dbf356432f06f4acd9a48d576822c9"
+    "contractSha256": "d7085d31567c05bc51aca638cfb87b7fefd89e34e26b22a42d1f8df90d4febd6"
   },
   {
     "service": "mdp-optimizer-rs",
@@ -7265,7 +7522,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "53e706525aa7d7e3ecfef418fd9c04218a62dfd5b47e47de7b4a5990659707b2"
+    "contractSha256": "3570fe8c2e0f6601dd4756bea86d7fe82b5ba8490dcc731bf79c6680fd40dd87"
   },
   {
     "service": "patent-filing-rs",
@@ -7531,7 +7788,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "b3eae79f1c2dae26c7599c1e8d30b0d50f0e31a4ca99461a934e7dff1392c31d"
+    "contractSha256": "211543d4132ef99e59675b8b990fbf8c02b705c81b0d6c7dd6275598c05c53a8"
   },
   {
     "service": "public-data-server-rs",
@@ -7923,7 +8180,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "852b2f8e3bcf9b092d038ab0147ddfeabecee8412197adda0db9858fb1743f92"
+    "contractSha256": "d5c6ec7d26f195bfab76da4942c308da71ee731570f43357a043112f939da66e"
   },
   {
     "service": "rest-api-rs",
@@ -8574,7 +8831,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "fa39190ac28a0cbbd947b4f87870b8e0f774038ef0418ffcf5c25e1fcc0b496f"
+    "contractSha256": "2d75d16211e9b297409351c5c456efbf61d81221c5c025557989171829ffcf54"
   },
   {
     "service": "runtime-config-rs",
@@ -8795,7 +9052,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "30422601aad7dd377a7bb1b9efada29af341032c88895f5a5b6741dc588c7b6f"
+    "contractSha256": "68a6c9082fe1ad7a818116cdac928fbc4d2f1f01274f99c7495f84465fb66c00"
   },
   {
     "service": "rust-vapi-phone-rs",
@@ -8949,7 +9206,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "713126cd5878576ea820404bd436789f3e39cff0ba31820c1bc1db62361ea5f8"
+    "contractSha256": "4bd1bbf800e186ac070b989741b352e089999c4e86cbe3382d887afc8606c848"
   },
   {
     "service": "spark-pipeline-server",
@@ -9061,7 +9318,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "ce48ddd6a56f7b812d5e188bd87948fe6054969eddcd0d938f82c45d693d4882"
+    "contractSha256": "9ce7b539d393248a707b4c6e17505b51991bdd23a70c4727e20e7237abf59a0b"
   },
   {
     "service": "trading-server-rs",
@@ -9215,7 +9472,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "a3eb8a37ccd2b4bafd95a2a22942351ea1cf0165dcd3c8d0cf1346ce0c94ff6a"
+    "contractSha256": "a91a3f24e6dd563358e2330de61b204631317015b73e275e32481cd2b379c3f9"
   },
   {
     "service": "wal-gateway-rs",
@@ -9402,7 +9659,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "a17e3bd2ca916e9813f4680da331af197ecb6579fc32056b8f949ca701c4bcd5"
+    "contractSha256": "281ceb959b4712522af35fcc0e631ac5932b7fb08fb5abdd2a0c4a9dfdb31c10"
   },
   {
     "service": "web-home-rs",
@@ -9846,7 +10103,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "d287ea6c6146f60372a5c58b09f806e8b8f520edf196f4c68946dd6500e6a23a"
+    "contractSha256": "b09d4d71d22d937420da5705336a85b4d283767ca6db74314afec63d5a822b2a"
   },
   {
     "service": "web-scraper-service",
@@ -10011,7 +10268,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "e9f3a0ff2c42a96bfcae91d5e9c33bdf8a8a2aa2412c84e6da48410de3fdc620"
+    "contractSha256": "9afc57cc4d83ba3f2029cdfd116e3fb35e079fdcf91df4634e74c7e315d7902f"
   },
   {
     "service": "webrtc-media-rs",
@@ -10242,7 +10499,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "732d49c9b0864b2e20e3524abf2c1dd515a394efaac7e85f418551f2a87c6aef"
+    "contractSha256": "a9463031bfc10974f4be21b5a46c7fb26eeb99544298642d969eabc60da575e3"
   },
   {
     "service": "webrtc-signaling-rs",

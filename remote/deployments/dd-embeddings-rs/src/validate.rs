@@ -21,12 +21,16 @@ pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 /// upstream call so an oversized request is rejected for free.
 pub fn enforce_input_limits(inputs: &[String], limits: &Limits) -> Result<(), ApiError> {
     if inputs.is_empty() {
-        return Err(ApiError::Invalid("input must contain at least one string".into()));
+        return Err(ApiError::Invalid(
+            "input must contain at least one string".into(),
+        ));
     }
     // Reject blank items outright rather than spending a paid provider call on
     // them (many providers also 400 on empty strings).
     if inputs.iter().any(|s| s.trim().is_empty()) {
-        return Err(ApiError::Invalid("input items must be non-empty (no blank strings)".into()));
+        return Err(ApiError::Invalid(
+            "input items must be non-empty (no blank strings)".into(),
+        ));
     }
     if inputs.len() > limits.max_batch_size {
         return Err(ApiError::Invalid(format!(
@@ -84,7 +88,9 @@ pub fn validate_model(model: Option<&str>) -> Result<(), ApiError> {
     let Some(m) = model else { return Ok(()) };
     const MAX: usize = 256;
     if m.is_empty() || m.len() > MAX {
-        return Err(ApiError::Invalid(format!("model name must be 1..={MAX} characters")));
+        return Err(ApiError::Invalid(format!(
+            "model name must be 1..={MAX} characters"
+        )));
     }
     if m.chars().any(|c| c.is_whitespace() || c.is_control()) {
         return Err(ApiError::Invalid(
@@ -119,14 +125,19 @@ pub fn validate_collection(name: &str) -> Result<(), ApiError> {
             "collection name must be 1..={MAX} characters"
         )));
     }
-    if !name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.')) {
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+    {
         return Err(ApiError::Invalid(
             "collection name may contain only [A-Za-z0-9._-]".into(),
         ));
     }
     // Defense in depth even though '/' is already excluded above.
     if name.contains("..") {
-        return Err(ApiError::Invalid("collection name may not contain `..`".into()));
+        return Err(ApiError::Invalid(
+            "collection name may not contain `..`".into(),
+        ));
     }
     Ok(())
 }
