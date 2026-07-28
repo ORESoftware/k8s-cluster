@@ -28,12 +28,12 @@ jobs:
       EXPECTED_VERSION: '1.0.1'
     steps:
       - name: Checkout main source of truth
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: main
 
       - name: Setup Node and OAuth helper
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
 
