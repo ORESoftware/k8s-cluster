@@ -148,19 +148,24 @@ pub(crate) async fn device_revision_handler(
     Ok(Json(DeviceRevisionResponse { device_revision }))
 }
 
+#[derive(Deserialize)]
+pub(crate) struct QueueEnvelopeRequest {
+    envelope: SignalCiphertextEnvelope,
+}
+
 #[derive(Debug, Serialize)]
-pub(crate) struct EnqueueEnvelopeResponse {
+pub(crate) struct QueueEnvelopeResponse {
     mailbox_seq: i64,
-    inserted: bool,
+    duplicate: bool,
 }
 
 pub(crate) async fn enqueue_envelope_handler(
     State(state): State<AppState>,
     who: AuthedDevice,
-    JsonBody(envelope): JsonBody<SignalCiphertextEnvelope>,
-) -> Result<(StatusCode, Json<EnqueueEnvelopeResponse>), ApiError> {
-    require_authenticated_sender(&envelope, who)?;
-    let result = signal_store::enqueue_envelope(state.database(), &envelope)
+    JsonBody(request): JsonBody<QueueEnvelopeRequest>,
+) -> Result<(StatusCode, Json<QueueEnvelopeResponse>), ApiError> {
+    require_authenticated_sender(&request.envelope, who)?;
+    let result = signal_store::enqueue_envelope(state.database(), &request.envelope)
         .await
         .map_err(map_store_error)?;
     let status = if result.inserted {
@@ -170,9 +175,9 @@ pub(crate) async fn enqueue_envelope_handler(
     };
     Ok((
         status,
-        Json(EnqueueEnvelopeResponse {
+        Json(QueueEnvelopeResponse {
             mailbox_seq: result.mailbox_seq,
-            inserted: result.inserted,
+            duplicate: !result.inserted,
         }),
     ))
 }
@@ -190,24 +195,36 @@ pub(crate) struct MailboxEnvelopeResponse {
     envelope: SignalCiphertextEnvelope,
 }
 
+#[derive(Debug, Serialize)]
+pub(crate) struct MailboxPullResponse {
+    items: Vec<MailboxEnvelopeResponse>,
+    next_cursor: i64,
+}
+
 pub(crate) async fn pull_mailbox_handler(
     State(state): State<AppState>,
     who: AuthedDevice,
     Query(query): Query<PullMailboxQuery>,
-) -> Result<Json<Vec<MailboxEnvelopeResponse>>, ApiError> {
+) -> Result<Json<MailboxPullResponse>, ApiError> {
     if query.after_mailbox_seq < 0 || query.limit == Some(0) {
         return Err(ApiError::BadRequest);
     }
+    let after_mailbox_seq = query.after_mailbox_seq;
     let rows = signal_store::pull_mailbox(
         state.database(),
         who.account_id,
         who.device_id,
-        query.after_mailbox_seq,
+        after_mailbox_seq,
         query.limit.unwrap_or(DEFAULT_MAILBOX_LIMIT),
     )
     .await
     .map_err(map_store_error)?;
-    Ok(Json(rows.into_iter().map(mailbox_response).collect()))
+    let items: Vec<MailboxEnvelopeResponse> = rows.into_iter().map(mailbox_response).collect();
+    let next_cursor = items
+        .last()
+        .map(|item| item.mailbox_seq)
+        .unwrap_or(after_mailbox_seq);
+    Ok(Json(MailboxPullResponse { items, next_cursor }))
 }
 
 #[derive(Deserialize)]
@@ -393,6 +410,38 @@ mod tests {
             Err(ApiError::BadRequest)
         ));
         assert!(require_sibling_target(Uuid::new_v4(), who).is_ok());
+    }
+
+    #[test]
+    fn queue_wire_shape_matches_shared_interfaces() {
+        let account_id = Uuid::new_v4();
+        let sender_device_id = Uuid::new_v4();
+        let value = serde_json::json!({"envelope": envelope(account_id, sender_device_id)});
+        let request: QueueEnvelopeRequest = serde_json::from_value(value).unwrap();
+        assert_eq!(request.envelope.metadata.account_id, account_id.to_string());
+
+        let inserted = serde_json::to_value(QueueEnvelopeResponse {
+            mailbox_seq: 7,
+            duplicate: false,
+        })
+        .unwrap();
+        assert_eq!(inserted, serde_json::json!({"mailbox_seq": 7, "duplicate": false}));
+    }
+
+    #[test]
+    fn mailbox_pull_wire_shape_has_items_and_monotonic_next_cursor() {
+        let account_id = Uuid::new_v4();
+        let sender_device_id = Uuid::new_v4();
+        let response = MailboxPullResponse {
+            items: vec![MailboxEnvelopeResponse {
+                mailbox_seq: 9,
+                envelope: envelope(account_id, sender_device_id),
+            }],
+            next_cursor: 9,
+        };
+        let value = serde_json::to_value(response).unwrap();
+        assert!(value.get("items").unwrap().is_array());
+        assert_eq!(value.get("next_cursor"), Some(&serde_json::json!(9)));
     }
 
     #[test]
