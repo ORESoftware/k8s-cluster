@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,6 +32,37 @@ function runNode(repoRoot, script, args = []) {
 
 function readJson(repoRoot, path) {
   return JSON.parse(readFileSync(resolve(repoRoot, path), 'utf8'));
+}
+
+function deploymentGitlinks(repoRoot) {
+  const output = execFileSync('git', ['ls-files', '--stage', '--', 'remote/deployments'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+  return new Set(
+    output
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const [metadata, path] = line.split('\t');
+        return metadata?.startsWith('160000 ') ? path : null;
+      })
+      .filter(Boolean),
+  );
+}
+
+function deploymentPathForGenerated(generatedPath) {
+  const marker = '/generated/';
+  const markerIndex = generatedPath.indexOf(marker);
+  return markerIndex === -1 ? null : generatedPath.slice(0, markerIndex);
+}
+
+function unavailableGitlink(repoRoot, generatedPath, gitlinks) {
+  const deploymentPath = deploymentPathForGenerated(generatedPath);
+  if (!deploymentPath || !gitlinks.has(deploymentPath)) {
+    return false;
+  }
+  return !existsSync(resolve(repoRoot, deploymentPath, '.git'));
 }
 
 function canonicalOpenApiPath(service) {
@@ -96,9 +127,17 @@ assert.ok(
   'central generated API docs HTML index must be committed and servable by web-home-rs.',
 );
 
+const gitlinks = deploymentGitlinks(repoRoot);
+let checkedServices = 0;
+let skippedGitlinks = 0;
 for (const service of index.services) {
   const openApiPath = canonicalOpenApiPath(service);
   assert.ok(openApiPath, `${service.service} must include a canonical OpenAPI JSON artifact`);
+  if (unavailableGitlink(repoRoot, openApiPath, gitlinks)) {
+    skippedGitlinks += 1;
+    continue;
+  }
+
   const publicPath = openApiPath.replace(/\.json$/, '.public.json');
   const metadataPath = openApiPath.replace(/\.json$/, '.metadata.json');
   for (const path of [openApiPath, publicPath, metadataPath]) {
@@ -116,6 +155,16 @@ for (const service of index.services) {
     assert.ok(openapi.paths[path]?.get, `${service.service} OpenAPI is missing GET ${path}`);
     assert.ok(publicOpenApi.paths[path]?.get, `${service.service} public OpenAPI is missing GET ${path}`);
   }
+  checkedServices += 1;
 }
+assert.ok(checkedServices > 0, 'expected at least one available service contract to be checked');
 
-console.log([generationOutput, validationOutput].filter(Boolean).join('\n'));
+console.log(
+  [
+    generationOutput,
+    validationOutput,
+    `route coverage checked ${checkedServices} service(s); skipped ${skippedGitlinks} uninitialized gitlink service(s)`,
+  ]
+    .filter(Boolean)
+    .join('\n'),
+);
