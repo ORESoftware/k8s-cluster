@@ -2,9 +2,9 @@
 """Merge the wal-gateway contract changes into the newer fleet generator.
 
 The original DEN-482 patch was prepared before the browser-test Fastify
-contract landed on main.  This script applies only the non-overlapping service
+contract landed on main. This script applies only the non-overlapping service
 patch, then conceptually merges the wal-gateway security/visibility semantics
-with the newer Node/Fastify route hints.  Every replacement is exact and
+with the newer Node/Fastify route hints. Every replacement is exact and
 fail-closed so upstream drift cannot silently discard either implementation.
 """
 
@@ -183,6 +183,46 @@ def record_runtime_auth_boundaries() -> None:
     path.write_text(source)
 
 
+def canonicalize_export_order() -> None:
+    path = Path("remote/deployments/wal-gateway-rs/src/docs.rs")
+    source = path.read_text()
+    old = """pub fn canonical_json(openapi: &OpenApi) -> Result<String, serde_json::Error> {
+    let mut json = serde_json::to_string_pretty(openapi)?;
+    json.push('\\n');
+    Ok(json)
+}"""
+    new = """fn sort_json_objects(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            let mut entries = std::mem::take(object).into_iter().collect::<Vec<_>>();
+            entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+            for (_, child) in &mut entries {
+                sort_json_objects(child);
+            }
+            object.extend(entries);
+        }
+        Value::Array(items) => {
+            for item in items {
+                sort_json_objects(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+pub fn canonical_json(openapi: &OpenApi) -> Result<String, serde_json::Error> {
+    // Serializing the Utoipa model directly can expose randomized map order.
+    // Normalize every JSON object while preserving semantically ordered arrays.
+    let mut value = serde_json::to_value(openapi)?;
+    sort_json_objects(&mut value);
+    let mut json = serde_json::to_string_pretty(&value)?;
+    json.push('\\n');
+    Ok(json)
+}"""
+    source = replace_once(source, old, new, "canonicalize OpenAPI export order")
+    path.write_text(source)
+
+
 def enforce_private_operation_security() -> None:
     path = Path("remote/tools/check-openapi-contracts.mjs")
     source = path.read_text()
@@ -211,6 +251,7 @@ def enforce_private_operation_security() -> None:
 def main() -> None:
     merge_generator()
     record_runtime_auth_boundaries()
+    canonicalize_export_order()
     enforce_private_operation_security()
 
 
