@@ -7,6 +7,12 @@ on:
     paths:
       - '.github/workflows/apply-den-482-runtime-config-openapi.yml'
       - 'scripts/den-482-runtime-config-openapi.payload'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-den-482-runtime-config-openapi.yml'
+      - 'scripts/den-482-runtime-config-openapi.payload'
   workflow_dispatch:
 
 permissions:
@@ -18,7 +24,9 @@ concurrency:
 
 jobs:
   apply:
-    if: github.repository == 'ORESoftware/k8s-libs-and-shared-defs'
+    if: >-
+      github.repository == 'ORESoftware/k8s-libs-and-shared-defs' &&
+      (github.event_name != 'pull_request' || github.head_ref == 'agent/den-482-runtime-config-openapi')
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
