@@ -73,5 +73,12 @@ if (packageJson.scripts?.typecheck !== bootstrapTypecheck) {
   throw new Error(`unexpected bootstrap typecheck command: ${String(packageJson.scripts?.typecheck)}`);
 }
 packageJson.scripts.typecheck = 'tsc --noEmit';
+const nativeOpenApiExport = 'node dist/server.js --export-openapi';
+if (packageJson.scripts?.['openapi:export'] !== nativeOpenApiExport) {
+  throw new Error(
+    `unexpected native OpenAPI export command: ${String(packageJson.scripts?.['openapi:export'])}`,
+  );
+}
+packageJson.scripts['openapi:export'] = 'node scripts/den-479-export-wrapper.mjs';
 writeFileSync(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`, 'utf8');
 unlinkSync(scriptPath);
