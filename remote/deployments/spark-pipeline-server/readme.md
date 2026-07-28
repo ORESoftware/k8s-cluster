@@ -165,10 +165,14 @@ nerdctl -n k8s.io build -f remote/deployments/spark-pipeline-server/Dockerfile \
 * `k8s/ec2/kustomization.yaml` — EC2 overlay consumed by Argo CD via
   `remote/argocd/apps/dd-spark-pipeline-server.application.yaml`.
 
-The EC2 deployment runs in the `ai-ml` namespace from the prebuilt shaded-jar image instead of
-mounting the repo with `hostPath` or fetching Maven dependencies at runtime. Rollouts use
-`maxUnavailable: 0` plus the PDB so an ordinary deploy does not intentionally drop the API to zero
-ready pods. The NetworkPolicy allows DNS for service/RDS resolution and keeps optional TCP 5432
-Postgres traffic on private CIDRs only. The optional `RDS_DATABASE_URL` key is read from
+The EC2 deployment runs in the `ai-ml` namespace from the reviewed Maven toolchain image,
+mounts the node's pinned checkout read-only, copies this module plus generated JVM pg-defs into a
+bounded `emptyDir`, and self-builds the shaded jar there before starting Java. This avoids a hidden
+dependency on a locally prebuilt `dd-spark-pipeline-server:dev` image while keeping Maven writes and
+runtime temp files off the read-only root filesystem. The single-node, pod-slot-constrained cluster
+rolls this singleton in place with `maxSurge: 0` and `maxUnavailable: 1`; the PDB continues to guard
+voluntary disruptions, but an intentional deployment rollout may briefly replace the sole ready pod.
+The NetworkPolicy allows DNS for service/RDS resolution and keeps optional TCP 5432 Postgres traffic
+on private CIDRs only. The optional `RDS_DATABASE_URL` key is read from
 `dd-remote-rest-api-secrets`, mirrored into `ai-ml` by the AI/ML seed layer, so the manifest reuses
 the existing External Secrets bridge instead of depending on an uncreated service-specific secret.
