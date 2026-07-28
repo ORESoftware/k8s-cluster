@@ -5,11 +5,15 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/gleam-presence-contract-diagnostics.yml'
+      - '.github/workflows/gleam-presence-format-materializer.yml'
+      - '.github/workflows/gleam-presence-openapi-contract.yml'
+      - 'remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/api_docs.gleam'
+      - 'remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam'
       - 'remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/openapi_export.gleam'
       - 'remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/route_contract.gleam'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   diagnostics:
@@ -19,10 +23,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Checkout without private gitlinks
+      - name: Checkout writable feature branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false
+          ref: agent/gleam-presence-executable-openapi
+          fetch-depth: 0
+          persist-credentials: true
           show-progress: false
           submodules: false
 
@@ -34,21 +40,68 @@ jobs:
           rebar3-version: '3'
           version-type: loose
 
-      - name: Format and compile isolated contract
+      - name: Materialize official formatting and harness dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/gleam-presence-openapi-contract.yml')
+          source = path.read_text()
+          old = '''          gleam_stdlib = ">= 0.44.0 and < 2.0.0"
+          gleam_json = ">= 2.0.0 and < 4.0.0"
+'''
+          new = '''          gleam_stdlib = ">= 0.68.0 and < 2.0.0"
+          gleam_http = ">= 4.0.0 and < 5.0.0"
+          gleam_json = ">= 2.0.0 and < 4.0.0"
+'''
+          if old in source:
+              if source.count(old) != 1:
+                  raise SystemExit(f'{path}: ambiguous harness dependency block')
+              path.write_text(source.replace(old, new, 1))
+          elif new not in source:
+              raise SystemExit(f'{path}: expected old or new harness dependency block')
+          PY
+
+          gleam format \
+            remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/route_contract.gleam \
+            remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/openapi_export.gleam \
+            remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/api_docs.gleam \
+            remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam
+
+          rm -f .github/workflows/gleam-presence-format-materializer.yml
+          git diff --check
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- . ':!vendor'; then
+            echo 'git conflict marker found' >&2
+            exit 1
+          fi
+
+          if ! git diff --quiet; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -A
+            git commit -m 'style(api-docs): format executable Gleam route contract'
+            git push origin HEAD:agent/gleam-presence-executable-openapi
+          fi
+
+      - name: Compile isolated executable contract
         id: compile
         shell: bash
         run: |
-          set -uo pipefail
+          set +e
+          set -u
+          set -o pipefail
           out="${RUNNER_TEMP}/gleam-presence-diagnostics"
           harness="$out/harness"
-          mkdir -p "$harness/src/gleamlang_presence_server" "$out/original"
+          rm -rf "$out"
+          mkdir -p "$harness/src/gleamlang_presence_server"
           cp \
             remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/route_contract.gleam \
             "$harness/src/gleamlang_presence_server/route_contract.gleam"
           cp \
             remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/openapi_export.gleam \
             "$harness/src/gleamlang_presence_server/openapi_export.gleam"
-          cp "$harness/src/gleamlang_presence_server/"*.gleam "$out/original/"
           cat > "$harness/gleam.toml" <<'TOML'
           name = "gleam_presence_contract"
           version = "0.1.0"
@@ -56,7 +109,8 @@ jobs:
           gleam = ">= 1.17.0 and < 2.0.0"
 
           [dependencies]
-          gleam_stdlib = ">= 0.44.0 and < 2.0.0"
+          gleam_stdlib = ">= 0.68.0 and < 2.0.0"
+          gleam_http = ">= 4.0.0 and < 5.0.0"
           gleam_json = ">= 2.0.0 and < 4.0.0"
           TOML
 
@@ -68,14 +122,13 @@ jobs:
             printf '\n== dependencies ==\n'
             gleam deps download
             printf '\n== formatter ==\n'
-            gleam format src
-            printf '\n== formatted diff ==\n'
-            diff -u "$out/original/route_contract.gleam" \
-              src/gleamlang_presence_server/route_contract.gleam || true
-            diff -u "$out/original/openapi_export.gleam" \
-              src/gleamlang_presence_server/openapi_export.gleam || true
+            gleam format --check src
             printf '\n== compiler ==\n'
             gleam check
+            printf '\n== native export ==\n'
+            gleam run -m gleamlang_presence_server/openapi_export \
+              > "$out/openapi.json"
+            python3 -m json.tool "$out/openapi.json" >/dev/null
           } 2>&1 | tee "$out/diagnostics.log"
           status=${PIPESTATUS[0]}
           printf '%s\n' "$status" > "$out/exit-status.txt"
@@ -90,4 +143,4 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-# Deliberate second branch push: activates a newly introduced PR workflow.
+# Temporary branch-scoped materialization support; removed once the native gate is green.
