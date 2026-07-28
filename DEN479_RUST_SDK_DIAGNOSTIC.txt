@@ -1,0 +1,232 @@
+# DEN-479 Rust 1.95 generated SDK diagnostic
+
+rustc 1.95.0 (59807616e 2026-04-14)
+cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+
+generate_status=0
+rust_status=101
+
+## compiler output
+[1m[92m    Updating[0m crates.io index
+[1m[92m     Locking[0m 176 packages to latest compatible versions
+[1m[92m Downloading[0m crates ...
+[1m[92m  Downloaded[0m atomic-waker v1.1.2
+[1m[92m  Downloaded[0m cc v1.4.0
+[1m[92m  Downloaded[0m cfg-if v1.0.4
+[1m[92m  Downloaded[0m foreign-types v0.3.2
+[1m[92m  Downloaded[0m displaydoc v0.2.6
+[1m[92m  Downloaded[0m find-msvc-tools v0.1.9
+[1m[92m  Downloaded[0m http-body v1.1.0
+[1m[92m  Downloaded[0m foreign-types-shared v0.1.1
+[1m[92m  Downloaded[0m futures-task v0.3.33
+[1m[92m  Downloaded[0m idna_adapter v1.2.2
+[1m[92m  Downloaded[0m openssl-macros v0.1.1
+[1m[92m  Downloaded[0m futures-core v0.3.33
+[1m[92m  Downloaded[0m openssl-probe v0.2.1
+[1m[92m  Downloaded[0m mime v0.3.17
+[1m[92m  Downloaded[0m zerofrom v0.1.8
+[1m[92m  Downloaded[0m hyper-tls v0.6.0
+[1m[92m  Downloaded[0m itoa v1.0.18
+[1m[92m  Downloaded[0m serde_repr v0.1.21
+[1m[92m  Downloaded[0m want v0.3.1
+[1m[92m  Downloaded[0m stable_deref_trait v1.2.1
+[1m[92m  Downloaded[0m serde_urlencoded v0.7.1
+[1m[92m  Downloaded[0m utf8_iter v1.0.4
+[1m[92m  Downloaded[0m try-lock v0.2.5
+[1m[92m  Downloaded[0m tower-service v0.3.3
+[1m[92m  Downloaded[0m zerofrom-derive v0.1.7
+[1m[92m  Downloaded[0m yoke-derive v0.8.2
+[1m[92m  Downloaded[0m form_urlencoded v1.2.2
+[1m[92m  Downloaded[0m base64 v0.22.1
+[1m[92m  Downloaded[0m potential_utf v0.1.5
+[1m[92m  Downloaded[0m bitflags v2.13.1
+[1m[92m  Downloaded[0m ipnet v2.12.0
+[1m[92m  Downloaded[0m tower-layer v0.3.3
+[1m[92m  Downloaded[0m quote v1.0.47
+[1m[92m  Downloaded[0m pkg-config v0.3.33
+[1m[92m  Downloaded[0m native-tls v0.2.18
+[1m[92m  Downloaded[0m zmij v1.0.23
+[1m[92m  Downloaded[0m unicase v2.9.0
+[1m[92m  Downloaded[0m tokio-native-tls v0.3.1
+[1m[92m  Downloaded[0m shlex v2.0.1
+[1m[92m  Downloaded[0m zeroize v1.9.0
+[1m[92m  Downloaded[0m tinystr v0.8.3
+[1m[92m  Downloaded[0m writeable v0.6.3
+[1m[92m  Downloaded[0m bytes v1.12.1
+[1m[92m  Downloaded[0m percent-encoding v2.3.2
+[1m[92m  Downloaded[0m mime_guess v2.0.5
+[1m[92m  Downloaded[0m http-body-util v0.1.4
+[1m[92m  Downloaded[0m synstructure v0.13.2
+[1m[92m  Downloaded[0m sync_wrapper v1.0.2
+[1m[92m  Downloaded[0m slab v0.4.12
+[1m[92m  Downloaded[0m smallvec v1.15.2
+[1m[92m  Downloaded[0m yoke v0.8.3
+[1m[92m  Downloaded[0m pin-project-lite v0.2.17
+[1m[92m  Downloaded[0m zerovec-derive v0.11.3
+[1m[92m  Downloaded[0m ryu v1.0.23
+[1m[92m  Downloaded[0m proc-macro2 v1.0.107
+[1m[92m  Downloaded[0m unicode-ident v1.0.24
+[1m[92m  Downloaded[0m tracing-core v0.1.36
+[1m[92m  Downloaded[0m socket2 v0.6.5
+[1m[92m  Downloaded[0m serde_derive v1.0.229
+[1m[92m  Downloaded[0m icu_provider v2.2.0
+[1m[92m  Downloaded[0m icu_normalizer v2.2.0
+[1m[92m  Downloaded[0m openssl-sys v0.9.117
+[1m[92m  Downloaded[0m zerotrie v0.2.4
+[1m[92m  Downloaded[0m serde v1.0.229
+[1m[92m  Downloaded[0m mio v1.2.2
+[1m[92m  Downloaded[0m hyper-util v0.1.20
+[1m[92m  Downloaded[0m tower v0.5.3
+[1m[92m  Downloaded[0m zerovec v0.11.6
+[1m[92m  Downloaded[0m idna v1.1.0
+[1m[92m  Downloaded[0m reqwest v0.13.4
+[1m[92m  Downloaded[0m tower-http v0.6.11
+[1m[92m  Downloaded[0m serde_json v1.0.151
+[1m[92m  Downloaded[0m icu_properties_data v2.2.0
+[1m[92m  Downloaded[0m vcpkg v0.2.15
+[1m[92m  Downloaded[0m futures-util v0.3.33
+[1m[92m  Downloaded[0m hyper v1.11.0
+[1m[92m  Downloaded[0m http v1.4.2
+[1m[92m  Downloaded[0m syn v2.0.119
+[1m[92m  Downloaded[0m syn v3.0.3
+[1m[92m  Downloaded[0m openssl v0.10.81
+[1m[92m  Downloaded[0m memchr v2.8.3
+[1m[92m  Downloaded[0m icu_locale_core v2.2.0
+[1m[92m  Downloaded[0m url v2.5.8
+[1m[92m  Downloaded[0m icu_collections v2.2.0
+[1m[92m  Downloaded[0m icu_normalizer_data v2.2.0
+[1m[92m  Downloaded[0m tracing v0.1.44
+[1m[92m  Downloaded[0m icu_properties v2.2.0
+[1m[92m  Downloaded[0m httparse v1.10.1
+[1m[92m  Downloaded[0m futures-channel v0.3.33
+[1m[92m  Downloaded[0m serde_core v1.0.229
+[1m[92m  Downloaded[0m rustls-pki-types v1.15.1
+[1m[92m  Downloaded[0m log v0.4.33
+[1m[92m  Downloaded[0m litemap v0.8.2
+[1m[92m  Downloaded[0m once_cell v1.21.4
+[1m[92m  Downloaded[0m libc v0.2.189
+[1m[92m  Downloaded[0m tokio v1.53.1
+[1m[92m   Compiling[0m proc-macro2 v1.0.107
+[1m[92m   Compiling[0m unicode-ident v1.0.24
+[1m[92m   Compiling[0m quote v1.0.47
+[1m[92m    Checking[0m stable_deref_trait v1.2.1
+[1m[92m   Compiling[0m libc v0.2.189
+[1m[92m    Checking[0m bytes v1.12.1
+[1m[92m   Compiling[0m shlex v2.0.1
+[1m[92m    Checking[0m pin-project-lite v0.2.17
+[1m[92m   Compiling[0m find-msvc-tools v0.1.9
+[1m[92m   Compiling[0m pkg-config v0.3.33
+[1m[92m   Compiling[0m cc v1.4.0
+[1m[92m   Compiling[0m vcpkg v0.2.15
+[1m[92m   Compiling[0m syn v2.0.119
+[1m[92m    Checking[0m itoa v1.0.18
+[1m[92m    Checking[0m futures-core v0.3.33
+[1m[92m    Checking[0m writeable v0.6.3
+[1m[92m    Checking[0m litemap v0.8.2
+[1m[92m    Checking[0m smallvec v1.15.2
+[1m[92m    Checking[0m socket2 v0.6.5
+[1m[92m    Checking[0m mio v1.2.2
+[1m[92m   Compiling[0m icu_normalizer_data v2.2.0
+[1m[92m   Compiling[0m icu_properties_data v2.2.0
+[1m[92m    Checking[0m utf8_iter v1.0.4
+[1m[92m    Checking[0m tokio v1.53.1
+[1m[92m   Compiling[0m openssl-sys v0.9.117
+[1m[92m    Checking[0m http v1.4.2
+[1m[92m    Checking[0m percent-encoding v2.3.2
+[1m[92m    Checking[0m http-body v1.1.0
+[1m[92m    Checking[0m bitflags v2.13.1
+[1m[92m    Checking[0m futures-task v0.3.33
+[1m[92m   Compiling[0m openssl v0.10.81
+[1m[92m    Checking[0m slab v0.4.12
+[1m[92m   Compiling[0m serde_core v1.0.229
+[1m[92m    Checking[0m foreign-types-shared v0.1.1
+[1m[92m   Compiling[0m httparse v1.10.1
+[1m[92m    Checking[0m foreign-types v0.3.2
+[1m[92m    Checking[0m futures-util v0.3.33
+[1m[92m   Compiling[0m syn v3.0.3
+[1m[92m   Compiling[0m synstructure v0.13.2
+[1m[92m    Checking[0m tower-service v0.3.3
+[1m[92m    Checking[0m once_cell v1.21.4
+[1m[92m   Compiling[0m native-tls v0.2.18
+[1m[92m    Checking[0m cfg-if v1.0.4
+[1m[92m    Checking[0m try-lock v0.2.5
+[1m[92m    Checking[0m tracing-core v0.1.36
+[1m[92m    Checking[0m want v0.3.1
+[1m[92m    Checking[0m form_urlencoded v1.2.2
+[1m[92m    Checking[0m futures-channel v0.3.33
+[1m[92m    Checking[0m openssl-probe v0.2.1
+[1m[92m   Compiling[0m serde v1.0.229
+[1m[92m    Checking[0m log v0.4.33
+[1m[92m   Compiling[0m unicase v2.9.0
+[1m[92m   Compiling[0m zmij v1.0.23
+[1m[92m   Compiling[0m zerofrom-derive v0.1.7
+[1m[92m   Compiling[0m yoke-derive v0.8.2
+[1m[92m   Compiling[0m zerovec-derive v0.11.3
+[1m[92m   Compiling[0m displaydoc v0.2.6
+[1m[92m   Compiling[0m openssl-macros v0.1.1
+[1m[92m    Checking[0m zerofrom v0.1.8
+[1m[92m    Checking[0m yoke v0.8.3
+[1m[92m    Checking[0m zerovec v0.11.6
+[1m[92m    Checking[0m atomic-waker v1.1.2
+[1m[92m    Checking[0m hyper v1.11.0
+[1m[92m    Checking[0m zerotrie v0.2.4
+[1m[92m   Compiling[0m mime_guess v2.0.5
+[1m[92m    Checking[0m tinystr v0.8.3
+[1m[92m    Checking[0m icu_locale_core v2.2.0
+[1m[92m    Checking[0m potential_utf v0.1.5
+[1m[92m   Compiling[0m serde_derive v1.0.229
+[1m[92m    Checking[0m icu_collections v2.2.0
+[1m[92m    Checking[0m tracing v0.1.44
+[1m[92m    Checking[0m sync_wrapper v1.0.2
+[1m[92m   Compiling[0m serde_json v1.0.151
+[1m[92m    Checking[0m base64 v0.22.1
+[1m[92m    Checking[0m icu_provider v2.2.0
+[1m[92m    Checking[0m ipnet v2.12.0
+[1m[92m    Checking[0m icu_normalizer v2.2.0
+[1m[92m    Checking[0m icu_properties v2.2.0
+[1m[92m    Checking[0m tower-layer v0.3.3
+[1m[92m    Checking[0m tower v0.5.3
+[1m[92m    Checking[0m hyper-util v0.1.20
+[1m[92m    Checking[0m idna_adapter v1.2.2
+[1m[92m    Checking[0m idna v1.1.0
+[1m[92m    Checking[0m tokio-native-tls v0.3.1
+[1m[92m    Checking[0m url v2.5.8
+[1m[92m    Checking[0m http-body-util v0.1.4
+[1m[92m    Checking[0m mime v0.3.17
+[1m[92m    Checking[0m ryu v1.0.23
+[1m[92m    Checking[0m zeroize v1.9.0
+[1m[92m    Checking[0m memchr v2.8.3
+[1m[92m    Checking[0m rustls-pki-types v1.15.1
+[1m[92m    Checking[0m hyper-tls v0.6.0
+[1m[92m    Checking[0m tower-http v0.6.11
+[1m[92m   Compiling[0m serde_repr v0.1.21
+[1m[92m    Checking[0m serde_urlencoded v0.7.1
+[1m[92m    Checking[0m reqwest v0.13.4
+[1m[92m    Checking[0m dd_browser_test_client v0.1.0 (/home/runner/work/k8s-cluster/k8s-cluster/.tmp/browser-test-sdk/rust)
+[1m[91merror[E0404][0m[1m: expected trait, found enum `Default`[0m
+  [1m[94m--> [0msrc/models/list_browser_automation_tools_compatibility_alias_200_response.rs:41:6
+   [1m[94m|[0m
+[1m[94m41[0m [1m[94m|[0m impl Default for Default {
+   [1m[94m|[0m      [1m[91m^^^^^^^[0m [1m[91mnot a trait[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: consider importing this trait instead
+   [1m[94m|[0m
+[1m[94m11[0m [92m+ use std::default::Default;[0m
+   [1m[94m|[0m
+
+[1mFor more information about this error, try `rustc --explain E0404`.[0m
+[1m[91merror[0m: could not compile `dd_browser_test_client` (lib) due to 1 previous error
+[1m[92m    Checking[0m dd_browser_test_client v0.1.0 (/home/runner/work/k8s-cluster/k8s-cluster/.tmp/browser-test-sdk/rust)
+[1m[91merror[E0404][0m[1m: expected trait, found enum `Default`[0m
+  [1m[94m--> [0msrc/models/list_browser_automation_tools_compatibility_alias_200_response.rs:41:6
+   [1m[94m|[0m
+[1m[94m41[0m [1m[94m|[0m impl Default for Default {
+   [1m[94m|[0m      [1m[91m^^^^^^^[0m [1m[91mnot a trait[0m
+   [1m[94m|[0m
+[1m[96mhelp[0m: consider importing this trait instead
+   [1m[94m|[0m
+[1m[94m11[0m [92m+ use std::default::Default;[0m
+   [1m[94m|[0m
+
+[1mFor more information about this error, try `rustc --explain E0404`.[0m
+[1m[91merror[0m: could not compile `dd_browser_test_client` (lib) due to 1 previous error
