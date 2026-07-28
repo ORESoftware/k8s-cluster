@@ -1,0 +1,157 @@
+# Branch-local one-shot regeneration. The job removes this workflow before it commits.
+name: Refresh dd-embeddings OpenAPI for DEN-445
+
+on:
+  push:
+    branches:
+      - agent/den-445-native-openapi-fresh
+    paths:
+      - '.github/workflows/refresh-dd-embeddings-openapi-den-445.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-dd-embeddings-openapi-den-445
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.repository == 'ORESoftware/k8s-cluster' && github.ref == 'refs/heads/agent/den-445-native-openapi-fresh'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-445-native-openapi-fresh
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: stable
+          components: rustfmt
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Create contract-only telemetry compile shim
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-rs/src
+          cat > remote/libs/telemetry-rs/Cargo.toml <<'TOML'
+          [package]
+          name = "dd-telemetry"
+          version = "0.1.0"
+          edition = "2021"
+
+          [lib]
+          path = "src/lib.rs"
+
+          [dependencies]
+          tracing = "0.1"
+          tower-http = { version = "0.6", features = ["trace"] }
+          http = "1"
+          TOML
+          cat > remote/libs/telemetry-rs/src/lib.rs <<'RS'
+          use http::{Request, Response};
+          use std::time::Duration;
+          use tower_http::classify::{ServerErrorsAsFailures, SharedClassifier};
+          use tower_http::trace::{DefaultOnRequest, MakeSpan, OnResponse, TraceLayer};
+          use tracing::Span;
+
+          #[must_use]
+          pub struct OtelGuard;
+
+          pub fn init(_: &str) -> OtelGuard {
+              OtelGuard
+          }
+
+          pub fn http_trace_layer() -> TraceLayer<
+              SharedClassifier<ServerErrorsAsFailures>,
+              OtelMakeSpan,
+              DefaultOnRequest,
+              OtelOnResponse,
+          > {
+              TraceLayer::new_for_http()
+                  .make_span_with(OtelMakeSpan)
+                  .on_response(OtelOnResponse)
+          }
+
+          #[derive(Clone, Copy, Debug, Default)]
+          pub struct OtelMakeSpan;
+
+          impl<B> MakeSpan<B> for OtelMakeSpan {
+              fn make_span(&mut self, request: &Request<B>) -> Span {
+                  tracing::info_span!(
+                      "http_request",
+                      http.request.method = %request.method(),
+                      url.path = %request.uri().path(),
+                      http.response.status_code = tracing::field::Empty,
+                  )
+              }
+          }
+
+          #[derive(Clone, Copy, Debug, Default)]
+          pub struct OtelOnResponse;
+
+          impl<B> OnResponse<B> for OtelOnResponse {
+              fn on_response(self, response: &Response<B>, _: Duration, span: &Span) {
+                  span.record(
+                      "http.response.status_code",
+                      response.status().as_u16() as u64,
+                  );
+              }
+          }
+          RS
+
+      - name: Export and validate the executable contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          service=remote/deployments/dd-embeddings-rs
+          cargo fmt --all --manifest-path "$service/Cargo.toml" -- --check
+          cargo run --locked --quiet --manifest-path "$service/Cargo.toml" -- --export-openapi > "${RUNNER_TEMP}/openapi.1.json"
+          cargo run --locked --quiet --manifest-path "$service/Cargo.toml" -- --export-openapi > "${RUNNER_TEMP}/openapi.2.json"
+          cmp "${RUNNER_TEMP}/openapi.1.json" "${RUNNER_TEMP}/openapi.2.json"
+          cp "${RUNNER_TEMP}/openapi.1.json" "$service/generated/openapi.json"
+          node remote/tools/check-openapi-contracts.mjs --service dd-embeddings-rs
+          node remote/tools/generate-api-docs.mjs --service dd-embeddings-rs
+          node remote/tools/generate-api-docs.mjs --check --service dd-embeddings-rs
+          node remote/tools/validate-openapi-contracts.mjs
+
+      - name: Commit only regenerated contract artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          git rm .github/workflows/refresh-dd-embeddings-openapi-den-445.yml
+          git add -A -- \
+            remote/deployments/dd-embeddings-rs/generated \
+            remote/deployments/generated-api-docs-index.json \
+            remote/deployments/generated-api-docs-index.html
+          mapfile -t changed < <(git diff --cached --name-only)
+          test "${#changed[@]}" -gt 1
+          for path in "${changed[@]}"; do
+            case "$path" in
+              .github/workflows/refresh-dd-embeddings-openapi-den-445.yml|remote/deployments/dd-embeddings-rs/generated/*|remote/deployments/generated-api-docs-index.json|remote/deployments/generated-api-docs-index.html)
+                ;;
+              *)
+                echo "unexpected path from contract refresh: $path" >&2
+                exit 1
+                ;;
+            esac
+          done
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore(DEN-445): refresh executable OpenAPI provenance [skip ci]'
+          git push origin HEAD:agent/den-445-native-openapi-fresh
