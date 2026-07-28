@@ -1,0 +1,91 @@
+name: gleam presence contract diagnostics
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/gleam-presence-contract-diagnostics.yml'
+      - 'remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/openapi_export.gleam'
+      - 'remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/route_contract.gleam'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostics:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.head_ref == 'agent/gleam-presence-executable-openapi'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout without private gitlinks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Setup Erlang and Gleam
+        uses: erlef/setup-beam@8736e9244717f9207464c14c6051b71d22253f60
+        with:
+          otp-version: '27.3'
+          gleam-version: '1.17.0'
+          rebar3-version: '3'
+          version-type: loose
+
+      - name: Format and compile isolated contract
+        id: compile
+        shell: bash
+        run: |
+          set -uo pipefail
+          out="${RUNNER_TEMP}/gleam-presence-diagnostics"
+          harness="$out/harness"
+          mkdir -p "$harness/src/gleamlang_presence_server" "$out/original"
+          cp \
+            remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/route_contract.gleam \
+            "$harness/src/gleamlang_presence_server/route_contract.gleam"
+          cp \
+            remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/openapi_export.gleam \
+            "$harness/src/gleamlang_presence_server/openapi_export.gleam"
+          cp "$harness/src/gleamlang_presence_server/"*.gleam "$out/original/"
+          cat > "$harness/gleam.toml" <<'TOML'
+          name = "gleam_presence_contract"
+          version = "0.1.0"
+          target = "erlang"
+          gleam = ">= 1.17.0 and < 2.0.0"
+
+          [dependencies]
+          gleam_stdlib = ">= 0.44.0 and < 2.0.0"
+          gleam_json = ">= 2.0.0 and < 4.0.0"
+          TOML
+
+          cd "$harness"
+          {
+            printf '== versions ==\n'
+            gleam --version
+            rebar3 version
+            printf '\n== dependencies ==\n'
+            gleam deps download
+            printf '\n== formatter ==\n'
+            gleam format src
+            printf '\n== formatted diff ==\n'
+            diff -u "$out/original/route_contract.gleam" \
+              src/gleamlang_presence_server/route_contract.gleam || true
+            diff -u "$out/original/openapi_export.gleam" \
+              src/gleamlang_presence_server/openapi_export.gleam || true
+            printf '\n== compiler ==\n'
+            gleam check
+          } 2>&1 | tee "$out/diagnostics.log"
+          status=${PIPESTATUS[0]}
+          printf '%s\n' "$status" > "$out/exit-status.txt"
+          exit 0
+
+      - name: Upload bounded Gleam diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+        with:
+          name: gleam-presence-contract-diagnostics
+          path: ${{ runner.temp }}/gleam-presence-diagnostics
+          if-no-files-found: error
+          retention-days: 1
