@@ -1,0 +1,131 @@
+name: DEN-406 current static diagnostics
+
+on:
+  push:
+    branches:
+      - agent/den-406-current-static-diagnostics
+
+permissions:
+  contents: read
+
+concurrency:
+  group: den-406-current-static-diagnostics-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out pinned remote/libs
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install remote test dependencies
+        working-directory: remote/tests
+        run: pnpm install --frozen-lockfile
+
+      - name: Run current static contracts and retain bounded diagnostics
+        id: tests
+        working-directory: remote/tests
+        shell: bash
+        run: |
+          set -uo pipefail
+          static_tests=(
+            general/agent-breadcrumb-pipeline.test.ts
+            general/ai-ml-platform-config.test.ts
+            general/athleto-app-routing.test.ts
+            general/bastion-config.test.ts
+            general/browser-job-runner-config.test.ts
+            general/browser-mcp-exposure.test.ts
+            general/browser-test-server-config.test.ts
+            general/build-server-config.test.ts
+            general/canonical-cloud-gitops.test.ts
+            general/cluster-doctor-cron.test.ts
+            general/cluster-hardening.test.ts
+            general/container-pool-config.test.ts
+            general/contract-service-config.test.ts
+            general/des-simulator-config.test.ts
+            general/dev-server-container-pool-config.test.ts
+            general/fabrication-cad-source-intake.test.ts
+            general/fsharp-ws-server-config.test.ts
+            general/gateway-service-directory.test.ts
+            general/gcs-chat-config.test.ts
+            general/gleam-lambda-runner-config.test.ts
+            general/gleam-mcp-server-config.test.ts
+            general/gleam-mcp-server-observability.test.ts
+            general/gleam-websocket-nats-fanout.test.ts
+            general/live-mutex-config.test.ts
+            general/local-k8s-cleanup.test.ts
+            general/mdp-optimizer-config.test.ts
+            general/nats-config.test.ts
+            general/nats-connect-resilience.test.ts
+            general/nats-shadow-handoff.test.ts
+            general/observability-config.test.ts
+            general/redis-cache-config.test.ts
+            general/remote-libs-submodule-contract.test.ts
+            general/remote-dev-worker-git-hardening.test.ts
+            general/runtime-split-config.test.ts
+            general/selenium-server-config.test.ts
+            general/thread-fleet-exporter-go-config.test.ts
+            general/thread-operator-go-config.test.ts
+            general/trading-server-config.test.ts
+            general/vpn-config.test.ts
+            general/web-home-agents-tasks-links.test.ts
+            general/web-home-agents-threads-container-state.test.ts
+            general/web-home-lambda-highlighter.test.ts
+            general/web-home-shared-header.test.ts
+            general/web-scraper-config.test.ts
+            general/webrtc-signaling-service.test.ts
+            general/ws-loadtest-config.test.ts
+          )
+          log="$RUNNER_TEMP/den-406-current-static-contracts.log"
+          summary="$RUNNER_TEMP/den-406-current-static-contracts-summary.txt"
+          set +e
+          pnpm exec tsx --test "${static_tests[@]}" >"$log" 2>&1
+          status=$?
+          set -e
+          {
+            printf 'commit=%s\n' "$GITHUB_SHA"
+            printf 'exit_status=%s\n\n' "$status"
+            printf 'Failure markers:\n'
+            grep -E '^(not ok [0-9]+ - |# (tests|pass|fail|cancelled|skipped|todo|duration_ms) )' "$log" || true
+          } >"$summary"
+          tail -n 160 "$log"
+          printf 'status=%s\n' "$status" >>"$GITHUB_OUTPUT"
+          printf 'log=%s\nsummary=%s\n' "$log" "$summary" >>"$GITHUB_OUTPUT"
+
+      - name: Upload sanitized diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: den-406-current-static-contracts
+          path: |
+            ${{ steps.tests.outputs.log }}
+            ${{ steps.tests.outputs.summary }}
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Preserve the real static-contract result
+        if: steps.tests.outputs.status != '0'
+        run: |
+          echo 'Current static repository contracts failed; inspect the uploaded bounded diagnostics.' >&2
+          exit 1
