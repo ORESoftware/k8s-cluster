@@ -1009,7 +1009,7 @@ gleeunit = ">= 1.11.0 and < 2.0.0"
     files: {
       'gleam.toml': gleamToml,
       'src/dd_api_sdk.gleam': source,
-      'test/dd_api_sdk_test.gleam': fixedTest,
+      [`test/${packageName}_test.gleam`]: fixedTest,
     },
   };
 }
