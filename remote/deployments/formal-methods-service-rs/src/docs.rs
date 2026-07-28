@@ -51,7 +51,9 @@ impl ApiDocs {
 
         Ok(Self {
             public_json: Bytes::from_static(PUBLIC_OPENAPI_JSON.as_bytes()),
-            public_scalar_html: Bytes::from(Scalar::new("/openapi.json").to_html()),
+            public_scalar_html: Bytes::from(
+                Scalar::new(Value::String("/openapi.json".to_string())).to_html(),
+            ),
             internal_json: Bytes::from(canonical_json(openapi)?),
             internal_scalar_html: Bytes::from(Scalar::new(openapi.clone()).to_html()),
         })
