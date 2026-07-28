@@ -21,10 +21,16 @@ jobs:
         with:
           persist-credentials: false
           show-progress: false
+      - name: Validate GitHub Actions
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
+        with:
+          args: ./.github/workflows/ci.yml
       - name: No build artifacts or env files tracked
         run: |
           bad=$(git ls-files | grep -E '(^|/)(target/|\.cache/|\.direnv/|\.env$|result$)' || true)
           if [ -n "$bad" ]; then echo "forbidden tracked files:"; echo "$bad"; exit 1; fi
+      - name: Sensitive DTOs cannot regain raw Debug
+        run: python3 scripts/check_sensitive_debug.py
       - name: Check all targets
         run: cargo check --quiet --locked --all-targets --all-features
       - name: Test all features
@@ -65,11 +71,7 @@ jobs:
                       continue
                   code = (message.get("code") or {}).get("code") or "rustc-error"
                   primary = next((span for span in message.get("spans", []) if span.get("is_primary")), {})
-                  item = {
-                      "code": code,
-                      "path": primary.get("file_name", "unknown"),
-                      "line": primary.get("line_start", 0),
-                  }
+                  item = {"code": code, "path": primary.get("file_name", "unknown"), "line": primary.get("line_start", 0)}
                   key = (item["code"], item["path"], item["line"])
                   if key not in seen:
                       seen.add(key)
