@@ -67,7 +67,7 @@ jobs:
       - name: Apply, validate, generate, and commit direct rebuild
         shell: bash
         env:
-          SHARED_COMMIT: 2504b054ac92becf265762c1bd1f0679a10de893
+          SHARED_COMMIT: 06b3a4ff87bb6e579686e5ced72b6772c4f742ac
           SHARED_FRAGMENT_SHA256: 5d330aa1a33ba118a5770af6409dcbad8dc408bb0cccaae4e6d257c337028d46
           PATCH_SHA256: 2a1cf6b4b8dce0789ce6cd555e2a1c27764a1a36ea6d30ca9e13ed62e874d5cd
         run: |
