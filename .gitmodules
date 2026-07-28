@@ -180,3 +180,4 @@
 [submodule "remote/deployments/cliptown-monorepo"]
 	path = remote/deployments/cliptown-monorepo
 	url = https://github.com/cliptown/cliptown-monorepo.git
+	branch = main
