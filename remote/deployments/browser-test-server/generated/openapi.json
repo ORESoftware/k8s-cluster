@@ -88,12 +88,15 @@
                       "type": "object"
                     },
                     "ok": {
-                      "const": true,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": true
                     },
                     "service": {
-                      "const": "dd-browser-test-server",
-                      "type": "string"
+                      "enum": [
+                        "dd-browser-test-server"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "dd-browser-test-server"
                     },
                     "tools": {
                       "items": {
@@ -129,12 +132,15 @@
                   "additionalProperties": false,
                   "properties": {
                     "error": {
-                      "const": "unauthorized",
-                      "type": "string"
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
                     },
                     "ok": {
-                      "const": false,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": false
                     }
                   },
                   "required": [
@@ -315,12 +321,15 @@
                       "type": "object"
                     },
                     "ok": {
-                      "const": true,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": true
                     },
                     "service": {
-                      "const": "dd-browser-test-server",
-                      "type": "string"
+                      "enum": [
+                        "dd-browser-test-server"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "dd-browser-test-server"
                     },
                     "tools": {
                       "items": {
@@ -356,12 +365,15 @@
                   "additionalProperties": false,
                   "properties": {
                     "error": {
-                      "const": "unauthorized",
-                      "type": "string"
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
                     },
                     "ok": {
-                      "const": false,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": false
                     }
                   },
                   "required": [
@@ -423,8 +435,8 @@
                       "type": "integer"
                     },
                     "ok": {
-                      "const": true,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": true
                     },
                     "serverInstanceId": {
                       "type": "string"
@@ -433,8 +445,11 @@
                       "type": "string"
                     },
                     "service": {
-                      "const": "dd-browser-test-server",
-                      "type": "string"
+                      "enum": [
+                        "dd-browser-test-server"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "dd-browser-test-server"
                     }
                   },
                   "required": [
@@ -457,12 +472,15 @@
                   "additionalProperties": false,
                   "properties": {
                     "error": {
-                      "const": "unauthorized",
-                      "type": "string"
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
                     },
                     "ok": {
-                      "const": false,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": false
                     }
                   },
                   "required": [
@@ -529,12 +547,15 @@
                   "additionalProperties": false,
                   "properties": {
                     "error": {
-                      "const": "unauthorized",
-                      "type": "string"
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
                     },
                     "ok": {
-                      "const": false,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": false
                     }
                   },
                   "required": [
@@ -630,8 +651,8 @@
                       "type": "integer"
                     },
                     "ok": {
-                      "const": true,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": true
                     },
                     "serverInstanceId": {
                       "type": "string"
@@ -640,8 +661,11 @@
                       "type": "string"
                     },
                     "service": {
-                      "const": "dd-browser-test-server",
-                      "type": "string"
+                      "enum": [
+                        "dd-browser-test-server"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "dd-browser-test-server"
                     }
                   },
                   "required": [
@@ -671,12 +695,15 @@
                   "additionalProperties": false,
                   "properties": {
                     "error": {
-                      "const": "unauthorized",
-                      "type": "string"
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
                     },
                     "ok": {
-                      "const": false,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": false
                     }
                   },
                   "required": [
@@ -733,11 +760,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "default": {
-                      "enum": [
-                        "playwright",
-                        "puppeteer",
-                        "selenium"
-                      ],
+                      "pattern": "^(playwright|puppeteer|selenium)$",
                       "type": "string"
                     },
                     "tools": {
@@ -790,12 +813,15 @@
                   "additionalProperties": false,
                   "properties": {
                     "error": {
-                      "const": "unauthorized",
-                      "type": "string"
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
                     },
                     "ok": {
-                      "const": false,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": false
                     }
                   },
                   "required": [
@@ -894,8 +920,8 @@
                       "type": "integer"
                     },
                     "ok": {
-                      "const": true,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": true
                     },
                     "serverInstanceId": {
                       "type": "string"
@@ -904,8 +930,11 @@
                       "type": "string"
                     },
                     "service": {
-                      "const": "dd-browser-test-server",
-                      "type": "string"
+                      "enum": [
+                        "dd-browser-test-server"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "dd-browser-test-server"
                     }
                   },
                   "required": [
@@ -965,12 +994,15 @@
                   "additionalProperties": false,
                   "properties": {
                     "error": {
-                      "const": "unauthorized",
-                      "type": "string"
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
                     },
                     "ok": {
-                      "const": false,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": false
                     }
                   },
                   "required": [
@@ -1037,12 +1069,15 @@
                   "additionalProperties": false,
                   "properties": {
                     "error": {
-                      "const": "unauthorized",
-                      "type": "string"
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
                     },
                     "ok": {
-                      "const": false,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": false
                     }
                   },
                   "required": [
@@ -1201,8 +1236,11 @@
                           "additionalProperties": false,
                           "properties": {
                             "action": {
-                              "const": "goto",
-                              "type": "string"
+                              "enum": [
+                                "goto"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "goto"
                             },
                             "description": {
                               "maxLength": 200,
@@ -1236,8 +1274,11 @@
                           "additionalProperties": false,
                           "properties": {
                             "action": {
-                              "const": "click",
-                              "type": "string"
+                              "enum": [
+                                "click"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "click"
                             },
                             "description": {
                               "maxLength": 200,
@@ -1269,8 +1310,11 @@
                           "additionalProperties": false,
                           "properties": {
                             "action": {
-                              "const": "fill",
-                              "type": "string"
+                              "enum": [
+                                "fill"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "fill"
                             },
                             "description": {
                               "maxLength": 200,
@@ -1302,8 +1346,11 @@
                           "additionalProperties": false,
                           "properties": {
                             "action": {
-                              "const": "select",
-                              "type": "string"
+                              "enum": [
+                                "select"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "select"
                             },
                             "description": {
                               "maxLength": 200,
@@ -1335,8 +1382,11 @@
                           "additionalProperties": false,
                           "properties": {
                             "action": {
-                              "const": "press",
-                              "type": "string"
+                              "enum": [
+                                "press"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "press"
                             },
                             "description": {
                               "maxLength": 200,
@@ -1368,8 +1418,11 @@
                           "additionalProperties": false,
                           "properties": {
                             "action": {
-                              "const": "waitForSelector",
-                              "type": "string"
+                              "enum": [
+                                "waitForSelector"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "waitForSelector"
                             },
                             "description": {
                               "maxLength": 200,
@@ -1405,8 +1458,11 @@
                           "additionalProperties": false,
                           "properties": {
                             "action": {
-                              "const": "waitForUrl",
-                              "type": "string"
+                              "enum": [
+                                "waitForUrl"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "waitForUrl"
                             },
                             "description": {
                               "maxLength": 200,
@@ -1433,8 +1489,11 @@
                           "additionalProperties": false,
                           "properties": {
                             "action": {
-                              "const": "waitForTimeout",
-                              "type": "string"
+                              "enum": [
+                                "waitForTimeout"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "waitForTimeout"
                             },
                             "description": {
                               "maxLength": 200,
@@ -1461,8 +1520,11 @@
                           "additionalProperties": false,
                           "properties": {
                             "action": {
-                              "const": "extractText",
-                              "type": "string"
+                              "enum": [
+                                "extractText"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "extractText"
                             },
                             "description": {
                               "maxLength": 200,
@@ -1494,8 +1556,11 @@
                           "additionalProperties": false,
                           "properties": {
                             "action": {
-                              "const": "extractAttribute",
-                              "type": "string"
+                              "enum": [
+                                "extractAttribute"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "extractAttribute"
                             },
                             "attribute": {
                               "maxLength": 120,
@@ -1533,8 +1598,11 @@
                           "additionalProperties": false,
                           "properties": {
                             "action": {
-                              "const": "screenshot",
-                              "type": "string"
+                              "enum": [
+                                "screenshot"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "screenshot"
                             },
                             "description": {
                               "maxLength": 200,
@@ -1563,8 +1631,11 @@
                           "additionalProperties": false,
                           "properties": {
                             "action": {
-                              "const": "evaluate",
-                              "type": "string"
+                              "enum": [
+                                "evaluate"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "evaluate"
                             },
                             "description": {
                               "maxLength": 200,
@@ -1858,8 +1929,11 @@
                   "additionalProperties": false,
                   "properties": {
                     "error": {
-                      "const": "invalid_request",
-                      "type": "string"
+                      "enum": [
+                        "invalid_request"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "invalid_request"
                     },
                     "issues": {
                       "items": {
@@ -1884,8 +1958,8 @@
                       "type": "array"
                     },
                     "ok": {
-                      "const": false,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": false
                     }
                   },
                   "required": [
@@ -1906,12 +1980,15 @@
                   "additionalProperties": false,
                   "properties": {
                     "error": {
-                      "const": "unauthorized",
-                      "type": "string"
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
                     },
                     "ok": {
-                      "const": false,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": false
                     }
                   },
                   "required": [
@@ -2130,8 +2207,11 @@
                   "additionalProperties": false,
                   "properties": {
                     "error": {
-                      "const": "browser-test concurrency limit reached",
-                      "type": "string"
+                      "enum": [
+                        "browser-test concurrency limit reached"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "browser-test concurrency limit reached"
                     },
                     "maxConcurrent": {
                       "maximum": 9007199254740991,
@@ -2139,8 +2219,8 @@
                       "type": "integer"
                     },
                     "ok": {
-                      "const": false,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": false
                     }
                   },
                   "required": [
@@ -2436,8 +2516,8 @@
                       "type": "integer"
                     },
                     "ok": {
-                      "const": true,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": true
                     },
                     "serverInstanceId": {
                       "type": "string"
@@ -2446,8 +2526,11 @@
                       "type": "string"
                     },
                     "service": {
-                      "const": "dd-browser-test-server",
-                      "type": "string"
+                      "enum": [
+                        "dd-browser-test-server"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "dd-browser-test-server"
                     }
                   },
                   "required": [
@@ -2477,12 +2560,15 @@
                   "additionalProperties": false,
                   "properties": {
                     "error": {
-                      "const": "unauthorized",
-                      "type": "string"
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
                     },
                     "ok": {
-                      "const": false,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": false
                     }
                   },
                   "required": [
@@ -2539,11 +2625,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "default": {
-                      "enum": [
-                        "playwright",
-                        "puppeteer",
-                        "selenium"
-                      ],
+                      "pattern": "^(playwright|puppeteer|selenium)$",
                       "type": "string"
                     },
                     "tools": {
@@ -2596,12 +2678,15 @@
                   "additionalProperties": false,
                   "properties": {
                     "error": {
-                      "const": "unauthorized",
-                      "type": "string"
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
                     },
                     "ok": {
-                      "const": false,
-                      "type": "boolean"
+                      "type": "boolean",
+                      "x-dd-constant-value": false
                     }
                   },
                   "required": [

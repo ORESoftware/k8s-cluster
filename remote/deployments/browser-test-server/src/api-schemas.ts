@@ -231,7 +231,7 @@ export const ServiceDescriptorSchema = z
 
 export const ToolsDescriptorSchema = z
   .object({
-    default: ToolSchema,
+    default: z.string().regex(/^(playwright|puppeteer|selenium)$/),
     tools: z.array(
       z
         .object({

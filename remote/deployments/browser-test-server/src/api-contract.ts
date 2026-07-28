@@ -76,6 +76,43 @@ function jsonSchema(schema: ZodType): JsonObject {
   return result;
 }
 
+function normalizeGeneratorSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeGeneratorSchema);
+  if (value === null || typeof value !== 'object') return value;
+
+  const result = Object.fromEntries(
+    Object.entries(value as JsonObject).map(([key, item]) => [
+      key,
+      normalizeGeneratorSchema(item),
+    ]),
+  ) as JsonObject;
+  if (Object.hasOwn(result, 'const')) {
+    const constant = result.const;
+    result['x-dd-constant-value'] = constant;
+    delete result.const;
+    if (typeof constant === 'boolean') {
+      result.type = 'boolean';
+      delete result.enum;
+    } else if (!Object.hasOwn(result, 'enum')) {
+      result.enum = [constant];
+    }
+  }
+  if (
+    Array.isArray(result.enum) &&
+    result.enum.length === 1 &&
+    typeof result.enum[0] === 'boolean'
+  ) {
+    result['x-dd-constant-value'] = result.enum[0];
+    result.type = 'boolean';
+    delete result.enum;
+  }
+  return result;
+}
+
+function openApiSchema(schema: ZodType): JsonObject {
+  return normalizeGeneratorSchema(jsonSchema(schema)) as JsonObject;
+}
+
 function validationIssues(error: z.ZodError): ValidationIssue[] {
   return error.issues.slice(0, 20).map((issue) => ({
     path: issue.path.length === 0 ? '$' : `$.${issue.path.map(String).join('.')}`.slice(0, 300),
@@ -102,7 +139,7 @@ function openApiResponses(route: ApiRouteContract): JsonObject {
     if (response.schema) {
       item.content = {
         [response.contentType ?? 'application/json']: {
-          schema: jsonSchema(response.schema),
+          schema: openApiSchema(response.schema),
         },
       };
     }
@@ -145,7 +182,7 @@ function routeOperation(route: ApiRouteContract): JsonObject {
       description: route.bodyDescription ?? 'JSON request body validated by the runtime Zod schema.',
       content: {
         'application/json': {
-          schema: jsonSchema(route.body),
+          schema: openApiSchema(route.body),
         },
       },
     };
