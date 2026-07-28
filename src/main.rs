@@ -1,8 +1,7 @@
-use std::{env, net::SocketAddr, sync::Arc};
+use std::{env, net::SocketAddr};
 
 use push_notification_server::{
-    ApiState, DenyAllAuthenticator, ProviderRegistry, provider_registry_from_env,
-    request_authenticator_from_env, router,
+    ApiState, provider_registry_from_env, request_authenticator_from_env, router,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -60,6 +59,10 @@ async fn shutdown_signal() {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use push_notification_server::{DenyAllAuthenticator, ProviderRegistry};
+
     use super::*;
 
     #[test]
