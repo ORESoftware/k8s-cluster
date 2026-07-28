@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the native-library Rust services into the Kubernetes containerd namespace.
-# The image names are derived from each crate's [package] version and must stay in
-# exact sync with the checked-in GitOps manifests.
+# Image names are derived from each crate's [package] version and must stay in
+# exact sync with every checked-in GitOps and warm-pool runtime consumer.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,15 +20,15 @@ usage() {
   cat >&2 <<'EOF'
 usage: remote/tools/build-native-service-images.sh [check|build]
 
-  check  Verify Cargo versions, immutable GitOps image references, pull policy,
-         and native-service Dockerfile release contracts. This is the default.
+  check  Verify Cargo versions, immutable GitOps/warm-pool image references,
+         pull policy, and native-service Dockerfile release contracts. Default.
   build  Run the checks, then build each exact version tag into containerd's
          Kubernetes namespace and verify that the resulting image exists.
 
 Environment:
   BUILDER=nerdctl                 Container builder binary.
   CONTAINER_NAMESPACE=k8s.io      nerdctl/containerd namespace.
-  IMAGE_PREFIX=docker.io/library  Image name prefix used by GitOps.
+  IMAGE_PREFIX=docker.io/library  Image name prefix used by runtime consumers.
   PROGRESS=plain                  BuildKit progress mode.
   ALLOW_EXISTING_IMAGE=1          Explicit emergency override for a tag rebuild.
   ALLOW_DIRTY_BUILD=1             Explicit local-development override.
@@ -105,11 +105,26 @@ check_service_contract() {
   printf 'verified %s -> %s\n' "${service}" "${image}"
 }
 
+check_warm_pool_contract() {
+  local seed document_image
+  seed="${REMOTE_ROOT}/databases/pg/seeds/container-pool-app-config.sql"
+  document_image="$(service_image dd-document-rs)"
+
+  require_exact_line "${seed}" "        \"image\": \"${document_image}\","
+  if grep -En '"image":[[:space:]]+"([^"[:space:]]+/)?dd-document-rs:(latest|dev|main|master)"' "${seed}"; then
+    echo "${seed#${REPO_ROOT}/} contains a mutable dd-document-rs warm-pool image tag" >&2
+    return 1
+  fi
+
+  printf 'verified dd-document warm pool -> %s\n' "${document_image}"
+}
+
 check_contract() {
   local service
   for service in "${SERVICES[@]}"; do
     check_service_contract "${service}"
   done
+  check_warm_pool_contract
 }
 
 require_clean_inputs() {
@@ -123,6 +138,7 @@ require_clean_inputs() {
     remote/deployments/dd-ocr-rs \
     remote/argocd/dd-next-runtime/dd-document-rs.deployment.yaml \
     remote/argocd/dd-next-runtime/dd-ocr-rs.deployment.yaml \
+    remote/databases/pg/seeds/container-pool-app-config.sql \
     remote/tools/build-native-service-images.sh)"
   if [[ -n "${status}" ]]; then
     echo 'refusing to build native release tags from dirty release inputs:' >&2
