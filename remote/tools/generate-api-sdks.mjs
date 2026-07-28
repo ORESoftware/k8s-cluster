@@ -159,6 +159,7 @@ export interface ApiClientOptions {
 
 export const SDK_SCOPE: SdkScope = ${q(scope)};
 export const CATALOG_SHA256 = ${q(catalog.catalogSha256)};
+export const OPERATION_COUNT = ${operations.length};
 export const OPERATIONS: readonly ApiOperation[] = Object.freeze(${JSON.stringify(operations, null, 2)});
 
 const operationsById = new Map(OPERATIONS.map((operation) => [operation.operationId, operation]));
@@ -339,6 +340,7 @@ use std::fmt::{Display, Formatter};
 
 pub const SDK_SCOPE: &str = ${q(scope)};
 pub const CATALOG_SHA256: &str = ${q(catalog.catalogSha256)};
+pub const OPERATION_COUNT: usize = ${operations.length};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ApiOperation {
@@ -554,6 +556,7 @@ function renderDart(scope, catalog) {
     .join('\n');
   const source = `const String sdkScope = ${q(scope)};
 const String catalogSha256 = ${q(catalog.catalogSha256)};
+const int operationCount = ${operations.length};
 
 class ApiOperation {
   const ApiOperation({
@@ -753,7 +756,7 @@ function renderGleam(scope, catalog) {
       path_parameters: ${gleamList(operation.pathParameters)},
       required_query_parameters: ${gleamList(operation.requiredQueryParameters)},
       optional_query_parameters: ${gleamList(operation.optionalQueryParameters)},
-      request_body_required: ${operation.requestBodyRequired},
+      request_body_required: ${operation.requestBodyRequired ? 'True' : 'False'},
       contract_sha256: ${q(operation.contractSha256)},
     ),`,
     )
@@ -765,6 +768,7 @@ import gleam/uri
 
 pub const sdk_scope = ${q(scope)}
 pub const catalog_sha256 = ${q(catalog.catalogSha256)}
+pub const operation_count = ${operations.length}
 
 pub type ApiOperation {
   ApiOperation(
@@ -911,7 +915,7 @@ fn validate_body(operation: ApiOperation, body: Option(String)) -> Result(Nil, B
 
 fn trim_base_url(base_url: String) -> String {
   case string.ends_with(base_url, "/") {
-    True -> string.drop_right(base_url, 1)
+    True -> string.drop_end(base_url, 1)
     False -> base_url
   }
 }
