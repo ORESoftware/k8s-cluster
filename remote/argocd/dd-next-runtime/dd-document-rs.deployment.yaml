@@ -37,8 +37,8 @@ spec:
         # the prebuilt image from deployments/dd-document-rs/Dockerfile because it
         # links the Pandoc Haskell bridge (libdd-pandoc-bridge.so) at build time.
         - name: document-rs
-          image: dd-document-rs:latest
-          imagePullPolicy: IfNotPresent
+          image: docker.io/library/dd-document-rs:0.1.0
+          imagePullPolicy: Never
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
