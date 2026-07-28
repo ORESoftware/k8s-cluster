@@ -78,10 +78,10 @@ jobs:
         with:
           node-version: '22.23.1'
 
-      - name: Setup Rust 1.85.1
+      - name: Setup Rust 1.95.0
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
         with:
-          toolchain: '1.85.1'
+          toolchain: '1.95.0'
 
       - name: Setup Dart 3.12.2
         uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
