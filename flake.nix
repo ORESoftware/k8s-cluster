@@ -2,7 +2,7 @@
   description = "3FA sync server agent-first development environment";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
@@ -23,6 +23,7 @@
               actionlint
               bash
               cacert
+              cargo-audit
               git
               gnugrep
               nixfmt-rfc-style
