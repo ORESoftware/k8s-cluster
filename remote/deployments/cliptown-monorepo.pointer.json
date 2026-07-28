@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "application_status": "pending-gitlink-update",
   "repository": "cliptown/cliptown-monorepo",
   "url": "https://github.com/cliptown/cliptown-monorepo.git",
   "branch": "main",
