@@ -2,7 +2,8 @@ name: sync-low-risk-batch-gitlinks-once
 
 on:
   push:
-    branches: [agent/sync-low-risk-batch-gitlinks]
+    branches:
+      - 'agent/sync-low-risk-batch-gitlinks'
 
 permissions:
   contents: write
@@ -11,6 +12,7 @@ jobs:
   sync:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
