@@ -6,6 +6,11 @@ on:
       - agent/den-483-formal-methods-executable-openapi
     paths:
       - '.github/workflows/den-483-materialize-formal-openapi.yml'
+  pull_request:
+    branches: [main]
+    types: [synchronize]
+    paths:
+      - '.github/workflows/den-483-materialize-formal-openapi.yml'
 
 permissions:
   contents: write
@@ -18,7 +23,8 @@ jobs:
   materialize:
     if: >-
       github.repository == 'ORESoftware/k8s-cluster' &&
-      github.ref_name == 'agent/den-483-formal-methods-executable-openapi'
+      ((github.event_name == 'push' && github.ref_name == 'agent/den-483-formal-methods-executable-openapi') ||
+       (github.event_name == 'pull_request' && github.head_ref == 'agent/den-483-formal-methods-executable-openapi' && github.base_ref == 'main'))
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -173,5 +179,3 @@ jobs:
           path: ${{ runner.temp }}/den-483-materialize.log
           if-no-files-found: warn
           retention-days: 1
-
-# Deliberate activation update after merging current main into the feature branch.
