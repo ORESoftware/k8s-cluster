@@ -41,7 +41,7 @@ jobs:
         working-directory: remote/nats-bridge
         run: cargo test --locked --bin nats_http_ingress
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked --version 0.21.2
+        run: cargo install cargo-audit --locked
       - name: Audit dependency advisories
         id: audit
         continue-on-error: true
