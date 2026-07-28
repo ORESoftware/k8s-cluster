@@ -32,7 +32,7 @@ export interface ApiClientOptions {
 }
 
 export const SDK_SCOPE: SdkScope = "public";
-export const CATALOG_SHA256 = "23a49b456e478b3498a905f8ee905adcc639ba25d867705ed69fee205d3c55c3";
+export const CATALOG_SHA256 = "ee475773694284526262e7e8e4850f0553dfee799c012c53e2735b7db8194888";
 export const OPERATION_COUNT = 279;
 export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
   {
@@ -1870,7 +1870,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "4580f624924c9746446ddded635d93700d5d8efbc4372526986d2061211333e7"
+    "contractSha256": "7a4e5261037afbf015a340049e4790d915298c2c080ac58c7c190bcaabedd0b1"
   },
   {
     "service": "gleamlang-presence-server",
@@ -1881,7 +1881,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "0022769d8ce84898fd9c0e6bcae7f4e46b4d1334184761c68ac6ad62974a76bb"
+    "contractSha256": "d97031aec2455dcaac6ca849160eade1bf174c9fbaf9d33ca0b7d2fdf7fe8ab2"
   },
   {
     "service": "gleamlang-presence-server",
@@ -1892,7 +1892,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "7f657d62c74b67ab45d4fd8271ac0b598744f3149e4afb7a9034daf8c4ef0f07"
+    "contractSha256": "815c53b6d18ca80e76d3dd89a28d6e3ee9d395a41583acd342a047a7fd205d4c"
   },
   {
     "service": "gleamlang-presence-server",
@@ -1903,18 +1903,18 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "6493d8310b34a0f39f1f9262bd4c5dc6bedbb9b87b0a63b582f2a1e7daa47d3e"
+    "contractSha256": "9e0d37dc9a7cf1cf2e0aa9f8221b40cc98e28438e77017282b3c8e608b090148"
   },
   {
     "service": "gleamlang-presence-server",
-    "operationId": "gleamlang_presence_server_get_healthz_65610a4485ce",
+    "operationId": "gleamlang_presence_server_get_openapi_json_3b3a44f2453e",
     "method": "GET",
-    "path": "/healthz",
+    "path": "/openapi.json",
     "pathParameters": [],
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "2c411906b47506e8c0b4e4307c33e0d7dc9f1eb69facc6c34ac34a657a8394da"
+    "contractSha256": "47ff71046500f7d35afa7f1f55509ebc277aeddfc43d568ebf4a8c6c148b314c"
   },
   {
     "service": "gleamlang-server",

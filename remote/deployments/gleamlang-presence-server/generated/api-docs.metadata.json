@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "gleamlang-presence-server",
   "language": "gleam",
-  "routeCount": 17,
+  "routeCount": 16,
   "routeTypeCounts": {
-    "service": 5,
-    "user-generated": 9,
+    "service": 7,
+    "user-generated": 6,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -21,14 +21,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
-      "purpose": "Help text.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      "visibility": "public",
+      "purpose": "Presence service help",
+      "handlers": [
+        "getPresenceHelp"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
       "path": "/api/docs",
@@ -36,14 +39,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
-      "purpose": "Human-readable generated API documentation.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      "visibility": "public",
+      "purpose": "Interactive API reference",
+      "handlers": [
+        "getPresenceApiReference"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
       "path": "/api/docs.json",
@@ -51,60 +57,73 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
-      "purpose": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      "visibility": "public",
+      "purpose": "Public OpenAPI contract alias",
+      "handlers": [
+        "getPresenceOpenApiAlias"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
-      "path": "/conv/:conv_id/broadcast",
+      "path": "/conv/{conv_id}/broadcast",
       "methods": [
         "POST"
       ],
       "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Body is broadcast to every conv-scoped",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "Broadcast to a conversation",
+      "handlers": [
+        "broadcastPresenceConversation"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
-      "path": "/conv/:conv_id/members",
+      "path": "/conv/{conv_id}/members",
       "methods": [
         "GET"
       ],
       "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "List members (PG-backed).",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "List conversation members",
+      "handlers": [
+        "listPresenceConversationMembers"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
-      "path": "/conv/:conv_id/members/:user_id",
+      "path": "/conv/{conv_id}/members/{user_id}",
       "methods": [
         "POST",
         "DELETE"
       ],
       "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Add user to conv (PG + cache + cluster broadcast).",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "Add a conversation member",
+      "handlers": [
+        "addPresenceConversationMember",
+        "removePresenceConversationMember"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
       "path": "/docs/api",
@@ -112,14 +131,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
-      "purpose": "Human-readable generated API documentation.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      "visibility": "public",
+      "purpose": "Interactive API reference alias",
+      "handlers": [
+        "getPresenceApiReferenceAlias"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
       "path": "/healthz",
@@ -127,14 +149,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "JSON health check.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "Presence process health",
+      "handlers": [
+        "getPresenceHealth"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
       "path": "/internal/runtime-config",
@@ -192,45 +217,72 @@
       "methods": [
         "GET"
       ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Plain text list of connected BEAM peers.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "List connected BEAM nodes",
+      "handlers": [
+        "listPresenceNodes"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
-      "path": "/user/:user_id/broadcast",
+      "path": "/openapi.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Public OpenAPI contract",
+      "handlers": [
+        "getPresenceOpenApi"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+    },
+    {
+      "path": "/user/{user_id}/broadcast",
       "methods": [
         "POST"
       ],
       "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Body is broadcast to every user-scoped ws",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "Broadcast to a user",
+      "handlers": [
+        "broadcastPresenceUser"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
-      "path": "/user/:user_id/devices/:device_id/logout",
+      "path": "/user/{user_id}/devices/{device_id}/logout",
       "methods": [
         "POST"
       ],
       "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Closes every ws (user- and conv-scoped) of",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "Log out one user device",
+      "handlers": [
+        "logoutPresenceDevice"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
       "path": "/ws",
@@ -238,44 +290,17 @@
         "GET"
       ],
       "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "Open a presence WebSocket",
+      "handlers": [
+        "connectPresenceWebSocket"
+      ],
       "sourceFiles": [
-        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
       ],
-      "notes": ""
-    },
-    {
-      "path": "/ws?user=:id",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Upgrade to a user-scoped ws.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/ws?user=:id&conv=:id",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Upgrade to a conv-scoped ws (must be a member).",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam"
-      ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     }
   ]
 }

@@ -50,11 +50,7 @@ pub type AuthBoundary {
 }
 
 pub type ParameterSpec {
-  ParameterSpec(
-    name: String,
-    required: Bool,
-    description: String,
-  )
+  ParameterSpec(name: String, required: Bool, description: String)
 }
 
 pub type RequestBodySpec {
@@ -112,10 +108,7 @@ pub type RouteSpec {
 }
 
 pub type RouteMatch {
-  RouteMatch(
-    route: RouteSpec,
-    parameters: List(#(String, String)),
-  )
+  RouteMatch(route: RouteSpec, parameters: List(#(String, String)))
 }
 
 pub fn routes() -> List(RouteSpec) {
@@ -151,7 +144,9 @@ pub fn routes() -> List(RouteSpec) {
       auth: Anonymous,
       query_parameters: [],
       request_body: NoRequestBody,
-      responses: [json_response("200", "Public OpenAPI 3.1 document.", FreeFormSchema)],
+      responses: [
+        json_response("200", "Public OpenAPI 3.1 document.", FreeFormSchema),
+      ],
       protocol: Http,
     ),
     route(
@@ -168,7 +163,9 @@ pub fn routes() -> List(RouteSpec) {
       auth: Anonymous,
       query_parameters: [],
       request_body: NoRequestBody,
-      responses: [json_response("200", "Public OpenAPI 3.1 document.", FreeFormSchema)],
+      responses: [
+        json_response("200", "Public OpenAPI 3.1 document.", FreeFormSchema),
+      ],
       protocol: Http,
     ),
     route(
@@ -287,7 +284,10 @@ pub fn routes() -> List(RouteSpec) {
           content_type: "",
           schema: EmptySchema,
         ),
-        text_response("403", "The user is not a member of the requested conversation."),
+        text_response(
+          "403",
+          "The user is not a member of the requested conversation.",
+        ),
       ],
       protocol: WebSocketProtocol,
     ),
@@ -470,7 +470,11 @@ pub fn routes() -> List(RouteSpec) {
         schema: FreeFormSchema,
       ),
       responses: [
-        json_response("200", "Runtime configuration was applied.", FreeFormSchema),
+        json_response(
+          "200",
+          "Runtime configuration was applied.",
+          FreeFormSchema,
+        ),
         text_response("401", "Server authentication failed."),
         text_response("400", "The apply request was invalid."),
       ],
@@ -585,8 +589,10 @@ fn find_route(
   case remaining {
     [] -> Error(Nil)
     [candidate, ..rest] ->
-      case candidate.method == method,
-        match_segments(candidate.segments, path_segments, []) {
+      case
+        candidate.method == method,
+        match_segments(candidate.segments, path_segments, [])
+      {
         True, Ok(parameters) ->
           Ok(RouteMatch(route: candidate, parameters: parameters))
         _, _ -> find_route(rest, method, path_segments)
@@ -602,17 +608,17 @@ fn match_segments(
   case expected, actual {
     [], [] -> Ok(list.reverse(parameters))
     [Literal(expected_segment), ..expected_rest],
-      [actual_segment, ..actual_rest] ->
+      [actual_segment, ..actual_rest]
+    ->
       case expected_segment == actual_segment {
         True -> match_segments(expected_rest, actual_rest, parameters)
         False -> Error(Nil)
       }
     [Variable(name), ..expected_rest], [actual_segment, ..actual_rest] ->
-      match_segments(
-        expected_rest,
-        actual_rest,
-        [#(name, actual_segment), ..parameters],
-      )
+      match_segments(expected_rest, actual_rest, [
+        #(name, actual_segment),
+        ..parameters
+      ])
     _, _ -> Error(Nil)
   }
 }
@@ -790,11 +796,7 @@ fn path_parameters(segments: List(Segment)) -> List(ParameterSpec) {
     [] -> []
     [Literal(_), ..rest] -> path_parameters(rest)
     [Variable(name), ..rest] -> [
-      ParameterSpec(
-        name: name,
-        required: True,
-        description: "Path identifier.",
-      ),
+      ParameterSpec(name: name, required: True, description: "Path identifier."),
       ..path_parameters(rest)
     ]
   }
@@ -828,10 +830,7 @@ fn request_body_entries(body: RequestBodySpec) {
           #(
             "content",
             json.object([
-              #(
-                content_type,
-                json.object([#("schema", schema_json(schema))]),
-              ),
+              #(content_type, json.object([#("schema", schema_json(schema))])),
             ]),
           ),
         ]),
@@ -887,9 +886,7 @@ fn schema_json(schema: Schema) {
         #(
           "properties",
           json.object(
-            list.map(fields, fn(field) {
-              #(field.0, schema_json(field.1))
-            }),
+            list.map(fields, fn(field) { #(field.0, schema_json(field.1)) }),
           ),
         ),
         #("required", json.array(required, json.string)),
@@ -909,10 +906,7 @@ fn security_entries(auth: AuthBoundary) {
         json.array(
           [
             json.object([
-              #(
-                "runtimeConfigServerAuth",
-                json.array([], json.string),
-              ),
+              #("runtimeConfigServerAuth", json.array([], json.string)),
             ]),
           ],
           fn(value) { value },
@@ -926,7 +920,6 @@ fn auth_name(auth: AuthBoundary) -> String {
   case auth {
     Anonymous -> "public"
     ClusterNetworkPolicy -> "cluster-network-policy"
-    RuntimeConfigServerSecret ->
-      "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)"
+    RuntimeConfigServerSecret -> "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)"
   }
 }

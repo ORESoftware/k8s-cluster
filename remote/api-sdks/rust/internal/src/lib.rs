@@ -2,8 +2,8 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 pub const SDK_SCOPE: &str = "internal";
-pub const CATALOG_SHA256: &str = "331bacb861a9309b41c9d5f6dc6f8bfa58b745c91bf44fdd49ba4ebc5822063a";
-pub const OPERATION_COUNT: usize = 941;
+pub const CATALOG_SHA256: &str = "5e3d4d825b548fbb43ca4272426f2a10808ecb0588fedfcbdc3f1ded723b51da";
+pub const OPERATION_COUNT: usize = 942;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ApiOperation {
@@ -6386,7 +6386,7 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "4a681dcd77bf779ccfb677e41c585d25eb337855b11f52f649dddf1bd9321b4a",
+        contract_sha256: "6ebeb65b7adbfb11a9861146f630276bb5944c09d994c64d7da8349e2e60e6d8",
     },
     ApiOperation {
         service: "gleamlang-presence-server",
@@ -6397,7 +6397,7 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "b596be33a8416ac1e1b219140d918fbb1f1ba50ba73340ade6482defda162771",
+        contract_sha256: "fc0c6e2d5fa8aee0d5d3a1a80d67b6e8f5210939fc582bfd00662335a2e7aaef",
     },
     ApiOperation {
         service: "gleamlang-presence-server",
@@ -6408,7 +6408,7 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "433dd16d8ea4445330fc9299b0b2ae39cce684750545557e8904413e901f7568",
+        contract_sha256: "354a0a1c128265f486adfb135c03d069d6c073c38aa68700a4de8c58bcb120bd",
     },
     ApiOperation {
         service: "gleamlang-presence-server",
@@ -6419,7 +6419,7 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "ab7fff20c2c3de2a83c211efd95cdee398dcb28b27ed50115f4772dcb1c860d7",
+        contract_sha256: "c6f82833dad320305cca96c5a9838ff59fcb8f39bd86350c39f675075ee2feed",
     },
     ApiOperation {
         service: "gleamlang-presence-server",
@@ -6430,7 +6430,7 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "0bff42ea034e2f1499c00aebc410ff81e7b05c14539a6a76eb427b7153137604",
+        contract_sha256: "48827393ae5f2feb6b715c89a2d7a4ad28104603e83312dcb08e27a60a841de8",
     },
     ApiOperation {
         service: "gleamlang-presence-server",
@@ -6441,7 +6441,7 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "cb15bcec055d730a8c81b48eda9bcc485effbf150db49be401824be08829fdbd",
+        contract_sha256: "5f4b943a2c669c9f81de8df056a273d4e30d7c9082d02c0ba032609b488cb29c",
     },
     ApiOperation {
         service: "gleamlang-presence-server",
@@ -6452,7 +6452,7 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "72e9bfc02dd1b3fc3f46985d5f08813ca29a5bd565bc12ff326c1a3b15980eff",
+        contract_sha256: "fd1a938f48ccfd730e04701e434fc5322f56b595d956b52dbe90878fdcceca60",
     },
     ApiOperation {
         service: "gleamlang-presence-server",
@@ -6474,7 +6474,18 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "c80fd494aba85cb5e8f724a6bc30cccc75714b67cabbaf447478778ed6448007",
+        contract_sha256: "459eb0f96524291bdf6b334e2f3a4f5b0b10511e22d33f11df5ccea5b8af8d3b",
+    },
+    ApiOperation {
+        service: "gleamlang-presence-server",
+        operation_id: "gleamlang_presence_server_get_openapi_json_3b3a44f2453e",
+        method: "GET",
+        path: "/openapi.json",
+        path_parameters: &[],
+        required_query_parameters: &[],
+        optional_query_parameters: &[],
+        request_body_required: false,
+        contract_sha256: "afe62b45325f885fd8afaa89980748cc81d5176141e9df3f4fda9caa24584cbf",
     },
     ApiOperation {
         service: "gleamlang-presence-server",
@@ -6483,9 +6494,9 @@ pub static OPERATIONS: &[ApiOperation] = &[
         path: "/ws",
         path_parameters: &[],
         required_query_parameters: &[],
-        optional_query_parameters: &["conv", "user"],
+        optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "9a8b87aa1bb8965bed43f75b7fd971bff797cacde3cae8cb6d2f5413f8b87e5c",
+        contract_sha256: "7e485f8057b59f24e9ce9f57800a1886edc170be17d4705ec8e54224e51c0d1b",
     },
     ApiOperation {
         service: "gleamlang-presence-server",
@@ -6496,7 +6507,7 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "1e60a38dd99f57ad170864c40b60ebeb3993ecfd823c46ee35f3b226ab2d2905",
+        contract_sha256: "6b15a395cb6886c7566440efe4eef4b291981107eda1ad5e191d21efd05466a6",
     },
     ApiOperation {
         service: "gleamlang-presence-server",
@@ -6507,7 +6518,7 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "e646c8f82a098fff807b49271769178e3193f8557f9a765834efb09193f2cf24",
+        contract_sha256: "41aae6f480737d134b51aad15be4e977147f2d3819bd34c1bc10bd6f0f4d2291",
     },
     ApiOperation {
         service: "gleamlang-presence-server",
@@ -6540,7 +6551,7 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "b6549cedbbca6eb3fcb5510c16c0354936ba6a40b4f149c45989604d5cf21f5b",
+        contract_sha256: "9f5a19f408c0b3eb8171f06a5533176e5d3d9e459f4db43652d79d7d7290148b",
     },
     ApiOperation {
         service: "gleamlang-presence-server",
@@ -6551,7 +6562,7 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "eb06ed048e62c5cfc6b8dc0f47f2afaee42061e461846944cf2afaf4453015de",
+        contract_sha256: "cf8a4ab926c28ef70a5fd689785824f353f207d1a45409aac5120f5082fcc3cc",
     },
     ApiOperation {
         service: "gleamlang-server",
@@ -10507,8 +10518,8 @@ mod tests {
     #[test]
     fn builds_canonical_docs_request() {
         assert_eq!(SDK_SCOPE, "internal");
-        assert_eq!(CATALOG_SHA256, "331bacb861a9309b41c9d5f6dc6f8bfa58b745c91bf44fdd49ba4ebc5822063a");
-        assert_eq!(OPERATIONS.len(), 941);
+        assert_eq!(CATALOG_SHA256, "5e3d4d825b548fbb43ca4272426f2a10808ecb0588fedfcbdc3f1ded723b51da");
+        assert_eq!(OPERATIONS.len(), 942);
         let request = build_request(
             "https://example.test/",
             "agent_worker_broker_rs_get_api_docs_2fc0dbab70df",

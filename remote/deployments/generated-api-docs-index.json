@@ -483,10 +483,10 @@
     {
       "service": "gleamlang-presence-server",
       "language": "gleam",
-      "routeCount": 17,
+      "routeCount": 16,
       "routeTypeCounts": {
-        "service": 5,
-        "user-generated": 9,
+        "service": 7,
+        "user-generated": 6,
         "runtime-config": 3
       },
       "generated": [

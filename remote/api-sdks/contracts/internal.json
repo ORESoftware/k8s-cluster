@@ -14655,8 +14655,8 @@
       "service": "gleamlang-presence-server",
       "language": "gleam",
       "specPath": "remote/deployments/gleamlang-presence-server/generated/api-docs.internal.json",
-      "specSha256": "fe0cfe26de51fecc3ca4559dc1af466f5bb5e66998da5cc11be797a12c9f9d5d",
-      "operationCount": 16,
+      "specSha256": "e15296508ba2f064510ce4cf8de1c4fe43cc974549324105d6e3d96c60b25a98",
+      "operationCount": 17,
       "operations": [
         {
           "service": "gleamlang-presence-server",
@@ -14664,10 +14664,10 @@
           "operationId": "gleamlang_presence_server_delete_conv_conv_id_members_user_id_e80911a1a01b",
           "method": "DELETE",
           "path": "/conv/{conv_id}/members/{user_id}",
-          "summary": "Add user to conv (PG + cache + cluster broadcast).",
+          "summary": "Add a conversation member",
           "visibility": "internal",
           "routeType": "user-generated",
-          "auth": "service-defined",
+          "auth": "cluster-network-policy",
           "pathParameters": [
             {
               "name": "conv_id",
@@ -14691,7 +14691,7 @@
               "content": []
             }
           ],
-          "contractSha256": "4a681dcd77bf779ccfb677e41c585d25eb337855b11f52f649dddf1bd9321b4a"
+          "contractSha256": "6ebeb65b7adbfb11a9861146f630276bb5944c09d994c64d7da8349e2e60e6d8"
         },
         {
           "service": "gleamlang-presence-server",
@@ -14699,7 +14699,7 @@
           "operationId": "gleamlang_presence_server_get_23af72802f06",
           "method": "GET",
           "path": "/",
-          "summary": "Help text.",
+          "summary": "Presence service help",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -14715,7 +14715,7 @@
               "content": []
             }
           ],
-          "contractSha256": "b596be33a8416ac1e1b219140d918fbb1f1ba50ba73340ade6482defda162771"
+          "contractSha256": "fc0c6e2d5fa8aee0d5d3a1a80d67b6e8f5210939fc582bfd00662335a2e7aaef"
         },
         {
           "service": "gleamlang-presence-server",
@@ -14723,7 +14723,7 @@
           "operationId": "gleamlang_presence_server_get_api_docs_7955b2b65374",
           "method": "GET",
           "path": "/api/docs",
-          "summary": "Human-readable generated API documentation.",
+          "summary": "Interactive API reference",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -14739,7 +14739,7 @@
               "content": []
             }
           ],
-          "contractSha256": "433dd16d8ea4445330fc9299b0b2ae39cce684750545557e8904413e901f7568"
+          "contractSha256": "354a0a1c128265f486adfb135c03d069d6c073c38aa68700a4de8c58bcb120bd"
         },
         {
           "service": "gleamlang-presence-server",
@@ -14747,7 +14747,7 @@
           "operationId": "gleamlang_presence_server_get_api_docs_json_33894b4d682c",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+          "summary": "Public OpenAPI contract alias",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -14763,7 +14763,7 @@
               "content": []
             }
           ],
-          "contractSha256": "ab7fff20c2c3de2a83c211efd95cdee398dcb28b27ed50115f4772dcb1c860d7"
+          "contractSha256": "c6f82833dad320305cca96c5a9838ff59fcb8f39bd86350c39f675075ee2feed"
         },
         {
           "service": "gleamlang-presence-server",
@@ -14771,10 +14771,10 @@
           "operationId": "gleamlang_presence_server_get_conv_conv_id_members_3d199fbe158f",
           "method": "GET",
           "path": "/conv/{conv_id}/members",
-          "summary": "List members (PG-backed).",
+          "summary": "List conversation members",
           "visibility": "internal",
           "routeType": "user-generated",
-          "auth": "service-defined",
+          "auth": "cluster-network-policy",
           "pathParameters": [
             {
               "name": "conv_id",
@@ -14793,7 +14793,7 @@
               "content": []
             }
           ],
-          "contractSha256": "0bff42ea034e2f1499c00aebc410ff81e7b05c14539a6a76eb427b7153137604"
+          "contractSha256": "48827393ae5f2feb6b715c89a2d7a4ad28104603e83312dcb08e27a60a841de8"
         },
         {
           "service": "gleamlang-presence-server",
@@ -14801,7 +14801,7 @@
           "operationId": "gleamlang_presence_server_get_docs_api_dfad3d725db1",
           "method": "GET",
           "path": "/docs/api",
-          "summary": "Human-readable generated API documentation.",
+          "summary": "Interactive API reference alias",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -14817,7 +14817,7 @@
               "content": []
             }
           ],
-          "contractSha256": "cb15bcec055d730a8c81b48eda9bcc485effbf150db49be401824be08829fdbd"
+          "contractSha256": "5f4b943a2c669c9f81de8df056a273d4e30d7c9082d02c0ba032609b488cb29c"
         },
         {
           "service": "gleamlang-presence-server",
@@ -14825,10 +14825,10 @@
           "operationId": "gleamlang_presence_server_get_healthz_65610a4485ce",
           "method": "GET",
           "path": "/healthz",
-          "summary": "JSON health check.",
-          "visibility": "public",
+          "summary": "Presence process health",
+          "visibility": "internal",
           "routeType": "service",
-          "auth": "public",
+          "auth": "cluster-network-policy",
           "pathParameters": [],
           "queryParameters": [],
           "requestBody": {
@@ -14841,7 +14841,7 @@
               "content": []
             }
           ],
-          "contractSha256": "72e9bfc02dd1b3fc3f46985d5f08813ca29a5bd565bc12ff326c1a3b15980eff"
+          "contractSha256": "fd1a938f48ccfd730e04701e434fc5322f56b595d956b52dbe90878fdcceca60"
         },
         {
           "service": "gleamlang-presence-server",
@@ -14873,10 +14873,10 @@
           "operationId": "gleamlang_presence_server_get_nodes_20dcc24257a3",
           "method": "GET",
           "path": "/nodes",
-          "summary": "Plain text list of connected BEAM peers.",
+          "summary": "List connected BEAM nodes",
           "visibility": "internal",
-          "routeType": "user-generated",
-          "auth": "service-defined",
+          "routeType": "service",
+          "auth": "cluster-network-policy",
           "pathParameters": [],
           "queryParameters": [],
           "requestBody": {
@@ -14889,31 +14889,20 @@
               "content": []
             }
           ],
-          "contractSha256": "c80fd494aba85cb5e8f724a6bc30cccc75714b67cabbaf447478778ed6448007"
+          "contractSha256": "459eb0f96524291bdf6b334e2f3a4f5b0b10511e22d33f11df5ccea5b8af8d3b"
         },
         {
           "service": "gleamlang-presence-server",
           "serviceLanguage": "gleam",
-          "operationId": "gleamlang_presence_server_get_ws_001e441dcc2a",
+          "operationId": "gleamlang_presence_server_get_openapi_json_3b3a44f2453e",
           "method": "GET",
-          "path": "/ws",
-          "summary": "Custom code-first route derived from the service router.",
-          "visibility": "internal",
-          "routeType": "user-generated",
-          "auth": "service-defined",
+          "path": "/openapi.json",
+          "summary": "Public OpenAPI contract",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
           "pathParameters": [],
-          "queryParameters": [
-            {
-              "name": "conv",
-              "required": false,
-              "schemaSha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
-            },
-            {
-              "name": "user",
-              "required": false,
-              "schemaSha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
-            }
-          ],
+          "queryParameters": [],
           "requestBody": {
             "required": false,
             "content": []
@@ -14924,7 +14913,31 @@
               "content": []
             }
           ],
-          "contractSha256": "9a8b87aa1bb8965bed43f75b7fd971bff797cacde3cae8cb6d2f5413f8b87e5c"
+          "contractSha256": "afe62b45325f885fd8afaa89980748cc81d5176141e9df3f4fda9caa24584cbf"
+        },
+        {
+          "service": "gleamlang-presence-server",
+          "serviceLanguage": "gleam",
+          "operationId": "gleamlang_presence_server_get_ws_001e441dcc2a",
+          "method": "GET",
+          "path": "/ws",
+          "summary": "Open a presence WebSocket",
+          "visibility": "internal",
+          "routeType": "user-generated",
+          "auth": "cluster-network-policy",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "7e485f8057b59f24e9ce9f57800a1886edc170be17d4705ec8e54224e51c0d1b"
         },
         {
           "service": "gleamlang-presence-server",
@@ -14932,10 +14945,10 @@
           "operationId": "gleamlang_presence_server_post_conv_conv_id_broadcast_bdefd4562386",
           "method": "POST",
           "path": "/conv/{conv_id}/broadcast",
-          "summary": "Body is broadcast to every conv-scoped",
+          "summary": "Broadcast to a conversation",
           "visibility": "internal",
           "routeType": "user-generated",
-          "auth": "service-defined",
+          "auth": "cluster-network-policy",
           "pathParameters": [
             {
               "name": "conv_id",
@@ -14954,7 +14967,7 @@
               "content": []
             }
           ],
-          "contractSha256": "1e60a38dd99f57ad170864c40b60ebeb3993ecfd823c46ee35f3b226ab2d2905"
+          "contractSha256": "6b15a395cb6886c7566440efe4eef4b291981107eda1ad5e191d21efd05466a6"
         },
         {
           "service": "gleamlang-presence-server",
@@ -14962,10 +14975,10 @@
           "operationId": "gleamlang_presence_server_post_conv_conv_id_members_user_id_d9864dcea2d6",
           "method": "POST",
           "path": "/conv/{conv_id}/members/{user_id}",
-          "summary": "Add user to conv (PG + cache + cluster broadcast).",
+          "summary": "Add a conversation member",
           "visibility": "internal",
           "routeType": "user-generated",
-          "auth": "service-defined",
+          "auth": "cluster-network-policy",
           "pathParameters": [
             {
               "name": "conv_id",
@@ -14989,7 +15002,7 @@
               "content": []
             }
           ],
-          "contractSha256": "e646c8f82a098fff807b49271769178e3193f8557f9a765834efb09193f2cf24"
+          "contractSha256": "41aae6f480737d134b51aad15be4e977147f2d3819bd34c1bc10bd6f0f4d2291"
         },
         {
           "service": "gleamlang-presence-server",
@@ -15045,10 +15058,10 @@
           "operationId": "gleamlang_presence_server_post_user_user_id_broadcast_b2d312d610ce",
           "method": "POST",
           "path": "/user/{user_id}/broadcast",
-          "summary": "Body is broadcast to every user-scoped ws",
+          "summary": "Broadcast to a user",
           "visibility": "internal",
           "routeType": "user-generated",
-          "auth": "service-defined",
+          "auth": "cluster-network-policy",
           "pathParameters": [
             {
               "name": "user_id",
@@ -15067,7 +15080,7 @@
               "content": []
             }
           ],
-          "contractSha256": "b6549cedbbca6eb3fcb5510c16c0354936ba6a40b4f149c45989604d5cf21f5b"
+          "contractSha256": "9f5a19f408c0b3eb8171f06a5533176e5d3d9e459f4db43652d79d7d7290148b"
         },
         {
           "service": "gleamlang-presence-server",
@@ -15075,10 +15088,10 @@
           "operationId": "gleamlang_presence_server_post_user_user_id_devices_device_id_logout_031ce93d07d6",
           "method": "POST",
           "path": "/user/{user_id}/devices/{device_id}/logout",
-          "summary": "Closes every ws (user- and conv-scoped) of",
+          "summary": "Log out one user device",
           "visibility": "internal",
           "routeType": "user-generated",
-          "auth": "service-defined",
+          "auth": "cluster-network-policy",
           "pathParameters": [
             {
               "name": "device_id",
@@ -15102,7 +15115,7 @@
               "content": []
             }
           ],
-          "contractSha256": "eb06ed048e62c5cfc6b8dc0f47f2afaee42061e461846944cf2afaf4453015de"
+          "contractSha256": "cf8a4ab926c28ef70a5fd689785824f353f207d1a45409aac5120f5082fcc3cc"
         }
       ]
     },
@@ -24093,6 +24106,6 @@
     }
   ],
   "serviceCount": 44,
-  "operationCount": 941,
-  "catalogSha256": "331bacb861a9309b41c9d5f6dc6f8bfa58b745c91bf44fdd49ba4ebc5822063a"
+  "operationCount": 942,
+  "catalogSha256": "5e3d4d825b548fbb43ca4272426f2a10808ecb0588fedfcbdc3f1ded723b51da"
 }

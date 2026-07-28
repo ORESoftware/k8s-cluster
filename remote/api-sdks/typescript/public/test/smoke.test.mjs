@@ -4,7 +4,7 @@ import { CATALOG_SHA256, OPERATIONS, SDK_SCOPE, buildRequest } from '../dist/ind
 
 test('generated public fleet SDK builds a canonical docs request', () => {
   assert.equal(SDK_SCOPE, "public");
-  assert.equal(CATALOG_SHA256, "23a49b456e478b3498a905f8ee905adcc639ba25d867705ed69fee205d3c55c3");
+  assert.equal(CATALOG_SHA256, "ee475773694284526262e7e8e4850f0553dfee799c012c53e2735b7db8194888");
   assert.equal(OPERATIONS.length, 279);
   const request = buildRequest({
     baseUrl: 'https://example.test/',

@@ -4225,7 +4225,7 @@
       "service": "gleamlang-presence-server",
       "language": "gleam",
       "specPath": "remote/deployments/gleamlang-presence-server/generated/api-docs.json",
-      "specSha256": "a50c6dd205874076d0b5c22a3eaf018dff681044d19c43ac88ea9cd52c300719",
+      "specSha256": "1997ac3766a678f412bc7d41702bad1a14ea7d7c4090b1dfafb96d8845f4c92e",
       "operationCount": 5,
       "operations": [
         {
@@ -4234,7 +4234,7 @@
           "operationId": "gleamlang_presence_server_get_23af72802f06",
           "method": "GET",
           "path": "/",
-          "summary": "Help text.",
+          "summary": "Presence service help",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -4250,7 +4250,7 @@
               "content": []
             }
           ],
-          "contractSha256": "4580f624924c9746446ddded635d93700d5d8efbc4372526986d2061211333e7"
+          "contractSha256": "7a4e5261037afbf015a340049e4790d915298c2c080ac58c7c190bcaabedd0b1"
         },
         {
           "service": "gleamlang-presence-server",
@@ -4258,7 +4258,7 @@
           "operationId": "gleamlang_presence_server_get_api_docs_7955b2b65374",
           "method": "GET",
           "path": "/api/docs",
-          "summary": "Human-readable generated API documentation.",
+          "summary": "Interactive API reference",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -4274,7 +4274,7 @@
               "content": []
             }
           ],
-          "contractSha256": "0022769d8ce84898fd9c0e6bcae7f4e46b4d1334184761c68ac6ad62974a76bb"
+          "contractSha256": "d97031aec2455dcaac6ca849160eade1bf174c9fbaf9d33ca0b7d2fdf7fe8ab2"
         },
         {
           "service": "gleamlang-presence-server",
@@ -4282,7 +4282,7 @@
           "operationId": "gleamlang_presence_server_get_api_docs_json_33894b4d682c",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+          "summary": "Public OpenAPI contract alias",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -4298,7 +4298,7 @@
               "content": []
             }
           ],
-          "contractSha256": "7f657d62c74b67ab45d4fd8271ac0b598744f3149e4afb7a9034daf8c4ef0f07"
+          "contractSha256": "815c53b6d18ca80e76d3dd89a28d6e3ee9d395a41583acd342a047a7fd205d4c"
         },
         {
           "service": "gleamlang-presence-server",
@@ -4306,7 +4306,7 @@
           "operationId": "gleamlang_presence_server_get_docs_api_dfad3d725db1",
           "method": "GET",
           "path": "/docs/api",
-          "summary": "Human-readable generated API documentation.",
+          "summary": "Interactive API reference alias",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -4322,15 +4322,15 @@
               "content": []
             }
           ],
-          "contractSha256": "6493d8310b34a0f39f1f9262bd4c5dc6bedbb9b87b0a63b582f2a1e7daa47d3e"
+          "contractSha256": "9e0d37dc9a7cf1cf2e0aa9f8221b40cc98e28438e77017282b3c8e608b090148"
         },
         {
           "service": "gleamlang-presence-server",
           "serviceLanguage": "gleam",
-          "operationId": "gleamlang_presence_server_get_healthz_65610a4485ce",
+          "operationId": "gleamlang_presence_server_get_openapi_json_3b3a44f2453e",
           "method": "GET",
-          "path": "/healthz",
-          "summary": "JSON health check.",
+          "path": "/openapi.json",
+          "summary": "Public OpenAPI contract",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -4346,7 +4346,7 @@
               "content": []
             }
           ],
-          "contractSha256": "2c411906b47506e8c0b4e4307c33e0d7dc9f1eb69facc6c34ac34a657a8394da"
+          "contractSha256": "47ff71046500f7d35afa7f1f55509ebc277aeddfc43d568ebf4a8c6c148b314c"
         }
       ]
     },
@@ -7135,5 +7135,5 @@
   ],
   "serviceCount": 44,
   "operationCount": 279,
-  "catalogSha256": "23a49b456e478b3498a905f8ee905adcc639ba25d867705ed69fee205d3c55c3"
+  "catalogSha256": "ee475773694284526262e7e8e4850f0553dfee799c012c53e2735b7db8194888"
 }

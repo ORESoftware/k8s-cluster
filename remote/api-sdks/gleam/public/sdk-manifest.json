@@ -5,8 +5,8 @@
   "packageName": "oresoftware_k8s_api_sdk_public",
   "generatedBy": "remote/tools/generate-api-sdks.mjs",
   "catalogPath": "remote/api-sdks/contracts/public.json",
-  "catalogSha256": "23a49b456e478b3498a905f8ee905adcc639ba25d867705ed69fee205d3c55c3",
-  "catalogFileSha256": "baa81b88a31f38370466ba7143095922acfdba9766c1c70b1f1870d57643fda6",
+  "catalogSha256": "ee475773694284526262e7e8e4850f0553dfee799c012c53e2735b7db8194888",
+  "catalogFileSha256": "23bf7693305820bf80565239ae406c4dfd7e42edb831f516e37c33fd944e463e",
   "serviceCount": 44,
   "operationCount": 279,
   "skippedServices": [
@@ -53,11 +53,11 @@
     },
     {
       "path": "src/dd_api_sdk.gleam",
-      "sha256": "98042f6ff07765e8b0fcf844f8b09c126d629116743e4edd98c0d8b2d9926b6a"
+      "sha256": "9c4d40be63d1102d5cafa02cbb3e72b0bca0af4c6a24cea41790532e0ce3a5c9"
     },
     {
       "path": "test/oresoftware_k8s_api_sdk_public_test.gleam",
-      "sha256": "50195431481ac6add5a70b904c0bfbb7cc11b5d6faee91312e92f0fba4dc3c8a"
+      "sha256": "edd188ab598fbed3e49e1d9915e8935af14eb5d2cb565118bda1bbde29a34b48"
     }
   ]
 }
