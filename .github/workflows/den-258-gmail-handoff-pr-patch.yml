@@ -83,19 +83,17 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm exec tsx --test general/browser-mcp-gmail-handoff.test.ts
 
-      - name: Commit verified product diff
+      - name: Commit verified non-workflow product diff
         shell: bash
         run: |
           set -euo pipefail
-          rm \
-            .github/workflows/den-258-gmail-handoff-bootstrap.yml \
-            .github/workflows/den-258-gmail-handoff-pr-patch.yml
+          # GitHub's workflow token cannot mutate workflow files. The connected
+          # GitHub App adds the permanent read-only workflow and removes these
+          # temporary files after this tested product commit lands.
+          rm .github/workflows/browser-mcp-gmail-handoff.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
-            .github/workflows/browser-mcp-gmail-handoff.yml \
-            .github/workflows/den-258-gmail-handoff-bootstrap.yml \
-            .github/workflows/den-258-gmail-handoff-pr-patch.yml \
             docs/gmail-browser-handoff-contract.md \
             remote/deployments/browser-mcp-rs/Dockerfile \
             remote/deployments/browser-mcp-rs/src/email_handoff.rs \
@@ -103,7 +101,6 @@ jobs:
             remote/tests/general/browser-mcp-gmail-handoff.test.ts
           git diff --cached --check
           if grep -R -nE '^(<<<<<<<|=======|>>>>>>>)' \
-            .github/workflows/browser-mcp-gmail-handoff.yml \
             docs/gmail-browser-handoff-contract.md \
             remote/deployments/browser-mcp-rs/Dockerfile \
             remote/deployments/browser-mcp-rs/src/email_handoff.rs \
