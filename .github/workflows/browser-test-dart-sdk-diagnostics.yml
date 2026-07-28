@@ -1,3 +1,4 @@
+# Explicit trigger after workflow registration.
 name: browser-test generated Dart SDK diagnostics
 
 on:
