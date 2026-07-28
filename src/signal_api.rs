@@ -219,7 +219,8 @@ pub(crate) async fn pull_mailbox_handler(
     )
     .await
     .map_err(map_store_error)?;
-    let items: Vec<MailboxEnvelopeResponse> = rows.into_iter().map(mailbox_response).collect();
+    let items: Vec<MailboxEnvelopeResponse> =
+        rows.into_iter().map(mailbox_response).collect();
     let next_cursor = items
         .last()
         .map(|item| item.mailbox_seq)
@@ -418,14 +419,20 @@ mod tests {
         let sender_device_id = Uuid::new_v4();
         let value = serde_json::json!({"envelope": envelope(account_id, sender_device_id)});
         let request: QueueEnvelopeRequest = serde_json::from_value(value).unwrap();
-        assert_eq!(request.envelope.metadata.account_id, account_id.to_string());
+        assert_eq!(
+            request.envelope.metadata.account_id,
+            account_id.to_string()
+        );
 
         let inserted = serde_json::to_value(QueueEnvelopeResponse {
             mailbox_seq: 7,
             duplicate: false,
         })
         .unwrap();
-        assert_eq!(inserted, serde_json::json!({"mailbox_seq": 7, "duplicate": false}));
+        assert_eq!(
+            inserted,
+            serde_json::json!({"mailbox_seq": 7, "duplicate": false})
+        );
     }
 
     #[test]
