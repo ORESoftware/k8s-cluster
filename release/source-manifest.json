@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "gitlinks_status": "applied",
-  "rollout": "low-risk-toolchain-sync-fixture-extension-controls",
+  "gitlinks_status": "pending-application",
+  "rollout": "final-low-risk-nix-capabilities-package-dry-runs",
   "repositories": {
     "apps/cliptown-interfaces": {
       "repository": "cliptown/cliptown-interfaces",
@@ -11,12 +11,12 @@
     "apps/cliptown-clients": {
       "repository": "cliptown/cliptown-clients",
       "branch": "main",
-      "commit": "0412c985b5939c28aedbbd9c364d04faef54d1a7"
+      "commit": "d5e2be3a39169f900f8fef2e097735ddd4c557a1"
     },
     "apps/cliptown-rust-backend.rs": {
       "repository": "cliptown/cliptown-rust-backend.rs",
       "branch": "main",
-      "commit": "1bd76994a150ef1aa1c83c0cddfb23c275088b14"
+      "commit": "f3697e62c6761dc3abc39f4577251fbc908bed5d"
     },
     "apps/cliptown-cli": {
       "repository": "cliptown/cliptown-cli",
@@ -26,7 +26,7 @@
     "apps/cliptown-flutter": {
       "repository": "cliptown/cliptown-flutter",
       "branch": "main",
-      "commit": "3501eb09d14d3b8a767fd974939c7eca99a83ebf"
+      "commit": "f1da59ad04957b6893526137c52f24a8e371a88d"
     },
     "apps/cliptown-extension": {
       "repository": "cliptown/cliptown-extension",
