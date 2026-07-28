@@ -3,6 +3,7 @@
   "$id": "https://dd.dev/schemas/runtime-config.schema.json",
   "title": "RuntimeConfigInterfaces",
   "description": "Shared cross-runtime types for dd-runtime-config: the config control plane, its subscriber registry, and the apply-payload pushed to /internal/update-runtime-config on every subscriber.",
+  "x-rust-openapi": true,
   "type": "object",
   "$defs": {
     "RuntimeConfigEnv": {

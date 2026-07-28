@@ -17,6 +17,18 @@
 // Hosts that want to register with the control plane should spawn
 // `tokio::spawn(register_with_control_plane())` once during startup.
 
+#[cfg(all(feature = "axum-07", feature = "axum-08"))]
+compile_error!("features axum-07 and axum-08 are mutually exclusive");
+#[cfg(not(any(feature = "axum-07", feature = "axum-08")))]
+compile_error!("enable exactly one of axum-07 or axum-08");
+#[cfg(all(feature = "openapi", not(feature = "axum-08")))]
+compile_error!("feature openapi requires axum-08");
+
+#[cfg(feature = "axum-07")]
+extern crate axum07 as axum;
+#[cfg(feature = "axum-08")]
+extern crate axum08 as axum;
+
 use std::collections::HashMap;
 use std::env;
 use std::sync::OnceLock;
@@ -31,9 +43,16 @@ use dd_shared_interfaces::{
     RuntimeConfigApplyReason, RuntimeConfigApplyRequest, RuntimeConfigApplyResponse,
     RuntimeConfigEnv, RuntimeConfigRegisterRequest,
 };
-use serde_json::{json, Value};
+use serde::Serialize;
+use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+#[cfg(feature = "openapi")]
+use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityScheme};
+#[cfg(feature = "openapi")]
+use utoipa::openapi::{Components, OpenApi};
+#[cfg(feature = "openapi")]
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 const ENV_SERVICE_NAME: &str = "RUNTIME_CONFIG_SERVICE_NAME";
 const ENV_SCOPE: &str = "RUNTIME_CONFIG_SCOPE";
@@ -65,6 +84,33 @@ pub struct RuntimeConfigStore {
     inner: Arc<RwLock<RuntimeConfigState>>,
     server_secret: Option<String>,
     allow_unauthenticated: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeConfigSnapshotResponse {
+    service: Option<String>,
+    scope: Option<String>,
+    env: Option<String>,
+    snapshot_version: i64,
+    applied_at: Option<String>,
+    entries: HashMap<String, Value>,
+    last_push_id: Option<String>,
+    last_reason: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RuntimeConfigResetResponse {
+    ok: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+pub struct RuntimeConfigErrorResponse {
+    ok: bool,
+    error: String,
 }
 
 impl Default for RuntimeConfigStore {
@@ -119,12 +165,46 @@ pub fn server_secret() -> Option<String> {
 
 /// Returns an axum Router with the three /internal/runtime-config* routes
 /// mounted. Merge it into the host service's Router.
+#[cfg(not(feature = "openapi"))]
 pub fn router() -> Router {
     Router::new()
         .route(SNAPSHOT_ROUTE_PATH, get(handle_get))
         .route(APPLY_ROUTE_PATH, post(handle_apply))
         .route(RESET_ROUTE_PATH, post(handle_reset))
         .with_state(global_store().clone())
+}
+
+/// Returns the executable router together with the OpenAPI fragment collected
+/// from the exact same route declarations. Hosts merge both results into their
+/// own runtime router and service contract.
+#[cfg(feature = "openapi")]
+pub fn router_and_openapi() -> (Router, OpenApi) {
+    router_and_openapi_with_store(global_store().clone())
+}
+
+#[cfg(feature = "openapi")]
+pub fn router_and_openapi_with_store(store: RuntimeConfigStore) -> (Router, OpenApi) {
+    let (router, mut openapi) = OpenApiRouter::new()
+        .routes(routes!(handle_get))
+        .routes(routes!(handle_apply))
+        .routes(routes!(handle_reset))
+        .split_for_parts();
+
+    let components = openapi.components.get_or_insert_with(Components::new);
+    components.add_security_scheme(
+        "runtime_config_server_auth",
+        SecurityScheme::ApiKey(ApiKey::Header(ApiKeyValue::with_description(
+            "x-server-auth",
+            "Shared server-to-server secret configured through RUNTIME_CONFIG_SERVER_SECRET.",
+        ))),
+    );
+
+    (router.with_state(store), openapi)
+}
+
+#[cfg(feature = "openapi")]
+pub fn router() -> Router {
+    router_and_openapi().0
 }
 
 fn read_env(name: &str) -> Option<String> {
@@ -168,38 +248,52 @@ fn constant_time_eq(a: &str, b: &str) -> bool {
     diff == 0
 }
 
+fn error_response(status: StatusCode, error: &str) -> Response {
+    (
+        status,
+        Json(RuntimeConfigErrorResponse {
+            ok: false,
+            error: error.to_string(),
+        }),
+    )
+        .into_response()
+}
+
 fn require_server_auth(store: &RuntimeConfigStore, headers: &HeaderMap) -> Result<(), Response> {
     let Some(expected) = store.server_secret.as_ref() else {
         if store.allow_unauthenticated {
             return Ok(());
         }
-        return Err((
+        return Err(error_response(
             StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({
-                "ok": false,
-                "error": "runtime config auth is not configured"
-            })),
-        )
-            .into_response());
+            "runtime config auth is not configured",
+        ));
     };
     let provided = headers
         .get("x-server-auth")
         .and_then(|value| value.to_str().ok())
         .unwrap_or("");
     if provided.is_empty() || !constant_time_eq(provided, expected.as_str()) {
-        return Err((
-            StatusCode::UNAUTHORIZED,
-            Json(json!({ "ok": false, "error": "unauthorized" })),
-        )
-            .into_response());
+        return Err(error_response(StatusCode::UNAUTHORIZED, "unauthorized"));
     }
     Ok(())
 }
 
-async fn handle_get(
-    State(store): State<RuntimeConfigStore>,
-    headers: HeaderMap,
-) -> Response {
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        get,
+        path = "/internal/runtime-config",
+        operation_id = "getRuntimeConfigSnapshot",
+        tag = "runtime-config",
+        security(("runtime_config_server_auth" = [])),
+        responses(
+            (status = 200, description = "Current in-process runtime configuration snapshot", body = RuntimeConfigSnapshotResponse),
+            (status = 401, description = "Missing or invalid server authentication", body = RuntimeConfigErrorResponse)
+        )
+    )
+)]
+async fn handle_get(State(store): State<RuntimeConfigStore>, headers: HeaderMap) -> Response {
     // The snapshot lists every pushed entry value, so once a push secret is
     // configured the read side must present it too. Without a configured
     // secret the route stays open (local development) — only the mutating
@@ -210,19 +304,35 @@ async fn handle_get(
         }
     }
     let state = store.inner.read().await;
-    Json(json!({
-        "service": read_env(ENV_SERVICE_NAME),
-        "scope": read_env(ENV_SCOPE),
-        "env": read_env(ENV_ENV),
-        "snapshotVersion": state.snapshot_version,
-        "appliedAt": state.applied_at,
-        "entries": state.entries,
-        "lastPushId": state.last_push_id,
-        "lastReason": state.last_reason,
-    }))
+    Json(RuntimeConfigSnapshotResponse {
+        service: read_env(ENV_SERVICE_NAME),
+        scope: read_env(ENV_SCOPE),
+        env: read_env(ENV_ENV),
+        snapshot_version: state.snapshot_version,
+        applied_at: state.applied_at.clone(),
+        entries: state.entries.clone(),
+        last_push_id: state.last_push_id.clone(),
+        last_reason: state.last_reason.clone(),
+    })
     .into_response()
 }
 
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        post,
+        path = "/internal/update-runtime-config",
+        operation_id = "applyRuntimeConfigSnapshot",
+        tag = "runtime-config",
+        security(("runtime_config_server_auth" = [])),
+        request_body = RuntimeConfigApplyRequest,
+        responses(
+            (status = 200, description = "Snapshot applied or acknowledged as stale", body = RuntimeConfigApplyResponse),
+            (status = 401, description = "Missing or invalid server authentication", body = RuntimeConfigErrorResponse),
+            (status = 503, description = "Runtime-config authentication is not configured", body = RuntimeConfigErrorResponse)
+        )
+    )
+)]
 async fn handle_apply(
     State(store): State<RuntimeConfigStore>,
     headers: HeaderMap,
@@ -273,13 +383,28 @@ async fn handle_apply(
     .into_response()
 }
 
+#[cfg_attr(
+    feature = "openapi",
+    utoipa::path(
+        post,
+        path = "/internal/runtime-config/reset",
+        operation_id = "resetRuntimeConfigSnapshot",
+        tag = "runtime-config",
+        security(("runtime_config_server_auth" = [])),
+        responses(
+            (status = 200, description = "Runtime overrides cleared", body = RuntimeConfigResetResponse),
+            (status = 401, description = "Missing or invalid server authentication", body = RuntimeConfigErrorResponse),
+            (status = 503, description = "Runtime-config authentication is not configured", body = RuntimeConfigErrorResponse)
+        )
+    )
+)]
 async fn handle_reset(State(store): State<RuntimeConfigStore>, headers: HeaderMap) -> Response {
     if let Err(response) = require_server_auth(&store, &headers) {
         return response;
     }
     let mut state = store.inner.write().await;
     *state = RuntimeConfigState::default();
-    Json(json!({ "ok": true })).into_response()
+    Json(RuntimeConfigResetResponse { ok: true }).into_response()
 }
 
 /// Register this process with the control plane in the background. Safe to
@@ -410,4 +535,76 @@ pub fn route_paths() -> [(&'static str, &'static str); 3] {
         (APPLY_ROUTE_PATH, "POST"),
         (RESET_ROUTE_PATH, "POST"),
     ]
+}
+
+#[cfg(all(test, feature = "openapi"))]
+mod tests {
+    use super::*;
+    use axum::body::{to_bytes, Body};
+    use axum::http::Request;
+    use tower::ServiceExt;
+
+    fn test_store() -> RuntimeConfigStore {
+        RuntimeConfigStore {
+            inner: Arc::new(RwLock::new(RuntimeConfigState::default())),
+            server_secret: None,
+            allow_unauthenticated: true,
+        }
+    }
+
+    #[test]
+    fn openapi_fragment_matches_runtime_route_inventory() {
+        let (_, openapi) = router_and_openapi_with_store(test_store());
+        let value = serde_json::to_value(openapi).expect("serialize OpenAPI");
+        let paths = value["paths"].as_object().expect("OpenAPI paths");
+        assert_eq!(paths.len(), route_paths().len());
+        for (path, method) in route_paths() {
+            assert!(paths.contains_key(path), "missing OpenAPI path {path}");
+            assert!(
+                paths[path]
+                    .as_object()
+                    .expect("path item")
+                    .contains_key(&method.to_ascii_lowercase()),
+                "missing OpenAPI operation {method} {path}",
+            );
+        }
+        assert_eq!(
+            value["components"]["securitySchemes"]["runtime_config_server_auth"]["name"],
+            "x-server-auth",
+        );
+    }
+
+    #[tokio::test]
+    async fn executable_router_serves_all_declared_routes() {
+        let (router, _) = router_and_openapi_with_store(test_store());
+
+        let snapshot = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(SNAPSHOT_ROUTE_PATH)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("snapshot response");
+        assert_eq!(snapshot.status(), StatusCode::OK);
+        let snapshot_body = to_bytes(snapshot.into_body(), 1024 * 1024)
+            .await
+            .expect("snapshot body");
+        let snapshot_json: Value = serde_json::from_slice(&snapshot_body).expect("snapshot JSON");
+        assert_eq!(snapshot_json["snapshotVersion"], 0);
+
+        let reset = router
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(RESET_ROUTE_PATH)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("reset response");
+        assert_eq!(reset.status(), StatusCode::OK);
+    }
 }
