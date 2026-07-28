@@ -150,6 +150,29 @@ for forbidden in (
 SERVER.write_text(server, encoding="utf-8")
 
 contract = CONTRACT.read_text(encoding="utf-8")
+for schema_id, marker in (
+    ("BrowserTool", "  $id: 'BrowserTool',\n"),
+    ("BrowserScenarioStep", "    $id: 'BrowserScenarioStep',\n"),
+    ("BrowserRunRequest", "    $id: 'BrowserRunRequest',\n"),
+):
+    contract = replace_once(
+        contract,
+        marker,
+        "",
+        f"keep inline {schema_id} schema anonymous",
+    )
+contract = replace_once(
+    contract,
+    "{ $id: 'BrowserRunResult', additionalProperties: false }",
+    "{ additionalProperties: false }",
+    "keep inline BrowserRunResult schema anonymous",
+)
+contract = replace_once(
+    contract,
+    "{ $id: 'BrowserApiError', additionalProperties: false }",
+    "{ additionalProperties: false }",
+    "keep inline BrowserApiError schema anonymous",
+)
 contract = replace_once(
     contract,
     """    ],
@@ -171,4 +194,4 @@ package["dependencies"].pop("ajv-formats", None)
 package["dependencies"] = dict(sorted(package["dependencies"].items()))
 PACKAGE.write_text(json.dumps(package, indent=2) + "\n", encoding="utf-8")
 
-print("repaired browser-test migration typing and marker boundaries")
+print("repaired browser-test migration typing, schema identity, and marker boundaries")
