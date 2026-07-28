@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "gitlinks_status": "applied-awaiting-ci",
+  "gitlinks_status": "applied",
   "rollout": "final-low-risk-nix-capabilities-package-dry-runs",
   "repositories": {
     "apps/cliptown-interfaces": {
