@@ -1,0 +1,72 @@
+name: Diagnose DEN-424 AI/ML v8 patch
+
+on:
+  push:
+    branches:
+      - agent/den-424-ai-ml-runtime-contracts
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/diagnose-den-424-ai-ml-v8-patch.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-den-424-ai-ml-v8-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-424-ai-ml-runtime-contracts
+          persist-credentials: false
+      - name: Build the v8 patch script
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/apply-den-424-ai-ml-runtime-contracts-v7.yml').read_text(encoding='utf-8')
+          start = '      - name: Build a position-bounded semantic patch from v6\n'
+          end = '      - uses: pnpm/action-setup@'
+          if workflow.count(start) != 1 or workflow.count(end) != 1:
+              raise SystemExit('DEN-424 v7 patch markers are not unique')
+          block = workflow.split(start, 1)[1].split(end, 1)[0]
+          prefix = '        shell: bash\n        run: |\n'
+          if not block.startswith(prefix):
+              raise SystemExit('DEN-424 v7 patch block shape changed')
+          lines = block[len(prefix):].splitlines()
+          if any(line and not line.startswith('          ') for line in lines):
+              raise SystemExit('DEN-424 v7 patch indentation changed')
+          script = '\n'.join(line[10:] if line else '' for line in lines) + '\n'
+          script = script.replace(
+              "Path('.github/workflows/apply-den-424-ai-ml-runtime-contracts-v6.yml')",
+              "Path('.github/den-424-ai-ml-v6-source.yml')",
+          )
+          output = Path('/tmp/den-424-ai-ml-v8-patch.sh')
+          output.write_text(script, encoding='utf-8')
+          output.chmod(0o700)
+          PY
+          bash -n /tmp/den-424-ai-ml-v8-patch.sh
+      - name: Execute patch with diagnostic capture
+        id: patch
+        shell: bash
+        run: |
+          set -o pipefail
+          /tmp/den-424-ai-ml-v8-patch.sh 2>&1 | tee "${RUNNER_TEMP}/den-424-ai-ml-v8-patch.log"
+      - name: Upload diagnostic
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-424-ai-ml-v8-patch-diagnostic
+          path: ${{ runner.temp }}/den-424-ai-ml-v8-patch.log
+          retention-days: 1
+          if-no-files-found: error
