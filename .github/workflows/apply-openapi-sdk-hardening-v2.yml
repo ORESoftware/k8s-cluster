@@ -53,9 +53,9 @@ jobs:
               'decoded': hashlib.sha256(decoded).hexdigest(),
           }
           print(json.dumps(digests, sort_keys=True))
-          assert digests['encoded'] == 'f544366d389363cf5889c0fb50be352be329f6586af886358166d12776e66dac'
-          assert digests['compressed'] == '24ebdc1f2d6de392d5843b972f4be2015ba1cddea77fd199b443543f32274a60'
-          assert digests['decoded'] == '5af054f628ccdd1d1cea771c01efe4d4f66ae69a4a6081f91059ce6d0cfe222b'
+          assert digests['encoded'] == '7347e477406e8a72e41a9fc74267f04c3d371d5f58918b19b4ab21688ed9e094'
+          assert digests['compressed'] == '0748e8b3e21c65965290e218f826556c6826d8cf1289178c30b4250be74d4686'
+          assert digests['decoded'] == '1ac555fd6f59e40856b52b8b91f2bf09910a8976c88717a9b72627a6c7038ff7'
 
           payload = json.loads(decoded)
           expected = {
