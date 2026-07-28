@@ -89,6 +89,21 @@ jobs:
           fs.writeFileSync(path, source);
           NODE
 
+      - name: Emit Gleam boolean constructors
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'remote/tools/generate-api-sdks.mjs';
+          const before = 'request_body_required: ${operation.requestBodyRequired},';
+          const after = "request_body_required: ${operation.requestBodyRequired ? 'True' : 'False'},";
+          let source = fs.readFileSync(path, 'utf8');
+          if (!source.includes(before) && !source.includes(after)) {
+            throw new Error('Gleam request-body Boolean renderer was not found');
+          }
+          source = source.replace(before, after);
+          fs.writeFileSync(path, source);
+          NODE
+
       - name: Check generator syntax
         run: |
           node --check remote/tools/api-sdk-common.mjs
@@ -192,7 +207,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add remote/tools/generate-api-sdks.mjs remote/api-sdks
+          git add -A remote/tools/generate-api-sdks.mjs remote/api-sdks docs/gleam-sdk-diagnostic.txt
           git diff --cached --exit-code && exit 1 || true
           git commit -m "Generate public and internal fleet API SDKs [api-sdk-generated]"
           git push origin HEAD:agent/openapi-fleet-sdks
