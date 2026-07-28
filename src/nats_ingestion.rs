@@ -261,7 +261,11 @@ async fn handle_message(
     message: jetstream::Message,
 ) -> Result<(), NatsRuntimeError> {
     let payload = message.payload.as_ref();
-    let delivery_attempt = message.info().map(|info| info.delivered).unwrap_or(1);
+    let delivery_attempt = message
+        .info()
+        .ok()
+        .and_then(|info| u64::try_from(info.delivered).ok())
+        .unwrap_or(1);
 
     if payload.len() > config.max_payload_bytes {
         let event = dead_letter_for_payload(
