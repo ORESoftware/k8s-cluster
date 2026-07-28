@@ -45,7 +45,7 @@ Provider credentials never appear in the envelope.
 
 A result must be durably published before the job is acknowledged. If result publishing fails, the consumer NAKs the job for another attempt.
 
-Long provider calls send `AckKind::Progress` heartbeats at one-third of the ack-wait interval so healthy in-flight work is not redelivered.
+Long provider calls send `AckKind::Progress` heartbeats at one-third of the ack-wait interval so healthy in-flight work is not redelivered. JetStream's signed delivery counter is normalized once into a nonnegative `u64` before it enters result or dead-letter schemas.
 
 ## Dispositions
 
