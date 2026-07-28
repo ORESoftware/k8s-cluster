@@ -11,18 +11,24 @@ publish = false
 [dependencies]
 async-trait = "0.1"
 axum = "0.8"
+base64 = "0.22"
+ece = "2.3"
 hex = "0.4"
 httpdate = "1"
 jsonwebtoken = "9"
+p256 = { version = "0.13", features = ["pem", "pkcs8"] }
 reqwest = { version = "0.12", default-features = false, features = ["http2", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 thiserror = "2"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 url = "2"
+
+[dev-dependencies]
+rand_core = { version = "0.6", features = ["getrandom"] }
 
 [profile.release]
 lto = "thin"
