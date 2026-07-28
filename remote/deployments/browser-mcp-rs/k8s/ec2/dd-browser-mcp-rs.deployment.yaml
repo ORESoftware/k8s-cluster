@@ -55,7 +55,7 @@ spec:
               app: dd-browser-mcp-rs
       containers:
         - name: browser-mcp-rs
-          image: ghcr.io/oresoftware/dd-browser-mcp-rs@sha256:f54dd077bae876ac36b2ddd8676ce0bc8cb6f6d31df063c5c526e873048b74d7
+          image: ghcr.io/oresoftware/dd-browser-mcp-rs@sha256:e07da89e3489442464df4730d78006ec83ae8ddcd38d966826f27031b6de4b14
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -89,9 +89,9 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
-            # ChatGPT custom MCP apps discover the in-process OAuth 2.1
-            # authorization server from the 401 Bearer challenge. A static
-            # operator bearer is deliberately not accepted on this public path.
+            # Public write-capable Browser MCP edges require OAuth. The binary
+            # retains an explicit no-auth compatibility mode for isolated local
+            # or disposable environments, but production must fail closed.
             - name: BROWSER_MCP_REQUIRE_AUTH
               value: 'true'
             # Both trusted public edges serve the same GitOps workload. Host
