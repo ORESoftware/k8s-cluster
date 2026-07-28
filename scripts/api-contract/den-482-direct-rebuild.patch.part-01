@@ -1,0 +1,270 @@
++        }
++    }
++    document["tags"] = Value::Array(
++        tags.into_iter()
++            .map(|name| serde_json::json!({ "name": name }))
++            .collect(),
++    );
++}
++
++fn finalize_value(document: &mut Value) {
++    document["info"] = serde_json::json!({
++        "title": "wal-gateway-rs API",
++        "version": env!("CARGO_PKG_VERSION"),
++        "description": "Typed operational and runtime-configuration API for the Postgres-to-NATS WAL gateway. The document is composed from the exact handlers registered by the live Axum routers."
++    });
++    document["x-dd-contract-scope"] = Value::String("internal".to_string());
++    document["x-dd-service"] = Value::String("wal-gateway-rs".to_string());
++    document["x-dd-source-of-truth"] = Value::String("utoipa-axum".to_string());
++
++    let public = PUBLIC_PATHS.iter().copied().collect::<BTreeSet<_>>();
++    let paths = document
++        .get_mut("paths")
++        .and_then(Value::as_object_mut)
++        .expect("composed OpenAPI paths");
++    for (path, path_item) in paths {
++        let path_item = path_item
++            .as_object_mut()
++            .unwrap_or_else(|| panic!("OpenAPI path item {path} must be an object"));
++        for method in HTTP_METHODS {
++            let Some(operation) = path_item.get_mut(*method).and_then(Value::as_object_mut) else {
++                continue;
++            };
++            operation.insert(
++                "x-dd-visibility".to_string(),
++                Value::String(if public.contains(path.as_str()) {
++                    "public"
++                } else {
++                    "internal"
++                }
++                .to_string()),
++            );
++        }
++    }
++}
++
++pub fn canonical_json(openapi: &OpenApi) -> Result<String, serde_json::Error> {
++    let mut json = serde_json::to_string_pretty(openapi)?;
++    json.push('\n');
++    Ok(json)
++}
++
++pub type SharedApiDocs = Arc<ApiDocs>;
+diff --git a/remote/deployments/wal-gateway-rs/src/main.rs b/remote/deployments/wal-gateway-rs/src/main.rs
+index 0640b076bb3f5d8f4446d9e19059a70a6c75a3dd..1b51c6da74ef07113ba36b03d5bb8697012716f1 100644
+--- a/remote/deployments/wal-gateway-rs/src/main.rs
++++ b/remote/deployments/wal-gateway-rs/src/main.rs
+@@ -63,6 +63,8 @@
+ //! See `Config` below for the full env-var matrix. Sensible defaults assume
+ //! the local dev cluster (`PG_DATABASE_URL`, `NATS_URL`).
+ 
++mod docs;
++
+ use std::{
+     collections::BTreeMap,
+     env,
+@@ -75,13 +77,24 @@ use std::{
+     time::{Duration, SystemTime, UNIX_EPOCH},
+ };
+ 
+-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Json, Router};
++use axum::{
++    extract::State,
++    http::{header, StatusCode},
++    response::{IntoResponse, Response},
++    Extension, Json, Router,
++};
+ use prometheus::{Encoder, IntCounter, IntGauge, TextEncoder};
+ use serde::Serialize;
+ use serde_json::{json, Value};
+ use tokio::time::sleep;
++use utoipa::openapi::OpenApi;
++use utoipa_axum::{router::OpenApiRouter, routes};
++
++use crate::docs::{ApiDocs, SharedApiDocs};
+ 
+ const SERVICE_NAME: &str = "dd-wal-gateway";
++const OPENAPI_EXPORT_FLAG: &str = "--export-openapi";
++const OPENAPI_CONTENT_TYPE: &str = "application/vnd.oai.openapi+json;version=3.1";
+ const SCHEMA_VERSION: &str = "cdc.row.v1";
+ // Stream name comes from the source-of-truth schema (CDC stream), so a
+ // rename in remote/libs/nats/subject-defs/schema/wal-cdc.schema.json
+@@ -227,19 +240,42 @@ fn now_ms() -> u64 {
+         .unwrap_or_default()
+ }
+ 
+-async fn api_docs_html() -> axum::response::Html<&'static str> {
+-    axum::response::Html(include_str!("../generated/api-docs.html"))
++fn local_router() -> OpenApiRouter<AppState> {
++    OpenApiRouter::new()
++        .routes(routes!(root))
++        .routes(routes!(healthz))
++        .routes(routes!(readyz))
++        .routes(routes!(metrics_handler))
++        .routes(routes!(openapi_json))
++        .routes(routes!(api_docs_json))
++        .routes(routes!(api_docs_ui))
++        .routes(routes!(docs_api_ui))
+ }
+ 
+-async fn api_docs_json() -> impl axum::response::IntoResponse {
+-    (
+-        [("content-type", "application/json; charset=utf-8")],
+-        include_str!("../generated/api-docs.json"),
+-    )
++fn openapi_document() -> OpenApi {
++    let (_, shared_openapi) = dd_runtime_config_client::router_and_openapi();
++    docs::compose(local_router().into_openapi(), shared_openapi)
++}
++
++fn app_router(state: AppState) -> Result<Router, Box<dyn Error + Send + Sync>> {
++    let (shared_router, shared_openapi) = dd_runtime_config_client::router_and_openapi();
++    let (local_router, local_openapi) = local_router().split_for_parts();
++    let openapi = docs::compose(local_openapi, shared_openapi);
++    let api_docs = Arc::new(ApiDocs::new(&openapi)?);
++
++    Ok(local_router
++        .with_state(state)
++        .merge(shared_router)
++        .layer(Extension(api_docs)))
+ }
+ 
+ #[tokio::main]
+ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
++    if env::args().any(|arg| arg == OPENAPI_EXPORT_FLAG) {
++        print!("{}", docs::canonical_json(&openapi_document())?);
++        return Ok(());
++    }
++
+     let _otel = dd_telemetry::init("dd-wal-gateway");
+ 
+     let config = Arc::new(Config::from_env().map_err(|error| {
+@@ -262,17 +298,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+         config: config.clone(),
+         metrics: metrics.clone(),
+     };
+-
+-    let app = Router::new()
+-        .route("/", get(root))
+-        .route("/healthz", get(healthz))
+-        .route("/docs/api", get(api_docs_html))
+-        .route("/api/docs", get(api_docs_html))
+-        .route("/api/docs.json", get(api_docs_json))
+-        .route("/readyz", get(readyz))
+-        .route("/metrics", get(metrics_handler))
+-        .with_state(state.clone())
+-        .merge(dd_runtime_config_client::router());
++    let app = app_router(state)?;
+ 
+     tokio::spawn(dd_runtime_config_client::register_with_control_plane());
+ 
+@@ -790,33 +816,80 @@ fn build_envelope<'a>(parsed: &'a ParsedChange, lsn: &'a str) -> Envelope<'a> {
+ 
+ // ── HTTP handlers ─────────────────────────────────────────────────────────
+ 
+-async fn root(State(state): State<AppState>) -> impl IntoResponse {
+-    Json(json!({
+-        "ok": true,
+-        "service": SERVICE_NAME,
+-        "schemaVersion": SCHEMA_VERSION,
+-        "pod": &state.config.pod_name,
+-        "slot": &state.config.slot_name,
+-        "stream": &state.config.stream_name,
+-        "subjectPrefix": &state.config.subject_prefix,
+-        "leader": state.metrics.leader.load(Ordering::Relaxed),
+-        "lastLsn": state.metrics.last_lsn.snapshot(),
+-        "uptimeMs": now_ms().saturating_sub(state.metrics.started_at_ms.load(Ordering::Relaxed)),
+-        "atMs": now_ms(),
+-    }))
++#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
++#[serde(rename_all = "camelCase")]
++struct RootResponse {
++    ok: bool,
++    service: &'static str,
++    schema_version: &'static str,
++}
++
++#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
++#[serde(rename_all = "camelCase")]
++struct HealthResponse {
++    ok: bool,
++    service: &'static str,
++    leader: bool,
++    polls: u64,
++    rows_published: u64,
++    at_ms: u64,
++}
++
++#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
++#[serde(rename_all = "camelCase")]
++struct ReadinessResponse {
++    ok: bool,
++    service: &'static str,
++    leader: bool,
++    at_ms: u64,
+ }
+ 
++#[utoipa::path(
++    get,
++    path = "/",
++    operation_id = "getWalGatewayDescriptor",
++    tag = "service",
++    security(()),
++    responses((status = 200, description = "Stable public service descriptor", body = RootResponse))
++)]
++async fn root() -> impl IntoResponse {
++    Json(RootResponse {
++        ok: true,
++        service: SERVICE_NAME,
++        schema_version: SCHEMA_VERSION,
++    })
++}
++
++#[utoipa::path(
++    get,
++    path = "/healthz",
++    operation_id = "getWalGatewayHealth",
++    tag = "operations",
++    security(()),
++    responses((status = 200, description = "Process health and bounded internal counters", body = HealthResponse))
++)]
+ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
+-    Json(json!({
+-        "ok": true,
+-        "service": SERVICE_NAME,
+-        "leader": state.metrics.leader.load(Ordering::Relaxed),
+-        "polls": state.metrics.polls_total.load(Ordering::Relaxed),
+-        "rowsPublished": state.metrics.rows_published_total.load(Ordering::Relaxed),
+-        "atMs": now_ms(),
+-    }))
++    Json(HealthResponse {
++        ok: true,
++        service: SERVICE_NAME,
++        leader: state.metrics.leader.load(Ordering::Relaxed),
++        polls: state.metrics.polls_total.load(Ordering::Relaxed),
++        rows_published: state.metrics.rows_published_total.load(Ordering::Relaxed),
++        at_ms: now_ms(),
++    })
+ }
+ 
++#[utoipa::path(
++    get,
++    path = "/readyz",
++    operation_id = "getWalGatewayReadiness",
++    tag = "operations",
++    security(()),
++    responses(
++        (status = 200, description = "Gateway is configured to reach JetStream", body = ReadinessResponse),
++        (status = 503, description = "A required gateway dependency is not configured", body = ReadinessResponse)
++    )
++)]
+ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
+     // Followers are ready (they're correctly idle waiting for the lock);
+     // only "not configured" is unready.
+@@ -828,15 +901,23 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
+     };
+     (
+         status,
+-        Json(json!({
+-            "ok": ok,
+-            "service": SERVICE_NAME,
