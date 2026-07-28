@@ -1,17 +1,17 @@
 {
   "schema_version": 1,
-  "gitlinks_status": "applied",
-  "rollout": "extension-background-privacy-policy-final-validation",
+  "gitlinks_status": "pending-application",
+  "rollout": "low-risk-toolchain-sync-fixture-extension-controls",
   "repositories": {
     "apps/cliptown-interfaces": {
       "repository": "cliptown/cliptown-interfaces",
       "branch": "main",
-      "commit": "e4e957b5372dc363fe6a52559c8959f0de781efb"
+      "commit": "77a2fdf8e0c6d9ec44133fb21814173259ff186c"
     },
     "apps/cliptown-clients": {
       "repository": "cliptown/cliptown-clients",
       "branch": "main",
-      "commit": "ed8611e0408466bc74bf57510d6acc601a38373a"
+      "commit": "0412c985b5939c28aedbbd9c364d04faef54d1a7"
     },
     "apps/cliptown-rust-backend.rs": {
       "repository": "cliptown/cliptown-rust-backend.rs",
@@ -31,7 +31,7 @@
     "apps/cliptown-extension": {
       "repository": "cliptown/cliptown-extension",
       "branch": "main",
-      "commit": "ea4b4eaf8de50d56bba81cbd6b4c47e1f393b437"
+      "commit": "1767062539c249e7dc9e8665b8c026777137a57e"
     },
     "apps/cliptown-infra": {
       "repository": "cliptown/cliptown-infra",
