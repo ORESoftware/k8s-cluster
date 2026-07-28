@@ -1,6 +1,12 @@
 name: DEN-256 combined Browser MCP profile contract
 
 on:
+  pull_request:
+    paths:
+      - 'remote/deployments/browser-mcp-rs/**'
+      - 'remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml'
+      - 'remote/tests/general/browser-mcp-exposure.test.ts'
+      - '.github/workflows/den-256-profile-merge-contract.yml'
   push:
     branches:
       - agent/den-256-platform-jobs-workflow
