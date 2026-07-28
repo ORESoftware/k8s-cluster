@@ -103,3 +103,5 @@ jobs:
             puts '::endgroup::'
           end
           RUBY
+
+# Deliberate second push: GitHub only activates a newly introduced branch workflow after it exists in the branch parent.
