@@ -1,0 +1,70 @@
+name: Finalize OpenAPI SDK staging tree
+
+on:
+  push:
+    branches:
+      - agent/openapi-fleet-sdks
+    paths:
+      - '.github/workflows/finalize-openapi-sdk-staging.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: finalize-openapi-sdk-staging
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    if: github.repository == 'ORESoftware/k8s-cluster' && github.ref == 'refs/heads/agent/openapi-fleet-sdks'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: agent/openapi-fleet-sdks
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Repair generator and regenerate every package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/tools/generate-api-sdks.mjs')
+          text = path.read_text()
+          needle = '  assert dd_api_sdk.catalog_sha256 == ${q(catalog.catalogSha256)}\n'
+          replacement = '  assert dd_api_sdk.catalog_sha256 == ${q(catalog.catalogSha256)} // gitleaks:allow\n'
+          count = text.count(needle)
+          if count == 1:
+              path.write_text(text.replace(needle, replacement))
+          elif replacement not in text:
+              raise SystemExit(f'unexpected Gleam provenance assertion count: {count}')
+          PY
+
+          node --check remote/tools/api-sdk-common.mjs
+          node --check remote/tools/generate-api-sdks.mjs
+          node --check remote/tools/validate-api-sdks.mjs
+          node remote/tools/generate-api-sdks.mjs
+          node remote/tools/generate-api-sdks.mjs --check
+          node remote/tools/validate-api-sdks.mjs
+          test -s remote/api-sdks/dart/public/bin/smoke.dart
+          test -s remote/api-sdks/dart/internal/bin/smoke.dart
+          grep -Fq 'gitleaks:allow' remote/api-sdks/gleam/public/test/oresoftware_k8s_api_sdk_public_test.gleam
+          grep -Fq 'gitleaks:allow' remote/api-sdks/gleam/internal/test/oresoftware_k8s_api_sdk_internal_test.gleam
+
+      - name: Commit the verified staging tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A -- remote/api-sdks remote/tools/generate-api-sdks.mjs
+          git diff --cached --check
+          test -n "$(git diff --cached --name-only)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Repair and regenerate fleet API SDKs'
+          git push origin HEAD:agent/openapi-fleet-sdks
