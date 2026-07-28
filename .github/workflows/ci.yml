@@ -1,5 +1,5 @@
-# CI: fmt, clippy, unit tests (--bins), and audit. Checks out the sibling
-# fiducia-interfaces repo so the path-dependency crates resolve.
+# Temporary diagnostic form of the permanent customer CI. It preserves the
+# strict gate while publishing the exact Clippy output for branch repair.
 name: ci
 
 on:
@@ -27,9 +27,6 @@ jobs:
           persist-credentials: false
           path: repo
           submodules: recursive
-      # The crate depends on sibling path crates under fiducia-interfaces
-      # (../fiducia-interfaces/generated/rust and .../generated/rust-db), so the
-      # interfaces repo must sit alongside for cargo to resolve them.
       - name: Validate GitHub Actions
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
@@ -62,8 +59,23 @@ jobs:
         working-directory: repo
         run: cargo fmt --all -- --check
       - name: clippy
+        id: clippy
+        continue-on-error: true
         working-directory: repo
-        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo clippy --locked --all-targets --all-features -- -D warnings 2>&1 | tee /tmp/fiducia-customer-cron-clippy.log
+      - name: Upload Clippy diagnostic
+        if: steps.clippy.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fiducia-customer-cron-clippy-${{ github.run_id }}
+          path: /tmp/fiducia-customer-cron-clippy.log
+          if-no-files-found: error
+      - name: Enforce Clippy result
+        if: steps.clippy.outcome == 'failure'
+        run: exit 1
       - name: test
         working-directory: repo
         run: cargo test --locked --all-targets --all-features
