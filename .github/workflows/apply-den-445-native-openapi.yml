@@ -7,6 +7,16 @@ on:
     paths:
       - '.github/workflows/apply-den-445-native-openapi.yml'
       - '.github/scripts/den-445-native-openapi.py.gz.b64.part*'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-den-445-native-openapi.yml'
+      - '.github/scripts/den-445-native-openapi.py.gz.b64.part*'
+      - 'remote/deployments/dd-embeddings-rs/**'
+      - 'remote/api-contracts/**'
+      - 'remote/tools/check-openapi-contracts.mjs'
+      - 'remote/tools/generate-openapi-sdks.mjs'
   workflow_dispatch:
 
 permissions:
@@ -18,6 +28,7 @@ concurrency:
 
 jobs:
   apply-test-and-commit:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -31,7 +42,6 @@ jobs:
           submodules: false
 
       - name: Reconstruct and verify reviewed migration
-        id: migration
         shell: bash
         run: |
           set -euo pipefail
@@ -76,7 +86,6 @@ jobs:
 
           #[must_use]
           pub struct OtelGuard;
-
           pub fn init(_service_name: &str) -> OtelGuard { OtelGuard }
 
           pub fn http_trace_layer() -> TraceLayer<
@@ -92,7 +101,6 @@ jobs:
 
           #[derive(Clone, Copy, Debug, Default)]
           pub struct OtelMakeSpan;
-
           impl<B> MakeSpan<B> for OtelMakeSpan {
               fn make_span(&mut self, request: &Request<B>) -> Span {
                   tracing::info_span!(
@@ -106,24 +114,18 @@ jobs:
 
           #[derive(Clone, Copy, Debug, Default)]
           pub struct OtelOnResponse;
-
           impl<B> OnResponse<B> for OtelOnResponse {
               fn on_response(self, response: &Response<B>, _latency: Duration, span: &Span) {
-                  span.record(
-                      "http.response.status_code",
-                      response.status().as_u16() as u64,
-                  );
+                  span.record("http.response.status_code", response.status().as_u16() as u64);
               }
           }
           RS
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
 
-      - name: Install Node.js
-        uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
 
@@ -152,10 +154,8 @@ jobs:
           mkdir -p generated
           cp "${RUNNER_TEMP}/openapi.1.json" generated/openapi.json
 
-      - name: Verify native contract invariants
-        shell: bash
+      - name: Verify contract invariants and compatibility docs
         run: |
-          set -euo pipefail
           node remote/tools/check-openapi-contracts.mjs --service dd-embeddings-rs
           node remote/tools/generate-api-docs.mjs --service dd-embeddings-rs
           node remote/tools/generate-api-docs.mjs --check --service dd-embeddings-rs
@@ -181,8 +181,7 @@ jobs:
           npm install --ignore-scripts --no-audit --no-fund
           npm run build
 
-      - name: Install Dart
-        uses: dart-lang/setup-dart@v1
+      - uses: dart-lang/setup-dart@v1
 
       - name: Analyze generated Dart SDK
         working-directory: .tmp/dd-embeddings-sdk/dart
@@ -205,9 +204,7 @@ jobs:
           fi
 
       - name: Remove reviewed migration transport
-        shell: bash
         run: |
-          set -euo pipefail
           rm -f .github/scripts/den-445-native-openapi.py.gz.b64.part*
           rmdir .github/scripts 2>/dev/null || true
           rm -f .github/workflows/apply-den-445-native-openapi.yml
@@ -219,10 +216,7 @@ jobs:
           git add -A
           git diff --cached --check
           git status --short
-          if git diff --cached --quiet; then
-            echo 'No native OpenAPI implementation changes were produced.' >&2
-            exit 1
-          fi
+          test -n "$(git status --short)"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'feat(DEN-445): enforce native executable OpenAPI contract'
