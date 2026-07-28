@@ -1,17 +1,16 @@
-# One-shot compiler-directed patch; removed after the source commit lands.
-name: fix customer cron compile findings
+name: apply customer cron compile fixes
 
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, reopened, synchronize]
+  push:
+    branches:
+      - agent/cron-customer-control-plane-v2
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.event.pull_request.head.ref == 'agent/cron-customer-control-plane-v2' && github.actor != 'github-actions[bot]'
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -37,39 +36,39 @@ jobs:
           marker = 'const MAX_RUN_MS: u64 = 120_000;\n'
           helper = '''const MAX_RUN_MS: u64 = 120_000;
 
-fn optional_env(name: &str) -> Option<String> {
-    std::env::var(name)
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-}
-'''
+          fn optional_env(name: &str) -> Option<String> {
+              std::env::var(name)
+                  .ok()
+                  .map(|value| value.trim().to_string())
+                  .filter(|value| !value.is_empty())
+          }
+          '''
           if 'fn optional_env(name: &str)' not in source:
               if source.count(marker) != 1:
                   raise SystemExit('optional_env insertion point changed')
               source = source.replace(marker, helper, 1)
 
           old = '''    cron_inventory_markup(
-        org_id,
-        &customer_csrf_token(config, customer),
-        schedules.as_ref().ok(),
-        functions.as_ref().ok(),
-        schedules.err().or_else(|| functions.err()),
-    )
-'''
+              org_id,
+              &customer_csrf_token(config, customer),
+              schedules.as_ref().ok(),
+              functions.as_ref().ok(),
+              schedules.err().or_else(|| functions.err()),
+          )
+          '''
           new = '''    let dependency_error = schedules
-        .as_ref()
-        .err()
-        .copied()
-        .or_else(|| functions.as_ref().err().copied());
-    cron_inventory_markup(
-        org_id,
-        &customer_csrf_token(config, customer),
-        schedules.as_ref().ok(),
-        functions.as_ref().ok(),
-        dependency_error,
-    )
-'''
+              .as_ref()
+              .err()
+              .copied()
+              .or_else(|| functions.as_ref().err().copied());
+          cron_inventory_markup(
+              org_id,
+              &customer_csrf_token(config, customer),
+              schedules.as_ref().ok(),
+              functions.as_ref().ok(),
+              dependency_error,
+          )
+          '''
           if old in source:
               source = source.replace(old, new, 1)
           elif 'let dependency_error = schedules' not in source:
@@ -79,6 +78,10 @@ fn optional_env(name: &str) -> Option<String> {
           PY
           cargo fmt --all
           git diff --check
+          if git diff --quiet -- src/cron.rs; then
+            echo 'customer cron compile fixes already applied'
+            exit 0
+          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add src/cron.rs
