@@ -42,11 +42,17 @@ the same idempotency key. The BFF forwards only:
 - the configured trusted-hop credential;
 - the canonical `x-fiducia-org-id`;
 - the idempotency key for mutations;
-- valid `traceparent` and `tracestate` values.
+- validated W3C `traceparent` and `tracestate` values.
 
-It never forwards `Cookie`, browser `Authorization`, function source into logs,
-or raw upstream errors. Redirects are disabled, requests time out after five
-seconds, and upstream responses are capped at two MiB.
+Trace propagation is fail closed. `traceparent` must use the canonical version
+`00` shape, lowercase hexadecimal fields, and nonzero trace and parent IDs.
+`tracestate` is forwarded only when `traceparent` is valid, is capped at 512
+bytes, and must contain printable ASCII. Malformed browser-supplied context is
+dropped rather than becoming a trusted internal correlation identity.
+
+The BFF never forwards `Cookie`, browser `Authorization`, function source into
+logs, or raw upstream errors. Redirects are disabled, requests time out after
+five seconds, and upstream responses are capped at two MiB.
 
 ## Configuration
 
@@ -68,7 +74,8 @@ invocation policies as the final authority.
 
 ## Verification
 
-The pull request must pass the repository's ordinary format, Clippy, unit-test,
-CLI-contract, and dependency-audit checks after all one-shot migration workflows
-are removed. CI compiles the ordinary Rust source directly; encoded payloads or
-self-modifying installer steps are not part of the reviewable implementation.
+The reviewable branch contains only ordinary Rust source, documentation, and
+tests. It must pass the repository's permanent format, strict Clippy, all-target
+unit/integration test, CLI-contract, dependency-audit, and release workflows at
+the exact final head. Temporary migration, diagnostic, encoded-payload, and
+self-modifying workflow artifacts are not part of the implementation.
