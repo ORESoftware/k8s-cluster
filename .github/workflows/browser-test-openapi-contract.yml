@@ -211,4 +211,7 @@ jobs:
             exit 1
           fi
           rm -rf remote/libs .tmp remote/deployments/browser-test-server/node_modules remote/deployments/browser-test-server/dist
-          git diff --exit-code
+          test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
+          git diff --check
+          git diff --quiet -- . ':(exclude)remote/libs'
+          test -z "$(git status --short --untracked-files=no -- . ':(exclude)remote/libs')"
