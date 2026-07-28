@@ -1,0 +1,51 @@
+name: sync-final-low-risk-batch-once
+
+on:
+  push:
+    branches: [agent/sync-final-low-risk-batch]
+    paths:
+      - release/source-manifest.json
+      - .github/workflows/sync-final-low-risk-batch-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out monorepo branch with recorded submodules
+        uses: actions/checkout@v4
+        with:
+          ref: agent/sync-final-low-risk-batch
+          fetch-depth: 0
+          submodules: recursive
+      - name: Apply exact source-manifest revisions
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          manifest_path = Path('release/source-manifest.json')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          for path, record in manifest['repositories'].items():
+              revision = record['commit']
+              subprocess.run(['git', '-C', path, 'fetch', '--depth=1', 'origin', revision], check=True)
+              subprocess.run(['git', '-C', path, 'checkout', '--detach', '--quiet', 'FETCH_HEAD'], check=True)
+              actual = subprocess.check_output(['git', '-C', path, 'rev-parse', 'HEAD'], text=True).strip()
+              if actual != revision:
+                  raise SystemExit(f'{path}: expected {revision}, found {actual}')
+          manifest['gitlinks_status'] = 'applied-awaiting-ci'
+          manifest_path.write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+          PY
+          rm .github/workflows/sync-final-low-risk-batch-once.yml
+      - name: Commit exact gitlinks and remove maintenance workflow
+        run: |
+          git add apps release/source-manifest.json .github/workflows/sync-final-low-risk-batch-once.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-41 apply final low-risk child revisions'
+          git push origin HEAD:agent/sync-final-low-risk-batch
