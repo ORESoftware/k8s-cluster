@@ -40,16 +40,22 @@ jobs:
           before = "  assert.match(readme, /does not accept arbitrary shell commands/);\n"
           after = (
               "  assert.match(readme, /intentionally does not accept caller-supplied shell commands/);\n"
+              "  assert.match(readme, /Profile scripts do invoke a\\s+shell inside their isolated runner container/);\n"
+              "  assert.match(readme, /cannot be overridden by the request/);\n"
+          )
+          exact_after = (
+              "  assert.match(readme, /intentionally does not accept caller-supplied shell commands/);\n"
               "  assert.match(readme, /Profile scripts do invoke a shell inside their isolated runner container/);\n"
               "  assert.match(readme, /cannot be overridden by the request/);\n"
           )
           count = text.count(before)
           if count == 1:
-              path.write_text(text.replace(before, after, 1), encoding='utf-8')
-          elif count == 0 and after in text:
-              pass
-          else:
+              text = text.replace(before, after, 1)
+          elif exact_after in text:
+              text = text.replace(exact_after, after, 1)
+          elif after not in text:
               raise SystemExit(f'expected one obsolete shell-safety assertion, found {count}')
+          path.write_text(text, encoding='utf-8')
           PY
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
