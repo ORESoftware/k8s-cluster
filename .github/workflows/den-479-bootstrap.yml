@@ -5,13 +5,13 @@ on:
     branches:
       - agent/den-479-fastify-zod-contract
     paths:
-      - '.github/den-479/apply.py.gz.b64'
+      - '.github/den-479/apply.py.gz.b64.part-*'
       - '.github/workflows/den-479-bootstrap.yml'
   pull_request:
     branches:
       - main
     paths:
-      - '.github/den-479/apply.py.gz.b64'
+      - '.github/den-479/apply.py.gz.b64.part-*'
       - '.github/workflows/den-479-bootstrap.yml'
   workflow_dispatch:
 
@@ -62,10 +62,19 @@ jobs:
           rm -f "$failure_log"
           mkdir -p "$(dirname "$failure_log")"
           status=0
+          payload_b64="${RUNNER_TEMP}/apply-den-479.py.gz.b64"
+          payload_gz="${RUNNER_TEMP}/apply-den-479.py.gz"
+          payload_py="${RUNNER_TEMP}/apply-den-479.py"
           {
-            base64 --decode .github/den-479/apply.py.gz.b64 | gzip --decompress > "${RUNNER_TEMP}/apply-den-479.py"
-            python3 -m py_compile "${RUNNER_TEMP}/apply-den-479.py"
-            python3 "${RUNNER_TEMP}/apply-den-479.py"
+            cat .github/den-479/apply.py.gz.b64.part-* > "$payload_b64"
+            printf '%s  %s\n' '080907a8ccd05d13b557fd39f6d06befa2b79c6e2824e3e2d6ef646893d8e0b5' "$payload_b64" | sha256sum --check --strict
+            base64 --decode "$payload_b64" > "$payload_gz"
+            printf '%s  %s\n' '15ddccbfa9f319f8aef874e8d24aa93e9f322a10129b1a10ea84e48e661f06d9' "$payload_gz" | sha256sum --check --strict
+            gzip --test "$payload_gz"
+            gzip --decompress --stdout "$payload_gz" > "$payload_py"
+            printf '%s  %s\n' '90217a6fbc97c2c27ba2bad7fbfa76605ccc529dfcdf29ab18d3ae085fe14ac8' "$payload_py" | sha256sum --check --strict
+            python3 -m py_compile "$payload_py"
+            python3 "$payload_py"
           } >"$failure_log" 2>&1 || status=$?
           if [ "$status" -ne 0 ]; then
             cat "$failure_log"
@@ -201,7 +210,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf .tmp remote/libs remote/deployments/browser-test-server/node_modules remote/deployments/browser-test-server/dist
-          rm -f .github/workflows/den-479-bootstrap.yml .github/den-479/apply.py.gz.b64 .github/den-479/bootstrap-failure.log
+          rm -f .github/workflows/den-479-bootstrap.yml .github/den-479/apply.py.gz.b64* .github/den-479/bootstrap-failure.log
           test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
           if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- ':!pnpm-lock.yaml'; then
             echo 'unresolved git conflict markers found' >&2
