@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-28T00:00:00Z",
+  "baseline": "2026-07-28",
+  "repositories": [
+    {
+      "name": "ORESoftware/k8s-cluster",
+      "visibility": "public",
+      "fork": false,
+      "archived": false,
+      "empty": false,
+      "default_branch": "main",
+      "lifecycle": "active",
+      "conformance_profile": "platform-infrastructure",
+      "canonical_location": "ORESoftware/k8s-cluster",
+      "linear_project": "Shared Platform & Portfolio Architecture",
+      "release_state": "continuous-delivery",
+      "deployment_state": "active",
+      "consumers": [],
+      "dependencies": [],
+      "security_class": "internal",
+      "data_class": "configuration-no-production-secrets",
+      "exemptions": [],
+      "review_date": "2026-07-28",
+      "linear_issue": "DEN-627"
+    }
+  ]
+}
