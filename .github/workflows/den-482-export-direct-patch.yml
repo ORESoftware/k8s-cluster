@@ -54,3 +54,5 @@ jobs:
           path: .tmp/den-482-direct-patch
           if-no-files-found: error
           retention-days: 1
+
+# Activation commit: export the exact PR-branch bytes for minimal repair.
