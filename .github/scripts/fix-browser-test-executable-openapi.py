@@ -32,6 +32,12 @@ for old, new in repairs.items():
 
 server = replace_once(
     server,
+    "import swagger from '@fastify/swagger';\n",
+    "import swagger, { type SwaggerOptions } from '@fastify/swagger';\n",
+    "import SwaggerOptions at the plugin boundary",
+)
+server = replace_once(
+    server,
     """import {
   registerAjvFormats,
   type TypeBoxTypeProvider,
@@ -60,6 +66,12 @@ server = replace_once(
 Format.Set('date-time', (value) => !Number.isNaN(Date.parse(value)));
 """,
     "register executable TypeBox formats",
+)
+server = replace_once(
+    server,
+    "await fastify.register(swagger, OPENAPI_SWAGGER_OPTIONS);\n",
+    "await fastify.register(swagger, OPENAPI_SWAGGER_OPTIONS as SwaggerOptions);\n",
+    "cast custom OpenAPI extensions only at registration",
 )
 server = replace_once(
     server,
@@ -120,20 +132,17 @@ SERVER.write_text(server, encoding="utf-8")
 contract = CONTRACT.read_text(encoding="utf-8")
 contract = replace_once(
     contract,
-    """import { Type, type Static } from '@fastify/type-provider-typebox';
-import type { FastifySchema } from 'fastify';
-""",
-    """import type { SwaggerOptions } from '@fastify/swagger';
-import { Type, type Static } from '@fastify/type-provider-typebox';
-import type { FastifySchema } from 'fastify';
-""",
-    "import SwaggerOptions",
-)
-contract = replace_once(
-    contract,
-    "export const OPENAPI_SWAGGER_OPTIONS = {\n",
-    "export const OPENAPI_SWAGGER_OPTIONS: SwaggerOptions = {\n",
-    "contextually type Swagger options",
+    """    ],
+  },
+};
+
+function sortJson""",
+    """    ],
+  },
+} as const;
+
+function sortJson""",
+    "preserve OpenAPI literal types without rejecting custom x-dd extensions",
 )
 CONTRACT.write_text(contract, encoding="utf-8")
 
