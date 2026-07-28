@@ -31,6 +31,10 @@ Root hostnames permit their own subdomains. Broad job marketplaces, webmail, ide
 - No demographic, disability, signature, legal-attestation, compensation-commitment, or final-submit decision is inferred from a page.
 - The Rust MCP ceiling and the Playwright/Selenium worker ceiling must remain byte-for-byte identical.
 
+## Validation contract
+
+`remote/tests/general/browser-mcp-exposure.test.ts` parses the deployed workflow JSON, compares `platform-jobs` with the reviewed domain constant, verifies the Rust MCP and worker ceilings remain identical, and asserts that broad marketplaces and Google/mail login hosts remain excluded.
+
 ## Adding another ATS
 
 1. Verify the official ATS hostname and redirect chain.
