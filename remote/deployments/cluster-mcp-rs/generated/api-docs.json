@@ -70,8 +70,8 @@
     "/api/docs.json": {
       "get": {
         "operationId": "cluster_mcp_rs_get_api_docs_json_ce0de73d3845",
-        "summary": "Machine-readable generated API route metadata.",
-        "description": "Machine-readable generated API route metadata.",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
         "tags": [
           "service"
         ],

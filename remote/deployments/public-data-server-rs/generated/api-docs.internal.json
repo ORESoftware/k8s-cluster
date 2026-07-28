@@ -140,8 +140,8 @@
     "/api/docs.json": {
       "get": {
         "operationId": "public_data_server_rs_get_api_docs_json_4df73fa27f3d",
-        "summary": "Machine-readable generated API route metadata.",
-        "description": "Machine-readable generated API route metadata.",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
         "tags": [
           "service"
         ],

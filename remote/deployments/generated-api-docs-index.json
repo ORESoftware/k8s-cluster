@@ -262,6 +262,21 @@
       ]
     },
     {
+      "service": "dd-embeddings-rs",
+      "language": "rust",
+      "routeCount": 21,
+      "routeTypeCounts": {
+        "service": 7,
+        "user-generated": 14
+      },
+      "generated": [
+        "remote/deployments/dd-embeddings-rs/generated/api-docs.json",
+        "remote/deployments/dd-embeddings-rs/generated/api-docs.html",
+        "remote/deployments/dd-embeddings-rs/generated/api-docs.internal.json",
+        "remote/deployments/dd-embeddings-rs/generated/api-docs.metadata.json"
+      ]
+    },
+    {
       "service": "dd-escrow-rs",
       "language": "rust",
       "routeCount": 19,

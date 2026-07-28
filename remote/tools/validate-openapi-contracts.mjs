@@ -9,6 +9,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, '..', '..');
 const indexPath = resolve(repoRoot, 'remote/deployments/generated-api-docs-index.json');
 const manifestPath = resolve(repoRoot, 'remote/config/api-contracts.json');
+const nativeManifestPath = resolve(repoRoot, 'remote/api-contracts/manifest.json');
 const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
 
 function readJson(path) {
@@ -268,11 +269,24 @@ function verifyService(item, gitlinks, fleetOperationIds) {
 function main() {
   const index = readJson(indexPath);
   const manifest = readJson(manifestPath);
+  const nativeManifest = readJson(nativeManifestPath);
   const indexedServices = (index.services ?? []).map((item) => item.service).sort();
   const allowlistedServices = [...(manifest.legacySourceScannerAllowlist ?? [])].sort();
+  const nativeServices = Object.keys(nativeManifest.services ?? {}).sort();
+  const nativeServiceSet = new Set(nativeServices);
+  const overlap = allowlistedServices.filter((service) => nativeServiceSet.has(service));
   assert(
-    JSON.stringify(indexedServices) === JSON.stringify(allowlistedServices),
-    'API contract manifest and central service index differ; new services must choose a native source-of-truth strategy or be reviewed into the temporary scanner allowlist',
+    overlap.length === 0,
+    `services cannot use both native contracts and the legacy scanner: ${overlap.join(', ')}`,
+  );
+  const expectedServices = [...new Set([...allowlistedServices, ...nativeServices])].sort();
+  const indexedServiceSet = new Set(indexedServices);
+  const expectedServiceSet = new Set(expectedServices);
+  const missingFromIndex = expectedServices.filter((service) => !indexedServiceSet.has(service));
+  const unclassifiedInIndex = indexedServices.filter((service) => !expectedServiceSet.has(service));
+  assert(
+    missingFromIndex.length === 0 && unclassifiedInIndex.length === 0,
+    `API contract service classification drift; missing from index: [${missingFromIndex.join(', ')}]; unclassified in index: [${unclassifiedInIndex.join(', ')}]`,
   );
 
   assert(

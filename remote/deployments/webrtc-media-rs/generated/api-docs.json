@@ -53,8 +53,8 @@
     "/api/docs.json": {
       "get": {
         "operationId": "webrtc_media_rs_get_api_docs_json_82c943e950c1",
-        "summary": "Machine-readable generated API route metadata.",
-        "description": "Machine-readable generated API route metadata.",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
         "tags": [
           "service"
         ],
