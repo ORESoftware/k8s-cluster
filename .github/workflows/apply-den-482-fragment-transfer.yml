@@ -1,0 +1,51 @@
+name: Apply DEN-482 fragment transfer bundle
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-den-482-fragment-transfer.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-482-fragment-transfer
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: >-
+      github.repository == 'ORESoftware/k8s-libs-and-shared-defs' &&
+      (github.event_name != 'pull_request' || github.head_ref == 'agent/den-482-runtime-config-openapi')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout writable feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-482-runtime-config-openapi
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Create deterministic transfer bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          gzip --no-name --best --stdout runtime-config-client-rs/generated/openapi.json \
+            | base64 --wrap=0 \
+            > runtime-config-client-rs/generated/openapi.json.gz.b64
+          printf '\n' >> runtime-config-client-rs/generated/openapi.json.gz.b64
+          base64 --decode runtime-config-client-rs/generated/openapi.json.gz.b64 \
+            | gzip --decompress \
+            | cmp - runtime-config-client-rs/generated/openapi.json
+          rm -f .github/workflows/apply-den-482-fragment-transfer.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'chore(DEN-482): stage deterministic OpenAPI transfer bundle'
+          git push origin HEAD:agent/den-482-runtime-config-openapi
