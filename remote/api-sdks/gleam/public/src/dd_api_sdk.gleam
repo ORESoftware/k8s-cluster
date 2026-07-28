@@ -4,7 +4,7 @@ import gleam/string
 import gleam/uri
 
 pub const sdk_scope = "public"
-pub const catalog_sha256 = "b295163700f77ceab8c68dbd2d16cdf79a1eba6b08e4683863f37123f416f7e4"
+pub const catalog_sha256 = "8b13a51a18433272657ee6c5e51b159c0a1d68a03ff6ae964d9bc553af5d2510"
 pub const operation_count = 281
 
 pub type ApiOperation {
@@ -372,7 +372,7 @@ pub fn operations() -> List(ApiOperation) {
       required_query_parameters: [],
       optional_query_parameters: [],
       request_body_required: False,
-      contract_sha256: "14d8298520219edaf08928560efbf7f80faf9c07f5ba284892d61ad9ab6a01d5",
+      contract_sha256: "f9d8219e1511073edaffd8d942443d5d75c86beafb0dacd31a1582529cde25a9",
     ),
     ApiOperation(
       service: "browser-test-server",
@@ -383,18 +383,7 @@ pub fn operations() -> List(ApiOperation) {
       required_query_parameters: [],
       optional_query_parameters: [],
       request_body_required: False,
-      contract_sha256: "ce5e466300acbf04acac028378bf65bc2761975b414d72d01dece6a225d3345c",
-    ),
-    ApiOperation(
-      service: "browser-test-server",
-      operation_id: "browser_test_server_get_d0fcfe74e294",
-      method: "GET",
-      path: "/",
-      path_parameters: [],
-      required_query_parameters: [],
-      optional_query_parameters: [],
-      request_body_required: False,
-      contract_sha256: "b98756969d49520cc995ca4b2d2631f2dbbbf8727828ff9f3a57ca462d9faec1",
+      contract_sha256: "e093a8331bef715e5b4f047327d04d1d34b2e2b5f5fe42958b2af68d27daa9be",
     ),
     ApiOperation(
       service: "browser-test-server",
@@ -405,7 +394,7 @@ pub fn operations() -> List(ApiOperation) {
       required_query_parameters: [],
       optional_query_parameters: [],
       request_body_required: False,
-      contract_sha256: "93ff17dccd27b42ef0bfc0394e227a123144ea27b30fbf925bd1a6084a0193f1",
+      contract_sha256: "bb35d1b6ed8426f431607e394355980935fd1d34a66cfa2a92445df05abb7558",
     ),
     ApiOperation(
       service: "browser-test-server",
@@ -416,7 +405,7 @@ pub fn operations() -> List(ApiOperation) {
       required_query_parameters: [],
       optional_query_parameters: [],
       request_body_required: False,
-      contract_sha256: "f579076ac7465b13955e2827129e8f218af0add62f4e792bb29faa430ecf78d9",
+      contract_sha256: "14ae48c27d1382bab824232c4cb0eec9205ec2a5db3207e7d4cd8a90a87f3f61",
     ),
     ApiOperation(
       service: "browser-test-server",
@@ -427,7 +416,18 @@ pub fn operations() -> List(ApiOperation) {
       required_query_parameters: [],
       optional_query_parameters: [],
       request_body_required: False,
-      contract_sha256: "7cb22d6c9ad676f713210a45178d132bdfae9113e678c07aa6351a449975dc13",
+      contract_sha256: "377d1dec9953b1c44f251d7cd5410cdde54a6f284a8e380ce90c47dac88afd90",
+    ),
+    ApiOperation(
+      service: "browser-test-server",
+      operation_id: "browser_test_server_get_openapi_json_db092e1508a9",
+      method: "GET",
+      path: "/openapi.json",
+      path_parameters: [],
+      required_query_parameters: [],
+      optional_query_parameters: [],
+      request_body_required: False,
+      contract_sha256: "6f1789f370fd12eadd9afa1de631b49fe6d1d55a7b7c60cde203d5105ee03fdd",
     ),
     ApiOperation(
       service: "build-server-rs",

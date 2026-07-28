@@ -18,8 +18,8 @@
     "/": {
       "get": {
         "operationId": "browser_test_server_get_d0fcfe74e294",
-        "summary": "Service descriptor, home redirect, or root RPC endpoint.",
-        "description": "Service descriptor, home redirect, or root RPC endpoint.",
+        "summary": "Describe the browser-test service and supported HTTP endpoints.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
           "service"
         ],
@@ -29,26 +29,32 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "public",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "service",
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "getBrowserTestService"
+        ],
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/browser-test-server/src/server.ts"
+          "remote/deployments/browser-test-server/generated/openapi.json"
         ],
         "x-dd-source-path": "/",
         "x-dd-source-paths": [
           "/"
         ],
-        "x-dd-visibility": "public",
-        "security": []
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
       }
     },
     "/api/docs": {
       "get": {
         "operationId": "browser_test_server_get_api_docs_9fcd645a3eb1",
-        "summary": "Human-readable generated API documentation.",
-        "description": "Human-readable generated API documentation.",
+        "summary": "Return the Scalar reference for the fail-closed public contract.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
           "service"
         ],
@@ -59,11 +65,13 @@
           }
         },
         "x-dd-auth": "public",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "service",
+        "x-dd-handlers": [
+          "getBrowserTestPublicApiReference"
+        ],
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/browser-test-server/src/server.ts"
+          "remote/deployments/browser-test-server/generated/openapi.json"
         ],
         "x-dd-source-path": "/api/docs",
         "x-dd-source-paths": [
@@ -76,8 +84,8 @@
     "/api/docs.json": {
       "get": {
         "operationId": "browser_test_server_get_api_docs_json_aeee36ad5e79",
-        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
-        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
           "service"
         ],
@@ -88,11 +96,13 @@
           }
         },
         "x-dd-auth": "public",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "service",
+        "x-dd-handlers": [
+          "getBrowserTestPublicOpenApiCompatibilityAlias"
+        ],
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/browser-test-server/src/server.ts"
+          "remote/deployments/browser-test-server/generated/openapi.json"
         ],
         "x-dd-source-path": "/api/docs.json",
         "x-dd-source-paths": [
@@ -105,10 +115,10 @@
     "/browser-test": {
       "get": {
         "operationId": "browser_test_server_get_browser_test_985dc1d9fb3b",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
+        "summary": "Describe the browser-test service and supported HTTP endpoints.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
-          "user-generated"
+          "service"
         ],
         "parameters": [],
         "responses": {
@@ -116,25 +126,32 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "getBrowserTestServiceCompatibilityAlias"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/browser-test-server/src/server.ts"
+          "remote/deployments/browser-test-server/generated/openapi.json"
         ],
         "x-dd-source-path": "/browser-test",
         "x-dd-source-paths": [
           "/browser-test"
         ],
-        "x-dd-visibility": "internal"
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
       }
     },
     "/browser-test/healthz": {
       "get": {
         "operationId": "browser_test_server_get_browser_test_healthz_03cb9eeca5b7",
-        "summary": "Health check.",
-        "description": "Health check.",
+        "summary": "Authenticated compatibility alias for browser-test liveness.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
           "service"
         ],
@@ -144,25 +161,32 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "service",
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "getBrowserTestHealthCompatibilityAlias"
+        ],
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/browser-test-server/src/server.ts"
+          "remote/deployments/browser-test-server/generated/openapi.json"
         ],
         "x-dd-source-path": "/browser-test/healthz",
         "x-dd-source-paths": [
           "/browser-test/healthz"
         ],
-        "x-dd-visibility": "internal"
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
       }
     },
     "/browser-test/metrics": {
       "get": {
         "operationId": "browser_test_server_get_browser_test_metrics_015fc7cd1888",
-        "summary": "Prometheus metrics.",
-        "description": "Prometheus metrics.",
+        "summary": "Authenticated compatibility alias for Prometheus metrics.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
           "service"
         ],
@@ -172,25 +196,32 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "service",
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "getBrowserTestPrometheusMetricsCompatibilityAlias"
+        ],
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/browser-test-server/src/server.ts"
+          "remote/deployments/browser-test-server/generated/openapi.json"
         ],
         "x-dd-source-path": "/browser-test/metrics",
         "x-dd-source-paths": [
           "/browser-test/metrics"
         ],
-        "x-dd-visibility": "internal"
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
       }
     },
     "/browser-test/status": {
       "get": {
         "operationId": "browser_test_server_get_browser_test_status_e2cef4c14ada",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
+        "summary": "Return bounded browser-test runtime status.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
           "user-generated"
         ],
@@ -200,25 +231,32 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "code-first",
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "getBrowserTestStatusCompatibilityAlias"
+        ],
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "user-generated",
         "x-dd-source-files": [
-          "remote/deployments/browser-test-server/src/server.ts"
+          "remote/deployments/browser-test-server/generated/openapi.json"
         ],
         "x-dd-source-path": "/browser-test/status",
         "x-dd-source-paths": [
           "/browser-test/status"
         ],
-        "x-dd-visibility": "internal"
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
       }
     },
     "/browser-test/tools": {
       "get": {
         "operationId": "browser_test_server_get_browser_test_tools_ec32e3d7e202",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
+        "summary": "List supported browser drivers and their runtime versions.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
           "user-generated"
         ],
@@ -228,25 +266,32 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "code-first",
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "listBrowserAutomationToolsCompatibilityAlias"
+        ],
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "user-generated",
         "x-dd-source-files": [
-          "remote/deployments/browser-test-server/src/server.ts"
+          "remote/deployments/browser-test-server/generated/openapi.json"
         ],
         "x-dd-source-path": "/browser-test/tools",
         "x-dd-source-paths": [
           "/browser-test/tools"
         ],
-        "x-dd-visibility": "internal"
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
       }
     },
     "/docs/api": {
       "get": {
         "operationId": "browser_test_server_get_docs_api_03e6dc5fb010",
-        "summary": "Human-readable generated API documentation.",
-        "description": "Human-readable generated API documentation.",
+        "summary": "Return the Scalar reference for the fail-closed public contract.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
           "service"
         ],
@@ -257,11 +302,13 @@
           }
         },
         "x-dd-auth": "public",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "service",
+        "x-dd-handlers": [
+          "getBrowserTestPublicApiReferenceCompatibilityAlias"
+        ],
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/browser-test-server/src/server.ts"
+          "remote/deployments/browser-test-server/generated/openapi.json"
         ],
         "x-dd-source-path": "/docs/api",
         "x-dd-source-paths": [
@@ -274,8 +321,8 @@
     "/healthz": {
       "get": {
         "operationId": "browser_test_server_get_healthz_4722a067e6ee",
-        "summary": "Health check.",
-        "description": "Health check.",
+        "summary": "Return a public liveness response for Kubernetes probes.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
           "service"
         ],
@@ -286,11 +333,13 @@
           }
         },
         "x-dd-auth": "public",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "service",
+        "x-dd-handlers": [
+          "getBrowserTestHealth"
+        ],
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/browser-test-server/src/server.ts"
+          "remote/deployments/browser-test-server/generated/openapi.json"
         ],
         "x-dd-source-path": "/healthz",
         "x-dd-source-paths": [
@@ -300,11 +349,81 @@
         "security": []
       }
     },
+    "/internal/docs/api": {
+      "get": {
+        "operationId": "browser_test_server_get_internal_docs_api_f36665cd4912",
+        "summary": "Return the Scalar reference for the complete internal contract.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "getBrowserTestInternalApiReference"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/internal/docs/api",
+        "x-dd-source-paths": [
+          "/internal/docs/api"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
+      }
+    },
+    "/internal/openapi.json": {
+      "get": {
+        "operationId": "browser_test_server_get_internal_openapi_json_bfb533fad608",
+        "summary": "Return the complete typed OpenAPI contract to trusted callers.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "getBrowserTestInternalOpenApi"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/internal/openapi.json",
+        "x-dd-source-paths": [
+          "/internal/openapi.json"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
+      }
+    },
     "/metrics": {
       "get": {
         "operationId": "browser_test_server_get_metrics_73d9974b01c6",
-        "summary": "Prometheus metrics.",
-        "description": "Prometheus metrics.",
+        "summary": "Return bounded Prometheus text exposition.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
           "service"
         ],
@@ -315,11 +434,13 @@
           }
         },
         "x-dd-auth": "public",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "service",
+        "x-dd-handlers": [
+          "getBrowserTestPrometheusMetrics"
+        ],
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/browser-test-server/src/server.ts"
+          "remote/deployments/browser-test-server/generated/openapi.json"
         ],
         "x-dd-source-path": "/metrics",
         "x-dd-source-paths": [
@@ -329,11 +450,42 @@
         "security": []
       }
     },
+    "/openapi.json": {
+      "get": {
+        "operationId": "browser_test_server_get_openapi_json_db092e1508a9",
+        "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getBrowserTestPublicOpenApi"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/openapi.json",
+        "x-dd-source-paths": [
+          "/openapi.json"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
     "/run": {
       "post": {
         "operationId": "browser_test_server_post_run_f002ed3660fc",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
+        "summary": "Run a bounded browser scenario with Playwright, Puppeteer, or Selenium.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
           "user-generated"
         ],
@@ -343,25 +495,32 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "code-first",
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "runBrowserScenario"
+        ],
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "user-generated",
         "x-dd-source-files": [
-          "remote/deployments/browser-test-server/src/server.ts"
+          "remote/deployments/browser-test-server/generated/openapi.json"
         ],
         "x-dd-source-path": "/run",
         "x-dd-source-paths": [
           "/run"
         ],
-        "x-dd-visibility": "internal"
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
       }
     },
     "/status": {
       "get": {
         "operationId": "browser_test_server_get_status_018e31ad4820",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
+        "summary": "Return bounded browser-test runtime status.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
           "user-generated"
         ],
@@ -371,25 +530,32 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "code-first",
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "getBrowserTestStatus"
+        ],
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "user-generated",
         "x-dd-source-files": [
-          "remote/deployments/browser-test-server/src/server.ts"
+          "remote/deployments/browser-test-server/generated/openapi.json"
         ],
         "x-dd-source-path": "/status",
         "x-dd-source-paths": [
           "/status"
         ],
-        "x-dd-visibility": "internal"
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
       }
     },
     "/tools": {
       "get": {
         "operationId": "browser_test_server_get_tools_888ba4d4028f",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
+        "summary": "List supported browser drivers and their runtime versions.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
           "user-generated"
         ],
@@ -399,18 +565,25 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "code-first",
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "listBrowserAutomationTools"
+        ],
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "user-generated",
         "x-dd-source-files": [
-          "remote/deployments/browser-test-server/src/server.ts"
+          "remote/deployments/browser-test-server/generated/openapi.json"
         ],
         "x-dd-source-path": "/tools",
         "x-dd-source-paths": [
           "/tools"
         ],
-        "x-dd-visibility": "internal"
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
       }
     }
   },
@@ -436,8 +609,8 @@
   "x-dd-contract-scope": "internal",
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "node",
-  "x-dd-operation-count": 14,
-  "x-dd-route-count": 14,
+  "x-dd-operation-count": 17,
+  "x-dd-route-count": 17,
   "x-dd-service": "browser-test-server",
   "x-dd-standard-docs-routes": [
     "/docs/api",

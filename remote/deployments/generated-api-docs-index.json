@@ -108,10 +108,10 @@
     {
       "service": "browser-test-server",
       "language": "node",
-      "routeCount": 14,
+      "routeCount": 17,
       "routeTypeCounts": {
-        "service": 8,
-        "user-generated": 6
+        "service": 12,
+        "user-generated": 5
       },
       "generated": [
         "remote/deployments/browser-test-server/generated/api-docs.json",

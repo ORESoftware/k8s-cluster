@@ -3,12 +3,12 @@
   "generatedBy": "remote/tools/generate-api-sdks.mjs",
   "generatorSha256": "a6a810aca72aa204db09ab15ff184c83feab086d4bb1c178f096affbadbb42ee",
   "indexPath": "remote/deployments/generated-api-docs-index.json",
-  "indexSha256": "30a9f4376e9effe65f31c7e39a4254f74c65ffb64cd58ed2fef7e711af39fb16",
+  "indexSha256": "6dcb831a9c3aa190957f0af6dba1288e543d5acbd843b12229bc85157798ad54",
   "scopes": {
     "public": {
       "catalogPath": "remote/api-sdks/contracts/public.json",
-      "catalogSha256": "b295163700f77ceab8c68dbd2d16cdf79a1eba6b08e4683863f37123f416f7e4",
-      "catalogFileSha256": "d9b80b41910cda1f95f57690fa6e4845262c879444ee940e6bb8b1625a6f5bcd",
+      "catalogSha256": "8b13a51a18433272657ee6c5e51b159c0a1d68a03ff6ae964d9bc553af5d2510",
+      "catalogFileSha256": "968abb8d5367f639f458cdfe579b40ccb1b10c0b476fe8e57682f3f0a6f0b312",
       "serviceCount": 44,
       "operationCount": 281,
       "skippedServices": [
@@ -82,7 +82,7 @@
         {
           "service": "browser-test-server",
           "specPath": "remote/deployments/browser-test-server/generated/api-docs.json",
-          "specSha256": "b9fad566fab26ad709bac0a8864e9d12a7267d50a6317bc0e9af3d6970e59db1",
+          "specSha256": "82fa66043fd6515be5a6963afc8109d704be4c433cc8419842c4e6800bd42deb",
           "operationCount": 6
         },
         {
@@ -317,10 +317,10 @@
     },
     "internal": {
       "catalogPath": "remote/api-sdks/contracts/internal.json",
-      "catalogSha256": "d20ebafb4afe13d8d63c370d4e0ad98262b17faffb751a756b6ca3b946b9030c",
-      "catalogFileSha256": "b8d6ee706bb115366842db92724b24e2518dd3577c9564ca4e0b090a18b09c66",
+      "catalogSha256": "94540173dd010e9faf26ab0996911bc31a0fdc75ba1a460295154cde51a04939",
+      "catalogFileSha256": "a7b94caea1f09e88ead670334b5c8832200ff4147cb64406d4e54da5fb041fc8",
       "serviceCount": 44,
-      "operationCount": 937,
+      "operationCount": 940,
       "skippedServices": [
         {
           "service": "billing-server-rs",
@@ -392,8 +392,8 @@
         {
           "service": "browser-test-server",
           "specPath": "remote/deployments/browser-test-server/generated/api-docs.internal.json",
-          "specSha256": "cc5e509bb5718e82982e822b5388d4bc4c2a6ac1d418edbaae1d5365f49141d9",
-          "operationCount": 14
+          "specSha256": "4c8ad6801ed28ba5d0c5c76fbb173cfb77a17fb12616d7fc44e534ea76646e3d",
+          "operationCount": 17
         },
         {
           "service": "build-server-rs",
@@ -633,9 +633,9 @@
       "packageName": "oresoftware_k8s_api_sdk_internal",
       "path": "remote/api-sdks/dart/internal",
       "manifestPath": "remote/api-sdks/dart/internal/sdk-manifest.json",
-      "manifestSha256": "2cdb10adc6e9d54ea882bef11efec42c95008c43ad4830427b226ee65ebe6432",
-      "catalogSha256": "d20ebafb4afe13d8d63c370d4e0ad98262b17faffb751a756b6ca3b946b9030c",
-      "operationCount": 937
+      "manifestSha256": "167de0d5d10dcd5972e980cab8cedcc1f1d8c3cfc0666efe26b2dd09ac6eb44c",
+      "catalogSha256": "94540173dd010e9faf26ab0996911bc31a0fdc75ba1a460295154cde51a04939",
+      "operationCount": 940
     },
     {
       "language": "dart",
@@ -643,8 +643,8 @@
       "packageName": "oresoftware_k8s_api_sdk_public",
       "path": "remote/api-sdks/dart/public",
       "manifestPath": "remote/api-sdks/dart/public/sdk-manifest.json",
-      "manifestSha256": "7dcd510407f6cd3d2445925a912a1918317eb337c62a558b7ca0d52a0efd4f6e",
-      "catalogSha256": "b295163700f77ceab8c68dbd2d16cdf79a1eba6b08e4683863f37123f416f7e4",
+      "manifestSha256": "b59010d3748fdc7ec3a14886e0f25ce420015437057d21510d707d28080d259c",
+      "catalogSha256": "8b13a51a18433272657ee6c5e51b159c0a1d68a03ff6ae964d9bc553af5d2510",
       "operationCount": 281
     },
     {
@@ -653,9 +653,9 @@
       "packageName": "oresoftware_k8s_api_sdk_internal",
       "path": "remote/api-sdks/gleam/internal",
       "manifestPath": "remote/api-sdks/gleam/internal/sdk-manifest.json",
-      "manifestSha256": "a16c3a2334b667cdae3c87c5fe954a6af5669a5a7c2915bfad3fb97a255f2bec",
-      "catalogSha256": "d20ebafb4afe13d8d63c370d4e0ad98262b17faffb751a756b6ca3b946b9030c",
-      "operationCount": 937
+      "manifestSha256": "690387f65b603923cae212311d23da7e4c3e54e08e192d17bb8872d7b20ecc2d",
+      "catalogSha256": "94540173dd010e9faf26ab0996911bc31a0fdc75ba1a460295154cde51a04939",
+      "operationCount": 940
     },
     {
       "language": "gleam",
@@ -663,8 +663,8 @@
       "packageName": "oresoftware_k8s_api_sdk_public",
       "path": "remote/api-sdks/gleam/public",
       "manifestPath": "remote/api-sdks/gleam/public/sdk-manifest.json",
-      "manifestSha256": "794df987aa9e5b7ea3afd0fbeabff8f96760b2490cf55fec51c5a51faabbf61a",
-      "catalogSha256": "b295163700f77ceab8c68dbd2d16cdf79a1eba6b08e4683863f37123f416f7e4",
+      "manifestSha256": "970bba400da05dae29ab5afbae04d5baa2530f3c0a535160aaa1348a4558429b",
+      "catalogSha256": "8b13a51a18433272657ee6c5e51b159c0a1d68a03ff6ae964d9bc553af5d2510",
       "operationCount": 281
     },
     {
@@ -673,9 +673,9 @@
       "packageName": "oresoftware-k8s-api-sdk-internal",
       "path": "remote/api-sdks/rust/internal",
       "manifestPath": "remote/api-sdks/rust/internal/sdk-manifest.json",
-      "manifestSha256": "be8e800fb8ad3c3ab462c2f9bc2b76a3677a43895620bef71db5b3e9c4cdde44",
-      "catalogSha256": "d20ebafb4afe13d8d63c370d4e0ad98262b17faffb751a756b6ca3b946b9030c",
-      "operationCount": 937
+      "manifestSha256": "3dac5701378dc823f37f41da5297093d8e98b837a1e7419d75566166099ad45b",
+      "catalogSha256": "94540173dd010e9faf26ab0996911bc31a0fdc75ba1a460295154cde51a04939",
+      "operationCount": 940
     },
     {
       "language": "rust",
@@ -683,8 +683,8 @@
       "packageName": "oresoftware-k8s-api-sdk-public",
       "path": "remote/api-sdks/rust/public",
       "manifestPath": "remote/api-sdks/rust/public/sdk-manifest.json",
-      "manifestSha256": "740a8c1a19d783187fb9e16afa937bf641ef5af69eb0b56f8be7003736c40e71",
-      "catalogSha256": "b295163700f77ceab8c68dbd2d16cdf79a1eba6b08e4683863f37123f416f7e4",
+      "manifestSha256": "d68fc120a85bbd207c5a4df891afe576c43759492ad34cb7ddacc751104b0531",
+      "catalogSha256": "8b13a51a18433272657ee6c5e51b159c0a1d68a03ff6ae964d9bc553af5d2510",
       "operationCount": 281
     },
     {
@@ -693,9 +693,9 @@
       "packageName": "@oresoftware/k8s-api-sdk-internal",
       "path": "remote/api-sdks/typescript/internal",
       "manifestPath": "remote/api-sdks/typescript/internal/sdk-manifest.json",
-      "manifestSha256": "5bd022052aede5c9190805db32c149b2b86376f3eb97b1f7fd6995a9e06481f0",
-      "catalogSha256": "d20ebafb4afe13d8d63c370d4e0ad98262b17faffb751a756b6ca3b946b9030c",
-      "operationCount": 937
+      "manifestSha256": "74813cff040b682ee8fe096e0ea930c1e51c8acc2b6d7f8764f83cfe417ac43b",
+      "catalogSha256": "94540173dd010e9faf26ab0996911bc31a0fdc75ba1a460295154cde51a04939",
+      "operationCount": 940
     },
     {
       "language": "typescript",
@@ -703,8 +703,8 @@
       "packageName": "@oresoftware/k8s-api-sdk-public",
       "path": "remote/api-sdks/typescript/public",
       "manifestPath": "remote/api-sdks/typescript/public/sdk-manifest.json",
-      "manifestSha256": "ce2a4c18f91fdebdcffcbddebc127453e45a99452747a9868895a18d2fe865c7",
-      "catalogSha256": "b295163700f77ceab8c68dbd2d16cdf79a1eba6b08e4683863f37123f416f7e4",
+      "manifestSha256": "fa01601b92e8be057c6878f0b3365e3cbc6852d6c84fb706537586eecccf5e69",
+      "catalogSha256": "8b13a51a18433272657ee6c5e51b159c0a1d68a03ff6ae964d9bc553af5d2510",
       "operationCount": 281
     }
   ]

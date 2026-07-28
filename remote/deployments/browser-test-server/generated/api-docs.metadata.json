@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "browser-test-server",
   "language": "node",
-  "routeCount": 14,
+  "routeCount": 17,
   "routeTypeCounts": {
-    "service": 8,
-    "user-generated": 6
+    "service": 12,
+    "user-generated": 5
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -20,14 +20,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "Describe the browser-test service and supported HTTP endpoints.",
+      "handlers": [
+        "getBrowserTestService"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
     },
     {
       "path": "/api/docs",
@@ -35,14 +38,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
-      "purpose": "Human-readable generated API documentation.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
+      "visibility": "public",
+      "purpose": "Return the Scalar reference for the fail-closed public contract.",
+      "handlers": [
+        "getBrowserTestPublicApiReference"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
     },
     {
       "path": "/api/docs.json",
@@ -50,29 +56,35 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
-      "purpose": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
+      "visibility": "public",
+      "purpose": "Return the fail-closed public OpenAPI 3.1 contract.",
+      "handlers": [
+        "getBrowserTestPublicOpenApiCompatibilityAlias"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
     },
     {
       "path": "/browser-test",
       "methods": [
         "GET"
       ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "Describe the browser-test service and supported HTTP endpoints.",
+      "handlers": [
+        "getBrowserTestServiceCompatibilityAlias"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
     },
     {
       "path": "/browser-test/healthz",
@@ -80,14 +92,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
-      "auth": "service-defined",
-      "purpose": "Health check.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "Authenticated compatibility alias for browser-test liveness.",
+      "handlers": [
+        "getBrowserTestHealthCompatibilityAlias"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
     },
     {
       "path": "/browser-test/metrics",
@@ -95,14 +110,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
-      "auth": "service-defined",
-      "purpose": "Prometheus metrics.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "Authenticated compatibility alias for Prometheus metrics.",
+      "handlers": [
+        "getBrowserTestPrometheusMetricsCompatibilityAlias"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
     },
     {
       "path": "/browser-test/status",
@@ -110,14 +128,17 @@
         "GET"
       ],
       "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "Return bounded browser-test runtime status.",
+      "handlers": [
+        "getBrowserTestStatusCompatibilityAlias"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
     },
     {
       "path": "/browser-test/tools",
@@ -125,14 +146,17 @@
         "GET"
       ],
       "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "List supported browser drivers and their runtime versions.",
+      "handlers": [
+        "listBrowserAutomationToolsCompatibilityAlias"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
     },
     {
       "path": "/docs/api",
@@ -140,14 +164,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
-      "purpose": "Human-readable generated API documentation.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
+      "visibility": "public",
+      "purpose": "Return the Scalar reference for the fail-closed public contract.",
+      "handlers": [
+        "getBrowserTestPublicApiReferenceCompatibilityAlias"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
     },
     {
       "path": "/healthz",
@@ -155,14 +182,53 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
-      "purpose": "Health check.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
+      "visibility": "public",
+      "purpose": "Return a public liveness response for Kubernetes probes.",
+      "handlers": [
+        "getBrowserTestHealth"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+    },
+    {
+      "path": "/internal/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "Return the Scalar reference for the complete internal contract.",
+      "handlers": [
+        "getBrowserTestInternalApiReference"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+    },
+    {
+      "path": "/internal/openapi.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "Return the complete typed OpenAPI contract to trusted callers.",
+      "handlers": [
+        "getBrowserTestInternalOpenApi"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
     },
     {
       "path": "/metrics",
@@ -170,14 +236,35 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
-      "purpose": "Prometheus metrics.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
+      "visibility": "public",
+      "purpose": "Return bounded Prometheus text exposition.",
+      "handlers": [
+        "getBrowserTestPrometheusMetrics"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+    },
+    {
+      "path": "/openapi.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Return the fail-closed public OpenAPI 3.1 contract.",
+      "handlers": [
+        "getBrowserTestPublicOpenApi"
+      ],
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
     },
     {
       "path": "/run",
@@ -185,14 +272,17 @@
         "POST"
       ],
       "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "Run a bounded browser scenario with Playwright, Puppeteer, or Selenium.",
+      "handlers": [
+        "runBrowserScenario"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
     },
     {
       "path": "/status",
@@ -200,14 +290,17 @@
         "GET"
       ],
       "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "Return bounded browser-test runtime status.",
+      "handlers": [
+        "getBrowserTestStatus"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
     },
     {
       "path": "/tools",
@@ -215,14 +308,17 @@
         "GET"
       ],
       "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+      "visibility": "internal",
+      "purpose": "List supported browser drivers and their runtime versions.",
+      "handlers": [
+        "listBrowserAutomationTools"
       ],
-      "notes": ""
+      "sourceFiles": [
+        "remote/deployments/browser-test-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
     }
   ]
 }
