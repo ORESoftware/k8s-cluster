@@ -27,23 +27,8 @@ jobs:
         with:
           tool: cargo-audit
           fallback: none
-      - name: Run RustSec audit and preserve exact diagnostics
-        run: |
-          set +e
-          cargo audit --json > jetstream-cargo-audit.json 2> jetstream-cargo-audit.log
-          status=$?
-          echo "$status" > jetstream-cargo-audit.exit
-          exit 0
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: jetstream-rustsec-diagnostics
-          path: |
-            jetstream-cargo-audit.json
-            jetstream-cargo-audit.log
-          if-no-files-found: error
-      - name: Enforce RustSec result
-        run: exit "$(cat jetstream-cargo-audit.exit)"
+      - name: Audit locked dependencies against RustSec
+        run: cargo audit
 
   secrets:
     runs-on: ubuntu-latest
