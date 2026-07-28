@@ -31,7 +31,7 @@
         },
         "x-dd-auth": "public",
         "x-dd-handlers": [
-          "getApiReference"
+          "getPublicApiReference"
         ],
         "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
@@ -62,7 +62,7 @@
         },
         "x-dd-auth": "public",
         "x-dd-handlers": [
-          "getOpenApiDocumentCompatibilityAlias"
+          "getPublicOpenApiDocumentCompatibilityAlias"
         ],
         "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
@@ -531,7 +531,7 @@
         },
         "x-dd-auth": "public",
         "x-dd-handlers": [
-          "getApiReferenceCompatibilityAlias"
+          "getPublicApiReferenceCompatibilityAlias"
         ],
         "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
@@ -575,6 +575,66 @@
         ],
         "x-dd-visibility": "public",
         "security": []
+      }
+    },
+    "/internal/docs/api": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_internal_docs_api_d373fd1bbe62",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "getInternalApiReference"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/internal/docs/api",
+        "x-dd-source-paths": [
+          "/internal/docs/api"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/internal/openapi.json": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_internal_openapi_json_e9dd76675a9c",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "getInternalOpenApiDocument"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/internal/openapi.json",
+        "x-dd-source-paths": [
+          "/internal/openapi.json"
+        ],
+        "x-dd-visibility": "internal"
       }
     },
     "/metrics": {
@@ -624,7 +684,7 @@
         },
         "x-dd-auth": "public",
         "x-dd-handlers": [
-          "getOpenApiDocument"
+          "getPublicOpenApiDocument"
         ],
         "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
@@ -693,8 +753,8 @@
   "x-dd-contract-scope": "internal",
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "rust",
-  "x-dd-operation-count": 21,
-  "x-dd-route-count": 21,
+  "x-dd-operation-count": 23,
+  "x-dd-route-count": 23,
   "x-dd-service": "dd-embeddings-rs",
   "x-dd-standard-docs-routes": [
     "/docs/api",

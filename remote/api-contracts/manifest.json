@@ -37,7 +37,13 @@
           "packageName": "@oresoftware/dd-embeddings-client"
         }
       },
-      "visibility": "private"
+      "visibility": "private",
+      "publicContract": "remote/deployments/dd-embeddings-rs/generated/api-docs.json",
+      "internalDocsRoutes": [
+        "/internal/openapi.json",
+        "/internal/docs/api"
+      ],
+      "runtimeContractPolicy": "Unauthenticated standard documentation routes serve only the fail-closed public contract; the complete typed contract and Scalar reference require bearer authentication."
     }
   }
 }

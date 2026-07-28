@@ -1,8 +1,9 @@
 //! Executable OpenAPI contract support.
 //!
 //! Route registration and contract collection happen together in
-//! `OpenApiRouter`. This module only adds service metadata/security and turns
-//! that generated document into immutable bytes served at runtime.
+//! `OpenApiRouter`. The complete typed contract is retained for private
+//! SDKs and authenticated internal documentation. Standard unauthenticated
+//! documentation routes serve only the generated fail-closed public subset.
 
 use std::sync::Arc;
 
@@ -11,21 +12,40 @@ use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::openapi::{Components, OpenApi};
 use utoipa_scalar::Scalar;
 
+const PUBLIC_OPENAPI_JSON: &str = include_str!("../generated/api-docs.json");
+
 #[derive(Clone)]
 pub struct ApiDocs {
-    pub json: Bytes,
-    pub scalar_html: Bytes,
+    pub public_json: Bytes,
+    pub public_scalar_html: Bytes,
+    pub internal_json: Bytes,
+    pub internal_scalar_html: Bytes,
 }
 
 impl ApiDocs {
-    pub fn new(openapi: &OpenApi) -> Result<Self, serde_json::Error> {
-        let json = canonical_json(openapi)?;
-        let scalar_html = Scalar::new(openapi.clone()).to_html();
+    pub fn new(openapi: &OpenApi) -> anyhow::Result<Self> {
+        let public_value: serde_json::Value = serde_json::from_str(PUBLIC_OPENAPI_JSON)?;
+        anyhow::ensure!(
+            public_value["x-dd-contract-scope"] == "public",
+            "embedded runtime OpenAPI must be the fail-closed public contract"
+        );
+        anyhow::ensure!(
+            public_value["info"]["title"] == "dd-embeddings-rs API (public)",
+            "embedded runtime OpenAPI has unexpected service metadata"
+        );
+        let public_openapi: OpenApi = serde_json::from_value(public_value)?;
+        let internal_json = canonical_json(openapi)?;
         Ok(Self {
-            json: Bytes::from(json),
-            scalar_html: Bytes::from(scalar_html),
+            public_json: Bytes::from_static(PUBLIC_OPENAPI_JSON.as_bytes()),
+            public_scalar_html: Bytes::from(Scalar::new(public_openapi).to_html()),
+            internal_json: Bytes::from(internal_json),
+            internal_scalar_html: Bytes::from(Scalar::new(openapi.clone()).to_html()),
         })
     }
+}
+
+pub fn public_json() -> &'static str {
+    PUBLIC_OPENAPI_JSON
 }
 
 fn register_schema<T: utoipa::ToSchema>(components: &mut Components) {
@@ -44,10 +64,6 @@ pub fn finalize(mut openapi: OpenApi) -> OpenApi {
         "Typed multi-provider embeddings, reranking, Qdrant RAG, and Postgres multi-signal search API. The document is generated from the same annotated handlers and Serde DTOs registered by the running Axum router."
             .to_string(),
     );
-    // `OpenApiRouter::new()` currently inherits Utoipa crate metadata in its
-    // default `Info`. That metadata describes the generator dependency, not
-    // this service. Clear it explicitly so the exported contract never claims
-    // the tool author's contact details or license as API provenance.
     openapi.info.contact = None;
     openapi.info.license = None;
 
@@ -60,7 +76,7 @@ pub fn finalize(mut openapi: OpenApi) -> OpenApi {
                 .scheme(HttpAuthScheme::Bearer)
                 .bearer_format("opaque service token")
                 .description(Some(
-                    "Set `Authorization: Bearer <token>`. Runtime enforcement is enabled when EMBEDDINGS_API_AUTH_BEARER is configured."
+                    "Set `Authorization: Bearer <token>`. Protected routes fail closed when EMBEDDINGS_API_AUTH_BEARER is absent."
                         .to_string(),
                 ))
                 .build(),

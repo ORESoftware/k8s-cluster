@@ -7,7 +7,7 @@
       "service": "agent-worker-broker-rs",
       "language": "rust",
       "specPath": "remote/deployments/agent-worker-broker-rs/generated/api-docs.json",
-      "specSha256": "9572bf231c7649fc965298d13b674d25aa66724731e6ccb1b150aba32fc0da6a",
+      "specSha256": "ce0f6c51a54a0fc52d23842e4f81255200cf54477a079cd2dac24255451ddad6",
       "operationCount": 6,
       "operations": [
         {
@@ -40,7 +40,7 @@
           "operationId": "agent_worker_broker_rs_get_api_docs_json_83c2ce1cd771",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -56,7 +56,7 @@
               "content": []
             }
           ],
-          "contractSha256": "da23dfd5a75b122d8c9787608de3b2d19f01fdab5a24377390e416da6f86c4c2"
+          "contractSha256": "7d38dbde823f6b53c02196edd4b960d1712fe9c53bd925b5307b43c23df9fa53"
         },
         {
           "service": "agent-worker-broker-rs",
@@ -160,7 +160,7 @@
       "service": "ai-ml-pipeline",
       "language": "python",
       "specPath": "remote/deployments/ai-ml-pipeline/generated/api-docs.json",
-      "specSha256": "72ceee0730181b9d27dee0a9c99e6ab22057e6c9065e780b0465b62e6632ea94",
+      "specSha256": "f322e248358d67cd69e55587e5606370f7fb1e9043d010bd9d19edcb4c7d49f4",
       "operationCount": 7,
       "operations": [
         {
@@ -217,7 +217,7 @@
           "operationId": "ai_ml_pipeline_get_api_docs_json_70c2984db6b1",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -233,7 +233,7 @@
               "content": []
             }
           ],
-          "contractSha256": "c3953b439c7da2fdbccd509a84ddca70b8703daae4b58e74b794327cb1569b71"
+          "contractSha256": "944dfd4ebe8619b5b1bc1d8fb5c078733f99c3a3ee3fdada6774f134e72675a0"
         },
         {
           "service": "ai-ml-pipeline",
@@ -337,7 +337,7 @@
       "service": "apostille-services-server-rs",
       "language": "rust",
       "specPath": "remote/deployments/apostille-services-server-rs/generated/api-docs.json",
-      "specSha256": "8c27d06bd58f209f5f8e942d74c5927f61640bde4d8a38383abd9dc7929f9914",
+      "specSha256": "3c8cb53fae70699ba9d085c489425b2dd0de3fa8b45182f6b3d05e5c93633964",
       "operationCount": 7,
       "operations": [
         {
@@ -394,7 +394,7 @@
           "operationId": "apostille_services_server_rs_get_api_docs_json_4759ab23ad74",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -410,7 +410,7 @@
               "content": []
             }
           ],
-          "contractSha256": "66a84db864a0112cc92fe778c17b7c2b57ea76ceea941b8cc3035aabe4cac3b8"
+          "contractSha256": "3292421816c7cef790f4b807c5f95a54d720e1d18a22cca4cedc5e62ff04a793"
         },
         {
           "service": "apostille-services-server-rs",
@@ -514,7 +514,7 @@
       "service": "auth-server-rs",
       "language": "rust",
       "specPath": "remote/deployments/auth-server-rs/generated/api-docs.json",
-      "specSha256": "f5e7c011adf9736e0f67d872557e5ed32437277087ea23c4c5caac5e41232102",
+      "specSha256": "0a6f18c47bf336c6bae575bc3f5c34f4353107ce28b7cb9dc17844a88decbf14",
       "operationCount": 5,
       "operations": [
         {
@@ -547,7 +547,7 @@
           "operationId": "auth_server_rs_get_api_docs_json_82ff253bf2ac",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -563,7 +563,7 @@
               "content": []
             }
           ],
-          "contractSha256": "0b586153411d6023ffa8f421db44b5bbea9b92c6f5486a523e30d05d5872d19a"
+          "contractSha256": "8c785b231024f3925d201a7a7b02192b097bb5fb8d071b517318d1210a61d59d"
         },
         {
           "service": "auth-server-rs",
@@ -643,7 +643,7 @@
       "service": "bastion-rs",
       "language": "rust",
       "specPath": "remote/deployments/bastion-rs/generated/api-docs.json",
-      "specSha256": "6505257fbb2a0802ea0aa93c2a8d8e5daa45105178e08b48cebe43a0e5554fe6",
+      "specSha256": "900bd8dc713603b376179bb7dc14698f002e19622a517071ba12d6994d0a6a0a",
       "operationCount": 4,
       "operations": [
         {
@@ -676,7 +676,7 @@
           "operationId": "bastion_rs_get_api_docs_json_8e3ea08ef5e9",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -692,7 +692,7 @@
               "content": []
             }
           ],
-          "contractSha256": "50ac83d3f4fed26da2b8f676fcc47ec1387289102ff4846ced2dc8e2023aac4a"
+          "contractSha256": "e12fb8fd85d89c1d09c8d02d799bfa7aed1d5b95bd11cd3f3bc80d00de5262d4"
         },
         {
           "service": "bastion-rs",
@@ -748,7 +748,7 @@
       "service": "browser-test-server",
       "language": "node",
       "specPath": "remote/deployments/browser-test-server/generated/api-docs.json",
-      "specSha256": "0869c21eceb74f6898479f013c2006eb5e57103e6160438de6e45f42f72b3cca",
+      "specSha256": "b9fad566fab26ad709bac0a8864e9d12a7267d50a6317bc0e9af3d6970e59db1",
       "operationCount": 6,
       "operations": [
         {
@@ -781,7 +781,7 @@
           "operationId": "browser_test_server_get_api_docs_json_aeee36ad5e79",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -797,7 +797,7 @@
               "content": []
             }
           ],
-          "contractSha256": "6d77d30b4e733a528f61ecf2b5934c340baa83c53448e4d354625515ca81eb9c"
+          "contractSha256": "ce5e466300acbf04acac028378bf65bc2761975b414d72d01dece6a225d3345c"
         },
         {
           "service": "browser-test-server",
@@ -901,7 +901,7 @@
       "service": "build-server-rs",
       "language": "rust",
       "specPath": "remote/deployments/build-server-rs/generated/api-docs.json",
-      "specSha256": "c9cb775d2dbf7199572bb1377ea81e2a5d1f59995782ed683f847068e668e88d",
+      "specSha256": "cd0cb6f1121df568f47972f9583d548a12fe8c338c55261cafc4fc2a73869403",
       "operationCount": 7,
       "operations": [
         {
@@ -958,7 +958,7 @@
           "operationId": "build_server_rs_get_api_docs_json_8bbb8ade2e6b",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -974,7 +974,7 @@
               "content": []
             }
           ],
-          "contractSha256": "98285d928ca5e159c90b5e61d053768f927236b762a8d94f042f3e2960ae57df"
+          "contractSha256": "8c7563868f79a9d3463291136543f06ae1702486ce79621bb4aa3f450cc6179d"
         },
         {
           "service": "build-server-rs",
@@ -1078,7 +1078,7 @@
       "service": "cluster-mcp-rs",
       "language": "rust",
       "specPath": "remote/deployments/cluster-mcp-rs/generated/api-docs.json",
-      "specSha256": "643642ab240aadc4ea778a9847ac7c7d9f34f13d4120803991b28f66ae5ac97c",
+      "specSha256": "f60043d291d93a63b7f9c76f6d747c927890701d3bc93b84708673b709e95dba",
       "operationCount": 8,
       "operations": [
         {
@@ -1135,7 +1135,7 @@
           "operationId": "cluster_mcp_rs_get_api_docs_json_ce0de73d3845",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -1151,7 +1151,7 @@
               "content": []
             }
           ],
-          "contractSha256": "db93d4b87cbd262955cec29257c3f44065c773224c7b290d249b9534635cf334"
+          "contractSha256": "c65c530b5a3a67da0d4cb6913da0d72ab0dacf93c37662fdf13f050dea75a899"
         },
         {
           "service": "cluster-mcp-rs",
@@ -1279,7 +1279,7 @@
       "service": "container-pool-rs",
       "language": "rust",
       "specPath": "remote/deployments/container-pool-rs/generated/api-docs.json",
-      "specSha256": "bb103192e58ff4e319356e82f7cf1ea49746a63f64b5510ec3ad49241779d04d",
+      "specSha256": "b857a276489896ea67c624b763fc176cd79908b1beddc671b26211d4456633dc",
       "operationCount": 6,
       "operations": [
         {
@@ -1312,7 +1312,7 @@
           "operationId": "container_pool_rs_get_api_docs_json_604449d9ef37",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -1328,7 +1328,7 @@
               "content": []
             }
           ],
-          "contractSha256": "ff3691ffb67a25ed6728cbd1a5d12b4d74631d8125f7005f6627be3cae54e780"
+          "contractSha256": "893a063d5649eba5591915b47339d4bd1cad5f4610f9cd1b1e8fe05160ad1441"
         },
         {
           "service": "container-pool-rs",
@@ -1432,7 +1432,7 @@
       "service": "contract-service-rs",
       "language": "rust",
       "specPath": "remote/deployments/contract-service-rs/generated/api-docs.json",
-      "specSha256": "56c8639655d6d001b22ac6be0a94016c5c3080180b814b6303496ac3d9c88cea",
+      "specSha256": "25129e8a8bf222bcfcf0c39eeac76540f94adc8733204fc8159b16a6e0247f06",
       "operationCount": 7,
       "operations": [
         {
@@ -1489,7 +1489,7 @@
           "operationId": "contract_service_rs_get_api_docs_json_fb76c651a8d1",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -1505,7 +1505,7 @@
               "content": []
             }
           ],
-          "contractSha256": "a61ba098d567381035b5514f5fb991adc4822af767e8055b7dfc96238b125b11"
+          "contractSha256": "36d07ee096b88b3876f91b164b55b37cdf2c6c11e75b0ebac6f95df619484f5d"
         },
         {
           "service": "contract-service-rs",
@@ -1609,7 +1609,7 @@
       "service": "dataset-labeling-rs",
       "language": "rust",
       "specPath": "remote/deployments/dataset-labeling-rs/generated/api-docs.json",
-      "specSha256": "31d76749ba39b1699943480afb4622c3f7e30df8e46360cb4591861e3c6b2e2f",
+      "specSha256": "c590078876aa8ae4d6d6df2b8eb3832ff65843a15b37fd25ad7c617d254b1c8a",
       "operationCount": 7,
       "operations": [
         {
@@ -1666,7 +1666,7 @@
           "operationId": "dataset_labeling_rs_get_api_docs_json_fa46e74a2646",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -1682,7 +1682,7 @@
               "content": []
             }
           ],
-          "contractSha256": "a646c188756fc2d94e3dcea519f668f5f499695ed2a485ad17b7ac004f1675b1"
+          "contractSha256": "1c345f13e93f5b05f57e9bd9857e2b72b0bfd5a118d8ec0c9a86923fbb9ba456"
         },
         {
           "service": "dataset-labeling-rs",
@@ -1786,7 +1786,7 @@
       "service": "dd-benefactor-marketing-rs",
       "language": "rust",
       "specPath": "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.json",
-      "specSha256": "799797d9c74beb1278792f8dbfaed7d43753c006af306a7f77dd1f3939638abe",
+      "specSha256": "3c03e1740a3ed3b9b6b7ddb7d91c21e4f751930aa893f5a95fd0383b39005237",
       "operationCount": 7,
       "operations": [
         {
@@ -1843,7 +1843,7 @@
           "operationId": "dd_benefactor_marketing_rs_get_api_docs_json_b220dfc40f18",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -1859,7 +1859,7 @@
               "content": []
             }
           ],
-          "contractSha256": "609f93782e498a409dac9d6404ae09b737e5755a2a048a1adcea85811b8b3198"
+          "contractSha256": "714e24a1a03dbc3ff56e0766305be15684f2c3bdccc502eb00c3ffc1ca338540"
         },
         {
           "service": "dd-benefactor-marketing-rs",
@@ -1963,7 +1963,7 @@
       "service": "dd-compliance-rs",
       "language": "rust",
       "specPath": "remote/deployments/dd-compliance-rs/generated/api-docs.json",
-      "specSha256": "cf621185f00ff8bcc29d60cb82d01f271dd78fd8bcc01171a7a977c7f424a698",
+      "specSha256": "c2d5b629c74f9fbd8a0efe6a56e392c3623560889c54d7c61df99cb94110cf12",
       "operationCount": 7,
       "operations": [
         {
@@ -2020,7 +2020,7 @@
           "operationId": "dd_compliance_rs_get_api_docs_json_b3744f0c89f6",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -2036,7 +2036,7 @@
               "content": []
             }
           ],
-          "contractSha256": "01ebc3a5c57d044e7c468ba02b5281f54a01d4e22b9f6490f36b6491c7dc18c4"
+          "contractSha256": "c10638791bc2dc4e1d81421c39d0cba58d483f1f6367c2a1177af99eb93e1716"
         },
         {
           "service": "dd-compliance-rs",
@@ -2140,7 +2140,7 @@
       "service": "dd-document-rs",
       "language": "rust",
       "specPath": "remote/deployments/dd-document-rs/generated/api-docs.json",
-      "specSha256": "68f97503641e35685865270a99147729ce09ac31a9b10f59fa10d4078f9cc595",
+      "specSha256": "120b1130d970fd8f94c73e6dc8d6d482d69986ac4be5a1702096754c11a593b8",
       "operationCount": 6,
       "operations": [
         {
@@ -2197,7 +2197,7 @@
           "operationId": "dd_document_rs_get_api_docs_json_4f57fda93437",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -2213,7 +2213,7 @@
               "content": []
             }
           ],
-          "contractSha256": "6cc758e06f12fac9fce0949ca5ca3ec6347c5bb0a0a44a00c3f4e827fc68f867"
+          "contractSha256": "29e7506e7991585f9e645a3449a8dfa544960b02f22ce12a272d55af16087827"
         },
         {
           "service": "dd-document-rs",
@@ -2290,10 +2290,187 @@
       ]
     },
     {
+      "service": "dd-embeddings-rs",
+      "language": "rust",
+      "specPath": "remote/deployments/dd-embeddings-rs/generated/api-docs.json",
+      "specSha256": "dd637682023ee92fc15fb99e1a0e1eaa3ee4cd35c95f8db4c68f9ce32f60d3af",
+      "operationCount": 7,
+      "operations": [
+        {
+          "service": "dd-embeddings-rs",
+          "serviceLanguage": "rust",
+          "operationId": "dd_embeddings_rs_get_api_docs_6d9a44ce91c7",
+          "method": "GET",
+          "path": "/api/docs",
+          "summary": "Human-readable generated API documentation.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "edda1d7fa4330b6f81565324e30ca4159ec7243cc4164f2711fb81ba508c2083"
+        },
+        {
+          "service": "dd-embeddings-rs",
+          "serviceLanguage": "rust",
+          "operationId": "dd_embeddings_rs_get_api_docs_json_5b156aa49080",
+          "method": "GET",
+          "path": "/api/docs.json",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "b08f8127fe7393b111cb249e4c0144219c247112ebe8080e5a8657ca26fcc0bf"
+        },
+        {
+          "service": "dd-embeddings-rs",
+          "serviceLanguage": "rust",
+          "operationId": "dd_embeddings_rs_get_docs_api_dbf8547bbd66",
+          "method": "GET",
+          "path": "/docs/api",
+          "summary": "Human-readable generated API documentation.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "9a01d1f5795e5c7b9937c536072fc0fb4b01b2de2f1276590c4492acf290fd5a"
+        },
+        {
+          "service": "dd-embeddings-rs",
+          "serviceLanguage": "rust",
+          "operationId": "dd_embeddings_rs_get_healthz_c98b323dcfc7",
+          "method": "GET",
+          "path": "/healthz",
+          "summary": "Health check.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "6ed640b94f136a744fe95ddd1e86203e7cea6c5dacdb8ae56473a8fa97531763"
+        },
+        {
+          "service": "dd-embeddings-rs",
+          "serviceLanguage": "rust",
+          "operationId": "dd_embeddings_rs_get_metrics_b8de5715f91f",
+          "method": "GET",
+          "path": "/metrics",
+          "summary": "Prometheus metrics.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "133282e030b1f405ecf5fa0e9ec1c9c055c78dc51c39b918957271b2e27350e7"
+        },
+        {
+          "service": "dd-embeddings-rs",
+          "serviceLanguage": "rust",
+          "operationId": "dd_embeddings_rs_get_openapi_json_e309ad71cb55",
+          "method": "GET",
+          "path": "/openapi.json",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "0c189609d02ee04c5531c965ba69ab9747819c2c47b02df0346084ceea4f4343"
+        },
+        {
+          "service": "dd-embeddings-rs",
+          "serviceLanguage": "rust",
+          "operationId": "dd_embeddings_rs_get_readyz_1034976ffc04",
+          "method": "GET",
+          "path": "/readyz",
+          "summary": "Readiness check.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "376df2fe1aaec03aad9128cca1fa9a148c0ebb7c4b3b8719f52ae4d9075aec38"
+        }
+      ]
+    },
+    {
       "service": "dd-escrow-rs",
       "language": "rust",
       "specPath": "remote/deployments/dd-escrow-rs/generated/api-docs.json",
-      "specSha256": "54e94b1e9a341e9270dfb3d7b1e9a27e2427949fa0c9a24249d8e58ebb7eb5a7",
+      "specSha256": "ce7371e5199b7be9229354e012e1e37fb8c06404d3a8c0f6f5133e8931532a14",
       "operationCount": 6,
       "operations": [
         {
@@ -2350,7 +2527,7 @@
           "operationId": "dd_escrow_rs_get_api_docs_json_44f48e7161b6",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -2366,7 +2543,7 @@
               "content": []
             }
           ],
-          "contractSha256": "a4080c1a406808c01c8946aca876826a059e873ab597c43ccf0104840454f182"
+          "contractSha256": "0aee453e7a7c14c3b20d67feaf3027f34e2330cfa10f74b7a5eda5539d23187e"
         },
         {
           "service": "dd-escrow-rs",
@@ -2446,7 +2623,7 @@
       "service": "dd-git-rs",
       "language": "rust",
       "specPath": "remote/deployments/dd-git-rs/generated/api-docs.json",
-      "specSha256": "9f7cd4d20085a72efb0f060b08e086c8d781ba4c066dca94f65e26024a331987",
+      "specSha256": "95f16a82e13f6afe6c6283289f98752aed7ec0dc83e8d1f612c4b3c7d99a6783",
       "operationCount": 7,
       "operations": [
         {
@@ -2503,7 +2680,7 @@
           "operationId": "dd_git_rs_get_api_docs_json_cae7319e06a7",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -2519,7 +2696,7 @@
               "content": []
             }
           ],
-          "contractSha256": "2b8b8220edc62567aa57c50cd7d511897312a159f1b12ea088a70e35f5887108"
+          "contractSha256": "6ccdc55d007db21982d366dc494d3f5213379089c46a1b9553b6567390884263"
         },
         {
           "service": "dd-git-rs",
@@ -2623,7 +2800,7 @@
       "service": "dd-music-rs",
       "language": "rust",
       "specPath": "remote/deployments/dd-music-rs/generated/api-docs.json",
-      "specSha256": "8e1ada8a2721d87e53ef87c48978369ea468e37556e02867027ffb495434677f",
+      "specSha256": "63bac5bb4708eabeaadf709e8f3a3a8248ace9ddf85fafad732b48d5db33b501",
       "operationCount": 7,
       "operations": [
         {
@@ -2680,7 +2857,7 @@
           "operationId": "dd_music_rs_get_api_docs_json_a0d8b9337eca",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -2696,7 +2873,7 @@
               "content": []
             }
           ],
-          "contractSha256": "08cbcbece0f2d34ac647a7fb4d795394f5f40ed579d9472a05ccf8e9aecfb048"
+          "contractSha256": "dad37131c395790897f4eea5afaa64703da0e3e5ad37abc887e3e9b3844344f4"
         },
         {
           "service": "dd-music-rs",
@@ -2800,7 +2977,7 @@
       "service": "dd-ocr-rs",
       "language": "rust",
       "specPath": "remote/deployments/dd-ocr-rs/generated/api-docs.json",
-      "specSha256": "1d268e3eb6636935f0c1495bf824f2dcf85165ab16f03d5459d880c5b789b3e6",
+      "specSha256": "0ad436de01197c17867cb7c0cf873533d18aa3aee70b8f977b18a93f64777dd2",
       "operationCount": 6,
       "operations": [
         {
@@ -2857,7 +3034,7 @@
           "operationId": "dd_ocr_rs_get_api_docs_json_f59be7ee5f25",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -2873,7 +3050,7 @@
               "content": []
             }
           ],
-          "contractSha256": "e517a44c5a19945a6557a9f3736093eefd6ac88a9cdee7abd9648102aefe7663"
+          "contractSha256": "48bbc48c63c03d53693777a5e308ffa2b147361b6c0fb0643b372456bcce76c5"
         },
         {
           "service": "dd-ocr-rs",
@@ -2953,7 +3130,7 @@
       "service": "des-simulator-rs",
       "language": "rust",
       "specPath": "remote/deployments/des-simulator-rs/generated/api-docs.json",
-      "specSha256": "7ea88d7960d3b824225bb0c7ec7a1af08409448b7faafe6a87bea3f80d1758f9",
+      "specSha256": "708092fabaa281b60c7d5742340cb39465c74dc1cc211dde0b3acd707d67367b",
       "operationCount": 6,
       "operations": [
         {
@@ -3010,7 +3187,7 @@
           "operationId": "des_simulator_rs_get_api_docs_json_07ae19f4dacd",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -3026,7 +3203,7 @@
               "content": []
             }
           ],
-          "contractSha256": "4f4bc20f7a25753dc74a37dc9ea28ad5faa379f04d2eed073ffbe11ba451ff82"
+          "contractSha256": "0f4ef942e1212c5bf2eefe36535c2fe3c8da1667143621609b88ee120173680f"
         },
         {
           "service": "des-simulator-rs",
@@ -3106,7 +3283,7 @@
       "service": "dev-server",
       "language": "node",
       "specPath": "remote/deployments/dev-server/generated/api-docs.json",
-      "specSha256": "b2c34fece046445d1ee30d69ba1633b549dcea7fa9945d9a4d4aac2427de4a83",
+      "specSha256": "69fd8cc1b860ca4ef292591e900efc8a92b8f494ad2d985e35f3f1c0290c01f5",
       "operationCount": 5,
       "operations": [
         {
@@ -3139,7 +3316,7 @@
           "operationId": "dev_server_get_api_docs_json_2000a92cd157",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -3155,7 +3332,7 @@
               "content": []
             }
           ],
-          "contractSha256": "20e17c1c4041bb756a41f8a627a5f6c9e06fb05cf0a1cc02e58f3c24ad19bda2"
+          "contractSha256": "c1fc5972708655b87b2c29c51e46d43e908c536b1acd1827d3ad2ff58083cbd2"
         },
         {
           "service": "dev-server",
@@ -3235,7 +3412,7 @@
       "service": "economics-server-rs",
       "language": "rust",
       "specPath": "remote/deployments/economics-server-rs/generated/api-docs.json",
-      "specSha256": "4f3f0363ec7bfb5ea6e66853cb6cd127ed6d7f0a654a24e4d57eef3ce3374905",
+      "specSha256": "2e8b966595031783d076877f7c6bc9efeeb680ea650206bd3705b9a4448533a4",
       "operationCount": 7,
       "operations": [
         {
@@ -3292,7 +3469,7 @@
           "operationId": "economics_server_rs_get_api_docs_json_4914d875e7fb",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -3308,7 +3485,7 @@
               "content": []
             }
           ],
-          "contractSha256": "6db29fa7ea23d5f896117ec6d7ee5cab35163280a73381f1b34fd72ce1116306"
+          "contractSha256": "a925b0766440f410fcd128b649a3519d2ab5c163f93cf9112f0eb52981459665"
         },
         {
           "service": "economics-server-rs",
@@ -3412,7 +3589,7 @@
       "service": "formal-methods-server-rs",
       "language": "rust",
       "specPath": "remote/deployments/formal-methods-server-rs/generated/api-docs.json",
-      "specSha256": "888313414a348617525c59af8aa54b25b7c287da293a496a793bff19a3a476a5",
+      "specSha256": "85b8374175c0b39c7dd064f4d06de6b4a18422248d615524cf929998071accb4",
       "operationCount": 6,
       "operations": [
         {
@@ -3445,7 +3622,7 @@
           "operationId": "formal_methods_server_rs_get_api_docs_json_cea8ec4c38a3",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -3461,7 +3638,7 @@
               "content": []
             }
           ],
-          "contractSha256": "2e2f0b93d6ff2a2a24443f65be848781f7ab4035a40c4be6a9e4b4982440d7e7"
+          "contractSha256": "49b1aebd15a2a5c3f0ca8ee592974bc6d1e7fccc2f84983605f1914c1a97ebc8"
         },
         {
           "service": "formal-methods-server-rs",
@@ -3565,7 +3742,7 @@
       "service": "formal-methods-service-rs",
       "language": "rust",
       "specPath": "remote/deployments/formal-methods-service-rs/generated/api-docs.json",
-      "specSha256": "0f606865b8229745ba1122966a0f278bca369ea0398413168804a0f4864a5dac",
+      "specSha256": "8ee36161b63e1ef53b25409b27c542e575b067f2c7b0a84a0d291643cfaf296f",
       "operationCount": 4,
       "operations": [
         {
@@ -3598,7 +3775,7 @@
           "operationId": "formal_methods_service_rs_get_api_docs_json_4e712a700e26",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -3614,7 +3791,7 @@
               "content": []
             }
           ],
-          "contractSha256": "4da51fd3eade6896c4bd56562bd07b9e92aa5a55003b40711b68c401be80e11e"
+          "contractSha256": "c7766c32f1ef1e4406894574aa907763219c85387863e90345fb88bcce5c03d5"
         },
         {
           "service": "formal-methods-service-rs",
@@ -3670,7 +3847,7 @@
       "service": "fsharp-ws-server",
       "language": "fsharp",
       "specPath": "remote/deployments/fsharp-ws-server/generated/api-docs.json",
-      "specSha256": "ea5cc30bdc1ec2cf4efc199eda8807895bdc3d698acddb3b68f50289f952d1ba",
+      "specSha256": "7de27016d07c6048e880549643efcc36bd309a28204912bd668b2e9c626d1ba5",
       "operationCount": 8,
       "operations": [
         {
@@ -3727,7 +3904,7 @@
           "operationId": "fsharp_ws_server_get_api_docs_json_877d51a9f4d2",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -3743,7 +3920,7 @@
               "content": []
             }
           ],
-          "contractSha256": "cfb1af122abdd2d3dc2a273a64a994a442729f07691bd3cf8a4e1b0bd8fa452a"
+          "contractSha256": "1795921b80b802040b829e044c096b4fb1809a6ff2d85ed54a0e57f22921191e"
         },
         {
           "service": "fsharp-ws-server",
@@ -3871,7 +4048,7 @@
       "service": "gleam-mcp-server",
       "language": "gleam",
       "specPath": "remote/deployments/gleam-mcp-server/generated/api-docs.json",
-      "specSha256": "98fe7e8c8d90640c46d13803a48318c35357b592a8518699e85f4e00631c96ae",
+      "specSha256": "99fcaf4873bc06da1795c211acde5d325dbf518b97ceb2fc14dbc714699cc6dd",
       "operationCount": 7,
       "operations": [
         {
@@ -3928,7 +4105,7 @@
           "operationId": "gleam_mcp_server_get_api_docs_json_5a117f6eaf26",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -3944,7 +4121,7 @@
               "content": []
             }
           ],
-          "contractSha256": "e4d577c6cc7b60126ad54efb2f8e01b828998354f1eb548057692827bde48844"
+          "contractSha256": "bac375b42337903083e9e4884e3f137e372f3d80e7830e2444a5f8c1fd6f015e"
         },
         {
           "service": "gleam-mcp-server",
@@ -4048,7 +4225,7 @@
       "service": "gleamlang-presence-server",
       "language": "gleam",
       "specPath": "remote/deployments/gleamlang-presence-server/generated/api-docs.json",
-      "specSha256": "0045ff3374fc0c089914887656f9a013644f5394f9e24379bec2ffea95f4c305",
+      "specSha256": "a50c6dd205874076d0b5c22a3eaf018dff681044d19c43ac88ea9cd52c300719",
       "operationCount": 5,
       "operations": [
         {
@@ -4105,7 +4282,7 @@
           "operationId": "gleamlang_presence_server_get_api_docs_json_33894b4d682c",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -4121,7 +4298,7 @@
               "content": []
             }
           ],
-          "contractSha256": "9298cb5136b3f46a2a4d4f894502656f814287eb7f90ed7ee6bac50615ec01ef"
+          "contractSha256": "7f657d62c74b67ab45d4fd8271ac0b598744f3149e4afb7a9034daf8c4ef0f07"
         },
         {
           "service": "gleamlang-presence-server",
@@ -4177,7 +4354,7 @@
       "service": "gleamlang-server",
       "language": "gleam",
       "specPath": "remote/deployments/gleamlang-server/generated/api-docs.json",
-      "specSha256": "c6fea007b78054c7408505cbbbca38f9e2fc2da01841e0181f82cf0822a55514",
+      "specSha256": "08d03c6bf08a73cda4f53eac077347c6eaaecb02a5fe450c312cddd4dcacffa0",
       "operationCount": 6,
       "operations": [
         {
@@ -4234,7 +4411,7 @@
           "operationId": "gleamlang_server_get_api_docs_json_e1232b0d6a02",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -4250,7 +4427,7 @@
               "content": []
             }
           ],
-          "contractSha256": "87fa0944b42d9c81ba5098587d2781f4694d60294fcc5f6f874e0ad8e010ad23"
+          "contractSha256": "1b014c04239f5bff4dee5b71a43dccfdb139af963afad4c74336202a24e70d51"
         },
         {
           "service": "gleamlang-server",
@@ -4330,7 +4507,7 @@
       "service": "gleamlang-server-nats-bridge",
       "language": "node",
       "specPath": "remote/deployments/gleamlang-server/generated/api-docs.nats-bridge.json",
-      "specSha256": "79fc309c91226753e70ff117bdf1d8277bf77044828095efceb75a3811251834",
+      "specSha256": "20967e8fa3d1f6743fdc04a33a21760526bee70ed5cf7fee7a949f2258a2f8a5",
       "operationCount": 4,
       "operations": [
         {
@@ -4363,7 +4540,7 @@
           "operationId": "gleamlang_server_nats_bridge_get_api_docs_json_ee1f891057dd",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -4379,7 +4556,7 @@
               "content": []
             }
           ],
-          "contractSha256": "85694771d878d409765e56bb0a2cf6d5ecfc1df394b72d1307c837b931a4f6d4"
+          "contractSha256": "adca4e3937d3f29a6a9613c682c501bc3e99f1689d59931f078d4df734286085"
         },
         {
           "service": "gleamlang-server-nats-bridge",
@@ -4435,7 +4612,7 @@
       "service": "gleamlang-ws-server",
       "language": "gleam",
       "specPath": "remote/deployments/gleamlang-ws-server/generated/api-docs.json",
-      "specSha256": "3bbbba5c96327fc9bbba43903c04323a92fc14d7ac421d5c7d0f5e03323c80ce",
+      "specSha256": "4077d59b28c4c2da9cc546d31fec36fc3b3d2984b5e9ee8c1abbad17c845d9e9",
       "operationCount": 6,
       "operations": [
         {
@@ -4492,7 +4669,7 @@
           "operationId": "gleamlang_ws_server_get_api_docs_json_c9e0c19e0e40",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -4508,7 +4685,7 @@
               "content": []
             }
           ],
-          "contractSha256": "3920c838269271ac9211634b2249873c0ecd9274dbe825329b25c8d1091e46e4"
+          "contractSha256": "bc319a0b6b2090a16573b4a77c7b83c6c6054777621951c511c9ecf076af4dd3"
         },
         {
           "service": "gleamlang-ws-server",
@@ -4588,7 +4765,7 @@
       "service": "knowledge-graph-builder-rs",
       "language": "rust",
       "specPath": "remote/deployments/knowledge-graph-builder-rs/generated/api-docs.json",
-      "specSha256": "2a5ee5b0cd0e97f02adb7a5f020a94f0dfbd541211e29d5fff3d913fead2c4d7",
+      "specSha256": "139e78950522a59aacacabccac90e869985396f2eb7ac533051b385e4db8850d",
       "operationCount": 7,
       "operations": [
         {
@@ -4645,7 +4822,7 @@
           "operationId": "knowledge_graph_builder_rs_get_api_docs_json_9c7107f45e6f",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -4661,7 +4838,7 @@
               "content": []
             }
           ],
-          "contractSha256": "adff173f56117c4c288a6b753c98e2b7eb67e9afbbcdf3a8912633402535fcd3"
+          "contractSha256": "d35eba4772bceb77ea027694476342548abea151d77d481cf62e05943f8ad1d2"
         },
         {
           "service": "knowledge-graph-builder-rs",
@@ -4765,7 +4942,7 @@
       "service": "mdp-optimizer-rs",
       "language": "rust",
       "specPath": "remote/deployments/mdp-optimizer-rs/generated/api-docs.json",
-      "specSha256": "44eb583e13bc94235bb8d1a26bf760ec483723fd8a53c4312f6104d84a5453be",
+      "specSha256": "49a43f4a5abfb724bb889a644cde3b5cc0482cf416b7207b832ebe0a19f6796a",
       "operationCount": 6,
       "operations": [
         {
@@ -4822,7 +4999,7 @@
           "operationId": "mdp_optimizer_rs_get_api_docs_json_1b51166c0d8c",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -4838,7 +5015,7 @@
               "content": []
             }
           ],
-          "contractSha256": "cf7d050f563e04be4ca2c032c2884623cbe4f14a2218530494f2bdd7c6aec8c7"
+          "contractSha256": "f2cc28568b61937a58c40063aaeb1e80273a5fc9011b6440f4b12f34d3b483f0"
         },
         {
           "service": "mdp-optimizer-rs",
@@ -4918,7 +5095,7 @@
       "service": "patent-filing-rs",
       "language": "rust",
       "specPath": "remote/deployments/patent-filing-rs/generated/api-docs.json",
-      "specSha256": "58f4e9d60d8efe2658ac7d4c23b49d16885917ac47c7eab3bbf8db8e3ac75b56",
+      "specSha256": "50d399bb3f19433998b3d141879d7221d6d5edf6ca9b5e7659fbd177af79e4e3",
       "operationCount": 7,
       "operations": [
         {
@@ -4975,7 +5152,7 @@
           "operationId": "patent_filing_rs_get_api_docs_json_e41c09ccb895",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -4991,7 +5168,7 @@
               "content": []
             }
           ],
-          "contractSha256": "4b1ab3b95a52d64241894536e82eaa5c25f2a5ec807bc123f6c32600972c6829"
+          "contractSha256": "ee378ca24bcea8db6091274de3d4add00b11ed75fc375103c8ce67afc8389ae8"
         },
         {
           "service": "patent-filing-rs",
@@ -5095,7 +5272,7 @@
       "service": "public-data-server-rs",
       "language": "rust",
       "specPath": "remote/deployments/public-data-server-rs/generated/api-docs.json",
-      "specSha256": "6ee4a278d0bab9450f14020d55e392348761ce940d1eedeb602e8dce18f75600",
+      "specSha256": "68e4c4d6caebc5acea33d6b61897f14917fdbebc7951e0df0853ed61d39f0eb6",
       "operationCount": 7,
       "operations": [
         {
@@ -5152,7 +5329,7 @@
           "operationId": "public_data_server_rs_get_api_docs_json_4df73fa27f3d",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -5168,7 +5345,7 @@
               "content": []
             }
           ],
-          "contractSha256": "ba6ad132657dc84f19ee930b7c7859437f39b490fe7fbd2244c4b10f69563a20"
+          "contractSha256": "46c8cedbf6b05441c9aba1a21cd768be39b26fb853db2380543de76a7e373bdb"
         },
         {
           "service": "public-data-server-rs",
@@ -5272,7 +5449,7 @@
       "service": "rest-api-rs",
       "language": "rust",
       "specPath": "remote/deployments/rest-api-rs/generated/api-docs.json",
-      "specSha256": "73f8b673e45e8d478a0dea69c33ce3b659fb6dcd5e4e363db784e4965db22367",
+      "specSha256": "a57afa800cf974f678ae6eee8c99b3c1523b43e9b3a1970dbad76091c30a0826",
       "operationCount": 6,
       "operations": [
         {
@@ -5305,7 +5482,7 @@
           "operationId": "rest_api_rs_get_api_docs_json_707c91ad7fa1",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -5321,7 +5498,7 @@
               "content": []
             }
           ],
-          "contractSha256": "f3d07c204d27a9741755a5d5bc611bb89cf50a4663ca342f1b7e3520675defda"
+          "contractSha256": "3ecdecaa7301ffb2470f457cf41a09d3c5fc3029039ba347b39644996231034b"
         },
         {
           "service": "rest-api-rs",
@@ -5425,7 +5602,7 @@
       "service": "runtime-config-rs",
       "language": "rust",
       "specPath": "remote/deployments/runtime-config-rs/generated/api-docs.json",
-      "specSha256": "5648a63fbaa5b80b8b09c57c69b35d44957eb9b8af932a7b675742a92eeee4e1",
+      "specSha256": "6a24f0f68ec884f4972af1008b7de78561578acc416660b9797d7c22bf39dc0c",
       "operationCount": 7,
       "operations": [
         {
@@ -5482,7 +5659,7 @@
           "operationId": "runtime_config_rs_get_api_docs_json_2e5baa5ee746",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -5498,7 +5675,7 @@
               "content": []
             }
           ],
-          "contractSha256": "e5ffa57e79df3ef9ed218a35df72e092eddc6d76f1f9c7ab90c72579756a5b15"
+          "contractSha256": "3eada674e34b54c10a02ed0f88b7176de54ff80a341271271c5c19743260c4cd"
         },
         {
           "service": "runtime-config-rs",
@@ -5602,7 +5779,7 @@
       "service": "rust-vapi-phone-rs",
       "language": "rust",
       "specPath": "remote/deployments/rust-vapi-phone-rs/generated/api-docs.json",
-      "specSha256": "a1bb66f1b2622d9fc11f01e65107fc99319f5a2f16b45f38713e234c77e09068",
+      "specSha256": "e3e1b78c9bfa1cec6178e2fdfce98fdfcc151956294420707a1a256d11396241",
       "operationCount": 6,
       "operations": [
         {
@@ -5659,7 +5836,7 @@
           "operationId": "rust_vapi_phone_rs_get_api_docs_json_ab30cf5fa282",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -5675,7 +5852,7 @@
               "content": []
             }
           ],
-          "contractSha256": "a8d6039316842fca34c99450785bebd106282c4bfc3c0286dce4de43e17e21dc"
+          "contractSha256": "db1708eabe910d5ac2a34550647404311ae08df839a67f343b3a777f212b5b11"
         },
         {
           "service": "rust-vapi-phone-rs",
@@ -5755,7 +5932,7 @@
       "service": "spark-pipeline-server",
       "language": "java",
       "specPath": "remote/deployments/spark-pipeline-server/generated/api-docs.json",
-      "specSha256": "7406f84c3567d6d9a75b28613a226dd25a52cd848ac6e4f2e93ce9c1e25f27bf",
+      "specSha256": "73261d95e2133e49d41074a7602c04b20ec74b750a3fcc91998423e892cf3df8",
       "operationCount": 6,
       "operations": [
         {
@@ -5788,7 +5965,7 @@
           "operationId": "spark_pipeline_server_get_api_docs_json_62f5c598dafd",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -5804,7 +5981,7 @@
               "content": []
             }
           ],
-          "contractSha256": "39cb79924da93bf118361ef4c21a7c9e06798c5c9eb2088674a1ad992b49c176"
+          "contractSha256": "b9b5e35d08e16c1235668ca2e4ab5d07119855f80b783b368000fdc7bec0fec6"
         },
         {
           "service": "spark-pipeline-server",
@@ -5908,7 +6085,7 @@
       "service": "trading-server-rs",
       "language": "rust",
       "specPath": "remote/deployments/trading-server-rs/generated/api-docs.json",
-      "specSha256": "3483bc67c377fdeaaaf7b26b6e0c9a72889e56a94aeccb4eafc20033e315365d",
+      "specSha256": "0f236fd6e4dfe6d01ef8175af0c996673f1cf6eb7cc7374e68e3d5ff6ed6570f",
       "operationCount": 7,
       "operations": [
         {
@@ -5941,7 +6118,7 @@
           "operationId": "trading_server_rs_get_api_docs_json_4fe043ad1f1f",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -5957,7 +6134,7 @@
               "content": []
             }
           ],
-          "contractSha256": "41e427d985bcb6e561086c25713bac872f93f493bd19447130d91f683ccb3f18"
+          "contractSha256": "05bcf79fd2e628a45b07d3134b275482b576f50adebb5462f24e783623aa2543"
         },
         {
           "service": "trading-server-rs",
@@ -6085,7 +6262,7 @@
       "service": "wal-gateway-rs",
       "language": "rust",
       "specPath": "remote/deployments/wal-gateway-rs/generated/api-docs.json",
-      "specSha256": "1b7e0e25a49a8047a8225e6594d62e5566778688af26dc50ddb43e819912434e",
+      "specSha256": "9066f67b6d44403f09cb6ea6ca623c4dad702457d85044cfff6d2f21569f0a7a",
       "operationCount": 7,
       "operations": [
         {
@@ -6142,7 +6319,7 @@
           "operationId": "wal_gateway_rs_get_api_docs_json_6c9a38cfa455",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -6158,7 +6335,7 @@
               "content": []
             }
           ],
-          "contractSha256": "0436de8128a4fdfc816ea5704b9662de26fca1113eee8b4f7942560e2e98b0d4"
+          "contractSha256": "45502dcc514cdc5da2b2c049700dcd5947e6a6033d40c9663b25020fbeaff900"
         },
         {
           "service": "wal-gateway-rs",
@@ -6262,7 +6439,7 @@
       "service": "web-home-rs",
       "language": "rust",
       "specPath": "remote/deployments/web-home-rs/generated/api-docs.json",
-      "specSha256": "da2bc1373ccfa4ee6c1b536bd7edfe9553afcadc093b593074454e43d499f279",
+      "specSha256": "dea57683173a605ab0ad1eb9e5d5beb7cfbb5428624fab1a3ef19ded5cff8ea8",
       "operationCount": 9,
       "operations": [
         {
@@ -6391,7 +6568,7 @@
           "operationId": "web_home_rs_get_api_docs_json_ee16e34b2f47",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -6407,7 +6584,7 @@
               "content": []
             }
           ],
-          "contractSha256": "758984ceec452d97b09e0a81319f4a50fff19cbb21c88635a004a9fa738b1905"
+          "contractSha256": "e51178906fec774f7b71c20f6cf68d79383035f52eda990cb41af97c72d35f73"
         },
         {
           "service": "web-home-rs",
@@ -6487,7 +6664,7 @@
       "service": "web-scraper-service",
       "language": "node",
       "specPath": "remote/deployments/web-scraper-service/generated/api-docs.json",
-      "specSha256": "a9fca3c0481feb31905723fdf54136cc04da50189148bb568b16e8871a422fce",
+      "specSha256": "c7109d63c1377750fe4e16af7584313f586732e53185b05fc3f563a7e56dbfad",
       "operationCount": 6,
       "operations": [
         {
@@ -6520,7 +6697,7 @@
           "operationId": "web_scraper_service_get_api_docs_json_9a7f22089c74",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -6536,7 +6713,7 @@
               "content": []
             }
           ],
-          "contractSha256": "b6f13b146ce93c933781389da3324e2a5d9d45cf258b1ab6d381ba340fbfae5e"
+          "contractSha256": "9598b71686a821553e690381a5e427669c94ad3addf3339be4c36439824b248a"
         },
         {
           "service": "web-scraper-service",
@@ -6640,7 +6817,7 @@
       "service": "webrtc-media-rs",
       "language": "rust",
       "specPath": "remote/deployments/webrtc-media-rs/generated/api-docs.json",
-      "specSha256": "ee8c649759aef8f6b822a112a6fe4544caa5331297d179578ba5cd54011872db",
+      "specSha256": "0474bb9a8ad6068e7a35454a6974866d717a645fcb0afb220b9e00efc0076eef",
       "operationCount": 7,
       "operations": [
         {
@@ -6697,7 +6874,7 @@
           "operationId": "webrtc_media_rs_get_api_docs_json_82c943e950c1",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -6713,7 +6890,7 @@
               "content": []
             }
           ],
-          "contractSha256": "97c21771fe2a4acf279af1dfe9a8a19f0ed45436f991d8ecadfb81c5f8c0701a"
+          "contractSha256": "ff220899d2900ae967350db0cccd4b5cd4f49de6c528bc220b4aca684aad5a30"
         },
         {
           "service": "webrtc-media-rs",
@@ -6817,7 +6994,7 @@
       "service": "webrtc-signaling-rs",
       "language": "rust",
       "specPath": "remote/deployments/webrtc-signaling-rs/generated/api-docs.json",
-      "specSha256": "eab1b56afb3184c20fecdd05a6b374a38eb99f7ceee4b15b74882913976ee55a",
+      "specSha256": "d5763df5e25d1db40de88af98530e77c9d78ff5f3f3d5a1ce2ac135428b16bc0",
       "operationCount": 6,
       "operations": [
         {
@@ -6874,7 +7051,7 @@
           "operationId": "webrtc_signaling_rs_get_api_docs_json_4566fb3cde56",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable generated API route metadata.",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -6890,7 +7067,7 @@
               "content": []
             }
           ],
-          "contractSha256": "fc9af96f0ad85b6c93f496bf878355ab076c7b2b2e4008aa360d473edb505240"
+          "contractSha256": "e600ad423038c20c2f0a9491765d28784fb5cf0fc42758ccea344db4caad3f9e"
         },
         {
           "service": "webrtc-signaling-rs",
@@ -7004,7 +7181,7 @@
       "reason": "uninitialized-deployment-gitlink"
     }
   ],
-  "serviceCount": 43,
-  "operationCount": 274,
-  "catalogSha256": "f1c583218baeeb1998f1ddf927b48d0868bfe3e7fbf04570d46309f149c824a1"
+  "serviceCount": 44,
+  "operationCount": 281,
+  "catalogSha256": "b295163700f77ceab8c68dbd2d16cdf79a1eba6b08e4683863f37123f416f7e4"
 }

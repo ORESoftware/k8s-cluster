@@ -32,13 +32,21 @@ Migrated HTTP services expose:
 
 | Route | Contract |
 | --- | --- |
-| `GET /openapi.json` | Canonical OpenAPI 3.1 document. |
-| `GET /api/docs.json` | Compatibility alias serving the same bytes. |
-| `GET /api/docs` | Interactive Scalar API reference. |
-| `GET /docs/api` | Compatibility alias for the same API reference. |
+| `GET /openapi.json` | Fail-closed public OpenAPI 3.1 document. |
+| `GET /api/docs.json` | Compatibility alias serving the exact same public bytes. |
+| `GET /api/docs` | Interactive Scalar reference for the public contract. |
+| `GET /docs/api` | Compatibility alias for the same public reference. |
 
-The OpenAPI JSON is generated once from the executable router, canonicalized,
-and served as immutable bytes. Runtime docs never use a separate route list.
+Private services additionally expose authenticated internal documentation routes,
+conventionally `GET /internal/openapi.json` and `GET /internal/docs/api`. Those
+routes serve the complete typed contract used by trusted service-to-service SDKs.
+
+The internal OpenAPI document is generated once from the executable router and
+canonicalized. The public artifact is a deterministic fail-closed projection of
+that exact document. Standard runtime routes embed and serve the committed public
+artifact byte-for-byte; internal routes serve the canonical full document. CI
+rejects exporter drift, projection drift, runtime-byte drift, or a public artifact
+containing private operations or schemas.
 
 ## Public and internal contracts
 

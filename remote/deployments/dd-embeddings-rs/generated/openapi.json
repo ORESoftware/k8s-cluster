@@ -90,10 +90,10 @@
         "tags": [
           "documentation"
         ],
-        "operationId": "getOpenApiDocument",
+        "operationId": "getPublicOpenApiDocument",
         "responses": {
           "200": {
-            "description": "Canonical OpenAPI 3.1 contract",
+            "description": "Fail-closed public OpenAPI 3.1 contract",
             "content": {
               "application/vnd.oai.openapi+json;version=3.1": {}
             }
@@ -109,10 +109,10 @@
         "tags": [
           "documentation"
         ],
-        "operationId": "getOpenApiDocumentCompatibilityAlias",
+        "operationId": "getPublicOpenApiDocumentCompatibilityAlias",
         "responses": {
           "200": {
-            "description": "Compatibility alias for the canonical OpenAPI 3.1 contract",
+            "description": "Compatibility alias for the fail-closed public OpenAPI 3.1 contract",
             "content": {
               "application/vnd.oai.openapi+json;version=3.1": {}
             }
@@ -128,10 +128,10 @@
         "tags": [
           "documentation"
         ],
-        "operationId": "getApiReference",
+        "operationId": "getPublicApiReference",
         "responses": {
           "200": {
-            "description": "Interactive Scalar API reference",
+            "description": "Interactive Scalar reference for the fail-closed public contract",
             "content": {
               "text/html": {
                 "schema": {
@@ -151,10 +151,10 @@
         "tags": [
           "documentation"
         ],
-        "operationId": "getApiReferenceCompatibilityAlias",
+        "operationId": "getPublicApiReferenceCompatibilityAlias",
         "responses": {
           "200": {
-            "description": "Compatibility alias for the interactive Scalar API reference",
+            "description": "Compatibility alias for the public Scalar API reference",
             "content": {
               "text/html": {
                 "schema": {
@@ -166,6 +166,152 @@
         },
         "security": [
           {}
+        ]
+      }
+    },
+    "/internal/openapi.json": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "operationId": "getInternalOpenApiDocument",
+        "responses": {
+          "200": {
+            "description": "Complete typed OpenAPI 3.1 contract for trusted service-to-service callers",
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {}
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested provider or resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream provider, vector store, or database failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service dependency, configuration, or concurrency capacity is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/internal/docs/api": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "operationId": "getInternalApiReference",
+        "responses": {
+          "200": {
+            "description": "Interactive Scalar reference for the complete internal contract",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid bearer token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Requested provider or resource was not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream provider, vector store, or database failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service dependency, configuration, or concurrency capacity is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
         ]
       }
     },
@@ -2296,7 +2442,7 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "opaque service token",
-        "description": "Set `Authorization: Bearer <token>`. Runtime enforcement is enabled when EMBEDDINGS_API_AUTH_BEARER is configured."
+        "description": "Set `Authorization: Bearer <token>`. Protected routes fail closed when EMBEDDINGS_API_AUTH_BEARER is absent."
       }
     }
   }

@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dd-embeddings-rs",
   "language": "rust",
-  "routeCount": 21,
+  "routeCount": 23,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 14
+    "user-generated": 16
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -24,7 +24,7 @@
       "auth": "public",
       "purpose": "Human-readable generated API documentation.",
       "handlers": [
-        "getApiReference"
+        "getPublicApiReference"
       ],
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
@@ -41,7 +41,7 @@
       "auth": "public",
       "purpose": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
       "handlers": [
-        "getOpenApiDocumentCompatibilityAlias"
+        "getPublicOpenApiDocumentCompatibilityAlias"
       ],
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
@@ -296,7 +296,7 @@
       "auth": "public",
       "purpose": "Human-readable generated API documentation.",
       "handlers": [
-        "getApiReferenceCompatibilityAlias"
+        "getPublicApiReferenceCompatibilityAlias"
       ],
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
@@ -314,6 +314,40 @@
       "purpose": "Health check.",
       "handlers": [
         "getHealth"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+    },
+    {
+      "path": "/internal/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "getInternalApiReference"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+    },
+    {
+      "path": "/internal/openapi.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "getInternalOpenApiDocument"
       ],
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
@@ -347,7 +381,7 @@
       "auth": "public",
       "purpose": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
       "handlers": [
-        "getOpenApiDocument"
+        "getPublicOpenApiDocument"
       ],
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"

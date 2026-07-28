@@ -139,7 +139,7 @@ async fn main() -> anyhow::Result<()> {
     }
     if cfg.api_auth_bearer.is_none() {
         tracing::warn!(
-            "EMBEDDINGS_API_AUTH_BEARER is not set — the functional /api routes are UNAUTHENTICATED at this layer; rely on an upstream gateway or set the token"
+            "EMBEDDINGS_API_AUTH_BEARER is not set — protected API and internal documentation routes will fail closed"
         );
     }
 
@@ -207,6 +207,8 @@ fn public_router() -> OpenApiRouter<AppState> {
 
 fn protected_router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
+        .routes(routes!(internal_openapi_json))
+        .routes(routes!(internal_api_docs_ui))
         .routes(routes!(list_providers))
         .routes(routes!(embed))
         .routes(routes!(rerank_handler))
@@ -256,7 +258,7 @@ async fn auth(
     next: middleware::Next,
 ) -> Response {
     let Some(expected) = state.api_auth_bearer.as_ref() else {
-        return next.run(request).await;
+        return ApiError::Unauthorized.into_response();
     };
     let presented = request
         .headers()
@@ -393,63 +395,109 @@ async fn metrics_endpoint(State(state): State<AppState>) -> impl IntoResponse {
 #[utoipa::path(
     get,
     path = "/openapi.json",
-    operation_id = "getOpenApiDocument",
+    operation_id = "getPublicOpenApiDocument",
     tag = "documentation",
     security(()),
-    responses((status = 200, description = "Canonical OpenAPI 3.1 contract", content_type = "application/vnd.oai.openapi+json;version=3.1"))
+    responses((status = 200, description = "Fail-closed public OpenAPI 3.1 contract", content_type = "application/vnd.oai.openapi+json;version=3.1"))
 )]
 async fn openapi_json(Extension(docs): Extension<SharedApiDocs>) -> Response {
-    openapi_response(docs)
+    public_openapi_response(docs)
 }
 
 #[utoipa::path(
     get,
     path = "/api/docs.json",
-    operation_id = "getOpenApiDocumentCompatibilityAlias",
+    operation_id = "getPublicOpenApiDocumentCompatibilityAlias",
     tag = "documentation",
     security(()),
-    responses((status = 200, description = "Compatibility alias for the canonical OpenAPI 3.1 contract", content_type = "application/vnd.oai.openapi+json;version=3.1"))
+    responses((status = 200, description = "Compatibility alias for the fail-closed public OpenAPI 3.1 contract", content_type = "application/vnd.oai.openapi+json;version=3.1"))
 )]
 async fn api_docs_json(Extension(docs): Extension<SharedApiDocs>) -> Response {
-    openapi_response(docs)
+    public_openapi_response(docs)
 }
 
 #[utoipa::path(
     get,
     path = "/api/docs",
-    operation_id = "getApiReference",
+    operation_id = "getPublicApiReference",
     tag = "documentation",
     security(()),
-    responses((status = 200, description = "Interactive Scalar API reference", body = String, content_type = "text/html"))
+    responses((status = 200, description = "Interactive Scalar reference for the fail-closed public contract", body = String, content_type = "text/html"))
 )]
 async fn api_docs_ui(Extension(docs): Extension<SharedApiDocs>) -> Response {
-    scalar_response(docs)
+    public_scalar_response(docs)
 }
 
 #[utoipa::path(
     get,
     path = "/docs/api",
-    operation_id = "getApiReferenceCompatibilityAlias",
+    operation_id = "getPublicApiReferenceCompatibilityAlias",
     tag = "documentation",
     security(()),
-    responses((status = 200, description = "Compatibility alias for the interactive Scalar API reference", body = String, content_type = "text/html"))
+    responses((status = 200, description = "Compatibility alias for the public Scalar API reference", body = String, content_type = "text/html"))
 )]
 async fn docs_api_ui(Extension(docs): Extension<SharedApiDocs>) -> Response {
-    scalar_response(docs)
+    public_scalar_response(docs)
 }
 
-fn openapi_response(docs: SharedApiDocs) -> Response {
+#[utoipa::path(
+    get,
+    path = "/internal/openapi.json",
+    operation_id = "getInternalOpenApiDocument",
+    tag = "documentation",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Complete typed OpenAPI 3.1 contract for trusted service-to-service callers", content_type = "application/vnd.oai.openapi+json;version=3.1"),
+        ApiErrorResponses
+    )
+)]
+async fn internal_openapi_json(Extension(docs): Extension<SharedApiDocs>) -> Response {
+    internal_openapi_response(docs)
+}
+
+#[utoipa::path(
+    get,
+    path = "/internal/docs/api",
+    operation_id = "getInternalApiReference",
+    tag = "documentation",
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 200, description = "Interactive Scalar reference for the complete internal contract", body = String, content_type = "text/html"),
+        ApiErrorResponses
+    )
+)]
+async fn internal_api_docs_ui(Extension(docs): Extension<SharedApiDocs>) -> Response {
+    internal_scalar_response(docs)
+}
+
+fn public_openapi_response(docs: SharedApiDocs) -> Response {
     (
         [(header::CONTENT_TYPE, OPENAPI_CONTENT_TYPE)],
-        docs.json.clone(),
+        docs.public_json.clone(),
     )
         .into_response()
 }
 
-fn scalar_response(docs: SharedApiDocs) -> Response {
+fn internal_openapi_response(docs: SharedApiDocs) -> Response {
+    (
+        [(header::CONTENT_TYPE, OPENAPI_CONTENT_TYPE)],
+        docs.internal_json.clone(),
+    )
+        .into_response()
+}
+
+fn public_scalar_response(docs: SharedApiDocs) -> Response {
     (
         [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-        docs.scalar_html.clone(),
+        docs.public_scalar_html.clone(),
+    )
+        .into_response()
+}
+
+fn internal_scalar_response(docs: SharedApiDocs) -> Response {
+    (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        docs.internal_scalar_html.clone(),
     )
         .into_response()
 }
@@ -972,6 +1020,8 @@ mod tests {
         "/docs/api",
         "/healthz",
         "/metrics",
+        "/internal/docs/api",
+        "/internal/openapi.json",
         "/openapi.json",
         "/readyz",
     ];
@@ -1061,14 +1111,25 @@ mod tests {
                 operations_by_path.insert((path.clone(), method.clone()), operation_id.to_string());
             }
         }
-        assert_eq!(operation_ids.len(), 21);
-        assert_eq!(operations_by_path.len(), 21);
+        assert_eq!(operation_ids.len(), 23);
+        assert_eq!(operations_by_path.len(), 23);
     }
 
     #[tokio::test]
-    async fn runtime_docs_handlers_serve_the_exact_generated_artifact() {
+    async fn runtime_docs_separate_public_and_internal_contracts_exactly() {
         let openapi = openapi_document();
-        let canonical = docs::canonical_json(&openapi).expect("canonical JSON");
+        let canonical = docs::canonical_json(&openapi).expect("canonical internal JSON");
+        let public = docs::public_json();
+        assert_ne!(
+            public, canonical,
+            "public and internal contracts must differ"
+        );
+
+        let public_document: Value = serde_json::from_str(public).expect("parse public OpenAPI");
+        assert_eq!(public_document["x-dd-contract-scope"], "public");
+        assert!(public_document["paths"]["/api/embeddings"].is_null());
+        assert!(public_document["components"]["schemas"]["EmbedApiRequest"].is_null());
+
         let shared = Arc::new(ApiDocs::new(&openapi).expect("runtime docs"));
 
         for response in [
@@ -1082,9 +1143,20 @@ mod tests {
             );
             let body = to_bytes(response.into_body(), usize::MAX)
                 .await
-                .expect("read OpenAPI body");
-            assert_eq!(body.as_ref(), canonical.as_bytes());
+                .expect("read public OpenAPI body");
+            assert_eq!(body.as_ref(), public.as_bytes());
         }
+
+        let response = internal_openapi_json(Extension(shared.clone())).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            OPENAPI_CONTENT_TYPE
+        );
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read internal OpenAPI body");
+        assert_eq!(body.as_ref(), canonical.as_bytes());
 
         for response in [
             api_docs_ui(Extension(shared.clone())).await,
@@ -1093,10 +1165,20 @@ mod tests {
             assert_eq!(response.status(), StatusCode::OK);
             let body = to_bytes(response.into_body(), usize::MAX)
                 .await
-                .expect("read Scalar body");
+                .expect("read public Scalar body");
             let html = String::from_utf8(body.to_vec()).expect("UTF-8 Scalar HTML");
             assert!(html.to_ascii_lowercase().contains("scalar"));
-            assert!(html.contains("dd-embeddings-rs API"));
+            assert!(html.contains("dd-embeddings-rs API (public)"));
         }
+
+        let response = internal_api_docs_ui(Extension(shared)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read internal Scalar body");
+        let html = String::from_utf8(body.to_vec()).expect("UTF-8 Scalar HTML");
+        assert!(html.to_ascii_lowercase().contains("scalar"));
+        assert!(html.contains("dd-embeddings-rs API"));
+        assert!(!html.contains("dd-embeddings-rs API (public)"));
     }
 }
