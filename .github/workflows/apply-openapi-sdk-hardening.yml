@@ -1,0 +1,153 @@
+name: Apply OpenAPI SDK hardening
+
+on:
+  push:
+    branches:
+      - agent/openapi-sdk-hardening
+    paths:
+      - '.github/workflows/apply-openapi-sdk-hardening.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-openapi-sdk-hardening
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout writable feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/openapi-sdk-hardening
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Verify and unpack bounded payload
+        run: |
+          node <<'NODE'
+          const crypto = require('node:crypto');
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const zlib = require('node:zlib');
+
+          const payloadDir = path.join('scripts', 'api-contract');
+          const parts = fs.readdirSync(payloadDir)
+            .filter((name) => /^openapi-sdk-hardening\.payload\.\d{2}$/.test(name))
+            .sort();
+          if (parts.length !== 6) {
+            throw new Error(`expected exactly 6 payload parts, found ${parts.length}`);
+          }
+
+          const encoded = parts
+            .map((name) => fs.readFileSync(path.join(payloadDir, name), 'utf8'))
+            .join('');
+          const digest = (value) => crypto.createHash('sha256').update(value).digest('hex');
+          if (digest(encoded) !== 'f544366d389363cf5889c0fb50be352be329f6586af886358166d12776e66dac') {
+            throw new Error('encoded payload SHA-256 mismatch');
+          }
+
+          const compressed = Buffer.from(encoded, 'base64');
+          if (digest(compressed) !== '24ebdc1f2d6de392d5843b972f4be2015ba1cddea77fd199b443543f32274a60') {
+            throw new Error('compressed payload SHA-256 mismatch');
+          }
+
+          const decoded = zlib.gunzipSync(compressed);
+          if (digest(decoded) !== '5af054f628ccdd1d1cea771c01efe4d4f66ae69a4a6081f91059ce6d0cfe222b') {
+            throw new Error('decoded payload SHA-256 mismatch');
+          }
+
+          const payload = JSON.parse(decoded.toString('utf8'));
+          const expected = new Set([
+            '.gitignore',
+            'docs/api-sdk-generation.md',
+            'remote/config/api-sdks.json',
+            'remote/tools/generate-api-sdk-index.mjs',
+            'remote/tools/generate-api-sdk-index.test.mjs',
+            'remote/tools/generate-api-sdk.mjs',
+            'remote/tools/generate-api-sdk.test.mjs',
+          ]);
+          const actual = new Set(Object.keys(payload));
+          if (actual.size !== expected.size || [...actual].some((name) => !expected.has(name))) {
+            throw new Error(`unexpected payload paths: ${[...actual].sort().join(', ')}`);
+          }
+
+          const root = path.resolve('.');
+          for (const [relativePath, content] of Object.entries(payload)) {
+            const target = path.resolve(relativePath);
+            if (target !== root && !target.startsWith(`${root}${path.sep}`)) {
+              throw new Error(`payload path escapes repository: ${relativePath}`);
+            }
+            if (relativePath.startsWith('.github/workflows/')) {
+              throw new Error(`payload may not alter workflow files: ${relativePath}`);
+            }
+            fs.mkdirSync(path.dirname(target), { recursive: true });
+            fs.writeFileSync(target, content, 'utf8');
+          }
+          NODE
+
+      - name: Validate tooling and generate fleet index
+        run: |
+          set -euo pipefail
+          node --check remote/tools/generate-api-sdk-index.mjs
+          node --check remote/tools/generate-api-sdk.mjs
+          node --check remote/tools/generate-api-sdk-index.test.mjs
+          node --check remote/tools/generate-api-sdk.test.mjs
+          node --test \
+            remote/tools/generate-api-sdk-index.test.mjs \
+            remote/tools/generate-api-sdk.test.mjs
+          node remote/tools/generate-api-sdk-index.mjs
+          node remote/tools/generate-api-sdk-index.mjs --check
+          node remote/tools/generate-api-sdk.mjs --all --dry-run --force
+          git diff --check
+
+      - name: Remove transport payloads
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const directory = path.join('scripts', 'api-contract');
+          for (const name of fs.readdirSync(directory)) {
+            if (/^openapi-sdk-hardening\.payload\.\d{2}$/.test(name)) {
+              fs.unlinkSync(path.join(directory, name));
+            }
+          }
+          NODE
+
+      - name: Commit generated SDK contract tooling
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- \
+            .gitignore \
+            docs/api-sdk-generation.md \
+            remote/config/api-sdks.json \
+            remote/deployments/generated-api-sdk-index.json \
+            remote/tools/generate-api-sdk-index.mjs \
+            remote/tools/generate-api-sdk-index.test.mjs \
+            remote/tools/generate-api-sdk.mjs \
+            remote/tools/generate-api-sdk.test.mjs
+          git add -A -- \
+            scripts/api-contract/openapi-sdk-hardening.payload.00 \
+            scripts/api-contract/openapi-sdk-hardening.payload.01 \
+            scripts/api-contract/openapi-sdk-hardening.payload.02 \
+            scripts/api-contract/openapi-sdk-hardening.payload.03 \
+            scripts/api-contract/openapi-sdk-hardening.payload.04 \
+            scripts/api-contract/openapi-sdk-hardening.payload.05
+          git diff --cached --check
+          git diff --cached --name-status
+          if git diff --cached --quiet; then
+            echo 'SDK contract tooling is already applied.'
+            exit 0
+          fi
+          git commit -m 'Harden generated OpenAPI SDK contracts [api-sdk-generated]'
+          git push origin HEAD:agent/openapi-sdk-hardening
