@@ -174,10 +174,10 @@ spec:
             # Process-level ceiling for persistent browser-agent navigation.
             # Per-call scopes are intersected with this list and cannot widen
             # it. This must stay byte-for-byte aligned with the browser MCP's
-            # temporary Fiducia applications profile. Root hostnames include
+            # reviewed Fiducia applications, platform-jobs, and appointments profiles. Root hostnames include
             # that vendor's subdomains; non-root entries are exact form hosts.
             - name: BROWSER_AGENT_ALLOWED_DOMAINS
-              value: 'benefactor.cc,confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,app.posthog.com,elevenlabs.io,www.together.ai,support.snyk.io,us.ovhcloud.com,www.pulumi.com,tally.so,allthingsopen.org,allthingsopen.wufoo.com,static.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com,www.gstatic.com,ssl.gstatic.com,fonts.googleapis.com,fonts.gstatic.com,httpbingo.org'
+              value: 'benefactor.cc,confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,app.posthog.com,elevenlabs.io,www.together.ai,support.snyk.io,us.ovhcloud.com,www.pulumi.com,tally.so,allthingsopen.org,allthingsopen.wufoo.com,static.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com,www.gstatic.com,ssl.gstatic.com,fonts.googleapis.com,fonts.gstatic.com,greenhouse.io,lever.co,ashbyhq.com,myworkdayjobs.com,workday.com,smartrecruiters.com,icims.com,jobvite.com,workable.com,bamboohr.com,recruitee.com,applytojob.com,ats.rippling.com,breezy.hr,jobscore.com,candidateportalin.ceipal.com,candidateportalnew.ceipal.com,cal.com,calendly.com,httpbingo.org'
             # Optional JSON secret store for secret_ref resolution (never logged
             # or returned). Absent by default -> secret refs are rejected.
             - name: BROWSER_AGENT_SECRETS_FILE

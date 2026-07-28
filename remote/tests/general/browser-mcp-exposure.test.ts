@@ -31,6 +31,26 @@ const GATEWAY = 'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml'
 const AWS_APPS = 'remote/argocd/clusters/aws/applications.yaml';
 const HETZNER_APPS = 'remote/argocd/clusters/hetzner/applications.yaml';
 const CLI_FLAGS = 'remote/deployments/browser-mcp-rs/.cli-flags.toml';
+const PLATFORM_JOB_DOMAINS = [
+  'greenhouse.io',
+  'lever.co',
+  'ashbyhq.com',
+  'myworkdayjobs.com',
+  'workday.com',
+  'smartrecruiters.com',
+  'icims.com',
+  'jobvite.com',
+  'workable.com',
+  'bamboohr.com',
+  'recruitee.com',
+  'applytojob.com',
+  'ats.rippling.com',
+  'breezy.hr',
+  'jobscore.com',
+  'candidateportalin.ceipal.com',
+  'candidateportalnew.ceipal.com',
+] as const;
+
 const REVIEWED_BROWSER_CEILING_DOMAINS = [
   'benefactor.cc',
   'confluent.cloud',
@@ -60,6 +80,7 @@ const REVIEWED_BROWSER_CEILING_DOMAINS = [
   'ssl.gstatic.com',
   'fonts.googleapis.com',
   'fonts.gstatic.com',
+  ...PLATFORM_JOB_DOMAINS,
   'httpbingo.org',
 ];
 
@@ -155,6 +176,23 @@ test('OAuth browser-mcp has reviewed, server-defined workflow domain ceilings', 
   assert.match(
     manifest,
     /"smoke-test":\["httpbingo\.org"\]/,
+  );
+
+  const workflowJson = manifest.match(
+    /- name:\s*BROWSER_MCP_WORKFLOW_ALLOWLISTS_JSON\s*\n\s*value:\s*>-\s*\n\s*(\{[^\n]+\})/,
+  )?.[1];
+  assert.ok(workflowJson, 'missing folded Browser MCP workflow profile JSON');
+  const workflows = JSON.parse(workflowJson) as Record<string, string[]>;
+  assert.deepEqual(
+    workflows['platform-jobs'],
+    [...PLATFORM_JOB_DOMAINS],
+    'platform-jobs must be a reviewed, server-defined ATS-only profile.',
+  );
+  assert.ok(
+    ['linkedin.com', 'indeed.com', 'ziprecruiter.com'].every(
+      (domain) => !domains.includes(domain),
+    ),
+    'Broad job marketplaces must not be added to the Browser MCP navigation ceiling.',
   );
 
   const worker = readFileSync(resolve(repoRoot, WORKER_DEPLOYMENT), 'utf8');
