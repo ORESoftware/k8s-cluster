@@ -8,68 +8,9 @@ on:
     - cron: "17 8 * * 1"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  jetstream-source:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-      - name: Normalize JetStream delivery attempt type
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("src/nats_ingestion.rs")
-          text = path.read_text()
-          old = '    let delivery_attempt = message.info().map(|info| info.delivered).unwrap_or(1);'
-          new = '''    let delivery_attempt = message
-        .info()
-        .ok()
-        .and_then(|info| u64::try_from(info.delivered).ok())
-        .unwrap_or(1);'''
-          if old in text:
-              text = text.replace(old, new, 1)
-          elif new not in text:
-              raise SystemExit("JetStream delivery-attempt anchor not found")
-          path.write_text(text)
-          PY
-          cargo fmt
-      - name: Commit JetStream delivery-attempt fix
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        run: |
-          if [ -z "$(git status --porcelain -- src/nats_ingestion.rs)" ]; then
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/nats_ingestion.rs
-          git commit -m "DEN-329 normalize JetStream delivery attempts"
-          git push origin "HEAD:${{ github.head_ref }}"
-      - run: cargo fmt --check
-      - name: Run Clippy and preserve JetStream diagnostics
-        run: |
-          set +e
-          cargo clippy --locked --all-targets --all-features -- -D warnings > jetstream-clippy.log 2>&1
-          status=$?
-          echo "$status" > jetstream-clippy.exit
-          exit 0
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: jetstream-clippy-diagnostics
-          path: jetstream-clippy.log
-          if-no-files-found: error
-      - name: Enforce Clippy result
-        run: exit "$(cat jetstream-clippy.exit)"
-      - run: cargo test --locked --all-features
-
   dependency-policy:
     runs-on: ubuntu-latest
     steps:
