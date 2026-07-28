@@ -1,0 +1,79 @@
+name: gleam presence format materializer
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize]
+    paths:
+      - '.github/workflows/gleam-presence-format-materializer.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.head_ref == 'agent/gleam-presence-executable-openapi'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout writable feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/gleam-presence-executable-openapi
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Setup Erlang and Gleam
+        uses: erlef/setup-beam@8736e9244717f9207464c14c6051b71d22253f60
+        with:
+          otp-version: '27.3'
+          gleam-version: '1.17.0'
+          rebar3-version: '3'
+          version-type: loose
+
+      - name: Add direct harness dependency and format source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          for path in [
+              Path('.github/workflows/gleam-presence-openapi-contract.yml'),
+              Path('.github/workflows/gleam-presence-contract-diagnostics.yml'),
+          ]:
+              source = path.read_text()
+              old = '''          gleam_stdlib = ">= 0.44.0 and < 2.0.0"
+          gleam_json = ">= 2.0.0 and < 4.0.0"
+'''
+              new = '''          gleam_stdlib = ">= 0.68.0 and < 2.0.0"
+          gleam_http = ">= 4.0.0 and < 5.0.0"
+          gleam_json = ">= 2.0.0 and < 4.0.0"
+'''
+              if source.count(old) != 1:
+                  raise SystemExit(f'{path}: expected one harness dependency block')
+              path.write_text(source.replace(old, new, 1))
+          PY
+
+          gleam format \
+            remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/route_contract.gleam \
+            remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/openapi_export.gleam \
+            remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/api_docs.gleam \
+            remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam
+
+          rm -f .github/workflows/gleam-presence-format-materializer.yml
+          git diff --check
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- . ':!vendor'; then
+            echo 'git conflict marker found' >&2
+            exit 1
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'style(api-docs): format executable Gleam route contract'
+          git push origin HEAD:agent/gleam-presence-executable-openapi
