@@ -268,13 +268,3 @@ index 0000000000000000000000000000000000000000..e46c5c35c40ad09f95419b51ee1de493
 +            if let Some(name) = value.get("name").and_then(Value::as_str) {
 +                tags.insert(name.to_string());
 +            }
-+        }
-+    }
-+    document["tags"] = Value::Array(
-+        tags.into_iter()
-+            .map(|name| serde_json::json!({ "name": name }))
-+            .collect(),
-+    );
-+}
-+
-+fn finalize_value(document: &mut Value) {
