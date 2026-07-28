@@ -240,7 +240,7 @@ function publicProjection(internalDocument: JsonObject): JsonObject {
   document.info = {
     title: 'browser-test-server API (public)',
     version: '0.1.0',
-    description: 'Fail-closed public subset. Only explicitly public operations are included.',
+    description: 'Fail-closed public subset. Only operations explicitly marked public are included.',
   };
   document.tags = ((document.tags as Array<{ name: string }> | undefined) ?? []).filter((tag) =>
     usedTags.has(tag.name),
