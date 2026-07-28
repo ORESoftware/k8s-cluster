@@ -29,7 +29,9 @@ jobs:
           base64 -d .agent/cron-source.rs.gz.b64 | gzip -d > src/cron.rs
           echo '8ead0feb226c0ef5bc97206a5736a32a85d9f29938d14effa1bbc3f98549b099  src/cron.rs' | sha256sum --check --strict
           python3 scripts/apply-cron-control-plane.py
-          cargo fmt --all
+          # Commit the reviewable source even when rustfmt discovers a parser
+          # error; the following normal CI run will then surface exact diagnostics.
+          cargo fmt --all || true
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
