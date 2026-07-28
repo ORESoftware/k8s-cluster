@@ -1,228 +1,142 @@
 {
-  "ok": true,
-  "generatedBy": "remote/tools/generate-api-docs.mjs",
-  "service": "browser-test-server",
-  "language": "node",
-  "routeCount": 14,
-  "routeTypeCounts": {
-    "service": 8,
-    "user-generated": 6
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "browser-test-server API (public)",
+    "version": "0.1.0",
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
   },
-  "standardDocsRoutes": [
+  "tags": [
+    {
+      "name": "service"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "browser_test_server_get_d0fcfe74e294",
+        "summary": "Service descriptor, home redirect, or root RPC endpoint.",
+        "description": "Service descriptor, home redirect, or root RPC endpoint.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "browser_test_server_get_api_docs_9fcd645a3eb1",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "browser_test_server_get_api_docs_json_aeee36ad5e79",
+        "summary": "Machine-readable generated API route metadata.",
+        "description": "Machine-readable generated API route metadata.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "browser_test_server_get_docs_api_03e6dc5fb010",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "browser_test_server_get_healthz_4722a067e6ee",
+        "summary": "Health check.",
+        "description": "Health check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "browser_test_server_get_metrics_73d9974b01c6",
+        "summary": "Prometheus metrics.",
+        "description": "Prometheus metrics.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    }
+  },
+  "components": {},
+  "x-dd-contract-scope": "public",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "node",
+  "x-dd-operation-count": 6,
+  "x-dd-route-count": 6,
+  "x-dd-service": "browser-test-server",
+  "x-dd-standard-docs-routes": [
     "/docs/api",
     "/api/docs",
     "/api/docs.json"
-  ],
-  "routes": [
-    {
-      "path": "/",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/docs",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Human-readable generated API documentation.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/docs.json",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Machine-readable generated API route metadata.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/browser-test",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/browser-test/healthz",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "service-defined",
-      "purpose": "Health check.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/browser-test/metrics",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "service-defined",
-      "purpose": "Prometheus metrics.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/browser-test/status",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/browser-test/tools",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/docs/api",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Human-readable generated API documentation.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/healthz",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Health check.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/metrics",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Prometheus metrics.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/run",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/status",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/tools",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    }
   ]
 }

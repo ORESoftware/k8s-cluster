@@ -1,0 +1,93 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "gleamlang-server-nats-bridge",
+  "language": "node",
+  "routeCount": 5,
+  "routeTypeCounts": {
+    "service": 4,
+    "user-generated": 1
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-server/nats-bridge.mjs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable generated API route metadata.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-server/nats-bridge.mjs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-server/nats-bridge.mjs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/healthz",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Health check.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-server/nats-bridge.mjs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/publish",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-server/nats-bridge.mjs"
+      ],
+      "notes": ""
+    }
+  ]
+}

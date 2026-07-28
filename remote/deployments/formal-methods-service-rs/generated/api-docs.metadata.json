@@ -1,0 +1,189 @@
+{
+  "ok": true,
+  "generatedBy": "remote/tools/generate-api-docs.mjs",
+  "service": "formal-methods-service-rs",
+  "language": "rust",
+  "routeCount": 10,
+  "routeTypeCounts": {
+    "service": 4,
+    "user-generated": 3,
+    "runtime-config": 3
+  },
+  "standardDocsRoutes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ],
+  "routes": [
+    {
+      "path": "/api/docs",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/docs.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Machine-readable generated API route metadata.",
+      "handlers": [
+        "api_docs_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/docs/api",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Human-readable generated API documentation.",
+      "handlers": [
+        "api_docs_html"
+      ],
+      "sourceFiles": [
+        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/health",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "health"
+      ],
+      "sourceFiles": [
+        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/runtime-config",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+      "handlers": [
+        "dd_runtime_config_client::handle_get"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/runtime-config/reset",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "purpose": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+      "handlers": [
+        "dd_runtime_config_client::handle_reset"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/update-runtime-config",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "runtime-config",
+      "implementation": "code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "purpose": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+      "handlers": [
+        "dd_runtime_config_client::handle_apply"
+      ],
+      "sourceFiles": [
+        "remote/libs/runtime-config-client-rs/src/lib.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/metrics",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Prometheus metrics.",
+      "handlers": [
+        "health"
+      ],
+      "sourceFiles": [
+        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/ready",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "health"
+      ],
+      "sourceFiles": [
+        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/webhook/github",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "webhook"
+      ],
+      "sourceFiles": [
+        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+      ],
+      "notes": ""
+    }
+  ]
+}

@@ -5,6 +5,7 @@
   "scripts": {
     "generate:api-docs": "node ../tools/generate-api-docs.mjs",
     "check:api-docs": "node ../tools/generate-api-docs.mjs --check",
+    "check:openapi-contracts": "node ../tools/validate-openapi-contracts.mjs",
     "check:observability-coverage": "node ../tools/check-observability-coverage.mjs",
     "audit:ai-ml-platform-helm": "node ../tools/audit-ai-ml-platform-helm.mjs",
     "audit:gateway-pages": "node ui-gateway-sweep.mjs",
