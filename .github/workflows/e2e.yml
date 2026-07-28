@@ -14,14 +14,18 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
       - uses: Swatinem/rust-cache@v2
-      - name: Normalize integration test source in workspace
+      - name: Normalize source with permanent-CI rustfmt
         run: cargo fmt
       - uses: actions/upload-artifact@v4
         with:
-          name: den-331-formatted-tests
-          path: tests/*.rs
+          name: den-331-stable-formatted-source
+          path: |
+            src/lib.rs
+            tests/*.rs
           if-no-files-found: error
       - name: Run real-socket HTTP integration tests with diagnostics
         run: |
@@ -50,8 +54,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
       - uses: Swatinem/rust-cache@v2
-      - name: Normalize integration test source in workspace
-        run: cargo fmt
       - name: Start NATS with JetStream
         run: |
           docker run --detach \
