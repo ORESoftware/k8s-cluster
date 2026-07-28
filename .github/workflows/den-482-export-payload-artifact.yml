@@ -1,0 +1,73 @@
+name: DEN-482 export migration payload artifact
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize]
+    paths:
+      - '.github/workflows/den-482-export-payload-artifact.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.head_ref == 'agent/den-482-wal-gateway-openapi' &&
+      github.base_ref == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 1
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Record byte diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload='scripts/api-contract/den-482-wal-openapi.payload'
+          mkdir -p .tmp/den-482-payload
+          cp "$payload" .tmp/den-482-payload/
+          sha256sum "$payload" > .tmp/den-482-payload/sha256.txt
+          wc -c -l "$payload" > .tmp/den-482-payload/size.txt
+          python3 - <<'PY' > .tmp/den-482-payload/base64-diagnostic.txt
+          import base64
+          import hashlib
+          from pathlib import Path
+
+          payload = Path('scripts/api-contract/den-482-wal-openapi.payload').read_bytes()
+          alphabet = set(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=\r\n\t ')
+          invalid = [(index, value) for index, value in enumerate(payload) if value not in alphabet]
+          compact = b''.join(payload.split())
+          filtered = bytes(value for value in compact if value in set(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/='))
+          print(f'raw_length={len(payload)}')
+          print(f'compact_length={len(compact)}')
+          print(f'compact_mod4={len(compact) % 4}')
+          print(f'invalid_count={len(invalid)}')
+          print(f'invalid_first_100={invalid[:100]}')
+          print(f'filtered_length={len(filtered)}')
+          print(f'filtered_mod4={len(filtered) % 4}')
+          for label, candidate in [('compact', compact), ('filtered', filtered)]:
+              try:
+                  decoded = base64.b64decode(candidate, validate=True)
+              except Exception as error:
+                  print(f'{label}_decode_error={error!r}')
+              else:
+                  print(f'{label}_decoded_length={len(decoded)}')
+                  print(f'{label}_decoded_sha256={hashlib.sha256(decoded).hexdigest()}')
+          PY
+
+      - name: Upload exact payload bytes
+        uses: actions/upload-artifact@v4
+        with:
+          name: den-482-wal-openapi-payload
+          path: .tmp/den-482-payload
+          if-no-files-found: error
+          retention-days: 1
