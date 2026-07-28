@@ -15,6 +15,7 @@
     "start": "node dist/server.js",
     "start:src": "tsx src/server.ts",
     "test:contract": "tsx --test src/api-contract.test.ts",
+    "test:runtime": "node scripts/runtime-contract-smoke.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
