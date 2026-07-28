@@ -20,9 +20,75 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
+async function readBuildServerSource(): Promise<string> {
+  const modules = [
+    'config',
+    'db',
+    'ecr',
+    'entity',
+    'events',
+    'exec',
+    'fiducia',
+    'gh_secrets',
+    'http',
+    'jobs',
+    'lambda_exec',
+    'profiles',
+    'state',
+    'types',
+    'util',
+    'validation',
+    'webhooks',
+  ];
+  const main = await readRepoFile('remote/deployments/build-server-rs/src/main.rs');
+  for (const moduleName of modules) {
+    assert.match(
+      main,
+      new RegExp(`mod ${moduleName};`),
+      `build-server-rs main.rs must register ${moduleName}.rs`,
+    );
+  }
+  const moduleSources = await Promise.all(
+    modules.map((moduleName) =>
+      readRepoFile(`remote/deployments/build-server-rs/src/${moduleName}.rs`),
+    ),
+  );
+  return [main, ...moduleSources].join('\n');
+}
+
+async function readWebHomeSource(): Promise<string> {
+  const modules = [
+    'agents',
+    'container_pool',
+    'grafana',
+    'handlers',
+    'home',
+    'jello',
+    'labs',
+    'lambda',
+    'metrics',
+    'shared',
+    'state',
+  ];
+  const main = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  for (const moduleName of modules) {
+    assert.match(
+      main,
+      new RegExp(`mod ${moduleName};`),
+      `web-home-rs main.rs must register ${moduleName}.rs`,
+    );
+  }
+  const moduleSources = await Promise.all(
+    modules.map((moduleName) =>
+      readRepoFile(`remote/deployments/web-home-rs/src/${moduleName}.rs`),
+    ),
+  );
+  return [main, ...moduleSources].join('\n');
+}
+
 test('rust build server queues controlled image builds and deploys', async () => {
   const cargoToml = await readRepoFile('remote/deployments/build-server-rs/Cargo.toml');
-  const source = await readRepoFile('remote/deployments/build-server-rs/src/main.rs');
+  const source = await readBuildServerSource();
   const readme = await readRepoFile('remote/deployments/build-server-rs/readme.md');
 
   assert.match(cargoToml, /name = "dd-build-server"/);
@@ -89,7 +155,7 @@ test('build server is deployed through Argo runtime manifests, gateway, and obse
   );
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
-  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const home = await readWebHomeSource();
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
 
   assert.match(deployment, /name:\s*dd-build-server/);
