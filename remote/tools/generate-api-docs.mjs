@@ -1444,6 +1444,37 @@ async function writeOrCheck(path, content) {
   await writeFile(path, content);
 }
 
+function canonicalGeneratedArtifacts(openapiPath) {
+  if (
+    typeof openapiPath !== 'string' ||
+    !openapiPath.endsWith('.json') ||
+    openapiPath.endsWith('.public.json') ||
+    openapiPath.endsWith('.metadata.json')
+  ) {
+    throw new Error(`invalid canonical OpenAPI artifact path: ${openapiPath}`);
+  }
+  return [
+    openapiPath,
+    openapiPath.replace(/\.json$/, '.html'),
+    openapiPath.replace(/\.json$/, '.public.json'),
+    openapiPath.replace(/\.json$/, '.metadata.json'),
+  ];
+}
+
+function normalizeIndexedServiceArtifacts(service) {
+  const canonical = service.generated?.find(
+    (path) =>
+      typeof path === 'string' &&
+      path.endsWith('.json') &&
+      !path.endsWith('.public.json') &&
+      !path.endsWith('.metadata.json'),
+  );
+  if (!canonical) {
+    throw new Error(`${service.service ?? 'unknown service'} has no canonical OpenAPI JSON artifact`);
+  }
+  return { ...service, generated: canonicalGeneratedArtifacts(canonical) };
+}
+
 async function main() {
   const services = [...await discoverRustServices(), ...await discoverExtraServices()]
     .filter((service) => service.routes.length > 0)
@@ -1515,13 +1546,43 @@ async function main() {
           );
         }
       }
-      console.log(
-        `preserved central API docs index because ${unavailableServices.length} indexed gitlink service(s) are not initialized: ${unavailableServices.join(', ')}`,
+
+      const unavailable = new Set(unavailableServices);
+      const currentPayload = JSON.parse(await readUtf8(centralIndexJson));
+      const currentByService = new Map(
+        (currentPayload.services ?? []).map((service) => [service.service, service]),
       );
-    } else {
+      const availableByService = new Map(index.map((service) => [service.service, service]));
+      const serviceNames = [...new Set([...currentByService.keys(), ...availableByService.keys()])].sort();
+      const mergedServices = serviceNames.map((serviceName) => {
+        const availableService = availableByService.get(serviceName);
+        if (availableService) {
+          return normalizeIndexedServiceArtifacts(availableService);
+        }
+        const preservedService = currentByService.get(serviceName);
+        if (!preservedService || !unavailable.has(serviceName)) {
+          throw new Error(
+            `central API docs index contains non-gitlink service that is no longer discoverable: ${serviceName}`,
+          );
+        }
+        return normalizeIndexedServiceArtifacts(preservedService);
+      });
+      const mergedPayload = { ...indexPayload, services: mergedServices };
       await writeOrCheck(
         centralIndexJson,
-        `${JSON.stringify(indexPayload, null, 2)}\n`,
+        `${JSON.stringify(mergedPayload, null, 2)}\n`,
+      );
+      console.log(
+        `updated central API docs JSON index while preserving HTML route details for ${unavailableServices.length} uninitialized gitlink service(s): ${unavailableServices.join(', ')}`,
+      );
+    } else {
+      const normalizedPayload = {
+        ...indexPayload,
+        services: indexPayload.services.map(normalizeIndexedServiceArtifacts),
+      };
+      await writeOrCheck(
+        centralIndexJson,
+        `${JSON.stringify(normalizedPayload, null, 2)}\n`,
       );
       await writeOrCheck(centralIndexHtml, renderDocsIndexHtml(indexItems));
     }

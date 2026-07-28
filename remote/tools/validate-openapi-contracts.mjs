@@ -99,6 +99,15 @@ function expectedRouteKeys(metadata) {
   return keys.sort();
 }
 
+function expectedGeneratedArtifacts(openapiRelative) {
+  return [
+    openapiRelative,
+    openapiRelative.replace(/\.json$/, '.html'),
+    openapiRelative.replace(/\.json$/, '.public.json'),
+    openapiRelative.replace(/\.json$/, '.metadata.json'),
+  ];
+}
+
 function verifyOpenApiShape(document, service, sourcePath) {
   assert(
     document.openapi === '3.1.0',
@@ -124,6 +133,10 @@ function verifyService(item, gitlinks, fleetOperationIds) {
   assert(
     typeof openapiRelative === 'string' && openapiRelative.endsWith('.json'),
     `${item.service}: central index must identify the canonical JSON artifact`,
+  );
+  assert(
+    JSON.stringify(item.generated) === JSON.stringify(expectedGeneratedArtifacts(openapiRelative)),
+    `${item.service}: central index generated artifacts must list full JSON, HTML, public JSON, and metadata JSON in canonical order`,
   );
   if (unavailableGitlink(openapiRelative, gitlinks)) {
     return { skipped: true };
