@@ -1,0 +1,145 @@
+name: DEN-479 literal normalization validation diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize]
+    paths:
+      - '.github/workflows/den-479-validation-diagnostic.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.head_ref == 'agent/den-479-browser-test-openapi' &&
+      github.base_ref == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          persist-credentials: true
+          submodules: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+      - name: Apply adapter and capture each validation command
+        shell: bash
+        run: |
+          set +e
+          python3 <<'PY'
+          from pathlib import Path
+          schemas = Path('remote/deployments/browser-test-server/src/api-schemas.ts')
+          source = schemas.read_text(encoding='utf-8').replace(
+              '    default: ToolSchema,\n',
+              "    default: z.string().regex(/^(playwright|puppeteer|selenium)$/),\n",
+              1,
+          )
+          schemas.write_text(source, encoding='utf-8')
+          contract = Path('remote/deployments/browser-test-server/src/api-contract.ts')
+          source = contract.read_text(encoding='utf-8')
+          old = '''function jsonSchema(schema: ZodType): JsonObject {
+            const converter = z.toJSONSchema as unknown as (
+              value: ZodType,
+              options?: { target?: 'draft-7' },
+            ) => JsonObject;
+            const result = structuredClone(converter(schema, { target: 'draft-7' }));
+            delete result.$schema;
+            return result;
+          }
+          '''
+          new = '''function normalizeGeneratorSchema(value: unknown): unknown {
+            if (Array.isArray(value)) return value.map(normalizeGeneratorSchema);
+            if (value === null || typeof value !== 'object') return value;
+            const result = Object.fromEntries(
+              Object.entries(value as JsonObject).map(([key, item]) => [key, normalizeGeneratorSchema(item)]),
+            ) as JsonObject;
+            if (Object.hasOwn(result, 'const')) {
+              const constant = result.const;
+              result['x-dd-constant-value'] = constant;
+              delete result.const;
+              if (typeof constant === 'boolean') {
+                result.type = 'boolean';
+                delete result.enum;
+              } else if (!Object.hasOwn(result, 'enum')) {
+                result.enum = [constant];
+              }
+            }
+            if (Array.isArray(result.enum) && result.enum.length === 1 && typeof result.enum[0] === 'boolean') {
+              result['x-dd-constant-value'] = result.enum[0];
+              result.type = 'boolean';
+              delete result.enum;
+            }
+            return result;
+          }
+
+          function jsonSchema(schema: ZodType): JsonObject {
+            const converter = z.toJSONSchema as unknown as (
+              value: ZodType,
+              options?: { target?: 'draft-7' },
+            ) => JsonObject;
+            const result = structuredClone(converter(schema, { target: 'draft-7' }));
+            delete result.$schema;
+            return normalizeGeneratorSchema(result) as JsonObject;
+          }
+          '''
+          if old not in source:
+              raise SystemExit('jsonSchema source block not found')
+          contract.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-node
+          printf '%s\n' '{"name":"@dd/telemetry","version":"0.0.0-contract-shim","type":"module","exports":{".":{"types":"./index.d.ts","default":"./index.js"}}}' > remote/libs/telemetry-node/package.json
+          printf '%s\n' 'export function initTelemetry(){return {shutdown:async()=>undefined}}' 'export function instrumentFastify(){}' 'export function loggerMixin(){return {}}' > remote/libs/telemetry-node/index.js
+          printf '%s\n' 'export interface TelemetryGuard { shutdown(): Promise<void>; }' 'export function initTelemetry(service: string): TelemetryGuard;' 'export function instrumentFastify(app: unknown, options?: { service?: string }): void;' 'export function loggerMixin(): Record<string, unknown>;' > remote/libs/telemetry-node/index.d.ts
+          corepack enable
+          corepack prepare pnpm@9.15.4 --activate
+
+          run_command() {
+            local name="$1"
+            shift
+            "$@" > "/tmp/${name}.log" 2>&1
+            local status=$?
+            printf '%s=%s\n' "$name" "$status" >> /tmp/statuses
+            return 0
+          }
+          : > /tmp/statuses
+          run_command install pnpm --dir remote/deployments/browser-test-server install --frozen-lockfile --ignore-workspace
+          run_command typecheck pnpm --dir remote/deployments/browser-test-server run typecheck
+          run_command build pnpm --dir remote/deployments/browser-test-server run build
+          run_command tests pnpm --dir remote/deployments/browser-test-server run test:contract
+          run_command export1 bash -lc 'pnpm --dir remote/deployments/browser-test-server run --silent export:openapi > remote/deployments/browser-test-server/generated/openapi.json'
+          run_command export2 bash -lc 'pnpm --dir remote/deployments/browser-test-server run --silent export:openapi > /tmp/browser-openapi.2.json'
+          run_command compare cmp remote/deployments/browser-test-server/generated/openapi.json /tmp/browser-openapi.2.json
+          run_command generate_docs node remote/tools/generate-api-docs.mjs
+          run_command native_check node remote/tools/check-openapi-contracts.mjs --service browser-test-server
+          run_command docs_check node remote/tools/generate-api-docs.mjs --check --service browser-test-server
+          run_command openapi_validate node remote/tools/validate-openapi-contracts.mjs
+          run_command generate_sdks node remote/tools/generate-api-sdks.mjs
+          run_command sdk_check node remote/tools/generate-api-sdks.mjs --check
+          run_command sdk_validate node remote/tools/validate-api-sdks.mjs
+
+          {
+            echo '# DEN-479 literal normalization validation diagnostic'
+            echo
+            cat /tmp/statuses
+            for name in install typecheck build tests export1 export2 compare generate_docs native_check docs_check openapi_validate generate_sdks sdk_check sdk_validate; do
+              echo
+              echo "## ${name}"
+              tail -n 80 "/tmp/${name}.log" 2>/dev/null || true
+            done
+          } > DEN479_VALIDATION_DIAGNOSTIC.txt
+          rm .github/workflows/den-479-validation-diagnostic.yml
+          git add DEN479_VALIDATION_DIAGNOSTIC.txt .github/workflows/den-479-validation-diagnostic.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-479 capture literal normalization validation diagnostic'
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
