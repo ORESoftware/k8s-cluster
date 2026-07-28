@@ -12,6 +12,7 @@ jobs:
   apply:
     if: github.event.pull_request.head.ref == 'agent/cron-customer-control-plane' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -21,35 +22,18 @@ jobs:
         with:
           toolchain: "1.97.0"
           components: rustfmt
-      - name: Verify and apply customer cron source
+      - name: Apply deterministic customer cron source
         shell: bash
         run: |
           set -euo pipefail
-          archive=/tmp/customer-cron-control-plane.tgz
-          cat .agent/cron-payload/part-* | base64 -d > "$archive"
-          actual_listing=$(tar -tzf "$archive" | sed 's#^\./##' | sed '/^$/d' | sort)
-          expected_listing=$(cat <<'EOF'
-          docs/cron-jobs.md
-          src/cron.rs
-          src/main.rs
-          src/tests.rs
-          src/views.rs
-          EOF
-          )
-          if [ "$actual_listing" != "$expected_listing" ]; then
-            echo 'unexpected payload entries' >&2
-            echo 'expected:' >&2
-            printf '%s\n' "$expected_listing" >&2
-            echo 'actual:' >&2
-            printf '%s\n' "$actual_listing" >&2
-            exit 1
-          fi
-          tar -xzf "$archive" --no-same-owner --no-same-permissions
+          base64 -d .agent/cron-source.rs.gz.b64 | gzip -d > src/cron.rs
+          echo '8ead0feb226c0ef5bc97206a5736a32a85d9f29938d14effa1bbc3f98549b099  src/cron.rs' | sha256sum --check --strict
+          python3 scripts/apply-cron-control-plane.py
           cargo fmt --all
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/cron.rs src/main.rs src/tests.rs src/views.rs docs/cron-jobs.md
+          git add src/cron.rs src/main.rs src/views.rs src/tests.rs
           if git diff --cached --quiet; then
             echo 'customer cron source already applied'
             exit 0
