@@ -5,6 +5,7 @@
 //! never decrypt ciphertext or receive private key/session state.
 
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use thiserror::Error;
 
 pub const SIGNAL_ENVELOPE_VERSION: u16 = 1;
@@ -35,7 +36,7 @@ impl SignalEnvelopeKind {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SignalEnvelopeMetadata {
     pub version: u16,
     pub envelope_id: String,
@@ -47,6 +48,24 @@ pub struct SignalEnvelopeMetadata {
     pub kind: SignalEnvelopeKind,
     pub created_at_ms: i64,
     pub expires_at_ms: i64,
+}
+
+impl fmt::Debug for SignalEnvelopeMetadata {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SignalEnvelopeMetadata")
+            .field("version", &self.version)
+            .field("envelope_id", &"<redacted>")
+            .field("account_id", &"<redacted>")
+            .field("sender_device_id", &"<redacted>")
+            .field("recipient_device_id", &"<redacted>")
+            .field("session_id", &"<redacted>")
+            .field("message_number", &self.message_number)
+            .field("kind", &self.kind)
+            .field("created_at_ms", &self.created_at_ms)
+            .field("expires_at_ms", &self.expires_at_ms)
+            .finish()
+    }
 }
 
 impl SignalEnvelopeMetadata {
@@ -108,10 +127,20 @@ impl SignalEnvelopeMetadata {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SignalCiphertextEnvelope {
     pub metadata: SignalEnvelopeMetadata,
     pub ciphertext: Vec<u8>,
+}
+
+impl fmt::Debug for SignalCiphertextEnvelope {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SignalCiphertextEnvelope")
+            .field("metadata", &self.metadata)
+            .field("ciphertext_len", &self.ciphertext.len())
+            .finish()
+    }
 }
 
 impl SignalCiphertextEnvelope {
@@ -126,7 +155,7 @@ impl SignalCiphertextEnvelope {
 
 /// Public material used by a client for asynchronous PQXDH-compatible session
 /// setup. Private key material is intentionally impossible to represent here.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SignalDevicePreKeyBundle {
     pub version: u16,
     pub device_id: String,
@@ -140,6 +169,35 @@ pub struct SignalDevicePreKeyBundle {
     pub pq_signed_pre_key_signature: Vec<u8>,
     pub one_time_pre_key_id: Option<u32>,
     pub one_time_pre_key: Option<Vec<u8>>,
+}
+
+impl fmt::Debug for SignalDevicePreKeyBundle {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SignalDevicePreKeyBundle")
+            .field("version", &self.version)
+            .field("device_id", &"<redacted>")
+            .field("registration_id", &self.registration_id)
+            .field("identity_key_len", &self.identity_key.len())
+            .field("signed_pre_key_id", &self.signed_pre_key_id)
+            .field("signed_pre_key_len", &self.signed_pre_key.len())
+            .field(
+                "signed_pre_key_signature_len",
+                &self.signed_pre_key_signature.len(),
+            )
+            .field("pq_signed_pre_key_id", &self.pq_signed_pre_key_id)
+            .field("pq_signed_pre_key_len", &self.pq_signed_pre_key.len())
+            .field(
+                "pq_signed_pre_key_signature_len",
+                &self.pq_signed_pre_key_signature.len(),
+            )
+            .field("one_time_pre_key_id", &self.one_time_pre_key_id)
+            .field(
+                "one_time_pre_key_len",
+                &self.one_time_pre_key.as_ref().map(Vec::len),
+            )
+            .finish()
+    }
 }
 
 impl SignalDevicePreKeyBundle {
@@ -300,6 +358,62 @@ mod tests {
         let json = serde_json::to_string(&envelope).unwrap();
         let decoded: SignalCiphertextEnvelope = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded, envelope);
+    }
+
+    #[test]
+    fn debug_output_redacts_routing_identifiers_ciphertext_and_public_key_bytes() {
+        let mut secret_metadata = metadata();
+        secret_metadata.envelope_id = "env-secret-123".into();
+        secret_metadata.account_id = "account-secret-456".into();
+        secret_metadata.sender_device_id = "sender-secret-789".into();
+        secret_metadata.recipient_device_id = "recipient-secret-012".into();
+        secret_metadata.session_id = "session-secret-345".into();
+        let envelope = SignalCiphertextEnvelope {
+            metadata: secret_metadata,
+            ciphertext: vec![211, 8, 92, 177],
+        };
+        let debug = format!("{envelope:?}");
+        for secret in [
+            "env-secret-123",
+            "account-secret-456",
+            "sender-secret-789",
+            "recipient-secret-012",
+            "session-secret-345",
+            "211, 8, 92, 177",
+        ] {
+            assert!(
+                !debug.contains(secret),
+                "debug output leaked {secret}: {debug}"
+            );
+        }
+        assert!(debug.contains("ciphertext_len: 4"));
+        assert!(debug.contains("<redacted>"));
+
+        let mut bundle = prekey_bundle();
+        bundle.device_id = "device-secret-999".into();
+        bundle.identity_key = vec![211; 32];
+        bundle.signed_pre_key = vec![177; 32];
+        bundle.signed_pre_key_signature = vec![166; 64];
+        bundle.pq_signed_pre_key = vec![155; 64];
+        bundle.pq_signed_pre_key_signature = vec![144; 64];
+        bundle.one_time_pre_key = Some(vec![133; 32]);
+        let debug = format!("{bundle:?}");
+        for secret in [
+            "device-secret-999",
+            "211, 211",
+            "177, 177",
+            "166, 166",
+            "155, 155",
+            "144, 144",
+            "133, 133",
+        ] {
+            assert!(
+                !debug.contains(secret),
+                "debug output leaked {secret}: {debug}"
+            );
+        }
+        assert!(debug.contains("identity_key_len: 32"));
+        assert!(debug.contains("one_time_pre_key_len: Some(32)"));
     }
 
     #[test]

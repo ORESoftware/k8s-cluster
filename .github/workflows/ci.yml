@@ -9,23 +9,60 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          persist-credentials: false
+      - name: Validate GitHub Actions
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: ./.github/workflows/ci.yml
       - name: No build artifacts or env files tracked
         run: |
           bad=$(git ls-files | grep -E '(^|/)(target/|\.direnv/|\.env$|result$)' || true)
           if [ -n "$bad" ]; then echo "forbidden tracked files:"; echo "$bad"; exit 1; fi
+      - name: Sensitive DTOs cannot regain raw Debug
+        run: python3 scripts/check_sensitive_debug.py
       - run: cargo check --locked
       - run: cargo test --locked
   fmt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          persist-credentials: false
       - run: cargo fmt --check
+  signal-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: threefa_signal_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      THREEFA_SIGNAL_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/threefa_signal_test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          persist-credentials: false
+      - name: Run real Signal transaction and retention tests
+        run: cargo test --locked signal_postgres_tests -- --ignored --test-threads=1
   container-flags:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          persist-credentials: false
       - name: Build final runtime image
         run: docker build -f deploy/Dockerfile -t threefa-backend:flags-test .
       - name: Verify self-contained parser and packaged contract
@@ -59,6 +96,6 @@ jobs:
           printf '%s\n' "$output"
           test "$status" -eq 1
           if grep -q 'invalid command-line configuration' <<<"$output"; then
-            echo 'declared bind flag was rejected before typed config' >&2
+            echo 'declared bind flag was rejected before typed config'
             exit 1
           fi
