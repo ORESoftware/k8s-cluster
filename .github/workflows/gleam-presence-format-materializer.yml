@@ -77,3 +77,5 @@ jobs:
           git add -A
           git commit -m 'style(api-docs): format executable Gleam route contract'
           git push origin HEAD:agent/gleam-presence-executable-openapi
+
+# Deliberate second branch push activates this newly introduced one-shot workflow.
