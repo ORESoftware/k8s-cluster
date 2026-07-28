@@ -1,3 +1,4 @@
+# Triggered after isolating the reviewed transformation source and removing obsolete one-shot workflows.
 # Branch-local one-shot landing workflow. It reuses the reviewed transformation source, but never pushes workflow-file changes.
 name: Sync DEN-445 public and private OpenAPI contracts v3
 
