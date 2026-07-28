@@ -18,8 +18,13 @@ Linear: DEN-256
 - `bamboohr.com`
 - `recruitee.com`
 - `applytojob.com`
+- `ats.rippling.com`
+- `breezy.hr`
+- `jobscore.com`
+- `candidateportalin.ceipal.com`
+- `candidateportalnew.ceipal.com`
 
-Root hostnames permit their own subdomains. Broad job marketplaces, webmail, identity-provider login hosts, arbitrary company sites, filing sites, and payment hosts are deliberately excluded. A company-hosted careers page requires a separate reviewed profile change rather than caller-supplied navigation permission.
+Root hostnames permit their own subdomains. The Rippling and CEIPAL entries are exact candidate-facing hosts; Breezy and JobScore use reviewed provider roots. Broad job marketplaces, webmail, identity-provider login hosts, arbitrary company sites, filing sites, and payment hosts are deliberately excluded. A company-hosted careers page requires a separate reviewed profile change rather than caller-supplied navigation permission.
 
 ## Safety boundary
 
