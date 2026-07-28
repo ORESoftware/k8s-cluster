@@ -17,27 +17,17 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Regenerate patched JetStream lockfile
-        run: cargo generate-lockfile
-      - uses: actions/upload-artifact@v4
-        with:
-          name: jetstream-patched-lockfile
-          path: Cargo.lock
-          if-no-files-found: error
       - run: cargo fmt --check
-      - name: Run Clippy and preserve async-nats upgrade diagnostics
-        run: |
-          set +e
-          cargo clippy --locked --all-targets --all-features -- -D warnings > jetstream-upgrade-clippy.log 2>&1
-          status=$?
-          echo "$status" > jetstream-upgrade-clippy.exit
-          exit 0
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: jetstream-upgrade-clippy-diagnostics
-          path: jetstream-upgrade-clippy.log
-          if-no-files-found: error
-      - name: Enforce Clippy result
-        run: exit "$(cat jetstream-upgrade-clippy.exit)"
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-features
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: push-notification-server:test
