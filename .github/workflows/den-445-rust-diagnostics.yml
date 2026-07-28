@@ -9,7 +9,6 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: write
   contents: read
 
 concurrency:
@@ -24,18 +23,24 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: agent/den-445-strong-openapi-contract
+          fetch-depth: 1
+          show-progress: false
+          submodules: false
 
       - name: Apply reviewed migration
+        shell: bash
         run: |
           set -euo pipefail
           cat .github/scripts/den-445-migrate.py.gz.b64.part* \
             | base64 --decode \
             | gzip --decompress \
             > "${RUNNER_TEMP}/den-445-migrate.py"
-          echo '8767999002f76acffb91f37d57666efe659efbd18a624c63153e7efcd29e8ada  '"${RUNNER_TEMP}/den-445-migrate.py" | sha256sum --check
+          sha256sum "${RUNNER_TEMP}/den-445-migrate.py"
+          python3 -m py_compile "${RUNNER_TEMP}/den-445-migrate.py"
           python3 "${RUNNER_TEMP}/den-445-migrate.py"
 
       - name: Create exact API-compatible telemetry shim
+        shell: bash
         run: |
           set -euo pipefail
           rm -rf remote/libs
@@ -45,27 +50,17 @@ jobs:
           name = "dd-telemetry"
           version = "0.1.0"
           edition = "2021"
-          description = "Shared OpenTelemetry tracing + structured-logging init for the Rust services in k8s-cluster/remote. Call dd_telemetry::init(\"dd-foo\") at the top of main and add dd_telemetry::http_trace_layer() to your axum Router. Explicit instrumentation only — no monkey-patching."
 
           [lib]
           path = "src/lib.rs"
 
           [dependencies]
           tracing = "0.1"
-          tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
-          tracing-opentelemetry = "0.27"
-          opentelemetry = "0.26"
-          opentelemetry_sdk = { version = "0.26", features = ["rt-tokio"] }
-          opentelemetry-otlp = { version = "0.26", default-features = false, features = ["trace", "http-proto", "reqwest-client", "reqwest-rustls"] }
-          opentelemetry-http = "0.26"
-          opentelemetry-semantic-conventions = "0.16"
           tower-http = { version = "0.6", features = ["trace"] }
           http = "1"
-          tokio = { version = "1", features = ["rt"] }
           TOML
           cat > remote/libs/telemetry-rs/src/lib.rs <<'RS'
           use std::time::Duration;
-
           use http::{Request, Response};
           use tower_http::classify::{ServerErrorsAsFailures, SharedClassifier};
           use tower_http::trace::{DefaultOnRequest, MakeSpan, OnResponse, TraceLayer};
@@ -74,9 +69,7 @@ jobs:
           #[must_use]
           pub struct OtelGuard;
 
-          pub fn init(_service_name: &str) -> OtelGuard {
-              OtelGuard
-          }
+          pub fn init(_service_name: &str) -> OtelGuard { OtelGuard }
 
           pub fn http_trace_layer() -> TraceLayer<
               SharedClassifier<ServerErrorsAsFailures>,
@@ -123,11 +116,12 @@ jobs:
       - name: Capture formatter and compiler output
         id: compile
         working-directory: remote/deployments/dd-embeddings-rs
+        shell: bash
         run: |
           set +e
           {
             cargo fmt --all
-            cargo check
+            cargo check --quiet
             cargo fmt --all -- --check
           } > "${RUNNER_TEMP}/den-445-rust.log" 2>&1
           status=$?
