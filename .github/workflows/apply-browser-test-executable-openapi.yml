@@ -8,6 +8,7 @@ on:
     paths:
       - '.github/workflows/apply-browser-test-executable-openapi.yml'
       - '.github/scripts/apply-browser-test-executable-openapi.py'
+      - '.github/scripts/fix-browser-test-executable-openapi.py'
       - 'remote/deployments/browser-test-server/**'
       - 'remote/api-contracts/**'
       - 'remote/config/api-contracts.json'
@@ -112,9 +113,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile .github/scripts/apply-browser-test-executable-openapi.py
+          python3 -m py_compile \
+            .github/scripts/apply-browser-test-executable-openapi.py \
+            .github/scripts/fix-browser-test-executable-openapi.py
           python3 .github/scripts/apply-browser-test-executable-openapi.py
+          python3 .github/scripts/fix-browser-test-executable-openapi.py
           git diff --check
+          git diff --binary > "${RUNNER_TEMP}/browser-test-migration.diff"
 
       - name: Install Node.js 22.23.1
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -140,10 +145,12 @@ jobs:
         working-directory: remote/deployments/browser-test-server
         shell: bash
         run: |
-          set -euo pipefail
-          pnpm docs:embed
-          pnpm typecheck
-          pnpm build
+          set -o pipefail
+          {
+            pnpm docs:embed
+            pnpm typecheck
+            pnpm build
+          } 2>&1 | tee "${RUNNER_TEMP}/browser-test-compile.log"
 
       - name: Export canonical native OpenAPI
         working-directory: remote/deployments/browser-test-server
@@ -292,3 +299,17 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'feat(browser-test): enforce executable OpenAPI contract'
           git push origin HEAD:agent/browser-test-executable-openapi
+
+      - name: Upload focused failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: browser-test-executable-openapi-diagnostics
+          path: |
+            ${{ runner.temp }}/browser-test-migration.diff
+            ${{ runner.temp }}/browser-test-compile.log
+            ${{ runner.temp }}/browser-test-openapi.1.json
+            ${{ runner.temp }}/browser-test-openapi.2.json
+            ${{ runner.temp }}/browser-test-openapi.3.json
+          retention-days: 1
+          if-no-files-found: warn
