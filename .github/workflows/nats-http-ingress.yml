@@ -22,7 +22,7 @@ concurrency:
 jobs:
   rust:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -31,15 +31,18 @@ jobs:
         with:
           toolchain: '1.90.0'
           components: rustfmt, clippy
+      - name: Regenerate the async-nats lockfile
+        working-directory: remote/nats-bridge
+        run: cargo update -p async-nats --precise 0.50.0
       - name: Check formatting
         working-directory: remote/nats-bridge
         run: rustfmt --check --edition 2024 src/bin/nats_http_ingress.rs
       - name: Run clippy
         working-directory: remote/nats-bridge
-        run: cargo clippy --locked --bin nats_http_ingress -- -D warnings
+        run: cargo clippy --bin nats_http_ingress -- -D warnings
       - name: Run unit tests
         working-directory: remote/nats-bridge
-        run: cargo test --locked --bin nats_http_ingress
+        run: cargo test --bin nats_http_ingress
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Audit dependency advisories
@@ -60,12 +63,14 @@ jobs:
             tail -n 300 "$report_dir/stderr.txt"
           fi
           exit "$status"
-      - name: Upload RustSec report
+      - name: Upload lockfile and RustSec evidence
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: den-440-rustsec-report
-          path: ${{ runner.temp }}/den-440-rustsec
+          name: den-440-async-nats-upgrade
+          path: |
+            remote/nats-bridge/Cargo.lock
+            ${{ runner.temp }}/den-440-rustsec
           if-no-files-found: error
           retention-days: 2
       - name: Enforce RustSec audit
