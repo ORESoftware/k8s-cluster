@@ -230,7 +230,10 @@ async fn real_socket_http_routes_all_providers_and_never_echoes_capabilities() {
     let readiness: Value = readiness.json().await.expect("readiness JSON");
     assert_eq!(readiness["authentication"]["configured"], true);
     assert_eq!(readiness["providers"]["fcm"]["configured"], true);
-    assert_eq!(readiness["providers"]["apns_production"]["configured"], true);
+    assert_eq!(
+        readiness["providers"]["apns_production"]["configured"],
+        true
+    );
     assert_eq!(readiness["providers"]["apns_sandbox"]["configured"], true);
     assert_eq!(readiness["providers"]["expo"]["configured"], true);
     assert_eq!(readiness["providers"]["web_push"]["configured"], true);
@@ -330,8 +333,14 @@ async fn graceful_shutdown_drains_an_in_flight_push_request() {
         .expect("provider did not start");
     shutdown.send(()).expect("signal graceful shutdown");
     sleep(Duration::from_millis(100)).await;
-    assert!(!request.is_finished(), "in-flight request ended before release");
-    assert!(!server.is_finished(), "server did not drain in-flight request");
+    assert!(
+        !request.is_finished(),
+        "in-flight request ended before release"
+    );
+    assert!(
+        !server.is_finished(),
+        "server did not drain in-flight request"
+    );
 
     provider.release.notify_waiters();
     let response = timeout(Duration::from_secs(5), request)
