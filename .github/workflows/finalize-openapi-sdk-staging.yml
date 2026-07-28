@@ -1,4 +1,3 @@
-# Triggered after registration so GitHub evaluates the push hook.
 name: Finalize OpenAPI SDK staging tree
 
 on:
@@ -7,19 +6,28 @@ on:
       - agent/openapi-fleet-sdks
     paths:
       - '.github/workflows/finalize-openapi-sdk-staging.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/finalize-openapi-sdk-staging.yml'
+      - 'remote/api-sdks/**'
+      - 'remote/tools/api-sdk-common.mjs'
+      - 'remote/tools/generate-api-sdks.mjs'
+      - 'remote/tools/validate-api-sdks.mjs'
 
 permissions:
   contents: write
 
 concurrency:
-  group: finalize-openapi-sdk-staging
+  group: finalize-openapi-sdk-staging-${{ github.event_name }}
   cancel-in-progress: false
 
 jobs:
   finalize:
-    if: github.repository == 'ORESoftware/k8s-cluster' && github.ref == 'refs/heads/agent/openapi-fleet-sdks'
+    if: github.repository == 'ORESoftware/k8s-cluster' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout exact feature branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -28,8 +36,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
           show-progress: false
+          submodules: false
 
-      - name: Repair generator and regenerate every package
+      - name: Repair the Gleam provenance assertion template
         shell: bash
         run: |
           set -euo pipefail
@@ -47,12 +56,38 @@ jobs:
               raise SystemExit(f'unexpected Gleam provenance assertion count: {count}')
           PY
 
+      - name: Check generator and validator syntax
+        shell: bash
+        run: |
+          set -euo pipefail
           node --check remote/tools/api-sdk-common.mjs
           node --check remote/tools/generate-api-sdks.mjs
           node --check remote/tools/validate-api-sdks.mjs
+
+      - name: Regenerate all public and internal SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
           node remote/tools/generate-api-sdks.mjs
+          git status --short | tee "${RUNNER_TEMP}/sdk-status.txt"
+          git diff --binary > "${RUNNER_TEMP}/sdk-regeneration.patch"
+
+      - name: Reject generator drift
+        shell: bash
+        run: |
+          set -euo pipefail
           node remote/tools/generate-api-sdks.mjs --check
+
+      - name: Validate contracts, catalogs, manifests, and provenance
+        shell: bash
+        run: |
+          set -euo pipefail
           node remote/tools/validate-api-sdks.mjs
+
+      - name: Verify generated smoke fixtures and scanner annotations
+        shell: bash
+        run: |
+          set -euo pipefail
           test -s remote/api-sdks/dart/public/bin/smoke.dart
           test -s remote/api-sdks/dart/internal/bin/smoke.dart
           grep -Fq 'gitleaks:allow' remote/api-sdks/gleam/public/test/oresoftware_k8s_api_sdk_public_test.gleam
@@ -64,8 +99,22 @@ jobs:
           set -euo pipefail
           git add -A -- remote/api-sdks remote/tools/generate-api-sdks.mjs
           git diff --cached --check
-          test -n "$(git diff --cached --name-only)"
+          if git diff --cached --quiet; then
+            echo 'SDK staging tree is already current.'
+            exit 0
+          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'Repair and regenerate fleet API SDKs'
+          git commit -m 'Repair and regenerate fleet API SDKs [skip ci]'
           git push origin HEAD:agent/openapi-fleet-sdks
+
+      - name: Upload focused diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: openapi-sdk-staging-diagnostics
+          path: |
+            ${{ runner.temp }}/sdk-status.txt
+            ${{ runner.temp }}/sdk-regeneration.patch
+          retention-days: 2
+          if-no-files-found: warn
