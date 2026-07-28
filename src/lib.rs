@@ -16,8 +16,8 @@ pub mod runtime;
 pub mod validation;
 
 pub use contracts::{
-    ContractVersion, Notification, ProviderEnvironment, ProviderKind, PushJob, PushOptions,
-    PushOutcome, PushPriority, PushTarget, TraceMetadata,
+    ContractVersion, Notification, OutcomeClass, ProviderEnvironment, ProviderKind, PushJob,
+    PushOptions, PushOutcome, PushPriority, PushTarget, TraceMetadata,
 };
 pub use dispatch::{
     ProviderReadinessView, ProviderRegistry, ProviderSlot, RegistryError, RegistryReadiness,
