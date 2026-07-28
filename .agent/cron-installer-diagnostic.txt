@@ -1,0 +1,8 @@
+expected=61d7d188650438bea565bf25877d6d3327bc197d0929111a249cd217ffc52d24
+actual=6b2555451ad6902cd45c36b787b348a5c526eab6f4f6e1620544535a020bf21d
+bytes=49915
+archive-listing:
+
+gzip: stdin: invalid compressed data--format violated
+tar: Child returned status 1
+tar: Error is not recoverable: exiting now
