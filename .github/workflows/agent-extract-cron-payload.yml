@@ -42,33 +42,14 @@ jobs:
       - uses: taiki-e/install-action@c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd
         with:
           tool: cargo-audit@0.22.2
-      - name: Recover and repair ordinary Rust source
-        id: recover
-        continue-on-error: true
+      - name: Repair ordinary Rust source and restore ordinary CI
         working-directory: repo
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/customer-cron-finalize
-          exec > >(tee /tmp/customer-cron-finalize/recover.log) 2>&1
-          git fetch --no-tags origin \
-            main:refs/remotes/origin/main \
-            agent/cron-customer-control-plane:refs/remotes/origin/agent/cron-customer-control-plane
-          git show origin/agent/cron-customer-control-plane:.agent/cron-source.rs.gz.b64 \
-            | base64 -d > /tmp/customer-cron.rs.gz
-          set +e
-          gzip -dc /tmp/customer-cron.rs.gz > src/cron.rs
-          gzip_status=$?
-          set -e
-          echo "gzip_status=$gzip_status"
-          echo "recovered_lines=$(wc -l < src/cron.rs)"
-          echo "recovered_bytes=$(wc -c < src/cron.rs)"
-          # The archived source has a damaged gzip checksum trailer but a complete
-          # DEFLATE stream. Validate the recovered body structurally before use.
-          test "$gzip_status" -eq 1
-          test "$(wc -l < src/cron.rs)" -ge 1500
-          grep -Fq 'fn upstream_errors_are_reduced_to_safe_codes()' src/cron.rs
-          tail -n 5 src/cron.rs | grep -Fq '}'
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          grep -Fq 'post(pause_schedule_api)' src/cron.rs
+          grep -Fq 'async fn pause_schedule_api(' src/cron.rs
           python3 - <<'PY'
           from pathlib import Path
 
@@ -85,10 +66,10 @@ jobs:
               '        .filter(|value| !value.is_empty())\n'
               '}\n'
           )
-          print(f'marker_count={source.count(marker)}')
-          if source.count(marker) != 1:
-              raise SystemExit('optional_env insertion point changed')
-          source = source.replace(marker, helper, 1)
+          if 'fn optional_env(name: &str)' not in source:
+              if source.count(marker) != 1:
+                  raise SystemExit('optional_env insertion point changed')
+              source = source.replace(marker, helper, 1)
 
           old = (
               '    cron_inventory_markup(\n'
@@ -113,41 +94,19 @@ jobs:
               '        dependency_error,\n'
               '    )\n'
           )
-          print(f'borrow_pattern_count={source.count(old)}')
-          if source.count(old) != 1:
+          if old in source:
+              source = source.replace(old, new, 1)
+          elif 'let dependency_error = schedules' not in source:
               raise SystemExit('borrow repair insertion point changed')
-          source = source.replace(old, new, 1)
+
           path.write_text(source)
           PY
-          sha256sum src/cron.rs
-      - name: Format and restore ordinary CI
-        id: format
-        if: steps.recover.outcome == 'success'
-        continue-on-error: true
-        working-directory: repo
-        shell: bash
-        run: |
-          set -euo pipefail
-          exec > >(tee /tmp/customer-cron-finalize/format.log) 2>&1
           cargo fmt --all
           git show origin/main:.github/workflows/ci.yml > .github/workflows/ci.yml
           rm -f \
             .github/workflows/agent-cron-clippy-diagnostic.yml \
             .github/workflows/agent-fix-cron-customer.yml
           git diff --check
-          sha256sum src/cron.rs
-      - name: Upload recovery diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: customer-cron-finalize-${{ github.run_id }}
-          path: |
-            /tmp/customer-cron-finalize
-            repo/src/cron.rs
-          if-no-files-found: warn
-      - name: Enforce recovery and formatting
-        if: steps.recover.outcome != 'success' || steps.format.outcome != 'success'
-        run: exit 1
       - name: CLI flag contract
         working-directory: repo
         run: |
