@@ -203,10 +203,19 @@ jobs:
             echo 'new git conflict marker detected' >&2
             exit 1
           fi
-          test -z "$(git diff --cached --name-only | grep -E 'den-482-(direct-rebuild|semantic-merge|wal-openapi|materialize)|apply-den-482|trigger-den-482|DEN482_MATERIALIZER' || true)"
-          test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
-          test "$(git ls-files --stage remote/libs | awk '{print $2}')" = "$SHARED_COMMIT"
+
           git diff --cached --name-status
+          bootstrap_leftovers="$(git ls-files | grep -E 'den-482-(direct-rebuild|semantic-merge|wal-openapi|materialize)|apply-den-482|trigger-den-482|DEN482_MATERIALIZER' || true)"
+          if [ -n "$bootstrap_leftovers" ]; then
+            printf 'bootstrap transport remains in final index:\n%s\n' "$bootstrap_leftovers" >&2
+            exit 1
+          fi
+          gitlink_mode="$(git ls-files --stage remote/libs | awk '{print $1}')"
+          gitlink_sha="$(git ls-files --stage remote/libs | awk '{print $2}')"
+          printf 'final remote/libs gitlink: mode=%s sha=%s\n' "$gitlink_mode" "$gitlink_sha"
+          test "$gitlink_mode" = '160000'
+          test "$gitlink_sha" = "$SHARED_COMMIT"
+
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'feat(DEN-482): migrate wal-gateway to executable OpenAPI'
