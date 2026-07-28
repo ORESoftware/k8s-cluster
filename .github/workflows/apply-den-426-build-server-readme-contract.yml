@@ -4,16 +4,23 @@ on:
   push:
     branches:
       - agent/den-426-build-server-module-contracts
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-den-426-build-server-readme-contract.yml'
+      - '.github/den-426-build-server-contract-trigger'
 
 permissions:
   contents: write
 
 concurrency:
-  group: apply-den-426-build-server-readme-contract
+  group: apply-den-426-build-server-readme-contract-${{ github.event_name }}
   cancel-in-progress: false
 
 jobs:
   patch-and-verify:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
