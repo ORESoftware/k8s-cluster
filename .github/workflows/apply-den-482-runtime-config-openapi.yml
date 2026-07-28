@@ -1,0 +1,161 @@
+name: Apply DEN-482 runtime-config OpenAPI adapter
+
+on:
+  push:
+    branches:
+      - agent/den-482-runtime-config-openapi
+    paths:
+      - '.github/workflows/apply-den-482-runtime-config-openapi.yml'
+      - 'scripts/den-482-runtime-config-openapi.payload'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-482-runtime-config-openapi
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.repository == 'ORESoftware/k8s-libs-and-shared-defs'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout writable feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-482-runtime-config-openapi
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Setup Node 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Setup Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.95.0'
+          components: rustfmt
+
+      - name: Verify and materialize the bounded patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload='scripts/den-482-runtime-config-openapi.payload'
+          decoded="${RUNNER_TEMP}/apply-den-482-runtime-config-openapi.mjs"
+          printf '%s  %s\n' \
+            'ed097417ac8f3e948023ae1851f4ed78fb07753875afd82e90ad789912e34c1b' \
+            "$payload" | sha256sum --check -
+          base64 --decode "$payload" | gzip --decompress > "$decoded"
+          printf '%s  %s\n' \
+            'c0e663866faae53508fed3cb591cffbb842f67df0b0d78ad4e4702d5757f73e2' \
+            "$decoded" | sha256sum --check -
+          node --check "$decoded"
+          node "$decoded"
+
+      - name: Regenerate schema-owned cross-language interfaces
+        shell: bash
+        run: |
+          set -euo pipefail
+          node interfaces/shared/src/generate.mjs
+          node interfaces/shared/src/generate.mjs --check
+          node --test \
+            interfaces/shared/src/generate.test.mjs \
+            interfaces/shared/src/openapi-generation.test.mjs
+
+      - name: Format Rust changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all --manifest-path interfaces/shared/generated/rust/Cargo.toml
+          cargo fmt --all --manifest-path runtime-config-client-rs/Cargo.toml
+
+      - name: Refresh lockfiles and validate both Axum adapters
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --manifest-path interfaces/shared/generated/rust/Cargo.toml --features openapi
+          cargo check --manifest-path runtime-config-client-rs/Cargo.toml
+          cargo test --manifest-path runtime-config-client-rs/Cargo.toml
+          cargo check \
+            --manifest-path runtime-config-client-rs/Cargo.toml \
+            --no-default-features \
+            --features openapi
+          cargo test \
+            --manifest-path runtime-config-client-rs/Cargo.toml \
+            --no-default-features \
+            --features openapi
+
+      - name: Re-run every Rust gate with immutable locks
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all --manifest-path interfaces/shared/generated/rust/Cargo.toml -- --check
+          cargo fmt --all --manifest-path runtime-config-client-rs/Cargo.toml -- --check
+          cargo check --locked \
+            --manifest-path interfaces/shared/generated/rust/Cargo.toml \
+            --features openapi
+          cargo check --locked --manifest-path runtime-config-client-rs/Cargo.toml
+          cargo test --locked --manifest-path runtime-config-client-rs/Cargo.toml
+          cargo check --locked \
+            --manifest-path runtime-config-client-rs/Cargo.toml \
+            --no-default-features \
+            --features openapi
+          cargo test --locked \
+            --manifest-path runtime-config-client-rs/Cargo.toml \
+            --no-default-features \
+            --features openapi
+
+      - name: Verify patch scope and repository hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          if git grep -nE '^(<<<<<<< |=======|>>>>>>> )' -- \
+            interfaces/shared \
+            runtime-config-client-rs; then
+            echo 'git conflict marker detected' >&2
+            exit 1
+          fi
+          mapfile -t changed < <(git status --short | sed -E 's/^.. //')
+          test "${#changed[@]}" -gt 0
+          for path in "${changed[@]}"; do
+            case "$path" in
+              interfaces/shared/schema/runtime-config.schema.json|interfaces/shared/src/generate.mjs|interfaces/shared/src/openapi-generation.test.mjs|interfaces/shared/generated/*|runtime-config-client-rs/Cargo.toml|runtime-config-client-rs/Cargo.lock|runtime-config-client-rs/src/lib.rs)
+                ;;
+              *)
+                echo "unexpected generated patch path: $path" >&2
+                exit 1
+                ;;
+            esac
+          done
+
+      - name: Remove one-shot transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            .github/workflows/apply-den-482-runtime-config-openapi.yml \
+            scripts/den-482-runtime-config-openapi.payload
+
+      - name: Commit executable shared contract adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          mapfile -t staged < <(git diff --cached --name-only)
+          printf 'DEN-482 staged paths:\n%s\n' "${staged[*]}"
+          test "${#staged[@]}" -gt 0
+          if git diff --cached --no-ext-diff --unified=0 | grep -E '^\+(<<<<<<< |=======$|>>>>>>> )'; then
+            echo 'new git conflict marker detected' >&2
+            exit 1
+          fi
+          git commit -m 'feat(DEN-482): add executable runtime-config OpenAPI adapter'
+          git push origin HEAD:agent/den-482-runtime-config-openapi
