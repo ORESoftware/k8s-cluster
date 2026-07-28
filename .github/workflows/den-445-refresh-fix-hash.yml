@@ -1,0 +1,65 @@
+name: DEN-445 refresh reviewed fix hash
+
+on:
+  push:
+    branches:
+      - agent/den-445-native-openapi-fresh
+    paths:
+      - '.github/workflows/den-445-refresh-fix-hash.yml'
+      - '.github/scripts/den-445-native-openapi-fix.py'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/den-445-refresh-fix-hash.yml'
+      - '.github/scripts/den-445-native-openapi-fix.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-445-refresh-reviewed-fix-hash
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent/den-445-native-openapi-fresh
+          fetch-depth: 0
+          persist-credentials: true
+          submodules: false
+
+      - name: Verify fix and refresh gate checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '1a27cf50a3d53c661ba56a172d060768b6817c59ef8e9f38ba40f8df840aea67  .github/scripts/den-445-native-openapi-fix.py' | sha256sum --check
+          python3 -m py_compile .github/scripts/den-445-native-openapi-fix.py
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/apply-den-445-native-openapi-v2.yml')
+          source = path.read_text()
+          old = 'd9c1c90fda9a41de1d528cf1bc9aabfb6a106c7a70b017f82f5160858c0f0dd8'
+          new = '1a27cf50a3d53c661ba56a172d060768b6817c59ef8e9f38ba40f8df840aea67'
+          if source.count(old) != 1:
+              raise SystemExit(f'expected one stale fix hash, found {source.count(old)}')
+          path.write_text(source.replace(old, new, 1))
+          PY
+          rm -f .github/workflows/den-445-refresh-fix-hash.yml
+          git diff --check
+
+      - name: Commit refreshed checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'ci(DEN-445): refresh reviewed schema-closure fix'
+          git push origin HEAD:agent/den-445-native-openapi-fresh
