@@ -52,9 +52,9 @@ rechecks the lock graph independently before it stages any files.
 
 ## CI flow
 
-`.github/workflows/openapi-sdks.yml` builds the release set twice from the same revision and
-requires byte-identical archives, manifests, indexes, and checksums. It also opens each tar archive
-and rejects cross-scope package paths or manifest entries.
+`.github/workflows/openapi-sdk-release-bundles.yml` builds the release set twice from the same
+revision and requires byte-identical archives, manifests, indexes, and checksums. It also opens each
+tar archive and rejects cross-scope package paths or manifest entries.
 
 The CI job writes only to `$RUNNER_TEMP`; the repository must remain clean afterward. It does not
 publish packages, upload release artifacts, or receive registry credentials. Registry publication
