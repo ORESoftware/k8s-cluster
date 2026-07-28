@@ -67,6 +67,8 @@ jobs:
       - name: Run static repo contract tests
         run: |
           set -euo pipefail
+          # Tests that read private deployment gitlinks are intentionally run in
+          # backend-contracts after the owner-scoped GitHub App checkout.
           static_tests=(
             general/agent-breadcrumb-pipeline.test.ts
             general/ai-ml-platform-config.test.ts
@@ -78,17 +80,13 @@ jobs:
             general/build-server-config.test.ts
             general/canonical-cloud-gitops.test.ts
             general/cluster-doctor-cron.test.ts
-            general/cluster-hardening.test.ts
             general/container-pool-config.test.ts
             general/contract-service-config.test.ts
             general/des-simulator-config.test.ts
             general/dev-server-container-pool-config.test.ts
-            general/fabrication-cad-source-intake.test.ts
             general/fsharp-ws-server-config.test.ts
-            general/gateway-service-directory.test.ts
             general/gcs-chat-config.test.ts
             general/github-app-submodule-token.test.ts
-            general/gleam-lambda-runner-config.test.ts
             general/gleam-mcp-server-config.test.ts
             general/gleam-mcp-server-observability.test.ts
             general/gleam-websocket-nats-fanout.test.ts
@@ -98,7 +96,6 @@ jobs:
             general/nats-config.test.ts
             general/nats-connect-resilience.test.ts
             general/nats-shadow-handoff.test.ts
-            general/observability-config.test.ts
             general/private-submodule-ci-contract.test.ts
             general/redis-cache-config.test.ts
             general/remote-libs-submodule-contract.test.ts
@@ -121,9 +118,9 @@ jobs:
         working-directory: remote/tests
 
   backend-contracts:
-    name: backend pins + SeaORM + NATS contracts
+    name: backend pins + private deployment contracts
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Require private libraries deploy key
         env:
@@ -183,6 +180,19 @@ jobs:
 
       - name: Verify pinned backend architecture and NATS subjects
         run: pnpm exec tsx --test general/backend-architecture-contract.test.ts general/nats-subject-contract.test.ts
+        working-directory: remote/tests
+
+      - name: Verify contracts that read private deployment sources
+        run: |
+          set -euo pipefail
+          private_deployment_tests=(
+            general/cluster-hardening.test.ts
+            general/fabrication-cad-source-intake.test.ts
+            general/gateway-service-directory.test.ts
+            general/gleam-lambda-runner-config.test.ts
+            general/observability-config.test.ts
+          )
+          pnpm exec tsx --test "${private_deployment_tests[@]}"
         working-directory: remote/tests
 
   kustomize-render:
