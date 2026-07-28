@@ -78,6 +78,8 @@ The HTTP integration suite verifies:
 - batches above the 100-job limit are rejected before provider dispatch
 - readiness remains unavailable without authentication or providers
 
+Test-only HTTP body and provider-kind imports remain gated under `cfg(test)` so production builds stay warning-free with Clippy warnings denied.
+
 The permanent merge gate additionally requires formatting, locked Clippy with warnings denied, all unit/integration tests, the Rust 1.88 container build, cargo-deny, RustSec, and full-history Gitleaks.
 
 ## NATS follow-up
