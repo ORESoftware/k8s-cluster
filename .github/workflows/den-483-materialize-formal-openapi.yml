@@ -174,4 +174,4 @@ jobs:
           if-no-files-found: warn
           retention-days: 1
 
-# Deliberate activation update: the workflow already exists in the branch parent.
+# Deliberate activation update after merging current main into the feature branch.
