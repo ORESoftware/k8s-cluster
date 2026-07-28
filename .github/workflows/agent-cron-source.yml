@@ -1,51 +1,58 @@
-name: diagnose customer cron payload
+name: apply customer cron control plane
 
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - agent/cron-customer-control-plane
 
 permissions:
   contents: write
 
 jobs:
-  diagnose:
-    if: github.event.pull_request.head.ref == 'agent/cron-customer-control-plane' && github.actor != 'github-actions[bot]'
+  apply:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/cron-customer-control-plane
           fetch-depth: 0
-          show-progress: false
-      - name: Record exact payload diagnostics
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: "1.97.0"
+          components: rustfmt
+      - name: Verify and apply customer cron source
         shell: bash
         run: |
-          set -u
-          work=/tmp/customer-cron-payload
-          diagnostic=.agent/cron-payload-diagnostic.txt
-          rm -rf "$work"
-          mkdir -p "$work"
-          : > "$diagnostic"
-          printf 'parts:\n' >> "$diagnostic"
-          find .agent/cron-payload -maxdepth 1 -type f -name 'part-*' -printf '%f %s bytes\n' | sort >> "$diagnostic"
-          cat .agent/cron-payload/part-* | base64 -d > "$work/payload.tgz" 2>"$work/base64.err"
-          base64_status=$?
-          printf 'base64_status=%s\n' "$base64_status" >> "$diagnostic"
-          cat "$work/base64.err" >> "$diagnostic"
-          if [ -f "$work/payload.tgz" ]; then
-            printf 'archive_bytes=' >> "$diagnostic"
-            wc -c < "$work/payload.tgz" >> "$diagnostic"
-            printf 'archive_sha256=' >> "$diagnostic"
-            sha256sum "$work/payload.tgz" | awk '{print $1}' >> "$diagnostic"
+          set -euo pipefail
+          archive=/tmp/customer-cron-control-plane.tgz
+          cat .agent/cron-payload/part-* | base64 -d > "$archive"
+          actual_listing=$(tar -tzf "$archive" | sed 's#^\./##' | sed '/^$/d' | sort)
+          expected_listing=$(cat <<'EOF'
+          docs/cron-jobs.md
+          src/cron.rs
+          src/main.rs
+          src/tests.rs
+          src/views.rs
+          EOF
+          )
+          if [ "$actual_listing" != "$expected_listing" ]; then
+            echo 'unexpected payload entries' >&2
+            echo 'expected:' >&2
+            printf '%s\n' "$expected_listing" >&2
+            echo 'actual:' >&2
+            printf '%s\n' "$actual_listing" >&2
+            exit 1
           fi
-          tar -tzf "$work/payload.tgz" > "$work/tar.list" 2>"$work/tar.err"
-          tar_status=$?
-          printf 'tar_status=%s\n' "$tar_status" >> "$diagnostic"
-          cat "$work/tar.err" >> "$diagnostic"
-          cat "$work/tar.list" >> "$diagnostic"
+          tar -xzf "$archive" --no-same-owner --no-same-permissions
+          cargo fmt --all
+          git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add "$diagnostic"
-          git commit -m 'chore: record customer cron payload diagnostic'
+          git add src/cron.rs src/main.rs src/tests.rs src/views.rs docs/cron-jobs.md
+          if git diff --cached --quiet; then
+            echo 'customer cron source already applied'
+            exit 0
+          fi
+          git commit -m 'feat: add tenant-safe customer cron control plane'
           git push origin HEAD:agent/cron-customer-control-plane
