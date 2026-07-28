@@ -110,10 +110,11 @@ impl ProviderRegistry {
     }
 }
 
-fn readiness(provider: Option<&Arc<dyn PushProvider>>) -> ProviderReadiness {
+fn readiness(provider: Option<&Arc<dyn PushProvider>>) -> ProviderReadinessView {
     provider
         .map(|provider| provider.readiness())
         .unwrap_or_else(|| ProviderReadiness::not_ready("provider is not configured"))
+        .into()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -138,25 +139,6 @@ impl From<ProviderReadiness> for ProviderReadinessView {
             configured: value.configured,
             safe_reason: value.safe_reason,
         }
-    }
-}
-
-impl RegistryReadiness {
-    fn from_readiness(value: ProviderReadiness) -> ProviderReadinessView {
-        value.into()
-    }
-}
-
-impl Serialize for ProviderReadiness {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        ProviderReadinessView {
-            configured: self.configured,
-            safe_reason: self.safe_reason.clone(),
-        }
-        .serialize(serializer)
     }
 }
 
