@@ -118,36 +118,43 @@ jobs:
         working-directory: remote/deployments/dd-embeddings-rs
         shell: bash
         run: |
-          set -euo pipefail
-          cargo fmt --all -- --check
-          cargo check --locked
-          cargo test --locked
+          set -o pipefail
+          {
+            cargo fmt --all -- --check
+            cargo check --locked
+            cargo test --locked
+          } 2>&1 | tee "${RUNNER_TEMP}/dd-embeddings-rust.log"
 
       - name: Prove deterministic committed OpenAPI
         working-directory: remote/deployments/dd-embeddings-rs
         shell: bash
         run: |
-          set -euo pipefail
-          cargo run --locked --quiet -- --export-openapi > "${RUNNER_TEMP}/openapi.1.json"
-          cargo run --locked --quiet -- --export-openapi > "${RUNNER_TEMP}/openapi.2.json"
-          cmp "${RUNNER_TEMP}/openapi.1.json" "${RUNNER_TEMP}/openapi.2.json"
-          cmp "${RUNNER_TEMP}/openapi.1.json" generated/openapi.json
-          python3 -m json.tool generated/openapi.json >/dev/null
+          set -o pipefail
+          {
+            cargo run --locked --quiet -- --export-openapi > "${RUNNER_TEMP}/openapi.1.json"
+            cargo run --locked --quiet -- --export-openapi > "${RUNNER_TEMP}/openapi.2.json"
+            cmp "${RUNNER_TEMP}/openapi.1.json" "${RUNNER_TEMP}/openapi.2.json"
+            cmp "${RUNNER_TEMP}/openapi.1.json" generated/openapi.json
+            python3 -m json.tool generated/openapi.json >/dev/null
+          } 2>&1 | tee "${RUNNER_TEMP}/dd-embeddings-openapi.log"
 
       - name: Verify native contract and compatibility artifacts
         shell: bash
         run: |
-          set -euo pipefail
-          node remote/tools/check-openapi-contracts.mjs --service dd-embeddings-rs
-          node remote/tools/generate-api-docs.mjs --check --service dd-embeddings-rs
+          set -o pipefail
+          {
+            node remote/tools/check-openapi-contracts.mjs --service dd-embeddings-rs
+            node remote/tools/generate-api-docs.mjs --check --service dd-embeddings-rs
+          } 2>&1 | tee "${RUNNER_TEMP}/dd-embeddings-invariants.log"
 
       - name: Generate Rust, TypeScript, and Dart SDK smoke clients
         shell: bash
         run: |
-          set -euo pipefail
+          set -o pipefail
           node remote/tools/generate-openapi-sdks.mjs \
             --service dd-embeddings-rs \
-            --output .tmp/dd-embeddings-sdk
+            --output .tmp/dd-embeddings-sdk \
+            2>&1 | tee "${RUNNER_TEMP}/dd-embeddings-sdk-generation.log"
 
       - name: Compile generated Rust SDK
         working-directory: .tmp/dd-embeddings-sdk/rust
@@ -174,3 +181,18 @@ jobs:
           set -euo pipefail
           dart pub get
           dart analyze
+
+      - name: Upload focused failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dd-embeddings-openapi-contract-diagnostics
+          path: |
+            ${{ runner.temp }}/dd-embeddings-rust.log
+            ${{ runner.temp }}/dd-embeddings-openapi.log
+            ${{ runner.temp }}/dd-embeddings-invariants.log
+            ${{ runner.temp }}/dd-embeddings-sdk-generation.log
+            ${{ runner.temp }}/openapi.1.json
+            ${{ runner.temp }}/openapi.2.json
+          retention-days: 2
+          if-no-files-found: warn
