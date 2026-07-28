@@ -6,18 +6,13 @@ on:
       - main
     paths:
       - '.github/workflows/den-445-fleet-openapi-diagnostics.yml'
-  push:
-    branches:
-      - agent/den-445-native-openapi-fresh
-    paths:
-      - '.github/workflows/den-445-fleet-openapi-diagnostics.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: den-445-fleet-openapi-diagnostics-${{ github.event_name }}
+  group: den-445-fleet-openapi-diagnostics-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
