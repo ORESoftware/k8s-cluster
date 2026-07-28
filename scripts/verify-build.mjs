@@ -66,7 +66,7 @@ for (const expected of [
   "Your choices and rights",
   "Security",
   "never later than the approved 100-hour ceiling",
-  "user-controlled copy outside Sonus Auris automatic retention",
+  "is outside Sonus Auris automatic retention",
   "Exporting does not delay deletion of the app-private copy",
 ]) {
   assert.ok(privacyText.includes(expected), `privacy policy missing ${expected}`);
