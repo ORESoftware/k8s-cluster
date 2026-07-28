@@ -102,6 +102,9 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
+      - name: Prepare pinned RustSec scanner
+        run: nix develop -c agent-check audit-prepare
+
       - name: Collect RustSec diagnostics
         id: diagnostics
         run: |
