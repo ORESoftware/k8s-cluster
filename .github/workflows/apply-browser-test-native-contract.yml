@@ -1,0 +1,218 @@
+name: apply Browser Test native contract projection
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-browser-test-native-contract
+  cancel-in-progress: true
+
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+  PUPPETEER_SKIP_DOWNLOAD: 'true'
+
+jobs:
+  project:
+    if: github.event.pull_request.head.ref == 'agent/den-479-browser-test-runtime-smoke-v2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout feature head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Preserve native executable OpenAPI in fleet generation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          contract = Path('remote/deployments/browser-test-server/src/api-contract.ts')
+          text = contract.read_text(encoding='utf-8')
+          old = "description: 'Fail-closed public subset. Only explicitly public operations are included.',"
+          new = "description: 'Fail-closed public subset. Only operations explicitly marked public are included.',"
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise SystemExit('browser-test public projection description marker missing')
+          contract.write_text(text, encoding='utf-8')
+
+          generator = Path('remote/tools/generate-api-docs.mjs')
+          text = generator.read_text(encoding='utf-8')
+          old_discovery = """    const openapiFile = join(deploymentDir, 'generated/openapi.json');
+              const rawRoutes = (await pathExists(openapiFile))
+                ? extractOpenApiRoutes(JSON.parse(await readUtf8(openapiFile)), openapiFile)
+                : [];
+          """
+          new_discovery = """    const openapiFile = join(deploymentDir, 'generated/openapi.json');
+              const canonicalOpenApi = (await pathExists(openapiFile))
+                ? JSON.parse(await readUtf8(openapiFile))
+                : null;
+              const rawRoutes = canonicalOpenApi
+                ? extractOpenApiRoutes(canonicalOpenApi, openapiFile)
+                : [];
+          """
+          if old_discovery in text:
+              text = text.replace(old_discovery, new_discovery, 1)
+          elif new_discovery not in text:
+              raise SystemExit('generator OpenAPI discovery marker missing')
+
+          old_service = """      outputName: spec.outputName ?? 'api-docs',
+                routes: normalizeRoutes(spec.service, rawRoutes),
+          """
+          new_service = """      outputName: spec.outputName ?? 'api-docs',
+                canonicalOpenApi: spec.service === 'browser-test-server' ? canonicalOpenApi : null,
+                routes: normalizeRoutes(spec.service, rawRoutes),
+          """
+          if old_service in text:
+              text = text.replace(old_service, new_service, 1)
+          elif new_service not in text:
+              raise SystemExit('generator service descriptor marker missing')
+
+          old_render = """    const docs = buildDocs(service);
+              const internalOpenapi = buildOpenApi(docs);
+              const publicOpenapi = buildPublicOpenApi(internalOpenapi);
+          """
+          new_render = """    const docs = buildDocs(service);
+              const internalOpenapi = service.canonicalOpenApi
+                ? structuredClone(service.canonicalOpenApi)
+                : buildOpenApi(docs);
+              const publicOpenapi = buildPublicOpenApi(internalOpenapi);
+          """
+          if old_render in text:
+              text = text.replace(old_render, new_render, 1)
+          elif new_render not in text:
+              raise SystemExit('generator rendering marker missing')
+          generator.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Create contract-only telemetry package shim
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-node
+          cat > remote/libs/telemetry-node/package.json <<'JSON'
+          {
+            "name": "@dd/telemetry",
+            "version": "0.0.0-contract-shim",
+            "type": "module",
+            "exports": {
+              ".": {
+                "types": "./index.d.ts",
+                "default": "./index.js"
+              }
+            }
+          }
+          JSON
+          cat > remote/libs/telemetry-node/index.js <<'JS'
+          export function initTelemetry() {
+            return { shutdown: async () => undefined };
+          }
+          export function instrumentFastify() {}
+          export function loggerMixin() {
+            return {};
+          }
+          JS
+          cat > remote/libs/telemetry-node/index.d.ts <<'TS'
+          export interface TelemetryGuard {
+            shutdown(): Promise<void>;
+          }
+          export function initTelemetry(service: string): TelemetryGuard;
+          export function instrumentFastify(app: unknown, options?: { service?: string }): void;
+          export function loggerMixin(): Record<string, unknown>;
+          TS
+
+      - name: Install Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Build and export deterministic native contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@9.15.4 --activate
+          pnpm --dir remote/deployments/browser-test-server install --frozen-lockfile --ignore-workspace
+          pnpm --dir remote/deployments/browser-test-server run typecheck
+          pnpm --dir remote/deployments/browser-test-server run build
+          pnpm --dir remote/deployments/browser-test-server run test:contract
+          pnpm --dir remote/deployments/browser-test-server run --silent export:openapi > "${RUNNER_TEMP}/browser-openapi.1.json"
+          pnpm --dir remote/deployments/browser-test-server run --silent export:openapi > "${RUNNER_TEMP}/browser-openapi.2.json"
+          cmp "${RUNNER_TEMP}/browser-openapi.1.json" "${RUNNER_TEMP}/browser-openapi.2.json"
+          cp "${RUNNER_TEMP}/browser-openapi.1.json" remote/deployments/browser-test-server/generated/openapi.json
+
+      - name: Regenerate current fleet projections and SDKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          node remote/tools/generate-api-docs.mjs
+          node remote/tools/generate-api-sdks.mjs
+          node remote/tools/generate-api-docs.mjs --check --service browser-test-server
+          node remote/tools/check-openapi-contracts.mjs --service browser-test-server
+          node remote/tools/validate-openapi-contracts.mjs
+          node remote/tools/generate-api-sdks.mjs --check
+          node remote/tools/validate-api-sdks.mjs
+
+      - name: Stage only semantic contract projections
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/deployments/browser-test-server/node_modules \
+            remote/deployments/browser-test-server/dist
+          git add \
+            remote/deployments/browser-test-server/src/api-contract.ts \
+            remote/deployments/browser-test-server/generated \
+            remote/deployments/generated-api-docs-index.json \
+            remote/deployments/generated-api-docs-index.html \
+            remote/api-sdks \
+            remote/tools/generate-api-docs.mjs
+          git diff --cached --check
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          allowed = (
+              'remote/deployments/browser-test-server/generated/',
+              'remote/deployments/generated-api-docs-index.',
+              'remote/api-sdks/',
+              'remote/deployments/browser-test-server/src/api-contract.ts',
+              'remote/tools/generate-api-docs.mjs',
+          )
+          changed = subprocess.check_output(
+              ['git', 'diff', '--cached', '--name-only'],
+              text=True,
+          ).splitlines()
+          unexpected = [path for path in changed if not any(path.startswith(prefix) for prefix in allowed)]
+          if unexpected:
+              raise SystemExit('unexpected generated paths:\n' + '\n'.join(unexpected))
+          if not changed:
+              print('native contract projections already current')
+          else:
+              print('\n'.join(changed))
+          PY
+
+      - name: Commit current-main native projections
+        shell: bash
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(openapi): project browser-test executable contract'
+          git push origin "HEAD:${HEAD_BRANCH}"
