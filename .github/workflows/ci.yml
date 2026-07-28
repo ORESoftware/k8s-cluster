@@ -23,9 +23,14 @@ jobs:
           toolchain: "1.97.0"
           components: rustfmt
       - name: Publish reviewable source on a fresh feature branch
+        id: publish
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
+          exec > >(tee /tmp/customer-cron-publish.log) 2>&1
+          set -Eeuo pipefail
+          trap 'status=$?; printf "failure_status=%s line=%s command=%q\n" "$status" "$LINENO" "$BASH_COMMAND"; exit "$status"' ERR
+          printf 'head_before=%s\n' "$(git rev-parse HEAD)"
           base64 -d .agent/cron-source.rs.gz.b64 | gzip -d > src/cron.rs
           echo '8ead0feb226c0ef5bc97206a5736a32a85d9f29938d14effa1bbc3f98549b099  src/cron.rs' | sha256sum --check --strict
           python3 scripts/apply-cron-control-plane.py
@@ -34,5 +39,17 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add src/cron.rs src/main.rs src/views.rs src/tests.rs docs/cron-jobs.md
+          git status --short
           git commit -m 'feat: add tenant-safe customer cron control plane'
           git push --force origin HEAD:refs/heads/agent/cron-customer-control-plane-applied
+      - name: Upload publish diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: customer-cron-publish-${{ github.run_id }}
+          path: /tmp/customer-cron-publish.log
+          if-no-files-found: error
+          retention-days: 3
+      - name: Enforce publish result
+        if: steps.publish.outcome == 'failure'
+        run: exit 1
