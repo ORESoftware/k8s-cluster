@@ -99,7 +99,15 @@ async function readWebHomeSource(): Promise<string> {
 test('rust build server queues controlled image builds and deploys', async () => {
   const cargoToml = await readRepoFile('remote/deployments/build-server-rs/Cargo.toml');
   const source = await readBuildServerSource();
+  const jobsSource = await readRepoFile('remote/deployments/build-server-rs/src/jobs.rs');
+  const profilesSource = await readRepoFile('remote/deployments/build-server-rs/src/profiles.rs');
   const readme = await readRepoFile('remote/deployments/build-server-rs/readme.md');
+
+  const executeBuildStart = jobsSource.indexOf('pub(crate) async fn execute_build');
+  const runJobStart = jobsSource.indexOf('pub(crate) async fn run_job');
+  assert.notEqual(executeBuildStart, -1, 'jobs.rs must define execute_build');
+  assert.ok(runJobStart > executeBuildStart, 'run_job must follow execute_build');
+  const executeBuildSource = jobsSource.slice(executeBuildStart, runJobStart);
 
   assert.match(cargoToml, /name = "dd-build-server"/);
   assert.match(cargoToml, /axum/);
@@ -142,7 +150,14 @@ test('rust build server queues controlled image builds and deploys', async () =>
   assert.match(source, /"apply"/);
   assert.match(source, /"rollout"/);
   assert.match(source, /dd_build_server_jobs_submitted_total/);
-  assert.doesNotMatch(source, /\/bin\/bash/);
+
+  // Arbitrary image-build requests remain argv-only. Shell execution is allowed
+  // only inside the fixed, operator-reviewed profile catalog selected by name.
+  assert.doesNotMatch(executeBuildSource, /\/bin\/bash/);
+  assert.match(profilesSource, /Fixed, operator-reviewed CI profiles/);
+  assert.match(jobsSource, /let profile = profiles::find\(&profile_name\)/);
+  assert.match(jobsSource, /step\.script\.to_string\(\)/);
+
   assert.match(readme, /does not accept arbitrary shell commands/);
   assert.match(readme, /not a fully untrusted code sandbox/);
   assert.match(readme, /`deploy.kind`: `kustomize`, `manifest`, or `none`/);
