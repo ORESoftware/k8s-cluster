@@ -1,0 +1,196 @@
+name: Apply DEN-426 container-pool contracts v5
+
+on:
+  push:
+    branches:
+      - agent/den-426-container-pool-contracts
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-den-426-container-pool-contracts-v5.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-426-container-pool-contracts-v5-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-426-container-pool-contracts
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Merge current main without rebasing
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor origin/main HEAD; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            if ! git merge --no-ff --no-edit origin/main; then
+              git diff --name-only --diff-filter=U >&2
+              exit 1
+            fi
+          fi
+          if git grep -n -E '^(<<<<<<< |=======$|>>>>>>> )' -- . ':(exclude)*.lock'; then
+            exit 1
+          fi
+      - name: Resolve the exact remote/libs gitlink
+        id: libs-pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin="$(git ls-files --stage -- remote/libs | awk '$1 == 160000 { print $2; exit }')"
+          test "${#pin}" = 40
+          echo "sha=$pin" >>"$GITHUB_OUTPUT"
+      - name: Check out remote/libs recursively at its exact pin
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/k8s-libs-and-shared-defs
+          ref: ${{ steps.libs-pin.outputs.sha }}
+          path: remote/libs
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          persist-credentials: false
+          submodules: recursive
+          fetch-depth: 1
+      - name: Execute the validated module and document-pool transform
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/apply-den-426-container-pool-contracts-v4.yml').read_text(encoding='utf-8')
+          start = '      - name: Apply symbol-bounded container-pool repair\n'
+          end = '      - uses: pnpm/action-setup@'
+          if workflow.count(start) != 1 or workflow.count(end) != 1:
+              raise SystemExit('DEN-426 v4 patch markers are not unique')
+          block = workflow.split(start, 1)[1].split(end, 1)[0]
+          prefix = '        shell: bash\n        run: |\n'
+          if not block.startswith(prefix):
+              raise SystemExit('DEN-426 v4 patch block shape changed')
+          lines = block[len(prefix):].splitlines()
+          if any(line and not line.startswith('          ') for line in lines):
+              raise SystemExit('DEN-426 v4 patch indentation changed')
+          script = '\n'.join(line[10:] if line else '' for line in lines) + '\n'
+          output = Path('/tmp/den-426-container-pool-v4-patch.sh')
+          output.write_text(script, encoding='utf-8')
+          output.chmod(0o700)
+          PY
+          /tmp/den-426-container-pool-v4-patch.sh
+      - name: Verify generated NATS imports in their authoritative modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/tests/general/container-pool-config.test.ts')
+          text = path.read_text(encoding='utf-8')
+
+          source_decl = '  const source = await readContainerPoolSource();\n'
+          module_decls = (
+              "  const natsBackgroundSource = await readRepoFile(\n"
+              "    'remote/deployments/container-pool-rs/src/background.rs',\n"
+              "  );\n"
+              "  const natsConfigSource = await readRepoFile(\n"
+              "    'remote/deployments/container-pool-rs/src/config.rs',\n"
+              "  );\n"
+              "  const natsLifecycleSource = await readRepoFile(\n"
+              "    'remote/deployments/container-pool-rs/src/lifecycle.rs',\n"
+              "  );\n"
+          )
+          if 'const natsBackgroundSource = await readRepoFile(' not in text:
+              if text.count(source_decl) != 1:
+                  raise SystemExit('container-pool source declaration is not unique')
+              text = text.replace(source_decl, source_decl + module_decls, 1)
+
+          import_symbol = '/use dd_nats_subject_defs::\\{'
+          import_pos = text.find(import_symbol)
+          if import_pos != -1:
+              block_start = text.rfind('  assert.match(', 0, import_pos)
+              block_end = text.find('  );\n', import_pos)
+              if block_start == -1 or block_end == -1:
+                  raise SystemExit('could not bound stale NATS import assertion')
+              block_end += len('  );\n')
+              replacement = r'''  assert.match(
+            natsBackgroundSource,
+            /use dd_nats_subject_defs::cdc_table_filter_subject;/,
+          );
+          assert.match(
+            natsConfigSource,
+            /use dd_nats_subject_defs::\{CONTAINER_POOL_REQUESTS_SUBJECT, CONTAINER_POOL_RESULTS_SUBJECT\};/,
+          );
+          assert.match(
+            natsLifecycleSource,
+            /use dd_nats_subject_defs::\{container_pool_events_subject, container_pool_heartbeats_subject\};/,
+          );
+          '''
+              text = text[:block_start] + replacement + text[block_end:]
+          elif 'natsBackgroundSource,' not in text or 'natsConfigSource,' not in text or 'natsLifecycleSource,' not in text:
+              raise SystemExit('split NATS import assertions were not found')
+
+          for table in ['app_config', 'container_pool_configs']:
+              before = f'/cdc_table_filter_subject\\("cdc", "public", "{table}"\\)/'
+              after = f'/cdc_table_filter_subject\\(\\s*"cdc",\\s*"public",\\s*"{table}",?\\s*\\)/'
+              if before in text:
+                  text = text.replace(before, after, 1)
+              elif after not in text:
+                  raise SystemExit(f'CDC table assertion missing for {table}')
+
+          path.write_text(text, encoding='utf-8')
+          PY
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Run the complete container-pool contract
+        id: focused-contract
+        shell: bash
+        working-directory: remote/tests
+        run: |
+          set -o pipefail
+          pnpm exec tsx --test general/container-pool-config.test.ts \
+            2>&1 | tee "${RUNNER_TEMP}/den-426-container-pool-contract-v5.log"
+      - name: Upload focused diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-426-container-pool-contract-v5
+          path: ${{ runner.temp }}/den-426-container-pool-contract-v5.log
+          retention-days: 1
+          if-no-files-found: warn
+      - name: Scan for unresolved conflict markers
+        if: success()
+        run: |
+          if git grep -n -E '^(<<<<<<< |=======$|>>>>>>> )' -- . ':(exclude)*.lock'; then
+            exit 1
+          fi
+      - name: Commit and push verified changes
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- remote/tests/general/container-pool-config.test.ts
+          if ! git diff --cached --quiet; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'DEN-426 align container-pool contracts with modules and document pool'
+          fi
+          if git rev-list --count origin/agent/den-426-container-pool-contracts..HEAD | grep -vq '^0$'; then
+            git push origin HEAD:agent/den-426-container-pool-contracts
+          fi
