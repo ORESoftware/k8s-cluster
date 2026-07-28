@@ -1,0 +1,7 @@
+[advisories]
+# RUSTSEC-2023-0071 has no patched `rsa` release. This service is PostgreSQL-only;
+# the crate enters the lockfile through SQLx's MySQL metadata used by SeaORM
+# macros and is not a direct dependency or runtime cryptography implementation.
+# DEN-538 tracks removal by upgrading to an ORM/SQLx stack where MySQL RSA is
+# explicitly optional. CI verifies the expected transitive path before auditing.
+ignore = ["RUSTSEC-2023-0071"]
