@@ -69,40 +69,42 @@ jobs:
           source = path.read_text()
 
           marker = 'const MAX_RUN_MS: u64 = 120_000;\n'
-          helper = '''const MAX_RUN_MS: u64 = 120_000;
-
-          fn optional_env(name: &str) -> Option<String> {
-              std::env::var(name)
-                  .ok()
-                  .map(|value| value.trim().to_string())
-                  .filter(|value| !value.is_empty())
-          }
-          '''
+          helper = (
+              'const MAX_RUN_MS: u64 = 120_000;\n\n'
+              'fn optional_env(name: &str) -> Option<String> {\n'
+              '    std::env::var(name)\n'
+              '        .ok()\n'
+              '        .map(|value| value.trim().to_string())\n'
+              '        .filter(|value| !value.is_empty())\n'
+              '}\n'
+          )
           if source.count(marker) != 1:
               raise SystemExit('optional_env insertion point changed')
           source = source.replace(marker, helper, 1)
 
-          old = '''    cron_inventory_markup(
-              org_id,
-              &customer_csrf_token(config, customer),
-              schedules.as_ref().ok(),
-              functions.as_ref().ok(),
-              schedules.err().or_else(|| functions.err()),
+          old = (
+              '    cron_inventory_markup(\n'
+              '        org_id,\n'
+              '        &customer_csrf_token(config, customer),\n'
+              '        schedules.as_ref().ok(),\n'
+              '        functions.as_ref().ok(),\n'
+              '        schedules.err().or_else(|| functions.err()),\n'
+              '    )\n'
           )
-          '''
-          new = '''    let dependency_error = schedules
-              .as_ref()
-              .err()
-              .copied()
-              .or_else(|| functions.as_ref().err().copied());
-          cron_inventory_markup(
-              org_id,
-              &customer_csrf_token(config, customer),
-              schedules.as_ref().ok(),
-              functions.as_ref().ok(),
-              dependency_error,
+          new = (
+              '    let dependency_error = schedules\n'
+              '        .as_ref()\n'
+              '        .err()\n'
+              '        .copied()\n'
+              '        .or_else(|| functions.as_ref().err().copied());\n'
+              '    cron_inventory_markup(\n'
+              '        org_id,\n'
+              '        &customer_csrf_token(config, customer),\n'
+              '        schedules.as_ref().ok(),\n'
+              '        functions.as_ref().ok(),\n'
+              '        dependency_error,\n'
+              '    )\n'
           )
-          '''
           if source.count(old) != 1:
               raise SystemExit('borrow repair insertion point changed')
           source = source.replace(old, new, 1)
