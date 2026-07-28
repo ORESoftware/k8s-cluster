@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "info": {
-    "title": "dataset-labeling-rs API",
+    "title": "dataset-labeling-rs API (public)",
     "version": "0.1.0",
-    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
   },
   "tags": [
     {
@@ -44,36 +44,6 @@
         ],
         "x-dd-visibility": "public",
         "security": []
-      }
-    },
-    "/aggregate": {
-      "post": {
-        "operationId": "dataset_labeling_rs_post_aggregate_8588462a9503",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "aggregate_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dataset-labeling-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/aggregate",
-        "x-dd-source-paths": [
-          "/aggregate"
-        ],
-        "x-dd-visibility": "internal"
       }
     },
     "/api/docs": {
@@ -138,126 +108,6 @@
         "security": []
       }
     },
-    "/datasets": {
-      "get": {
-        "operationId": "dataset_labeling_rs_get_datasets_0410cd66a9d3",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "create_dataset_http",
-          "list_datasets_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dataset-labeling-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/datasets",
-        "x-dd-source-paths": [
-          "/datasets"
-        ],
-        "x-dd-visibility": "internal"
-      },
-      "post": {
-        "operationId": "dataset_labeling_rs_post_datasets_05bd038d9d4d",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "create_dataset_http",
-          "list_datasets_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dataset-labeling-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/datasets",
-        "x-dd-source-paths": [
-          "/datasets"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/datasets/export": {
-      "get": {
-        "operationId": "dataset_labeling_rs_get_datasets_export_98c56e7072d3",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "export_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dataset-labeling-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/datasets/export",
-        "x-dd-source-paths": [
-          "/datasets/export"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/descriptor": {
-      "get": {
-        "operationId": "dataset_labeling_rs_get_descriptor_e71ac91187de",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "descriptor"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dataset-labeling-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/descriptor",
-        "x-dd-source-paths": [
-          "/descriptor"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
     "/docs/api": {
       "get": {
         "operationId": "dataset_labeling_rs_get_docs_api_c67400bc23e0",
@@ -287,66 +137,6 @@
         ],
         "x-dd-visibility": "public",
         "security": []
-      }
-    },
-    "/example": {
-      "get": {
-        "operationId": "dataset_labeling_rs_get_example_09b4a7d5e19f",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "example"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dataset-labeling-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/example",
-        "x-dd-source-paths": [
-          "/example"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/functions/apply": {
-      "post": {
-        "operationId": "dataset_labeling_rs_post_functions_apply_7b659eaada79",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "functions_apply_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dataset-labeling-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/functions/apply",
-        "x-dd-source-paths": [
-          "/functions/apply"
-        ],
-        "x-dd-visibility": "internal"
       }
     },
     "/healthz": {
@@ -380,36 +170,6 @@
         "security": []
       }
     },
-    "/labels": {
-      "post": {
-        "operationId": "dataset_labeling_rs_post_labels_7f46681edaeb",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "labels_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dataset-labeling-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/labels",
-        "x-dd-source-paths": [
-          "/labels"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
     "/metrics": {
       "get": {
         "operationId": "dataset_labeling_rs_get_metrics_20be3e57dd3f",
@@ -439,36 +199,6 @@
         ],
         "x-dd-visibility": "public",
         "security": []
-      }
-    },
-    "/pipeline/jobs": {
-      "post": {
-        "operationId": "dataset_labeling_rs_post_pipeline_jobs_c942c4bf7e81",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "pipeline_jobs_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dataset-labeling-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/pipeline/jobs",
-        "x-dd-source-paths": [
-          "/pipeline/jobs"
-        ],
-        "x-dd-visibility": "internal"
       }
     },
     "/readyz": {
@@ -501,66 +231,6 @@
         "x-dd-visibility": "public",
         "security": []
       }
-    },
-    "/schema": {
-      "get": {
-        "operationId": "dataset_labeling_rs_get_schema_f8799ad9cda6",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "schema"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dataset-labeling-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/schema",
-        "x-dd-source-paths": [
-          "/schema"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/tasks": {
-      "post": {
-        "operationId": "dataset_labeling_rs_post_tasks_e785b7222320",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "tasks_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dataset-labeling-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/tasks",
-        "x-dd-source-paths": [
-          "/tasks"
-        ],
-        "x-dd-visibility": "internal"
-      }
     }
   },
   "components": {
@@ -582,11 +252,11 @@
       }
     }
   },
-  "x-dd-contract-scope": "internal",
+  "x-dd-contract-scope": "public",
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "rust",
-  "x-dd-operation-count": 18,
-  "x-dd-route-count": 17,
+  "x-dd-operation-count": 7,
+  "x-dd-route-count": 7,
   "x-dd-service": "dataset-labeling-rs",
   "x-dd-standard-docs-routes": [
     "/docs/api",

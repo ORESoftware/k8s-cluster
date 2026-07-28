@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "info": {
-    "title": "gleam-mcp-server API",
+    "title": "gleam-mcp-server API (public)",
     "version": "0.1.0",
-    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
   },
   "tags": [
     {
@@ -190,188 +190,6 @@
         "security": []
       }
     },
-    "/home": {
-      "get": {
-        "operationId": "gleam_mcp_server_get_home_40f91564c8cd",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
-        ],
-        "x-dd-source-path": "/home",
-        "x-dd-source-paths": [
-          "/home"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/internal/runtime-config": {
-      "get": {
-        "operationId": "gleam_mcp_server_get_internal_runtime_config_7d24a2aa4251",
-        "summary": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
-        "description": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_get"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/libs/runtime-config-client-gleam/src/dd_runtime_config_client.gleam"
-        ],
-        "x-dd-source-path": "/internal/runtime-config",
-        "x-dd-source-paths": [
-          "/internal/runtime-config"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/internal/runtime-config/reset": {
-      "post": {
-        "operationId": "gleam_mcp_server_post_internal_runtime_config_reset_fa8ef863e921",
-        "summary": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
-        "description": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_reset"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/libs/runtime-config-client-gleam/src/dd_runtime_config_client.gleam"
-        ],
-        "x-dd-source-path": "/internal/runtime-config/reset",
-        "x-dd-source-paths": [
-          "/internal/runtime-config/reset"
-        ],
-        "x-dd-visibility": "internal",
-        "security": [
-          {
-            "serverAuth": []
-          }
-        ]
-      }
-    },
-    "/internal/update-runtime-config": {
-      "post": {
-        "operationId": "gleam_mcp_server_post_internal_update_runtime_config_add41fc9bf3c",
-        "summary": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
-        "description": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_apply"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/libs/runtime-config-client-gleam/src/dd_runtime_config_client.gleam"
-        ],
-        "x-dd-source-path": "/internal/update-runtime-config",
-        "x-dd-source-paths": [
-          "/internal/update-runtime-config"
-        ],
-        "x-dd-visibility": "internal",
-        "security": [
-          {
-            "serverAuth": []
-          }
-        ]
-      }
-    },
-    "/mcp": {
-      "get": {
-        "operationId": "gleam_mcp_server_get_mcp_f9b64b9c49f8",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
-        ],
-        "x-dd-source-path": "/mcp",
-        "x-dd-source-paths": [
-          "/mcp"
-        ],
-        "x-dd-visibility": "internal"
-      },
-      "post": {
-        "operationId": "gleam_mcp_server_post_mcp_72506b88c555",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
-        ],
-        "x-dd-source-path": "/mcp",
-        "x-dd-source-paths": [
-          "/mcp"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
     "/metrics": {
       "get": {
         "operationId": "gleam_mcp_server_get_metrics_ee284b4ec7e3",
@@ -400,34 +218,6 @@
         "x-dd-visibility": "public",
         "security": []
       }
-    },
-    "/observability": {
-      "get": {
-        "operationId": "gleam_mcp_server_get_observability_0a5aa0a4538b",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
-        ],
-        "x-dd-source-path": "/observability",
-        "x-dd-source-paths": [
-          "/observability"
-        ],
-        "x-dd-visibility": "internal"
-      }
     }
   },
   "components": {
@@ -449,11 +239,11 @@
       }
     }
   },
-  "x-dd-contract-scope": "internal",
+  "x-dd-contract-scope": "public",
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "gleam",
-  "x-dd-operation-count": 14,
-  "x-dd-route-count": 12,
+  "x-dd-operation-count": 7,
+  "x-dd-route-count": 6,
   "x-dd-service": "gleam-mcp-server",
   "x-dd-standard-docs-routes": [
     "/docs/api",

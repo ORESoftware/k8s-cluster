@@ -23,7 +23,7 @@
       "generated": [
         "remote/deployments/agent-worker-broker-rs/generated/api-docs.json",
         "remote/deployments/agent-worker-broker-rs/generated/api-docs.html",
-        "remote/deployments/agent-worker-broker-rs/generated/api-docs.public.json",
+        "remote/deployments/agent-worker-broker-rs/generated/api-docs.internal.json",
         "remote/deployments/agent-worker-broker-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -39,7 +39,7 @@
       "generated": [
         "remote/deployments/ai-ml-pipeline/generated/api-docs.json",
         "remote/deployments/ai-ml-pipeline/generated/api-docs.html",
-        "remote/deployments/ai-ml-pipeline/generated/api-docs.public.json",
+        "remote/deployments/ai-ml-pipeline/generated/api-docs.internal.json",
         "remote/deployments/ai-ml-pipeline/generated/api-docs.metadata.json"
       ]
     },
@@ -54,7 +54,7 @@
       "generated": [
         "remote/deployments/apostille-services-server-rs/generated/api-docs.json",
         "remote/deployments/apostille-services-server-rs/generated/api-docs.html",
-        "remote/deployments/apostille-services-server-rs/generated/api-docs.public.json",
+        "remote/deployments/apostille-services-server-rs/generated/api-docs.internal.json",
         "remote/deployments/apostille-services-server-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -70,7 +70,7 @@
       "generated": [
         "remote/deployments/auth-server-rs/generated/api-docs.json",
         "remote/deployments/auth-server-rs/generated/api-docs.html",
-        "remote/deployments/auth-server-rs/generated/api-docs.public.json",
+        "remote/deployments/auth-server-rs/generated/api-docs.internal.json",
         "remote/deployments/auth-server-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -86,7 +86,7 @@
       "generated": [
         "remote/deployments/bastion-rs/generated/api-docs.json",
         "remote/deployments/bastion-rs/generated/api-docs.html",
-        "remote/deployments/bastion-rs/generated/api-docs.public.json",
+        "remote/deployments/bastion-rs/generated/api-docs.internal.json",
         "remote/deployments/bastion-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -101,7 +101,7 @@
       "generated": [
         "remote/deployments/billing-server-rs/generated/api-docs.json",
         "remote/deployments/billing-server-rs/generated/api-docs.html",
-        "remote/deployments/billing-server-rs/generated/api-docs.public.json",
+        "remote/deployments/billing-server-rs/generated/api-docs.internal.json",
         "remote/deployments/billing-server-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -116,7 +116,7 @@
       "generated": [
         "remote/deployments/browser-test-server/generated/api-docs.json",
         "remote/deployments/browser-test-server/generated/api-docs.html",
-        "remote/deployments/browser-test-server/generated/api-docs.public.json",
+        "remote/deployments/browser-test-server/generated/api-docs.internal.json",
         "remote/deployments/browser-test-server/generated/api-docs.metadata.json"
       ]
     },
@@ -132,7 +132,7 @@
       "generated": [
         "remote/deployments/build-server-rs/generated/api-docs.json",
         "remote/deployments/build-server-rs/generated/api-docs.html",
-        "remote/deployments/build-server-rs/generated/api-docs.public.json",
+        "remote/deployments/build-server-rs/generated/api-docs.internal.json",
         "remote/deployments/build-server-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -148,7 +148,7 @@
       "generated": [
         "remote/deployments/cluster-mcp-rs/generated/api-docs.json",
         "remote/deployments/cluster-mcp-rs/generated/api-docs.html",
-        "remote/deployments/cluster-mcp-rs/generated/api-docs.public.json",
+        "remote/deployments/cluster-mcp-rs/generated/api-docs.internal.json",
         "remote/deployments/cluster-mcp-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -164,7 +164,7 @@
       "generated": [
         "remote/deployments/container-pool-rs/generated/api-docs.json",
         "remote/deployments/container-pool-rs/generated/api-docs.html",
-        "remote/deployments/container-pool-rs/generated/api-docs.public.json",
+        "remote/deployments/container-pool-rs/generated/api-docs.internal.json",
         "remote/deployments/container-pool-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -180,7 +180,7 @@
       "generated": [
         "remote/deployments/contract-service-rs/generated/api-docs.json",
         "remote/deployments/contract-service-rs/generated/api-docs.html",
-        "remote/deployments/contract-service-rs/generated/api-docs.public.json",
+        "remote/deployments/contract-service-rs/generated/api-docs.internal.json",
         "remote/deployments/contract-service-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -195,7 +195,7 @@
       "generated": [
         "remote/deployments/dart-server/generated/api-docs.json",
         "remote/deployments/dart-server/generated/api-docs.html",
-        "remote/deployments/dart-server/generated/api-docs.public.json",
+        "remote/deployments/dart-server/generated/api-docs.internal.json",
         "remote/deployments/dart-server/generated/api-docs.metadata.json"
       ]
     },
@@ -210,7 +210,7 @@
       "generated": [
         "remote/deployments/dataset-labeling-rs/generated/api-docs.json",
         "remote/deployments/dataset-labeling-rs/generated/api-docs.html",
-        "remote/deployments/dataset-labeling-rs/generated/api-docs.public.json",
+        "remote/deployments/dataset-labeling-rs/generated/api-docs.internal.json",
         "remote/deployments/dataset-labeling-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -225,7 +225,7 @@
       "generated": [
         "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.json",
         "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.html",
-        "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.public.json",
+        "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.internal.json",
         "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -241,7 +241,7 @@
       "generated": [
         "remote/deployments/dd-compliance-rs/generated/api-docs.json",
         "remote/deployments/dd-compliance-rs/generated/api-docs.html",
-        "remote/deployments/dd-compliance-rs/generated/api-docs.public.json",
+        "remote/deployments/dd-compliance-rs/generated/api-docs.internal.json",
         "remote/deployments/dd-compliance-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -257,7 +257,7 @@
       "generated": [
         "remote/deployments/dd-document-rs/generated/api-docs.json",
         "remote/deployments/dd-document-rs/generated/api-docs.html",
-        "remote/deployments/dd-document-rs/generated/api-docs.public.json",
+        "remote/deployments/dd-document-rs/generated/api-docs.internal.json",
         "remote/deployments/dd-document-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -273,7 +273,7 @@
       "generated": [
         "remote/deployments/dd-escrow-rs/generated/api-docs.json",
         "remote/deployments/dd-escrow-rs/generated/api-docs.html",
-        "remote/deployments/dd-escrow-rs/generated/api-docs.public.json",
+        "remote/deployments/dd-escrow-rs/generated/api-docs.internal.json",
         "remote/deployments/dd-escrow-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -288,7 +288,7 @@
       "generated": [
         "remote/deployments/dd-git-rs/generated/api-docs.json",
         "remote/deployments/dd-git-rs/generated/api-docs.html",
-        "remote/deployments/dd-git-rs/generated/api-docs.public.json",
+        "remote/deployments/dd-git-rs/generated/api-docs.internal.json",
         "remote/deployments/dd-git-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -303,7 +303,7 @@
       "generated": [
         "remote/deployments/dd-music-rs/generated/api-docs.json",
         "remote/deployments/dd-music-rs/generated/api-docs.html",
-        "remote/deployments/dd-music-rs/generated/api-docs.public.json",
+        "remote/deployments/dd-music-rs/generated/api-docs.internal.json",
         "remote/deployments/dd-music-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -319,7 +319,7 @@
       "generated": [
         "remote/deployments/dd-ocr-rs/generated/api-docs.json",
         "remote/deployments/dd-ocr-rs/generated/api-docs.html",
-        "remote/deployments/dd-ocr-rs/generated/api-docs.public.json",
+        "remote/deployments/dd-ocr-rs/generated/api-docs.internal.json",
         "remote/deployments/dd-ocr-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -335,7 +335,7 @@
       "generated": [
         "remote/deployments/des-simulator-rs/generated/api-docs.json",
         "remote/deployments/des-simulator-rs/generated/api-docs.html",
-        "remote/deployments/des-simulator-rs/generated/api-docs.public.json",
+        "remote/deployments/des-simulator-rs/generated/api-docs.internal.json",
         "remote/deployments/des-simulator-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -351,7 +351,7 @@
       "generated": [
         "remote/deployments/dev-server/generated/api-docs.json",
         "remote/deployments/dev-server/generated/api-docs.html",
-        "remote/deployments/dev-server/generated/api-docs.public.json",
+        "remote/deployments/dev-server/generated/api-docs.internal.json",
         "remote/deployments/dev-server/generated/api-docs.metadata.json"
       ]
     },
@@ -367,7 +367,7 @@
       "generated": [
         "remote/deployments/economics-server-rs/generated/api-docs.json",
         "remote/deployments/economics-server-rs/generated/api-docs.html",
-        "remote/deployments/economics-server-rs/generated/api-docs.public.json",
+        "remote/deployments/economics-server-rs/generated/api-docs.internal.json",
         "remote/deployments/economics-server-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -382,7 +382,7 @@
       "generated": [
         "remote/deployments/fiducia-customer.rs/generated/api-docs.json",
         "remote/deployments/fiducia-customer.rs/generated/api-docs.html",
-        "remote/deployments/fiducia-customer.rs/generated/api-docs.public.json",
+        "remote/deployments/fiducia-customer.rs/generated/api-docs.internal.json",
         "remote/deployments/fiducia-customer.rs/generated/api-docs.metadata.json"
       ]
     },
@@ -398,7 +398,7 @@
       "generated": [
         "remote/deployments/formal-methods-server-rs/generated/api-docs.json",
         "remote/deployments/formal-methods-server-rs/generated/api-docs.html",
-        "remote/deployments/formal-methods-server-rs/generated/api-docs.public.json",
+        "remote/deployments/formal-methods-server-rs/generated/api-docs.internal.json",
         "remote/deployments/formal-methods-server-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -414,7 +414,7 @@
       "generated": [
         "remote/deployments/formal-methods-service-rs/generated/api-docs.json",
         "remote/deployments/formal-methods-service-rs/generated/api-docs.html",
-        "remote/deployments/formal-methods-service-rs/generated/api-docs.public.json",
+        "remote/deployments/formal-methods-service-rs/generated/api-docs.internal.json",
         "remote/deployments/formal-methods-service-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -429,7 +429,7 @@
       "generated": [
         "remote/deployments/fsharp-ws-server/generated/api-docs.json",
         "remote/deployments/fsharp-ws-server/generated/api-docs.html",
-        "remote/deployments/fsharp-ws-server/generated/api-docs.public.json",
+        "remote/deployments/fsharp-ws-server/generated/api-docs.internal.json",
         "remote/deployments/fsharp-ws-server/generated/api-docs.metadata.json"
       ]
     },
@@ -445,7 +445,7 @@
       "generated": [
         "remote/deployments/gleam-lambda-runner/generated/api-docs.json",
         "remote/deployments/gleam-lambda-runner/generated/api-docs.html",
-        "remote/deployments/gleam-lambda-runner/generated/api-docs.public.json",
+        "remote/deployments/gleam-lambda-runner/generated/api-docs.internal.json",
         "remote/deployments/gleam-lambda-runner/generated/api-docs.metadata.json"
       ]
     },
@@ -461,7 +461,7 @@
       "generated": [
         "remote/deployments/gleam-mcp-server/generated/api-docs.json",
         "remote/deployments/gleam-mcp-server/generated/api-docs.html",
-        "remote/deployments/gleam-mcp-server/generated/api-docs.public.json",
+        "remote/deployments/gleam-mcp-server/generated/api-docs.internal.json",
         "remote/deployments/gleam-mcp-server/generated/api-docs.metadata.json"
       ]
     },
@@ -477,7 +477,7 @@
       "generated": [
         "remote/deployments/gleamlang-presence-server/generated/api-docs.json",
         "remote/deployments/gleamlang-presence-server/generated/api-docs.html",
-        "remote/deployments/gleamlang-presence-server/generated/api-docs.public.json",
+        "remote/deployments/gleamlang-presence-server/generated/api-docs.internal.json",
         "remote/deployments/gleamlang-presence-server/generated/api-docs.metadata.json"
       ]
     },
@@ -493,7 +493,7 @@
       "generated": [
         "remote/deployments/gleamlang-server/generated/api-docs.json",
         "remote/deployments/gleamlang-server/generated/api-docs.html",
-        "remote/deployments/gleamlang-server/generated/api-docs.public.json",
+        "remote/deployments/gleamlang-server/generated/api-docs.internal.json",
         "remote/deployments/gleamlang-server/generated/api-docs.metadata.json"
       ]
     },
@@ -508,7 +508,7 @@
       "generated": [
         "remote/deployments/gleamlang-server/generated/api-docs.nats-bridge.json",
         "remote/deployments/gleamlang-server/generated/api-docs.nats-bridge.html",
-        "remote/deployments/gleamlang-server/generated/api-docs.nats-bridge.public.json",
+        "remote/deployments/gleamlang-server/generated/api-docs.nats-bridge.internal.json",
         "remote/deployments/gleamlang-server/generated/api-docs.nats-bridge.metadata.json"
       ]
     },
@@ -524,7 +524,7 @@
       "generated": [
         "remote/deployments/gleamlang-ws-server/generated/api-docs.json",
         "remote/deployments/gleamlang-ws-server/generated/api-docs.html",
-        "remote/deployments/gleamlang-ws-server/generated/api-docs.public.json",
+        "remote/deployments/gleamlang-ws-server/generated/api-docs.internal.json",
         "remote/deployments/gleamlang-ws-server/generated/api-docs.metadata.json"
       ]
     },
@@ -539,7 +539,7 @@
       "generated": [
         "remote/deployments/knowledge-graph-builder-rs/generated/api-docs.json",
         "remote/deployments/knowledge-graph-builder-rs/generated/api-docs.html",
-        "remote/deployments/knowledge-graph-builder-rs/generated/api-docs.public.json",
+        "remote/deployments/knowledge-graph-builder-rs/generated/api-docs.internal.json",
         "remote/deployments/knowledge-graph-builder-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -555,7 +555,7 @@
       "generated": [
         "remote/deployments/mdp-optimizer-rs/generated/api-docs.json",
         "remote/deployments/mdp-optimizer-rs/generated/api-docs.html",
-        "remote/deployments/mdp-optimizer-rs/generated/api-docs.public.json",
+        "remote/deployments/mdp-optimizer-rs/generated/api-docs.internal.json",
         "remote/deployments/mdp-optimizer-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -571,7 +571,7 @@
       "generated": [
         "remote/deployments/patent-filing-rs/generated/api-docs.json",
         "remote/deployments/patent-filing-rs/generated/api-docs.html",
-        "remote/deployments/patent-filing-rs/generated/api-docs.public.json",
+        "remote/deployments/patent-filing-rs/generated/api-docs.internal.json",
         "remote/deployments/patent-filing-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -586,7 +586,7 @@
       "generated": [
         "remote/deployments/public-data-server-rs/generated/api-docs.json",
         "remote/deployments/public-data-server-rs/generated/api-docs.html",
-        "remote/deployments/public-data-server-rs/generated/api-docs.public.json",
+        "remote/deployments/public-data-server-rs/generated/api-docs.internal.json",
         "remote/deployments/public-data-server-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -603,7 +603,7 @@
       "generated": [
         "remote/deployments/rest-api-rs/generated/api-docs.json",
         "remote/deployments/rest-api-rs/generated/api-docs.html",
-        "remote/deployments/rest-api-rs/generated/api-docs.public.json",
+        "remote/deployments/rest-api-rs/generated/api-docs.internal.json",
         "remote/deployments/rest-api-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -618,7 +618,7 @@
       "generated": [
         "remote/deployments/runtime-config-rs/generated/api-docs.json",
         "remote/deployments/runtime-config-rs/generated/api-docs.html",
-        "remote/deployments/runtime-config-rs/generated/api-docs.public.json",
+        "remote/deployments/runtime-config-rs/generated/api-docs.internal.json",
         "remote/deployments/runtime-config-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -634,7 +634,7 @@
       "generated": [
         "remote/deployments/rust-vapi-phone-rs/generated/api-docs.json",
         "remote/deployments/rust-vapi-phone-rs/generated/api-docs.html",
-        "remote/deployments/rust-vapi-phone-rs/generated/api-docs.public.json",
+        "remote/deployments/rust-vapi-phone-rs/generated/api-docs.internal.json",
         "remote/deployments/rust-vapi-phone-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -649,7 +649,7 @@
       "generated": [
         "remote/deployments/spark-pipeline-server/generated/api-docs.json",
         "remote/deployments/spark-pipeline-server/generated/api-docs.html",
-        "remote/deployments/spark-pipeline-server/generated/api-docs.public.json",
+        "remote/deployments/spark-pipeline-server/generated/api-docs.internal.json",
         "remote/deployments/spark-pipeline-server/generated/api-docs.metadata.json"
       ]
     },
@@ -665,7 +665,7 @@
       "generated": [
         "remote/deployments/trading-server-rs/generated/api-docs.json",
         "remote/deployments/trading-server-rs/generated/api-docs.html",
-        "remote/deployments/trading-server-rs/generated/api-docs.public.json",
+        "remote/deployments/trading-server-rs/generated/api-docs.internal.json",
         "remote/deployments/trading-server-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -680,7 +680,7 @@
       "generated": [
         "remote/deployments/usacc-rest-api-backend-rs/generated/api-docs.json",
         "remote/deployments/usacc-rest-api-backend-rs/generated/api-docs.html",
-        "remote/deployments/usacc-rest-api-backend-rs/generated/api-docs.public.json",
+        "remote/deployments/usacc-rest-api-backend-rs/generated/api-docs.internal.json",
         "remote/deployments/usacc-rest-api-backend-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -695,7 +695,7 @@
       "generated": [
         "remote/deployments/wal-gateway-rs/generated/api-docs.json",
         "remote/deployments/wal-gateway-rs/generated/api-docs.html",
-        "remote/deployments/wal-gateway-rs/generated/api-docs.public.json",
+        "remote/deployments/wal-gateway-rs/generated/api-docs.internal.json",
         "remote/deployments/wal-gateway-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -711,7 +711,7 @@
       "generated": [
         "remote/deployments/web-home-rs/generated/api-docs.json",
         "remote/deployments/web-home-rs/generated/api-docs.html",
-        "remote/deployments/web-home-rs/generated/api-docs.public.json",
+        "remote/deployments/web-home-rs/generated/api-docs.internal.json",
         "remote/deployments/web-home-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -726,7 +726,7 @@
       "generated": [
         "remote/deployments/web-scraper-service/generated/api-docs.json",
         "remote/deployments/web-scraper-service/generated/api-docs.html",
-        "remote/deployments/web-scraper-service/generated/api-docs.public.json",
+        "remote/deployments/web-scraper-service/generated/api-docs.internal.json",
         "remote/deployments/web-scraper-service/generated/api-docs.metadata.json"
       ]
     },
@@ -742,7 +742,7 @@
       "generated": [
         "remote/deployments/webrtc-media-rs/generated/api-docs.json",
         "remote/deployments/webrtc-media-rs/generated/api-docs.html",
-        "remote/deployments/webrtc-media-rs/generated/api-docs.public.json",
+        "remote/deployments/webrtc-media-rs/generated/api-docs.internal.json",
         "remote/deployments/webrtc-media-rs/generated/api-docs.metadata.json"
       ]
     },
@@ -758,7 +758,7 @@
       "generated": [
         "remote/deployments/webrtc-signaling-rs/generated/api-docs.json",
         "remote/deployments/webrtc-signaling-rs/generated/api-docs.html",
-        "remote/deployments/webrtc-signaling-rs/generated/api-docs.public.json",
+        "remote/deployments/webrtc-signaling-rs/generated/api-docs.internal.json",
         "remote/deployments/webrtc-signaling-rs/generated/api-docs.metadata.json"
       ]
     }

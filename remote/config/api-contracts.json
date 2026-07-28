@@ -8,15 +8,16 @@
     "openapi": "/api/docs.json"
   },
   "generatedArtifacts": {
-    "openapi": "generated/api-docs.json",
-    "publicOpenapi": "generated/api-docs.public.json",
-    "metadata": "generated/api-docs.metadata.json",
-    "html": "generated/api-docs.html"
+    "publicOpenapi": "generated/api-docs.json",
+    "publicHtml": "generated/api-docs.html",
+    "internalOpenapi": "generated/api-docs.internal.json",
+    "metadata": "generated/api-docs.metadata.json"
   },
   "visibility": {
     "default": "internal",
     "publicRule": "Only routes explicitly classified public may enter the public OpenAPI document or public SDK.",
-    "extension": "x-dd-visibility"
+    "extension": "x-dd-visibility",
+    "runtimeDocsRule": "The standard HTTP docs routes serve only the fail-closed public contract. The internal contract is an unserved build artifact for private SDKs and CI."
   },
   "nativeSourceOfTruth": {
     "rust": "utoipa + utoipa-axum OpenApiRouter/routes!",

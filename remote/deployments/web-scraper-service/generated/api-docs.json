@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "info": {
-    "title": "web-scraper-service API",
+    "title": "web-scraper-service API (public)",
     "version": "0.1.0",
-    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
   },
   "tags": [
     {
@@ -188,228 +188,6 @@
         "x-dd-visibility": "public",
         "security": []
       }
-    },
-    "/scrape": {
-      "get": {
-        "operationId": "web_scraper_service_get_scrape_552a5adc3706",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/web-scraper-service/src/server.ts"
-        ],
-        "x-dd-source-path": "/scrape",
-        "x-dd-source-paths": [
-          "/scrape"
-        ],
-        "x-dd-visibility": "internal"
-      },
-      "post": {
-        "operationId": "web_scraper_service_post_scrape_0ee22862f6dc",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/web-scraper-service/src/server.ts"
-        ],
-        "x-dd-source-path": "/scrape",
-        "x-dd-source-paths": [
-          "/scrape"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/scrape/healthz": {
-      "get": {
-        "operationId": "web_scraper_service_get_scrape_healthz_a1364850f55c",
-        "summary": "Health check.",
-        "description": "Health check.",
-        "tags": [
-          "service"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "service",
-        "x-dd-route-type": "service",
-        "x-dd-source-files": [
-          "remote/deployments/web-scraper-service/src/server.ts"
-        ],
-        "x-dd-source-path": "/scrape/healthz",
-        "x-dd-source-paths": [
-          "/scrape/healthz"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/scrape/metrics": {
-      "get": {
-        "operationId": "web_scraper_service_get_scrape_metrics_14ba0699e3ea",
-        "summary": "Prometheus metrics.",
-        "description": "Prometheus metrics.",
-        "tags": [
-          "service"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "service",
-        "x-dd-route-type": "service",
-        "x-dd-source-files": [
-          "remote/deployments/web-scraper-service/src/server.ts"
-        ],
-        "x-dd-source-path": "/scrape/metrics",
-        "x-dd-source-paths": [
-          "/scrape/metrics"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/scrape/status": {
-      "get": {
-        "operationId": "web_scraper_service_get_scrape_status_9a948c3e1d7a",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/web-scraper-service/src/server.ts"
-        ],
-        "x-dd-source-path": "/scrape/status",
-        "x-dd-source-paths": [
-          "/scrape/status"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/scrape/strategies": {
-      "get": {
-        "operationId": "web_scraper_service_get_scrape_strategies_40bc66671d09",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/web-scraper-service/src/server.ts"
-        ],
-        "x-dd-source-path": "/scrape/strategies",
-        "x-dd-source-paths": [
-          "/scrape/strategies"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/status": {
-      "get": {
-        "operationId": "web_scraper_service_get_status_707e0afbb4a4",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/web-scraper-service/src/server.ts"
-        ],
-        "x-dd-source-path": "/status",
-        "x-dd-source-paths": [
-          "/status"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/strategies": {
-      "get": {
-        "operationId": "web_scraper_service_get_strategies_6255802ef2cf",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/web-scraper-service/src/server.ts"
-        ],
-        "x-dd-source-path": "/strategies",
-        "x-dd-source-paths": [
-          "/strategies"
-        ],
-        "x-dd-visibility": "internal"
-      }
     }
   },
   "components": {
@@ -431,11 +209,11 @@
       }
     }
   },
-  "x-dd-contract-scope": "internal",
+  "x-dd-contract-scope": "public",
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "node",
-  "x-dd-operation-count": 14,
-  "x-dd-route-count": 13,
+  "x-dd-operation-count": 6,
+  "x-dd-route-count": 6,
   "x-dd-service": "web-scraper-service",
   "x-dd-standard-docs-routes": [
     "/docs/api",

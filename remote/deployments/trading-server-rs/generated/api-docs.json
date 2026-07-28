@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "info": {
-    "title": "trading-server-rs API",
+    "title": "trading-server-rs API (public)",
     "version": "0.1.0",
-    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
   },
   "tags": [
     {
@@ -111,36 +111,6 @@
         "security": []
       }
     },
-    "/decide": {
-      "post": {
-        "operationId": "trading_server_rs_post_decide_187501fdde97",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "decide_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/trading-server-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/decide",
-        "x-dd-source-paths": [
-          "/decide"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
     "/docs/api": {
       "get": {
         "operationId": "trading_server_rs_get_docs_api_8b7c8dbeea0a",
@@ -172,36 +142,6 @@
         "security": []
       }
     },
-    "/example": {
-      "get": {
-        "operationId": "trading_server_rs_get_example_f3e674ee51fb",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "example"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/trading-server-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/example",
-        "x-dd-source-paths": [
-          "/example"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
     "/healthz": {
       "get": {
         "operationId": "trading_server_rs_get_healthz_281793b14bb1",
@@ -231,106 +171,6 @@
         ],
         "x-dd-visibility": "public",
         "security": []
-      }
-    },
-    "/internal/runtime-config": {
-      "get": {
-        "operationId": "trading_server_rs_get_internal_runtime_config_f7da0c20afd6",
-        "summary": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
-        "description": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_get"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/libs/runtime-config-client-rs/src/lib.rs"
-        ],
-        "x-dd-source-path": "/internal/runtime-config",
-        "x-dd-source-paths": [
-          "/internal/runtime-config"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/internal/runtime-config/reset": {
-      "post": {
-        "operationId": "trading_server_rs_post_internal_runtime_config_reset_614b464ef414",
-        "summary": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
-        "description": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_reset"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/libs/runtime-config-client-rs/src/lib.rs"
-        ],
-        "x-dd-source-path": "/internal/runtime-config/reset",
-        "x-dd-source-paths": [
-          "/internal/runtime-config/reset"
-        ],
-        "x-dd-visibility": "internal",
-        "security": [
-          {
-            "serverAuth": []
-          }
-        ]
-      }
-    },
-    "/internal/update-runtime-config": {
-      "post": {
-        "operationId": "trading_server_rs_post_internal_update_runtime_config_257bf0aec70b",
-        "summary": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
-        "description": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_apply"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/libs/runtime-config-client-rs/src/lib.rs"
-        ],
-        "x-dd-source-path": "/internal/update-runtime-config",
-        "x-dd-source-paths": [
-          "/internal/update-runtime-config"
-        ],
-        "x-dd-visibility": "internal",
-        "security": [
-          {
-            "serverAuth": []
-          }
-        ]
       }
     },
     "/metrics": {
@@ -394,36 +234,6 @@
         "x-dd-visibility": "public",
         "security": []
       }
-    },
-    "/schema": {
-      "get": {
-        "operationId": "trading_server_rs_get_schema_e23d41b2964c",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "schema"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/trading-server-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/schema",
-        "x-dd-source-paths": [
-          "/schema"
-        ],
-        "x-dd-visibility": "internal"
-      }
     }
   },
   "components": {
@@ -445,11 +255,11 @@
       }
     }
   },
-  "x-dd-contract-scope": "internal",
+  "x-dd-contract-scope": "public",
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "rust",
-  "x-dd-operation-count": 13,
-  "x-dd-route-count": 13,
+  "x-dd-operation-count": 7,
+  "x-dd-route-count": 7,
   "x-dd-service": "trading-server-rs",
   "x-dd-standard-docs-routes": [
     "/docs/api",

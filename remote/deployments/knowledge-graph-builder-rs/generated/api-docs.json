@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "info": {
-    "title": "knowledge-graph-builder-rs API",
+    "title": "knowledge-graph-builder-rs API (public)",
     "version": "0.1.0",
-    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
   },
   "tags": [
     {
@@ -108,36 +108,6 @@
         "security": []
       }
     },
-    "/descriptor": {
-      "get": {
-        "operationId": "knowledge_graph_builder_rs_get_descriptor_5322d537118c",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "descriptor"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/knowledge-graph-builder-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/descriptor",
-        "x-dd-source-paths": [
-          "/descriptor"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
     "/docs/api": {
       "get": {
         "operationId": "knowledge_graph_builder_rs_get_docs_api_6df62c184f64",
@@ -167,246 +137,6 @@
         ],
         "x-dd-visibility": "public",
         "security": []
-      }
-    },
-    "/example": {
-      "get": {
-        "operationId": "knowledge_graph_builder_rs_get_example_9f787cfcb68a",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "example"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/knowledge-graph-builder-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/example",
-        "x-dd-source-paths": [
-          "/example"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/graph/centrality": {
-      "post": {
-        "operationId": "knowledge_graph_builder_rs_post_graph_centrality_07a88ef8790c",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "centrality_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/knowledge-graph-builder-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/graph/centrality",
-        "x-dd-source-paths": [
-          "/graph/centrality"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/graph/export": {
-      "get": {
-        "operationId": "knowledge_graph_builder_rs_get_graph_export_0259266ee2a8",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "graph_export"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/knowledge-graph-builder-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/graph/export",
-        "x-dd-source-paths": [
-          "/graph/export"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/graph/extract": {
-      "post": {
-        "operationId": "knowledge_graph_builder_rs_post_graph_extract_1613e1a8fcd7",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "extract_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/knowledge-graph-builder-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/graph/extract",
-        "x-dd-source-paths": [
-          "/graph/extract"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/graph/paths": {
-      "post": {
-        "operationId": "knowledge_graph_builder_rs_post_graph_paths_4674306ff451",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "paths_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/knowledge-graph-builder-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/graph/paths",
-        "x-dd-source-paths": [
-          "/graph/paths"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/graph/query": {
-      "post": {
-        "operationId": "knowledge_graph_builder_rs_post_graph_query_be7ad923d21f",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "query_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/knowledge-graph-builder-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/graph/query",
-        "x-dd-source-paths": [
-          "/graph/query"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/graph/stats": {
-      "get": {
-        "operationId": "knowledge_graph_builder_rs_get_graph_stats_31572e536cef",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "graph_stats"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/knowledge-graph-builder-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/graph/stats",
-        "x-dd-source-paths": [
-          "/graph/stats"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/graph/upsert": {
-      "post": {
-        "operationId": "knowledge_graph_builder_rs_post_graph_upsert_1d2cd6a5e11c",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "upsert_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/knowledge-graph-builder-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/graph/upsert",
-        "x-dd-source-paths": [
-          "/graph/upsert"
-        ],
-        "x-dd-visibility": "internal"
       }
     },
     "/healthz": {
@@ -471,36 +201,6 @@
         "security": []
       }
     },
-    "/pipeline/jobs": {
-      "post": {
-        "operationId": "knowledge_graph_builder_rs_post_pipeline_jobs_b806657c0c2f",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "pipeline_jobs_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/knowledge-graph-builder-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/pipeline/jobs",
-        "x-dd-source-paths": [
-          "/pipeline/jobs"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
     "/readyz": {
       "get": {
         "operationId": "knowledge_graph_builder_rs_get_readyz_5c3113c1f27f",
@@ -531,36 +231,6 @@
         "x-dd-visibility": "public",
         "security": []
       }
-    },
-    "/schema": {
-      "get": {
-        "operationId": "knowledge_graph_builder_rs_get_schema_43fe203d0ad4",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "schema"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/knowledge-graph-builder-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/schema",
-        "x-dd-source-paths": [
-          "/schema"
-        ],
-        "x-dd-visibility": "internal"
-      }
     }
   },
   "components": {
@@ -582,11 +252,11 @@
       }
     }
   },
-  "x-dd-contract-scope": "internal",
+  "x-dd-contract-scope": "public",
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "rust",
-  "x-dd-operation-count": 18,
-  "x-dd-route-count": 18,
+  "x-dd-operation-count": 7,
+  "x-dd-route-count": 7,
   "x-dd-service": "knowledge-graph-builder-rs",
   "x-dd-standard-docs-routes": [
     "/docs/api",

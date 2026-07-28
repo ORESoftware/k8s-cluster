@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "info": {
-    "title": "dd-music-rs API",
+    "title": "dd-music-rs API (public)",
     "version": "0.1.0",
-    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
   },
   "tags": [
     {
@@ -170,36 +170,6 @@
         "security": []
       }
     },
-    "/internal/generate": {
-      "post": {
-        "operationId": "dd_music_rs_post_internal_generate_2d2036f4b3d7",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "generate_internal"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dd-music-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/internal/generate",
-        "x-dd-source-paths": [
-          "/internal/generate"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
     "/metrics": {
       "get": {
         "operationId": "dd_music_rs_get_metrics_b0c68a2cbe03",
@@ -261,213 +231,6 @@
         "x-dd-visibility": "public",
         "security": []
       }
-    },
-    "/songs": {
-      "get": {
-        "operationId": "dd_music_rs_get_songs_9e47add83a7f",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "list_songs"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dd-music-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/songs",
-        "x-dd-source-paths": [
-          "/songs"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/songs/{song_id}": {
-      "get": {
-        "operationId": "dd_music_rs_get_songs_song_id_b976e6da42b7",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [
-          {
-            "name": "song_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "get_song"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dd-music-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/songs/:song_id",
-        "x-dd-source-paths": [
-          "/songs/:song_id"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/songs/{song_id}/audio": {
-      "get": {
-        "operationId": "dd_music_rs_get_songs_song_id_audio_e345689189c5",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [
-          {
-            "name": "song_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "song_audio"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dd-music-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/songs/:song_id/audio",
-        "x-dd-source-paths": [
-          "/songs/:song_id/audio"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/songs/{song_id}/votes": {
-      "post": {
-        "operationId": "dd_music_rs_post_songs_song_id_votes_4984234292bb",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [
-          {
-            "name": "song_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "vote_song"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dd-music-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/songs/:song_id/votes",
-        "x-dd-source-paths": [
-          "/songs/:song_id/votes"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/songs/shelf": {
-      "get": {
-        "operationId": "dd_music_rs_get_songs_shelf_b7b451a291a1",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "songs_shelf"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dd-music-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/songs/shelf",
-        "x-dd-source-paths": [
-          "/songs/shelf"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/ws": {
-      "get": {
-        "operationId": "dd_music_rs_get_ws_0a1171a715e7",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "ws_votes"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dd-music-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/ws",
-        "x-dd-source-paths": [
-          "/ws"
-        ],
-        "x-dd-visibility": "internal"
-      }
     }
   },
   "components": {
@@ -489,11 +252,11 @@
       }
     }
   },
-  "x-dd-contract-scope": "internal",
+  "x-dd-contract-scope": "public",
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "rust",
-  "x-dd-operation-count": 14,
-  "x-dd-route-count": 14,
+  "x-dd-operation-count": 7,
+  "x-dd-route-count": 7,
   "x-dd-service": "dd-music-rs",
   "x-dd-standard-docs-routes": [
     "/docs/api",

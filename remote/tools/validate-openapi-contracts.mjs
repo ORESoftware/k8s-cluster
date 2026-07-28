@@ -99,12 +99,12 @@ function expectedRouteKeys(metadata) {
   return keys.sort();
 }
 
-function expectedGeneratedArtifacts(openapiRelative) {
+function expectedGeneratedArtifacts(publicRelative) {
   return [
-    openapiRelative,
-    openapiRelative.replace(/\.json$/, '.html'),
-    openapiRelative.replace(/\.json$/, '.public.json'),
-    openapiRelative.replace(/\.json$/, '.metadata.json'),
+    publicRelative,
+    publicRelative.replace(/\.json$/, '.html'),
+    publicRelative.replace(/\.json$/, '.internal.json'),
+    publicRelative.replace(/\.json$/, '.metadata.json'),
   ];
 }
 
@@ -129,31 +129,42 @@ function verifyOpenApiShape(document, service, sourcePath) {
 }
 
 function verifyService(item, gitlinks, fleetOperationIds) {
-  const openapiRelative = item.generated?.[0];
+  const publicRelative = item.generated?.[0];
   assert(
-    typeof openapiRelative === 'string' && openapiRelative.endsWith('.json'),
-    `${item.service}: central index must identify the canonical JSON artifact`,
+    typeof publicRelative === 'string' &&
+      publicRelative.endsWith('.json') &&
+      !publicRelative.endsWith('.internal.json') &&
+      !publicRelative.endsWith('.metadata.json'),
+    `${item.service}: central index must identify the public runtime OpenAPI artifact`,
   );
   assert(
-    JSON.stringify(item.generated) === JSON.stringify(expectedGeneratedArtifacts(openapiRelative)),
-    `${item.service}: central index generated artifacts must list full JSON, HTML, public JSON, and metadata JSON in canonical order`,
+    JSON.stringify(item.generated) === JSON.stringify(expectedGeneratedArtifacts(publicRelative)),
+    `${item.service}: central index generated artifacts must list public JSON, public HTML, internal JSON, and metadata JSON in canonical order`,
   );
-  if (unavailableGitlink(openapiRelative, gitlinks)) {
+  if (unavailableGitlink(publicRelative, gitlinks)) {
     return { skipped: true };
   }
 
-  const openapiPath = resolve(repoRoot, openapiRelative);
-  const publicPath = resolve(repoRoot, openapiRelative.replace(/\.json$/, '.public.json'));
-  const metadataPath = resolve(repoRoot, openapiRelative.replace(/\.json$/, '.metadata.json'));
-  for (const path of [openapiPath, publicPath, metadataPath]) {
-    assert(existsSync(path), `${item.service}: missing ${displayPath(path)}`);
+  const publicPath = resolve(repoRoot, publicRelative);
+  const internalPath = resolve(repoRoot, publicRelative.replace(/\.json$/, '.internal.json'));
+  const metadataPath = resolve(repoRoot, publicRelative.replace(/\.json$/, '.metadata.json'));
+  for (const artifactPath of [publicPath, internalPath, metadataPath]) {
+    assert(existsSync(artifactPath), `${item.service}: missing ${displayPath(artifactPath)}`);
   }
 
-  const openapi = readJson(openapiPath);
   const publicOpenapi = readJson(publicPath);
+  const internalOpenapi = readJson(internalPath);
   const metadata = readJson(metadataPath);
-  verifyOpenApiShape(openapi, item.service, openapiPath);
   verifyOpenApiShape(publicOpenapi, item.service, publicPath);
+  verifyOpenApiShape(internalOpenapi, item.service, internalPath);
+  assert(
+    publicOpenapi['x-dd-contract-scope'] === 'public',
+    `${item.service}: runtime OpenAPI must be the public contract`,
+  );
+  assert(
+    internalOpenapi['x-dd-contract-scope'] === 'internal',
+    `${item.service}: private SDK artifact must be the internal contract`,
+  );
   assert(metadata.service === item.service, `${item.service}: metadata service mismatch`);
   assert(metadata.language === item.language, `${item.service}: metadata language mismatch`);
   assert(
@@ -161,12 +172,12 @@ function verifyService(item, gitlinks, fleetOperationIds) {
     `${item.service}: metadata routeCount is stale`,
   );
 
-  const fullEntries = operationEntries(openapi);
+  const fullEntries = operationEntries(internalOpenapi);
   const actualKeys = fullEntries.flatMap(operationSourceKeys).sort();
   const expectedKeys = expectedRouteKeys(metadata);
   assert(
     JSON.stringify(actualKeys) === JSON.stringify(expectedKeys),
-    `${item.service}: OpenAPI route/method set drifted from generated route metadata`,
+    `${item.service}: internal OpenAPI route/method set drifted from generated route metadata`,
   );
 
   const localOperationIds = new Set();
@@ -195,7 +206,7 @@ function verifyService(item, gitlinks, fleetOperationIds) {
     assert(standardRoutes.has(route), `${item.service}: metadata omits standard route ${route}`);
     assert(
       actualKeys.includes(`GET ${route}`),
-      `${item.service}: OpenAPI omits GET ${route}`,
+      `${item.service}: internal OpenAPI omits GET ${route}`,
     );
   }
 
@@ -210,7 +221,7 @@ function verifyService(item, gitlinks, fleetOperationIds) {
     );
     assert(
       entry.operation['x-dd-visibility'] === 'public',
-      `${item.service}: internal operation leaked into public OpenAPI: ${key}`,
+      `${item.service}: internal operation leaked into runtime OpenAPI: ${key}`,
     );
   }
   const expectedPublicKeys = fullEntries
@@ -220,8 +231,14 @@ function verifyService(item, gitlinks, fleetOperationIds) {
   const actualPublicKeys = publicEntries.map(operationDocumentKey).sort();
   assert(
     JSON.stringify(expectedPublicKeys) === JSON.stringify(actualPublicKeys),
-    `${item.service}: public OpenAPI is not the exact public subset`,
+    `${item.service}: runtime OpenAPI is not the exact public subset`,
   );
+  for (const route of ['/docs/api', '/api/docs', '/api/docs.json']) {
+    assert(
+      actualPublicKeys.includes(`GET ${route}`),
+      `${item.service}: public runtime OpenAPI omits GET ${route}`,
+    );
+  }
 
   return {
     skipped: false,

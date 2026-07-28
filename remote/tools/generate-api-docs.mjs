@@ -1143,6 +1143,18 @@ function buildOpenApi(docs) {
   };
 }
 
+function operationEntriesForDocument(document) {
+  const entries = [];
+  for (const pathItem of Object.values(document.paths ?? {})) {
+    for (const method of [...OPENAPI_METHODS].map((value) => value.toLowerCase())) {
+      if (pathItem[method]) {
+        entries.push({ method, operation: pathItem[method] });
+      }
+    }
+  }
+  return entries;
+}
+
 function buildPublicOpenApi(openapi) {
   const document = structuredClone(openapi);
   for (const [path, pathItem] of Object.entries(document.paths)) {
@@ -1159,6 +1171,9 @@ function buildPublicOpenApi(openapi) {
   document.info.description =
     'Fail-closed public subset. Only operations explicitly marked public are included.';
   document['x-dd-contract-scope'] = 'public';
+  document['x-dd-route-count'] = new Set(
+    operationEntriesForDocument(document).flatMap((entry) => entry.operation['x-dd-source-paths'] ?? []),
+  ).size;
   document['x-dd-operation-count'] = Object.values(document.paths).reduce(
     (count, pathItem) =>
       count +
@@ -1169,6 +1184,21 @@ function buildPublicOpenApi(openapi) {
     0,
   );
   return document;
+}
+
+function buildPublicDocs(docs) {
+  const routes = docs.routes.filter((route) => openApiVisibility(route) === 'public');
+  const routeTypeCounts = routes.reduce((acc, route) => {
+    acc[route.routeType] = (acc[route.routeType] ?? 0) + 1;
+    return acc;
+  }, {});
+  return {
+    ...docs,
+    routeCount: routes.length,
+    routeTypeCounts,
+    routes,
+    contractScope: 'public',
+  };
 }
 
 function buildDocs(service) {
@@ -1301,41 +1331,19 @@ ${rows}
 `;
 }
 
-function renderDocsIndexHtml(items) {
-  const totalRoutes = items.reduce((sum, item) => sum + item.docs.routeCount, 0);
-  const serviceRows = items
-    .map((item) => {
-      const docs = item.docs;
-      const routeRows = docs.routes
-        .map((route) => {
-          const methods = route.methods
-            .map((method) => `<span class="method">${escapeHtml(method)}</span>`)
-            .join('');
-          return `<tr>
-  <td data-label="Service"><code>${escapeHtml(docs.service)}</code></td>
-  <td data-label="Type"><span class="badge ${escapeHtml(route.routeType)}">${escapeHtml(route.routeType)}</span></td>
-  <td data-label="Methods"><div class="methods">${methods}</div></td>
-  <td data-label="Path"><code>${escapeHtml(route.path)}</code></td>
-  <td data-label="Purpose">${escapeHtml(route.purpose)}${route.notes ? `<div class="muted">${escapeHtml(route.notes)}</div>` : ''}</td>
+function renderDocsIndexHtml(services) {
+  const totalRoutes = services.reduce((sum, service) => sum + service.routeCount, 0);
+  const serviceRows = services
+    .map((service) => {
+      const publicJson = service.generated[0];
+      const publicHtml = service.generated[1];
+      return `<tr>
+  <td data-label="Service"><code>${escapeHtml(service.service)}</code></td>
+  <td data-label="Language">${escapeHtml(service.language)}</td>
+  <td data-label="Routes">${service.routeCount}</td>
+  <td data-label="Public docs"><code>${escapeHtml(publicHtml)}</code></td>
+  <td data-label="Public OpenAPI"><code>${escapeHtml(publicJson)}</code></td>
 </tr>`;
-        })
-        .join('\n');
-      return `<details>
-  <summary>
-    <span><strong>${escapeHtml(docs.service)}</strong> <span class="muted">${escapeHtml(docs.language)}</span></span>
-    <span>${docs.routeCount} routes</span>
-  </summary>
-  <div class="generated">
-    <span>Generated JSON: <code>${escapeHtml(item.generated[0])}</code></span>
-    <span>Generated HTML: <code>${escapeHtml(item.generated[1])}</code></span>
-  </div>
-  <table>
-    <thead><tr><th>Service</th><th>Type</th><th>Methods</th><th>Path</th><th>Purpose</th></tr></thead>
-    <tbody>
-${routeRows}
-    </tbody>
-  </table>
-</details>`;
     })
     .join('\n');
   return `<!doctype html>
@@ -1345,35 +1353,23 @@ ${routeRows}
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>dd runtime API docs</title>
   <style>
-    :root { color-scheme: light; --bg:#f7f8fa; --panel:#fff; --ink:#17202a; --muted:#5b6672; --line:#d8dee6; --code:#eef2f6; --service:#52687a; --custom:#1f6f5b; --internal:#8a5a12; --runtime:#3a4d8a; }
-    * { box-sizing: border-box; }
-    body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    header, main { width:min(1180px, calc(100% - 32px)); margin:0 auto; }
+    :root { color-scheme: light; --bg:#f7f8fa; --panel:#fff; --ink:#17202a; --muted:#5b6672; --line:#d8dee6; --code:#eef2f6; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    header,main { width:min(1180px,calc(100% - 32px)); margin:0 auto; }
     header { padding:28px 0 18px; }
-    h1 { margin:0 0 6px; font-size:30px; line-height:1.15; letter-spacing:0; }
+    h1 { margin:0 0 6px; font-size:30px; line-height:1.15; }
     p { margin:0; color:var(--muted); }
     .summary { display:flex; flex-wrap:wrap; gap:10px; margin-top:18px; }
-    .summary span, .badge { display:inline-flex; align-items:center; min-height:26px; border:1px solid var(--line); border-radius:6px; padding:3px 9px; background:var(--panel); white-space:nowrap; }
-    .badge { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0; }
-    .service { color:var(--service); }
-    .user-generated { color:var(--custom); }
-    .internal-db { color:var(--internal); }
-    .runtime-config { color:var(--runtime); }
-    details { margin:0 0 12px; background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
-    summary { display:flex; justify-content:space-between; gap:12px; padding:13px 14px; cursor:pointer; }
-    .generated { display:flex; flex-wrap:wrap; gap:10px; padding:0 14px 12px; color:var(--muted); font-size:12px; }
-    table { width:100%; border-collapse:collapse; border-top:1px solid var(--line); }
-    th, td { padding:11px 12px; border-bottom:1px solid var(--line); vertical-align:top; text-align:left; }
-    th { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:0; background:#fbfcfd; }
+    .summary span { display:inline-flex; align-items:center; min-height:26px; border:1px solid var(--line); border-radius:6px; padding:3px 9px; background:var(--panel); }
+    table { width:100%; border-collapse:collapse; background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+    th,td { padding:11px 12px; border-bottom:1px solid var(--line); vertical-align:top; text-align:left; }
+    th { color:var(--muted); font-size:12px; text-transform:uppercase; background:#fbfcfd; }
     tr:last-child td { border-bottom:0; }
-    code { display:inline-block; max-width:100%; padding:2px 5px; border-radius:5px; background:var(--code); overflow-wrap:anywhere; font-family:ui-monospace, "SFMono-Regular", Consolas, monospace; font-size:12px; }
-    .methods { display:flex; flex-wrap:wrap; gap:5px; }
-    .method { background:#17202a; color:#fff; border-radius:5px; padding:2px 6px; font-size:12px; font-weight:700; }
-    .muted { color:var(--muted); font-size:12px; }
+    code { display:inline-block; max-width:100%; padding:2px 5px; border-radius:5px; background:var(--code); overflow-wrap:anywhere; font-family:ui-monospace,"SFMono-Regular",Consolas,monospace; font-size:12px; }
     @media (max-width:760px) {
-      header, main { width:min(100% - 20px, 1180px); }
-      summary { align-items:flex-start; flex-direction:column; }
-      table, tbody, tr, td { display:block; width:100%; }
+      header,main { width:min(100% - 20px,1180px); }
+      table,tbody,tr,td { display:block; width:100%; }
       thead { display:none; }
       tr { border-bottom:1px solid var(--line); }
       td { border-bottom:0; padding:8px 10px; }
@@ -1384,15 +1380,20 @@ ${routeRows}
 <body>
   <header>
     <h1>dd runtime API docs</h1>
-    <p>Central generated index. Each listed HTTP service must also mount <code>/docs/api</code>, <code>/api/docs</code>, and <code>/api/docs.json</code> on its own service port.</p>
+    <p>Public-only fleet index. Internal contracts are unserved build artifacts used for private SDK generation and parity checks.</p>
     <div class="summary">
-      <span>${items.length} services</span>
-      <span>${totalRoutes} routes</span>
+      <span>${services.length} services</span>
+      <span>${totalRoutes} registered routes</span>
       <span>central JSON <code>/api-docs.json</code></span>
     </div>
   </header>
   <main>
+    <table>
+      <thead><tr><th>Service</th><th>Language</th><th>Registered routes</th><th>Public docs</th><th>Public OpenAPI</th></tr></thead>
+      <tbody>
 ${serviceRows}
+      </tbody>
+    </table>
   </main>
 </body>
 </html>
@@ -1444,20 +1445,20 @@ async function writeOrCheck(path, content) {
   await writeFile(path, content);
 }
 
-function canonicalGeneratedArtifacts(openapiPath) {
+function canonicalGeneratedArtifacts(publicOpenapiPath) {
   if (
-    typeof openapiPath !== 'string' ||
-    !openapiPath.endsWith('.json') ||
-    openapiPath.endsWith('.public.json') ||
-    openapiPath.endsWith('.metadata.json')
+    typeof publicOpenapiPath !== 'string' ||
+    !publicOpenapiPath.endsWith('.json') ||
+    publicOpenapiPath.endsWith('.internal.json') ||
+    publicOpenapiPath.endsWith('.metadata.json')
   ) {
-    throw new Error(`invalid canonical OpenAPI artifact path: ${openapiPath}`);
+    throw new Error(`invalid public OpenAPI artifact path: ${publicOpenapiPath}`);
   }
   return [
-    openapiPath,
-    openapiPath.replace(/\.json$/, '.html'),
-    openapiPath.replace(/\.json$/, '.public.json'),
-    openapiPath.replace(/\.json$/, '.metadata.json'),
+    publicOpenapiPath,
+    publicOpenapiPath.replace(/\.json$/, '.html'),
+    publicOpenapiPath.replace(/\.json$/, '.internal.json'),
+    publicOpenapiPath.replace(/\.json$/, '.metadata.json'),
   ];
 }
 
@@ -1466,11 +1467,11 @@ function normalizeIndexedServiceArtifacts(service) {
     (path) =>
       typeof path === 'string' &&
       path.endsWith('.json') &&
-      !path.endsWith('.public.json') &&
+      !path.endsWith('.internal.json') &&
       !path.endsWith('.metadata.json'),
   );
   if (!canonical) {
-    throw new Error(`${service.service ?? 'unknown service'} has no canonical OpenAPI JSON artifact`);
+    throw new Error(`${service.service ?? 'unknown service'} has no public OpenAPI JSON artifact`);
   }
   return { ...service, generated: canonicalGeneratedArtifacts(canonical) };
 }
@@ -1488,28 +1489,28 @@ async function main() {
   for (const service of services) {
     assertStandardDocsRoutes(service);
     const docs = buildDocs(service);
-    const openapi = buildOpenApi(docs);
-    const publicOpenapi = buildPublicOpenApi(openapi);
+    const internalOpenapi = buildOpenApi(docs);
+    const publicOpenapi = buildPublicOpenApi(internalOpenapi);
+    const publicDocs = buildPublicDocs(docs);
     const outputBase = service.outputName ?? 'api-docs';
     const generatedDir = join(service.deploymentDir, 'generated');
-    const json = `${JSON.stringify(openapi, null, 2)}\n`;
     const publicJson = `${JSON.stringify(publicOpenapi, null, 2)}\n`;
+    const internalJson = `${JSON.stringify(internalOpenapi, null, 2)}\n`;
     const metadataJson = `${JSON.stringify(docs, null, 2)}\n`;
-    const html = renderDocsHtml(docs);
-    const generated = [
-      relative(repoRoot, join(generatedDir, `${outputBase}.json`)).split(sep).join('/'),
-      relative(repoRoot, join(generatedDir, `${outputBase}.html`)).split(sep).join('/'),
-      relative(repoRoot, join(generatedDir, `${outputBase}.public.json`)).split(sep).join('/'),
-      relative(repoRoot, join(generatedDir, `${outputBase}.metadata.json`)).split(sep).join('/'),
-    ];
-    await writeOrCheck(join(generatedDir, `${outputBase}.json`), json);
-    await writeOrCheck(join(generatedDir, `${outputBase}.public.json`), publicJson);
+    const html = renderDocsHtml(publicDocs);
+    const publicOpenapiPath = relative(
+      repoRoot,
+      join(generatedDir, `${outputBase}.json`),
+    ).split(sep).join('/');
+    const generated = canonicalGeneratedArtifacts(publicOpenapiPath);
+    await writeOrCheck(join(generatedDir, `${outputBase}.json`), publicJson);
+    await writeOrCheck(join(generatedDir, `${outputBase}.internal.json`), internalJson);
     await writeOrCheck(join(generatedDir, `${outputBase}.metadata.json`), metadataJson);
     await writeOrCheck(join(generatedDir, `${outputBase}.html`), html);
     if (service.language === 'gleam' && outputBase === 'api-docs' && service.moduleDir) {
       await writeOrCheck(
         join(service.moduleDir, 'api_docs.gleam'),
-        gleamApiDocsModule(docs, openapi),
+        gleamApiDocsModule(publicDocs, publicOpenapi),
       );
     }
     index.push({
@@ -1519,7 +1520,7 @@ async function main() {
       routeTypeCounts: docs.routeTypeCounts,
       generated,
     });
-    indexItems.push({ docs, generated });
+    indexItems.push({ docs: publicDocs, generated });
   }
   const indexPayload = {
     ok: true,
@@ -1572,6 +1573,7 @@ async function main() {
         centralIndexJson,
         `${JSON.stringify(mergedPayload, null, 2)}\n`,
       );
+      await writeOrCheck(centralIndexHtml, renderDocsIndexHtml(mergedServices));
       console.log(
         `updated central API docs JSON index while preserving HTML route details for ${unavailableServices.length} uninitialized gitlink service(s): ${unavailableServices.join(', ')}`,
       );
@@ -1584,7 +1586,7 @@ async function main() {
         centralIndexJson,
         `${JSON.stringify(normalizedPayload, null, 2)}\n`,
       );
-      await writeOrCheck(centralIndexHtml, renderDocsIndexHtml(indexItems));
+      await writeOrCheck(centralIndexHtml, renderDocsIndexHtml(normalizedPayload.services));
     }
   }
   console.log(`${checkOnly ? 'checked' : 'generated'} API docs for ${services.length} service(s)`);

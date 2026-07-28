@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "info": {
-    "title": "container-pool-rs API",
+    "title": "container-pool-rs API (public)",
     "version": "0.1.0",
-    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
   },
   "tags": [
     {
@@ -142,106 +142,6 @@
         "security": []
       }
     },
-    "/internal/runtime-config": {
-      "get": {
-        "operationId": "container_pool_rs_get_internal_runtime_config_a5f8ba36f606",
-        "summary": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
-        "description": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_get"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/libs/runtime-config-client-rs/src/lib.rs"
-        ],
-        "x-dd-source-path": "/internal/runtime-config",
-        "x-dd-source-paths": [
-          "/internal/runtime-config"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/internal/runtime-config/reset": {
-      "post": {
-        "operationId": "container_pool_rs_post_internal_runtime_config_reset_58679215318d",
-        "summary": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
-        "description": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_reset"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/libs/runtime-config-client-rs/src/lib.rs"
-        ],
-        "x-dd-source-path": "/internal/runtime-config/reset",
-        "x-dd-source-paths": [
-          "/internal/runtime-config/reset"
-        ],
-        "x-dd-visibility": "internal",
-        "security": [
-          {
-            "serverAuth": []
-          }
-        ]
-      }
-    },
-    "/internal/update-runtime-config": {
-      "post": {
-        "operationId": "container_pool_rs_post_internal_update_runtime_config_18a5c73d1fd8",
-        "summary": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
-        "description": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_apply"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/libs/runtime-config-client-rs/src/lib.rs"
-        ],
-        "x-dd-source-path": "/internal/update-runtime-config",
-        "x-dd-source-paths": [
-          "/internal/update-runtime-config"
-        ],
-        "x-dd-visibility": "internal",
-        "security": [
-          {
-            "serverAuth": []
-          }
-        ]
-      }
-    },
     "/metrics": {
       "get": {
         "operationId": "container_pool_rs_get_metrics_750509a34cf2",
@@ -271,153 +171,6 @@
         ],
         "x-dd-visibility": "public",
         "security": []
-      }
-    },
-    "/pools": {
-      "get": {
-        "operationId": "container_pool_rs_get_pools_c414ce637617",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "list_pools"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/container-pool-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/pools",
-        "x-dd-source-paths": [
-          "/pools"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/pools/{pool}": {
-      "get": {
-        "operationId": "container_pool_rs_get_pools_pool_8b52288733c0",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [
-          {
-            "name": "pool",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "get_pool"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/container-pool-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/pools/:pool",
-        "x-dd-source-paths": [
-          "/pools/:pool"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/pools/{pool}/dispatch": {
-      "post": {
-        "operationId": "container_pool_rs_post_pools_pool_dispatch_98af171472c5",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [
-          {
-            "name": "pool",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "dispatch_pool"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/container-pool-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/pools/:pool/dispatch",
-        "x-dd-source-paths": [
-          "/pools/:pool/dispatch"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/pools/{pool}/warm": {
-      "post": {
-        "operationId": "container_pool_rs_post_pools_pool_warm_130a3851b8b1",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [
-          {
-            "name": "pool",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "warm_pool"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/container-pool-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/pools/:pool/warm",
-        "x-dd-source-paths": [
-          "/pools/:pool/warm"
-        ],
-        "x-dd-visibility": "internal"
       }
     },
     "/readyz": {
@@ -471,11 +224,11 @@
       }
     }
   },
-  "x-dd-contract-scope": "internal",
+  "x-dd-contract-scope": "public",
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "rust",
-  "x-dd-operation-count": 13,
-  "x-dd-route-count": 13,
+  "x-dd-operation-count": 6,
+  "x-dd-route-count": 6,
   "x-dd-service": "container-pool-rs",
   "x-dd-standard-docs-routes": [
     "/docs/api",

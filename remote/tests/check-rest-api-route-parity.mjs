@@ -9,9 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function findRepoRoot() {
   for (const candidate of [process.cwd(), resolve(__dirname, '..', '..')]) {
-    if (existsSync(resolve(candidate, 'remote/tools/generate-api-docs.mjs'))) {
-      return candidate;
-    }
+    if (existsSync(resolve(candidate, 'remote/tools/generate-api-docs.mjs'))) return candidate;
   }
   throw new Error(`Unable to locate repo root from ${process.cwd()}`);
 }
@@ -59,49 +57,50 @@ function deploymentPathForGenerated(generatedPath) {
 
 function unavailableGitlink(repoRoot, generatedPath, gitlinks) {
   const deploymentPath = deploymentPathForGenerated(generatedPath);
-  if (!deploymentPath || !gitlinks.has(deploymentPath)) {
-    return false;
-  }
+  if (!deploymentPath || !gitlinks.has(deploymentPath)) return false;
   return !existsSync(resolve(repoRoot, deploymentPath, '.git'));
 }
 
-function canonicalOpenApiPath(service) {
-  return service.generated.find(
-    (path) => path.endsWith('.json') && !path.endsWith('.public.json') && !path.endsWith('.metadata.json'),
-  );
+function expectedArtifacts(publicPath) {
+  return [
+    publicPath,
+    publicPath.replace(/\.json$/, '.html'),
+    publicPath.replace(/\.json$/, '.internal.json'),
+    publicPath.replace(/\.json$/, '.metadata.json'),
+  ];
 }
 
 const repoRoot = findRepoRoot();
 const generationOutput = runNode(repoRoot, 'remote/tools/generate-api-docs.mjs', ['--check']);
 const validationOutput = runNode(repoRoot, 'remote/tools/validate-openapi-contracts.mjs');
 
-const restApiOpenApiPath = 'remote/deployments/rest-api-rs/generated/api-docs.json';
+const restApiPublicPath = 'remote/deployments/rest-api-rs/generated/api-docs.json';
+const restApiInternalPath = 'remote/deployments/rest-api-rs/generated/api-docs.internal.json';
 const restApiMetadataPath = 'remote/deployments/rest-api-rs/generated/api-docs.metadata.json';
-const restApiPublicPath = 'remote/deployments/rest-api-rs/generated/api-docs.public.json';
-const restApiOpenApi = readJson(repoRoot, restApiOpenApiPath);
-const restApiMetadata = readJson(repoRoot, restApiMetadataPath);
 const restApiPublic = readJson(repoRoot, restApiPublicPath);
+const restApiInternal = readJson(repoRoot, restApiInternalPath);
+const restApiMetadata = readJson(repoRoot, restApiMetadataPath);
 
-assert.equal(restApiOpenApi.openapi, '3.1.0');
-assert.equal(restApiOpenApi['x-dd-contract-scope'], 'internal');
+assert.equal(restApiPublic.openapi, '3.1.0');
 assert.equal(restApiPublic['x-dd-contract-scope'], 'public');
+assert.equal(restApiInternal['x-dd-contract-scope'], 'internal');
 assert.equal(restApiMetadata.routeTypeCounts['user-generated'], 26);
 assert.ok(!Object.prototype.hasOwnProperty.call(restApiMetadata.routeTypeCounts, 'pg' + '-first'));
-for (const path of ['/docs/api', '/api/docs', '/api/docs.json']) {
+for (const route of ['/docs/api', '/api/docs', '/api/docs.json']) {
   assert.ok(
-    restApiMetadata.routes.some((route) => route.path === path && route.methods.includes('GET')),
-    `rest-api-rs generated metadata is missing GET ${path}`,
+    restApiMetadata.routes.some((entry) => entry.path === route && entry.methods.includes('GET')),
+    `rest-api-rs generated metadata is missing GET ${route}`,
   );
-  assert.ok(restApiOpenApi.paths[path]?.get, `rest-api-rs OpenAPI is missing GET ${path}`);
-  assert.ok(restApiPublic.paths[path]?.get, `rest-api-rs public OpenAPI is missing GET ${path}`);
+  assert.ok(restApiInternal.paths[route]?.get, `rest-api-rs internal OpenAPI is missing GET ${route}`);
+  assert.ok(restApiPublic.paths[route]?.get, `rest-api-rs public OpenAPI is missing GET ${route}`);
 }
 assert.ok(
   restApiMetadata.routes.every((route) => !route.path.startsWith('/api/db')),
   'rest-api-rs generated metadata must not expose generic /api/db routes.',
 );
 assert.ok(
-  Object.keys(restApiOpenApi.paths).every((path) => !path.startsWith('/api/db')),
-  'rest-api-rs OpenAPI must not expose generic /api/db routes.',
+  Object.keys(restApiPublic.paths).every((path) => !path.startsWith('/internal/')),
+  'rest-api-rs public runtime OpenAPI must not expose /internal routes.',
 );
 assert.ok(
   readFileSync(resolve(repoRoot, 'remote/deployments/rest-api-rs/src/main.rs'), 'utf8').includes(
@@ -120,40 +119,49 @@ for (const serviceName of ['dart-server', 'fsharp-ws-server']) {
     `${serviceName} must stay inside generated API contract coverage`,
   );
 }
-assert.ok(
-  readFileSync(resolve(repoRoot, 'remote/deployments/generated-api-docs-index.html'), 'utf8').includes(
-    'dd runtime API docs',
-  ),
-  'central generated API docs HTML index must be committed and servable by web-home-rs.',
+const centralHtml = readFileSync(
+  resolve(repoRoot, 'remote/deployments/generated-api-docs-index.html'),
+  'utf8',
 );
+assert.ok(centralHtml.includes('Public-only fleet index'));
+assert.ok(!centralHtml.includes('/internal/runtime-config'));
 
 const gitlinks = deploymentGitlinks(repoRoot);
 let checkedServices = 0;
 let skippedGitlinks = 0;
 for (const service of index.services) {
-  const openApiPath = canonicalOpenApiPath(service);
-  assert.ok(openApiPath, `${service.service} must include a canonical OpenAPI JSON artifact`);
-  if (unavailableGitlink(repoRoot, openApiPath, gitlinks)) {
+  const publicPath = service.generated?.[0];
+  assert.ok(publicPath, `${service.service} must include a public runtime OpenAPI artifact`);
+  assert.deepEqual(
+    service.generated,
+    expectedArtifacts(publicPath),
+    `${service.service} central artifact list is not canonical`,
+  );
+  if (unavailableGitlink(repoRoot, publicPath, gitlinks)) {
     skippedGitlinks += 1;
     continue;
   }
 
-  const publicPath = openApiPath.replace(/\.json$/, '.public.json');
-  const metadataPath = openApiPath.replace(/\.json$/, '.metadata.json');
-  for (const path of [openApiPath, publicPath, metadataPath]) {
-    assert.ok(existsSync(resolve(repoRoot, path)), `${service.service} is missing ${path}`);
+  const internalPath = publicPath.replace(/\.json$/, '.internal.json');
+  const metadataPath = publicPath.replace(/\.json$/, '.metadata.json');
+  for (const artifactPath of [publicPath, internalPath, metadataPath]) {
+    assert.ok(existsSync(resolve(repoRoot, artifactPath)), `${service.service} is missing ${artifactPath}`);
   }
 
-  const openapi = readJson(repoRoot, openApiPath);
-  const publicOpenApi = readJson(repoRoot, publicPath);
+  const publicOpenapi = readJson(repoRoot, publicPath);
+  const internalOpenapi = readJson(repoRoot, internalPath);
   const metadata = readJson(repoRoot, metadataPath);
-  assert.equal(openapi.openapi, '3.1.0', `${service.service} must emit OpenAPI 3.1`);
-  assert.equal(openapi['x-dd-service'], service.service);
-  assert.equal(publicOpenApi['x-dd-contract-scope'], 'public');
+  assert.equal(publicOpenapi.openapi, '3.1.0', `${service.service} must emit OpenAPI 3.1`);
+  assert.equal(publicOpenapi['x-dd-contract-scope'], 'public');
+  assert.equal(internalOpenapi['x-dd-contract-scope'], 'internal');
+  assert.equal(publicOpenapi['x-dd-service'], service.service);
   assert.equal(metadata.service, service.service);
-  for (const path of metadata.standardDocsRoutes) {
-    assert.ok(openapi.paths[path]?.get, `${service.service} OpenAPI is missing GET ${path}`);
-    assert.ok(publicOpenApi.paths[path]?.get, `${service.service} public OpenAPI is missing GET ${path}`);
+  for (const route of metadata.standardDocsRoutes) {
+    assert.ok(internalOpenapi.paths[route]?.get, `${service.service} internal OpenAPI is missing GET ${route}`);
+    assert.ok(publicOpenapi.paths[route]?.get, `${service.service} public OpenAPI is missing GET ${route}`);
+  }
+  for (const path of Object.keys(publicOpenapi.paths)) {
+    assert.ok(!path.startsWith('/internal/'), `${service.service} leaked internal route ${path}`);
   }
   checkedServices += 1;
 }

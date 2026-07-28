@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "info": {
-    "title": "spark-pipeline-server API",
+    "title": "spark-pipeline-server API (public)",
     "version": "0.1.0",
-    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
   },
   "tags": [
     {
@@ -200,139 +200,6 @@
         "x-dd-visibility": "public",
         "security": []
       }
-    },
-    "/v1/jobs": {
-      "get": {
-        "operationId": "spark_pipeline_server_get_v1_jobs_214caf267a69",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "ListJobsHandler",
-          "SubmitJobHandler",
-          "authGate"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/spark-pipeline-server/src/main/java/com/oresoftware/dd/sparkpipeline/MainVerticle.java"
-        ],
-        "x-dd-source-path": "/v1/jobs",
-        "x-dd-source-paths": [
-          "/v1/jobs"
-        ],
-        "x-dd-visibility": "internal"
-      },
-      "post": {
-        "operationId": "spark_pipeline_server_post_v1_jobs_ad91619f36c9",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "ListJobsHandler",
-          "SubmitJobHandler",
-          "authGate"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/spark-pipeline-server/src/main/java/com/oresoftware/dd/sparkpipeline/MainVerticle.java"
-        ],
-        "x-dd-source-path": "/v1/jobs",
-        "x-dd-source-paths": [
-          "/v1/jobs"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/v1/jobs/{id}": {
-      "get": {
-        "operationId": "spark_pipeline_server_get_v1_jobs_id_9208ec2d285b",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "JobStatusHandler",
-          "authGate"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/spark-pipeline-server/src/main/java/com/oresoftware/dd/sparkpipeline/MainVerticle.java"
-        ],
-        "x-dd-source-path": "/v1/jobs/:id",
-        "x-dd-source-paths": [
-          "/v1/jobs/:id"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/v1/repos": {
-      "get": {
-        "operationId": "spark_pipeline_server_get_v1_repos_46f592709a72",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "ListReposHandler",
-          "authGate"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/spark-pipeline-server/src/main/java/com/oresoftware/dd/sparkpipeline/MainVerticle.java"
-        ],
-        "x-dd-source-path": "/v1/repos",
-        "x-dd-source-paths": [
-          "/v1/repos"
-        ],
-        "x-dd-visibility": "internal"
-      }
     }
   },
   "components": {
@@ -354,11 +221,11 @@
       }
     }
   },
-  "x-dd-contract-scope": "internal",
+  "x-dd-contract-scope": "public",
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "java",
-  "x-dd-operation-count": 10,
-  "x-dd-route-count": 9,
+  "x-dd-operation-count": 6,
+  "x-dd-route-count": 6,
   "x-dd-service": "spark-pipeline-server",
   "x-dd-standard-docs-routes": [
     "/docs/api",

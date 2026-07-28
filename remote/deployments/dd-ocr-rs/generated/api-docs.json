@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "info": {
-    "title": "dd-ocr-rs API",
+    "title": "dd-ocr-rs API (public)",
     "version": "0.1.0",
-    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
   },
   "tags": [
     {
@@ -111,36 +111,6 @@
         "security": []
       }
     },
-    "/capabilities": {
-      "get": {
-        "operationId": "dd_ocr_rs_get_capabilities_172f47d29997",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "capabilities_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dd-ocr-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/capabilities",
-        "x-dd-source-paths": [
-          "/capabilities"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
     "/docs/api": {
       "get": {
         "operationId": "dd_ocr_rs_get_docs_api_b66630f1a903",
@@ -170,66 +140,6 @@
         ],
         "x-dd-visibility": "public",
         "security": []
-      }
-    },
-    "/engines": {
-      "get": {
-        "operationId": "dd_ocr_rs_get_engines_47c8210b8e7a",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "engines_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dd-ocr-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/engines",
-        "x-dd-source-paths": [
-          "/engines"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/example": {
-      "get": {
-        "operationId": "dd_ocr_rs_get_example_15df929da821",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "example_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dd-ocr-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/example",
-        "x-dd-source-paths": [
-          "/example"
-        ],
-        "x-dd-visibility": "internal"
       }
     },
     "/healthz": {
@@ -263,106 +173,6 @@
         "security": []
       }
     },
-    "/internal/runtime-config": {
-      "get": {
-        "operationId": "dd_ocr_rs_get_internal_runtime_config_78b4e4b04550",
-        "summary": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
-        "description": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_get"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/libs/runtime-config-client-rs/src/lib.rs"
-        ],
-        "x-dd-source-path": "/internal/runtime-config",
-        "x-dd-source-paths": [
-          "/internal/runtime-config"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/internal/runtime-config/reset": {
-      "post": {
-        "operationId": "dd_ocr_rs_post_internal_runtime_config_reset_83b3f0d65af5",
-        "summary": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
-        "description": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_reset"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/libs/runtime-config-client-rs/src/lib.rs"
-        ],
-        "x-dd-source-path": "/internal/runtime-config/reset",
-        "x-dd-source-paths": [
-          "/internal/runtime-config/reset"
-        ],
-        "x-dd-visibility": "internal",
-        "security": [
-          {
-            "serverAuth": []
-          }
-        ]
-      }
-    },
-    "/internal/update-runtime-config": {
-      "post": {
-        "operationId": "dd_ocr_rs_post_internal_update_runtime_config_8d4010f1d1c8",
-        "summary": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
-        "description": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_apply"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/libs/runtime-config-client-rs/src/lib.rs"
-        ],
-        "x-dd-source-path": "/internal/update-runtime-config",
-        "x-dd-source-paths": [
-          "/internal/update-runtime-config"
-        ],
-        "x-dd-visibility": "internal",
-        "security": [
-          {
-            "serverAuth": []
-          }
-        ]
-      }
-    },
     "/metrics": {
       "get": {
         "operationId": "dd_ocr_rs_get_metrics_3f3b225d2987",
@@ -393,96 +203,6 @@
         "x-dd-visibility": "public",
         "security": []
       }
-    },
-    "/ocr": {
-      "post": {
-        "operationId": "dd_ocr_rs_post_ocr_7d801c9d7576",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "ocr_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dd-ocr-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/ocr",
-        "x-dd-source-paths": [
-          "/ocr"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/ocr/stream": {
-      "post": {
-        "operationId": "dd_ocr_rs_post_ocr_stream_3f45b9ae7408",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "ocr_stream_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dd-ocr-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/ocr/stream",
-        "x-dd-source-paths": [
-          "/ocr/stream"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/status": {
-      "get": {
-        "operationId": "dd_ocr_rs_get_status_3f8c7dbb7834",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "status_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/dd-ocr-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/status",
-        "x-dd-source-paths": [
-          "/status"
-        ],
-        "x-dd-visibility": "internal"
-      }
     }
   },
   "components": {
@@ -504,11 +224,11 @@
       }
     }
   },
-  "x-dd-contract-scope": "internal",
+  "x-dd-contract-scope": "public",
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "rust",
-  "x-dd-operation-count": 15,
-  "x-dd-route-count": 15,
+  "x-dd-operation-count": 6,
+  "x-dd-route-count": 6,
   "x-dd-service": "dd-ocr-rs",
   "x-dd-standard-docs-routes": [
     "/docs/api",

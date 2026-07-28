@@ -12,7 +12,7 @@ implemented in Rust, Node.js/TypeScript, Gleam, Dart, Python, Java, and F#.
 2. **OpenAPI 3.1 at runtime.** Every service exposes:
    - `GET /docs/api` — human-readable API reference.
    - `GET /api/docs` — compatibility alias for the human-readable reference.
-   - `GET /api/docs.json` — canonical OpenAPI 3.1 JSON for that running build.
+   - `GET /api/docs.json` — fail-closed public OpenAPI 3.1 JSON for that running build. The full internal contract is never served by these public routes.
 3. **Fail-closed public contracts.** An operation is internal unless its source declaration
    explicitly marks it public. The generated `api-docs.public.json` file contains only operations
    with `x-dd-visibility: public`; private and operator routes must never enter public SDKs.
@@ -29,10 +29,10 @@ For the default output name `api-docs`, each service owns:
 
 | Artifact | Purpose |
 | --- | --- |
-| `generated/api-docs.json` | Full service-local OpenAPI 3.1 document served at `/api/docs.json`. |
-| `generated/api-docs.public.json` | Fail-closed public subset used to generate public SDKs. |
+| `generated/api-docs.json` | Fail-closed public OpenAPI 3.1 document served at `/api/docs.json` and used for public SDKs. |
+| `generated/api-docs.html` | Public-only human-readable reference served by the two HTML routes. |
+| `generated/api-docs.internal.json` | Full, unserved contract used only for private SDKs and CI parity checks. |
 | `generated/api-docs.metadata.json` | Migration/debug metadata about discovered source routes; not a consumer contract. |
-| `generated/api-docs.html` | Human-readable route reference served by the two HTML routes. |
 
 The current fleet generator produces route-complete OpenAPI documents from existing route
 registrations and preserves richer source metadata as a companion artifact. This is a migration
@@ -171,20 +171,20 @@ The default client targets are:
 - Dart: `http`/`dio` client package suitable for Flutter and server-side Dart.
 - Gleam: typed client using the selected HTTP client package.
 
-Public packages are generated from `api-docs.public.json`; workspace/private packages are generated
-from `api-docs.json`. A public package must never import or expose an internal operation.
+Public packages are generated from the runtime-safe `api-docs.json`; workspace/private packages are generated
+from the unserved `api-docs.internal.json`. A public package must never import or expose an internal operation.
 
 ## CI gates
 
 `remote/tools/generate-api-docs.mjs --check` verifies deterministic generated files.
 `remote/tools/validate-openapi-contracts.mjs` additionally verifies:
 
-- every indexed available service has full, public, and metadata artifacts;
+- every indexed available service has public runtime, public HTML, internal, and metadata artifacts;
 - full documents are OpenAPI 3.1;
 - registered method/path pairs and OpenAPI operations are identical;
 - every operation has a fleet-unique `operationId`;
 - visibility and auth metadata are present;
-- the public document is the exact public subset; and
+- the runtime document is the exact public subset of the unserved internal document; and
 - all three standard docs routes are documented.
 
 The explicit scanner allowlist in `remote/config/api-contracts.json` prevents accidental expansion

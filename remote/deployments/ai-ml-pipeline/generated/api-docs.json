@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "info": {
-    "title": "ai-ml-pipeline API",
+    "title": "ai-ml-pipeline API (public)",
     "version": "0.1.0",
-    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
   },
   "tags": [
     {
@@ -47,36 +47,6 @@
         ],
         "x-dd-visibility": "public",
         "security": []
-      }
-    },
-    "/analyze": {
-      "post": {
-        "operationId": "ai_ml_pipeline_post_analyze_71dad4820ccf",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "do_POST"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py"
-        ],
-        "x-dd-source-path": "/analyze",
-        "x-dd-source-paths": [
-          "/analyze"
-        ],
-        "x-dd-visibility": "internal"
       }
     },
     "/api/docs": {
@@ -203,166 +173,6 @@
         "security": []
       }
     },
-    "/ingest": {
-      "post": {
-        "operationId": "ai_ml_pipeline_post_ingest_9d4b18e8a04c",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "do_POST"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py"
-        ],
-        "x-dd-source-path": "/ingest",
-        "x-dd-source-paths": [
-          "/ingest"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/internal/runtime-config": {
-      "get": {
-        "operationId": "ai_ml_pipeline_get_internal_runtime_config_052cd748be26",
-        "summary": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
-        "description": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_get"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py"
-        ],
-        "x-dd-source-path": "/internal/runtime-config",
-        "x-dd-source-paths": [
-          "/internal/runtime-config"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/internal/runtime-config/reset": {
-      "post": {
-        "operationId": "ai_ml_pipeline_post_internal_runtime_config_reset_ec16d892f5db",
-        "summary": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
-        "description": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_reset"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py"
-        ],
-        "x-dd-source-path": "/internal/runtime-config/reset",
-        "x-dd-source-paths": [
-          "/internal/runtime-config/reset"
-        ],
-        "x-dd-visibility": "internal",
-        "security": [
-          {
-            "serverAuth": []
-          }
-        ]
-      }
-    },
-    "/internal/update-runtime-config": {
-      "post": {
-        "operationId": "ai_ml_pipeline_post_internal_update_runtime_config_838616f52615",
-        "summary": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
-        "description": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_apply"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py"
-        ],
-        "x-dd-source-path": "/internal/update-runtime-config",
-        "x-dd-source-paths": [
-          "/internal/update-runtime-config"
-        ],
-        "x-dd-visibility": "internal",
-        "security": [
-          {
-            "serverAuth": []
-          }
-        ]
-      }
-    },
-    "/mdp/features": {
-      "post": {
-        "operationId": "ai_ml_pipeline_post_mdp_features_70df7e5f5241",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "do_POST"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py"
-        ],
-        "x-dd-source-path": "/mdp/features",
-        "x-dd-source-paths": [
-          "/mdp/features"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
     "/metrics": {
       "get": {
         "operationId": "ai_ml_pipeline_get_metrics_1dc6de9bee57",
@@ -424,36 +234,6 @@
         "x-dd-visibility": "public",
         "security": []
       }
-    },
-    "/status": {
-      "get": {
-        "operationId": "ai_ml_pipeline_get_status_e370d1a55002",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "do_GET"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline.py"
-        ],
-        "x-dd-source-path": "/status",
-        "x-dd-source-paths": [
-          "/status"
-        ],
-        "x-dd-visibility": "internal"
-      }
     }
   },
   "components": {
@@ -475,11 +255,11 @@
       }
     }
   },
-  "x-dd-contract-scope": "internal",
+  "x-dd-contract-scope": "public",
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "python",
-  "x-dd-operation-count": 14,
-  "x-dd-route-count": 14,
+  "x-dd-operation-count": 7,
+  "x-dd-route-count": 7,
   "x-dd-service": "ai-ml-pipeline",
   "x-dd-standard-docs-routes": [
     "/docs/api",

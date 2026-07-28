@@ -164,7 +164,7 @@ truth. Rust uses `utoipa` plus `utoipa-axum` route registration; Node/Fastify us
 consumed by `@fastify/swagger`; Gleam and Dart use typed route registries that drive both dispatch
 and OpenAPI output. The source scanner in `remote/tools/generate-api-docs.mjs` is a temporary,
 explicitly allowlisted migration bridge only. New services must use a native strategy, and CI must
-regenerate/check both the full and fail-closed public OpenAPI artifacts before SDK publication.
+regenerate/check the unserved internal contract and the fail-closed public OpenAPI served at `/api/docs.json` before SDK publication.
 See `docs/http-api-openapi-sdk-contract.md`.
 
 ## Access Posture

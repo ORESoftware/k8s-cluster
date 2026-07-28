@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "info": {
-    "title": "rust-vapi-phone-rs API",
+    "title": "rust-vapi-phone-rs API (public)",
     "version": "0.1.0",
-    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
   },
   "tags": [
     {
@@ -111,36 +111,6 @@
         "security": []
       }
     },
-    "/config": {
-      "get": {
-        "operationId": "rust_vapi_phone_rs_get_config_bf2899df698a",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "config_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/rust-vapi-phone-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/config",
-        "x-dd-source-paths": [
-          "/config"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
     "/docs/api": {
       "get": {
         "operationId": "rust_vapi_phone_rs_get_docs_api_f4a0f2422469",
@@ -170,66 +140,6 @@
         ],
         "x-dd-visibility": "public",
         "security": []
-      }
-    },
-    "/flamegraph": {
-      "get": {
-        "operationId": "rust_vapi_phone_rs_get_flamegraph_f7eca6e19486",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "flamegraph_html"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/rust-vapi-phone-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/flamegraph",
-        "x-dd-source-paths": [
-          "/flamegraph"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/flamegraph.svg": {
-      "get": {
-        "operationId": "rust_vapi_phone_rs_get_flamegraph_svg_3bfde71bfc16",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "flamegraph_svg"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/rust-vapi-phone-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/flamegraph.svg",
-        "x-dd-source-paths": [
-          "/flamegraph.svg"
-        ],
-        "x-dd-visibility": "internal"
       }
     },
     "/healthz": {
@@ -263,106 +173,6 @@
         "security": []
       }
     },
-    "/internal/runtime-config": {
-      "get": {
-        "operationId": "rust_vapi_phone_rs_get_internal_runtime_config_c4718340c6a5",
-        "summary": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
-        "description": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_get"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/libs/runtime-config-client-rs/src/lib.rs"
-        ],
-        "x-dd-source-path": "/internal/runtime-config",
-        "x-dd-source-paths": [
-          "/internal/runtime-config"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/internal/runtime-config/reset": {
-      "post": {
-        "operationId": "rust_vapi_phone_rs_post_internal_runtime_config_reset_8158360a36e8",
-        "summary": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
-        "description": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_reset"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/libs/runtime-config-client-rs/src/lib.rs"
-        ],
-        "x-dd-source-path": "/internal/runtime-config/reset",
-        "x-dd-source-paths": [
-          "/internal/runtime-config/reset"
-        ],
-        "x-dd-visibility": "internal",
-        "security": [
-          {
-            "serverAuth": []
-          }
-        ]
-      }
-    },
-    "/internal/update-runtime-config": {
-      "post": {
-        "operationId": "rust_vapi_phone_rs_post_internal_update_runtime_config_e71d12d596e0",
-        "summary": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
-        "description": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_apply"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/libs/runtime-config-client-rs/src/lib.rs"
-        ],
-        "x-dd-source-path": "/internal/update-runtime-config",
-        "x-dd-source-paths": [
-          "/internal/update-runtime-config"
-        ],
-        "x-dd-visibility": "internal",
-        "security": [
-          {
-            "serverAuth": []
-          }
-        ]
-      }
-    },
     "/metrics": {
       "get": {
         "operationId": "rust_vapi_phone_rs_get_metrics_d1df251dda84",
@@ -393,96 +203,6 @@
         "x-dd-visibility": "public",
         "security": []
       }
-    },
-    "/setup": {
-      "post": {
-        "operationId": "rust_vapi_phone_rs_post_setup_ea1ebf377fad",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "setup_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/rust-vapi-phone-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/setup",
-        "x-dd-source-paths": [
-          "/setup"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/status": {
-      "get": {
-        "operationId": "rust_vapi_phone_rs_get_status_a223860719ff",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "status_http"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/rust-vapi-phone-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/status",
-        "x-dd-source-paths": [
-          "/status"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/webhook": {
-      "post": {
-        "operationId": "rust_vapi_phone_rs_post_webhook_2cb2b9c3ead7",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "webhook"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/rust-vapi-phone-rs/src/main.rs"
-        ],
-        "x-dd-source-path": "/webhook",
-        "x-dd-source-paths": [
-          "/webhook"
-        ],
-        "x-dd-visibility": "internal"
-      }
     }
   },
   "components": {
@@ -504,11 +224,11 @@
       }
     }
   },
-  "x-dd-contract-scope": "internal",
+  "x-dd-contract-scope": "public",
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "rust",
-  "x-dd-operation-count": 15,
-  "x-dd-route-count": 15,
+  "x-dd-operation-count": 6,
+  "x-dd-route-count": 6,
   "x-dd-service": "rust-vapi-phone-rs",
   "x-dd-standard-docs-routes": [
     "/docs/api",

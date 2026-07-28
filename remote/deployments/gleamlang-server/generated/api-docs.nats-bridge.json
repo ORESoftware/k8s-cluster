@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "info": {
-    "title": "gleamlang-server-nats-bridge API",
+    "title": "gleamlang-server-nats-bridge API (public)",
     "version": "0.1.0",
-    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
   },
   "tags": [
     {
@@ -130,34 +130,6 @@
         "x-dd-visibility": "public",
         "security": []
       }
-    },
-    "/publish": {
-      "post": {
-        "operationId": "gleamlang_server_nats_bridge_post_publish_929320fed9fc",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
-        "tags": [
-          "user-generated"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "user-generated",
-        "x-dd-source-files": [
-          "remote/deployments/gleamlang-server/nats-bridge.mjs"
-        ],
-        "x-dd-source-path": "/publish",
-        "x-dd-source-paths": [
-          "/publish"
-        ],
-        "x-dd-visibility": "internal"
-      }
     }
   },
   "components": {
@@ -179,11 +151,11 @@
       }
     }
   },
-  "x-dd-contract-scope": "internal",
+  "x-dd-contract-scope": "public",
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "node",
-  "x-dd-operation-count": 5,
-  "x-dd-route-count": 5,
+  "x-dd-operation-count": 4,
+  "x-dd-route-count": 4,
   "x-dd-service": "gleamlang-server-nats-bridge",
   "x-dd-standard-docs-routes": [
     "/docs/api",
