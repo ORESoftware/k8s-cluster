@@ -1,0 +1,149 @@
+name: DEN-445 invariant diagnostics
+
+on:
+  push:
+    branches:
+      - agent/den-445-native-openapi-fresh
+    paths:
+      - '.github/workflows/den-445-invariant-diagnostics.yml'
+      - '.github/scripts/den-445-native-openapi.py.gz.b64.part*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: den-445-invariant-diagnostics
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent/den-445-native-openapi-fresh
+          fetch-depth: 1
+          show-progress: false
+          submodules: false
+
+      - name: Apply reviewed migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/scripts/den-445-native-openapi.py.gz.b64.part* \
+            | tr -d '\n\r' \
+            | base64 --decode \
+            | gzip --decompress \
+            > "${RUNNER_TEMP}/den-445-native-openapi.py"
+          echo '284a4d2ccf34a41af5556c0fdec364e60829d696a113bb59506b7bed09a90738  '"${RUNNER_TEMP}/den-445-native-openapi.py" | sha256sum --check
+          python3 "${RUNNER_TEMP}/den-445-native-openapi.py"
+
+      - name: Create telemetry compile shim
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-rs/src
+          cat > remote/libs/telemetry-rs/Cargo.toml <<'TOML'
+          [package]
+          name = "dd-telemetry"
+          version = "0.1.0"
+          edition = "2021"
+          [lib]
+          path = "src/lib.rs"
+          [dependencies]
+          tracing = "0.1"
+          tower-http = { version = "0.6", features = ["trace"] }
+          http = "1"
+          TOML
+          cat > remote/libs/telemetry-rs/src/lib.rs <<'RS'
+          use std::time::Duration;
+          use http::{Request, Response};
+          use tower_http::classify::{ServerErrorsAsFailures, SharedClassifier};
+          use tower_http::trace::{DefaultOnRequest, MakeSpan, OnResponse, TraceLayer};
+          use tracing::Span;
+          #[must_use]
+          pub struct OtelGuard;
+          pub fn init(_: &str) -> OtelGuard { OtelGuard }
+          pub fn http_trace_layer() -> TraceLayer<SharedClassifier<ServerErrorsAsFailures>, OtelMakeSpan, DefaultOnRequest, OtelOnResponse> {
+              TraceLayer::new_for_http().make_span_with(OtelMakeSpan).on_response(OtelOnResponse)
+          }
+          #[derive(Clone, Copy, Debug, Default)]
+          pub struct OtelMakeSpan;
+          impl<B> MakeSpan<B> for OtelMakeSpan {
+              fn make_span(&mut self, request: &Request<B>) -> Span {
+                  tracing::info_span!("http_request", http.request.method = %request.method(), url.path = %request.uri().path(), http.response.status_code = tracing::field::Empty)
+              }
+          }
+          #[derive(Clone, Copy, Debug, Default)]
+          pub struct OtelOnResponse;
+          impl<B> OnResponse<B> for OtelOnResponse {
+              fn on_response(self, response: &Response<B>, _: Duration, span: &Span) {
+                  span.record("http.response.status_code", response.status().as_u16() as u64);
+              }
+          }
+          RS
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Prepare exact committed contract candidate
+        working-directory: remote/deployments/dd-embeddings-rs
+        run: |
+          cargo check --quiet
+          cargo run --locked --quiet -- --export-openapi > generated/openapi.json
+
+      - name: Capture native checker output
+        id: checker
+        shell: bash
+        run: |
+          set +e
+          node remote/tools/check-openapi-contracts.mjs --service dd-embeddings-rs \
+            > "${RUNNER_TEMP}/checker.log" 2>&1
+          status=$?
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          cat "${RUNNER_TEMP}/checker.log"
+          exit 0
+
+      - name: Capture compatibility generation output
+        id: generator
+        shell: bash
+        run: |
+          set +e
+          node remote/tools/generate-api-docs.mjs --service dd-embeddings-rs \
+            > "${RUNNER_TEMP}/generator.log" 2>&1
+          status=$?
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          cat "${RUNNER_TEMP}/generator.log"
+          exit 0
+
+      - name: Capture compatibility check output
+        id: generator_check
+        shell: bash
+        run: |
+          set +e
+          node remote/tools/generate-api-docs.mjs --check --service dd-embeddings-rs \
+            > "${RUNNER_TEMP}/generator-check.log" 2>&1
+          status=$?
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          cat "${RUNNER_TEMP}/generator-check.log"
+          exit 0
+
+      - name: Upload invariant diagnostics
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-445-invariant-diagnostics
+          path: |
+            ${{ runner.temp }}/checker.log
+            ${{ runner.temp }}/generator.log
+            ${{ runner.temp }}/generator-check.log
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Require all invariant checks
+        if: steps.checker.outputs.status != '0' || steps.generator.outputs.status != '0' || steps.generator_check.outputs.status != '0'
+        run: exit 1
