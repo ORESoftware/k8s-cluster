@@ -38,29 +38,53 @@ jobs:
           const fs = require('node:fs');
           const path = 'remote/tools/generate-api-sdks.mjs';
           let source = fs.readFileSync(path, 'utf8');
-          const replacements = [
-            [
-              'export const CATALOG_SHA256 = ${q(catalog.catalogSha256)};\\nexport const OPERATIONS:',
-              'export const CATALOG_SHA256 = ${q(catalog.catalogSha256)};\\nexport const OPERATION_COUNT = ${operations.length};\\nexport const OPERATIONS:',
-            ],
-            [
-              'pub const CATALOG_SHA256: &str = ${q(catalog.catalogSha256)};\\n\\n#[derive',
-              'pub const CATALOG_SHA256: &str = ${q(catalog.catalogSha256)};\\npub const OPERATION_COUNT: usize = ${operations.length};\\n\\n#[derive',
-            ],
-            [
-              'const String catalogSha256 = ${q(catalog.catalogSha256)};\\n\\nclass ApiOperation',
-              'const String catalogSha256 = ${q(catalog.catalogSha256)};\\nconst int operationCount = ${operations.length};\\n\\nclass ApiOperation',
-            ],
-            [
-              'pub const catalog_sha256 = ${q(catalog.catalogSha256)}\\n\\npub type ApiOperation',
-              'pub const catalog_sha256 = ${q(catalog.catalogSha256)}\\npub const operation_count = ${operations.length}\\n\\npub type ApiOperation',
-            ],
+          const patches = [
+            {
+              pattern: /export const CATALOG_SHA256 = \$\{q\(catalog\.catalogSha256\)\};\nexport const OPERATIONS:/,
+              marker: 'export const OPERATION_COUNT = ${operations.length};',
+              replacement: [
+                'export const CATALOG_SHA256 = ${q(catalog.catalogSha256)};',
+                'export const OPERATION_COUNT = ${operations.length};',
+                'export const OPERATIONS:',
+              ].join('\n'),
+            },
+            {
+              pattern: /pub const CATALOG_SHA256: &str = \$\{q\(catalog\.catalogSha256\)\};\n\n#\[derive/,
+              marker: 'pub const OPERATION_COUNT: usize = ${operations.length};',
+              replacement: [
+                'pub const CATALOG_SHA256: &str = ${q(catalog.catalogSha256)};',
+                'pub const OPERATION_COUNT: usize = ${operations.length};',
+                '',
+                '#[derive',
+              ].join('\n'),
+            },
+            {
+              pattern: /const String catalogSha256 = \$\{q\(catalog\.catalogSha256\)\};\n\nclass ApiOperation/,
+              marker: 'const int operationCount = ${operations.length};',
+              replacement: [
+                'const String catalogSha256 = ${q(catalog.catalogSha256)};',
+                'const int operationCount = ${operations.length};',
+                '',
+                'class ApiOperation',
+              ].join('\n'),
+            },
+            {
+              pattern: /pub const catalog_sha256 = \$\{q\(catalog\.catalogSha256\)\}\n\npub type ApiOperation/,
+              marker: 'pub const operation_count = ${operations.length}',
+              replacement: [
+                'pub const catalog_sha256 = ${q(catalog.catalogSha256)}',
+                'pub const operation_count = ${operations.length}',
+                '',
+                'pub type ApiOperation',
+              ].join('\n'),
+            },
           ];
-          for (const [before, after] of replacements) {
-            if (!source.includes(before) && !source.includes(after)) {
-              throw new Error(`SDK generator patch anchor was not found: ${before}`);
+          for (const patch of patches) {
+            if (source.includes(patch.marker)) continue;
+            if (!patch.pattern.test(source)) {
+              throw new Error(`SDK generator patch anchor was not found: ${patch.marker}`);
             }
-            source = source.replace(before, after);
+            source = source.replace(patch.pattern, patch.replacement);
           }
           fs.writeFileSync(path, source);
           NODE
