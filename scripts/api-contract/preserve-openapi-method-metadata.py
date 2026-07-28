@@ -39,7 +39,7 @@ def update_generator() -> None:
     }
 
     for (const method of methods) {
-      const key = `${route.path}\u0000${method}`;
+      const key = JSON.stringify([route.path, method]);
       let current = byPathAndMethod.get(key);
       if (!current) {
         current = {
@@ -121,15 +121,13 @@ def update_generator() -> None:
       }'''
     new_existing_merge = r'''      const existing = pathItem[methodName];
       if (existing) {
-        const expected = {
-          summary: route.purpose,
-          description: route.notes || route.purpose,
+        const invariantFields = {
           'x-dd-auth': route.auth,
           'x-dd-implementation': route.implementation,
           'x-dd-route-type': route.routeType,
           'x-dd-visibility': visibility,
         };
-        for (const [field, value] of Object.entries(expected)) {
+        for (const [field, value] of Object.entries(invariantFields)) {
           if (existing[field] !== value) {
             throw new Error(
               `ambiguous OpenAPI ${field} for ${docs.service} ${method} ${path}: ${JSON.stringify(existing[field])} versus ${JSON.stringify(value)}`,
@@ -142,6 +140,54 @@ def update_generator() -> None:
             `ambiguous OpenAPI security for ${docs.service} ${method} ${path}: query/path variants must share effective security`,
           );
         }
+
+        const variants = existing['x-dd-source-variants'] ?? [
+          {
+            path: existing['x-dd-source-path'],
+            summary: existing.summary,
+            description: existing.description,
+          },
+        ];
+        const candidate = {
+          path: route.path,
+          summary: route.purpose,
+          description: route.notes || route.purpose,
+        };
+        const samePath = variants.find((variant) => variant.path === candidate.path);
+        if (
+          samePath &&
+          (samePath.summary !== candidate.summary || samePath.description !== candidate.description)
+        ) {
+          throw new Error(
+            `ambiguous OpenAPI source variant for ${docs.service} ${method} ${candidate.path}`,
+          );
+        }
+        if (!samePath) {
+          variants.push(candidate);
+        }
+        variants.sort((left, right) => {
+          const pathOrder = left.path.localeCompare(right.path);
+          if (pathOrder !== 0) return pathOrder;
+          const summaryOrder = left.summary.localeCompare(right.summary);
+          if (summaryOrder !== 0) return summaryOrder;
+          return left.description.localeCompare(right.description);
+        });
+        existing['x-dd-source-variants'] = variants;
+
+        const summaries = [...new Set(variants.map((variant) => variant.summary))];
+        const descriptions = [...new Set(variants.map((variant) => variant.description))];
+        existing.summary =
+          summaries.length === 1 ? summaries[0] : `Route variants for ${method} ${path}`;
+        existing.description =
+          descriptions.length === 1
+            ? descriptions[0]
+            : [
+                'Runtime route variants:',
+                ...variants.map(
+                  (variant) => `- ${variant.path}: ${variant.description}`,
+                ),
+              ].join('\n');
+
         existing.parameters = mergeOpenApiParameters(
           existing.parameters ?? [],
           openApiQueryParameters(route.path),
@@ -155,7 +201,7 @@ def update_generator() -> None:
         source,
         old_existing_merge,
         new_existing_merge,
-        "harden duplicate OpenAPI operation merge",
+        "preserve query variants without collapsing method metadata",
     )
     GENERATOR.write_text(source, encoding="utf-8")
 
