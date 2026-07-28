@@ -28,7 +28,7 @@ jobs:
       EXPECTED_VERSION: '1.0.1'
     steps:
       - name: Checkout main source of truth
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: main
 
