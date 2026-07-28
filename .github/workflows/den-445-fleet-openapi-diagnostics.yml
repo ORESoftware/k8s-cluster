@@ -1,6 +1,11 @@
 name: DEN-445 fleet OpenAPI diagnostics
 
 on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/den-445-fleet-openapi-diagnostics.yml'
   push:
     branches:
       - agent/den-445-native-openapi-fresh
@@ -12,7 +17,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: den-445-fleet-openapi-diagnostics
+  group: den-445-fleet-openapi-diagnostics-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
