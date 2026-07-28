@@ -6,62 +6,19 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Remove duplicate HTTP test cfg attribute
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("src/http_api.rs")
-          text = path.read_text()
-          duplicate = "#[cfg(test)]\n#[cfg(test)]\nuse axum::body::Body;"
-          single = "#[cfg(test)]\nuse axum::body::Body;"
-          if duplicate in text:
-              text = text.replace(duplicate, single, 1)
-          elif single not in text:
-              raise SystemExit("HTTP Body test import anchor not found")
-          path.write_text(text)
-          PY
-          cargo fmt
-      - name: Commit duplicate-attribute fix
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        run: |
-          if [ -z "$(git status --porcelain -- src/http_api.rs)" ]; then
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/http_api.rs
-          git commit -m "DEN-329 remove duplicate test cfg attribute"
-          git push origin "HEAD:${{ github.head_ref }}"
       - run: cargo fmt --check
-      - name: Run Clippy and preserve HTTP diagnostics
-        run: |
-          set +e
-          cargo clippy --locked --all-targets --all-features -- -D warnings > http-ingestion-clippy.log 2>&1
-          status=$?
-          echo "$status" > http-ingestion-clippy.exit
-          exit 0
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: http-ingestion-clippy-diagnostics
-          path: http-ingestion-clippy.log
-          if-no-files-found: error
-      - name: Enforce Clippy result
-        run: exit "$(cat http-ingestion-clippy.exit)"
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-features
 
   container:
