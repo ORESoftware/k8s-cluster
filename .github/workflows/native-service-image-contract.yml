@@ -11,6 +11,7 @@ on:
       - 'remote/deployments/dd-ocr-rs/Dockerfile'
       - 'remote/argocd/dd-next-runtime/dd-document-rs.deployment.yaml'
       - 'remote/argocd/dd-next-runtime/dd-ocr-rs.deployment.yaml'
+      - 'remote/databases/pg/seeds/container-pool-app-config.sql'
   push:
     branches:
       - dev
@@ -24,6 +25,7 @@ on:
       - 'remote/deployments/dd-ocr-rs/Dockerfile'
       - 'remote/argocd/dd-next-runtime/dd-document-rs.deployment.yaml'
       - 'remote/argocd/dd-next-runtime/dd-ocr-rs.deployment.yaml'
+      - 'remote/databases/pg/seeds/container-pool-app-config.sql'
 
 permissions:
   contents: read
@@ -112,6 +114,12 @@ jobs:
             'image:[[:space:]]+([^[:space:]]+/)?dd-(document|ocr)-rs:(latest|dev|main|master)([[:space:]]|$)' \
             remote/argocd/dd-next-runtime/dd-document-rs.deployment.yaml \
             remote/argocd/dd-next-runtime/dd-ocr-rs.deployment.yaml; then
-            echo 'mutable native-service image tag detected' >&2
+            echo 'mutable native-service GitOps image tag detected' >&2
+            exit 1
+          fi
+          if grep -En \
+            '"image":[[:space:]]+"([^"[:space:]]+/)?dd-document-rs:(latest|dev|main|master)"' \
+            remote/databases/pg/seeds/container-pool-app-config.sql; then
+            echo 'mutable dd-document warm-pool image tag detected' >&2
             exit 1
           fi
