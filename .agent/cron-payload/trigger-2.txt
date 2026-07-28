@@ -1,0 +1,1 @@
+Trigger the pull-request installer after its workflow definition is already present on the feature branch.
