@@ -1,0 +1,175 @@
+name: DEN-483 materialize formal-methods executable OpenAPI
+
+on:
+  push:
+    branches:
+      - agent/den-483-formal-methods-executable-openapi
+    paths:
+      - '.github/workflows/den-483-materialize-formal-openapi.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-483-materialize-formal-openapi
+  cancel-in-progress: true
+
+jobs:
+  materialize:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref_name == 'agent/den-483-formal-methods-executable-openapi'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout writable feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-483-formal-methods-executable-openapi
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Merge current main without rebasing
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags origin main
+          git merge --no-edit --no-ff origin/main
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- . ':!vendor'; then
+            echo 'git conflict marker found after semantic merge' >&2
+            exit 1
+          fi
+
+      - name: Setup Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.95.0'
+          components: rustfmt
+
+      - name: Setup Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Setup Dart 3.12.2
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        with:
+          sdk: '3.12.2'
+
+      - name: Apply formatting, generate contracts and SDKs, validate, and commit
+        id: materialize
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="${RUNNER_TEMP}/den-483-materialize.log"
+          {
+            set -euo pipefail
+            bash scripts/api-contract/formal-methods-private-gitlink-shims.sh
+
+            service='remote/deployments/formal-methods-service-rs'
+            mkdir -p "$service/generated"
+            cargo fmt --manifest-path "$service/Cargo.toml" --all
+            cargo check --manifest-path "$service/Cargo.toml"
+            cargo test --manifest-path "$service/Cargo.toml"
+
+            cargo run --manifest-path "$service/Cargo.toml" --quiet -- --export-openapi \
+              > "$service/generated/openapi.json"
+            cargo run --manifest-path "$service/Cargo.toml" --quiet -- --export-openapi \
+              > "${RUNNER_TEMP}/formal-openapi.second.json"
+            cmp "$service/generated/openapi.json" "${RUNNER_TEMP}/formal-openapi.second.json"
+            python3 -m json.tool "$service/generated/openapi.json" >/dev/null
+
+            node remote/tools/generate-api-docs.mjs
+            node remote/tools/generate-api-sdks.mjs
+
+            cargo fmt --manifest-path "$service/Cargo.toml" --all -- --check
+            cargo check --locked --manifest-path "$service/Cargo.toml"
+            cargo test --locked --manifest-path "$service/Cargo.toml"
+            node remote/tools/check-openapi-contracts.mjs --service formal-methods-service-rs
+            node remote/tools/generate-api-docs.mjs --check --service formal-methods-service-rs
+            node remote/tools/validate-openapi-contracts.mjs
+            node remote/tools/generate-api-sdks.mjs --check
+            node remote/tools/validate-api-sdks.mjs
+
+            python3 - <<'PY'
+            import json
+            from pathlib import Path
+
+            directory = Path('remote/deployments/formal-methods-service-rs/generated')
+            internal = json.loads((directory / 'openapi.json').read_text(encoding='utf-8'))
+            public = json.loads((directory / 'api-docs.json').read_text(encoding='utf-8'))
+            expected_public = {'/openapi.json', '/api/docs.json', '/api/docs', '/docs/api'}
+            assert set(public['paths']) == expected_public, sorted(public['paths'])
+            operation = internal['paths']['/webhook/github']['post']
+            assert operation['security'] == [{'github_webhook_signature': []}]
+            assert operation['x-dd-max-request-body-bytes'] == 8 * 1024 * 1024
+            assert set(operation['responses']) == {'200', '202', '400', '401', '413', '500'}
+            public_text = json.dumps(public).lower()
+            for forbidden in (
+                '/webhook/github', '/health', '/ready', '/metrics', '/internal/',
+                'github_webhook_signature', 'x-hub-signature-256',
+                'runtime_config_server_auth', 'github_token_configured',
+            ):
+                assert forbidden not in public_text, forbidden
+            PY
+
+            rm -rf .tmp/formal-methods-sdk
+            node remote/tools/generate-openapi-sdks.mjs \
+              --service formal-methods-service-rs \
+              --output .tmp/formal-methods-sdk
+            cargo check --manifest-path .tmp/formal-methods-sdk/rust/Cargo.toml
+            (
+              cd .tmp/formal-methods-sdk/typescript
+              npm install --ignore-scripts --no-audit --no-fund --package-lock=false
+              npm run build
+            )
+            (
+              cd .tmp/formal-methods-sdk/dart
+              dart pub get
+              dart analyze
+            )
+
+            rm -rf .tmp remote/libs
+            find remote/api-sdks -type d \( \
+              -name node_modules -o -name dist -o -name target -o \
+              -name .dart_tool -o -name build \
+            \) -prune -exec rm -rf '{}' +
+            find remote/api-sdks -type f \( \
+              -name package-lock.json -o -name pubspec.lock -o -name manifest.toml \
+            \) -delete
+            rm -f .github/workflows/den-483-materialize-formal-openapi.yml
+
+            git diff --check
+            if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- . ':!vendor'; then
+              echo 'git conflict marker found before commit' >&2
+              exit 1
+            fi
+            test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
+            test -s "$service/generated/openapi.json"
+            test -s "$service/generated/api-docs.json"
+            test -s "$service/generated/api-docs.internal.json"
+            test -s "$service/generated/api-docs.metadata.json"
+
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add -A -- . ':(exclude)remote/libs'
+            git diff --cached --check
+            test -z "$(git diff --cached --name-only | grep -F 'den-483-materialize-formal-openapi.yml' || true)"
+            git diff --cached --name-status
+            git commit -m 'feat(DEN-483): materialize formal-methods contracts and SDKs'
+            git push origin HEAD:agent/den-483-formal-methods-executable-openapi
+          } 2>&1 | tee "$log"
+          exit "${PIPESTATUS[0]}"
+
+      - name: Upload bounded materialization diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+        with:
+          name: den-483-materialize-log
+          path: ${{ runner.temp }}/den-483-materialize.log
+          if-no-files-found: warn
+          retention-days: 1
