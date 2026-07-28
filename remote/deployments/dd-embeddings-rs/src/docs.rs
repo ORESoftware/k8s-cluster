@@ -44,6 +44,12 @@ pub fn finalize(mut openapi: OpenApi) -> OpenApi {
         "Typed multi-provider embeddings, reranking, Qdrant RAG, and Postgres multi-signal search API. The document is generated from the same annotated handlers and Serde DTOs registered by the running Axum router."
             .to_string(),
     );
+    // `OpenApiRouter::new()` currently inherits Utoipa crate metadata in its
+    // default `Info`. That metadata describes the generator dependency, not
+    // this service. Clear it explicitly so the exported contract never claims
+    // the tool author's contact details or license as API provenance.
+    openapi.info.contact = None;
+    openapi.info.license = None;
 
     let components = openapi.components.get_or_insert_with(Components::new);
     register_schema::<crate::error::ErrorResponse>(components);
