@@ -3,9 +3,9 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "wal-gateway-rs",
   "language": "rust",
-  "routeCount": 10,
+  "routeCount": 11,
   "routeTypeCounts": {
-    "service": 7,
+    "service": 8,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -20,16 +20,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
+      "visibility": "public",
       "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
       "handlers": [
-        "root"
+        "getWalGatewayDescriptor"
       ],
       "sourceFiles": [
-        "remote/deployments/wal-gateway-rs/src/main.rs"
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
       "path": "/api/docs",
@@ -37,16 +38,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
+      "visibility": "public",
       "purpose": "Human-readable generated API documentation.",
       "handlers": [
-        "api_docs_html"
+        "getWalGatewayPublicApiReference"
       ],
       "sourceFiles": [
-        "remote/deployments/wal-gateway-rs/src/main.rs"
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
       "path": "/api/docs.json",
@@ -54,16 +56,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
+      "visibility": "public",
       "purpose": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
       "handlers": [
-        "api_docs_json"
+        "getWalGatewayPublicOpenApiDocumentCompatibilityAlias"
       ],
       "sourceFiles": [
-        "remote/deployments/wal-gateway-rs/src/main.rs"
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
       "path": "/docs/api",
@@ -71,16 +74,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
+      "visibility": "public",
       "purpose": "Human-readable generated API documentation.",
       "handlers": [
-        "api_docs_html"
+        "getWalGatewayPublicApiReferenceCompatibilityAlias"
       ],
       "sourceFiles": [
-        "remote/deployments/wal-gateway-rs/src/main.rs"
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
       "path": "/healthz",
@@ -88,16 +92,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
       "purpose": "Health check.",
       "handlers": [
-        "healthz"
+        "getWalGatewayHealth"
       ],
       "sourceFiles": [
-        "remote/deployments/wal-gateway-rs/src/main.rs"
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
       "path": "/internal/runtime-config",
@@ -156,16 +161,35 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
       "purpose": "Prometheus metrics.",
       "handlers": [
-        "metrics_handler"
+        "getWalGatewayPrometheusMetrics"
       ],
       "sourceFiles": [
-        "remote/deployments/wal-gateway-rs/src/main.rs"
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+    },
+    {
+      "path": "/openapi.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+      "handlers": [
+        "getWalGatewayPublicOpenApiDocument"
+      ],
+      "sourceFiles": [
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     },
     {
       "path": "/readyz",
@@ -173,16 +197,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
       "purpose": "Readiness check.",
       "handlers": [
-        "readyz"
+        "getWalGatewayReadiness"
       ],
       "sourceFiles": [
-        "remote/deployments/wal-gateway-rs/src/main.rs"
+        "remote/deployments/wal-gateway-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
     }
   ]
 }

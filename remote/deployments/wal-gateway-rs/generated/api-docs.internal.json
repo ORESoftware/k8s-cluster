@@ -19,7 +19,7 @@
       "get": {
         "operationId": "wal_gateway_rs_get_81138a5d044f",
         "summary": "Service descriptor, home redirect, or root RPC endpoint.",
-        "description": "Service descriptor, home redirect, or root RPC endpoint.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
         "tags": [
           "service"
         ],
@@ -31,12 +31,12 @@
         },
         "x-dd-auth": "public",
         "x-dd-handlers": [
-          "root"
+          "getWalGatewayDescriptor"
         ],
-        "x-dd-implementation": "service",
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/wal-gateway-rs/src/main.rs"
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
         ],
         "x-dd-source-path": "/",
         "x-dd-source-paths": [
@@ -50,7 +50,7 @@
       "get": {
         "operationId": "wal_gateway_rs_get_api_docs_04ae0a7546bc",
         "summary": "Human-readable generated API documentation.",
-        "description": "Human-readable generated API documentation.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
         "tags": [
           "service"
         ],
@@ -62,12 +62,12 @@
         },
         "x-dd-auth": "public",
         "x-dd-handlers": [
-          "api_docs_html"
+          "getWalGatewayPublicApiReference"
         ],
-        "x-dd-implementation": "service",
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/wal-gateway-rs/src/main.rs"
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
         ],
         "x-dd-source-path": "/api/docs",
         "x-dd-source-paths": [
@@ -81,7 +81,7 @@
       "get": {
         "operationId": "wal_gateway_rs_get_api_docs_json_6c9a38cfa455",
         "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
-        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
         "tags": [
           "service"
         ],
@@ -93,12 +93,12 @@
         },
         "x-dd-auth": "public",
         "x-dd-handlers": [
-          "api_docs_json"
+          "getWalGatewayPublicOpenApiDocumentCompatibilityAlias"
         ],
-        "x-dd-implementation": "service",
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/wal-gateway-rs/src/main.rs"
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
         ],
         "x-dd-source-path": "/api/docs.json",
         "x-dd-source-paths": [
@@ -112,7 +112,7 @@
       "get": {
         "operationId": "wal_gateway_rs_get_docs_api_430cec7c04e7",
         "summary": "Human-readable generated API documentation.",
-        "description": "Human-readable generated API documentation.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
         "tags": [
           "service"
         ],
@@ -124,12 +124,12 @@
         },
         "x-dd-auth": "public",
         "x-dd-handlers": [
-          "api_docs_html"
+          "getWalGatewayPublicApiReferenceCompatibilityAlias"
         ],
-        "x-dd-implementation": "service",
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/wal-gateway-rs/src/main.rs"
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
         ],
         "x-dd-source-path": "/docs/api",
         "x-dd-source-paths": [
@@ -143,7 +143,7 @@
       "get": {
         "operationId": "wal_gateway_rs_get_healthz_13ad4ec5056b",
         "summary": "Health check.",
-        "description": "Health check.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
         "tags": [
           "service"
         ],
@@ -153,21 +153,20 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "public",
+        "x-dd-auth": "cluster-network-policy",
         "x-dd-handlers": [
-          "healthz"
+          "getWalGatewayHealth"
         ],
-        "x-dd-implementation": "service",
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/wal-gateway-rs/src/main.rs"
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
         ],
         "x-dd-source-path": "/healthz",
         "x-dd-source-paths": [
           "/healthz"
         ],
-        "x-dd-visibility": "public",
-        "security": []
+        "x-dd-visibility": "internal"
       }
     },
     "/internal/runtime-config": {
@@ -274,7 +273,37 @@
       "get": {
         "operationId": "wal_gateway_rs_get_metrics_b8a63d88661c",
         "summary": "Prometheus metrics.",
-        "description": "Prometheus metrics.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "cluster-network-policy",
+        "x-dd-handlers": [
+          "getWalGatewayPrometheusMetrics"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/metrics",
+        "x-dd-source-paths": [
+          "/metrics"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "wal_gateway_rs_get_openapi_json_4460f2bd801d",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
         "tags": [
           "service"
         ],
@@ -286,16 +315,16 @@
         },
         "x-dd-auth": "public",
         "x-dd-handlers": [
-          "metrics_handler"
+          "getWalGatewayPublicOpenApiDocument"
         ],
-        "x-dd-implementation": "service",
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/wal-gateway-rs/src/main.rs"
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
         ],
-        "x-dd-source-path": "/metrics",
+        "x-dd-source-path": "/openapi.json",
         "x-dd-source-paths": [
-          "/metrics"
+          "/openapi.json"
         ],
         "x-dd-visibility": "public",
         "security": []
@@ -305,7 +334,7 @@
       "get": {
         "operationId": "wal_gateway_rs_get_readyz_12a0d2292af6",
         "summary": "Readiness check.",
-        "description": "Readiness check.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
         "tags": [
           "service"
         ],
@@ -315,21 +344,20 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "public",
+        "x-dd-auth": "cluster-network-policy",
         "x-dd-handlers": [
-          "readyz"
+          "getWalGatewayReadiness"
         ],
-        "x-dd-implementation": "service",
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/wal-gateway-rs/src/main.rs"
+          "remote/deployments/wal-gateway-rs/generated/openapi.json"
         ],
         "x-dd-source-path": "/readyz",
         "x-dd-source-paths": [
           "/readyz"
         ],
-        "x-dd-visibility": "public",
-        "security": []
+        "x-dd-visibility": "internal"
       }
     }
   },
@@ -355,8 +383,8 @@
   "x-dd-contract-scope": "internal",
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "rust",
-  "x-dd-operation-count": 10,
-  "x-dd-route-count": 10,
+  "x-dd-operation-count": 11,
+  "x-dd-route-count": 11,
   "x-dd-service": "wal-gateway-rs",
   "x-dd-standard-docs-routes": [
     "/docs/api",

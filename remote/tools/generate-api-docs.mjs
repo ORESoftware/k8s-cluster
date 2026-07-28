@@ -239,6 +239,52 @@ const OPENAPI_DOCUMENT_METHODS = new Set([
   'trace',
 ]);
 
+function openApiAuthHint(operation, method, path) {
+  const security = operation.security;
+  if (security === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(security)) {
+    throw new Error(`${method.toUpperCase()} ${path} has a non-array OpenAPI security value`);
+  }
+  if (
+    security.length === 0 ||
+    security.some(
+      (requirement) =>
+        requirement &&
+        typeof requirement === 'object' &&
+        !Array.isArray(requirement) &&
+        Object.keys(requirement).length === 0,
+    )
+  ) {
+    return 'public';
+  }
+
+  const schemes = [
+    ...new Set(
+      security.flatMap((requirement) => {
+        if (!requirement || typeof requirement !== 'object' || Array.isArray(requirement)) {
+          throw new Error(`${method.toUpperCase()} ${path} has an invalid security requirement`);
+        }
+        return Object.keys(requirement);
+      }),
+    ),
+  ].sort();
+  if (schemes.length === 0) {
+    return 'public';
+  }
+  if (schemes.every((scheme) => scheme === 'runtime_config_server_auth' || scheme === 'serverAuth')) {
+    return 'X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)';
+  }
+  if (schemes.every((scheme) => scheme === 'operatorSecret')) {
+    return 'operator secret';
+  }
+  if (schemes.every((scheme) => scheme === 'webhookSignature')) {
+    return 'webhook signature';
+  }
+  return undefined;
+}
+
 function extractOpenApiRoutes(document, sourceFile) {
   if (typeof document !== 'object' || document === null || typeof document.paths !== 'object') {
     throw new Error(`${relative(repoRoot, sourceFile)} is not an OpenAPI document with paths`);
@@ -258,6 +304,19 @@ function extractOpenApiRoutes(document, sourceFile) {
       if (typeof operationId !== 'string' || operationId.length === 0) {
         throw new Error(`${method.toUpperCase()} ${path} has no stable operationId`);
       }
+      const visibilityHint = operation['x-dd-visibility'];
+      if (visibilityHint !== undefined && !['public', 'internal'].includes(visibilityHint)) {
+        throw new Error(
+          `${method.toUpperCase()} ${path} has invalid x-dd-visibility ${JSON.stringify(visibilityHint)}`,
+        );
+      }
+      const explicitAuthHint = operation['x-dd-auth'];
+      if (
+        explicitAuthHint !== undefined &&
+        (typeof explicitAuthHint !== 'string' || explicitAuthHint.length === 0)
+      ) {
+        throw new Error(`${method.toUpperCase()} ${path} has an invalid x-dd-auth value`);
+      }
       routes.push({
         path,
         methods: [method.toUpperCase()],
@@ -273,8 +332,8 @@ function extractOpenApiRoutes(document, sourceFile) {
           document['x-dd-language'] === 'node'
             ? 'Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.'
             : 'Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.',
-        visibilityHint: operation['x-dd-visibility'],
-        authHint: operation['x-dd-auth'],
+        visibilityHint,
+        authHint: explicitAuthHint ?? openApiAuthHint(operation, method, path),
         routeTypeHint: operation['x-dd-route-type'],
       });
     }
@@ -704,6 +763,15 @@ function mergeRoutes(routes) {
     current.methods = sortMethods([...(current.methods ?? []), ...(route.methods ?? [])]);
     current.handlers = [...new Set([...(current.handlers ?? []), ...(route.handlers ?? [])])].sort();
     current.sourceFiles.add(route.sourceFile);
+    for (const hint of ['visibilityHint', 'authHint', 'routeTypeHint']) {
+      if (route[hint] === undefined) continue;
+      if (current[hint] !== undefined && current[hint] !== route[hint]) {
+        throw new Error(
+          `ambiguous ${hint} for ${route.path}: ${JSON.stringify(current[hint])} versus ${JSON.stringify(route[hint])}`,
+        );
+      }
+      current[hint] = route[hint];
+    }
     if (route.purposeHint && !current.purposeHint) {
       current.purposeHint = route.purposeHint;
     }
