@@ -1,0 +1,51 @@
+name: DEN-482 repair direct rebuild patch checksum
+
+on:
+  push:
+    branches:
+      - agent/den-482-wal-gateway-openapi
+    paths:
+      - '.github/workflows/den-482-rehash-direct-patch.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-482-rehash-direct-patch
+  cancel-in-progress: true
+
+jobs:
+  repair:
+    if: github.repository == 'ORESoftware/k8s-cluster'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-482-wal-gateway-openapi
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Recompute reviewed patch checksum and self-remove
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch_file="${RUNNER_TEMP}/den-482-direct-rebuild.patch"
+          cat scripts/api-contract/den-482-direct-rebuild.patch.part-* > "$patch_file"
+          digest="$(sha256sum "$patch_file" | awk '{print $1}')"
+          test "${#digest}" -eq 64
+          sed -i -E \
+            "s/(PATCH_SHA256: )[0-9a-f]{64}/\\1${digest}/" \
+            .github/workflows/den-482-direct-rebuild.yml
+          grep -F "PATCH_SHA256: ${digest}" .github/workflows/den-482-direct-rebuild.yml
+          rm -f .github/workflows/den-482-rehash-direct-patch.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'ci(DEN-482): repair direct rebuild patch checksum'
+          git push origin HEAD:agent/den-482-wal-gateway-openapi
