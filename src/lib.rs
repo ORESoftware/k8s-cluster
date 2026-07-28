@@ -7,6 +7,7 @@
 pub mod contracts;
 pub mod dispatch;
 pub mod http_api;
+pub mod nats_ingestion;
 pub mod provider;
 pub mod providers;
 pub mod redaction;
@@ -24,6 +25,10 @@ pub use dispatch::{
 pub use http_api::{
     ApiState, AuthConfigError, BatchRequest, BatchResponse, DenyAllAuthenticator,
     RequestAuthenticator, SharedSecretAuthenticator, router,
+};
+pub use nats_ingestion::{
+    NatsConfig, NatsConfigError, NatsDisposition, PushDeadLetterEventV1, PushJobEnvelopeV1,
+    PushResultEventV1, disposition_for_outcome, run_nats_consumer,
 };
 pub use provider::{ProviderError, ProviderReadiness, PushProvider};
 pub use providers::apns::{ApnsConfig, ApnsConfigError, ApnsProvider};
