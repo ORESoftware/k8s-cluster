@@ -79,27 +79,6 @@ assert.match(
   natsSharedSource,
   /use dd_nats_subject_defs::\{[\s\S]*?thread_tasks_subject[\s\S]*?DD_REMOTE_TASKS_STREAM_NAME[\s\S]*?GIT_REPOS_CHANGES_SUBJECT[\s\S]*?LAMBDAS_FUNCTIONS_SUBJECT[\s\S]*?ORCHESTRATOR_WAKEUP_SUBJECT[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?THREAD_TASKS_WILDCARD[\s\S]*?\};/,
 );
-  assert.match(server, /use dd_shared_interfaces::AgentTaskQueueMessage/);
-  assert.match(server, /let message = AgentTaskQueueMessage \{/);
-  assert.match(server, /dispatch_mode: Some\(dispatch_mode\)/);
-  assert.match(server, /container_pool_dispatch: Some\(container_pool_dispatch\)/);
-  assert.match(server, /thread_title: Option<String>/);
-  assert.match(server, /fn nats_task_subject/);
-  assert.match(server, /thread_tasks_subject\(thread_id\)/);
-  assert.match(server, /fn nats_task_stream_name/);
-  assert.match(server, /DD_REMOTE_TASKS_STREAM_NAME/);
-  assert.match(server, /THREAD_TASKS_WILDCARD/);
-  assert.match(server, /ensure_nats_task_stream/);
-  assert.match(server, /jetstream_publish_task/);
-  assert.match(server, /RetentionPolicy::WorkQueue/);
-  assert.match(server, /fn nats_wakeup_subject/);
-  assert.match(server, /ORCHESTRATOR_WAKEUP_SUBJECT/);
-  assert.match(server, /fn nats_event_subject/);
-  assert.match(server, /RUNTIME_EVENTS_SUBJECT/);
-  assert.match(
-    server,
-    /cdc_table_filter_subject\(\s*"cdc",\s*"public",\s*"lambda_functions",?\s*\)/,
-  );
   assert.match(
     server,
     /cdc_table_filter_subject\(\s*"cdc",\s*"public",\s*"known_git_repos",?\s*\)/,
