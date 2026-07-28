@@ -267,4 +267,11 @@ jobs:
           set -euo pipefail
           rm -rf .tmp remote/libs
           git diff --check
-          test -z "$(git status --short --untracked-files=no)"
+          git diff --cached --quiet
+          # `remote/libs` is an intentionally uninitialized private gitlink. The
+          # contract job temporarily overlays it with a compile-only telemetry
+          # shim, then removes that worktree. Verify the index still contains the
+          # exact gitlink mode while rejecting every other tracked modification.
+          test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
+          git diff --quiet -- . ':(exclude)remote/libs'
+          test -z "$(git status --short --untracked-files=no -- . ':(exclude)remote/libs')"
