@@ -42,7 +42,7 @@ jobs:
           repository: ORESoftware/k8s-cluster-e2e
           token: ${{ secrets.K8S_SUBMODULE_TOKEN }}
           path: k8s-cluster-e2e
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.gate.outputs.skip != 'true'
         with: { node-version: 22 }
       - name: Run contract suite against this tree
