@@ -1,3 +1,4 @@
+# DEN-482: prove the compatibility and executable-contract adapters from one schema source.
 name: runtime-config executable OpenAPI
 
 on:
