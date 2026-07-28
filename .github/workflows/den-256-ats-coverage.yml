@@ -1,0 +1,143 @@
+name: DEN-256 verified ATS coverage
+
+on:
+  push:
+    branches:
+      - agent/den-256-ats-coverage
+    paths:
+      - .github/workflows/den-256-ats-coverage.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-256-ats-coverage
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-256-ats-coverage
+          fetch-depth: 0
+
+      - name: Apply focused ATS additions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          import re
+
+          mcp_path = Path('remote/deployments/browser-mcp-rs/k8s/ec2/dd-browser-mcp-rs.deployment.yaml')
+          worker_path = Path('remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml')
+          test_path = Path('remote/tests/general/browser-mcp-exposure.test.ts')
+          docs_path = Path('docs/browser-mcp-platform-jobs-workflow.md')
+
+          additions = [
+              'ats.rippling.com',
+              'breezy.hr',
+              'jobscore.com',
+              'candidateportalin.ceipal.com',
+              'candidateportalnew.ceipal.com',
+          ]
+
+          old_tail = 'recruitee.com,applytojob.com,httpbingo.org'
+          new_tail = 'recruitee.com,applytojob.com,' + ','.join(additions) + ',httpbingo.org'
+
+          mcp = mcp_path.read_text()
+          worker = worker_path.read_text()
+          assert old_tail in mcp, 'MCP ceiling tail changed unexpectedly'
+          assert old_tail in worker, 'worker ceiling tail changed unexpectedly'
+          mcp = mcp.replace(old_tail, new_tail, 1)
+          worker = worker.replace(old_tail, new_tail, 1)
+
+          old_profile = '"platform-jobs":["greenhouse.io","lever.co","ashbyhq.com","myworkdayjobs.com","workday.com","smartrecruiters.com","icims.com","jobvite.com","workable.com","bamboohr.com","recruitee.com","applytojob.com"]'
+          new_profile = old_profile[:-1] + ',' + ','.join(json.dumps(domain) for domain in additions) + ']'
+          assert old_profile in mcp, 'platform-jobs workflow changed unexpectedly'
+          mcp = mcp.replace(old_profile, new_profile, 1)
+
+          test = test_path.read_text()
+          marker = "  'applytojob.com',\n] as const;"
+          assert marker in test, 'platform-jobs test constant changed unexpectedly'
+          inserted = "  'applytojob.com',\n" + ''.join(f"  '{domain}',\n" for domain in additions) + '] as const;'
+          test = test.replace(marker, inserted, 1)
+
+          docs = docs_path.read_text()
+          docs_marker = '- `applytojob.com`\n'
+          assert docs_marker in docs, 'platform-jobs documentation changed unexpectedly'
+          docs_insert = docs_marker + ''.join(f'- `{domain}`\n' for domain in additions)
+          docs = docs.replace(docs_marker, docs_insert, 1)
+          docs = docs.replace(
+              'Root hostnames permit their own subdomains.',
+              'Root hostnames permit their own subdomains. The Rippling and CEIPAL entries are exact candidate-facing hosts; Breezy and JobScore use reviewed provider roots.',
+              1,
+          )
+
+          mcp_path.write_text(mcp)
+          worker_path.write_text(worker)
+          test_path.write_text(test)
+          docs_path.write_text(docs)
+
+          # Focused validation: exact profile, byte-identical ceilings, no broad marketplace expansion.
+          def env_value(source: str, name: str) -> str:
+              match = re.search(rf'- name:\s*{re.escape(name)}\s*\n\s*value:\s*[\'\"]?([^\'\"\n]+)', source)
+              assert match, f'missing {name}'
+              return match.group(1)
+
+          mcp_ceiling = env_value(mcp, 'BROWSER_MCP_ALLOWED_DOMAINS')
+          worker_ceiling = env_value(worker, 'BROWSER_AGENT_ALLOWED_DOMAINS')
+          assert mcp_ceiling == worker_ceiling, 'MCP and worker ceilings diverged'
+          for domain in additions:
+              assert mcp_ceiling.split(',').count(domain) == 1, f'{domain} missing or duplicated'
+          for forbidden in ('linkedin.com', 'indeed.com', 'ziprecruiter.com', 'gmail.com', 'accounts.google.com'):
+              assert forbidden not in mcp_ceiling.split(','), f'forbidden broad/login domain added: {forbidden}'
+
+          workflow_match = re.search(
+              r'- name:\s*BROWSER_MCP_WORKFLOW_ALLOWLISTS_JSON\s*\n\s*value:\s*>-\s*\n\s*(\{[^\n]+\})',
+              mcp,
+          )
+          assert workflow_match, 'missing workflow JSON'
+          workflows = json.loads(workflow_match.group(1))
+          expected = [
+              'greenhouse.io', 'lever.co', 'ashbyhq.com', 'myworkdayjobs.com',
+              'workday.com', 'smartrecruiters.com', 'icims.com', 'jobvite.com',
+              'workable.com', 'bamboohr.com', 'recruitee.com', 'applytojob.com',
+              *additions,
+          ]
+          assert workflows['platform-jobs'] == expected, 'platform-jobs order or membership drifted'
+          assert '<<<<<<<' not in ''.join((mcp, worker, test, docs))
+          assert '>>>>>>>' not in ''.join((mcp, worker, test, docs))
+          PY
+
+      - name: Validate focused files
+        run: |
+          python3 -m json.tool <(python3 - <<'PY'
+          import json, re
+          text = open('remote/deployments/browser-mcp-rs/k8s/ec2/dd-browser-mcp-rs.deployment.yaml').read()
+          match = re.search(r'- name:\s*BROWSER_MCP_WORKFLOW_ALLOWLISTS_JSON\s*\n\s*value:\s*>-\s*\n\s*(\{[^\n]+\})', text)
+          print(json.dumps(json.loads(match.group(1))))
+          PY
+          ) >/dev/null
+          grep -RInE '^(<<<<<<<|=======|>>>>>>>)' \
+            remote/deployments/browser-mcp-rs/k8s/ec2/dd-browser-mcp-rs.deployment.yaml \
+            remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml \
+            remote/tests/general/browser-mcp-exposure.test.ts \
+            docs/browser-mcp-platform-jobs-workflow.md && exit 1 || true
+
+      - name: Commit product changes and remove temporary workflow
+        run: |
+          rm .github/workflows/den-256-ats-coverage.yml
+          git config user.name 'ORESoftware'
+          git config user.email 'noreply@github.com'
+          git add \
+            remote/deployments/browser-mcp-rs/k8s/ec2/dd-browser-mcp-rs.deployment.yaml \
+            remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml \
+            remote/tests/general/browser-mcp-exposure.test.ts \
+            docs/browser-mcp-platform-jobs-workflow.md \
+            .github/workflows/den-256-ats-coverage.yml
+          git commit -m 'DEN-256 Extend reviewed ATS coverage'
+          git push origin HEAD:agent/den-256-ats-coverage
