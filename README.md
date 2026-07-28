@@ -11,7 +11,11 @@ Provider adapters:
 - Expo Push with batched tickets and receipt follow-up
 - Web Push with direct RFC 8291 ECE encryption, ES256 VAPID, redirect blocking, strict host/address policy, and endpoint redaction
 
-Authenticated versioned HTTP and NATS ingestion is tracked by DEN-329.
+Ingestion interfaces:
+
+- fail-closed authenticated HTTP v1 single and batch routes
+- optional durable NATS JetStream WorkQueue ingestion with dedicated result/dead-letter subjects
+- shared provider registry, validation, redacted outcomes, trace context, and retry classification
 
 ## Run
 
@@ -27,10 +31,14 @@ PORT=8121
 RUST_LOG=push_notification_server=info,tower_http=info
 ```
 
-Current endpoints:
+Current HTTP endpoints:
 
 - `GET /healthz`
 - `GET /readyz`
+- `POST /v1/push/jobs`
+- `POST /v1/push/jobs/batch`
+
+JetStream remains disabled unless `NATS_URL` is configured.
 
 ## Configuration
 
@@ -39,9 +47,24 @@ Provider credentials are server-side secrets. Use Kubernetes External Secrets, w
 Examples are documented in `.env.example`. Detailed protocol and operations documents:
 
 - [`docs/contracts-v1.md`](docs/contracts-v1.md)
+- [`docs/http-ingestion-v1.md`](docs/http-ingestion-v1.md)
+- [`docs/nats-ingestion-v1.md`](docs/nats-ingestion-v1.md)
 - [`docs/apns.md`](docs/apns.md)
 - [`docs/expo.md`](docs/expo.md)
 - [`docs/web-push.md`](docs/web-push.md)
+
+## JetStream reliability
+
+The durable consumer:
+
+- uses dedicated versioned job, result, and dead-letter streams/subjects
+- publishes a redacted result before Ack
+- sends ack-progress heartbeats during long provider calls
+- delayed-NAKs retryable outcomes while attempts remain
+- dead-letters and Terms final retryable or poison messages
+- hashes raw payloads instead of copying capability-bearing targets into DLQ records
+- bounds concurrency and message size
+- relies on NATS account/subject ACLs, with optional migration envelope authentication
 
 ## Web Push security
 
@@ -71,4 +94,4 @@ GitHub Actions additionally validates the Rust 1.88 container, cargo-deny policy
 
 Linear project: `github.com/ORESoftware/push-notification-server.rs`
 
-DEN-324 established the contracts and safety boundary. DEN-325 through DEN-328 implement the four provider adapters. DEN-329 adds authenticated HTTP and NATS ingestion.
+DEN-324 established the contracts and safety boundary. DEN-325 through DEN-328 implement the four provider adapters. DEN-329 adds authenticated HTTP and durable NATS ingestion.
