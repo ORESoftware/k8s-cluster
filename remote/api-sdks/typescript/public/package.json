@@ -1,0 +1,33 @@
+{
+  "name": "@oresoftware/k8s-api-sdk-public",
+  "version": "0.1.0",
+  "description": "public fleet HTTP SDK generated from the k8s-cluster OpenAPI contracts",
+  "private": false,
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "sdk-manifest.json"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ORESoftware/k8s-cluster.git"
+  }
+}

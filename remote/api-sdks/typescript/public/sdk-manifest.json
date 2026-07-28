@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "language": "typescript",
+  "scope": "public",
+  "packageName": "@oresoftware/k8s-api-sdk-public",
+  "generatedBy": "remote/tools/generate-api-sdks.mjs",
+  "catalogPath": "remote/api-sdks/contracts/public.json",
+  "catalogSha256": "f1c583218baeeb1998f1ddf927b48d0868bfe3e7fbf04570d46309f149c824a1",
+  "catalogFileSha256": "82f0c11b3d1da92f0b8797f36ebfbfa10d8bd8d85f3ba388165d75da26fe5f3c",
+  "serviceCount": 43,
+  "operationCount": 274,
+  "skippedServices": [
+    {
+      "service": "billing-server-rs",
+      "language": "rust",
+      "deploymentPath": "remote/deployments/billing-server-rs",
+      "sourceRepository": "git@github.com:quaestor-ledger/billing-server.rs.git",
+      "reason": "uninitialized-deployment-gitlink"
+    },
+    {
+      "service": "dart-server",
+      "language": "dart",
+      "deploymentPath": "remote/deployments/dart-server",
+      "sourceRepository": "git@github.com:sagitta-stack/dart-server.git",
+      "reason": "uninitialized-deployment-gitlink"
+    },
+    {
+      "service": "fiducia-customer.rs",
+      "language": "rust",
+      "deploymentPath": "remote/deployments/fiducia-customer.rs",
+      "sourceRepository": "https://github.com/fiducia-cloud/fiducia-customer.rs.git",
+      "reason": "uninitialized-deployment-gitlink"
+    },
+    {
+      "service": "gleam-lambda-runner",
+      "language": "gleam",
+      "deploymentPath": "remote/deployments/gleam-lambda-runner",
+      "sourceRepository": "git@github.com:scintilla-run/gleam-lambda-runner.git",
+      "reason": "uninitialized-deployment-gitlink"
+    },
+    {
+      "service": "usacc-rest-api-backend-rs",
+      "language": "rust",
+      "deploymentPath": "remote/deployments/usacc-rest-api-backend-rs",
+      "sourceRepository": "git@github.com:usa-acc/rest-api-backend.rs.git",
+      "reason": "uninitialized-deployment-gitlink"
+    }
+  ],
+  "generatedFiles": [
+    {
+      "path": "package.json",
+      "sha256": "67208c8ee2fbeea0c65838524060909fa25a83adbe73a7bee8ffdee615c5d6f1"
+    },
+    {
+      "path": "src/index.ts",
+      "sha256": "65b4e6bcf84892d2e3f5f480150ca0e74259078466d4acf636514e7c83b72266"
+    },
+    {
+      "path": "test/smoke.test.mjs",
+      "sha256": "ce316bb0ef4aec3135b6719dcf6d55038ba1cb1ed48ab3aff92450a000e6e1a1"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "8389d10e7382c7963607242dd57897f99be20fed8d43cb49a612088f1dadd7a7"
+    }
+  ]
+}
