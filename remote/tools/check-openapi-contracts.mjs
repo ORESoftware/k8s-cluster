@@ -85,6 +85,20 @@ function assertLocalRefsResolve(name, document) {
   }
 }
 
+function assertNoGeneratorInfoLeak(name, document) {
+  const contact = document.info?.contact;
+  const license = document.info?.license;
+  const utoipaContactLeaked =
+    contact?.name === 'Juha Kukkonen' || contact?.email === 'juha7kukkonen@gmail.com';
+  const utoipaLicenseLeaked =
+    license?.name === 'MIT OR Apache-2.0' && license?.identifier === 'MIT OR Apache-2.0';
+  if (utoipaContactLeaked || utoipaLicenseLeaked) {
+    throw new Error(
+      `${name}: OpenAPI info contains Utoipa dependency metadata instead of explicit service provenance`,
+    );
+  }
+}
+
 function validate(name, service, raw) {
   const document = JSON.parse(raw);
   if (typeof document.openapi !== 'string' || !document.openapi.startsWith('3.1.')) {
@@ -93,6 +107,7 @@ function validate(name, service, raw) {
   if (!document.info?.title || !document.info?.version) {
     throw new Error(`${name}: info.title and info.version are required`);
   }
+  assertNoGeneratorInfoLeak(name, document);
   if (!document.components?.securitySchemes?.bearer_auth) {
     throw new Error(`${name}: bearer_auth security scheme is missing`);
   }
