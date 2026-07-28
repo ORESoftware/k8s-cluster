@@ -1,0 +1,78 @@
+name: Apply DEN-426 build-server readme contract
+
+on:
+  push:
+    branches:
+      - agent/den-426-build-server-module-contracts
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-426-build-server-readme-contract
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    if: github.actor == 'ORESoftware'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-426-build-server-module-contracts
+          persist-credentials: true
+      - name: Align the shell-safety documentation assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/tests/general/build-server-config.test.ts')
+          text = path.read_text(encoding='utf-8')
+          before = "  assert.match(readme, /does not accept arbitrary shell commands/);\n"
+          after = (
+              "  assert.match(readme, /intentionally does not accept caller-supplied shell commands/);\n"
+              "  assert.match(readme, /Profile scripts do invoke a shell inside their isolated runner container/);\n"
+              "  assert.match(readme, /cannot be overridden by the request/);\n"
+          )
+          count = text.count(before)
+          if count == 1:
+              path.write_text(text.replace(before, after, 1), encoding='utf-8')
+          elif count == 0 and after in text:
+              pass
+          else:
+              raise SystemExit(f'expected one obsolete shell-safety assertion, found {count}')
+          PY
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Run the complete build-server contract
+        run: pnpm exec tsx --test general/build-server-config.test.ts
+        working-directory: remote/tests
+      - name: Scan for unresolved conflict markers
+        run: |
+          if git grep -n -E '^(<<<<<<< |=======$|>>>>>>> )' -- . ':(exclude)*.lock'; then
+            exit 1
+          fi
+      - name: Commit the verified documentation contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- remote/tests/general/build-server-config.test.ts
+          if git diff --cached --quiet; then
+            echo 'DEN-426 shell-safety contract already aligned.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-426 align build-server shell safety documentation contract'
+          git push origin HEAD:agent/den-426-build-server-module-contracts
