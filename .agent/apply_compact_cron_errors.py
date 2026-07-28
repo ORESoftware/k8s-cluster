@@ -7,8 +7,6 @@ source = path.read_text()
 
 def replace_exact(old: str, new: str, expected: int, label: str) -> None:
     global source
-    old = dedent(old)
-    new = dedent(new)
     count = source.count(old)
     if count != expected:
         raise SystemExit(f"{label}: expected {expected} matches, found {count}")
