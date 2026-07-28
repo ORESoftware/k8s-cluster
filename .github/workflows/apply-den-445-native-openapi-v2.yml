@@ -52,7 +52,7 @@ jobs:
             | gzip --decompress \
             > "${RUNNER_TEMP}/den-445-native-openapi.py"
           echo '284a4d2ccf34a41af5556c0fdec364e60829d696a113bb59506b7bed09a90738  '"${RUNNER_TEMP}/den-445-native-openapi.py" | sha256sum --check
-          echo 'd9c1c90fda9a41de1d528cf1bc9aabfb6a106c7a70b017f82f5160858c0f0dd8  .github/scripts/den-445-native-openapi-fix.py' | sha256sum --check
+          echo '1a27cf50a3d53c661ba56a172d060768b6817c59ef8e9f38ba40f8df840aea67  .github/scripts/den-445-native-openapi-fix.py' | sha256sum --check
           python3 -m py_compile "${RUNNER_TEMP}/den-445-native-openapi.py" .github/scripts/den-445-native-openapi-fix.py
           python3 "${RUNNER_TEMP}/den-445-native-openapi.py" \
             > "${RUNNER_TEMP}/den-445-apply.log" 2>&1
@@ -209,6 +209,7 @@ jobs:
           rm -f .github/workflows/apply-den-445-native-openapi.yml
           rm -f .github/workflows/apply-den-445-native-openapi-v2.yml
           rm -f .github/workflows/den-445-invariant-diagnostics.yml
+          rm -f .github/workflows/den-445-refresh-fix-hash.yml
 
       - name: Validate repository hygiene
         shell: bash
