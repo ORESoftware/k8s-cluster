@@ -118,7 +118,7 @@ jobs:
                   (if $pageToken == "" then {} else {pageToken:$pageToken} end)
                 else {} end)
               ')"
-            curl --fail --location --silent --show-error \
+            curl --fail --location --post302 --post303 --silent --show-error \
               --retry 3 --retry-all-errors \
               --connect-timeout 20 --max-time 120 \
               -H 'content-type: application/json' \
