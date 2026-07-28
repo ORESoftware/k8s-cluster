@@ -23,10 +23,27 @@ jobs:
           toolchain: "1.97.0"
           components: rustfmt
       - name: Apply line-bounded validation patch
+        id: patch
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 .agent/apply_compact_cron_errors.py 2>&1 | tee /tmp/customer-cron-patch.log
+      - name: Upload patch diagnostic
+        if: steps.patch.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: customer-cron-patch-${{ github.run_id }}
+          path: /tmp/customer-cron-patch.log
+          if-no-files-found: error
+          retention-days: 1
+      - name: Enforce patch result
+        if: steps.patch.outcome == 'failure'
+        run: exit 1
+      - name: Format, restore permanent CI, and commit ordinary source
         shell: bash
         run: |
           set -euo pipefail
-          python3 .agent/apply_compact_cron_errors.py
           cargo fmt --all
           git fetch --no-tags origin main
           git show origin/main:.github/workflows/ci.yml > .github/workflows/ci.yml
