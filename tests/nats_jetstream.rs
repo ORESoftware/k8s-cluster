@@ -216,10 +216,7 @@ async fn live_jetstream_retries_redelivers_and_dead_letters_without_leaking_targ
     assert_eq!(exhausted["job_id"], "job-dead");
     assert_eq!(exhausted["delivery_attempt"], 3);
     assert_eq!(exhausted["max_deliver"], 3);
-    assert_eq!(
-        exhausted["payload_sha256"].as_str().map(str::len),
-        Some(64)
-    );
+    assert_eq!(exhausted["payload_sha256"].as_str().map(str::len), Some(64));
     assert!(!exhausted.to_string().contains(dead_token));
     assert_eq!(provider.dead_calls.load(Ordering::SeqCst), 3);
 
