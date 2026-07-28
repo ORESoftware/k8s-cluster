@@ -3,7 +3,7 @@
   "generatedBy": "remote/tools/generate-api-sdks.mjs",
   "generatorSha256": "a6a810aca72aa204db09ab15ff184c83feab086d4bb1c178f096affbadbb42ee",
   "indexPath": "remote/deployments/generated-api-docs-index.json",
-  "indexSha256": "b6066fa86864e447a116021a15c53bf87c2f3bbbc4094450e36f92756bd3ab76",
+  "indexSha256": "30a9f4376e9effe65f31c7e39a4254f74c65ffb64cd58ed2fef7e711af39fb16",
   "scopes": {
     "public": {
       "catalogPath": "remote/api-sdks/contracts/public.json",
