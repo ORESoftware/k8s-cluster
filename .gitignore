@@ -11,3 +11,7 @@ result-*
 
 # scratch space (git worktrees, build scratch, etc.)
 tmp/
+
+# Python repository-contract test caches.
+__pycache__/
+*.py[cod]
