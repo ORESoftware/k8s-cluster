@@ -29,13 +29,32 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Build the pinned runner image without publishing
+      - name: Capture the pinned runner image build
+        id: build
+        shell: bash
         run: |
+          set +e
           docker build \
+            --progress=plain \
             --pull \
             --file remote/deployments/sonus-auris-ci-runner/Dockerfile \
             --tag sonus-auris-ci-runner:ci \
-            .
+            . > "$RUNNER_TEMP/sonus-runner-build.log" 2>&1
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          tail -n 160 "$RUNNER_TEMP/sonus-runner-build.log"
+          exit 0
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: sonus-runner-build-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sonus-runner-build.log
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Require a successful image build
+        run: test '${{ steps.build.outputs.exit_code }}' = 0
 
       - name: Verify non-root identity and required native tools
         run: |
