@@ -50,10 +50,15 @@ jobs:
           joined_assert = b'+        ] {+            assert_eq!(response.status(), StatusCode::OK);'
           split_assert = b'+        ] {\n+            assert_eq!(response.status(), StatusCode::OK);'
 
-          assert data.count(duplicate) == 1, 'unexpected duplicate-block count'
+          first = data.find(duplicate)
+          second = data.find(duplicate, first + len(duplicate))
+          third = data.find(duplicate, second + len(duplicate))
+          assert first >= 0, 'expected legitimate block is missing'
+          assert second == first + len(duplicate), (first, second, len(duplicate))
+          assert third == -1, 'unexpected third duplicate block'
           assert data.count(joined_service) == 1, 'unexpected joined-service count'
           assert data.count(joined_assert) == 1, 'unexpected joined-assert count'
-          data = data.replace(duplicate, b'', 1)
+          data = data[:second] + data[second + len(duplicate):]
           data = data.replace(joined_service, split_service, 1)
           data = data.replace(joined_assert, split_assert, 1)
 
@@ -97,4 +102,4 @@ jobs:
           git commit -m 'ci(DEN-482): repair direct patch chunk boundaries'
           git push origin "HEAD:${GITHUB_HEAD_REF}"
 
-# Activation commit: repair only the three byte ranges proven by artifact diff.
+# Activation commit: delete only the second adjacent duplicate and add two proven newlines.
