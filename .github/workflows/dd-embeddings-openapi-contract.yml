@@ -1,0 +1,176 @@
+name: dd-embeddings executable OpenAPI contract
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/dd-embeddings-openapi-contract.yml'
+      - 'remote/deployments/dd-embeddings-rs/**'
+      - 'remote/api-contracts/**'
+      - 'remote/tools/check-openapi-contracts.mjs'
+      - 'remote/tools/generate-api-docs.mjs'
+      - 'remote/tools/generate-openapi-sdks.mjs'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/dd-embeddings-openapi-contract.yml'
+      - 'remote/deployments/dd-embeddings-rs/**'
+      - 'remote/api-contracts/**'
+      - 'remote/tools/check-openapi-contracts.mjs'
+      - 'remote/tools/generate-api-docs.mjs'
+      - 'remote/tools/generate-openapi-sdks.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dd-embeddings-openapi-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          show-progress: false
+          submodules: false
+
+      - name: Create contract-only telemetry compile shim
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-rs/src
+          cat > remote/libs/telemetry-rs/Cargo.toml <<'TOML'
+          [package]
+          name = "dd-telemetry"
+          version = "0.1.0"
+          edition = "2021"
+
+          [lib]
+          path = "src/lib.rs"
+
+          [dependencies]
+          tracing = "0.1"
+          tower-http = { version = "0.6", features = ["trace"] }
+          http = "1"
+          TOML
+          cat > remote/libs/telemetry-rs/src/lib.rs <<'RS'
+          use std::time::Duration;
+          use http::{Request, Response};
+          use tower_http::classify::{ServerErrorsAsFailures, SharedClassifier};
+          use tower_http::trace::{DefaultOnRequest, MakeSpan, OnResponse, TraceLayer};
+          use tracing::Span;
+
+          #[must_use]
+          pub struct OtelGuard;
+          pub fn init(_: &str) -> OtelGuard { OtelGuard }
+
+          pub fn http_trace_layer() -> TraceLayer<
+              SharedClassifier<ServerErrorsAsFailures>,
+              OtelMakeSpan,
+              DefaultOnRequest,
+              OtelOnResponse,
+          > {
+              TraceLayer::new_for_http()
+                  .make_span_with(OtelMakeSpan)
+                  .on_response(OtelOnResponse)
+          }
+
+          #[derive(Clone, Copy, Debug, Default)]
+          pub struct OtelMakeSpan;
+          impl<B> MakeSpan<B> for OtelMakeSpan {
+              fn make_span(&mut self, request: &Request<B>) -> Span {
+                  tracing::info_span!(
+                      "http_request",
+                      http.request.method = %request.method(),
+                      url.path = %request.uri().path(),
+                      http.response.status_code = tracing::field::Empty,
+                  )
+              }
+          }
+
+          #[derive(Clone, Copy, Debug, Default)]
+          pub struct OtelOnResponse;
+          impl<B> OnResponse<B> for OtelOnResponse {
+              fn on_response(self, response: &Response<B>, _: Duration, span: &Span) {
+                  span.record("http.response.status_code", response.status().as_u16() as u64);
+              }
+          }
+          RS
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Format, compile, and test Rust service
+        working-directory: remote/deployments/dd-embeddings-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --locked
+          cargo test --locked
+
+      - name: Prove deterministic committed OpenAPI
+        working-directory: remote/deployments/dd-embeddings-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run --locked --quiet -- --export-openapi > "${RUNNER_TEMP}/openapi.1.json"
+          cargo run --locked --quiet -- --export-openapi > "${RUNNER_TEMP}/openapi.2.json"
+          cmp "${RUNNER_TEMP}/openapi.1.json" "${RUNNER_TEMP}/openapi.2.json"
+          cmp "${RUNNER_TEMP}/openapi.1.json" generated/openapi.json
+          python3 -m json.tool generated/openapi.json >/dev/null
+
+      - name: Verify native contract and compatibility artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node remote/tools/check-openapi-contracts.mjs --service dd-embeddings-rs
+          node remote/tools/generate-api-docs.mjs --check --service dd-embeddings-rs
+
+      - name: Generate Rust, TypeScript, and Dart SDK smoke clients
+        shell: bash
+        run: |
+          set -euo pipefail
+          node remote/tools/generate-openapi-sdks.mjs \
+            --service dd-embeddings-rs \
+            --output .tmp/dd-embeddings-sdk
+
+      - name: Compile generated Rust SDK
+        working-directory: .tmp/dd-embeddings-sdk/rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check
+          cargo check --locked
+
+      - name: Type-check generated TypeScript SDK
+        working-directory: .tmp/dd-embeddings-sdk/typescript
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --ignore-scripts --no-audit --no-fund
+          npm run build
+
+      - uses: dart-lang/setup-dart@v1
+
+      - name: Analyze generated Dart SDK
+        working-directory: .tmp/dd-embeddings-sdk/dart
+        shell: bash
+        run: |
+          set -euo pipefail
+          dart pub get
+          dart analyze
