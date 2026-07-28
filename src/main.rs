@@ -1,7 +1,8 @@
 use std::{env, net::SocketAddr};
 
-use axum::{Json, Router, routing::get};
-use serde_json::{Value, json};
+use push_notification_server::{
+    ApiState, provider_registry_from_env, request_authenticator_from_env, router,
+};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -15,7 +16,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let address = bind_address()?;
-    let app = app();
+    let registry = provider_registry_from_env()?;
+    let authenticator = request_authenticator_from_env()?;
+    let app = router(ApiState::new(registry, authenticator));
     let listener = tokio::net::TcpListener::bind(address).await?;
 
     tracing::info!(%address, "push notification server listening");
@@ -24,31 +27,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     Ok(())
-}
-
-fn app() -> Router {
-    Router::new()
-        .route("/healthz", get(healthz))
-        .route("/readyz", get(readyz))
-}
-
-async fn healthz() -> Json<Value> {
-    Json(json!({
-        "ok": true,
-        "service": "push-notification-server"
-    }))
-}
-
-async fn readyz() -> Json<Value> {
-    Json(json!({
-        "ok": true,
-        "providers": {
-            "fcm": false,
-            "apns": false,
-            "expo": false,
-            "webpush": false
-        }
-    }))
 }
 
 fn bind_address() -> Result<SocketAddr, std::net::AddrParseError> {
@@ -81,6 +59,10 @@ async fn shutdown_signal() {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use push_notification_server::{DenyAllAuthenticator, ProviderRegistry};
+
     use super::*;
 
     #[test]
@@ -90,7 +72,10 @@ mod tests {
     }
 
     #[test]
-    fn router_can_be_constructed() {
-        let _ = app();
+    fn router_can_be_constructed_without_runtime_credentials() {
+        let _ = router(ApiState::new(
+            ProviderRegistry::new(),
+            Arc::new(DenyAllAuthenticator),
+        ));
     }
 }
