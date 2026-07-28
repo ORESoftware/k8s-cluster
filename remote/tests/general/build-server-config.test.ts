@@ -158,7 +158,9 @@ test('rust build server queues controlled image builds and deploys', async () =>
   assert.match(jobsSource, /let profile = profiles::find\(&profile_name\)/);
   assert.match(jobsSource, /step\.script\.to_string\(\)/);
 
-  assert.match(readme, /does not accept arbitrary shell commands/);
+  assert.match(readme, /intentionally does not accept caller-supplied shell commands/);
+  assert.match(readme, /Profile scripts do invoke a\s+shell inside their isolated runner container/);
+  assert.match(readme, /cannot be overridden by the request/);
   assert.match(readme, /not a fully untrusted code sandbox/);
   assert.match(readme, /`deploy.kind`: `kustomize`, `manifest`, or `none`/);
   assert.match(readme, /ECR push support is enabled/);
