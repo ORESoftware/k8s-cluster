@@ -68,6 +68,7 @@
     "requireAllConsumerOperationsTyped": true,
     "requireExplicitAuthContract": true,
     "requirePublicSubsetParity": true,
-    "internalPackagesArePrivate": true
+    "internalPackagesArePrivate": true,
+    "requireStableOperationIds": true
   }
 }
