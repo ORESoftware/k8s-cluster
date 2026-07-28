@@ -46,6 +46,7 @@ python3 -m json.tool "$work_dir/openapi.1.json" >/dev/null
 
 python3 - <<'PY'
 import json
+from collections import defaultdict
 from pathlib import Path
 
 service = Path('remote/deployments/gleamlang-presence-server')
@@ -87,14 +88,23 @@ projected_operation_ids = [
 ]
 assert len(projected_operation_ids) == len(set(projected_operation_ids))
 
+native_handlers_by_path = defaultdict(set)
+for (path, _), operation in native_operations.items():
+    native_handlers_by_path[path].add(operation['operationId'])
+
 for key, native in native_operations.items():
     path, method = key
     projected = projected_operations[key]
-    assert projected['x-dd-handlers'] == [native['operationId']], (key, projected)
+    projected_handlers = projected['x-dd-handlers']
+    assert len(projected_handlers) == len(set(projected_handlers)), (key, projected)
+    assert set(projected_handlers) == native_handlers_by_path[path], (key, projected)
+    assert native['operationId'] in projected_handlers, (key, projected)
     assert projected['x-dd-source-path'] == path, (key, projected)
     assert projected['x-dd-source-paths'] == [path], (key, projected)
     assert projected['x-dd-visibility'] == native['x-dd-visibility'], key
     assert projected['x-dd-auth'] == native['x-dd-auth'], key
+    assert projected['x-dd-route-type'] == native['x-dd-route-type'], key
+    assert projected['x-dd-implementation'] == 'openapi-code-first', key
     assert projected.get('security') == native.get('security'), key
     assert projected['summary'] == native['summary'], key
     assert projected['x-dd-source-files'] == [
