@@ -54,3 +54,5 @@ jobs:
           git diff --cached --check
           git commit -m 'ci(DEN-482): rehash reviewable direct patch'
           git push origin "HEAD:${GITHUB_HEAD_REF}"
+
+# Activation commit: validate and hash the exact patch bytes present on the PR branch.
