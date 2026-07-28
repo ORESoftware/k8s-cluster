@@ -460,16 +460,24 @@ fn tool_def(
     schema: Value,
     read_only: bool,
     scopes: &[&str],
+    require_auth: bool,
 ) -> Value {
+    let security_schemes = if require_auth {
+        json!([{
+            "type": "oauth2",
+            "scopes": scopes
+        }])
+    } else {
+        json!([{
+            "type": "noauth"
+        }])
+    };
     json!({
         "name": name,
         "title": title,
         "description": description,
         "inputSchema": schema,
-        "securitySchemes": [{
-            "type": "oauth2",
-            "scopes": scopes
-        }],
+        "securitySchemes": security_schemes,
         "annotations": {
             "readOnlyHint": read_only,
             "destructiveHint": !read_only,
@@ -479,7 +487,7 @@ fn tool_def(
     })
 }
 
-fn tools_list_result(id: Value) -> Value {
+fn tools_list_result(id: Value, require_auth: bool) -> Value {
     json!({
         "jsonrpc": "2.0",
         "id": id,
@@ -492,6 +500,7 @@ fn tools_list_result(id: Value) -> Value {
                     browser_act_schema(),
                     false,
                     &[oauth::SCOPE_MCP_TOOLS, oauth::SCOPE_BROWSER_ACT],
+                    require_auth,
                 ),
                 tool_def(
                     "browser_state",
@@ -500,6 +509,7 @@ fn tools_list_result(id: Value) -> Value {
                     browser_state_schema(),
                     true,
                     &[oauth::SCOPE_MCP_TOOLS, oauth::SCOPE_BROWSER_READ],
+                    require_auth,
                 )
             ]
         }
@@ -834,7 +844,7 @@ async fn rpc(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> 
     let response = match method.as_str() {
         "initialize" => initialize_result(id, request.params.as_ref()),
         "ping" => json!({ "jsonrpc": "2.0", "id": id, "result": {} }),
-        "tools/list" => tools_list_result(id),
+        "tools/list" => tools_list_result(id, state.config.require_auth),
         "tools/call" => tools_call_result(&state, id, request.params.as_ref(), &owner).await,
         _ => {
             state
@@ -1119,7 +1129,7 @@ mod tests {
 
     #[test]
     fn tools_list_exposes_exactly_the_two_browser_tools() {
-        let r = tools_list_result(json!(2));
+        let r = tools_list_result(json!(2), true);
         let tools = r["result"]["tools"].as_array().unwrap();
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert_eq!(names.len(), 2);
@@ -1128,6 +1138,15 @@ mod tests {
             assert_eq!(tool["securitySchemes"][0]["type"], "oauth2");
             let scopes = tool["securitySchemes"][0]["scopes"].as_array().unwrap();
             assert!(scopes.contains(&json!(oauth::SCOPE_MCP_TOOLS)));
+        }
+    }
+
+    #[test]
+    fn tools_list_advertises_noauth_when_authentication_is_disabled() {
+        let r = tools_list_result(json!(2), false);
+        let tools = r["result"]["tools"].as_array().unwrap();
+        for tool in tools {
+            assert_eq!(tool["securitySchemes"], json!([{ "type": "noauth" }]));
         }
     }
 

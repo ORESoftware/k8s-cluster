@@ -44,6 +44,11 @@ const PLATFORM_JOB_DOMAINS = [
   'bamboohr.com',
   'recruitee.com',
   'applytojob.com',
+  'ats.rippling.com',
+  'breezy.hr',
+  'jobscore.com',
+  'candidateportalin.ceipal.com',
+  'candidateportalnew.ceipal.com',
 ] as const;
 
 const REVIEWED_BROWSER_CEILING_DOMAINS = [
