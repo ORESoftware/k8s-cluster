@@ -1167,27 +1167,50 @@ function buildPublicOpenApi(openapi) {
       delete document.paths[path];
     }
   }
+
+  const publicEntries = operationEntriesForDocument(document);
+  const publicSourceRouteCount = new Set(
+    publicEntries.flatMap((entry) => entry.operation['x-dd-source-paths'] ?? []),
+  ).size;
+  const publicTags = new Set();
+  for (const entry of publicEntries) {
+    for (const tag of entry.operation.tags ?? []) {
+      publicTags.add(tag);
+    }
+    for (const extension of [
+      'x-dd-auth',
+      'x-dd-handlers',
+      'x-dd-implementation',
+      'x-dd-source-files',
+      'x-dd-source-path',
+      'x-dd-source-paths',
+    ]) {
+      delete entry.operation[extension];
+    }
+    entry.operation.security = [];
+  }
+
+  document.tags = (document.tags ?? []).filter((tag) => publicTags.has(tag.name));
+  document.components = {};
   document.info.title = `${document.info.title} (public)`;
   document.info.description =
     'Fail-closed public subset. Only operations explicitly marked public are included.';
   document['x-dd-contract-scope'] = 'public';
-  document['x-dd-route-count'] = new Set(
-    operationEntriesForDocument(document).flatMap((entry) => entry.operation['x-dd-source-paths'] ?? []),
-  ).size;
-  document['x-dd-operation-count'] = Object.values(document.paths).reduce(
-    (count, pathItem) =>
-      count +
-      [...OPENAPI_METHODS]
-        .map((value) => value.toLowerCase())
-        .filter((method) => pathItem[method])
-        .length,
-    0,
-  );
+  document['x-dd-route-count'] = publicSourceRouteCount;
+  document['x-dd-operation-count'] = publicEntries.length;
   return document;
 }
 
 function buildPublicDocs(docs) {
-  const routes = docs.routes.filter((route) => openApiVisibility(route) === 'public');
+  const routes = docs.routes
+    .filter((route) => openApiVisibility(route) === 'public')
+    .map((route) => ({
+      ...route,
+      handlers: [],
+      implementation: '',
+      notes: '',
+      sourceFiles: [],
+    }));
   const routeTypeCounts = routes.reduce((acc, route) => {
     acc[route.routeType] = (acc[route.routeType] ?? 0) + 1;
     return acc;

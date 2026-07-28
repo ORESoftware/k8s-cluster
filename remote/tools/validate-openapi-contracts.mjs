@@ -211,18 +211,36 @@ function verifyService(item, gitlinks, fleetOperationIds) {
   }
 
   const publicEntries = operationEntries(publicOpenapi);
+  assert(
+    Object.keys(publicOpenapi.components?.securitySchemes ?? {}).length === 0,
+    `${item.service}: public runtime OpenAPI must not publish internal security schemes`,
+  );
+  const publicTagNames = new Set(publicEntries.flatMap((entry) => entry.operation.tags ?? []));
+  assert(
+    (publicOpenapi.tags ?? []).every((tag) => publicTagNames.has(tag.name)),
+    `${item.service}: public runtime OpenAPI contains unused or internal tags`,
+  );
   const fullByKey = new Map(fullEntries.map((entry) => [operationDocumentKey(entry), entry]));
   for (const entry of publicEntries) {
     const key = operationDocumentKey(entry);
     assert(fullByKey.has(key), `${item.service}: public OpenAPI contains non-canonical operation ${key}`);
     assert(
-      JSON.stringify(operationSourceKeys(entry)) === JSON.stringify(operationSourceKeys(fullByKey.get(key))),
-      `${item.service}: public OpenAPI source-path set drifted for ${key}`,
-    );
-    assert(
       entry.operation['x-dd-visibility'] === 'public',
       `${item.service}: internal operation leaked into runtime OpenAPI: ${key}`,
     );
+    for (const extension of [
+      'x-dd-auth',
+      'x-dd-handlers',
+      'x-dd-implementation',
+      'x-dd-source-files',
+      'x-dd-source-path',
+      'x-dd-source-paths',
+    ]) {
+      assert(
+        !Object.hasOwn(entry.operation, extension),
+        `${item.service}: public runtime OpenAPI leaked debug extension ${extension} for ${key}`,
+      );
+    }
   }
   const expectedPublicKeys = fullEntries
     .filter((entry) => entry.operation['x-dd-visibility'] === 'public')

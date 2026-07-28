@@ -8,13 +8,7 @@
   },
   "tags": [
     {
-      "name": "runtime-config"
-    },
-    {
       "name": "service"
-    },
-    {
-      "name": "user-generated"
     }
   ],
   "paths": {
@@ -32,17 +26,7 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "public",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "service",
         "x-dd-route-type": "service",
-        "x-dd-source-files": [
-          "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
-        ],
-        "x-dd-source-path": "/",
-        "x-dd-source-paths": [
-          "/"
-        ],
         "x-dd-visibility": "public",
         "security": []
       },
@@ -59,17 +43,7 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "public",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "service",
         "x-dd-route-type": "service",
-        "x-dd-source-files": [
-          "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
-        ],
-        "x-dd-source-path": "/",
-        "x-dd-source-paths": [
-          "/"
-        ],
         "x-dd-visibility": "public",
         "security": []
       }
@@ -88,17 +62,7 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "public",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "service",
         "x-dd-route-type": "service",
-        "x-dd-source-files": [
-          "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
-        ],
-        "x-dd-source-path": "/api/docs",
-        "x-dd-source-paths": [
-          "/api/docs"
-        ],
         "x-dd-visibility": "public",
         "security": []
       }
@@ -117,17 +81,7 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "public",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "service",
         "x-dd-route-type": "service",
-        "x-dd-source-files": [
-          "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
-        ],
-        "x-dd-source-path": "/api/docs.json",
-        "x-dd-source-paths": [
-          "/api/docs.json"
-        ],
         "x-dd-visibility": "public",
         "security": []
       }
@@ -146,17 +100,7 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "public",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "service",
         "x-dd-route-type": "service",
-        "x-dd-source-files": [
-          "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
-        ],
-        "x-dd-source-path": "/docs/api",
-        "x-dd-source-paths": [
-          "/docs/api"
-        ],
         "x-dd-visibility": "public",
         "security": []
       }
@@ -175,17 +119,7 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "public",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "service",
         "x-dd-route-type": "service",
-        "x-dd-source-files": [
-          "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
-        ],
-        "x-dd-source-path": "/healthz",
-        "x-dd-source-paths": [
-          "/healthz"
-        ],
         "x-dd-visibility": "public",
         "security": []
       }
@@ -204,41 +138,13 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "public",
-        "x-dd-handlers": [],
-        "x-dd-implementation": "service",
         "x-dd-route-type": "service",
-        "x-dd-source-files": [
-          "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
-        ],
-        "x-dd-source-path": "/metrics",
-        "x-dd-source-paths": [
-          "/metrics"
-        ],
         "x-dd-visibility": "public",
         "security": []
       }
     }
   },
-  "components": {
-    "securitySchemes": {
-      "serverAuth": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "X-Server-Auth"
-      },
-      "operatorSecret": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "X-Operator-Secret"
-      },
-      "webhookSignature": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "X-Webhook-Signature"
-      }
-    }
-  },
+  "components": {},
   "x-dd-contract-scope": "public",
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "gleam",
