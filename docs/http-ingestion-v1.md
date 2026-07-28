@@ -67,6 +67,19 @@ Outcomes contain target fingerprints, never complete provider tokens, Web Push e
 
 The readiness body reports authentication mode and separate FCM, APNs production, APNs sandbox, Expo, and Web Push readiness without exposing credentials.
 
+## Tests
+
+The HTTP integration suite verifies:
+
+- all submissions fail closed when no authenticator is configured
+- the explicit migration bearer secret authorizes valid requests
+- authenticated jobs dispatch through the provider registry
+- validation failures never echo capability tokens
+- batches above the 100-job limit are rejected before provider dispatch
+- readiness remains unavailable without authentication or providers
+
+The permanent merge gate additionally requires formatting, locked Clippy with warnings denied, all unit/integration tests, the Rust 1.88 container build, cargo-deny, RustSec, and full-history Gitleaks.
+
 ## NATS follow-up
 
 The next DEN-329 PR adds dedicated versioned JetStream job/result subjects, explicit ack/nak/term behavior, retry/dead-letter policy, and signed/enveloped job authentication while reusing this registry, validation, and outcome mapping.
