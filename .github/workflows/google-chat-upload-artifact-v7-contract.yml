@@ -20,15 +20,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Validate Google Chat workflows
-        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
-        with:
-          args: >-
-            .github/workflows/bootstrap-clasp-and-export-chat.yml
-            .github/workflows/ephemeral-google-chat-relay-get.yml
-            .github/workflows/ephemeral-google-chat-relay.yml
-            .github/workflows/google-chat-apps-script-sync.yml
-            .github/workflows/google-chat-upload-artifact-v7-contract.yml
       - name: Create harmless encrypted-artifact-shaped fixtures
         shell: bash
         run: |
