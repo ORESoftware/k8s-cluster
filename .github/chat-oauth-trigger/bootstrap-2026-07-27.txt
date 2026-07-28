@@ -1,0 +1,1 @@
+Bootstrap clasp credentials, deploy bridge 1.0.1, and export Google Chat for DEN-266.

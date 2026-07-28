@@ -1,3 +1,6 @@
+# clasp push replaces the remote Apps Script project, so keep this allowlist
+# explicit and production-only. Tests, reports, credentials, and fixtures must
+# never be uploaded.
 **/*
 !App.gs
 !EmailExport.gs
