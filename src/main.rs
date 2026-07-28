@@ -1,7 +1,8 @@
 use std::{env, net::SocketAddr};
 
 use push_notification_server::{
-    ApiState, provider_registry_from_env, request_authenticator_from_env, router,
+    ApiState, NatsConfig, provider_registry_from_env, request_authenticator_from_env, router,
+    run_nats_consumer,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -18,6 +19,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let address = bind_address()?;
     let registry = provider_registry_from_env()?;
     let authenticator = request_authenticator_from_env()?;
+
+    if let Some(nats_config) = NatsConfig::from_env()? {
+        let nats_registry = registry.clone();
+        tokio::spawn(async move {
+            if let Err(error) = run_nats_consumer(nats_config, nats_registry).await {
+                tracing::error!(%error, "JetStream push ingestion stopped");
+            }
+        });
+    } else {
+        tracing::info!("JetStream push ingestion disabled because NATS_URL is not configured");
+    }
+
     let app = router(ApiState::new(registry, authenticator));
     let listener = tokio::net::TcpListener::bind(address).await?;
 
