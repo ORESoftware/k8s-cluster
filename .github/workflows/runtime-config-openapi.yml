@@ -66,12 +66,26 @@ jobs:
             --manifest-path interfaces/shared/generated/rust/Cargo.toml \
             --features openapi
 
-      - name: Verify legacy Axum 0.7 adapter
+      - name: Verify legacy Axum 0.7 formatting
         run: |
-          set -euo pipefail
-          cargo fmt --all --manifest-path runtime-config-client-rs/Cargo.toml -- --check
-          cargo check --locked --manifest-path runtime-config-client-rs/Cargo.toml
-          cargo test --locked --manifest-path runtime-config-client-rs/Cargo.toml
+          set -uo pipefail
+          cargo fmt --all --manifest-path runtime-config-client-rs/Cargo.toml -- --check \
+            2>&1 | tee "${RUNNER_TEMP}/legacy-format.log"
+          exit "${PIPESTATUS[0]}"
+
+      - name: Compile legacy Axum 0.7 adapter
+        run: |
+          set -uo pipefail
+          cargo check --locked --manifest-path runtime-config-client-rs/Cargo.toml \
+            2>&1 | tee "${RUNNER_TEMP}/legacy-check.log"
+          exit "${PIPESTATUS[0]}"
+
+      - name: Test legacy Axum 0.7 adapter
+        run: |
+          set -uo pipefail
+          cargo test --locked --manifest-path runtime-config-client-rs/Cargo.toml \
+            2>&1 | tee "${RUNNER_TEMP}/legacy-test.log"
+          exit "${PIPESTATUS[0]}"
 
       - name: Verify Axum 0.8 executable OpenAPI adapter
         run: |
@@ -113,3 +127,12 @@ jobs:
             echo 'git conflict marker detected' >&2
             exit 1
           fi
+
+      - name: Upload bounded legacy-adapter diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+        with:
+          name: runtime-config-legacy-adapter-logs
+          path: ${{ runner.temp }}/legacy-*.log
+          if-no-files-found: warn
+          retention-days: 1
