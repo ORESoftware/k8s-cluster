@@ -1,3 +1,4 @@
+# Explicit trigger after workflow registration.
 name: Apply browser-test executable OpenAPI migration
 
 on:
