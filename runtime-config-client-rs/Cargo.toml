@@ -7,10 +7,27 @@ description = "Shared receiver helper for dd-runtime-config push messages. Drop 
 [lib]
 path = "src/lib.rs"
 
+[features]
+default = ["axum-07"]
+axum-07 = ["dep:axum07"]
+axum-08 = ["dep:axum08"]
+openapi = [
+  "axum-08",
+  "dep:utoipa",
+  "dep:utoipa-axum",
+  "dd-shared-interfaces/openapi",
+]
+
 [dependencies]
-axum = { version = "0.7", features = ["macros"] }
-dd-shared-interfaces = { path = "../interfaces/shared/generated/rust" }
+axum07 = { package = "axum", version = "0.7", features = ["macros"], optional = true }
+axum08 = { package = "axum", version = "0.8", features = ["macros"], optional = true }
+dd-shared-interfaces = { path = "../interfaces/shared/generated/rust", default-features = false }
 reqwest = { version = "=0.12.9", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
+utoipa = { version = "=5.5.0", optional = true, features = ["preserve_order", "preserve_path_order"] }
+utoipa-axum = { version = "=0.2.0", optional = true }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }

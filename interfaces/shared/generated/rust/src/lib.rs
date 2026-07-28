@@ -2573,6 +2573,7 @@ pub struct FabricationSubmittedInstruction {
 }
 
 /// Why this push happened. 'cron' = periodic sweep, 'admin' = on-demand UI button, 'register' = subscriber just joined, 'manual' = explicit API call, 'initial' = subscriber boot-time pull.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RuntimeConfigApplyReason {
@@ -2589,6 +2590,7 @@ pub enum RuntimeConfigApplyReason {
 }
 
 /// Payload POSTed by the control plane to each subscriber's /internal/update-runtime-config endpoint.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeConfigApplyRequest {
     /// Opaque id for tracing (UUIDv4 recommended).
@@ -2599,6 +2601,7 @@ pub struct RuntimeConfigApplyRequest {
 }
 
 /// What a subscriber returns to the control plane after applying (or rejecting) a snapshot.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeConfigApplyResponse {
     pub ok: bool,
@@ -2625,6 +2628,7 @@ pub struct RuntimeConfigApplyResponse {
 }
 
 /// One config entry. `value` is a free-form JSON value so callers can ship simple strings/numbers or richer JSON objects without rev'ing the schema.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeConfigEntry {
     pub env: RuntimeConfigEnv,
@@ -2648,6 +2652,7 @@ pub struct RuntimeConfigEntry {
 }
 
 /// Top-level namespace for every runtime-config record. Every Redis key, every snapshot, every subscriber registration is scoped to exactly one env. Stage and prod are isolated.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RuntimeConfigEnv {
@@ -2658,6 +2663,7 @@ pub enum RuntimeConfigEnv {
 }
 
 /// Payload sent by a subscriber to POST /subscribers on the control plane.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeConfigRegisterRequest {
     pub env: RuntimeConfigEnv,
@@ -2670,6 +2676,7 @@ pub struct RuntimeConfigRegisterRequest {
 }
 
 /// The full set of active entries that apply to a given (env, scope) at a point in time. Subscribers receive this on every push.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeConfigSnapshot {
     pub env: RuntimeConfigEnv,
@@ -2684,6 +2691,7 @@ pub struct RuntimeConfigSnapshot {
 }
 
 /// One long-running service that wants config pushed to it. Subscribers are env-bound: a single deployment instance can only belong to one env.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeConfigSubscriber {
     pub env: RuntimeConfigEnv,
@@ -2714,6 +2722,7 @@ pub struct RuntimeConfigSubscriber {
 }
 
 /// Payload sent by the admin UI (or any operator script) to create or update one entry. The control plane assigns the new version and updatedAt.
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeConfigUpsertRequest {
     pub env: RuntimeConfigEnv,

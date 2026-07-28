@@ -7,6 +7,11 @@ description = "Generated Rust types for dd shared cross-runtime interfaces. Do n
 [lib]
 path = "src/lib.rs"
 
+[features]
+default = []
+openapi = ["dep:utoipa"]
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+utoipa = { version = "=5.5.0", optional = true }

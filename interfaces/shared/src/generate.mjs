@@ -86,8 +86,8 @@ async function main() {
 // ---------- Model ----------
 
 /**
- * @typedef {{ kind: 'object', name: string, description?: string, fields: Field[] }} ObjectType
- * @typedef {{ kind: 'enum', name: string, description?: string, values: string[] }} EnumType
+ * @typedef {{ kind: 'object', name: string, description?: string, rustOpenapi: boolean, fields: Field[] }} ObjectType
+ * @typedef {{ kind: 'enum', name: string, description?: string, rustOpenapi: boolean, values: string[] }} EnumType
  * @typedef {ObjectType | EnumType} NamedType
  * @typedef {{ name: string, description?: string, required: boolean, nullable: boolean, type: TypeRef }} Field
  * @typedef {{ tag: 'primitive', name: 'string' | 'number' | 'integer' | 'boolean' | 'any' } |
@@ -121,19 +121,20 @@ function buildModel(schemaFiles) {
         throw new Error(`Duplicate $defs name across schema files: ${name}`);
       }
       seen.add(name);
-      named.push(resolveNamed(name, def, filename));
+      named.push(resolveNamed(name, def, filename, doc['x-rust-openapi'] === true));
     }
   }
   named.sort((a, b) => a.name.localeCompare(b.name));
   return { named };
 }
 
-function resolveNamed(name, def, filename) {
+function resolveNamed(name, def, filename, rustOpenapi) {
   if (Array.isArray(def.enum) && (def.type === 'string' || def.type === undefined)) {
     return {
       kind: 'enum',
       name,
       description: def.description,
+      rustOpenapi,
       values: def.enum.map((value) => {
         if (typeof value !== 'string') {
           throw new Error(`enum values must be strings (in ${filename} / ${name})`);
@@ -160,7 +161,7 @@ function resolveNamed(name, def, filename) {
       type: typeRef,
     });
   }
-  return { kind: 'object', name, description: def.description, fields };
+  return { kind: 'object', name, description: def.description, rustOpenapi, fields };
 }
 
 function resolveTypeRef(def, label) {
@@ -335,9 +336,14 @@ function renderRustCargo() {
     '[lib]',
     'path = "src/lib.rs"',
     '',
+    '[features]',
+    'default = []',
+    'openapi = ["dep:utoipa"]',
+    '',
     '[dependencies]',
     'serde = { version = "1", features = ["derive"] }',
     'serde_json = "1"',
+    'utoipa = { version = "=5.5.0", optional = true }',
     '',
   ].join('\n');
 }
@@ -355,6 +361,9 @@ function renderRust(model) {
       for (const line of splitDoc(named.description)) lines.push(`/// ${line}`);
     }
     if (named.kind === 'enum') {
+      if (named.rustOpenapi) {
+        lines.push('#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]');
+      }
       lines.push('#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]');
       lines.push('#[serde(rename_all = "lowercase")]');
       lines.push(`pub enum ${named.name} {`);
@@ -364,6 +373,9 @@ function renderRust(model) {
       }
       lines.push('}');
     } else {
+      if (named.rustOpenapi) {
+        lines.push('#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]');
+      }
       lines.push('#[derive(Debug, Clone, Serialize, Deserialize)]');
       lines.push(`pub struct ${named.name} {`);
       for (const field of named.fields) {
