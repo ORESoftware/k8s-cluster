@@ -119,6 +119,26 @@ server = replace_once(
 """,
     "narrow Fastify unknown errors safely",
 )
+server = replace_once(
+    server,
+    """  void main().catch(async (error) => {
+    fastify.log.error({ err: error }, 'dd-browser-test-server failed to start');
+    process.exitCode = 1;
+    await closeResources().catch(() => {});
+  });
+""",
+    """  void main().catch(async (error) => {
+    if (exportingOpenApi) {
+      console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
+    } else {
+      fastify.log.error({ err: error }, 'dd-browser-test-server failed to start');
+    }
+    process.exitCode = 1;
+    await closeResources().catch(() => {});
+  });
+""",
+    "surface side-effect-free exporter failures on stderr",
+)
 
 for forbidden in (
     "const metrics = {const metrics = {",
