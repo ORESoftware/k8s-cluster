@@ -1,13 +1,9 @@
-name: diagnose customer cron installer
+name: diagnose customer cron payload
 
 on:
   pull_request:
-    branches:
-      - main
-    types:
-      - opened
-      - synchronize
-      - reopened
+    branches: [main]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
@@ -22,23 +18,28 @@ jobs:
           ref: agent/cron-customer-control-plane
           fetch-depth: 0
           show-progress: false
-      - name: Persist archive diagnostic
+      - name: Record exact extracted source hashes
         shell: bash
         run: |
-          set -u
-          diagnostic=.agent/cron-installer-diagnostic.txt
-          cat .agent/cron-payload/part-* | base64 -d > /tmp/customer-cron-implementation.tgz
+          set -euo pipefail
+          work=/tmp/customer-cron-payload
+          rm -rf "$work"
+          mkdir -p "$work"
+          cat .agent/cron-payload/part-* | base64 -d > "$work/payload.tgz"
+          tar -xzf "$work/payload.tgz" -C "$work"
           {
-            echo 'expected=61d7d188650438bea565bf25877d6d3327bc197d0929111a249cd217ffc52d24'
-            printf 'actual='
-            sha256sum /tmp/customer-cron-implementation.tgz | awk '{print $1}'
-            printf 'bytes='
-            wc -c < /tmp/customer-cron-implementation.tgz
-            echo 'archive-listing:'
-            tar -tzf /tmp/customer-cron-implementation.tgz || true
-          } > "$diagnostic" 2>&1
+            sha256sum "$work/src/cron.rs"
+            sha256sum "$work/src/main.rs"
+            sha256sum "$work/src/views.rs"
+            sha256sum "$work/src/tests.rs"
+            sha256sum "$work/docs/cron-jobs.md"
+            printf 'archive  '
+            sha256sum "$work/payload.tgz" | awk '{print $1}'
+            printf 'bytes  '
+            wc -c < "$work/payload.tgz"
+          } | sed "s#${work}/##" > .agent/cron-payload-hashes.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add "$diagnostic"
-          git commit -m 'chore: record customer cron installer diagnostic'
+          git add .agent/cron-payload-hashes.txt
+          git commit -m 'chore: record customer cron payload hashes'
           git push origin HEAD:agent/cron-customer-control-plane
