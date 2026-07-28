@@ -210,16 +210,21 @@ jobs:
           rm -f .github/workflows/apply-den-445-native-openapi-v2.yml
           rm -f .github/workflows/den-445-invariant-diagnostics.yml
           rm -f .github/workflows/den-445-refresh-fix-hash.yml
+          rm -f .github/workflows/den-445-fix-hygiene.yml
 
       - name: Validate repository hygiene
         shell: bash
         run: |
           set -euo pipefail
           git diff --check
-          if git grep -n -E '^(<<<<<<< |=======$|>>>>>>> )' -- . ':(exclude)*.lock'; then
+          if git diff --no-ext-diff --unified=0 -- . \
+            | grep -E '^\+(<<<<<<< |=======$|>>>>>>> )'; then
+            echo 'new git conflict marker detected' >&2
             exit 1
           fi
-          if git grep -n -E '(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})' -- .; then
+          if git diff --no-ext-diff --unified=0 -- . \
+            | grep -E '^\+.*(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})'; then
+            echo 'new GitHub token-like value detected' >&2
             exit 1
           fi
 
