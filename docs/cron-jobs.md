@@ -65,3 +65,9 @@ container, browser, arbitrary entry-command, and customer-supplied environment
 configuration. Source is capped at 256 KiB and run time at 120 seconds. The
 function service applies its stricter storage, activation, sandbox, output, and
 invocation policies as the final authority.
+
+## Verification
+
+The pull request must pass the repository's ordinary format, Clippy, unit-test,
+CLI-contract, and dependency-audit checks after all one-shot migration workflows
+are removed.
