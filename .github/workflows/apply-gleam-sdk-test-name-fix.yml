@@ -1,0 +1,57 @@
+name: apply Gleam SDK test name fix
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-gleam-sdk-test-name-fix
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'agent/openapi-fleet-sdks'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout writable feature branch
+        uses: actions/checkout@v7
+        with:
+          ref: agent/openapi-fleet-sdks
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Derive Gleam test module from package name
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'remote/tools/generate-api-sdks.mjs';
+          const before = "      'test/dd_api_sdk_test.gleam': fixedTest,";
+          const after = '      [`test/${packageName}_test.gleam`]: fixedTest,';
+          let source = fs.readFileSync(path, 'utf8');
+          if (!source.includes(before) && !source.includes(after)) {
+            throw new Error('Gleam test module output path was not found');
+          }
+          source = source.replace(before, after);
+          fs.writeFileSync(path, source);
+          NODE
+          node --check remote/tools/generate-api-sdks.mjs
+          git diff --check
+
+      - name: Commit generator fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add remote/tools/generate-api-sdks.mjs
+          if git diff --cached --quiet; then
+            echo "Gleam test module naming is already fixed."
+            exit 0
+          fi
+          git commit -m "Fix generated Gleam SDK test module names"
+          git push origin HEAD:agent/openapi-fleet-sdks
