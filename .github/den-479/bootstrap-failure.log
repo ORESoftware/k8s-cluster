@@ -1,0 +1,12 @@
+
+gzip: stdin: invalid compressed data--crc error
+
+gzip: stdin: invalid compressed data--length error
+  File "/home/runner/work/_temp/apply-den-479.py", line 1163
+    "imple """nfi]);rornew Err---------------Schemes?.bearerest, te/tools/check-openapi-contracts.mjs"
+                 ^
+SyntaxError: closing parenthesis ']' does not match opening parenthesis '(' on line 1157
+  File "/home/runner/work/_temp/apply-den-479.py", line 1163
+    "imple """nfi]);rornew Err---------------Schemes?.bearerest, te/tools/check-openapi-contracts.mjs"
+                 ^
+SyntaxError: closing parenthesis ']' does not match opening parenthesis '(' on line 1157
