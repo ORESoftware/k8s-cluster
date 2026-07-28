@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "application_status": "applied-awaiting-human-cleanup",
+  "application_status": "applied-awaiting-validation",
   "repository": "cliptown/cliptown-monorepo",
   "url": "https://github.com/cliptown/cliptown-monorepo.git",
   "branch": "main",
