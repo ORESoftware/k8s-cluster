@@ -1,5 +1,6 @@
 name: DEN-440 lockfile export
 
+# One-use read-only exporter; delete after the regenerated lockfile is committed.
 on:
   push:
     branches:
