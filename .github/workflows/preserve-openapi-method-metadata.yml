@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/preserve-openapi-method-metadata.yml'
       - 'scripts/api-contract/preserve-openapi-method-metadata.py'
+      - 'scripts/api-contract/assert-gleam-method-metadata.py'
 
 permissions:
   contents: write
@@ -51,13 +52,13 @@ jobs:
           set -euo pipefail
           status='scripts/api-contract/preserve-openapi-method-metadata-status.md'
           mkdir -p "$(dirname "$status")"
-          cat > "$status" <<EOF
-          # Method-aware OpenAPI regeneration
-
-          Status: running
-          Source commit: ${GITHUB_SHA}
-          Workflow run: ${GITHUB_RUN_ID}
-          EOF
+          {
+            echo '# Method-aware OpenAPI regeneration'
+            echo
+            echo 'Status: running'
+            echo "Source commit: ${GITHUB_SHA}"
+            echo "Workflow run: ${GITHUB_RUN_ID}"
+          } > "$status"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add "$status"
@@ -97,35 +98,14 @@ jobs:
           log="${RUNNER_TEMP}/preserve-openapi-method-metadata.log"
           {
             set -euo pipefail
-            python3 -m py_compile scripts/api-contract/preserve-openapi-method-metadata.py
+            python3 -m py_compile \
+              scripts/api-contract/preserve-openapi-method-metadata.py \
+              scripts/api-contract/assert-gleam-method-metadata.py
             python3 scripts/api-contract/preserve-openapi-method-metadata.py
             node --check remote/tools/generate-api-docs.mjs
             node remote/tools/generate-api-docs.mjs
             node remote/tools/generate-api-sdks.mjs
-
-            python3 - <<'PY'
-          import json
-          from pathlib import Path
-
-          service = Path('remote/deployments/gleamlang-presence-server/generated')
-          native = json.loads((service / 'openapi.json').read_text(encoding='utf-8'))
-          projected = json.loads((service / 'api-docs.internal.json').read_text(encoding='utf-8'))
-          path = '/conv/{conv_id}/members/{user_id}'
-          expected = {
-              'post': ('addConversationMember', 'Add a conversation member'),
-              'delete': ('removeConversationMember', 'Remove a conversation member'),
-          }
-          for method, (operation_id, summary) in expected.items():
-              native_operation = native['paths'][path][method]
-              projected_operation = projected['paths'][path][method]
-              assert native_operation['operationId'] == operation_id
-              assert native_operation['summary'] == summary
-              assert projected_operation['summary'] == summary
-              assert projected_operation['x-dd-handlers'] == [operation_id]
-              assert projected_operation['x-dd-auth'] == native_operation['x-dd-auth']
-              assert projected_operation.get('security') == native_operation.get('security')
-          assert projected['paths'][path]['post']['summary'] != projected['paths'][path]['delete']['summary']
-          PY
+            python3 scripts/api-contract/assert-gleam-method-metadata.py
 
             OPENAPI_CHECK_ALLOW_DIRTY=1 \
               bash remote/deployments/gleamlang-presence-server/scripts/check-openapi.sh
@@ -133,6 +113,7 @@ jobs:
             rm -f \
               .github/workflows/preserve-openapi-method-metadata.yml \
               scripts/api-contract/preserve-openapi-method-metadata.py \
+              scripts/api-contract/assert-gleam-method-metadata.py \
               scripts/api-contract/preserve-openapi-method-metadata-status.md
 
             git diff --check
@@ -147,7 +128,7 @@ jobs:
             git diff --cached --check
             unexpected_bootstrap="$({
               git diff --cached --name-status \
-                | awk '$1 != "D" && $2 ~ /(preserve-openapi-method-metadata|preserve-openapi-method-metadata-status)/ {print}'
+                | awk '$1 != "D" && $2 ~ /(preserve-openapi-method-metadata|assert-gleam-method-metadata|preserve-openapi-method-metadata-status)/ {print}'
             } || true)"
             test -z "$unexpected_bootstrap"
             git diff --cached --name-status
@@ -200,3 +181,5 @@ jobs:
           path: ${{ runner.temp }}/preserve-openapi-method-metadata.log
           if-no-files-found: warn
           retention-days: 1
+
+# Deliberate activation update: the workflow already existed in the branch parent.
