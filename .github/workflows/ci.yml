@@ -19,27 +19,23 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Apply compiler-guided HTTP import fixes
+      - name: Remove duplicate HTTP test cfg attribute
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
           path = Path("src/http_api.rs")
           text = path.read_text()
-          text = text.replace(
-              "use axum::body::Body;",
-              "#[cfg(test)]\nuse axum::body::Body;",
-              1,
-          )
-          text = text.replace(
-              "use crate::contracts::{ContractVersion, OutcomeClass, ProviderKind, PushJob, PushOutcome};",
-              "use crate::contracts::{ContractVersion, OutcomeClass, PushJob, PushOutcome};\n#[cfg(test)]\nuse crate::contracts::ProviderKind;",
-              1,
-          )
+          duplicate = "#[cfg(test)]\n#[cfg(test)]\nuse axum::body::Body;"
+          single = "#[cfg(test)]\nuse axum::body::Body;"
+          if duplicate in text:
+              text = text.replace(duplicate, single, 1)
+          elif single not in text:
+              raise SystemExit("HTTP Body test import anchor not found")
           path.write_text(text)
           PY
           cargo fmt
-      - name: Commit compiler-guided HTTP fixes
+      - name: Commit duplicate-attribute fix
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         run: |
           if [ -z "$(git status --porcelain -- src/http_api.rs)" ]; then
@@ -48,7 +44,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/http_api.rs
-          git commit -m "DEN-329 fix HTTP test-only imports"
+          git commit -m "DEN-329 remove duplicate test cfg attribute"
           git push origin "HEAD:${{ github.head_ref }}"
       - run: cargo fmt --check
       - name: Run Clippy and preserve HTTP diagnostics
