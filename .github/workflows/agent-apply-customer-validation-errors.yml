@@ -22,137 +22,15 @@ jobs:
         with:
           toolchain: "1.97.0"
           components: rustfmt
-      - name: Replace response-sized validation errors with compact codes
+      - name: Apply line-bounded validation patch
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          path = Path('src/cron.rs')
-          source = path.read_text()
-
-          def replace_once(pattern: str, replacement: str, label: str) -> None:
-              global source
-              source, count = re.subn(pattern, replacement, source, count=1, flags=re.S)
-              if count != 1:
-                  raise SystemExit(f'{label}: expected one replacement, got {count}')
-
-          source, count = re.subn(
-              r'(let name = match take_schedule_name\(&mut body\) \{\s*Ok\(name\) => name,\s*)Err\(response\) => return response,',
-              r'\1Err(code) => return bad_request(code),',
-              source,
-              count=1,
-          )
-          if count != 1:
-              raise SystemExit(f'take_schedule_name caller: expected one replacement, got {count}')
-
-          source, count = re.subn(
-              r'(let idempotency = match required_idempotency\(&headers\) \{\s*Ok\(value\) => value,\s*)Err\(response\) => return response,',
-              r'\1Err(code) => return bad_request(code),',
-              source,
-          )
-          if count != 2:
-              raise SystemExit(f'required_idempotency callers: expected two replacements, got {count}')
-
-          source, count = re.subn(
-              r'(let body = match validated_function_body\([\s\S]*?\) \{\s*Ok\(body\) => body,\s*)Err\(response\) => return response,',
-              r'\1Err(code) => return bad_request(code),',
-              source,
-          )
-          if count != 3:
-              raise SystemExit(f'validated_function_body callers: expected three replacements, got {count}')
-
-          replace_once(
-              r'fn required_idempotency\(headers: &HeaderMap\) -> Result<HeaderValue, Response> \{.*?\n\}',
-              '''fn required_idempotency(headers: &HeaderMap) -> Result<HeaderValue, &'static str> {
-              let value = headers
-                  .get(IDEMPOTENCY_KEY_HEADER)
-                  .ok_or("idempotency_key_required")?;
-              let valid = value.to_str().is_ok_and(|value| {
-                  !value.is_empty()
-                      && value.len() <= 200
-                      && value.bytes().all(|byte| matches!(byte, 0x21..=0x7e))
-              });
-              if !valid {
-                  return Err("invalid_idempotency_key");
-              }
-              Ok(value.clone())
-          }''',
-              'required_idempotency helper',
-          )
-
-          replace_once(
-              r'fn take_schedule_name\(body: &mut Value\) -> Result<String, Response> \{.*?\n\}',
-              '''fn take_schedule_name(body: &mut Value) -> Result<String, &'static str> {
-              let object = body.as_object_mut().ok_or("invalid_schedule")?;
-              let name = object
-                  .remove("name")
-                  .and_then(|value| value.as_str().map(str::to_string))
-                  .ok_or("schedule_name_required")?;
-              if !valid_schedule_name(&name) {
-                  return Err("invalid_schedule_name");
-              }
-              Ok(name)
-          }''',
-              'take_schedule_name helper',
-          )
-
-          replace_once(
-              r'fn validated_function_body\(mut body: Value\) -> Result<Value, Response> \{.*?\n\}\n\nfn valid_schedule_name',
-              '''fn validated_function_body(mut body: Value) -> Result<Value, &'static str> {
-              let object = body.as_object_mut().ok_or("invalid_function")?;
-              if let Some(runtime) = object.get("runtime").and_then(Value::as_str) {
-                  if runtime != "nodejs" {
-                      return Err("unsupported_function_runtime");
-                  }
-              }
-              object.insert("runtime".to_string(), Value::String("nodejs".to_string()));
-              if object
-                  .get("entryCommand")
-                  .or_else(|| object.get("entry_command"))
-                  .is_some()
-                  || object.get("environment").is_some()
-                  || object.get("container").is_some()
-              {
-                  return Err("unsupported_function_configuration");
-              }
-              let slug = object
-                  .get("slug")
-                  .and_then(Value::as_str)
-                  .unwrap_or_default();
-              if !valid_slug(slug) {
-                  return Err("invalid_function_slug");
-              }
-              let source = object
-                  .get("functionBody")
-                  .or_else(|| object.get("function_body"))
-                  .and_then(Value::as_str)
-                  .unwrap_or_default();
-              if source.is_empty() || source.len() > MAX_FUNCTION_SOURCE_BYTES {
-                  return Err("invalid_function_source");
-              }
-              let max_run_ms = object
-                  .get("maxRunMs")
-                  .or_else(|| object.get("max_run_ms"))
-                  .and_then(Value::as_u64)
-                  .unwrap_or(30_000);
-              if max_run_ms == 0 || max_run_ms > MAX_RUN_MS {
-                  return Err("invalid_function_timeout");
-              }
-              Ok(body)
-          }
-
-          fn valid_schedule_name''',
-              'validated_function_body helper',
-          )
-
-          path.write_text(source)
-          PY
+          python3 .agent/apply_compact_cron_errors.py
           cargo fmt --all
           git fetch --no-tags origin main
           git show origin/main:.github/workflows/ci.yml > .github/workflows/ci.yml
+          git rm .agent/apply_compact_cron_errors.py
           git rm .github/workflows/agent-apply-customer-validation-errors.yml
           git diff --check
           git config user.name 'github-actions[bot]'
