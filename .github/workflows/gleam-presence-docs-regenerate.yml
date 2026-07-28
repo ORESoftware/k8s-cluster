@@ -6,6 +6,7 @@ on:
       - agent/gleam-presence-executable-openapi
     paths:
       - '.github/workflows/gleam-presence-docs-regenerate.yml'
+      - 'scripts/api-contract/framework-neutralize-api-docs.py'
       - 'remote/tools/generate-api-docs.mjs'
 
 permissions:
@@ -97,22 +98,7 @@ jobs:
           log="${RUNNER_TEMP}/framework-neutral-api-docs.log"
           {
             set -euo pipefail
-            python3 - <<'PY'
-            from pathlib import Path
-
-            path = Path('remote/tools/generate-api-docs.mjs')
-            source = path.read_text(encoding='utf-8')
-            old = """        notes:
-                      document['x-dd-language'] === 'node'
-                        ? 'Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.'
-                        : 'Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.',"""
-            new = """        notes:
-                      'Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.',"""
-            count = source.count(old)
-            if count != 1:
-                raise SystemExit(f'expected one framework-specific notes block, found {count}')
-            path.write_text(source.replace(old, new, 1), encoding='utf-8')
-            PY
+            python3 scripts/api-contract/framework-neutralize-api-docs.py
             node --check remote/tools/generate-api-docs.mjs
             node remote/tools/generate-api-docs.mjs
             node remote/tools/generate-api-sdks.mjs
@@ -123,11 +109,11 @@ jobs:
             node remote/tools/generate-api-sdks.mjs --check
             node remote/tools/validate-api-sdks.mjs
 
-            if grep -R -n --fixed-strings \
-              'runtime Axum router' \
+            if grep -R -n -E \
+              'runtime (Axum|Fastify) router' \
               remote/deployments/*/generated/api-docs*.json \
               remote/deployments/*/generated/api-docs*.html; then
-              echo 'framework-specific Axum description remains in generated docs' >&2
+              echo 'framework-specific runtime-router description remains in generated docs' >&2
               exit 1
             fi
 
@@ -163,6 +149,7 @@ jobs:
 
             rm -f \
               .github/workflows/gleam-presence-docs-regenerate.yml \
+              scripts/api-contract/framework-neutralize-api-docs.py \
               scripts/api-contract/gleam-presence-regenerate-status.md
 
             git diff --check
@@ -174,6 +161,11 @@ jobs:
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git add -A
             git diff --cached --check
+            unexpected_bootstrap="$({
+              git diff --cached --name-status \
+                | awk '$1 != "D" && $2 ~ /(gleam-presence-docs-regenerate|framework-neutralize-api-docs|gleam-presence-regenerate-status)/ {print}'
+            } || true)"
+            test -z "$unexpected_bootstrap"
             git diff --cached --name-status
             git commit -m 'fix(api-docs): make executable contract descriptions framework-neutral'
             git push origin HEAD:agent/gleam-presence-executable-openapi
