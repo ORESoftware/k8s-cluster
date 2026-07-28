@@ -96,3 +96,5 @@ jobs:
           git diff --cached --check
           git commit -m 'ci(DEN-482): repair direct patch chunk boundaries'
           git push origin "HEAD:${GITHUB_HEAD_REF}"
+
+# Activation commit: repair only the three byte ranges proven by artifact diff.
