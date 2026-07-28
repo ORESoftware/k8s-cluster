@@ -4,188 +4,168 @@ TAP version 13
 # Subtest: generated outputs are up to date with schema source
 ok 1 - generated outputs are up to date with schema source
   ---
-  duration_ms: 96.535185
+  duration_ms: 120.074899
   type: 'test'
   ...
 # Subtest: typescript output exposes the agent task queue envelope
 ok 2 - typescript output exposes the agent task queue envelope
   ---
-  duration_ms: 10.483431
+  duration_ms: 15.698582
   type: 'test'
   ...
 # Subtest: typescript output exposes fabrication CAD conversion payloads
 ok 3 - typescript output exposes fabrication CAD conversion payloads
   ---
-  duration_ms: 2.249529
+  duration_ms: 3.486626
   type: 'test'
   ...
 # Subtest: typescript output exposes fabrication machine profile payloads
 ok 4 - typescript output exposes fabrication machine profile payloads
   ---
-  duration_ms: 1.632574
+  duration_ms: 3.27475
   type: 'test'
   ...
 # Subtest: typescript output exposes fabrication design synthesis payloads
 ok 5 - typescript output exposes fabrication design synthesis payloads
   ---
-  duration_ms: 2.723726
+  duration_ms: 5.847906
   type: 'test'
   ...
 # Subtest: typescript output exposes fabrication instruction generation payloads
 ok 6 - typescript output exposes fabrication instruction generation payloads
   ---
-  duration_ms: 1.688382
+  duration_ms: 2.13711
   type: 'test'
   ...
 # Subtest: typescript output exposes fabrication instruction review payloads
 ok 7 - typescript output exposes fabrication instruction review payloads
   ---
-  duration_ms: 1.344645
+  duration_ms: 2.482487
   type: 'test'
   ...
 # Subtest: typescript output exposes fabrication instruction simulation payloads
 ok 8 - typescript output exposes fabrication instruction simulation payloads
   ---
-  duration_ms: 1.392274
+  duration_ms: 2.443764
   type: 'test'
   ...
 # Subtest: typescript output exposes fabrication assembly planning payloads
 ok 9 - typescript output exposes fabrication assembly planning payloads
   ---
-  duration_ms: 1.843088
+  duration_ms: 2.787397
   type: 'test'
   ...
 # Subtest: typescript output exposes fabrication learning outcome payloads
 ok 10 - typescript output exposes fabrication learning outcome payloads
   ---
-  duration_ms: 2.34752
+  duration_ms: 3.473853
   type: 'test'
   ...
 # Subtest: typescript output exposes fabrication release readiness payloads
 ok 11 - typescript output exposes fabrication release readiness payloads
   ---
-  duration_ms: 1.652925
+  duration_ms: 2.64442
   type: 'test'
   ...
 # Subtest: rust output exposes the agent task queue envelope
 ok 12 - rust output exposes the agent task queue envelope
   ---
-  duration_ms: 1.474539
+  duration_ms: 2.362523
   type: 'test'
   ...
 # Subtest: rust output exposes fabrication CAD conversion payloads
 ok 13 - rust output exposes fabrication CAD conversion payloads
   ---
-  duration_ms: 2.022294
+  duration_ms: 5.333684
   type: 'test'
   ...
 # Subtest: rust output exposes fabrication machine profile payloads
 ok 14 - rust output exposes fabrication machine profile payloads
   ---
-  duration_ms: 2.617144
+  duration_ms: 4.315197
   type: 'test'
   ...
 # Subtest: rust output exposes fabrication design synthesis payloads
 ok 15 - rust output exposes fabrication design synthesis payloads
   ---
-  duration_ms: 2.033073
+  duration_ms: 4.04387
   type: 'test'
   ...
 # Subtest: rust output exposes fabrication instruction generation payloads
 ok 16 - rust output exposes fabrication instruction generation payloads
   ---
-  duration_ms: 2.017655
+  duration_ms: 2.35063
   type: 'test'
   ...
 # Subtest: rust output exposes fabrication instruction review payloads
 ok 17 - rust output exposes fabrication instruction review payloads
   ---
-  duration_ms: 1.471122
+  duration_ms: 2.105611
   type: 'test'
   ...
 # Subtest: rust output exposes fabrication instruction simulation payloads
 ok 18 - rust output exposes fabrication instruction simulation payloads
   ---
-  duration_ms: 3.632409
+  duration_ms: 4.385779
   type: 'test'
   ...
 # Subtest: rust output exposes fabrication assembly planning payloads
 ok 19 - rust output exposes fabrication assembly planning payloads
   ---
-  duration_ms: 1.42711
+  duration_ms: 4.104864
   type: 'test'
   ...
 # Subtest: rust output exposes fabrication learning outcome payloads
 ok 20 - rust output exposes fabrication learning outcome payloads
   ---
-  duration_ms: 1.714548
+  duration_ms: 2.372751
   type: 'test'
   ...
 # Subtest: rust output exposes fabrication release readiness payloads
 ok 21 - rust output exposes fabrication release readiness payloads
   ---
-  duration_ms: 4.061959
+  duration_ms: 4.677516
   type: 'test'
   ...
 # Subtest: fabrication CAD conversion examples validate and correlate request/result envelopes
 ok 22 - fabrication CAD conversion examples validate and correlate request/result envelopes
   ---
-  duration_ms: 4.283962
+  duration_ms: 8.381148
   type: 'test'
   ...
 # Subtest: runtime-config schema opts generated Rust wire types into OpenAPI
 not ok 23 - runtime-config schema opts generated Rust wire types into OpenAPI
   ---
-  duration_ms: 7.223124
+  duration_ms: 7.518774
   type: 'test'
   location: '/home/runner/work/k8s-libs-and-shared-defs/k8s-libs-and-shared-defs/interfaces/shared/src/openapi-generation.test.mjs:9:1'
   failureType: 'testCodeFailure'
   error: |-
-    The input did not match the regular expression /openapi = ["dep:utoipa"]/. Input:
+    The input did not match the regular expression /cfg_attr(feature = "openapi", derive(utoipa::ToSchema))/. Input:
     
-    '[package]\n' +
-      'name = "dd-shared-interfaces"\n' +
-      'version = "0.1.0"\n' +
-      'edition = "2021"\n' +
-      'description = "Generated Rust types for dd shared cross-runtime interfaces. Do not edit by hand."\n' +
+    '= "initial")]\n' +
+      '    Initial,\n' +
+      '}\n' +
       '\n' +
-      '[lib]\n' +
-      'path = "src/lib.rs"\n' +
-      '\n' +
-      '[features]\n' +
-      'default = []\n' +
-      'openapi = ["dep:utoipa"]\n' +
-      '\n' +
-      '[dependencies]\n' +
-      'serde = { version = "1", features = ["derive"] }\n' +
-      'serde_json = "1"\n' +
-      'utoipa = { version = "=5.5.0", optional = true }\n'
+      "/// Payload POSTed by the control plane to each subscriber's /internal/update-runtime-config endpoint.\n" +
+      '#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]\n' +
+      '#[derive(Debug, Clone, Serialize, Deserialize)]\n'
     
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected:
   actual: |-
-    [package]
-    name = "dd-shared-interfaces"
-    version = "0.1.0"
-    edition = "2021"
-    description = "Generated Rust types for dd shared cross-runtime interfaces. Do not edit by hand."
+    = "initial")]
+        Initial,
+    }
     
-    [lib]
-    path = "src/lib.rs"
-    
-    [features]
-    default = []
-    openapi = ["dep:utoipa"]
-    
-    [dependencies]
-    serde = { version = "1", features = ["derive"] }
-    serde_json = "1"
-    utoipa = { version = "=5.5.0", optional = true }
+    /// Payload POSTed by the control plane to each subscriber's /internal/update-runtime-config endpoint.
+    #[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
+    #[derive(Debug, Clone, Serialize, Deserialize)]
     
   operator: 'match'
   stack: |-
-    TestContext.<anonymous> (file:///home/runner/work/k8s-libs-and-shared-defs/k8s-libs-and-shared-defs/interfaces/shared/src/openapi-generation.test.mjs:16:10)
+    TestContext.<anonymous> (file:///home/runner/work/k8s-libs-and-shared-defs/k8s-libs-and-shared-defs/interfaces/shared/src/openapi-generation.test.mjs:23:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
   ...
@@ -197,4 +177,4 @@ not ok 23 - runtime-config schema opts generated Rust wire types into OpenAPI
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 314.40904
+# duration_ms 379.61393
