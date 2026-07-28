@@ -1,0 +1,115 @@
+name: DEN-258 apply Gmail handoff boundary
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/den-258-gmail-handoff-pr-patch.yml'
+      - '.github/workflows/den-258-gmail-handoff-bootstrap.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-258-gmail-handoff-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  apply-and-verify:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'agent/den-258-gmail-browser-handoff'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact pull request head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Extract and run the reviewed bounded patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/den-258-gmail-handoff-bootstrap.yml')
+          lines = workflow.read_text().splitlines()
+          step = '      - name: Add fail-closed Gmail handoff boundary'
+          next_step = '      - name: Format Rust sources'
+          try:
+              step_index = lines.index(step)
+              run_index = lines.index('        run: |', step_index)
+              end_index = lines.index(next_step, run_index)
+          except ValueError as error:
+              raise SystemExit(f'bounded bootstrap layout drifted: {error}')
+          block = []
+          for line in lines[run_index + 1:end_index]:
+              if line and not line.startswith('          '):
+                  raise SystemExit(f'unexpected indentation in bounded bootstrap: {line!r}')
+              block.append(line[10:] if line else '')
+          script = Path('/tmp/den-258-apply.sh')
+          script.write_text('\n'.join(block) + '\n')
+          PY
+          bash -euxo pipefail /tmp/den-258-apply.sh
+
+      - name: Format Rust sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.90.0 --profile minimal --component rustfmt
+          cargo +1.90.0 fmt --manifest-path remote/deployments/browser-mcp-rs/Cargo.toml
+          cargo +1.90.0 fmt --manifest-path remote/deployments/browser-mcp-rs/Cargo.toml -- --check
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Verify Gmail handoff source contracts
+        shell: bash
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm exec tsx --test general/browser-mcp-gmail-handoff.test.ts
+
+      - name: Commit verified product diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm \
+            .github/workflows/den-258-gmail-handoff-bootstrap.yml \
+            .github/workflows/den-258-gmail-handoff-pr-patch.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            .github/workflows/browser-mcp-gmail-handoff.yml \
+            .github/workflows/den-258-gmail-handoff-bootstrap.yml \
+            .github/workflows/den-258-gmail-handoff-pr-patch.yml \
+            docs/gmail-browser-handoff-contract.md \
+            remote/deployments/browser-mcp-rs/Dockerfile \
+            remote/deployments/browser-mcp-rs/src/email_handoff.rs \
+            remote/deployments/browser-mcp-rs/src/main.rs \
+            remote/tests/general/browser-mcp-gmail-handoff.test.ts
+          git diff --cached --check
+          if grep -R -nE '^(<<<<<<<|=======|>>>>>>>)' \
+            .github/workflows/browser-mcp-gmail-handoff.yml \
+            docs/gmail-browser-handoff-contract.md \
+            remote/deployments/browser-mcp-rs/Dockerfile \
+            remote/deployments/browser-mcp-rs/src/email_handoff.rs \
+            remote/deployments/browser-mcp-rs/src/main.rs \
+            remote/tests/general/browser-mcp-gmail-handoff.test.ts; then
+            exit 1
+          fi
+          git commit -m 'DEN-258 add fail-closed Gmail browser handoff'
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
