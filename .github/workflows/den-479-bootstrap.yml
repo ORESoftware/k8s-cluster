@@ -119,9 +119,26 @@ jobs:
         working-directory: remote/deployments/browser-test-server
         shell: bash
         run: |
-          set -euo pipefail
-          pnpm typecheck
-          pnpm build
+          set -uo pipefail
+          failure_log="${GITHUB_WORKSPACE}/.github/den-479/typecheck-failure.log"
+          rm -f "$failure_log"
+          status=0
+          {
+            pnpm typecheck
+            pnpm build
+          } >"$failure_log" 2>&1 || status=$?
+          if [ "$status" -ne 0 ]; then
+            cat "$failure_log"
+            cd "$GITHUB_WORKSPACE"
+            git config user.name 'oresoftware-api-contract-bot'
+            git config user.email 'oresoftware-api-contract-bot@users.noreply.github.com'
+            git add "$failure_log"
+            git commit -m 'chore(DEN-479): capture executable-router typecheck failure'
+            target_branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+            git push origin "HEAD:${target_branch}"
+            exit "$status"
+          fi
+          rm -f "$failure_log"
 
       - name: Export the native OpenAPI contract twice
         working-directory: remote/deployments/browser-test-server
@@ -209,7 +226,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf .tmp remote/libs remote/deployments/browser-test-server/node_modules remote/deployments/browser-test-server/dist
-          rm -rf .github/workflows/den-479-bootstrap.yml .github/den-479/payload .github/den-479/bootstrap-failure.log
+          rm -rf .github/workflows/den-479-bootstrap.yml .github/den-479
           test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
           if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- ':!pnpm-lock.yaml'; then
             echo 'unresolved git conflict markers found' >&2
