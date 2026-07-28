@@ -1,0 +1,90 @@
+name: Refresh DEN-445 generated contracts and SDKs
+
+on:
+  push:
+    branches:
+      - agent/den-445-native-openapi-fresh
+    paths:
+      - '.github/workflows/refresh-den-445-generated-contracts.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-den-445-generated-contracts
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    if: github.repository == 'ORESoftware/k8s-cluster'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-445-native-openapi-fresh
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Install Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Regenerate and validate fleet contracts and SDKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check remote/tools/generate-api-docs.mjs
+          node --check remote/tools/validate-openapi-contracts.mjs
+          node --check remote/tests/check-rest-api-route-parity.mjs
+          node --check remote/tools/generate-api-sdks.mjs
+          node --check remote/tools/validate-api-sdks.mjs
+
+          node remote/tools/generate-api-docs.mjs
+          node remote/tools/generate-api-docs.mjs --check
+          node remote/tools/validate-openapi-contracts.mjs
+          node remote/tests/check-rest-api-route-parity.mjs
+
+          node remote/tools/generate-api-sdks.mjs
+          node remote/tools/generate-api-sdks.mjs --check
+          node remote/tools/validate-api-sdks.mjs
+
+      - name: Stage generated products only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A -- remote/deployments remote/api-sdks
+          mapfile -t changed < <(git diff --cached --name-only)
+          test "${#changed[@]}" -gt 0
+          for path in "${changed[@]}"; do
+            case "$path" in
+              remote/deployments/generated-api-docs-index.json|\
+              remote/deployments/generated-api-docs-index.html|\
+              remote/deployments/*/generated/*|\
+              remote/deployments/*/src/*/api_docs.gleam|\
+              remote/api-sdks/*)
+                ;;
+              *)
+                echo "unexpected non-generated path from fleet refresh: $path" >&2
+                exit 1
+                ;;
+            esac
+          done
+          git diff --cached --check
+          if git diff --cached --no-ext-diff --unified=0 | grep -E '^\+(<<<<<<< |=======$|>>>>>>> )'; then
+            echo 'new git conflict marker detected' >&2
+            exit 1
+          fi
+
+      - name: Commit deterministic generated state
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore(DEN-445): refresh deterministic fleet contracts and SDKs'
+          git push origin HEAD:agent/den-445-native-openapi-fresh
