@@ -702,9 +702,9 @@
     {
       "service": "wal-gateway-rs",
       "language": "rust",
-      "routeCount": 10,
+      "routeCount": 11,
       "routeTypeCounts": {
-        "service": 7,
+        "service": 8,
         "runtime-config": 3
       },
       "generated": [
