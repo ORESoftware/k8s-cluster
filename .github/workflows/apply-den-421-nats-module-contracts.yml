@@ -85,9 +85,7 @@ jobs:
           elif text.count(old_rest) != 1:
               raise SystemExit('REST source helper must retain one authoritative main.rs read')
 
-          server_declaration = (
-              "  const server = await readRestApiSource();\n"
-          )
+          server_declaration = "  const server = await readRestApiSource();\n"
           subject_declarations = (
               "  const natsEventsSource = await readRepoFile(\n"
               "    'remote/deployments/rest-api-rs/src/events.rs',\n"
@@ -99,18 +97,16 @@ jobs:
           if 'const natsEventsSource = await readRepoFile(' not in text:
               if text.count(server_declaration) != 1:
                   raise SystemExit('expected one REST server declaration')
-              text = text.replace(
-                  server_declaration,
-                  server_declaration + subject_declarations,
-                  1,
-              )
+              text = text.replace(server_declaration, server_declaration + subject_declarations, 1)
 
-          old_import_assertion = r'''  assert.match(
-            server,
-            /use dd_nats_subject_defs::\{[\s\S]*?cdc_table_filter_subject[\s\S]*?thread_tasks_subject[\s\S]*?DD_REMOTE_TASKS_STREAM_NAME[\s\S]*?GIT_REPOS_CHANGES_SUBJECT[\s\S]*?LAMBDAS_FUNCTIONS_SUBJECT[\s\S]*?ORCHESTRATOR_WAKEUP_SUBJECT[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?THREAD_TASKS_WILDCARD[\s\S]*?\};/,
-          );
-          '''
-          new_import_assertions = r'''  assert.match(
+          import_start_marker = "  assert.match(\n    server,\n    /use dd_nats_subject_defs::\\{"
+          import_start = text.find(import_start_marker)
+          if import_start != -1:
+              import_end = text.find("  );\n", import_start)
+              if import_end == -1:
+                  raise SystemExit('could not locate the end of the monolithic NATS import assertion')
+              import_end += len("  );\n")
+              replacement = r'''  assert.match(
             natsEventsSource,
             /use dd_nats_subject_defs::cdc_table_filter_subject;/,
           );
@@ -119,37 +115,14 @@ jobs:
             /use dd_nats_subject_defs::\{[\s\S]*?thread_tasks_subject[\s\S]*?DD_REMOTE_TASKS_STREAM_NAME[\s\S]*?GIT_REPOS_CHANGES_SUBJECT[\s\S]*?LAMBDAS_FUNCTIONS_SUBJECT[\s\S]*?ORCHESTRATOR_WAKEUP_SUBJECT[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?THREAD_TASKS_WILDCARD[\s\S]*?\};/,
           );
           '''
-          count = text.count(old_import_assertion)
-          if count == 1:
-              text = text.replace(old_import_assertion, new_import_assertions, 1)
-          elif count == 0 and new_import_assertions in text:
-              pass
-          else:
-              raise SystemExit(f'expected one monolithic NATS import assertion, found {count}')
+              text = text[:import_start] + replacement + text[import_end:]
+          elif 'natsEventsSource,' not in text or 'natsSharedSource,' not in text:
+              raise SystemExit('monolithic NATS import assertion was not found or migrated')
 
-          consumer_declaration = (
-              "  const consumer = await readRepoFile('remote/deployments/queue-consumer-rs/src/main.rs');\n"
-          )
-          production_declaration = (
-              "  const consumerTestModuleStart = consumer.indexOf('\\n#[cfg(test)]');\n"
-              "  assert.notEqual(consumerTestModuleStart, -1, 'queue consumer must retain a cfg(test) boundary');\n"
-              "  const productionConsumer = consumer.slice(0, consumerTestModuleStart);\n"
-          )
-          if 'const consumerTestModuleStart = consumer.indexOf(' not in text:
-              if text.count(consumer_declaration) != 1:
-                  raise SystemExit('expected one queue-consumer source declaration')
-              text = text.replace(
-                  consumer_declaration,
-                  consumer_declaration + production_declaration,
-                  1,
-              )
-
-          old_assertion = (
-              "  assert.doesNotMatch(consumer, /Command::new|tokio::process|std::process/);\n"
-          )
+          old_assertion = "  assert.doesNotMatch(consumer, /Command::new|tokio::process|std::process/);\n"
           new_assertion = (
               "  assert.doesNotMatch(\n"
-              "    productionConsumer,\n"
+              "    consumer,\n"
               "    /Command::new|tokio::process|std::process::Command/,\n"
               "  );\n"
           )
@@ -159,7 +132,7 @@ jobs:
           elif count == 0 and new_assertion in text:
               pass
           else:
-              raise SystemExit(f'expected one unscoped subprocess assertion, found {count}')
+              raise SystemExit(f'expected one overbroad subprocess assertion, found {count}')
 
           path.write_text(text, encoding='utf-8')
           PY
