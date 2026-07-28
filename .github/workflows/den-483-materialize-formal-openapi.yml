@@ -147,7 +147,8 @@ jobs:
             find remote/api-sdks -type f \( \
               -name package-lock.json -o -name pubspec.lock -o -name manifest.toml \
             \) -delete
-            rm -f .github/workflows/den-483-materialize-formal-openapi.yml
+            rm -f .github/workflows/den-483-materialize-formal-openapi.yml \
+              scripts/api-contract/den-483-last-run.md
 
             git diff --check
             if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- . ':!vendor'; then
@@ -164,12 +165,48 @@ jobs:
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git add -A -- . ':(exclude)remote/libs'
             git diff --cached --check
-            test -z "$(git diff --cached --name-only | grep -F 'den-483-materialize-formal-openapi.yml' || true)"
+            test -z "$(git diff --cached --name-only | grep -E 'den-483-(materialize-formal-openapi|last-run)' || true)"
             git diff --cached --name-status
             git commit -m 'feat(DEN-483): materialize formal-methods contracts and SDKs'
             git push origin HEAD:agent/den-483-formal-methods-executable-openapi
           } 2>&1 | tee "$log"
           exit "${PIPESTATUS[0]}"
+
+      - name: Commit bounded failure diagnostic
+        if: failure() && steps.materialize.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="${RUNNER_TEMP}/den-483-materialize.log"
+          diagnostic='scripts/api-contract/den-483-last-run.md'
+          mkdir -p "$(dirname "$diagnostic")"
+          {
+            echo '# DEN-483 materialization failure'
+            echo
+            echo "Workflow run: ${GITHUB_RUN_ID}"
+            echo "Source commit: ${GITHUB_SHA}"
+            echo
+            echo '## Working tree'
+            echo '```text'
+            git status --short || true
+            echo '```'
+            echo
+            echo '## Diff summary'
+            echo '```text'
+            git diff --stat || true
+            echo '```'
+            echo
+            echo '## Last 260 log lines'
+            echo '```text'
+            tail -n 260 "$log" || true
+            echo '```'
+          } > "$diagnostic"
+          git reset
+          git add "$diagnostic"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore(DEN-483): capture bounded materialization failure' -- "$diagnostic"
+          git push origin HEAD:agent/den-483-formal-methods-executable-openapi
 
       - name: Upload bounded materialization diagnostics
         if: always()
