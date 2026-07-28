@@ -1,0 +1,53 @@
+name: sync-low-risk-batch-gitlinks-once
+
+on:
+  push:
+    branches: [agent/sync-low-risk-batch-gitlinks]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/sync-low-risk-batch-gitlinks
+          fetch-depth: 0
+          submodules: recursive
+      - name: Verify main heads and apply exact reviewed gitlinks
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+
+          manifest_path = Path('release/source-manifest.json')
+          manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+          if manifest.get('gitlinks_status') != 'pending-application':
+              raise SystemExit('source manifest is not pending application')
+
+          for path, entry in sorted(manifest['repositories'].items()):
+              commit = entry['commit']
+              remote_head = subprocess.check_output(
+                  ['git', '-C', path, 'ls-remote', 'origin', 'refs/heads/main'],
+                  text=True,
+              ).split()[0]
+              if remote_head != commit:
+                  raise SystemExit(f'{path}: reviewed commit {commit} is not current main {remote_head}')
+              subprocess.run(['git', '-C', path, 'fetch', 'origin', commit, '--depth=1'], check=True)
+              subprocess.run(['git', '-C', path, 'checkout', '--detach', commit], check=True)
+
+          manifest['gitlinks_status'] = 'applied'
+          manifest_path.write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+          PY
+      - name: Commit exact gitlinks and remove one-time workflow
+        run: |
+          rm .github/workflows/sync-low-risk-batch-gitlinks-once.yml
+          git add -A
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Sync reviewed low-risk child gitlinks'
+          git push origin HEAD:agent/sync-low-risk-batch-gitlinks
