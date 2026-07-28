@@ -130,13 +130,25 @@ jobs:
           set -euo pipefail
           bash scripts/api-contract/create-wal-gateway-contract-shims.sh
 
-      - name: Verify service formatting, compilation, and tests
+      - name: Verify service formatting
         working-directory: remote/deployments/wal-gateway-rs
         shell: bash
         run: |
           set -euo pipefail
-          cargo fmt --all -- --check
+          cargo fmt --package dd-wal-gateway -- --check
+
+      - name: Verify service compilation
+        working-directory: remote/deployments/wal-gateway-rs
+        shell: bash
+        run: |
+          set -euo pipefail
           cargo check --locked
+
+      - name: Verify service tests
+        working-directory: remote/deployments/wal-gateway-rs
+        shell: bash
+        run: |
+          set -euo pipefail
           cargo test --locked
 
       - name: Prove deterministic native contract
