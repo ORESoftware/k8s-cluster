@@ -20,6 +20,64 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
+async function readWebHomeSource(): Promise<string> {
+  const modules = [
+    'agents',
+    'container_pool',
+    'grafana',
+    'handlers',
+    'home',
+    'jello',
+    'labs',
+    'lambda',
+    'metrics',
+    'shared',
+    'state',
+  ];
+  const main = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  for (const moduleName of modules) {
+    assert.match(main, new RegExp(`mod ${moduleName};`), `main.rs must register ${moduleName}.rs`);
+  }
+  const moduleSources = await Promise.all(
+    modules.map((moduleName) =>
+      readRepoFile(`remote/deployments/web-home-rs/src/${moduleName}.rs`),
+    ),
+  );
+  return [main, ...moduleSources].join('\n');
+}
+
+async function readRestApiSource(): Promise<string> {
+  const modules = [
+    'api_docs',
+    'container_pool_routes',
+    'context',
+    'db',
+    'db_routes',
+    'dispatch',
+    'events',
+    'graphql_routes',
+    'handlers',
+    'k8s',
+    'lambdas',
+    'metrics',
+    'pg_contract',
+    'shared',
+    'state',
+    'threads',
+    'types',
+  ];
+  const main = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  for (const moduleName of modules) {
+    assert.match(main, new RegExp(`mod ${moduleName};`), `rest-api-rs main.rs must register ${moduleName}.rs`);
+  }
+  const moduleSources = await Promise.all(
+    modules.map((moduleName) =>
+      readRepoFile(`remote/deployments/rest-api-rs/src/${moduleName}.rs`),
+    ),
+  );
+  return [main, ...moduleSources].join('\n');
+}
+
 function regexEscape(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -55,7 +113,7 @@ function assertGatewayLocationRequiresAuth(source: string, locationPattern: RegE
 }
 
 test('rust homepage lists public pages and protected ops/data paths', async () => {
-  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const home = await readWebHomeSource();
 
   assert.match(home, /dd remote service directory/);
   assert.match(home, /Public entrypoint for the EC2 Kubernetes runtime\. Open paths:/);
@@ -803,7 +861,7 @@ test("gateway Let's Encrypt renewal script stays aligned with the ACME webroot f
 });
 
 test('rust agent tasks page fetches the REST API directly', async () => {
-  const server = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const server = await readWebHomeSource();
   const cargo = await readRepoFile('remote/deployments/web-home-rs/Cargo.toml');
   const readme = await readRepoFile('remote/deployments/web-home-rs/readme.md');
   const deployment = await readRepoFile(
@@ -824,7 +882,7 @@ test('rust agent tasks page fetches the REST API directly', async () => {
     'remote/argocd/dd-next-runtime/dd-remote-rest-api-rbac.yaml',
   );
   const restReadme = await readRepoFile('remote/deployments/rest-api-rs/readme.md');
-  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const restServer = await readRestApiSource();
 
   assert.match(server, /\/agents\/tasks/);
   assert.match(server, /Thread chat/);
@@ -859,7 +917,11 @@ test('rust agent tasks page fetches the REST API directly', async () => {
   assert.match(deployment, /livenessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
   assert.match(
     dockerfile,
-    /COPY --from=build \/app\/deployments\/web-home-rs\/target\/release\/dd-remote-web-home/,
+    /cp target\/release\/dd-remote-web-home \/usr\/local\/bin\/dd-remote-web-home/,
+  );
+  assert.match(
+    dockerfile,
+    /COPY --from=build \/usr\/local\/bin\/dd-remote-web-home \/usr\/local\/bin\/dd-remote-web-home/,
   );
   assert.match(dockerfile, /USER 10001:10001/);
   assert.match(dockerfile, /CMD \["\/usr\/local\/bin\/dd-remote-web-home"\]/);
@@ -1034,7 +1096,7 @@ test('otel collector scrapes the rust REST API', async () => {
 });
 
 test('rust agent tasks page keeps the direct REST fetch error contract', async () => {
-  const server = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const server = await readWebHomeSource();
 
   assert.doesNotMatch(server, /agent_remote_dev_threads/);
   assert.doesNotMatch(server, /SUPABASE_SERVICE_ROLE_KEY/);
@@ -1068,7 +1130,7 @@ test('rust agent tasks page keeps the direct REST fetch error contract', async (
 });
 
 test('rust agent threads page renders stored response events and feedback controls', async () => {
-  const server = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const server = await readWebHomeSource();
   const readme = await readRepoFile('remote/deployments/web-home-rs/readme.md');
   const restReadme = await readRepoFile('remote/deployments/rest-api-rs/readme.md');
   const threadsJs = server.slice(
@@ -1347,8 +1409,8 @@ test('rust agent threads page renders stored response events and feedback contro
 });
 
 test('rust thread chat dispatch keeps worker proxy transport errors server-side', async () => {
-  const server = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
-  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const server = await readWebHomeSource();
+  const restServer = await readRestApiSource();
 
   assert.match(
     server,
@@ -1403,8 +1465,8 @@ test('rust thread chat dispatch keeps worker proxy transport errors server-side'
 });
 
 test('rust agent tasks page exposes runtime thread controls without collapsing admin archival semantics', async () => {
-  const server = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
-  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const server = await readWebHomeSource();
+  const restServer = await readRestApiSource();
 
   assert.match(
     server,
@@ -1611,7 +1673,7 @@ test('node worker image is baked with git/ssh and runs as the node user', async 
   const bootstrapDeployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
   );
-  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const restServer = await readRestApiSource();
   const threadRuntimeBlock = restServer.match(
     /fn thread_runtime_image\(\) -> String[\s\S]*?async fn scale_thread_runtime/,
   );
@@ -1655,8 +1717,8 @@ test('node worker image is baked with git/ssh and runs as the node user', async 
 
 test('node worker opens draft PRs only through explicit control action', async () => {
   const server = await readRepoFile('remote/deployments/dev-server/src/server.ts');
-  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
-  const webHome = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const restServer = await readRestApiSource();
+  const webHome = await readWebHomeSource();
 
   assert.match(server, /POST \/thread\/open-pr/);
   assert.match(server, /fastify\.post\('\/thread\/open-pr'/);
