@@ -69,6 +69,12 @@ const LAST_UPDATED = "2026-07-27";
   <ul>
     <li><strong>On your device</strong> by default (encrypted).</li>
     <li>
+      <strong>To a destination you explicitly choose for local export</strong>, such
+      as the system share sheet or a user-selected desktop file. That exported copy
+      is controlled by you, is outside Sonus Auris automatic retention, and must be
+      deleted or secured by you in the destination you selected.
+    </li>
+    <li>
       <strong>To storage you control</strong>, if you connect it (your S3-compatible
       bucket, Google Drive, OneDrive, or iCloud). Their handling is governed by their terms.
     </li>
@@ -82,15 +88,29 @@ const LAST_UPDATED = "2026-07-27";
 
   <h2>Retention</h2>
   <p>
-    Local clips age out automatically based on your rolling-window setting. Backed-up
-    clips persist according to the retention settings for their destination or until
-    you delete them. Backend ciphertext and metadata are removed when their retention
-    expires or on account deletion, subject to limited legal retention.
+    App-private local plaintext clips age out automatically based on your rolling-window
+    setting and never later than the approved 100-hour ceiling; you may choose a shorter
+    window. Backup failure, offline operation, disabled backup, or retrying a transfer
+    does not extend that deadline. Backed-up clips persist according to the retention
+    settings for their destination or until you delete them. Backend ciphertext and
+    metadata are removed when their retention expires or on account deletion, subject
+    to limited legal retention.
+  </p>
+  <p>
+    When you deliberately export a local copy, the new copy lives outside Sonus Auris
+    app-private storage and automatic retention. Exporting does not delay deletion of
+    the app-private copy. You are responsible for securing and deleting the exported
+    copy from the destination you selected.
   </p>
 
   <h2>Your choices and rights</h2>
   <ul>
     <li>Start/stop recording at any time; delete any clip in the app.</li>
+    <li>Choose a local retention window of 100 hours or less.</li>
+    <li>
+      Export an explicit user-controlled local copy without extending the app-private
+      deletion deadline.
+    </li>
     <li>Turn location, analysis, and backup on or off at any time.</li>
     <li>
       <strong>Delete your account and associated data</strong> — see

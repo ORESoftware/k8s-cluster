@@ -88,6 +88,9 @@ for (const expected of [
   "Retention",
   "Your choices and rights",
   "Security",
+  "never later than the approved 100-hour ceiling",
+  "is outside Sonus Auris automatic retention",
+  "Exporting does not delay deletion of the app-private copy",
 ]) {
   assert.ok(privacyText.includes(expected), `privacy policy missing ${expected}`);
 }
@@ -101,6 +104,9 @@ for (const expected of [
   "What gets deleted vs. retained",
   "within 30 days",
   "alexander.d.mills@gmail.com",
+  "Local copies you deliberately exported",
+  "Outside Sonus Auris app storage and automatic retention",
+  "Exporting a local copy does not delay deletion",
 ]) {
   assert.ok(deletionText.includes(expected), `account deletion page missing ${expected}`);
 }
