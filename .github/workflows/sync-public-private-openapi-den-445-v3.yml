@@ -1,4 +1,4 @@
-# Branch-local one-shot landing workflow. It reuses the reviewed v2 scripts, but never pushes workflow-file changes.
+# Branch-local one-shot landing workflow. It reuses the reviewed transformation source, but never pushes workflow-file changes.
 name: Sync DEN-445 public and private OpenAPI contracts v3
 
 on:
@@ -39,11 +39,11 @@ jobs:
           git fetch origin main --no-tags
           git merge --no-edit origin/main
 
-      - name: Reuse reviewed v2 source and policy patches
+      - name: Reuse reviewed source and policy patches
         shell: bash
         run: |
           set -euo pipefail
-          workflow='.github/workflows/sync-public-private-openapi-den-445-v2.yml'
+          workflow='.github/den-445-sync-source.yml'
           run_reviewed_step() {
             local step_name="$1"
             STEP_NAME="$step_name" ruby -ryaml -e '
@@ -73,7 +73,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          workflow='.github/workflows/sync-public-private-openapi-den-445-v2.yml'
+          workflow='.github/den-445-sync-source.yml'
           run_reviewed_step() {
             local step_name="$1"
             STEP_NAME="$step_name" ruby -ryaml -e '
@@ -93,9 +93,6 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf remote/libs
-          # `remote/libs` is a tracked gitlink. The job overlays it with a
-          # compile-only telemetry shim, then restores the index entry rather
-          # than staging a submodule deletion.
           git reset -- remote/libs || true
           git add -A -- \
             docs/executable-http-api-contract.md \
