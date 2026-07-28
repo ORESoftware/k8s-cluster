@@ -1,3 +1,4 @@
+# Triggered after workflow registration so GitHub evaluates the branch push hook.
 name: Regenerate DEN-445 fleet SDK catalog
 
 on:
