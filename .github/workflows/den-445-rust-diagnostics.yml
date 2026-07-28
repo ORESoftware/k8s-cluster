@@ -35,7 +35,7 @@ jobs:
           echo '8767999002f76acffb91f37d57666efe659efbd18a624c63153e7efcd29e8ada  '"${RUNNER_TEMP}/den-445-migrate.py" | sha256sum --check
           python3 "${RUNNER_TEMP}/den-445-migrate.py"
 
-      - name: Create API-compatible telemetry shim
+      - name: Create exact API-compatible telemetry shim
         run: |
           set -euo pipefail
           rm -rf remote/libs
@@ -45,8 +45,11 @@ jobs:
           name = "dd-telemetry"
           version = "0.1.0"
           edition = "2021"
+          description = "Shared OpenTelemetry tracing + structured-logging init for the Rust services in k8s-cluster/remote. Call dd_telemetry::init(\"dd-foo\") at the top of main and add dd_telemetry::http_trace_layer() to your axum Router. Explicit instrumentation only — no monkey-patching."
+
           [lib]
           path = "src/lib.rs"
+
           [dependencies]
           tracing = "0.1"
           tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
@@ -62,6 +65,7 @@ jobs:
           TOML
           cat > remote/libs/telemetry-rs/src/lib.rs <<'RS'
           use std::time::Duration;
+
           use http::{Request, Response};
           use tower_http::classify::{ServerErrorsAsFailures, SharedClassifier};
           use tower_http::trace::{DefaultOnRequest, MakeSpan, OnResponse, TraceLayer};
@@ -69,21 +73,46 @@ jobs:
 
           #[must_use]
           pub struct OtelGuard;
-          pub fn init(_: &str) -> OtelGuard { OtelGuard }
-          pub fn http_trace_layer() -> TraceLayer<SharedClassifier<ServerErrorsAsFailures>, OtelMakeSpan, DefaultOnRequest, OtelOnResponse> {
-              TraceLayer::new_for_http().make_span_with(OtelMakeSpan).on_response(OtelOnResponse)
+
+          pub fn init(_service_name: &str) -> OtelGuard {
+              OtelGuard
           }
+
+          pub fn http_trace_layer() -> TraceLayer<
+              SharedClassifier<ServerErrorsAsFailures>,
+              OtelMakeSpan,
+              DefaultOnRequest,
+              OtelOnResponse,
+          > {
+              TraceLayer::new_for_http()
+                  .make_span_with(OtelMakeSpan)
+                  .on_response(OtelOnResponse)
+          }
+
           #[derive(Clone, Copy, Debug, Default)]
           pub struct OtelMakeSpan;
+
           impl<B> MakeSpan<B> for OtelMakeSpan {
               fn make_span(&mut self, request: &Request<B>) -> Span {
-                  tracing::info_span!("http_request", method = %request.method(), path = %request.uri().path())
+                  tracing::info_span!(
+                      "http_request",
+                      http.request.method = %request.method(),
+                      url.path = %request.uri().path(),
+                      http.response.status_code = tracing::field::Empty,
+                  )
               }
           }
+
           #[derive(Clone, Copy, Debug, Default)]
           pub struct OtelOnResponse;
+
           impl<B> OnResponse<B> for OtelOnResponse {
-              fn on_response(self, _: &Response<B>, _: Duration, _: &Span) {}
+              fn on_response(self, response: &Response<B>, _latency: Duration, span: &Span) {
+                  span.record(
+                      "http.response.status_code",
+                      response.status().as_u16() as u64,
+                  );
+              }
           }
           RS
 
