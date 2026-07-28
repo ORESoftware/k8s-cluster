@@ -8,9 +8,9 @@ import test from 'node:test';
 // on 2026-07-25.
 //
 // ChatGPT custom MCP apps cannot supply an operator's arbitrary static bearer.
-// OAuth remains implemented for later re-enablement, but production temporarily
-// uses explicit no-auth mode with a narrow domain ceiling and browser safety
-// controls.
+// This deployment therefore implements OAuth discovery, dynamic public-client
+// registration, PKCE, scoped/audience-bound access tokens, and rotating refresh
+// grants while retaining the domain ceiling and browser safety controls.
 //
 // These are cheap file assertions on purpose: they must fail in CI *before*
 // anything reaches a cluster.
@@ -32,6 +32,7 @@ const AWS_APPS = 'remote/argocd/clusters/aws/applications.yaml';
 const HETZNER_APPS = 'remote/argocd/clusters/hetzner/applications.yaml';
 const CLI_FLAGS = 'remote/deployments/browser-mcp-rs/.cli-flags.toml';
 const REVIEWED_BROWSER_CEILING_DOMAINS = [
+  'benefactor.cc',
   'confluent.cloud',
   'confluent.io',
   'signoz.io',
@@ -59,6 +60,7 @@ const REVIEWED_BROWSER_CEILING_DOMAINS = [
   'ssl.gstatic.com',
   'fonts.googleapis.com',
   'fonts.gstatic.com',
+  'httpbingo.org',
 ];
 
 function readDeployment(): string {
@@ -90,7 +92,7 @@ function nginxLocation(source: string, declaration: string): string {
   return source.slice(start, end);
 }
 
-test('temporary no-auth browser-mcp has reviewed, server-defined workflow domain ceilings', () => {
+test('OAuth browser-mcp has reviewed, server-defined workflow domain ceilings', () => {
   const manifest = readDeployment();
   if (!manifest) return;
 
@@ -108,15 +110,15 @@ test('temporary no-auth browser-mcp has reviewed, server-defined workflow domain
   );
   assert.equal(
     envValue(manifest, 'BROWSER_MCP_REQUIRE_AUTH'),
-    'false',
-    'The temporary public posture must remain an explicit no-auth decision.',
+    'true',
+    'The public write-capable browser MCP must require OAuth.',
   );
 
   const domains = (value as string).split(',').map((domain) => domain.trim());
   assert.deepEqual(
     domains,
     REVIEWED_BROWSER_CEILING_DOMAINS,
-    'The no-auth production endpoint must contain only the reviewed workflow-profile union.',
+    'The OAuth production endpoint must contain only the reviewed workflow-profile union.',
   );
   assert.ok(
     domains.every(
@@ -148,11 +150,11 @@ test('temporary no-auth browser-mcp has reviewed, server-defined workflow domain
   );
   assert.match(
     manifest,
-    /"fiducia-applications":\["confluent\.cloud".*"fonts\.gstatic\.com"\]/,
+    /"benefactor-site":\["benefactor\.cc"\]/,
   );
-  assert.doesNotMatch(
+  assert.match(
     manifest,
-    /"benefactor-site"|"benefactor-prospect-audit"|"smoke-test"|benefactor\.cc|samsonconstruction\.com|awthome\.com|revduprenovations\.com|httpbingo\.org/,
+    /"smoke-test":\["httpbingo\.org"\]/,
   );
 
   const worker = readFileSync(resolve(repoRoot, WORKER_DEPLOYMENT), 'utf8');
@@ -298,19 +300,18 @@ test('public browser-mcp gateway has dedicated abuse limits and trusted client f
   );
 });
 
-test('browser-mcp CLI contract has no credential or implicit navigation defaults', () => {
-  const flags = readFileSync(resolve(repoRoot, CLI_FLAGS), 'utf8');
-
-  assert.doesNotMatch(flags, /dummy-.*credential/);
-  assert.match(flags, /\[flags\.require_auth\][\s\S]*?default = "true"/);
-  for (const section of [
-    'worker_auth_secret',
-    'oauth_signing_secret',
-    'oauth_operator_secret',
-    'allowed_domains',
+test('browser-mcp flags2env contract keeps all credentials env-only', () => {
+  const config = readFileSync(resolve(repoRoot, CLI_FLAGS), 'utf8');
+  for (const secret of [
+    'SERVER_AUTH_SECRET',
+    'BROWSER_MCP_OAUTH_SIGNING_SECRET',
+    'BROWSER_MCP_OAUTH_OPERATOR_SECRET',
   ]) {
-    const body = flags.match(new RegExp(`\\[flags\\.${section}\\]([\\s\\S]*?)(?=\\n\\[|$)`))?.[1];
-    assert.ok(body, `missing ${section} flag`);
-    assert.doesNotMatch(body, /\ndefault\s*=/, `${section} must not have an implicit default`);
+    assert.match(config, new RegExp(`"${secret}"`));
+    assert.doesNotMatch(
+      config,
+      new RegExp(`\\[flags\\.[^\\]]+\\][\\s\\S]*?env\\s*=\\s*"${secret}"`),
+      `${secret} must remain env-only and must never be exposed as a CLI flag.`,
+    );
   }
 });
