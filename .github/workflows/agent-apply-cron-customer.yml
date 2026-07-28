@@ -1,0 +1,37 @@
+name: apply recovered customer cron source
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.ref == 'agent/cron-customer-control-plane-v2' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: agent/cron-customer-control-plane-v2
+          fetch-depth: 0
+          show-progress: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: "1.97.0"
+          components: rustfmt
+      - name: Recover, integrate, and format source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/apply-cron-control-plane.py
+          cargo fmt --all
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/cron.rs src/main.rs src/views.rs src/tests.rs
+          git commit -m 'feat: add tenant-safe customer cron control plane'
+          git push origin HEAD:agent/cron-customer-control-plane-v2
