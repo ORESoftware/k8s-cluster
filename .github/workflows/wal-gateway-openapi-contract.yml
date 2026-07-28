@@ -6,11 +6,13 @@ on:
     paths:
       - '.github/workflows/wal-gateway-openapi-contract.yml'
       - 'docs/http-api-openapi-sdk-contract.md'
+      - 'scripts/api-contract/create-wal-gateway-contract-shims.sh'
       - 'remote/api-contracts/manifest.json'
       - 'remote/api-contracts/fragments/runtime-config-client-rs.openapi.json'
       - 'remote/config/api-contracts.json'
       - 'remote/deployments/wal-gateway-rs/**'
       - 'remote/deployments/generated-api-docs-index.json'
+      - 'remote/deployments/generated-api-docs-index.html'
       - 'remote/api-sdks/**'
       - 'remote/tools/check-openapi-contracts.mjs'
       - 'remote/tools/generate-api-docs.mjs'
@@ -20,16 +22,17 @@ on:
       - 'remote/tools/validate-openapi-contracts.mjs'
       - 'remote/libs'
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - '.github/workflows/wal-gateway-openapi-contract.yml'
       - 'docs/http-api-openapi-sdk-contract.md'
+      - 'scripts/api-contract/create-wal-gateway-contract-shims.sh'
       - 'remote/api-contracts/manifest.json'
       - 'remote/api-contracts/fragments/runtime-config-client-rs.openapi.json'
       - 'remote/config/api-contracts.json'
       - 'remote/deployments/wal-gateway-rs/**'
       - 'remote/deployments/generated-api-docs-index.json'
+      - 'remote/deployments/generated-api-docs-index.html'
       - 'remote/api-sdks/**'
       - 'remote/tools/check-openapi-contracts.mjs'
       - 'remote/tools/generate-api-docs.mjs'
@@ -85,7 +88,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          expected='2504b054ac92becf265762c1bd1f0679a10de893'
+          expected='06b3a4ff87bb6e579686e5ced72b6772c4f742ac'
           actual="$(git ls-files --stage remote/libs | awk '{print $2}')"
           mode="$(git ls-files --stage remote/libs | awk '{print $1}')"
           test "$mode" = '160000'
@@ -99,9 +102,8 @@ jobs:
           from pathlib import Path
 
           manifest = json.loads(Path('remote/api-contracts/manifest.json').read_text())
-          service = manifest['services']['wal-gateway-rs']
-          shared = service['sharedContracts'][0]
-          assert shared['commit'] == '2504b054ac92becf265762c1bd1f0679a10de893'
+          shared = manifest['services']['wal-gateway-rs']['sharedContracts'][0]
+          assert shared['commit'] == '06b3a4ff87bb6e579686e5ced72b6772c4f742ac'
           assert shared['sha256'] == '5d330aa1a33ba118a5770af6409dcbad8dc408bb0cccaae4e6d257c337028d46'
           assert shared['vendored'] == 'remote/api-contracts/fragments/runtime-config-client-rs.openapi.json'
           PY
@@ -117,176 +119,16 @@ jobs:
         with:
           node-version: '22.23.1'
 
+      - name: Setup Dart 3.12.2
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        with:
+          sdk: '3.12.2'
+
       - name: Create contract-only private gitlink shims
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf remote/libs
-
-          mkdir -p remote/libs/telemetry-rs/src
-          cat > remote/libs/telemetry-rs/Cargo.toml <<'TOML'
-          [package]
-          name = "dd-telemetry"
-          version = "0.1.0"
-          edition = "2021"
-
-          [lib]
-          path = "src/lib.rs"
-
-          [dependencies]
-          tracing = "0.1"
-          tower-http = { version = "0.6", features = ["trace"] }
-          http = "1"
-          TOML
-          cat > remote/libs/telemetry-rs/src/lib.rs <<'RS'
-          use http::{Request, Response};
-          use std::time::Duration;
-          use tower_http::classify::{ServerErrorsAsFailures, SharedClassifier};
-          use tower_http::trace::{DefaultOnRequest, MakeSpan, OnResponse, TraceLayer};
-          use tracing::Span;
-
-          #[must_use]
-          pub struct OtelGuard;
-
-          pub fn init(_: &str) -> OtelGuard {
-              OtelGuard
-          }
-
-          pub fn http_trace_layer() -> TraceLayer<
-              SharedClassifier<ServerErrorsAsFailures>,
-              OtelMakeSpan,
-              DefaultOnRequest,
-              OtelOnResponse,
-          > {
-              TraceLayer::new_for_http()
-                  .make_span_with(OtelMakeSpan)
-                  .on_response(OtelOnResponse)
-          }
-
-          #[derive(Clone, Copy, Debug, Default)]
-          pub struct OtelMakeSpan;
-
-          impl<B> MakeSpan<B> for OtelMakeSpan {
-              fn make_span(&mut self, request: &Request<B>) -> Span {
-                  tracing::info_span!(
-                      "http_request",
-                      http.request.method = %request.method(),
-                      url.path = %request.uri().path(),
-                      http.response.status_code = tracing::field::Empty,
-                  )
-              }
-          }
-
-          #[derive(Clone, Copy, Debug, Default)]
-          pub struct OtelOnResponse;
-
-          impl<B> OnResponse<B> for OtelOnResponse {
-              fn on_response(self, response: &Response<B>, _: Duration, span: &Span) {
-                  span.record(
-                      "http.response.status_code",
-                      response.status().as_u16() as u64,
-                  );
-              }
-          }
-          RS
-
-          mkdir -p remote/libs/nats/subject-defs/generated/rust/src
-          cat > remote/libs/nats/subject-defs/generated/rust/Cargo.toml <<'TOML'
-          [package]
-          name = "dd-nats-subject-defs"
-          version = "0.1.0"
-          edition = "2021"
-
-          [lib]
-          path = "src/lib.rs"
-          TOML
-          cat > remote/libs/nats/subject-defs/generated/rust/src/lib.rs <<'RS'
-          pub const CDC_STREAM_NAME: &str = "CDC";
-
-          #[derive(Debug, Clone, PartialEq, Eq)]
-          pub struct CdcRowChangeSubject {
-              pub prefix: String,
-              pub schema: String,
-              pub table: String,
-              pub op: String,
-          }
-
-          pub fn cdc_row_change_subject(
-              prefix: &str,
-              schema: &str,
-              table: &str,
-              op: &str,
-          ) -> String {
-              format!("{prefix}.{schema}.{table}.{op}")
-          }
-
-          pub fn parse_cdc_row_change_subject(subject: &str) -> Option<CdcRowChangeSubject> {
-              let mut parts = subject.split('.');
-              let parsed = CdcRowChangeSubject {
-                  prefix: parts.next()?.to_string(),
-                  schema: parts.next()?.to_string(),
-                  table: parts.next()?.to_string(),
-                  op: parts.next()?.to_string(),
-              };
-              if parts.next().is_some() {
-                  return None;
-              }
-              Some(parsed)
-          }
-          RS
-
-          mkdir -p remote/libs/runtime-config-client-rs/src
-          cat > remote/libs/runtime-config-client-rs/Cargo.toml <<'TOML'
-          [package]
-          name = "dd-runtime-config-client"
-          version = "0.1.0"
-          edition = "2021"
-
-          [lib]
-          path = "src/lib.rs"
-
-          [features]
-          default = ["openapi"]
-          openapi = []
-
-          [dependencies]
-          axum = "0.8"
-          serde_json = "1"
-          utoipa = "=5.5.0"
-          TOML
-          cat > remote/libs/runtime-config-client-rs/src/lib.rs <<'RS'
-          use axum::routing::{get, post};
-          use axum::{Json, Router};
-          use serde_json::{json, Value};
-          use utoipa::openapi::OpenApi;
-
-          const OPENAPI_JSON: &str =
-              include_str!("../../../api-contracts/fragments/runtime-config-client-rs.openapi.json");
-
-          async fn snapshot() -> Json<Value> {
-              Json(json!({"snapshotVersion": 0, "entries": {}}))
-          }
-
-          async fn mutate() -> Json<Value> {
-              Json(json!({"ok": true}))
-          }
-
-          pub fn router_and_openapi() -> (Router, OpenApi) {
-              let router = Router::new()
-                  .route("/internal/runtime-config", get(snapshot))
-                  .route("/internal/update-runtime-config", post(mutate))
-                  .route("/internal/runtime-config/reset", post(mutate));
-              let openapi =
-                  serde_json::from_str(OPENAPI_JSON).expect("vendored runtime-config OpenAPI");
-              (router, openapi)
-          }
-
-          pub fn router() -> Router {
-              router_and_openapi().0
-          }
-
-          pub async fn register_with_control_plane() {}
-          RS
+          bash scripts/api-contract/create-wal-gateway-contract-shims.sh
 
       - name: Verify service formatting, compilation, and tests
         working-directory: remote/deployments/wal-gateway-rs
@@ -302,10 +144,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo run --locked --quiet -- --export-openapi > "${{ RUNNER_TEMP }}/openapi.1.json"
-          cargo run --locked --quiet -- --export-openapi > "${{ RUNNER_TEMP }}/openapi.2.json"
-          cmp "${{ RUNNER_TEMP }}/openapi.1.json" "${{ RUNNER_TEMP }}/openapi.2.json"
-          cmp "${{ RUNNER_TEMP }}/openapi.1.json" generated/openapi.json
+          cargo run --locked --quiet -- --export-openapi > "${{ runner.temp }}/openapi.1.json"
+          cargo run --locked --quiet -- --export-openapi > "${{ runner.temp }}/openapi.2.json"
+          cmp "${{ runner.temp }}/openapi.1.json" "${{ runner.temp }}/openapi.2.json"
+          cmp "${{ runner.temp }}/openapi.1.json" generated/openapi.json
           python3 -m json.tool generated/openapi.json >/dev/null
 
       - name: Verify native, fleet, and SDK contracts
@@ -336,10 +178,11 @@ jobs:
               Path('remote/deployments/wal-gateway-rs/generated/api-docs.json').read_text()
           )
           expected = {'/', '/openapi.json', '/api/docs.json', '/api/docs', '/docs/api'}
-          if set(public.get('paths', {})) != expected:
-              raise SystemExit(
-                  f"unexpected public paths: {sorted(public.get('paths', {}))}"
-              )
+          actual = set(public.get('paths', {}))
+          if actual != expected:
+              raise SystemExit(f'unexpected public paths: {sorted(actual)}')
+          if public.get('x-dd-contract-scope') != 'public':
+              raise SystemExit('public contract scope marker is missing')
           encoded = json.dumps(public).lower()
           forbidden = [
               '"pod"', '"slot"', '"stream"', '"subjectprefix"',
@@ -348,11 +191,9 @@ jobs:
           leaked = [term for term in forbidden if term in encoded]
           if leaked:
               raise SystemExit(f'public contract leaked operational details: {leaked}')
-          if public.get('x-dd-contract-scope') != 'public':
-              raise SystemExit('public contract scope marker is missing')
           PY
 
-      - name: Generate Rust, TypeScript, and Dart service SDK smoke clients
+      - name: Generate service SDK smoke clients
         shell: bash
         run: |
           set -euo pipefail
@@ -370,11 +211,6 @@ jobs:
           npm install --ignore-scripts --no-audit --no-fund
           npm run build
 
-      - name: Setup Dart 3.12.2
-        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
-        with:
-          sdk: '3.12.2'
-
       - name: Analyze generated Dart service SDK
         working-directory: .tmp/wal-gateway-sdk/dart
         shell: bash
@@ -391,6 +227,6 @@ jobs:
           git diff --check
           git diff --cached --quiet
           test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
-          test "$(git ls-files --stage remote/libs | awk '{print $2}')" = '2504b054ac92becf265762c1bd1f0679a10de893'
+          test "$(git ls-files --stage remote/libs | awk '{print $2}')" = '06b3a4ff87bb6e579686e5ced72b6772c4f742ac'
           git diff --quiet -- . ':(exclude)remote/libs'
           test -z "$(git status --short --untracked-files=no -- . ':(exclude)remote/libs')"
