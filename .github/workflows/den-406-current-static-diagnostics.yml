@@ -1,6 +1,11 @@
 name: DEN-406 current static diagnostics
 
 on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/den-406-current-static-diagnostics.yml'
   push:
     branches:
       - agent/den-406-current-static-diagnostics
@@ -9,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: den-406-current-static-diagnostics-${{ github.ref }}
+  group: den-406-current-static-diagnostics-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
