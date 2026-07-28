@@ -293,4 +293,36 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn sensitive_attribute_detection_normalizes_common_key_variants() {
+        for key in [
+            "http.request.header.authorization",
+            "api-key",
+            "session.token",
+            "DB.PASSWORD",
+            "signing-key",
+        ] {
+            assert!(sensitive_attribute_key(key), "should reject {key:?}");
+        }
+        for key in ["cloud.region", "deployment.environment", "team"] {
+            assert!(!sensitive_attribute_key(key), "should allow {key:?}");
+        }
+    }
+
+    #[test]
+    fn resource_attributes_reject_invalid_keys_and_values() {
+        let oversized_key = "k".repeat(129);
+        let oversized_value = "v".repeat(257);
+        let raw = format!(
+            "safe.key=value,bad key=value,{oversized_key}=value,empty=,control=line\nbreak,too.big={oversized_value},also-safe=ok"
+        );
+        assert_eq!(
+            resource_attribute_pairs(&raw).collect::<Vec<_>>(),
+            vec![
+                ("safe.key".to_string(), "value".to_string()),
+                ("also-safe".to_string(), "ok".to_string()),
+            ]
+        );
+    }
 }

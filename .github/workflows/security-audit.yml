@@ -100,6 +100,70 @@ jobs:
           # fail on every other vulnerability.
           cargo audit --ignore RUSTSEC-2023-0071
 
+  rust-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: sonus-auris-backend.rs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: sonus-auris-backend.rs
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - name: Always validate local Rust formatting
+        run: cargo fmt --check
+
+      - name: Detect private interfaces credential
+        id: private_interfaces
+        env:
+          SUBMODULE_TOKEN: ${{ secrets.SONUS_SUBMODULE_TOKEN }}
+        run: |
+          if [[ -n "$SUBMODULE_TOKEN" ]]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo '::warning::SONUS_SUBMODULE_TOKEN is not configured; compile, clippy, and unit tests that require the private interfaces crate are skipped.'
+            {
+              echo '### Private interfaces build skipped'
+              echo
+              echo 'Configure `SONUS_SUBMODULE_TOKEN` with read-only Contents access to `sonus-auris/sonus-auris-interfaces`, preferably using a short-lived GitHub App token.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Check out private generated interfaces
+        if: steps.private_interfaces.outputs.available == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: sonus-auris/sonus-auris-interfaces
+          ref: main
+          path: sonus-auris-interfaces
+          token: ${{ secrets.SONUS_SUBMODULE_TOKEN }}
+          persist-credentials: false
+
+      - if: steps.private_interfaces.outputs.available == 'true'
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: sonus-auris-backend.rs
+
+      - name: Check all Rust targets
+        if: steps.private_interfaces.outputs.available == 'true'
+        run: cargo check --locked --all-targets
+
+      - name: Lint all Rust targets
+        if: steps.private_interfaces.outputs.available == 'true'
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Run Rust unit and integration tests
+        if: steps.private_interfaces.outputs.available == 'true'
+        run: cargo test --locked
+
   postgres-policy-audit:
     runs-on: ubuntu-latest
     timeout-minutes: 10
