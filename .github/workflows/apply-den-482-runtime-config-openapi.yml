@@ -68,6 +68,7 @@ jobs:
       - name: Regenerate schema-owned cross-language interfaces
         shell: bash
         run: |
+          set +e
           set -uo pipefail
           log="${RUNNER_TEMP}/den-482-generation.log"
           {
@@ -78,6 +79,7 @@ jobs:
               interfaces/shared/src/openapi-generation.test.mjs
           } >"$log" 2>&1
           status=$?
+          set -e
           cat "$log"
           if [ "$status" -ne 0 ]; then
             mkdir -p docs
