@@ -30,7 +30,7 @@ jobs:
         env:
           SUBMODULE_AUTH_MODE: ssh
         run: bash scripts/ci/init-submodules-with-report.sh remote/libs
-      - name: Extract and execute the exact container-pool reconciliation
+      - name: Extract the exact container-pool reconciliation
         shell: bash
         run: |
           set -euo pipefail
@@ -55,33 +55,41 @@ jobs:
           output.chmod(0o700)
           PY
           bash -n /tmp/den-426-container-pool-patch.sh
-          /tmp/den-426-container-pool-patch.sh
+      - name: Execute patch with bounded diagnostics
+        id: patch
+        shell: bash
+        run: |
+          set -o pipefail
+          /tmp/den-426-container-pool-patch.sh 2>&1 | tee "${RUNNER_TEMP}/den-426-container-pool-patch.log"
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        if: success()
         with:
           version: 10.33.0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: success()
         with:
           node-version: '22'
           cache: pnpm
           cache-dependency-path: remote/tests/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+        if: success()
         working-directory: remote/tests
       - name: Run the complete container-pool contract
+        if: success()
         id: focused-contract
         shell: bash
         working-directory: remote/tests
         run: |
-          set +e
-          log="${RUNNER_TEMP}/den-426-container-pool-contract.log"
-          pnpm exec tsx --test general/container-pool-config.test.ts >"$log" 2>&1
-          status=$?
-          tail -500 "$log"
-          exit "$status"
+          set -o pipefail
+          pnpm exec tsx --test general/container-pool-config.test.ts \
+            2>&1 | tee "${RUNNER_TEMP}/den-426-container-pool-contract.log"
       - name: Upload focused diagnostics
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: den-426-container-pool-contract-diagnostics
-          path: ${{ runner.temp }}/den-426-container-pool-contract.log
+          path: |
+            ${{ runner.temp }}/den-426-container-pool-patch.log
+            ${{ runner.temp }}/den-426-container-pool-contract.log
           retention-days: 1
           if-no-files-found: warn
