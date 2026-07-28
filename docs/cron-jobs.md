@@ -52,7 +52,9 @@ dropped rather than becoming a trusted internal correlation identity.
 
 The BFF never forwards `Cookie`, browser `Authorization`, function source into
 logs, or raw upstream errors. Redirects are disabled, requests time out after
-five seconds, and upstream responses are capped at two MiB.
+five seconds, and upstream responses are capped at two MiB. Request-validation
+helpers return compact stable error codes; Axum responses are constructed only
+at the HTTP boundary rather than carried through internal `Result` values.
 
 ## Configuration
 
