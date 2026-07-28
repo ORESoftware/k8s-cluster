@@ -44,6 +44,8 @@ read-only by default; do not add write-capable AWS or Kubernetes tools without a
 short-lived human grant, auth, and audit design. Treat the EC2 Kubernetes manifests and live
 `dd_cluster` output as the runtime source of truth.
 
+Reach the cluster MCP through the WireGuard VPN plus `dd-bastion` authenticated gateway flow; never expose the read-only MCP service directly to the public internet.
+
 ## canonical-mcp (canonical.cloud stack)
 
 For anything touching `remote/deployments/canonical-cloud`, the
