@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Changes to this reviewed migration repair intentionally retrigger the cross-language SDK diagnostics.
 
 from __future__ import annotations
 
