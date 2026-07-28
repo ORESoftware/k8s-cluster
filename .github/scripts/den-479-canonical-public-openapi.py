@@ -45,10 +45,10 @@ replace_once(
 """,
     """      moduleDir: dirname(files[0]),
       outputName: spec.outputName ?? 'api-docs',
-      canonicalOpenApi,
+      canonicalOpenApi: spec.service === 'browser-test-server' ? canonicalOpenApi : null,
       routes: normalizeRoutes(spec.service, rawRoutes),
 """,
-    "carry the native document into artifact generation",
+    "carry the browser-test native document into artifact generation",
 )
 
 replace_once(
