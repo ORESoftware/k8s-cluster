@@ -62,6 +62,14 @@ pub fn app_router(
         .layer(TraceLayer::new_for_http()))
 }
 
+/// Backward-compatible constructor used by the existing webhook integration
+/// suite and downstream in-repository callers. It delegates to the same
+/// executable router/contract composition as production; there is no second
+/// route table.
+pub fn router(state: AppState) -> Router {
+    app_router(state).expect("formal-methods executable API router must build")
+}
+
 #[utoipa::path(
     get,
     path = "/openapi.json",
