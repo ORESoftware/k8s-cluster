@@ -7,6 +7,14 @@ on:
     paths:
       - '.github/workflows/den-445-invariant-diagnostics.yml'
       - '.github/scripts/den-445-native-openapi.py.gz.b64.part*'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/den-445-invariant-diagnostics.yml'
+      - '.github/scripts/den-445-native-openapi.py.gz.b64.part*'
+      - 'remote/deployments/dd-embeddings-rs/**'
+      - 'remote/tools/generate-api-docs.mjs'
   workflow_dispatch:
 
 permissions:
@@ -18,6 +26,7 @@ concurrency:
 
 jobs:
   diagnose:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
