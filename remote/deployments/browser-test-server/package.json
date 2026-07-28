@@ -13,7 +13,7 @@
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
     "start:src": "tsx src/server.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "node scripts/den-479-post-apply-fix.mjs && tsc --noEmit"
   },
   "dependencies": {
     "@dd/telemetry": "file:../../libs/telemetry-node",
