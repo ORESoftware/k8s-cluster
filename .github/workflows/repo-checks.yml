@@ -23,33 +23,25 @@ jobs:
   static-contracts:
     name: api docs + static repo contracts
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
-      - name: Require private-submodule read token
-        env:
-          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
-        run: test -n "$K8S_SUBMODULE_TOKEN"
-
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Initialize required contract submodule
-        env:
-          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
-        run: |
-          set -euo pipefail
-          token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
-          git config --global url."${token_url}".insteadOf "git@github.com:"
-          trap 'git config --global --unset-all url."${token_url}".insteadOf || true' EXIT
-          git submodule update --init --recursive --depth 1 -- remote/libs
+      - name: Initialize required contract submodule at its exact gitlink
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 10.33.0
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
           cache: pnpm
@@ -67,9 +59,12 @@ jobs:
         run: pnpm run check:observability-coverage
         working-directory: remote/tests
 
-      - name: Run static repo contract tests
+      - name: Run static repo contract tests and retain bounded diagnostics
+        id: static
+        working-directory: remote/tests
+        shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           static_tests=(
             general/agent-breadcrumb-pipeline.test.ts
             general/ai-ml-platform-config.test.ts
@@ -118,8 +113,38 @@ jobs:
             general/webrtc-signaling-service.test.ts
             general/ws-loadtest-config.test.ts
           )
-          pnpm exec tsx --test "${static_tests[@]}"
-        working-directory: remote/tests
+          log="$RUNNER_TEMP/den-406-current-static-contracts.log"
+          summary="$RUNNER_TEMP/den-406-current-static-contracts-summary.txt"
+          set +e
+          pnpm exec tsx --test "${static_tests[@]}" >"$log" 2>&1
+          status=$?
+          set -e
+          {
+            printf 'commit=%s\n' "$GITHUB_SHA"
+            printf 'exit_status=%s\n\n' "$status"
+            printf 'Failure markers:\n'
+            grep -E '^(not ok [0-9]+ - |# (tests|pass|fail|cancelled|skipped|todo|duration_ms) )' "$log" || true
+          } >"$summary"
+          tail -n 160 "$log"
+          printf 'status=%s\n' "$status" >>"$GITHUB_OUTPUT"
+          printf 'log=%s\nsummary=%s\n' "$log" "$summary" >>"$GITHUB_OUTPUT"
+
+      - name: Upload current static-contract diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: den-406-current-static-contracts
+          path: |
+            ${{ steps.static.outputs.log }}
+            ${{ steps.static.outputs.summary }}
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Preserve the real static-contract result
+        if: steps.static.outputs.status != '0'
+        run: |
+          echo 'Current static repository contracts failed; inspect the uploaded bounded diagnostics.' >&2
+          exit 1
 
   backend-contracts:
     name: backend pins + SeaORM + NATS contracts
