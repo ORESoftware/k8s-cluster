@@ -114,6 +114,7 @@ jobs:
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
         with:
           toolchain: '1.95.0'
+          components: rustfmt
 
       - name: Generate the exact Rust client
         shell: bash
@@ -124,20 +125,32 @@ jobs:
             --service browser-test-server \
             --output .tmp/browser-test-sdk
 
-      - name: Capture Rust compiler diagnostics
+      - name: Compile, test, document, and lock the generated Rust client
         id: cargo
         working-directory: .tmp/browser-test-sdk/rust
         shell: bash
         run: |
-          set +e
-          cargo check --locked \
-            > "${RUNNER_TEMP}/browser-test-rust-sdk.stdout" \
-            2> "${RUNNER_TEMP}/browser-test-rust-sdk.stderr"
-          status=$?
-          set -e
-          echo "exit_status=${status}" > "${RUNNER_TEMP}/browser-test-rust-sdk.status"
-          cat "${RUNNER_TEMP}/browser-test-rust-sdk.stderr" >&2
-          exit "${status}"
+          set -o pipefail
+          rm -f Cargo.lock
+          {
+            echo '=== initial compile and lock creation ==='
+            cargo check
+            test -s Cargo.lock
+            cp Cargo.lock "${RUNNER_TEMP}/browser-test-rust-sdk.Cargo.lock"
+
+            echo '=== locked reproducibility compile ==='
+            cargo check --locked
+
+            echo '=== locked generated-client tests ==='
+            cargo test --locked
+
+            echo '=== locked documentation build ==='
+            cargo doc --no-deps --locked
+
+            echo '=== generated source formatting ==='
+            cargo fmt --all -- --check
+          } 2>&1 | tee "${RUNNER_TEMP}/browser-test-rust-sdk.log"
+          sha256sum Cargo.lock > "${RUNNER_TEMP}/browser-test-rust-sdk.Cargo.lock.sha256"
 
       - name: Upload generated crate and compiler diagnostics
         if: always()
@@ -146,9 +159,9 @@ jobs:
           name: browser-test-rust-sdk-diagnostics
           path: |
             .tmp/browser-test-sdk/rust
-            ${{ runner.temp }}/browser-test-rust-sdk.stdout
-            ${{ runner.temp }}/browser-test-rust-sdk.stderr
-            ${{ runner.temp }}/browser-test-rust-sdk.status
+            ${{ runner.temp }}/browser-test-rust-sdk.log
+            ${{ runner.temp }}/browser-test-rust-sdk.Cargo.lock
+            ${{ runner.temp }}/browser-test-rust-sdk.Cargo.lock.sha256
             remote/deployments/browser-test-server/generated/openapi.json
           retention-days: 1
-          if-no-files-found: error
+          if-no-files-found: warn
