@@ -120,38 +120,28 @@ jobs:
               raise SystemExit('browser-mcp exposure test: reviewed ceiling tail drifted')
           test_source = test_source.replace(old_tail, new_tail)
 
-          smoke_assert = '''  assert.match(
-            manifest,
-            /"smoke-test":\\["httpbingo\\.org"\\]/,
-          );
-
-          const worker = readFileSync(resolve(repoRoot, WORKER_DEPLOYMENT), 'utf8');'''
-          profile_assert = '''  assert.match(
-            manifest,
-            /"smoke-test":\\["httpbingo\\.org"\\]/,
-          );
-
-          const workflowJson = manifest.match(
-            /- name:\\s*BROWSER_MCP_WORKFLOW_ALLOWLISTS_JSON\\s*\\n\\s*value:\\s*>-\\s*\\n\\s*(\\{[^\\n]+\\})/,
-          )?.[1];
-          assert.ok(workflowJson, 'missing folded Browser MCP workflow profile JSON');
-          const workflows = JSON.parse(workflowJson) as Record<string, string[]>;
-          assert.deepEqual(
-            workflows['platform-jobs'],
-            [...PLATFORM_JOB_DOMAINS],
-            'platform-jobs must be a reviewed, server-defined ATS-only profile.',
-          );
-          assert.ok(
-            ['linkedin.com', 'indeed.com', 'ziprecruiter.com'].every(
-              (domain) => !domains.includes(domain),
-            ),
-            'Broad job marketplaces must not be added to the Browser MCP navigation ceiling.',
-          );
-
-          const worker = readFileSync(resolve(repoRoot, WORKER_DEPLOYMENT), 'utf8');'''
-          if test_source.count(smoke_assert) != 1:
-              raise SystemExit('browser-mcp exposure test: workflow assertion block drifted')
-          test_path.write_text(test_source.replace(smoke_assert, profile_assert))
+          worker_marker = "\n  const worker = readFileSync(resolve(repoRoot, WORKER_DEPLOYMENT), 'utf8');"
+          if test_source.count(worker_marker) != 1:
+              raise SystemExit('browser-mcp exposure test: worker assertion marker drifted')
+          profile_assert = '''
+            const workflowJson = manifest.match(
+              /- name:\\s*BROWSER_MCP_WORKFLOW_ALLOWLISTS_JSON\\s*\\n\\s*value:\\s*>-\\s*\\n\\s*(\\{[^\\n]+\\})/,
+            )?.[1];
+            assert.ok(workflowJson, 'missing folded Browser MCP workflow profile JSON');
+            const workflows = JSON.parse(workflowJson) as Record<string, string[]>;
+            assert.deepEqual(
+              workflows['platform-jobs'],
+              [...PLATFORM_JOB_DOMAINS],
+              'platform-jobs must be a reviewed, server-defined ATS-only profile.',
+            );
+            assert.ok(
+              ['linkedin.com', 'indeed.com', 'ziprecruiter.com'].every(
+                (domain) => !domains.includes(domain),
+              ),
+              'Broad job marketplaces must not be added to the Browser MCP navigation ceiling.',
+            );
+          '''
+          test_path.write_text(test_source.replace(worker_marker, profile_assert + worker_marker))
           PY
 
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
