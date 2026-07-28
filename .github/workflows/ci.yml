@@ -19,20 +19,36 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Normalize HTTP ingestion source and lockfile
+      - name: Apply compiler-guided HTTP import fixes
         run: |
-          cargo generate-lockfile
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/http_api.rs")
+          text = path.read_text()
+          text = text.replace(
+              "use axum::body::Body;",
+              "#[cfg(test)]\nuse axum::body::Body;",
+              1,
+          )
+          text = text.replace(
+              "use crate::contracts::{ContractVersion, OutcomeClass, ProviderKind, PushJob, PushOutcome};",
+              "use crate::contracts::{ContractVersion, OutcomeClass, PushJob, PushOutcome};\n#[cfg(test)]\nuse crate::contracts::ProviderKind;",
+              1,
+          )
+          path.write_text(text)
+          PY
           cargo fmt
-      - name: Commit normalized HTTP ingestion files
+      - name: Commit compiler-guided HTTP fixes
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         run: |
-          if [ -z "$(git status --porcelain -- Cargo.lock src)" ]; then
+          if [ -z "$(git status --porcelain -- src/http_api.rs)" ]; then
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.lock src
-          git commit -m "DEN-329 normalize HTTP ingestion source"
+          git add src/http_api.rs
+          git commit -m "DEN-329 fix HTTP test-only imports"
           git push origin "HEAD:${{ github.head_ref }}"
       - run: cargo fmt --check
       - name: Run Clippy and preserve HTTP diagnostics
