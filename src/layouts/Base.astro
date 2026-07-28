@@ -18,6 +18,7 @@ const {
 // the GitHub Pages subpath. BASE_URL has no trailing slash, so add one.
 const base = import.meta.env.BASE_URL;
 const ogImage = new URL(`${base}/og.svg`, Astro.site);
+const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
 const fontFaceCss = `@font-face {
   font-family: "Baloo 2";
   font-style: normal;
@@ -37,9 +38,11 @@ const fontFaceCss = `@font-face {
 
     <title>{title}</title>
     <meta name="description" content={description} />
+    <link rel="canonical" href={canonicalUrl} />
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonicalUrl} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:image" content={ogImage} />

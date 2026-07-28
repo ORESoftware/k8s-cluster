@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+env:
+  SONUS_AURIS_SITE_URL: https://sonusauris.app
+  SONUS_AURIS_SITE_BASE: /
+
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -27,7 +31,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Verify the exact static site before publication
+      - name: Verify the exact production-root static site before publication
         run: npm run check
 
   build:
