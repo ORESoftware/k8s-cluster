@@ -261,10 +261,7 @@ async fn handle_message(
     message: jetstream::Message,
 ) -> Result<(), NatsRuntimeError> {
     let payload = message.payload.as_ref();
-    let delivery_attempt = message
-        .info()
-        .map(|info| info.delivered)
-        .unwrap_or(1);
+    let delivery_attempt = message.info().map(|info| info.delivered).unwrap_or(1);
 
     if payload.len() > config.max_payload_bytes {
         let event = dead_letter_for_payload(
@@ -721,20 +718,10 @@ mod tests {
     fn dead_letters_hash_payloads_without_copying_raw_capabilities() {
         let payload = serde_json::to_vec(&PushJobEnvelopeV1::new(job())).expect("envelope");
         let token = "fixture-token-123";
-        let event = dead_letter_for_payload(
-            &payload,
-            "invalid_envelope_json",
-            None,
-            None,
-            1,
-            5,
-        );
+        let event = dead_letter_for_payload(&payload, "invalid_envelope_json", None, None, 1, 5);
         let encoded: Value = serde_json::to_value(event).expect("dead event");
         assert_eq!(encoded["payload_bytes"], payload.len());
         assert!(!encoded.to_string().contains(token));
-        assert_eq!(
-            encoded["payload_sha256"].as_str().map(str::len),
-            Some(64)
-        );
+        assert_eq!(encoded["payload_sha256"].as_str().map(str::len), Some(64));
     }
 }
