@@ -19,13 +19,13 @@ edition = "2021"
 dd-telemetry = { path = "../../libs/telemetry-rs" }
 tracing = "0.1"
 async-nats = "=0.38.0"
-axum = { version = "0.7", features = ["macros"] }
+axum = { version = "0.8", features = ["macros"] }
 # Source-of-truth NATS subject names, wildcards, queue groups, and stream
 # names. The constants below replace the legacy "cdc"/"CDC" magic strings
 # so a subject rename in remote/libs/nats/subject-defs/schema/ immediately
 # surfaces here at compile time instead of silently drifting.
 dd-nats-subject-defs = { path = "../../libs/nats/subject-defs/generated/rust" }
-dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs" }
+dd-runtime-config-client = { path = "../../libs/runtime-config-client-rs", default-features = false, features = ["openapi"] }
 prometheus = "0.13"
 rustls = { version = "=0.23.20", default-features = false, features = ["ring", "std"] }
 serde = { version = "1", features = ["derive"] }
@@ -33,4 +33,12 @@ serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync"] }
 tokio-postgres = { version = "=0.7.12", features = ["with-serde_json-1"] }
 tokio-postgres-rustls = "=0.12.0"
+# Keep this adapter trio pinned and upgrade it atomically only after native
+# artifact determinism and every generated SDK compile gate remain green.
+utoipa = { version = "=5.5.0", features = ["preserve_order", "preserve_path_order"] }
+utoipa-axum = "=0.2.0"
+utoipa-scalar = "=0.3.0"
 webpki-roots = "=0.26.7"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
