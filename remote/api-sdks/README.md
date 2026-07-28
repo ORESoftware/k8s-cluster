@@ -16,8 +16,8 @@ generator itself.
 
 Current generated coverage:
 
-- public: 44 services / 281 operations
-- internal: 44 services / 940 operations
+- public: 44 services / 279 operations
+- internal: 44 services / 941 operations
 - temporarily unavailable deployment gitlinks: 5
 
 ## Temporary gitlink exclusions
