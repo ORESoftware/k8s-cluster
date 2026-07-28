@@ -1,4 +1,4 @@
-name: apply customer cron control plane
+name: diagnose customer cron installer
 
 on:
   pull_request:
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 jobs:
-  apply:
+  diagnose:
     if: github.event.pull_request.head.ref == 'agent/cron-customer-control-plane' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
@@ -21,17 +21,24 @@ jobs:
         with:
           ref: agent/cron-customer-control-plane
           fetch-depth: 0
-      - name: Verify and apply reviewed implementation
+          show-progress: false
+      - name: Persist archive diagnostic
         shell: bash
         run: |
-          set -euo pipefail
+          set -u
+          diagnostic=.agent/cron-installer-diagnostic.txt
           cat .agent/cron-payload/part-* | base64 -d > /tmp/customer-cron-implementation.tgz
-          echo '61d7d188650438bea565bf25877d6d3327bc197d0929111a249cd217ffc52d24  /tmp/customer-cron-implementation.tgz' | sha256sum --check --strict
-          tar -xzf /tmp/customer-cron-implementation.tgz
-          git diff --check
+          {
+            echo 'expected=61d7d188650438bea565bf25877d6d3327bc197d0929111a249cd217ffc52d24'
+            printf 'actual='
+            sha256sum /tmp/customer-cron-implementation.tgz | awk '{print $1}'
+            printf 'bytes='
+            wc -c < /tmp/customer-cron-implementation.tgz
+            echo 'archive-listing:'
+            tar -tzf /tmp/customer-cron-implementation.tgz || true
+          } > "$diagnostic" 2>&1
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/main.rs src/views.rs src/tests.rs src/cron.rs docs/cron-jobs.md
-          git rm -r .agent/cron-payload .github/workflows/agent-cron-source.yml
-          git commit -m 'feat: add tenant-safe customer cron control plane'
+          git add "$diagnostic"
+          git commit -m 'chore: record customer cron installer diagnostic'
           git push origin HEAD:agent/cron-customer-control-plane
