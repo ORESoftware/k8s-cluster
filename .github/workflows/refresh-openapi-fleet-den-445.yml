@@ -36,6 +36,63 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Upgrade the fleet validator for native contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/tools/validate-openapi-contracts.mjs')
+          source = path.read_text()
+          old_constants = """const indexPath = resolve(repoRoot, 'remote/deployments/generated-api-docs-index.json');
+          const manifestPath = resolve(repoRoot, 'remote/config/api-contracts.json');
+          const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
+          """
+          new_constants = """const indexPath = resolve(repoRoot, 'remote/deployments/generated-api-docs-index.json');
+          const manifestPath = resolve(repoRoot, 'remote/config/api-contracts.json');
+          const nativeManifestPath = resolve(repoRoot, 'remote/api-contracts/manifest.json');
+          const HTTP_METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'];
+          """
+          old_classification = """  const manifest = readJson(manifestPath);
+            const indexedServices = (index.services ?? []).map((item) => item.service).sort();
+            const allowlistedServices = [...(manifest.legacySourceScannerAllowlist ?? [])].sort();
+            assert(
+              JSON.stringify(indexedServices) === JSON.stringify(allowlistedServices),
+              'API contract manifest and central service index differ; new services must choose a native source-of-truth strategy or be reviewed into the temporary scanner allowlist',
+            );
+          """
+          new_classification = """  const manifest = readJson(manifestPath);
+            const nativeManifest = readJson(nativeManifestPath);
+            const indexedServices = (index.services ?? []).map((item) => item.service).sort();
+            const allowlistedServices = [...(manifest.legacySourceScannerAllowlist ?? [])].sort();
+            const nativeServices = Object.keys(nativeManifest.services ?? {}).sort();
+            const nativeServiceSet = new Set(nativeServices);
+            const overlap = allowlistedServices.filter((service) => nativeServiceSet.has(service));
+            assert(
+              overlap.length === 0,
+              `services cannot use both native contracts and the legacy scanner: ${overlap.join(', ')}`,
+            );
+            const expectedServices = [...new Set([...allowlistedServices, ...nativeServices])].sort();
+            const indexedServiceSet = new Set(indexedServices);
+            const expectedServiceSet = new Set(expectedServices);
+            const missingFromIndex = expectedServices.filter((service) => !indexedServiceSet.has(service));
+            const unclassifiedInIndex = indexedServices.filter((service) => !expectedServiceSet.has(service));
+            assert(
+              missingFromIndex.length === 0 && unclassifiedInIndex.length === 0,
+              `API contract service classification drift; missing from index: [${missingFromIndex.join(', ')}]; unclassified in index: [${unclassifiedInIndex.join(', ')}]`,
+            );
+          """
+          if source.count(old_constants) != 1:
+              raise SystemExit('expected exactly one contract manifest constant block')
+          if source.count(old_classification) != 1:
+              raise SystemExit('expected exactly one legacy-only classification block')
+          source = source.replace(old_constants, new_constants, 1)
+          source = source.replace(old_classification, new_classification, 1)
+          path.write_text(source)
+          PY
+          node --check remote/tools/validate-openapi-contracts.mjs
+
       - name: Regenerate and validate the full fleet
         shell: bash
         run: |
@@ -54,14 +111,14 @@ jobs:
           unexpected="$({
             git diff --name-only --diff-filter=ACMRTUXB
             git ls-files --others --exclude-standard
-          } | sort -u | grep -Ev '^remote/deployments/(generated-api-docs-index\.(json|html)|[^/]+/generated/[^/]+|[^/]+/src/[^/]+/api_docs\.gleam)$' || true)"
+          } | sort -u | grep -Ev '^(remote/tools/validate-openapi-contracts\.mjs|remote/deployments/(generated-api-docs-index\.(json|html)|[^/]+/generated/[^/]+|[^/]+/src/[^/]+/api_docs\.gleam))$' || true)"
           if [[ -n "${unexpected}" ]]; then
-            echo 'generator modified paths outside the generated-artifact allowlist:' >&2
+            echo 'refresh modified paths outside the reviewed allowlist:' >&2
             printf '%s\n' "${unexpected}" >&2
             exit 1
           fi
 
-          git add -A -- remote/deployments remote/api-contracts
+          git add -A -- remote/deployments remote/api-contracts remote/tools/validate-openapi-contracts.mjs
           mapfile -t changed < <(git diff --cached --name-only)
           test "${#changed[@]}" -gt 0
           for path in "${changed[@]}"; do
@@ -70,10 +127,11 @@ jobs:
               remote/deployments/generated-api-docs-index.html|\
               remote/deployments/*/generated/*|\
               remote/deployments/*/src/*/api_docs.gleam|\
-              remote/api-contracts/manifest.json)
+              remote/api-contracts/manifest.json|\
+              remote/tools/validate-openapi-contracts.mjs)
                 ;;
               *)
-                echo "unexpected non-generated path from fleet refresh: ${path}" >&2
+                echo "unexpected path from fleet refresh: ${path}" >&2
                 exit 1
                 ;;
             esac
@@ -88,13 +146,13 @@ jobs:
           node remote/tools/validate-openapi-contracts.mjs
           node remote/tests/check-rest-api-route-parity.mjs
 
-      - name: Commit generated artifacts only
+      - name: Commit validator and generated artifacts
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'chore(DEN-445): refresh fleet OpenAPI provenance'
+          git commit -m 'fix(DEN-445): validate native and legacy OpenAPI sources'
           git push origin HEAD:agent/den-445-native-openapi-fresh
 
       - name: Upload refresh diagnostics
