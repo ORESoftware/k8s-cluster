@@ -1,0 +1,65 @@
+name: Refresh fleet OpenAPI artifacts for DEN-445
+
+on:
+  push:
+    branches:
+      - agent/den-445-native-openapi-fresh
+    paths:
+      - '.github/workflows/refresh-openapi-fleet-den-445.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-openapi-fleet-den-445
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.repository == 'ORESoftware/k8s-cluster' && github.ref == 'refs/heads/agent/den-445-native-openapi-fresh'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: agent/den-445-native-openapi-fresh
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Regenerate and validate the full fleet
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check remote/tools/generate-api-docs.mjs
+          node --check remote/tools/validate-openapi-contracts.mjs
+          node --check remote/tests/check-rest-api-route-parity.mjs
+          node remote/tools/generate-api-docs.mjs
+          node remote/tools/generate-api-docs.mjs --check
+          node remote/tools/validate-openapi-contracts.mjs
+          node remote/tests/check-rest-api-route-parity.mjs
+
+      - name: Commit generated artifacts only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A -- remote/deployments remote/api-contracts
+          mapfile -t changed < <(git diff --cached --name-only)
+          test "${#changed[@]}" -gt 0
+          for path in "${changed[@]}"; do
+            case "$path" in
+              remote/deployments/*/generated/*|remote/api-contracts/manifest.json)
+                ;;
+              *)
+                echo "unexpected non-generated path from fleet refresh: $path" >&2
+                exit 1
+                ;;
+            esac
+          done
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore(DEN-445): refresh fleet OpenAPI provenance [skip ci]'
+          git push origin HEAD:agent/den-445-native-openapi-fresh
