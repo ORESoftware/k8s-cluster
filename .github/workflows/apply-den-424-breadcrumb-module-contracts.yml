@@ -23,16 +23,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Check out DEN-424 branch with the narrow shared-library key
+      - name: Check out DEN-424 branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: agent/den-424-breadcrumb-module-contracts
-          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
           persist-credentials: true
-      - name: Initialize the exact recursive shared-library gitlink
+      - name: Resolve the exact shared-library gitlink
+        id: libs-pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          pin="$(git ls-files --stage -- remote/libs | awk '$1 == 160000 { print $2; exit }')"
+          test "${#pin}" = 40
+          echo "sha=$pin" >>"$GITHUB_OUTPUT"
+      - name: Check out only the shared definitions required by this contract
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/k8s-libs-and-shared-defs
+          ref: ${{ steps.libs-pin.outputs.sha }}
+          path: remote/libs
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Verify the shared definitions match the indexed gitlink
         env:
-          SUBMODULE_AUTH_MODE: ssh
-        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
+          EXPECTED_LIBS_SHA: ${{ steps.libs-pin.outputs.sha }}
+        run: test "$(git -C remote/libs rev-parse HEAD)" = "$EXPECTED_LIBS_SHA"
       - name: Align breadcrumb contracts with registered Rust modules
         shell: bash
         run: |
@@ -115,8 +131,6 @@ jobs:
                   raise SystemExit(
                       f'expected breadcrumb source reads rest=2/web=1; found rest={rest_count}/web={web_count}'
                   )
-              # Rewrite test call sites before inserting helper bodies so each
-              # helper retains exactly one authoritative direct main.rs read.
               text = text.replace(old_rest, 'await readRestApiSource()')
               text = text.replace(old_web, 'await readWebHomeSource()')
               if text.count(anchor) != 1:
@@ -156,7 +170,7 @@ jobs:
           name: den-424-breadcrumb-contract-diagnostics
           path: ${{ runner.temp }}/den-424-breadcrumb-contract.log
           retention-days: 1
-          if-no-files-found: error
+          if-no-files-found: warn
       - name: Verify no unresolved conflict markers
         if: success()
         run: |
