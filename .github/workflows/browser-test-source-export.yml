@@ -1,9 +1,9 @@
 name: Browser test source export
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/browser-test-openapi-zod
+      - main
     paths:
       - '.github/workflows/browser-test-source-export.yml'
   workflow_dispatch:
