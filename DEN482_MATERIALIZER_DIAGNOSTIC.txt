@@ -1,0 +1,25 @@
+# DEN-482 materializer diagnostic
+
+payload_expected=e8b9182eb49ee6f980e589b00c0c8ec1fd43bf39bc01293e55a456a07dae756f
+payload_actual=04d0c4b4b1ab4640733b85aa003409c84d597140565d827dc7dac670fd5ecf75
+base64_status=1
+compressed_expected=67333dba49c98aac4340fa41402b4713ba0faa4968a53cd4fa56655266a478ea
+compressed_actual=454c61c8e3fe769c215876042b6d0692647224eeeeb3aeb6f40472052ef94f83
+gzip_status=1
+decoded_expected=48122dcd79379231fd6b5935aab257a07e355f580f5de6289e8868268ea4f36a
+decoded_actual=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+node_check_status=0
+node_run_status=0
+
+## base64 stderr
+base64: invalid input
+
+## gzip stderr
+
+gzip: /home/runner/work/_temp/den-482-wal-openapi.mjs.gz: invalid compressed data--format violated
+
+## node check stderr
+
+## node run stdout
+
+## node run stderr
