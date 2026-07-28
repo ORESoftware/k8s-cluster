@@ -52,6 +52,7 @@ jobs:
         with:
           otp-version: '27.3.4.14'
           gleam-version: '1.17.0'
+          rebar3-version: '3'
 
       - name: Install remote test dependencies
         run: pnpm install --frozen-lockfile
