@@ -33,6 +33,8 @@ serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "sync"] }
 tokio-postgres = { version = "=0.7.12", features = ["with-serde_json-1"] }
 tokio-postgres-rustls = "=0.12.0"
+# Keep this adapter trio pinned and upgrade it atomically only after native
+# artifact determinism and every generated SDK compile gate remain green.
 utoipa = { version = "=5.5.0", features = ["preserve_order", "preserve_path_order"] }
 utoipa-axum = "=0.2.0"
 utoipa-scalar = "=0.3.0"
