@@ -25,7 +25,7 @@ permissions:
 
 concurrency:
   group: apply-den-445-native-openapi-v2
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   apply-test-and-commit:
@@ -212,19 +212,22 @@ jobs:
           rm -f .github/workflows/den-445-refresh-fix-hash.yml
           rm -f .github/workflows/den-445-fix-hygiene.yml
 
-      - name: Validate repository hygiene
+      - name: Stage and validate repository hygiene
         shell: bash
         run: |
           set -euo pipefail
-          git diff --check
-          if git diff --no-ext-diff --unified=0 -- . \
+          git add -A
+          git status --short | tee "${RUNNER_TEMP}/den-445-status.log"
+          test -n "$(git status --short)"
+          git diff --cached --check 2>&1 | tee "${RUNNER_TEMP}/den-445-hygiene.log"
+          if git diff --cached --no-ext-diff --unified=0 -- . \
             | grep -E '^\+(<<<<<<< |=======$|>>>>>>> )'; then
-            echo 'new git conflict marker detected' >&2
+            echo 'new git conflict marker detected' | tee -a "${RUNNER_TEMP}/den-445-hygiene.log" >&2
             exit 1
           fi
-          if git diff --no-ext-diff --unified=0 -- . \
+          if git diff --cached --no-ext-diff --unified=0 -- . \
             | grep -E '^\+.*(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})'; then
-            echo 'new GitHub token-like value detected' >&2
+            echo 'new GitHub token-like value detected' | tee -a "${RUNNER_TEMP}/den-445-hygiene.log" >&2
             exit 1
           fi
 
@@ -232,14 +235,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git add -A
-          git diff --cached --check
-          git status --short
-          test -n "$(git status --short)"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'feat(DEN-445): enforce native executable OpenAPI contract'
-          git push origin HEAD:agent/den-445-native-openapi-fresh
+          git commit -m 'feat(DEN-445): enforce native executable OpenAPI contract' \
+            2>&1 | tee "${RUNNER_TEMP}/den-445-commit.log"
+          git push origin HEAD:agent/den-445-native-openapi-fresh \
+            2>&1 | tee -a "${RUNNER_TEMP}/den-445-commit.log"
 
       - name: Upload focused failure diagnostics
         if: failure()
@@ -252,6 +253,9 @@ jobs:
             ${{ runner.temp }}/den-445-rust.log
             ${{ runner.temp }}/den-445-invariants.log
             ${{ runner.temp }}/den-445-sdk-generation.log
+            ${{ runner.temp }}/den-445-status.log
+            ${{ runner.temp }}/den-445-hygiene.log
+            ${{ runner.temp }}/den-445-commit.log
             ${{ runner.temp }}/openapi.1.json
             ${{ runner.temp }}/openapi.2.json
           retention-days: 1
