@@ -1,4 +1,4 @@
-name: DEN-445 fleet OpenAPI diagnostics
+name: DEN-445 fleet OpenAPI regeneration
 
 on:
   pull_request:
@@ -9,14 +9,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: den-445-fleet-openapi-diagnostics-${{ github.ref }}
+  group: den-445-fleet-openapi-regeneration-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  diff:
+  regenerate:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -25,6 +25,7 @@ jobs:
         with:
           ref: agent/den-445-native-openapi-fresh
           fetch-depth: 0
+          persist-credentials: true
           show-progress: false
           submodules: false
 
@@ -33,7 +34,7 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Regenerate fleet contracts and capture exact drift
+      - name: Regenerate and validate fleet contracts
         shell: bash
         run: |
           set -euo pipefail
@@ -46,14 +47,45 @@ jobs:
           cat "${RUNNER_TEMP}/fleet-openapi-stat.txt"
           test -s "${RUNNER_TEMP}/fleet-openapi.diff"
 
+          unexpected="$({
+            git diff --name-only --diff-filter=ACMRTUXB
+            git ls-files --others --exclude-standard
+          } | sort -u | grep -Ev '^remote/deployments/(generated-api-docs-index\.(json|html)|[^/]+/generated/[^/]+|[^/]+/src/[^/]+/api_docs\.gleam)$' || true)"
+          if [[ -n "${unexpected}" ]]; then
+            echo 'generator modified paths outside the generated-artifact allowlist:' >&2
+            printf '%s\n' "${unexpected}" >&2
+            exit 1
+          fi
+
+          git add remote/deployments
+          git diff --cached --check
+          if git diff --cached --no-ext-diff --unified=0 -- . \
+            | grep -E '^\+(<<<<<<< |=======$|>>>>>>> )'; then
+            echo 'new git conflict marker detected' >&2
+            exit 1
+          fi
+          node remote/tools/generate-api-docs.mjs --check
+          node remote/tools/validate-openapi-contracts.mjs
+          node remote/tests/check-rest-api-route-parity.mjs
+
+      - name: Commit regenerated compatibility artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore(DEN-445): regenerate fleet OpenAPI compatibility artifacts'
+          git push origin HEAD:agent/den-445-native-openapi-fresh
+
       - name: Upload regeneration diagnostics
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: den-445-fleet-openapi-diagnostics
+          name: den-445-fleet-openapi-regeneration
           path: |
             ${{ runner.temp }}/fleet-openapi-generation.log
             ${{ runner.temp }}/fleet-openapi-status.txt
             ${{ runner.temp }}/fleet-openapi-stat.txt
             ${{ runner.temp }}/fleet-openapi.diff
           retention-days: 1
-          if-no-files-found: error
+          if-no-files-found: warn
