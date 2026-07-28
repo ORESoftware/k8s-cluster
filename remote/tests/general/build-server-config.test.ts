@@ -20,6 +20,20 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
+async function readBuildServerModule(moduleName: string): Promise<string> {
+  const flatPath = `remote/deployments/build-server-rs/src/${moduleName}.rs`;
+  if (existsSync(resolve(repoRoot, flatPath))) {
+    return readRepoFile(flatPath);
+  }
+
+  const directoryPath = `remote/deployments/build-server-rs/src/${moduleName}/mod.rs`;
+  assert.ok(
+    existsSync(resolve(repoRoot, directoryPath)),
+    `build-server-rs module ${moduleName} must resolve to ${flatPath} or ${directoryPath}`,
+  );
+  return readRepoFile(directoryPath);
+}
+
 async function readBuildServerSource(): Promise<string> {
   const modules = [
     'config',
@@ -45,14 +59,10 @@ async function readBuildServerSource(): Promise<string> {
     assert.match(
       main,
       new RegExp(`mod ${moduleName};`),
-      `build-server-rs main.rs must register ${moduleName}.rs`,
+      `build-server-rs main.rs must register ${moduleName}`,
     );
   }
-  const moduleSources = await Promise.all(
-    modules.map((moduleName) =>
-      readRepoFile(`remote/deployments/build-server-rs/src/${moduleName}.rs`),
-    ),
-  );
+  const moduleSources = await Promise.all(modules.map(readBuildServerModule));
   return [main, ...moduleSources].join('\n');
 }
 
