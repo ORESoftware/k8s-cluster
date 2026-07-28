@@ -18,7 +18,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.head_ref == 'agent/openapi-fleet-sdks'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - name: Checkout writable feature branch
         uses: actions/checkout@v7
@@ -101,6 +101,22 @@ jobs:
       - name: Validate SDK provenance and parity
         run: node remote/tools/validate-api-sdks.mjs
 
+      - name: Setup Gleam first
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          gleam-version: '1.17.0'
+
+      - name: Compile and test Gleam SDKs first
+        run: |
+          for scope in public internal; do
+            (
+              cd "remote/api-sdks/gleam/$scope"
+              gleam deps download
+              gleam test
+            )
+          done
+
       - name: Build TypeScript SDKs
         run: |
           for scope in public internal; do
@@ -133,22 +149,6 @@ jobs:
               dart pub get
               dart analyze
               dart run bin/smoke.dart
-            )
-          done
-
-      - name: Setup Gleam
-        uses: erlef/setup-beam@v1
-        with:
-          otp-version: '27'
-          gleam-version: '1.17.0'
-
-      - name: Compile and test Gleam SDKs
-        run: |
-          for scope in public internal; do
-            (
-              cd "remote/api-sdks/gleam/$scope"
-              gleam deps download
-              gleam test
             )
           done
 
