@@ -1,0 +1,42 @@
+name: extract customer cron payload
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  extract:
+    if: github.event.pull_request.head.ref == 'agent/cron-customer-control-plane'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: agent/cron-customer-control-plane
+          persist-credentials: false
+          show-progress: false
+      - name: Decode multipart payload
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/customer-cron/extracted
+          cat .agent/cron-payload/part-* | base64 -d > /tmp/customer-cron/payload.tgz
+          {
+            sha256sum /tmp/customer-cron/payload.tgz
+            wc -c /tmp/customer-cron/payload.tgz
+            tar -tzf /tmp/customer-cron/payload.tgz
+          } > /tmp/customer-cron/diagnostic.txt 2>&1
+          status=$?
+          if [ "$status" -eq 0 ]; then
+            tar -xzf /tmp/customer-cron/payload.tgz -C /tmp/customer-cron/extracted
+          fi
+          echo "$status" > /tmp/customer-cron/status.txt
+      - name: Upload decoded payload
+        uses: actions/upload-artifact@v4
+        with:
+          name: customer-cron-decoded-${{ github.run_id }}
+          path: /tmp/customer-cron
+          if-no-files-found: error
