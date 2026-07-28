@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/den-482-direct-rebuild.yml'
       - 'scripts/api-contract/den-482-direct-rebuild.patch.part-*'
+      - 'scripts/api-contract/den-482-semantic-merge.py'
 
 permissions:
   contents: write
@@ -73,13 +74,41 @@ jobs:
           log="${RUNNER_TEMP}/den-482-direct-rebuild.log"
           exec > >(tee "$log") 2>&1
 
-          patch_file="${RUNNER_TEMP}/den-482-direct-rebuild.patch"
-          cat scripts/api-contract/den-482-direct-rebuild.patch.part-* > "$patch_file"
-          printf '%s  %s\n' "$PATCH_SHA256" "$patch_file" | sha256sum --check -
-          git apply --check "$patch_file"
-          git apply "$patch_file"
+          full_patch_file="${RUNNER_TEMP}/den-482-direct-rebuild.patch"
+          service_patch_file="${RUNNER_TEMP}/den-482-direct-rebuild.service.patch"
+          cat scripts/api-contract/den-482-direct-rebuild.patch.part-* > "$full_patch_file"
+          printf '%s  %s\n' "$PATCH_SHA256" "$full_patch_file" | sha256sum --check -
+          python3 - "$full_patch_file" "$service_patch_file" <<'PY'
+          import hashlib
+          import sys
+          from pathlib import Path
+
+          full_path = Path(sys.argv[1])
+          service_path = Path(sys.argv[2])
+          data = full_path.read_bytes()
+          marker = b'diff --git a/remote/tools/generate-api-docs.mjs b/remote/tools/generate-api-docs.mjs\n'
+          if data.count(marker) != 1:
+              raise SystemExit(f'expected one generator patch section, found {data.count(marker)}')
+          index = data.index(marker)
+          service_patch = data[:index]
+          generator_patch = data[index:]
+          expected_service_sha = '151b885259e9f5dd04aaa1228f334d9b31b420949c964a8da97cfb4cc39d4735'
+          expected_generator_sha = 'fc073fdf826f5b63326042aa65c1d03c7637c9db5bdfda2af1800d33101e7bc6'
+          actual_service_sha = hashlib.sha256(service_patch).hexdigest()
+          actual_generator_sha = hashlib.sha256(generator_patch).hexdigest()
+          if actual_service_sha != expected_service_sha:
+              raise SystemExit(f'unexpected service patch sha256: {actual_service_sha}')
+          if actual_generator_sha != expected_generator_sha:
+              raise SystemExit(f'unexpected generator patch sha256: {actual_generator_sha}')
+          service_path.write_bytes(service_patch)
+          PY
+          git apply --check "$service_patch_file"
+          git apply "$service_patch_file"
+          python3 -m py_compile scripts/api-contract/den-482-semantic-merge.py
+          python3 scripts/api-contract/den-482-semantic-merge.py
           node --check remote/tools/generate-api-docs.mjs
           node --check remote/tools/check-openapi-contracts.mjs
+          git diff --check
 
           rm -rf remote/libs
           git init -q remote/libs
@@ -173,6 +202,7 @@ jobs:
             scripts/api-contract/den-482-direct-rebuild.patch.part-01 \
             scripts/api-contract/den-482-direct-rebuild.patch.part-02 \
             scripts/api-contract/den-482-direct-rebuild.patch.part-03 \
+            scripts/api-contract/den-482-semantic-merge.py \
             scripts/api-contract/den-482-last-run.log \
             DEN482_MATERIALIZER_DIAGNOSTIC.txt
 
@@ -184,7 +214,7 @@ jobs:
             echo 'new git conflict marker detected' >&2
             exit 1
           fi
-          test -z "$(git diff --cached --name-only | grep -E 'den-482-(direct-rebuild|wal-openapi|materialize)|apply-den-482|trigger-den-482|DEN482_MATERIALIZER' || true)"
+          test -z "$(git diff --cached --name-only | grep -E 'den-482-(direct-rebuild|semantic-merge|wal-openapi|materialize)|apply-den-482|trigger-den-482|DEN482_MATERIALIZER' || true)"
           test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
           test "$(git ls-files --stage remote/libs | awk '{print $2}')" = "$SHARED_COMMIT"
           git diff --cached --name-status
@@ -202,5 +232,4 @@ jobs:
           if-no-files-found: warn
           retention-days: 1
 
-# Activation commit: the workflow already existed on the feature branch before this synchronize event.
-# Connector activation after deterministic chunk repair; no contract source changed.
+# Connector activation after semantic merge with the newer Fastify code-first generator.
