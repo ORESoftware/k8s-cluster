@@ -1,0 +1,47 @@
+name: Repository catalog
+
+on:
+  pull_request:
+    paths:
+      - "catalog/**"
+      - "tools/repository_catalog.py"
+      - "tools/test_repository_catalog.py"
+      - ".github/workflows/repository-catalog.yml"
+  push:
+    branches: [main]
+    paths:
+      - "catalog/**"
+      - "tools/repository_catalog.py"
+      - "tools/test_repository_catalog.py"
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run unit tests
+        working-directory: tools
+        run: python -m unittest -v test_repository_catalog.py
+      - name: Validate canonical catalog
+        run: python tools/repository_catalog.py catalog/repositories.json
+      - name: Generate reproducible drift artifacts
+        run: |
+          python tools/repository_catalog.py \
+            catalog/repositories.json \
+            --baseline catalog/repositories.json \
+            --json-output artifacts/repository-catalog-drift.json \
+            --markdown-output artifacts/repository-catalog-drift.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: repository-catalog-drift
+          path: artifacts/
+          if-no-files-found: error
