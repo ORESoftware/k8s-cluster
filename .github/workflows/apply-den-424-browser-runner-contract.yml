@@ -62,6 +62,18 @@ jobs:
           else:
               raise SystemExit(f'expected one obsolete detached --rm assertion, found {count}')
 
+          old_network = '''  assert.match(main, /"--network", &config\.network/);
+          '''
+          new_network = '''  assert.match(main, /\("--network", config\.network\.clone\(\)\)/);
+          '''
+          count = text.count(old_network)
+          if count == 1:
+              text = text.replace(old_network, new_network, 1)
+          elif count == 0 and new_network in text:
+              pass
+          else:
+              raise SystemExit(f'expected one obsolete network argv assertion, found {count}')
+
           path.write_text(text, encoding='utf-8')
           PY
       - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
