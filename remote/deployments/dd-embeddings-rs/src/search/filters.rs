@@ -53,9 +53,14 @@ pub fn to_values(binds: &[Bound]) -> Vec<sea_orm::Value> {
 
 fn validate_field(field: &str) -> Result<(), ApiError> {
     if field.is_empty() || field.len() > 128 {
-        return Err(ApiError::Invalid("filter field name must be 1..=128 chars".into()));
+        return Err(ApiError::Invalid(
+            "filter field name must be 1..=128 chars".into(),
+        ));
     }
-    if !field.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.')) {
+    if !field
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+    {
         return Err(ApiError::Invalid(format!(
             "filter field `{field}` may contain only [A-Za-z0-9_.-]"
         )));
@@ -91,7 +96,10 @@ pub fn render(filters: &Value, binds: &mut Vec<Bound>) -> Result<String, ApiErro
 /// Equality via JSONB containment — type-accurate for any scalar (avoids the
 /// `"5" != "5.0"` pitfall of text comparison).
 fn eq_pred(field: &str, val: &Value, binds: &mut Vec<Bound>) -> Result<String, ApiError> {
-    let obj = Value::Object(serde_json::Map::from_iter([(field.to_string(), val.clone())]));
+    let obj = Value::Object(serde_json::Map::from_iter([(
+        field.to_string(),
+        val.clone(),
+    )]));
     let n = push(binds, Bound::Json(obj));
     Ok(format!("attributes @> ${n}::jsonb"))
 }
@@ -104,7 +112,12 @@ fn num(field: &str, op: &str, val: &Value, binds: &mut Vec<Bound>) -> Result<Str
     Ok(format!("(attributes->>'{field}')::numeric {op} ${n}"))
 }
 
-fn render_op(field: &str, op: &str, val: &Value, binds: &mut Vec<Bound>) -> Result<String, ApiError> {
+fn render_op(
+    field: &str,
+    op: &str,
+    val: &Value,
+    binds: &mut Vec<Bound>,
+) -> Result<String, ApiError> {
     match op {
         "eq" => eq_pred(field, val, binds),
         "ne" => Ok(format!("not ({})", eq_pred(field, val, binds)?)),
@@ -120,7 +133,10 @@ fn render_op(field: &str, op: &str, val: &Value, binds: &mut Vec<Bound>) -> Resu
                 // `x in ()` ⇒ always false.
                 return Ok("false".into());
             }
-            let ors: Vec<String> = arr.iter().map(|v| eq_pred(field, v, binds)).collect::<Result<_, _>>()?;
+            let ors: Vec<String> = arr
+                .iter()
+                .map(|v| eq_pred(field, v, binds))
+                .collect::<Result<_, _>>()?;
             Ok(format!("({})", ors.join(" or ")))
         }
         "contains" => {
@@ -139,6 +155,8 @@ fn render_op(field: &str, op: &str, val: &Value, binds: &mut Vec<Bound>) -> Resu
                 format!("not (attributes ? ${n})")
             })
         }
-        other => Err(ApiError::Invalid(format!("unknown filter operator `{other}`"))),
+        other => Err(ApiError::Invalid(format!(
+            "unknown filter operator `{other}`"
+        ))),
     }
 }
