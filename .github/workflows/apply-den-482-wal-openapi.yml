@@ -1,3 +1,4 @@
+# DEN-482: one-shot, self-removing materialization of the reviewed migration payload.
 name: Apply DEN-482 wal-gateway OpenAPI migration
 
 on:
