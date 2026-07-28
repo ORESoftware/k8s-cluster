@@ -123,13 +123,13 @@ spec:
             # navigation policy is enforced centrally regardless of what the model
             # sends. The service fails closed when this is empty; keep it narrow
             # and widen deliberately. Comma-separated hostnames.
-            # Reviewed Fiducia applications and platform-jobs profiles.
+            # Reviewed Fiducia applications, platform-jobs, and appointments profiles.
             # Root vendor hostnames also permit that vendor's subdomains. The
             # two non-root entries are the exact All Things Open Wufoo tenant
             # and AWS Community Day CFP host. Filing sites, webmail, cloud
             # metadata, and arbitrary prospect domains remain blocked.
             - name: BROWSER_MCP_ALLOWED_DOMAINS
-              value: 'benefactor.cc,confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,app.posthog.com,elevenlabs.io,www.together.ai,support.snyk.io,us.ovhcloud.com,www.pulumi.com,tally.so,allthingsopen.org,allthingsopen.wufoo.com,static.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com,www.gstatic.com,ssl.gstatic.com,fonts.googleapis.com,fonts.gstatic.com,greenhouse.io,lever.co,ashbyhq.com,myworkdayjobs.com,workday.com,smartrecruiters.com,icims.com,jobvite.com,workable.com,bamboohr.com,recruitee.com,applytojob.com,httpbingo.org'
+              value: 'benefactor.cc,confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,app.posthog.com,elevenlabs.io,www.together.ai,support.snyk.io,us.ovhcloud.com,www.pulumi.com,tally.so,allthingsopen.org,allthingsopen.wufoo.com,static.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com,www.gstatic.com,ssl.gstatic.com,fonts.googleapis.com,fonts.gstatic.com,greenhouse.io,lever.co,ashbyhq.com,myworkdayjobs.com,workday.com,smartrecruiters.com,icims.com,jobvite.com,workable.com,bamboohr.com,recruitee.com,applytojob.com,cal.com,calendly.com,httpbingo.org'
             # Callers select one named workflow profile. Profiles are
             # server-defined subsets of the ceiling above; caller-provided
             # allowed_domains are always discarded.
@@ -137,7 +137,7 @@ spec:
               value: fiducia-applications
             - name: BROWSER_MCP_WORKFLOW_ALLOWLISTS_JSON
               value: >-
-                {"benefactor-site":["benefactor.cc"],"fiducia-applications":["confluent.cloud","confluent.io","signoz.io","tailscale.com","planetscale.com","clerk.com","algolia.com","app.posthog.com","elevenlabs.io","www.together.ai","support.snyk.io","us.ovhcloud.com","www.pulumi.com","tally.so","allthingsopen.org","allthingsopen.wufoo.com","static.wufoo.com","talks.devopsdays.org","sessionize.com","events.linuxfoundation.org","cfp.awscommunitydaysoflo.com","forms.gle","docs.google.com","www.gstatic.com","ssl.gstatic.com","fonts.googleapis.com","fonts.gstatic.com"],"platform-jobs":["greenhouse.io","lever.co","ashbyhq.com","myworkdayjobs.com","workday.com","smartrecruiters.com","icims.com","jobvite.com","workable.com","bamboohr.com","recruitee.com","applytojob.com"],"smoke-test":["httpbingo.org"]}
+                {"benefactor-site":["benefactor.cc"],"fiducia-applications":["confluent.cloud","confluent.io","signoz.io","tailscale.com","planetscale.com","clerk.com","algolia.com","app.posthog.com","elevenlabs.io","www.together.ai","support.snyk.io","us.ovhcloud.com","www.pulumi.com","tally.so","allthingsopen.org","allthingsopen.wufoo.com","static.wufoo.com","talks.devopsdays.org","sessionize.com","events.linuxfoundation.org","cfp.awscommunitydaysoflo.com","forms.gle","docs.google.com","www.gstatic.com","ssl.gstatic.com","fonts.googleapis.com","fonts.gstatic.com"],"platform-jobs":["greenhouse.io","lever.co","ashbyhq.com","myworkdayjobs.com","workday.com","smartrecruiters.com","icims.com","jobvite.com","workable.com","bamboohr.com","recruitee.com","applytojob.com"],"appointments":["cal.com","calendly.com"],"smoke-test":["httpbingo.org"]}
             - name: OTEL_SERVICE_NAME
               value: dd-browser-mcp-rs
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
