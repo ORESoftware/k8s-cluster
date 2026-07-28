@@ -1,0 +1,58 @@
+name: nix profile renderer diagnostic
+
+on:
+  pull_request:
+    paths:
+      - scripts/render-nix-agent-profile.sh
+      - nix-agent-profiles/**
+      - .github/workflows/nix-agent-profile-renderer-diagnostic.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.result.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          show-progress: false
+      - uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Capture renderer result
+        id: result
+        run: |
+          set +e
+          target="$RUNNER_TEMP/nix-profile-diagnostic"
+          mkdir -p "$target"
+          git -C "$target" init -q
+          nix develop -c bash scripts/render-nix-agent-profile.sh \
+            --profile rust \
+            --output-dir "$target" \
+            --skip-lock >renderer.stdout 2>renderer.stderr
+          status=$?
+          set -e
+          message=$(tail -n 1 renderer.stderr)
+          if [ -z "$message" ]; then
+            message=$(tail -n 1 renderer.stdout)
+          fi
+          message=$(printf '%s' "${message:-no-output}" | sed -E 's/[^A-Za-z0-9._+/-]+/-/g' | cut -c1-72)
+          printf 'matrix={"include":[{"status":%s,"message":"%s"}]}\n' "$status" "$message" >>"$GITHUB_OUTPUT"
+
+  result:
+    needs: scan
+    strategy:
+      matrix: ${{ fromJson(needs.scan.outputs.matrix) }}
+    name: Renderer exit ${{ matrix.status }} — ${{ matrix.message }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce renderer result
+        env:
+          RENDERER_STATUS: ${{ matrix.status }}
+        run: test "$RENDERER_STATUS" -eq 0
