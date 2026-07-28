@@ -116,3 +116,5 @@ jobs:
 
           git commit -m 'chore(DEN-469): repin Dart executable-contract source'
           git push origin HEAD:agent/den-469-dart-server-gitlink-repin
+
+# Deliberate activation update: this workflow already exists in the branch parent.
