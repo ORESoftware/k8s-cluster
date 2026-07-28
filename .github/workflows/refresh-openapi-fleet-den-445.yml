@@ -1,4 +1,4 @@
-# Branch-local one-shot refresh for reviewed DEN-445 generated contracts.
+# Registered branch-local one-shot refresh for reviewed DEN-445 generated contracts.
 name: Refresh fleet OpenAPI artifacts for DEN-445
 
 on:
