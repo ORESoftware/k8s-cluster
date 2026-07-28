@@ -2,22 +2,23 @@
 name: Refresh fleet OpenAPI artifacts for DEN-445
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/den-445-native-openapi-fresh
+      - main
     paths:
       - '.github/workflows/refresh-openapi-fleet-den-445.yml'
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: refresh-openapi-fleet-den-445
-  cancel-in-progress: false
+  group: refresh-openapi-fleet-den-445-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   refresh:
-    if: github.repository == 'ORESoftware/k8s-cluster' && github.ref == 'refs/heads/agent/den-445-native-openapi-fresh'
+    if: github.repository == 'ORESoftware/k8s-cluster'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -30,6 +31,11 @@ jobs:
           show-progress: false
           submodules: false
 
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+
       - name: Regenerate and validate the full fleet
         shell: bash
         run: |
@@ -37,7 +43,47 @@ jobs:
           node --check remote/tools/generate-api-docs.mjs
           node --check remote/tools/validate-openapi-contracts.mjs
           node --check remote/tests/check-rest-api-route-parity.mjs
-          node remote/tools/generate-api-docs.mjs
+          node remote/tools/generate-api-docs.mjs \
+            2>&1 | tee "${RUNNER_TEMP}/fleet-openapi-generation.log"
+          git status --short > "${RUNNER_TEMP}/fleet-openapi-status.txt"
+          git diff --stat > "${RUNNER_TEMP}/fleet-openapi-stat.txt"
+          git diff --binary > "${RUNNER_TEMP}/fleet-openapi.diff"
+          cat "${RUNNER_TEMP}/fleet-openapi-status.txt"
+          cat "${RUNNER_TEMP}/fleet-openapi-stat.txt"
+
+          unexpected="$({
+            git diff --name-only --diff-filter=ACMRTUXB
+            git ls-files --others --exclude-standard
+          } | sort -u | grep -Ev '^remote/deployments/(generated-api-docs-index\.(json|html)|[^/]+/generated/[^/]+|[^/]+/src/[^/]+/api_docs\.gleam)$' || true)"
+          if [[ -n "${unexpected}" ]]; then
+            echo 'generator modified paths outside the generated-artifact allowlist:' >&2
+            printf '%s\n' "${unexpected}" >&2
+            exit 1
+          fi
+
+          git add -A -- remote/deployments remote/api-contracts
+          mapfile -t changed < <(git diff --cached --name-only)
+          test "${#changed[@]}" -gt 0
+          for path in "${changed[@]}"; do
+            case "${path}" in
+              remote/deployments/generated-api-docs-index.json|\
+              remote/deployments/generated-api-docs-index.html|\
+              remote/deployments/*/generated/*|\
+              remote/deployments/*/src/*/api_docs.gleam|\
+              remote/api-contracts/manifest.json)
+                ;;
+              *)
+                echo "unexpected non-generated path from fleet refresh: ${path}" >&2
+                exit 1
+                ;;
+            esac
+          done
+          git diff --cached --check
+          if git diff --cached --no-ext-diff --unified=0 -- . \
+            | grep -E '^\+(<<<<<<< |=======$|>>>>>>> )'; then
+            echo 'new git conflict marker detected' >&2
+            exit 1
+          fi
           node remote/tools/generate-api-docs.mjs --check
           node remote/tools/validate-openapi-contracts.mjs
           node remote/tests/check-rest-api-route-parity.mjs
@@ -46,21 +92,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git add -A -- remote/deployments remote/api-contracts
-          mapfile -t changed < <(git diff --cached --name-only)
-          test "${#changed[@]}" -gt 0
-          for path in "${changed[@]}"; do
-            case "$path" in
-              remote/deployments/*/generated/*|remote/api-contracts/manifest.json)
-                ;;
-              *)
-                echo "unexpected non-generated path from fleet refresh: $path" >&2
-                exit 1
-                ;;
-            esac
-          done
-          git diff --cached --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'chore(DEN-445): refresh fleet OpenAPI provenance [skip ci]'
+          git commit -m 'chore(DEN-445): refresh fleet OpenAPI provenance'
           git push origin HEAD:agent/den-445-native-openapi-fresh
+
+      - name: Upload refresh diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-445-fleet-openapi-refresh
+          path: |
+            ${{ runner.temp }}/fleet-openapi-generation.log
+            ${{ runner.temp }}/fleet-openapi-status.txt
+            ${{ runner.temp }}/fleet-openapi-stat.txt
+            ${{ runner.temp }}/fleet-openapi.diff
+          retention-days: 1
+          if-no-files-found: warn
