@@ -68,7 +68,15 @@ jobs:
           otp-version: '27.3'
           gleam-version: '1.17.0'
           rebar3-version: '3'
-          version-type: strict
+          version-type: loose
+
+      - name: Record resolved toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          gleam --version
+          rebar3 version
+          erl -noshell -eval 'io:format("OTP ~s~n", [erlang:system_info(otp_release)]), halt().' 
 
       - name: Build isolated executable-contract harness
         shell: bash
