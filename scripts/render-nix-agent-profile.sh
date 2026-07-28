@@ -19,8 +19,8 @@ for ((index = 0; index < ${#arguments[@]}; index++)); do
   esac
 done
 
-if [[ ! -x "$implementation" ]]; then
-  printf 'renderer implementation is missing or not executable: %s\n' "$implementation" >&2
+if [[ ! -r "$implementation" ]]; then
+  printf 'renderer implementation is missing or unreadable: %s\n' "$implementation" >&2
   exit 69
 fi
 
