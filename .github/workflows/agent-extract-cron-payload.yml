@@ -42,7 +42,7 @@ jobs:
       - uses: taiki-e/install-action@c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd
         with:
           tool: cargo-audit@0.22.2
-      - name: Repair ordinary Rust source and restore ordinary CI
+      - name: Repair and harden ordinary Rust source
         working-directory: repo
         shell: bash
         run: |
@@ -99,6 +99,158 @@ jobs:
           elif 'let dependency_error = schedules' not in source:
               raise SystemExit('borrow repair insertion point changed')
 
+          if 'let mut response = match request.send().await {' not in source:
+              source = source.replace(
+                  '    let response = match request.send().await {\n',
+                  '    let mut response = match request.send().await {\n',
+                  1,
+              )
+
+          old = (
+              '    let bytes = match response.bytes().await {\n'
+              '        Ok(bytes) if bytes.len() <= MAX_UPSTREAM_BYTES => bytes,\n'
+              '        Ok(_) => return bad_gateway("cron_upstream_response_too_large"),\n'
+              '        Err(_) => return bad_gateway("cron_upstream_response_invalid"),\n'
+              '    };\n'
+          )
+          new = (
+              '    let capacity = response\n'
+              '        .content_length()\n'
+              '        .unwrap_or(0)\n'
+              '        .min(MAX_UPSTREAM_BYTES as u64) as usize;\n'
+              '    let mut bytes = Vec::with_capacity(capacity);\n'
+              '    loop {\n'
+              '        let chunk = match response.chunk().await {\n'
+              '            Ok(Some(chunk)) => chunk,\n'
+              '            Ok(None) => break,\n'
+              '            Err(_) => return bad_gateway("cron_upstream_response_invalid"),\n'
+              '        };\n'
+              '        if bytes.len().saturating_add(chunk.len()) > MAX_UPSTREAM_BYTES {\n'
+              '            return bad_gateway("cron_upstream_response_too_large");\n'
+              '        }\n'
+              '        bytes.extend_from_slice(&chunk);\n'
+              '    }\n'
+          )
+          if old in source:
+              source = source.replace(old, new, 1)
+          elif 'let mut bytes = Vec::with_capacity(capacity);' not in source:
+              raise SystemExit('streaming response cap insertion point changed')
+
+          old = (
+              '    for name in ["traceparent", "tracestate"] {\n'
+              '        let header = HeaderName::from_static(name);\n'
+              '        if let Some(value) = incoming.get(&header) {\n'
+              '            headers.insert(header, value.clone());\n'
+              '        }\n'
+              '    }\n'
+          )
+          new = (
+              '    if let Some(traceparent) = incoming\n'
+              '        .get("traceparent")\n'
+              '        .filter(|value| valid_traceparent(value))\n'
+              '    {\n'
+              '        headers.insert(\n'
+              '            HeaderName::from_static("traceparent"),\n'
+              '            traceparent.clone(),\n'
+              '        );\n'
+              '        if let Some(tracestate) = incoming\n'
+              '            .get("tracestate")\n'
+              '            .filter(|value| valid_tracestate(value))\n'
+              '        {\n'
+              '            headers.insert(\n'
+              '                HeaderName::from_static("tracestate"),\n'
+              '                tracestate.clone(),\n'
+              '            );\n'
+              '        }\n'
+              '    }\n'
+          )
+          if old in source:
+              source = source.replace(old, new, 1)
+          elif '.filter(|value| valid_traceparent(value))' not in source:
+              raise SystemExit('trace-context validation insertion point changed')
+
+          trace_helpers = '''fn valid_traceparent(value: &HeaderValue) -> bool {
+              fn lower_hex(bytes: &[u8]) -> bool {
+                  bytes
+                      .iter()
+                      .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+              }
+
+              let Ok(value) = value.to_str() else {
+                  return false;
+              };
+              let bytes = value.as_bytes();
+              if bytes.len() != 55
+                  || &bytes[..3] != b"00-"
+                  || bytes[35] != b'-'
+                  || bytes[52] != b'-'
+              {
+                  return false;
+              }
+              let trace_id = &bytes[3..35];
+              let parent_id = &bytes[36..52];
+              let flags = &bytes[53..55];
+              lower_hex(trace_id)
+                  && trace_id.iter().any(|byte| *byte != b'0')
+                  && lower_hex(parent_id)
+                  && parent_id.iter().any(|byte| *byte != b'0')
+                  && lower_hex(flags)
+          }
+
+          fn valid_tracestate(value: &HeaderValue) -> bool {
+              let Ok(value) = value.to_str() else {
+                  return false;
+              };
+              !value.is_empty()
+                  && value.len() <= 512
+                  && value.split(',').count() <= 32
+                  && value
+                      .bytes()
+                      .all(|byte| byte == b'\t' || (0x20..=0x7e).contains(&byte))
+          }
+
+          '''
+          if 'fn valid_traceparent(value: &HeaderValue)' not in source:
+              marker = 'fn sanitize_upstream_json(status: StatusCode, value: Value) -> Value {\n'
+              if source.count(marker) != 1:
+                  raise SystemExit('trace helper insertion point changed')
+              source = source.replace(marker, trace_helpers + marker, 1)
+
+          test_marker = '''    #[test]
+              fn url_builder_encodes_path_segments() {
+          '''
+          trace_tests = '''    #[test]
+              fn invalid_or_unbounded_trace_context_is_not_forwarded() {
+                  let mut incoming = HeaderMap::new();
+                  incoming.insert("traceparent", HeaderValue::from_static("not-a-traceparent"));
+                  incoming.insert("tracestate", HeaderValue::from_static("vendor=browser-secret"));
+                  let headers = outbound_headers(&service(), "acme", &incoming, None).unwrap();
+                  assert!(headers.get("traceparent").is_none());
+                  assert!(headers.get("tracestate").is_none());
+
+                  incoming.insert(
+                      "traceparent",
+                      HeaderValue::from_static(
+                          "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
+                      ),
+                  );
+                  incoming.insert(
+                      "tracestate",
+                      HeaderValue::from_str(&"a".repeat(513)).unwrap(),
+                  );
+                  let headers = outbound_headers(&service(), "acme", &incoming, None).unwrap();
+                  assert!(headers.get("traceparent").is_some());
+                  assert!(headers.get("tracestate").is_none());
+              }
+
+              #[test]
+              fn url_builder_encodes_path_segments() {
+          '''
+          if 'fn invalid_or_unbounded_trace_context_is_not_forwarded()' not in source:
+              if source.count(test_marker) != 1:
+                  raise SystemExit('trace test insertion point changed')
+              source = source.replace(test_marker, trace_tests, 1)
+
           path.write_text(source)
           PY
           cargo fmt --all
@@ -116,8 +268,26 @@ jobs:
         working-directory: repo
         run: cargo fmt --all -- --check
       - name: Clippy
+        id: clippy
+        continue-on-error: true
         working-directory: repo
-        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo clippy --locked --all-targets --all-features -- -D warnings \
+            2>&1 | tee /tmp/customer-cron-clippy.log
+      - name: Upload Clippy diagnostic
+        if: steps.clippy.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: customer-cron-clippy-${{ github.run_id }}
+          path: |
+            /tmp/customer-cron-clippy.log
+            repo/src/cron.rs
+          if-no-files-found: error
+      - name: Enforce Clippy
+        if: steps.clippy.outcome == 'failure'
+        run: exit 1
       - name: Test
         working-directory: repo
         run: cargo test --locked --all-targets --all-features
