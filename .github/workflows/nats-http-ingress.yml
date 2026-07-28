@@ -48,22 +48,30 @@ jobs:
         working-directory: remote/nats-bridge
         run: |
           set +e
-          cargo audit --json > "${RUNNER_TEMP}/den-440-cargo-audit.json"
+          report_dir="${RUNNER_TEMP}/den-440-rustsec"
+          mkdir -p "$report_dir"
+          cargo audit --json >"$report_dir/report.json" 2>"$report_dir/stderr.txt"
           status=$?
-          python3 -m json.tool "${RUNNER_TEMP}/den-440-cargo-audit.json" | tail -n 300
+          printf '%s\n' "$status" >"$report_dir/exit-status.txt"
+          if test -s "$report_dir/report.json" && python3 -m json.tool "$report_dir/report.json" >/dev/null 2>&1; then
+            python3 -m json.tool "$report_dir/report.json" | tail -n 300
+          else
+            echo 'cargo-audit did not produce valid JSON; stderr follows:'
+            tail -n 300 "$report_dir/stderr.txt"
+          fi
           exit "$status"
       - name: Upload RustSec report
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: den-440-rustsec-report
-          path: ${{ runner.temp }}/den-440-cargo-audit.json
+          path: ${{ runner.temp }}/den-440-rustsec
           if-no-files-found: error
           retention-days: 2
       - name: Enforce RustSec audit
         if: steps.audit.outcome == 'failure'
         run: |
-          echo 'RustSec audit failed; inspect the exact JSON report.'
+          echo 'RustSec audit failed; inspect the exact report artifact.'
           exit 1
 
   contracts:
