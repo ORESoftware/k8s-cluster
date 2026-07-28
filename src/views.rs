@@ -11,6 +11,7 @@ pub(crate) enum CustomerTab {
     Dashboard,
     Auth,
     ApiKeys,
+    Crons,
     Security,
     Activity,
     Notifications,
@@ -18,11 +19,12 @@ pub(crate) enum CustomerTab {
 }
 
 impl CustomerTab {
-    pub(crate) fn all() -> [CustomerTab; 7] {
+    pub(crate) fn all() -> [CustomerTab; 8] {
         [
             CustomerTab::Dashboard,
             CustomerTab::Auth,
             CustomerTab::ApiKeys,
+            CustomerTab::Crons,
             CustomerTab::Security,
             CustomerTab::Activity,
             CustomerTab::Notifications,
@@ -35,6 +37,7 @@ impl CustomerTab {
             CustomerTab::Dashboard => "/app",
             CustomerTab::Auth => "/app/auth",
             CustomerTab::ApiKeys => "/app/api-keys",
+            CustomerTab::Crons => "/app/crons",
             CustomerTab::Security => "/app/security",
             CustomerTab::Activity => "/app/activity",
             CustomerTab::Notifications => "/app/notifications",
@@ -47,6 +50,7 @@ impl CustomerTab {
             CustomerTab::Dashboard => "Dashboard",
             CustomerTab::Auth => "Account",
             CustomerTab::ApiKeys => "API Keys",
+            CustomerTab::Crons => "Cron Jobs",
             CustomerTab::Security => "Security",
             CustomerTab::Activity => "Activity",
             CustomerTab::Notifications => "Notifications",
@@ -59,6 +63,7 @@ impl CustomerTab {
             CustomerTab::Dashboard => "Account posture, API access, preferences, and customer security in one workspace.",
             CustomerTab::Auth => "Your Supabase identity, verified organization membership, and isolated customer session.",
             CustomerTab::ApiKeys => "Create, rotate, scope, and audit customer API keys for production integrations.",
+            CustomerTab::Crons => "Create schedules, attach managed code or webhooks, run jobs on demand, and inspect the traceable run trail.",
             CustomerTab::Security => "Two-factor authentication, trusted sessions, recovery, and account protection.",
             CustomerTab::Activity => "Organization-scoped account and API activity from the durable customer audit log.",
             CustomerTab::Notifications => "Key-rotation reminders, lock-contention alerts, and account notices delivered to you.",
@@ -176,6 +181,7 @@ pub(crate) fn customer_tab_content(
         CustomerTab::Dashboard => dashboard_markup(config, customer, org_id),
         CustomerTab::Auth => auth_markup(customer, csrf_token),
         CustomerTab::ApiKeys => api_keys_markup(org_id, csrf_token),
+        CustomerTab::Crons => cron_markup(org_id, csrf_token),
         CustomerTab::Security => security_markup(org_id),
         CustomerTab::Activity => activity_markup(org_id),
         CustomerTab::Notifications => notifications_markup(org_id),

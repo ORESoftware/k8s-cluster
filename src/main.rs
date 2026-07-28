@@ -4,6 +4,7 @@
 // is delegated to fiducia-auth so there is exactly one credential authority.
 mod auth;
 mod billing;
+mod cron;
 mod entity;
 mod request_security;
 mod store;
@@ -50,7 +51,7 @@ const SERVICE: &str = "fiducia-backend";
 /// Bound request handling time. The site is static; nothing legitimately runs long.
 const REQUEST_TIMEOUT_SECS: u64 = 30;
 /// Cap request bodies — this tier only serves GETs.
-const MAX_BODY_BYTES: usize = 64 * 1024;
+const MAX_BODY_BYTES: usize = 384 * 1024;
 const STREAM_HEARTBEAT_SECS: u64 = 15;
 const CUSTOMER_WS_PATH: &str = "/app/ws";
 const CUSTOMER_EVENTS_PATH: &str = "/app/events";
@@ -116,6 +117,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         pool: Some(pool),
         authenticator: Authenticator::from_env(),
         request_security,
+        cron_services: CronServices::from_env(),
     };
 
     let app = build_router(config);
@@ -257,7 +259,13 @@ fn parse_customer_app_origin(value: &str) -> Result<HeaderValue, io::Error> {
 fn customer_cors(origin: HeaderValue) -> CorsLayer {
     CorsLayer::new()
         .allow_origin(origin)
-        .allow_methods([Method::GET, Method::POST, Method::PUT, Method::OPTIONS])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
         .allow_headers([
             header::AUTHORIZATION,
             header::CONTENT_TYPE,
@@ -287,7 +295,7 @@ fn build_router(config: AppConfig) -> Router {
     // Routes are declared as flat literals (not nested) so the shared API-docs
     // generator (remote/tools/generate-api-docs.mjs, which scans the router's
     // route declarations) records their true paths.
-    let router = Router::new()
+    let router = cron_routes(Router::new())
         // Liveness/readiness probe (matches the sibling canonical.cloud
         // convention); also available as /api/health.
         .route("/healthz", get(health))
@@ -484,6 +492,9 @@ struct AppConfig {
     /// writes to their org. Fail-closed (`Deny`) when no auth backend is set.
     authenticator: Authenticator,
     request_security: RequestSecurity,
+    /// Fail-closed trusted clients for the tenant-scoped scheduler and managed
+    /// function runtime. Browser credentials are never forwarded.
+    cron_services: CronServices,
 }
 
 impl AppConfig {
@@ -532,6 +543,7 @@ impl AppConfig {
 }
 
 mod security;
+pub(crate) use cron::*;
 pub(crate) use security::*;
 
 mod login;

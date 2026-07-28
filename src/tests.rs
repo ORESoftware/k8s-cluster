@@ -184,6 +184,7 @@ fn test_config() -> AppConfig {
             b"0123456789abcdef0123456789abcdef".to_vec(),
         )
         .unwrap(),
+        cron_services: CronServices::disabled(),
     }
 }
 
