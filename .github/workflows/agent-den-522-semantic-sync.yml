@@ -1,0 +1,132 @@
+name: DEN-522 semantic branch sync
+
+on:
+  push:
+    branches:
+      - agent/den-522-appointment-booking-profile
+
+permissions:
+  contents: write
+
+jobs:
+  merge-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: agent/den-522-appointment-booking-profile
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - name: Merge reviewed ATS branch and reapply appointment delta
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin agent/den-256-platform-jobs-workflow
+          git merge --no-ff --no-commit origin/agent/den-256-platform-jobs-workflow || true
+
+          for path in \
+            .github/workflows/repo-checks.yml \
+            remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml \
+            remote/deployments/browser-mcp-rs/k8s/ec2/dd-browser-mcp-rs.deployment.yaml; do
+            if git ls-files -u -- "$path" | grep -q .; then
+              git checkout --theirs -- "$path"
+              git add "$path"
+            fi
+          done
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+          import re
+
+          mcp_path = Path('remote/deployments/browser-mcp-rs/k8s/ec2/dd-browser-mcp-rs.deployment.yaml')
+          worker_path = Path('remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml')
+          checks_path = Path('.github/workflows/repo-checks.yml')
+
+          mcp = mcp_path.read_text()
+          worker = worker_path.read_text()
+          checks = checks_path.read_text()
+
+          mcp = mcp.replace(
+              'Reviewed Fiducia applications and platform-jobs profiles.',
+              'Reviewed Fiducia applications, platform-jobs, and appointments profiles.',
+              1,
+          )
+          worker = worker.replace(
+              'reviewed Fiducia applications and platform-jobs profiles.',
+              'reviewed Fiducia applications, platform-jobs, and appointments profiles.',
+              1,
+          )
+
+          for label, text in [('MCP', mcp), ('worker', worker)]:
+              if ',cal.com,calendly.com,httpbingo.org' not in text:
+                  text = text.replace(',httpbingo.org\'', ',cal.com,calendly.com,httpbingo.org\'', 1)
+              if label == 'MCP':
+                  mcp = text
+              else:
+                  worker = text
+
+          if '"appointments":["cal.com","calendly.com"]' not in mcp:
+              mcp = mcp.replace(
+                  '"smoke-test":["httpbingo.org"]',
+                  '"appointments":["cal.com","calendly.com"],"smoke-test":["httpbingo.org"]',
+                  1,
+              )
+
+          appointment_test = '            general/browser-mcp-appointment-profile.test.ts\n'
+          if appointment_test not in checks:
+              marker = '            general/browser-mcp-exposure.test.ts\n'
+              if marker not in checks:
+                  raise SystemExit('repo checks no longer contains Browser MCP exposure test marker')
+              checks = checks.replace(marker, marker + appointment_test, 1)
+
+          mcp_path.write_text(mcp)
+          worker_path.write_text(worker)
+          checks_path.write_text(checks)
+
+          def env_value(text: str, name: str) -> str:
+              match = re.search(rf'- name:\s*{name}\s*\n\s*value:\s*[\'\"]?([^\'\"\n]+)', text)
+              if not match:
+                  raise SystemExit(f'missing {name}')
+              return match.group(1)
+
+          mcp_ceiling = env_value(mcp, 'BROWSER_MCP_ALLOWED_DOMAINS')
+          worker_ceiling = env_value(worker, 'BROWSER_AGENT_ALLOWED_DOMAINS')
+          if mcp_ceiling != worker_ceiling:
+              raise SystemExit('MCP and worker ceilings diverged')
+          if not all(host in mcp_ceiling.split(',') for host in ('cal.com', 'calendly.com')):
+              raise SystemExit('appointment roots missing from process ceiling')
+
+          workflow_match = re.search(
+              r'- name:\s*BROWSER_MCP_WORKFLOW_ALLOWLISTS_JSON\s*\n\s*value:\s*>-\s*\n\s*(\{[^\n]+\})',
+              mcp,
+          )
+          if not workflow_match:
+              raise SystemExit('missing workflow JSON')
+          workflows = json.loads(workflow_match.group(1))
+          if workflows.get('appointments') != ['cal.com', 'calendly.com']:
+              raise SystemExit('appointments profile is not exact')
+          if 'platform-jobs' not in workflows or 'fiducia-applications' not in workflows:
+              raise SystemExit('existing reviewed profiles were lost')
+          PY
+
+          git diff --check
+          grep -R -nE '^(<<<<<<<|=======|>>>>>>>)' --exclude-dir=.git . && exit 1 || true
+          cd remote/tests
+          corepack pnpm install --frozen-lockfile
+          pnpm exec tsx --test general/browser-mcp-appointment-profile.test.ts general/browser-mcp-exposure.test.ts
+          cd ../..
+          rm .github/workflows/agent-den-522-semantic-sync.yml
+          git add -A
+          git commit -m 'merge(DEN-522): preserve ATS and appointment Browser MCP profiles'
+          git push origin HEAD:agent/den-522-appointment-booking-profile
