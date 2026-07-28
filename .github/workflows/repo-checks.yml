@@ -32,16 +32,15 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # The repository-scoped GITHUB_TOKEN extraheader can override the
+          # broader credential used for private cross-organization submodules.
+          persist-credentials: false
 
       - name: Initialize required contract submodule
         env:
           K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
-        run: |
-          set -euo pipefail
-          token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
-          git config --global url."${token_url}".insteadOf "git@github.com:"
-          trap 'git config --global --unset-all url."${token_url}".insteadOf || true' EXIT
-          git submodule update --init --recursive --depth 1 -- remote/libs
+        run: bash .github/scripts/init-private-submodules.sh remote/libs
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -133,16 +132,13 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Initialize pinned libraries and backend repositories
         env:
           K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
-        run: |
-          set -euo pipefail
-          token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
-          git config --global url."${token_url}".insteadOf "git@github.com:"
-          trap 'git config --global --unset-all url."${token_url}".insteadOf || true' EXIT
-          git submodule update --init --depth 1 -- remote/libs remote/deployments
+        run: bash .github/scripts/init-private-submodules.sh remote/libs remote/deployments
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
