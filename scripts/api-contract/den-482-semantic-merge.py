@@ -192,7 +192,32 @@ def canonicalize_export_order() -> None:
     json.push('\\n');
     Ok(json)
 }"""
-    new = """fn sort_json_objects(value: &mut Value) {
+    new = """fn restore_shared_free_form_schemas(value: &mut Value) {
+    // The shared handlers model these fields as serde_json::Value and therefore
+    // intentionally accept any JSON value. Utoipa can emit that valid OpenAPI
+    // 3.1 shape but cannot deserialize it again, so the private-submodule CI
+    // shim temporarily uses an explicit union. Restore the authoritative
+    // free-form shape before exporting the executable contract and SDK input.
+    for pointer in [
+        \"/components/schemas/RuntimeConfigEntry/properties/value\",
+        \"/components/schemas/RuntimeConfigEntry/properties/meta\",
+    ] {
+        let schema = value
+            .pointer_mut(pointer)
+            .unwrap_or_else(|| panic!(\"missing shared free-form schema at {pointer}\"))
+            .as_object_mut()
+            .unwrap_or_else(|| panic!(\"shared free-form schema at {pointer} must be an object\"));
+        schema.remove(\"type\");
+    }
+
+    let pointer = \"/components/schemas/RuntimeConfigSnapshotResponse/properties/entries/additionalProperties\";
+    let schema = value
+        .pointer_mut(pointer)
+        .unwrap_or_else(|| panic!(\"missing shared free-form schema at {pointer}\"));
+    *schema = Value::Object(Map::new());
+}
+
+fn sort_json_objects(value: &mut Value) {
     match value {
         Value::Object(object) => {
             let mut entries = std::mem::take(object).into_iter().collect::<Vec<_>>();
@@ -215,6 +240,7 @@ pub fn canonical_json(openapi: &OpenApi) -> Result<String, serde_json::Error> {
     // Serializing the Utoipa model directly can expose randomized map order.
     // Normalize every JSON object while preserving semantically ordered arrays.
     let mut value = serde_json::to_value(openapi)?;
+    restore_shared_free_form_schemas(&mut value);
     sort_json_objects(&mut value);
     let mut json = serde_json::to_string_pretty(&value)?;
     json.push('\\n');
