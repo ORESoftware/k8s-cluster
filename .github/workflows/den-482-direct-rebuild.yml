@@ -203,3 +203,4 @@ jobs:
           retention-days: 1
 
 # Activation commit: the workflow already existed on the feature branch before this synchronize event.
+# Connector activation after deterministic chunk repair; no contract source changed.
