@@ -6,27 +6,25 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Normalize JetStream delivery attempt type
+      - name: Apply delivery-attempt type fix in workspace
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
           path = Path("src/nats_ingestion.rs")
           text = path.read_text()
-          old = '''    let delivery_attempt = message.info().map(|info| info.delivered).unwrap_or(1);'''
+          old = '    let delivery_attempt = message.info().map(|info| info.delivered).unwrap_or(1);'
           new = '''    let delivery_attempt = message
         .info()
         .ok()
@@ -39,17 +37,11 @@ jobs:
           path.write_text(text)
           PY
           cargo fmt
-      - name: Commit JetStream delivery-attempt fix
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        run: |
-          if [ -z "$(git status --porcelain -- src/nats_ingestion.rs)" ]; then
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/nats_ingestion.rs
-          git commit -m "DEN-329 normalize JetStream delivery attempts"
-          git push origin "HEAD:${{ github.head_ref }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jetstream-patched-source
+          path: src/nats_ingestion.rs
+          if-no-files-found: error
       - run: cargo fmt --check
       - name: Run Clippy and preserve JetStream diagnostics
         run: |
