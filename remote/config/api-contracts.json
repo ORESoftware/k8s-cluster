@@ -35,7 +35,6 @@
     "auth-server-rs",
     "bastion-rs",
     "billing-server-rs",
-    "browser-test-server",
     "build-server-rs",
     "cluster-mcp-rs",
     "container-pool-rs",

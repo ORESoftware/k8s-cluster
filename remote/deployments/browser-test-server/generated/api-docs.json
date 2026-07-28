@@ -12,30 +12,11 @@
     }
   ],
   "paths": {
-    "/": {
-      "get": {
-        "operationId": "browser_test_server_get_d0fcfe74e294",
-        "summary": "Service descriptor, home redirect, or root RPC endpoint.",
-        "description": "Service descriptor, home redirect, or root RPC endpoint.",
-        "tags": [
-          "service"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-route-type": "service",
-        "x-dd-visibility": "public",
-        "security": []
-      }
-    },
     "/api/docs": {
       "get": {
         "operationId": "browser_test_server_get_api_docs_9fcd645a3eb1",
-        "summary": "Human-readable generated API documentation.",
-        "description": "Human-readable generated API documentation.",
+        "summary": "Return the Scalar reference for the fail-closed public contract.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
           "service"
         ],
@@ -53,8 +34,8 @@
     "/api/docs.json": {
       "get": {
         "operationId": "browser_test_server_get_api_docs_json_aeee36ad5e79",
-        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
-        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
           "service"
         ],
@@ -72,8 +53,8 @@
     "/docs/api": {
       "get": {
         "operationId": "browser_test_server_get_docs_api_03e6dc5fb010",
-        "summary": "Human-readable generated API documentation.",
-        "description": "Human-readable generated API documentation.",
+        "summary": "Return the Scalar reference for the fail-closed public contract.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
           "service"
         ],
@@ -91,8 +72,8 @@
     "/healthz": {
       "get": {
         "operationId": "browser_test_server_get_healthz_4722a067e6ee",
-        "summary": "Health check.",
-        "description": "Health check.",
+        "summary": "Return a public liveness response for Kubernetes probes.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
           "service"
         ],
@@ -110,8 +91,27 @@
     "/metrics": {
       "get": {
         "operationId": "browser_test_server_get_metrics_73d9974b01c6",
-        "summary": "Prometheus metrics.",
-        "description": "Prometheus metrics.",
+        "summary": "Return bounded Prometheus text exposition.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "browser_test_server_get_openapi_json_db092e1508a9",
+        "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
+        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
         "tags": [
           "service"
         ],

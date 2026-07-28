@@ -748,7 +748,7 @@
       "service": "browser-test-server",
       "language": "node",
       "specPath": "remote/deployments/browser-test-server/generated/api-docs.json",
-      "specSha256": "b9fad566fab26ad709bac0a8864e9d12a7267d50a6317bc0e9af3d6970e59db1",
+      "specSha256": "82fa66043fd6515be5a6963afc8109d704be4c433cc8419842c4e6800bd42deb",
       "operationCount": 6,
       "operations": [
         {
@@ -757,7 +757,7 @@
           "operationId": "browser_test_server_get_api_docs_9fcd645a3eb1",
           "method": "GET",
           "path": "/api/docs",
-          "summary": "Human-readable generated API documentation.",
+          "summary": "Return the Scalar reference for the fail-closed public contract.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -773,7 +773,7 @@
               "content": []
             }
           ],
-          "contractSha256": "14d8298520219edaf08928560efbf7f80faf9c07f5ba284892d61ad9ab6a01d5"
+          "contractSha256": "f9d8219e1511073edaffd8d942443d5d75c86beafb0dacd31a1582529cde25a9"
         },
         {
           "service": "browser-test-server",
@@ -781,7 +781,7 @@
           "operationId": "browser_test_server_get_api_docs_json_aeee36ad5e79",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+          "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -797,31 +797,7 @@
               "content": []
             }
           ],
-          "contractSha256": "ce5e466300acbf04acac028378bf65bc2761975b414d72d01dece6a225d3345c"
-        },
-        {
-          "service": "browser-test-server",
-          "serviceLanguage": "node",
-          "operationId": "browser_test_server_get_d0fcfe74e294",
-          "method": "GET",
-          "path": "/",
-          "summary": "Service descriptor, home redirect, or root RPC endpoint.",
-          "visibility": "public",
-          "routeType": "service",
-          "auth": "public",
-          "pathParameters": [],
-          "queryParameters": [],
-          "requestBody": {
-            "required": false,
-            "content": []
-          },
-          "responses": [
-            {
-              "status": "default",
-              "content": []
-            }
-          ],
-          "contractSha256": "b98756969d49520cc995ca4b2d2631f2dbbbf8727828ff9f3a57ca462d9faec1"
+          "contractSha256": "e093a8331bef715e5b4f047327d04d1d34b2e2b5f5fe42958b2af68d27daa9be"
         },
         {
           "service": "browser-test-server",
@@ -829,7 +805,7 @@
           "operationId": "browser_test_server_get_docs_api_03e6dc5fb010",
           "method": "GET",
           "path": "/docs/api",
-          "summary": "Human-readable generated API documentation.",
+          "summary": "Return the Scalar reference for the fail-closed public contract.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -845,7 +821,7 @@
               "content": []
             }
           ],
-          "contractSha256": "93ff17dccd27b42ef0bfc0394e227a123144ea27b30fbf925bd1a6084a0193f1"
+          "contractSha256": "bb35d1b6ed8426f431607e394355980935fd1d34a66cfa2a92445df05abb7558"
         },
         {
           "service": "browser-test-server",
@@ -853,7 +829,7 @@
           "operationId": "browser_test_server_get_healthz_4722a067e6ee",
           "method": "GET",
           "path": "/healthz",
-          "summary": "Health check.",
+          "summary": "Return a public liveness response for Kubernetes probes.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -869,7 +845,7 @@
               "content": []
             }
           ],
-          "contractSha256": "f579076ac7465b13955e2827129e8f218af0add62f4e792bb29faa430ecf78d9"
+          "contractSha256": "14ae48c27d1382bab824232c4cb0eec9205ec2a5db3207e7d4cd8a90a87f3f61"
         },
         {
           "service": "browser-test-server",
@@ -877,7 +853,7 @@
           "operationId": "browser_test_server_get_metrics_73d9974b01c6",
           "method": "GET",
           "path": "/metrics",
-          "summary": "Prometheus metrics.",
+          "summary": "Return bounded Prometheus text exposition.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -893,7 +869,31 @@
               "content": []
             }
           ],
-          "contractSha256": "7cb22d6c9ad676f713210a45178d132bdfae9113e678c07aa6351a449975dc13"
+          "contractSha256": "377d1dec9953b1c44f251d7cd5410cdde54a6f284a8e380ce90c47dac88afd90"
+        },
+        {
+          "service": "browser-test-server",
+          "serviceLanguage": "node",
+          "operationId": "browser_test_server_get_openapi_json_db092e1508a9",
+          "method": "GET",
+          "path": "/openapi.json",
+          "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "6f1789f370fd12eadd9afa1de631b49fe6d1d55a7b7c60cde203d5105ee03fdd"
         }
       ]
     },
@@ -7183,5 +7183,5 @@
   ],
   "serviceCount": 44,
   "operationCount": 281,
-  "catalogSha256": "b295163700f77ceab8c68dbd2d16cdf79a1eba6b08e4683863f37123f416f7e4"
+  "catalogSha256": "8b13a51a18433272657ee6c5e51b159c0a1d68a03ff6ae964d9bc553af5d2510"
 }

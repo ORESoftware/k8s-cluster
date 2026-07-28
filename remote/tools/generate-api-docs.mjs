@@ -269,7 +269,13 @@ function extractOpenApiRoutes(document, sourceFile) {
             : typeof operation.description === 'string'
               ? operation.description
               : '',
-        notes: 'Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.',
+        notes:
+          document['x-dd-language'] === 'node'
+            ? 'Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.'
+            : 'Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.',
+        visibilityHint: operation['x-dd-visibility'],
+        authHint: operation['x-dd-auth'],
+        routeTypeHint: operation['x-dd-route-type'],
       });
     }
   }
@@ -716,7 +722,18 @@ function mergeRoutes(routes) {
 
 function normalizeRoutes(serviceName, rawRoutes) {
   return mergeRoutes(rawRoutes).map((route) => {
-    const routeType = classifyRoute(serviceName, route);
+    const routeType =
+      typeof route.routeTypeHint === 'string' && route.routeTypeHint.length > 0
+        ? route.routeTypeHint
+        : classifyRoute(serviceName, route);
+    const auth =
+      typeof route.authHint === 'string' && route.authHint.length > 0
+        ? route.authHint
+        : routeAuth(routeType, route);
+    const visibility =
+      route.visibilityHint === 'public' || route.visibilityHint === 'internal'
+        ? route.visibilityHint
+        : undefined;
     return {
       path: route.path,
       methods: route.methods,
@@ -728,7 +745,8 @@ function normalizeRoutes(serviceName, rawRoutes) {
           : routeType === 'service'
             ? 'service'
             : 'code-first',
-      auth: routeAuth(routeType, route),
+      auth,
+      visibility,
       purpose: routePurpose(routeType, route),
       handlers: route.handlers ?? [],
       sourceFiles: route.sourceFiles.map((file) => relative(repoRoot, file).split(sep).join('/')),
@@ -974,13 +992,18 @@ async function discoverExtraServices() {
     if (!(await pathExists(files[0]))) {
       continue;
     }
-    const rawRoutes = [];
-    for (const file of files) {
-      if (await pathExists(file)) {
-        rawRoutes.push(...spec.parser(await readUtf8(file), file));
+    const deploymentDir = resolve(repoRoot, spec.deploymentDir ?? dirname(dirname(files[0])));
+    const openapiFile = join(deploymentDir, 'generated/openapi.json');
+    const rawRoutes = (await pathExists(openapiFile))
+      ? extractOpenApiRoutes(JSON.parse(await readUtf8(openapiFile)), openapiFile)
+      : [];
+    if (rawRoutes.length === 0) {
+      for (const file of files) {
+        if (await pathExists(file)) {
+          rawRoutes.push(...spec.parser(await readUtf8(file), file));
+        }
       }
     }
-    const deploymentDir = resolve(repoRoot, spec.deploymentDir ?? dirname(dirname(files[0])));
     // Python services: the helper is inline so we look for the marker class
     // directly. Gleam services: detect the path dep in gleam.toml. Either
     // way we inject the same three routes the Rust client emits.
@@ -1083,6 +1106,9 @@ function openApiOperationId(service, route, method) {
 }
 
 function openApiVisibility(route) {
+  if (route.visibility === 'public' || route.visibility === 'internal') {
+    return route.visibility;
+  }
   if (route.routeType === 'internal-db' || route.routeType === 'runtime-config') {
     return 'internal';
   }

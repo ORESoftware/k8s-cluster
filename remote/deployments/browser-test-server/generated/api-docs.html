@@ -55,16 +55,8 @@
 <tr>
   <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/</code></td>
-  <td data-label="Purpose">Service descriptor, home redirect, or root RPC endpoint.</td>
-  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
-  <td data-label="Auth">public</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/api/docs</code></td>
-  <td data-label="Purpose">Human-readable generated API documentation.</td>
+  <td data-label="Purpose">Return the Scalar reference for the fail-closed public contract.</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
@@ -72,7 +64,7 @@
   <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/api/docs.json</code></td>
-  <td data-label="Purpose">Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.</td>
+  <td data-label="Purpose">Return the fail-closed public OpenAPI 3.1 contract.</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
@@ -80,7 +72,7 @@
   <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/docs/api</code></td>
-  <td data-label="Purpose">Human-readable generated API documentation.</td>
+  <td data-label="Purpose">Return the Scalar reference for the fail-closed public contract.</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
@@ -88,7 +80,7 @@
   <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/healthz</code></td>
-  <td data-label="Purpose">Health check.</td>
+  <td data-label="Purpose">Return a public liveness response for Kubernetes probes.</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
@@ -96,7 +88,15 @@
   <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/metrics</code></td>
-  <td data-label="Purpose">Prometheus metrics.</td>
+  <td data-label="Purpose">Return bounded Prometheus text exposition.</td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
+  <td data-label="Auth">public</td>
+</tr>
+<tr>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
+  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
+  <td data-label="Path"><code>/openapi.json</code></td>
+  <td data-label="Purpose">Return the fail-closed public OpenAPI 3.1 contract.</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
