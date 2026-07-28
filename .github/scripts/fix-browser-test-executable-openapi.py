@@ -121,6 +121,18 @@ server = replace_once(
 )
 server = replace_once(
     server,
+    """function toolsDescriptor() {
+  return {
+    default: config.defaultTool,
+""",
+    """function toolsDescriptor() {
+  return {
+    defaultTool: config.defaultTool,
+""",
+    "avoid generated Rust Default enum collision in the tools response",
+)
+server = replace_once(
+    server,
     """  void main().catch(async (error) => {
     fastify.log.error({ err: error }, 'dd-browser-test-server failed to start');
     process.exitCode = 1;
@@ -144,6 +156,7 @@ for forbidden in (
     "const metrics = {const metrics = {",
     "registerAjvFormats",
     "export type { RunRequest, RunResult, Step };\nexport type { RunRequest, RunResult, Step };",
+    "    default: config.defaultTool,",
 ):
     if forbidden in server:
         raise SystemExit(f"migration repair did not remove {forbidden!r}")
@@ -175,6 +188,18 @@ contract = replace_once(
 )
 contract = replace_once(
     contract,
+    """const ToolsDescriptorSchema = Type.Object(
+  {
+    default: ToolSchema,
+""",
+    """const ToolsDescriptorSchema = Type.Object(
+  {
+    defaultTool: ToolSchema,
+""",
+    "avoid generated Rust Default enum collision in the OpenAPI schema",
+)
+contract = replace_once(
+    contract,
     """    ],
   },
 };
@@ -187,6 +212,8 @@ function sortJson""",
 function sortJson""",
     "preserve OpenAPI literal types without rejecting custom x-dd extensions",
 )
+if "    default: ToolSchema," in contract:
+    raise SystemExit("tools response still exposes the generator-hostile default property")
 CONTRACT.write_text(contract, encoding="utf-8")
 
 package = json.loads(PACKAGE.read_text(encoding="utf-8"))
@@ -194,4 +221,4 @@ package["dependencies"].pop("ajv-formats", None)
 package["dependencies"] = dict(sorted(package["dependencies"].items()))
 PACKAGE.write_text(json.dumps(package, indent=2) + "\n", encoding="utf-8")
 
-print("repaired browser-test migration typing, schema identity, and marker boundaries")
+print("repaired browser-test migration typing, schema identity, Rust model names, and marker boundaries")
