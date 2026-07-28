@@ -78,6 +78,18 @@ function parseJson(response, label) {
   }
 }
 
+function assertScalarBootstrap(response, expectedSpecUrl, label) {
+  assert.equal(response.status, 200, label);
+  assert.match(response.contentType, /text\/html/, label);
+  assert.match(response.body, /id=["']api-reference["']/, label);
+  assert.match(response.body, /@scalar\/api-reference/, label);
+  assert.match(
+    response.body,
+    new RegExp(`data-url=["']${expectedSpecUrl.replaceAll('/', '\\/')}["']`),
+    label,
+  );
+}
+
 async function stopChild(child, logs) {
   if (child.exitCode !== null) return;
   child.kill('SIGTERM');
@@ -146,11 +158,9 @@ try {
 
   for (const path of ['/docs/api', '/api/docs']) {
     const response = await request(baseUrl, path);
-    assert.equal(response.status, 200, path);
-    assert.match(response.contentType, /text\/html/, path);
-    assert.match(response.body, /Scalar\.createApiReference/, path);
-    assert.match(response.body, /openapi\.json/, path);
+    assertScalarBootstrap(response, '/openapi.json', path);
     assert.doesNotMatch(response.body, /internal\/openapi\.json/, path);
+    assert.doesNotMatch(response.body, /runBrowserScenario/, path);
   }
 
   const health = await request(baseUrl, '/healthz');
@@ -206,10 +216,9 @@ try {
   const internalDocs = await request(baseUrl, '/internal/docs/api', {
     headers: { 'x-server-auth': authSecret },
   });
-  assert.equal(internalDocs.status, 200);
-  assert.match(internalDocs.contentType, /text\/html/);
-  assert.match(internalDocs.body, /Scalar\.createApiReference/);
-  assert.match(internalDocs.body, /runBrowserScenario/);
+  assertScalarBootstrap(internalDocs, '/internal/openapi.json', '/internal/docs/api');
+  assert.doesNotMatch(internalDocs.body, /data-url=["']\/openapi\.json["']/);
+  assert.doesNotMatch(internalDocs.body, /runBrowserScenario/);
 
   const tools = await request(baseUrl, '/tools', {
     headers: { authorization: `Bearer ${authSecret}` },
