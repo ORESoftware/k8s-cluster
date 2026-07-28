@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "gitlinks_status": "pending-application",
+  "gitlinks_status": "applied",
   "rollout": "low-risk-toolchain-sync-fixture-extension-controls",
   "repositories": {
     "apps/cliptown-interfaces": {
