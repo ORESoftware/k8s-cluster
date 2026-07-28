@@ -1,0 +1,59 @@
+name: DEN-445 fleet OpenAPI diagnostics
+
+on:
+  push:
+    branches:
+      - agent/den-445-native-openapi-fresh
+    paths:
+      - '.github/workflows/den-445-fleet-openapi-diagnostics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: den-445-fleet-openapi-diagnostics
+  cancel-in-progress: true
+
+jobs:
+  diff:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: agent/den-445-native-openapi-fresh
+          fetch-depth: 0
+          show-progress: false
+          submodules: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+
+      - name: Regenerate fleet contracts and capture exact drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          node remote/tools/generate-api-docs.mjs \
+            2>&1 | tee "${RUNNER_TEMP}/fleet-openapi-generation.log"
+          git status --short > "${RUNNER_TEMP}/fleet-openapi-status.txt"
+          git diff --stat > "${RUNNER_TEMP}/fleet-openapi-stat.txt"
+          git diff --binary > "${RUNNER_TEMP}/fleet-openapi.diff"
+          cat "${RUNNER_TEMP}/fleet-openapi-status.txt"
+          cat "${RUNNER_TEMP}/fleet-openapi-stat.txt"
+          test -s "${RUNNER_TEMP}/fleet-openapi.diff"
+
+      - name: Upload regeneration diagnostics
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-445-fleet-openapi-diagnostics
+          path: |
+            ${{ runner.temp }}/fleet-openapi-generation.log
+            ${{ runner.temp }}/fleet-openapi-status.txt
+            ${{ runner.temp }}/fleet-openapi-stat.txt
+            ${{ runner.temp }}/fleet-openapi.diff
+          retention-days: 1
+          if-no-files-found: error
