@@ -8,6 +8,7 @@ with the newer Node/Fastify route hints. Every replacement is exact and
 fail-closed so upstream drift cannot silently discard either implementation.
 """
 
+import os
 from pathlib import Path
 
 
@@ -223,6 +224,21 @@ pub fn canonical_json(openapi: &OpenApi) -> Result<String, serde_json::Error> {
     path.write_text(source)
 
 
+def pin_shared_contract_revision() -> None:
+    path = Path("remote/api-contracts/manifest.json")
+    source = path.read_text()
+    merged_commit = os.environ.get("SHARED_COMMIT")
+    if not merged_commit:
+        raise SystemExit("SHARED_COMMIT is required to pin shared contract provenance")
+    source = replace_once(
+        source,
+        "2504b054ac92becf265762c1bd1f0679a10de893",
+        merged_commit,
+        "pin merged shared runtime-config revision",
+    )
+    path.write_text(source)
+
+
 def enforce_private_operation_security() -> None:
     path = Path("remote/tools/check-openapi-contracts.mjs")
     source = path.read_text()
@@ -252,6 +268,7 @@ def main() -> None:
     merge_generator()
     record_runtime_auth_boundaries()
     canonicalize_export_order()
+    pin_shared_contract_revision()
     enforce_private_operation_security()
 
 
