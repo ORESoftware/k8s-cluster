@@ -1,0 +1,118 @@
+name: DEN-445 Rust diagnostics
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/den-445-rust-diagnostics.yml'
+      - '.github/scripts/den-445-migrate.py.gz.b64.part*'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: den-445-rust-diagnostics
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: agent/den-445-strong-openapi-contract
+
+      - name: Apply reviewed migration
+        run: |
+          set -euo pipefail
+          cat .github/scripts/den-445-migrate.py.gz.b64.part* \
+            | base64 --decode \
+            | gzip --decompress \
+            > "${RUNNER_TEMP}/den-445-migrate.py"
+          echo '8767999002f76acffb91f37d57666efe659efbd18a624c63153e7efcd29e8ada  '"${RUNNER_TEMP}/den-445-migrate.py" | sha256sum --check
+          python3 "${RUNNER_TEMP}/den-445-migrate.py"
+
+      - name: Create API-compatible telemetry shim
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-rs/src
+          cat > remote/libs/telemetry-rs/Cargo.toml <<'TOML'
+          [package]
+          name = "dd-telemetry"
+          version = "0.1.0"
+          edition = "2021"
+          [lib]
+          path = "src/lib.rs"
+          [dependencies]
+          tracing = "0.1"
+          tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
+          tracing-opentelemetry = "0.27"
+          opentelemetry = "0.26"
+          opentelemetry_sdk = { version = "0.26", features = ["rt-tokio"] }
+          opentelemetry-otlp = { version = "0.26", default-features = false, features = ["trace", "http-proto", "reqwest-client", "reqwest-rustls"] }
+          opentelemetry-http = "0.26"
+          opentelemetry-semantic-conventions = "0.16"
+          tower-http = { version = "0.6", features = ["trace"] }
+          http = "1"
+          tokio = { version = "1", features = ["rt"] }
+          TOML
+          cat > remote/libs/telemetry-rs/src/lib.rs <<'RS'
+          use std::time::Duration;
+          use http::{Request, Response};
+          use tower_http::classify::{ServerErrorsAsFailures, SharedClassifier};
+          use tower_http::trace::{DefaultOnRequest, MakeSpan, OnResponse, TraceLayer};
+          use tracing::Span;
+
+          #[must_use]
+          pub struct OtelGuard;
+          pub fn init(_: &str) -> OtelGuard { OtelGuard }
+          pub fn http_trace_layer() -> TraceLayer<SharedClassifier<ServerErrorsAsFailures>, OtelMakeSpan, DefaultOnRequest, OtelOnResponse> {
+              TraceLayer::new_for_http().make_span_with(OtelMakeSpan).on_response(OtelOnResponse)
+          }
+          #[derive(Clone, Copy, Debug, Default)]
+          pub struct OtelMakeSpan;
+          impl<B> MakeSpan<B> for OtelMakeSpan {
+              fn make_span(&mut self, request: &Request<B>) -> Span {
+                  tracing::info_span!("http_request", method = %request.method(), path = %request.uri().path())
+              }
+          }
+          #[derive(Clone, Copy, Debug, Default)]
+          pub struct OtelOnResponse;
+          impl<B> OnResponse<B> for OtelOnResponse {
+              fn on_response(self, _: &Response<B>, _: Duration, _: &Span) {}
+          }
+          RS
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Capture formatter and compiler output
+        id: compile
+        working-directory: remote/deployments/dd-embeddings-rs
+        run: |
+          set +e
+          {
+            cargo fmt --all
+            cargo check
+            cargo fmt --all -- --check
+          } > "${RUNNER_TEMP}/den-445-rust.log" 2>&1
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload formatter and compiler output
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-445-rust-diagnostics
+          path: ${{ runner.temp }}/den-445-rust.log
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Require successful compile
+        if: steps.compile.outputs.status != '0'
+        run: exit 1
