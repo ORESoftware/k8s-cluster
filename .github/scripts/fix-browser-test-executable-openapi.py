@@ -70,7 +70,7 @@ Format.Set('date-time', (value) => !Number.isNaN(Date.parse(value)));
 server = replace_once(
     server,
     "await fastify.register(swagger, OPENAPI_SWAGGER_OPTIONS);\n",
-    "await fastify.register(swagger, OPENAPI_SWAGGER_OPTIONS as SwaggerOptions);\n",
+    "await fastify.register(swagger, OPENAPI_SWAGGER_OPTIONS as unknown as SwaggerOptions);\n",
     "cast custom OpenAPI extensions only at registration",
 )
 server = replace_once(
