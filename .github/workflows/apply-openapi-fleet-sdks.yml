@@ -97,10 +97,18 @@ jobs:
           const before = 'request_body_required: ${operation.requestBodyRequired},';
           const after = "request_body_required: ${operation.requestBodyRequired ? 'True' : 'False'},";
           let source = fs.readFileSync(path, 'utf8');
-          if (!source.includes(before) && !source.includes(after)) {
+          const gleamStart = source.indexOf('function renderGleam(');
+          if (gleamStart === -1) {
+            throw new Error('renderGleam function was not found');
+          }
+          const beforeIndex = source.indexOf(before, gleamStart);
+          const afterIndex = source.indexOf(after, gleamStart);
+          if (beforeIndex === -1 && afterIndex === -1) {
             throw new Error('Gleam request-body Boolean renderer was not found');
           }
-          source = source.replace(before, after);
+          if (beforeIndex !== -1) {
+            source = source.slice(0, beforeIndex) + after + source.slice(beforeIndex + before.length);
+          }
           fs.writeFileSync(path, source);
           NODE
 
