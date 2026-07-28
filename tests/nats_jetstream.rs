@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use async_nats::jetstream;
@@ -207,10 +207,7 @@ async fn live_jetstream_retries_redelivers_and_dead_letters_without_leaking_targ
     for expected_attempt in 1..=3 {
         let event = next_json(&mut results).await;
         assert_eq!(event["outcome"]["job_id"], "job-dead");
-        assert_eq!(
-            event["outcome"]["class"],
-            "transient_provider_failure"
-        );
+        assert_eq!(event["outcome"]["class"], "transient_provider_failure");
         assert_eq!(event["delivery_attempt"], expected_attempt);
         assert!(!event.to_string().contains(dead_token));
     }
@@ -219,7 +216,10 @@ async fn live_jetstream_retries_redelivers_and_dead_letters_without_leaking_targ
     assert_eq!(exhausted["job_id"], "job-dead");
     assert_eq!(exhausted["delivery_attempt"], 3);
     assert_eq!(exhausted["max_deliver"], 3);
-    assert_eq!(exhausted["payload_sha256"].as_str().map(str::len), Some(64));
+    assert_eq!(
+        exhausted["payload_sha256"].as_str().map(str::len),
+        Some(64)
+    );
     assert!(!exhausted.to_string().contains(dead_token));
     assert_eq!(provider.dead_calls.load(Ordering::SeqCst), 3);
 
