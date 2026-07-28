@@ -41,9 +41,12 @@ jobs:
           fi
           printf 'decode=%s\narchive=%s\nextract=%s\n' "$decode_status" "$archive_status" "$extract_status" > /tmp/customer-cron/status.txt
           exit 0
-      - name: Upload decoded payload
+      - name: Upload decoded payload and raw segments
         uses: actions/upload-artifact@v4
         with:
           name: customer-cron-decoded-${{ github.run_id }}
-          path: /tmp/customer-cron
+          path: |
+            /tmp/customer-cron
+            .agent/cron-payload
+            .agent/cron-source.rs.gz.b64
           if-no-files-found: error
