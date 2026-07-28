@@ -39,8 +39,22 @@ jobs:
           python-version: "3.12"
       - name: Compile validator
         run: python -m py_compile remote/argocd/ci-runners/validate-sonus-arc-scaffold.py
-      - name: Validate inert ARC design, activation templates, runner pin, and secret boundaries
-        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py
+      - name: Validate required scaffold files
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py files
+      - name: Validate inert promotion state
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py inert
+      - name: Validate ARC chart/controller alignment
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py versions
+      - name: Validate non-privileged runner template
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py template
+      - name: Validate ExternalSecret and smoke templates
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py activation
+      - name: Validate pinned runner image contract
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py runner
+      - name: Validate operational documentation
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py docs
+      - name: Validate committed secret boundaries
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py secrets
       - name: Check repository whitespace and conflict markers
         run: |
           git diff --check HEAD^ HEAD
