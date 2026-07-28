@@ -154,6 +154,16 @@ use utoipa::openapi::OpenApi;
 const OPENAPI_JSON: &str =
     include_str!("../../../api-contracts/fragments/runtime-config-client-rs.openapi.json");
 
+const ANY_JSON_TYPES: [&str; 7] = [
+    "object",
+    "array",
+    "string",
+    "number",
+    "integer",
+    "boolean",
+    "null",
+];
+
 async fn snapshot() -> Json<Value> {
     Json(json!({"snapshotVersion": 0, "entries": {}}))
 }
@@ -162,14 +172,49 @@ async fn mutate() -> Json<Value> {
     Json(json!({"ok": true}))
 }
 
+fn normalize_openapi_31_free_form_schemas(document: &mut Value) {
+    // Utoipa 5.5 can emit valid OpenAPI 3.1 free-form JSON schemas, but its
+    // OpenApi deserializer does not accept a schema represented solely by a
+    // description or by an empty object. Preserve the authoritative fragment
+    // byte-for-byte on disk and make the equivalent "any JSON value" meaning
+    // explicit only inside this cross-repository compile shim.
+    for pointer in [
+        "/components/schemas/RuntimeConfigEntry/properties/value",
+        "/components/schemas/RuntimeConfigEntry/properties/meta",
+    ] {
+        let schema = document
+            .pointer_mut(pointer)
+            .unwrap_or_else(|| panic!("missing expected free-form schema at {pointer}"));
+        let object = schema
+            .as_object_mut()
+            .unwrap_or_else(|| panic!("expected schema object at {pointer}"));
+        object.insert("type".to_string(), json!(ANY_JSON_TYPES));
+    }
+
+    let pointer = "/components/schemas/RuntimeConfigSnapshotResponse/properties/entries/additionalProperties";
+    let schema = document
+        .pointer_mut(pointer)
+        .unwrap_or_else(|| panic!("missing expected additionalProperties schema at {pointer}"));
+    assert!(
+        schema.as_object().is_some_and(serde_json::Map::is_empty),
+        "expected the vendored additionalProperties schema to remain free-form"
+    );
+    *schema = json!({"type": ANY_JSON_TYPES});
+}
+
+fn shared_openapi() -> OpenApi {
+    let mut document: Value =
+        serde_json::from_str(OPENAPI_JSON).expect("valid vendored runtime-config OpenAPI JSON");
+    normalize_openapi_31_free_form_schemas(&mut document);
+    serde_json::from_value(document).expect("Utoipa-compatible runtime-config OpenAPI")
+}
+
 pub fn router_and_openapi() -> (Router, OpenApi) {
     let router = Router::new()
         .route("/internal/runtime-config", get(snapshot))
         .route("/internal/update-runtime-config", post(mutate))
         .route("/internal/runtime-config/reset", post(mutate));
-    let openapi =
-        serde_json::from_str(OPENAPI_JSON).expect("vendored runtime-config OpenAPI");
-    (router, openapi)
+    (router, shared_openapi())
 }
 
 pub fn router() -> Router {
