@@ -1,5 +1,5 @@
 # Method-aware OpenAPI regeneration
 
 Status: running
-Source commit: 9353492934b55f6a1fef489d1f0b6d05becae3cc
-Workflow run: 30335646497
+Source commit: 36cd24889569c1084ba3afe3daf0b3ee5cc0b502
+Workflow run: 30335698766
