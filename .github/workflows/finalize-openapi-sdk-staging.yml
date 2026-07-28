@@ -1,3 +1,4 @@
+# Triggered after registration so GitHub evaluates the push hook.
 name: Finalize OpenAPI SDK staging tree
 
 on:
