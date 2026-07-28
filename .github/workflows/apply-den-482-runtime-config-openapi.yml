@@ -1,18 +1,13 @@
 name: Apply DEN-482 runtime-config OpenAPI adapter
 
 on:
-  push:
-    branches:
-      - agent/den-482-runtime-config-openapi
-    paths:
-      - '.github/workflows/apply-den-482-runtime-config-openapi.yml'
-      - 'scripts/den-482-runtime-config-openapi.payload'
   pull_request:
     branches:
       - main
     paths:
       - '.github/workflows/apply-den-482-runtime-config-openapi.yml'
       - 'scripts/den-482-runtime-config-openapi.payload'
+      - 'docs/den-482-runtime-config-openapi-diagnostic.txt'
   workflow_dispatch:
 
 permissions:
@@ -20,7 +15,7 @@ permissions:
 
 concurrency:
   group: apply-den-482-runtime-config-openapi
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   apply:
@@ -64,6 +59,17 @@ jobs:
             "$decoded" | sha256sum --check -
           node --check "$decoded"
           node "$decoded"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'interfaces/shared/src/openapi-generation.test.mjs';
+          const before = 'assert.match(cargo, /openapi = ["dep:utoipa"]/);';
+          const after = 'assert.match(cargo, /openapi = \\["dep:utoipa"\\]/);';
+          const source = fs.readFileSync(path, 'utf8');
+          if (!source.includes(before) && !source.includes(after)) {
+            throw new Error('expected OpenAPI Cargo assertion was not found');
+          }
+          fs.writeFileSync(path, source.replace(before, after));
+          NODE
 
       - name: Regenerate schema-owned cross-language interfaces
         shell: bash
