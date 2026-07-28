@@ -7,18 +7,13 @@ on:
       - agent/den-445-native-openapi-fresh
     paths:
       - '.github/workflows/sync-public-private-openapi-den-445-v3.yml'
-  pull_request:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/sync-public-private-openapi-den-445-v3.yml'
 
 permissions:
   contents: write
 
 concurrency:
   group: sync-public-private-openapi-den-445-v3
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   integrate:
@@ -41,7 +36,7 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git fetch origin main
+          git fetch origin main --no-tags
           git merge --no-edit origin/main
 
       - name: Reuse reviewed v2 source and policy patches
@@ -98,12 +93,25 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf remote/libs
-          git add -A
+          # `remote/libs` is a tracked gitlink. The job overlays it with a
+          # compile-only telemetry shim, then restores the index entry rather
+          # than staging a submodule deletion.
+          git reset -- remote/libs || true
+          git add -A -- \
+            docs/executable-http-api-contract.md \
+            remote/api-contracts/manifest.json \
+            remote/deployments/dd-embeddings-rs \
+            remote/deployments/generated-api-docs-index.json \
+            remote/deployments/generated-api-docs-index.html \
+            remote/api-sdks
+          git reset -- remote/libs || true
+          test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
+
           mapfile -t changed < <(git diff --cached --name-only)
           test "${#changed[@]}" -gt 3
           for path in "${changed[@]}"; do
             case "$path" in
-              docs/executable-http-api-contract.md|remote/api-contracts/manifest.json|remote/deployments/dd-embeddings-rs/src/docs.rs|remote/deployments/dd-embeddings-rs/src/main.rs|remote/deployments/dd-embeddings-rs/generated/*|remote/deployments/generated-api-docs-index.json|remote/deployments/generated-api-docs-index.html|remote/api-sdks/*|remote/api-sdks/**)
+              docs/executable-http-api-contract.md|remote/api-contracts/manifest.json|remote/deployments/dd-embeddings-rs/*|remote/deployments/generated-api-docs-index.json|remote/deployments/generated-api-docs-index.html|remote/api-sdks/*)
                 ;;
               *)
                 echo "unexpected staged path from DEN-445 integration: $path" >&2
@@ -112,5 +120,9 @@ jobs:
             esac
           done
           git diff --cached --check
+          if git diff --cached --no-ext-diff --unified=0 | grep -E '^\+(<<<<<<< |=======$|>>>>>>> )'; then
+            echo 'new git conflict marker detected' >&2
+            exit 1
+          fi
           git commit -m 'fix(DEN-445): separate public and private runtime API docs'
           git push origin HEAD:agent/den-445-native-openapi-fresh
