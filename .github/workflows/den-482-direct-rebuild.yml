@@ -8,6 +8,7 @@ on:
       - '.github/workflows/den-482-direct-rebuild.yml'
       - 'scripts/api-contract/den-482-direct-rebuild.patch.part-*'
       - 'scripts/api-contract/den-482-semantic-merge.py'
+      - 'scripts/api-contract/den-482-private-gitlink-shims.sh'
 
 permissions:
   contents: write
@@ -110,20 +111,7 @@ jobs:
           node --check remote/tools/check-openapi-contracts.mjs
           git diff --check
 
-          rm -rf remote/libs
-          git init -q remote/libs
-          git -C remote/libs remote add origin https://github.com/ORESoftware/k8s-libs-and-shared-defs.git
-          git -C remote/libs fetch --depth=1 origin "$SHARED_COMMIT"
-          git -C remote/libs checkout --detach FETCH_HEAD
-          test "$(git -C remote/libs rev-parse HEAD)" = "$SHARED_COMMIT"
-
-          mkdir -p remote/api-contracts/fragments
-          cp remote/libs/runtime-config-client-rs/generated/openapi.json \
-            remote/api-contracts/fragments/runtime-config-client-rs.openapi.json
-          printf '%s  %s\n' \
-            "$SHARED_FRAGMENT_SHA256" \
-            remote/api-contracts/fragments/runtime-config-client-rs.openapi.json \
-            | sha256sum --check -
+          bash scripts/api-contract/den-482-private-gitlink-shims.sh
 
           cargo_dir='remote/deployments/wal-gateway-rs'
           cargo fmt --manifest-path "$cargo_dir/Cargo.toml" --all
@@ -203,6 +191,7 @@ jobs:
             scripts/api-contract/den-482-direct-rebuild.patch.part-02 \
             scripts/api-contract/den-482-direct-rebuild.patch.part-03 \
             scripts/api-contract/den-482-semantic-merge.py \
+            scripts/api-contract/den-482-private-gitlink-shims.sh \
             scripts/api-contract/den-482-last-run.log \
             DEN482_MATERIALIZER_DIAGNOSTIC.txt
 
@@ -232,4 +221,4 @@ jobs:
           if-no-files-found: warn
           retention-days: 1
 
-# Connector activation after semantic merge with the newer Fastify code-first generator.
+# Connector activation with exact vendored fragment and compile-only private-gitlink shims.
