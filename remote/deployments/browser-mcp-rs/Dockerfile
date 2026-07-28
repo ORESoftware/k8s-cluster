@@ -17,7 +17,8 @@ WORKDIR /app/remote/deployments/browser-mcp-rs
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,id=cargo-git,sharing=locked \
     --mount=type=cache,target=/app/remote/deployments/browser-mcp-rs/target,id=browser-mcp-rs-target-${TARGETARCH},sharing=locked \
-    cargo build --release --locked \
+    cargo test --locked \
+ && cargo build --release --locked \
  && cp target/release/dd-browser-mcp-rs /usr/local/bin/dd-browser-mcp-rs
 
 FROM gcr.io/distroless/cc-debian12:nonroot
