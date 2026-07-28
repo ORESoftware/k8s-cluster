@@ -1062,8 +1062,11 @@ async function discoverExtraServices() {
     }
     const deploymentDir = resolve(repoRoot, spec.deploymentDir ?? dirname(dirname(files[0])));
     const openapiFile = join(deploymentDir, 'generated/openapi.json');
-    const rawRoutes = (await pathExists(openapiFile))
-      ? extractOpenApiRoutes(JSON.parse(await readUtf8(openapiFile)), openapiFile)
+    const canonicalOpenApi = (await pathExists(openapiFile))
+      ? JSON.parse(await readUtf8(openapiFile))
+      : null;
+    const rawRoutes = canonicalOpenApi
+      ? extractOpenApiRoutes(canonicalOpenApi, openapiFile)
       : [];
     if (rawRoutes.length === 0) {
       for (const file of files) {
@@ -1097,6 +1100,7 @@ async function discoverExtraServices() {
       deploymentDir,
       moduleDir: dirname(files[0]),
       outputName: spec.outputName ?? 'api-docs',
+      canonicalOpenApi: spec.service === 'browser-test-server' ? canonicalOpenApi : null,
       routes: normalizeRoutes(spec.service, rawRoutes),
     });
   }
@@ -1669,7 +1673,9 @@ async function main() {
   for (const service of services) {
     assertStandardDocsRoutes(service);
     const docs = buildDocs(service);
-    const internalOpenapi = buildOpenApi(docs);
+    const internalOpenapi = service.canonicalOpenApi
+      ? structuredClone(service.canonicalOpenApi)
+      : buildOpenApi(docs);
     const publicOpenapi = buildPublicOpenApi(internalOpenapi);
     const publicDocs = buildPublicDocs(docs);
     const outputBase = service.outputName ?? 'api-docs';
