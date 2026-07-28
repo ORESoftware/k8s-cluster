@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(test)]
 use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, State};
 use axum::http::header::AUTHORIZATION;
@@ -10,7 +11,9 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
-use crate::contracts::{ContractVersion, OutcomeClass, ProviderKind, PushJob, PushOutcome};
+#[cfg(test)]
+use crate::contracts::ProviderKind;
+use crate::contracts::{ContractVersion, OutcomeClass, PushJob, PushOutcome};
 use crate::dispatch::{ProviderRegistry, RegistryReadiness};
 use crate::provider::ProviderError;
 use crate::redaction::truncate_utf8;
