@@ -1,0 +1,203 @@
+name: DEN-482 direct rebuild wal-gateway executable contract
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize]
+    paths:
+      - '.github/workflows/den-482-direct-rebuild.yml'
+      - 'scripts/api-contract/den-482-direct-rebuild.patch.part-*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-482-direct-rebuild-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  rebuild:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.head_ref == 'agent/den-482-wal-gateway-openapi' &&
+      github.base_ref == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Merge current main without rebasing
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags origin main
+          git merge --no-edit --no-ff origin/main
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- . ':!vendor'; then
+            echo 'git conflict marker found after semantic merge' >&2
+            exit 1
+          fi
+
+      - name: Setup Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Setup Rust 1.95.0
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.95.0'
+          components: rustfmt
+
+      - name: Setup Dart 3.12.2
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+        with:
+          sdk: '3.12.2'
+
+      - name: Apply, validate, generate, and commit direct rebuild
+        shell: bash
+        env:
+          SHARED_COMMIT: 2504b054ac92becf265762c1bd1f0679a10de893
+          SHARED_FRAGMENT_SHA256: 5d330aa1a33ba118a5770af6409dcbad8dc408bb0cccaae4e6d257c337028d46
+          PATCH_SHA256: 2a1cf6b4b8dce0789ce6cd555e2a1c27764a1a36ea6d30ca9e13ed62e874d5cd
+        run: |
+          set -euo pipefail
+          log="${RUNNER_TEMP}/den-482-direct-rebuild.log"
+          exec > >(tee "$log") 2>&1
+
+          patch_file="${RUNNER_TEMP}/den-482-direct-rebuild.patch"
+          cat scripts/api-contract/den-482-direct-rebuild.patch.part-* > "$patch_file"
+          printf '%s  %s\n' "$PATCH_SHA256" "$patch_file" | sha256sum --check -
+          git apply --check "$patch_file"
+          git apply "$patch_file"
+          node --check remote/tools/generate-api-docs.mjs
+          node --check remote/tools/check-openapi-contracts.mjs
+
+          rm -rf remote/libs
+          git init -q remote/libs
+          git -C remote/libs remote add origin https://github.com/ORESoftware/k8s-libs-and-shared-defs.git
+          git -C remote/libs fetch --depth=1 origin "$SHARED_COMMIT"
+          git -C remote/libs checkout --detach FETCH_HEAD
+          test "$(git -C remote/libs rev-parse HEAD)" = "$SHARED_COMMIT"
+
+          mkdir -p remote/api-contracts/fragments
+          cp remote/libs/runtime-config-client-rs/generated/openapi.json \
+            remote/api-contracts/fragments/runtime-config-client-rs.openapi.json
+          printf '%s  %s\n' \
+            "$SHARED_FRAGMENT_SHA256" \
+            remote/api-contracts/fragments/runtime-config-client-rs.openapi.json \
+            | sha256sum --check -
+
+          cargo_dir='remote/deployments/wal-gateway-rs'
+          cargo fmt --manifest-path "$cargo_dir/Cargo.toml" --all
+          cargo check --manifest-path "$cargo_dir/Cargo.toml"
+          mkdir -p "$cargo_dir/generated"
+          cargo run --manifest-path "$cargo_dir/Cargo.toml" --quiet -- --export-openapi \
+            > "$cargo_dir/generated/openapi.json"
+          cargo run --manifest-path "$cargo_dir/Cargo.toml" --quiet -- --export-openapi \
+            > "${RUNNER_TEMP}/wal-gateway-openapi.second.json"
+          cmp "$cargo_dir/generated/openapi.json" "${RUNNER_TEMP}/wal-gateway-openapi.second.json"
+          python3 -m json.tool "$cargo_dir/generated/openapi.json" >/dev/null
+
+          node remote/tools/generate-api-docs.mjs
+          node remote/tools/generate-api-sdks.mjs
+
+          cargo test --manifest-path "$cargo_dir/Cargo.toml"
+          cargo fmt --manifest-path "$cargo_dir/Cargo.toml" --all -- --check
+          cargo check --locked --manifest-path "$cargo_dir/Cargo.toml"
+          cargo test --locked --manifest-path "$cargo_dir/Cargo.toml"
+          node remote/tools/check-openapi-contracts.mjs --service wal-gateway-rs
+          node remote/tools/generate-api-docs.mjs --check --service wal-gateway-rs
+          node remote/tools/validate-openapi-contracts.mjs
+          node remote/tools/generate-api-sdks.mjs --check
+          node remote/tools/validate-api-sdks.mjs
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          public = json.loads(
+              Path('remote/deployments/wal-gateway-rs/generated/api-docs.json').read_text()
+          )
+          expected = {'/', '/openapi.json', '/api/docs.json', '/api/docs', '/docs/api'}
+          actual = set(public.get('paths', {}))
+          if actual != expected:
+              raise SystemExit(f'unexpected public paths: {sorted(actual)}')
+          if public.get('x-dd-contract-scope') != 'public':
+              raise SystemExit('public contract scope marker is missing')
+          encoded = json.dumps(public).lower()
+          forbidden = [
+              '"pod"', '"slot"', '"stream"', '"subjectprefix"',
+              '"leader"', '"lastlsn"', '"database_url"', '"nats_url"',
+          ]
+          leaked = [term for term in forbidden if term in encoded]
+          if leaked:
+              raise SystemExit(f'public contract leaked operational details: {leaked}')
+          PY
+
+          rm -rf .tmp/wal-gateway-sdk
+          node remote/tools/generate-openapi-sdks.mjs \
+            --service wal-gateway-rs \
+            --output .tmp/wal-gateway-sdk
+          cargo check --manifest-path .tmp/wal-gateway-sdk/rust/Cargo.toml
+          (
+            cd .tmp/wal-gateway-sdk/typescript
+            npm install --ignore-scripts --no-audit --no-fund
+            npm run build
+          )
+          (
+            cd .tmp/wal-gateway-sdk/dart
+            dart pub get
+            dart analyze
+          )
+
+          rm -rf remote/libs .tmp
+          git checkout origin/main -- .github/workflows/secret-scan.yml
+          rm -f \
+            .github/workflows/apply-den-482-wal-openapi.yml \
+            .github/workflows/den-482-materialize-v2.yml \
+            .github/workflows/trigger-den-482-wal-openapi.yml \
+            .github/workflows/den-482-export-payload-artifact.yml \
+            .github/workflows/den-482-direct-rebuild.yml \
+            scripts/api-contract/den-482-wal-openapi.payload \
+            scripts/api-contract/run-den-482-wal-openapi.sh \
+            scripts/api-contract/den-482-direct-rebuild.patch.part-00 \
+            scripts/api-contract/den-482-direct-rebuild.patch.part-01 \
+            scripts/api-contract/den-482-direct-rebuild.patch.part-02 \
+            scripts/api-contract/den-482-direct-rebuild.patch.part-03 \
+            scripts/api-contract/den-482-last-run.log \
+            DEN482_MATERIALIZER_DIAGNOSTIC.txt
+
+          git add -A -- . ':(exclude)remote/libs'
+          git update-index --add --cacheinfo "160000,$SHARED_COMMIT,remote/libs"
+          git diff --cached --check
+          if git diff --cached --no-ext-diff --unified=0 \
+            | grep -E '^\+(<<<<<<< |=======$|>>>>>>> )'; then
+            echo 'new git conflict marker detected' >&2
+            exit 1
+          fi
+          test -z "$(git diff --cached --name-only | grep -E 'den-482-(direct-rebuild|wal-openapi|materialize)|apply-den-482|trigger-den-482|DEN482_MATERIALIZER' || true)"
+          test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
+          test "$(git ls-files --stage remote/libs | awk '{print $2}')" = "$SHARED_COMMIT"
+          git diff --cached --name-status
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(DEN-482): migrate wal-gateway to executable OpenAPI'
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
+
+      - name: Upload bounded direct-rebuild diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+        with:
+          name: den-482-direct-rebuild-log
+          path: ${{ runner.temp }}/den-482-direct-rebuild.log
+          if-no-files-found: warn
+          retention-days: 1
