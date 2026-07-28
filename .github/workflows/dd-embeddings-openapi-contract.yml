@@ -39,6 +39,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
+          persist-credentials: false
           show-progress: false
           submodules: false
 
@@ -123,7 +124,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          node-version: '22'
+          node-version: '22.23.1'
 
       - name: Verify Rust formatting
         working-directory: remote/deployments/dd-embeddings-rs
@@ -156,6 +157,35 @@ jobs:
           cmp "${RUNNER_TEMP}/openapi.1.json" "${RUNNER_TEMP}/openapi.2.json"
           cmp "${RUNNER_TEMP}/openapi.1.json" generated/openapi.json
           python3 -m json.tool generated/openapi.json >/dev/null
+
+      - name: Reject dependency-owned OpenAPI provenance
+        working-directory: remote/deployments/dd-embeddings-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          document = json.loads(Path('generated/openapi.json').read_text(encoding='utf-8'))
+          info = document.get('info', {})
+          contact = info.get('contact') or {}
+          license_info = info.get('license') or {}
+          forbidden_contact = (
+              contact.get('name') == 'Juha Kukkonen'
+              or contact.get('email') == 'juha7kukkonen@gmail.com'
+          )
+          forbidden_license = (
+              license_info.get('name') == 'MIT OR Apache-2.0'
+              and license_info.get('identifier') == 'MIT OR Apache-2.0'
+          )
+          if forbidden_contact or forbidden_license:
+              raise SystemExit(
+                  'OpenAPI info contains Utoipa dependency metadata instead of explicit service provenance'
+              )
+          if info.get('title') != 'dd-embeddings-rs API' or not info.get('description'):
+              raise SystemExit('OpenAPI info must contain explicit dd-embeddings service metadata')
+          PY
 
       - name: Verify native contract and compatibility artifacts
         shell: bash
@@ -194,6 +224,8 @@ jobs:
 
       - name: Install Dart
         uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260
+        with:
+          sdk: '3.12.2'
 
       - name: Analyze generated Dart SDK
         working-directory: .tmp/dd-embeddings-sdk/dart
