@@ -1,0 +1,56 @@
+name: apply OpenAPI index hardening
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-openapi-index-hardening
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'agent/openapi-contract-hardening'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout writable feature branch
+        uses: actions/checkout@v7
+        with:
+          ref: agent/openapi-contract-hardening
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Apply index hardening
+        run: node scripts/api-contract/harden-openapi-index.mjs
+
+      - name: Regenerate partial-checkout contracts and central index
+        run: node remote/tools/generate-api-docs.mjs
+
+      - name: Validate canonical artifact indexing and OpenAPI parity
+        run: node remote/tools/validate-openapi-contracts.mjs
+
+      - name: Verify tooling
+        run: |
+          node --check remote/tools/generate-api-docs.mjs
+          node --check remote/tools/validate-openapi-contracts.mjs
+          node remote/tests/check-rest-api-route-parity.mjs
+          git diff --check
+
+      - name: Remove one-shot patch script
+        run: node -e "require('node:fs').unlinkSync('scripts/api-contract/harden-openapi-index.mjs')"
+
+      - name: Commit index hardening
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A remote scripts
+          git diff --cached --exit-code && exit 1 || true
+          git commit -m "Harden central OpenAPI artifact indexing [api-contract-generated]"
+          git push origin HEAD:agent/openapi-contract-hardening
