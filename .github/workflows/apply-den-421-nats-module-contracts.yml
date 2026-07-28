@@ -1,0 +1,170 @@
+name: Apply DEN-421 NATS module contracts
+
+on:
+  push:
+    branches:
+      - agent/den-421-nats-module-contracts
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-den-421-nats-module-contracts.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-421-nats-module-contracts-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-421-nats-module-contracts
+          persist-credentials: true
+      - name: Align NATS handoff contracts with source boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/tests/general/nats-shadow-handoff.test.ts')
+          text = path.read_text(encoding='utf-8')
+          anchor = """async function readRepoFile(relativePath: string): Promise<string> {
+            return readFile(resolve(repoRoot, relativePath), 'utf8');
+          }
+          """
+          helper = r"""
+          async function readRestApiSource(): Promise<string> {
+            const modules = [
+              'api_docs',
+              'container_pool_routes',
+              'context',
+              'db',
+              'db_routes',
+              'dispatch',
+              'events',
+              'graphql_routes',
+              'handlers',
+              'k8s',
+              'lambdas',
+              'metrics',
+              'pg_contract',
+              'shared',
+              'state',
+              'threads',
+              'types',
+            ];
+            const main = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+            for (const moduleName of modules) {
+              assert.match(main, new RegExp(`mod ${moduleName};`), `rest-api-rs main.rs must register ${moduleName}.rs`);
+            }
+            const moduleSources = await Promise.all(
+              modules.map((moduleName) =>
+                readRepoFile(`remote/deployments/rest-api-rs/src/${moduleName}.rs`),
+              ),
+            );
+            return [main, ...moduleSources].join('\n');
+          }
+          """
+          old_rest = "await readRepoFile('remote/deployments/rest-api-rs/src/main.rs')"
+          if 'async function readRestApiSource()' not in text:
+              count = text.count(old_rest)
+              if count != 2:
+                  raise SystemExit(f'expected two REST main.rs call sites, found {count}')
+              text = text.replace(old_rest, 'await readRestApiSource()')
+              if text.count(anchor) != 1:
+                  raise SystemExit(f'expected one readRepoFile anchor, found {text.count(anchor)}')
+              text = text.replace(anchor, anchor + helper, 1)
+          elif text.count(old_rest) != 1:
+              raise SystemExit('REST source helper must retain one authoritative main.rs read')
+
+          consumer_declaration = (
+              "  const consumer = await readRepoFile('remote/deployments/queue-consumer-rs/src/main.rs');\n"
+          )
+          production_declaration = (
+              "  const productionConsumer = consumer.split('\\n#[cfg(test)]', 1)[0] ?? consumer;\n"
+          )
+          if production_declaration not in text:
+              if text.count(consumer_declaration) != 1:
+                  raise SystemExit('expected one queue-consumer source declaration')
+              text = text.replace(
+                  consumer_declaration,
+                  consumer_declaration + production_declaration,
+                  1,
+              )
+
+          old_assertion = (
+              "  assert.doesNotMatch(consumer, /Command::new|tokio::process|std::process/);\n"
+          )
+          new_assertion = (
+              "  assert.doesNotMatch(productionConsumer, /Command::new|tokio::process|std::process/);\n"
+          )
+          count = text.count(old_assertion)
+          if count == 1:
+              text = text.replace(old_assertion, new_assertion, 1)
+          elif count == 0 and new_assertion in text:
+              pass
+          else:
+              raise SystemExit(f'expected one unscoped subprocess assertion, found {count}')
+
+          path.write_text(text, encoding='utf-8')
+          PY
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Run the three source-boundary NATS contracts
+        id: nats-contracts
+        shell: bash
+        working-directory: remote/tests
+        run: |
+          set +e
+          log="${RUNNER_TEMP}/den-421-nats-module-contracts.log"
+          pnpm exec tsx --test \
+            --test-name-pattern='rest api publishes queued handoffs|queue consumer is deployed|rest api exposes an internal prepare route' \
+            general/nats-shadow-handoff.test.ts \
+            >"$log" 2>&1
+          status=$?
+          tail -500 "$log"
+          exit "$status"
+      - name: Upload focused diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-421-nats-module-contract-diagnostics
+          path: ${{ runner.temp }}/den-421-nats-module-contracts.log
+          retention-days: 1
+          if-no-files-found: error
+      - name: Scan for unresolved conflict markers
+        if: success()
+        run: |
+          if git grep -n -E '^(<<<<<<< |=======$|>>>>>>> )' -- . ':(exclude)*.lock'; then
+            exit 1
+          fi
+      - name: Commit the verified source-boundary repair
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- remote/tests/general/nats-shadow-handoff.test.ts
+          if git diff --cached --quiet; then
+            echo 'DEN-421 NATS module contracts already aligned.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-421 align NATS handoff contracts with source boundaries'
+          git push origin HEAD:agent/den-421-nats-module-contracts
