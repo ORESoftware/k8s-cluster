@@ -71,7 +71,6 @@
     "spark-pipeline-server",
     "trading-server-rs",
     "usacc-rest-api-backend-rs",
-    "wal-gateway-rs",
     "web-home-rs",
     "web-scraper-service",
     "webrtc-media-rs",

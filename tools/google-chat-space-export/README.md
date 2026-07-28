@@ -119,6 +119,32 @@ Use the returned `data.nextPageToken` as `pageToken` on the next request. Suppor
 
 After the import, run `rotateBridgeToken()` or `disableBridge()` from the editor.
 
+## Dry-run import planner
+
+[`import-plan.mjs`](./import-plan.mjs) is a read-only gate between the raw Chat export and Linear. It accepts both HTTP bridge pages (`{ok,data.messages}`) and Gmail export attachments (`{messages,...}`), validates the fixed space/date boundary, deduplicates repeated pages, groups messages conservatively by thread, and emits deterministic JSON and Markdown reports.
+
+```bash
+node tools/google-chat-space-export/import-plan.mjs \
+  --input ./private/google-chat-export \
+  --existing-index ./private/linear-issue-index.json \
+  --project-map tools/google-chat-space-export/import-project-map.example.json \
+  --json ./private/google-chat-import-plan.json \
+  --markdown ./private/google-chat-import-plan.md
+```
+
+The optional existing-issue index can be an array or `{ "issues": [...] }`. Each issue may contain `id`, `identifier`, `title`, `description`, `comments`, `project`, `state`, `url`, and explicit `sourceKeys`. The planner also discovers deterministic `google-chat:...` keys embedded in descriptions or comments.
+
+The project map has `repositories` and `organizations` objects. Explicit repository mappings outrank organization mappings. Unmapped or conflicting references are left for manual review rather than silently routed to a catch-all project.
+
+Candidate actions are:
+
+- `create` — substantive, high-confidence work with no detected duplicate;
+- `comment-existing` — one or more exact Chat source keys already belong to an issue;
+- `manual-review` — title duplicate, ambiguous project, or an unusually large thread;
+- `skip-non-actionable` — acknowledgements or empty/deleted-only threads.
+
+The planner never uses a Linear API key and never writes to Linear. Run the generated plan through human/agent review, then perform the controlled apply phase in small batches. A second dry run after applying must propose zero duplicate creations.
+
 ## Linear import rules
 
 Group messages by thread and work item, search completed and archived Linear issues, persist each deterministic `sourceKey`, and add context to existing issues instead of creating duplicates. Tracking issue: `DEN-266` in `github.com/ORESoftware`.

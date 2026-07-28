@@ -37,7 +37,7 @@ env:
 
 jobs:
   validate:
-    name: validate Apps Script source
+    name: validate and test Apps Script source
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -67,21 +67,41 @@ jobs:
             temp_file="$(mktemp --suffix=.js)"
             cp "$source" "$temp_file"
             node --check "$temp_file"
-            rm -f "$temp_file"
+            unlink "$temp_file"
           done
 
-      - name: Verify fixed safety boundaries and absence of credentials
+      - name: Verify fixed safety boundaries and production-only clasp allowlist
         shell: bash
         run: |
           set -euo pipefail
           grep -Fq "spaces/AAQAoHKdzvI" "${APPS_SCRIPT_DIR}/App.gs"
           grep -Fq "2026-05-10T04:00:00.000Z" "${APPS_SCRIPT_DIR}/App.gs"
           grep -Fq "alexander.d.mills@gmail.com" "${APPS_SCRIPT_DIR}/EmailExport.gs"
+          ! grep -Fq "orderBy: 'ASC'" "${APPS_SCRIPT_DIR}/App.gs"
+
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const root = process.env.APPS_SCRIPT_DIR;
+          const lines = fs
+            .readFileSync(path.join(root, '.claspignore'), 'utf8')
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line && !line.startsWith('#'));
+          const expected = ['**/*', '!App.gs', '!EmailExport.gs', '!appsscript.json'];
+          if (JSON.stringify(lines) !== JSON.stringify(expected)) {
+            throw new Error(`Unexpected .claspignore allowlist: ${JSON.stringify(lines)}`);
+          }
+          NODE
+
           if grep -RInE '(refresh_token|client_secret|-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|ghp_[A-Za-z0-9]{20,}|AIza[A-Za-z0-9_-]{20,})' \
             "${APPS_SCRIPT_DIR}" --exclude='README.md'; then
             echo 'Potential credential material found in Apps Script source.' >&2
             exit 1
           fi
+
+      - name: Run Apps Script bridge regression tests
+        run: node --test "${APPS_SCRIPT_DIR}/test/app.test.mjs"
 
   deploy:
     name: push, version, and redeploy Apps Script
@@ -142,6 +162,7 @@ jobs:
           test -f App.gs
           test -f EmailExport.gs
           test -f appsscript.json
+          test -f .claspignore
           clasp show-file-status
 
       - name: Push repository source to Apps Script
@@ -159,30 +180,45 @@ jobs:
             --description "$description"
           clasp list-deployments
 
-      - name: Verify deployed public health endpoint
+      - name: Verify exact deployed bridge version
         shell: bash
         run: |
           set -euo pipefail
+          expected_version="$(node <<'NODE'
+          const fs = require('node:fs');
+          const source = fs.readFileSync(`${process.env.APPS_SCRIPT_DIR}/App.gs`, 'utf8');
+          const match = source.match(/\bversion:\s*'([^']+)'/);
+          if (!match) throw new Error('Could not read CHAT_BRIDGE.version from App.gs');
+          process.stdout.write(match[1]);
+          NODE
+          )"
           response="$(mktemp)"
           for attempt in $(seq 1 12); do
             if curl --fail --location --silent --show-error \
               --max-time 30 \
               "${APPS_SCRIPT_EXEC_URL}?action=health&sha=${GITHUB_SHA}" \
               --output "$response" &&
-              jq -e '.ok == true and .service == "google-chat-linear-bridge"' "$response" >/dev/null; then
+              jq -e --arg expected "$expected_version" '
+                .ok == true and
+                .service == "google-chat-linear-bridge" and
+                .version == $expected
+              ' "$response" >/dev/null; then
               jq '{ok, service, version, configured}' "$response"
+              unlink "$response"
               exit 0
             fi
             sleep 10
           done
           cat "$response" >&2 || true
+          unlink "$response" || true
           exit 1
 
       - name: Remove local credentials
         if: always()
         shell: bash
         run: |
-          rm -f "${HOME}/.clasprc.json" "${APPS_SCRIPT_DIR}/.clasp.json"
+          unlink "${HOME}/.clasprc.json" 2>/dev/null || true
+          unlink "${APPS_SCRIPT_DIR}/.clasp.json" 2>/dev/null || true
 
   pull-artifact:
     name: pull remote Apps Script snapshot
@@ -234,8 +270,8 @@ jobs:
       - name: Remove credential mapping from artifact
         shell: bash
         run: |
-          rm -f "${RUNNER_TEMP}/google-chat-apps-script-remote/.clasp.json"
-          rm -f "${HOME}/.clasprc.json"
+          unlink "${RUNNER_TEMP}/google-chat-apps-script-remote/.clasp.json"
+          unlink "${HOME}/.clasprc.json"
 
       - name: Upload pulled snapshot
         uses: actions/upload-artifact@v4
