@@ -78,7 +78,7 @@ jobs:
       - name: Generate exact service clients
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
           rm -rf .tmp/browser-test-sdk
           node remote/tools/generate-openapi-sdks.mjs \
             --service browser-test-server \
@@ -91,21 +91,30 @@ jobs:
           toolchain: '1.95.0'
           components: rustfmt
 
-      - name: Compile, test, document, and format-check the generated Rust client
-        working-directory: .tmp/browser-test-sdk/rust
+      - name: Compile, test, document, and normalize the generated Rust client
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
+          exec > >(tee "${RUNNER_TEMP}/browser-test-rust-sdk.log") 2>&1
+          cd .tmp/browser-test-sdk/rust
           rm -f Cargo.lock
-          {
-            cargo check
-            test -s Cargo.lock
-            cargo check --locked
-            cargo test --locked
-            cargo doc --no-deps --locked
-            cargo fmt --all -- --check
-          } 2>&1 | tee "${RUNNER_TEMP}/browser-test-rust-sdk.log"
+
+          echo '=== initial compile and lock creation ==='
+          cargo check
+          test -s Cargo.lock
           sha256sum Cargo.lock > "${RUNNER_TEMP}/browser-test-rust-sdk.Cargo.lock.sha256"
+
+          echo '=== locked compile, tests, and documentation ==='
+          cargo check --locked
+          cargo test --locked
+          cargo doc --no-deps --locked
+
+          echo '=== formatter parse and idempotence ==='
+          cargo fmt --all
+          cargo fmt --all -- --check
+
+          echo '=== compile after formatter normalization ==='
+          cargo check --locked
 
       - name: Remove transient Rust build state
         if: always()
@@ -156,7 +165,7 @@ jobs:
       - name: Generate exact service clients
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
           rm -rf .tmp/browser-test-sdk
           node remote/tools/generate-openapi-sdks.mjs \
             --service browser-test-server \
@@ -164,32 +173,43 @@ jobs:
             2>&1 | tee "${RUNNER_TEMP}/browser-test-typescript-sdk-generation.log"
 
       - name: Build, test, and dry-pack the generated TypeScript client
-        working-directory: .tmp/browser-test-sdk/typescript
         shell: bash
         run: |
-          set -o pipefail
-          {
-            npm install --ignore-scripts --no-audit --no-fund
-            npm run build
-            npm test --if-present
-            npm pack --dry-run --json > "${RUNNER_TEMP}/browser-test-typescript-sdk-pack.json"
-            node - <<'NODE'
-            const { readFileSync } = require('node:fs');
-            const result = JSON.parse(
-              readFileSync(process.env.RUNNER_TEMP + '/browser-test-typescript-sdk-pack.json', 'utf8'),
-            );
+          set -euo pipefail
+          exec > >(tee "${RUNNER_TEMP}/browser-test-typescript-sdk.log") 2>&1
+          cd .tmp/browser-test-sdk/typescript
+
+          echo '=== dependency installation ==='
+          npm install --ignore-scripts --no-audit --no-fund
+
+          echo '=== dual TypeScript build ==='
+          npm run build
+          test -s dist/index.js
+          test -s dist/index.d.ts
+          test -s dist/esm/index.js
+
+          echo '=== generated tests when present ==='
+          npm run test --if-present
+
+          echo '=== publish payload dry-run ==='
+          npm pack --dry-run --json > "${RUNNER_TEMP}/browser-test-typescript-sdk-pack.json"
+          node -e '
+            const { readFileSync } = require("node:fs");
+            const path = process.env.RUNNER_TEMP + "/browser-test-typescript-sdk-pack.json";
+            const result = JSON.parse(readFileSync(path, "utf8"));
             if (!Array.isArray(result) || result.length !== 1) {
-              throw new Error('npm pack did not return exactly one package result');
+              throw new Error("npm pack did not return exactly one package result");
             }
             const files = result[0].files;
             if (!Array.isArray(files) || files.length === 0) {
-              throw new Error('generated TypeScript package would publish no files');
+              throw new Error("generated TypeScript package would publish no files");
             }
-            if (!files.some((entry) => /\.(js|d\.ts)$/.test(entry.path))) {
-              throw new Error('generated TypeScript package lacks JavaScript or declarations');
+            for (const required of ["dist/index.js", "dist/index.d.ts", "dist/esm/index.js"]) {
+              if (!files.some((entry) => entry.path === required)) {
+                throw new Error(`generated TypeScript package omits ${required}`);
+              }
             }
-            NODE
-          } 2>&1 | tee "${RUNNER_TEMP}/browser-test-typescript-sdk.log"
+          '
 
       - name: Remove transient TypeScript build state
         if: always()
@@ -240,7 +260,7 @@ jobs:
       - name: Generate exact service clients
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
           rm -rf .tmp/browser-test-sdk
           node remote/tools/generate-openapi-sdks.mjs \
             --service browser-test-server \
@@ -252,23 +272,32 @@ jobs:
         with:
           sdk: '3.12.2'
 
-      - name: Resolve, analyze, format-check, and test the generated Dart client
-        working-directory: .tmp/browser-test-sdk/dart
+      - name: Resolve, analyze, normalize, and test the generated Dart client
         shell: bash
         run: |
-          set -o pipefail
-          {
-            dart pub get
-            test -s pubspec.lock
-            dart analyze
-            dart format --output=none --set-exit-if-changed lib
-            if test -d test && find test -type f -name '*_test.dart' -print -quit | grep -q .; then
-              dart test
-            else
-              echo 'No generated Dart tests were emitted.'
-            fi
-          } 2>&1 | tee "${RUNNER_TEMP}/browser-test-dart-sdk.log"
+          set -euo pipefail
+          exec > >(tee "${RUNNER_TEMP}/browser-test-dart-sdk.log") 2>&1
+          cd .tmp/browser-test-sdk/dart
+
+          echo '=== dependency resolution and initial analysis ==='
+          dart pub get
+          test -s pubspec.lock
           sha256sum pubspec.lock > "${RUNNER_TEMP}/browser-test-dart-sdk.pubspec.lock.sha256"
+          dart analyze
+
+          echo '=== formatter parse and idempotence ==='
+          dart format lib
+          dart format --output=none --set-exit-if-changed lib
+
+          echo '=== analysis after formatter normalization ==='
+          dart analyze
+
+          echo '=== generated tests when present ==='
+          if test -d test && find test -type f -name '*_test.dart' -print -quit | grep -q .; then
+            dart test
+          else
+            echo 'No generated Dart tests were emitted.'
+          fi
 
       - name: Remove transient Dart build state
         if: always()
