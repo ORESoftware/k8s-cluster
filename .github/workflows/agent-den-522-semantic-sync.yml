@@ -1,9 +1,10 @@
 name: DEN-522 semantic branch sync
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/den-522-appointment-booking-profile
+      - agent/den-256-platform-jobs-workflow
+    types: [opened, reopened, synchronize]
 
 permissions:
   contents: write
