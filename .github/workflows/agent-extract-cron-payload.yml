@@ -50,3 +50,4 @@ jobs:
             .agent/cron-payload
             .agent/cron-source.rs.gz.b64
           if-no-files-found: error
+          include-hidden-files: true
