@@ -19,6 +19,64 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
+async function readRestApiSource(): Promise<string> {
+  const modules = [
+    'api_docs',
+    'container_pool_routes',
+    'context',
+    'db',
+    'db_routes',
+    'dispatch',
+    'events',
+    'graphql_routes',
+    'handlers',
+    'k8s',
+    'lambdas',
+    'metrics',
+    'pg_contract',
+    'shared',
+    'state',
+    'threads',
+    'types',
+  ];
+  const main = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  for (const moduleName of modules) {
+    assert.match(main, new RegExp(`mod ${moduleName};`), `rest-api-rs main.rs must register ${moduleName}.rs`);
+  }
+  const moduleSources = await Promise.all(
+    modules.map((moduleName) =>
+      readRepoFile(`remote/deployments/rest-api-rs/src/${moduleName}.rs`),
+    ),
+  );
+  return [main, ...moduleSources].join('\n');
+}
+
+async function readWebHomeSource(): Promise<string> {
+  const modules = [
+    'agents',
+    'container_pool',
+    'grafana',
+    'handlers',
+    'home',
+    'jello',
+    'labs',
+    'lambda',
+    'metrics',
+    'shared',
+    'state',
+  ];
+  const main = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  for (const moduleName of modules) {
+    assert.match(main, new RegExp(`mod ${moduleName};`), `web-home-rs main.rs must register ${moduleName}.rs`);
+  }
+  const moduleSources = await Promise.all(
+    modules.map((moduleName) =>
+      readRepoFile(`remote/deployments/web-home-rs/src/${moduleName}.rs`),
+    ),
+  );
+  return [main, ...moduleSources].join('\n');
+}
+
 test('postgres schema declares the agent_remote_dev_breadcrumbs source of truth', async () => {
   const schemaSql = await readRepoFile('remote/libs/pg-defs/schema/schema.sql');
 
@@ -51,7 +109,7 @@ test('pg-defs codegen surfaces the breadcrumb table in every generated language'
 });
 
 test('rest-api exposes breadcrumb ingest + tail endpoints backed by postgres', async () => {
-  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const restServer = await readRestApiSource();
 
   assert.match(restServer, /struct AgentBreadcrumbIngestRequest/);
   assert.match(restServer, /struct AgentBreadcrumbRow/);
@@ -103,9 +161,9 @@ test('dev-server uses the rest-api breadcrumb endpoints instead of writing tmp/c
 });
 
 test('breadcrumbs ride the context picker as checkbox-selectable candidates', async () => {
-  const restServer = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const restServer = await readRestApiSource();
   const devServer = await readRepoFile('remote/deployments/dev-server/src/server.ts');
-  const webHome = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const webHome = await readWebHomeSource();
 
   // 1. AgentContextCandidate carries a `kind` discriminator; breadcrumbs are
   //    fetched alongside agent_context_blobs in the same response.
