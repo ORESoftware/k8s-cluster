@@ -173,3 +173,5 @@ jobs:
           path: ${{ runner.temp }}/den-483-materialize.log
           if-no-files-found: warn
           retention-days: 1
+
+# Deliberate activation update: the workflow already exists in the branch parent.
