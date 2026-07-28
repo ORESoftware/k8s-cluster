@@ -63,9 +63,8 @@ jobs:
           http = "1"
           TOML
           cat > remote/libs/telemetry-rs/src/lib.rs <<'RS'
-          use std::time::Duration;
-
           use http::{Request, Response};
+          use std::time::Duration;
           use tower_http::classify::{ServerErrorsAsFailures, SharedClassifier};
           use tower_http::trace::{DefaultOnRequest, MakeSpan, OnResponse, TraceLayer};
           use tracing::Span;
@@ -107,7 +106,10 @@ jobs:
 
           impl<B> OnResponse<B> for OtelOnResponse {
               fn on_response(self, response: &Response<B>, _: Duration, span: &Span) {
-                  span.record("http.response.status_code", response.status().as_u16() as u64);
+                  span.record(
+                      "http.response.status_code",
+                      response.status().as_u16() as u64,
+                  );
               }
           }
           RS
