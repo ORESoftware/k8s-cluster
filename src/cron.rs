@@ -272,11 +272,11 @@ async fn create_schedule_api(
     };
     let name = match take_schedule_name(&mut body) {
         Ok(name) => name,
-        Err(response) => return response,
+        Err(code) => return bad_request(code),
     };
     let idempotency = match required_idempotency(&headers) {
         Ok(value) => value,
-        Err(response) => return response,
+        Err(code) => return bad_request(code),
     };
     proxy_json(
         &config,
@@ -469,7 +469,7 @@ async fn create_function_api(
 ) -> Response {
     let body = match validated_function_body(body) {
         Ok(body) => body,
-        Err(response) => return response,
+        Err(code) => return bad_request(code),
     };
     proxy_write_for_selected_org(
         &config,
@@ -514,7 +514,7 @@ async fn update_function_api(
     }
     let body = match validated_function_body(body) {
         Ok(body) => body,
-        Err(response) => return response,
+        Err(code) => return bad_request(code),
     };
     proxy_write_for_selected_org(
         &config,
@@ -648,7 +648,7 @@ async fn proxy_write_for_selected_org(
     };
     let idempotency = match required_idempotency(headers) {
         Ok(value) => value,
-        Err(response) => return response,
+        Err(code) => return bad_request(code),
     };
     proxy_json(
         config,
@@ -675,8 +675,19 @@ async fn authenticate_write(
     Ok(customer)
 }
 
-fn required_idempotency(headers: &HeaderMap) -> Result<HeaderValue, Response> {
-    require_idempotency_key(headers).cloned()
+fn required_idempotency(headers: &HeaderMap) -> Result<HeaderValue, &'static str> {
+    let value = headers
+        .get(IDEMPOTENCY_KEY_HEADER)
+        .ok_or("idempotency_key_required")?;
+    let valid = value.to_str().is_ok_and(|value| {
+        !value.is_empty()
+            && value.len() <= 200
+            && value.bytes().all(|byte| matches!(byte, 0x21..=0x7e))
+    });
+    if !valid {
+        return Err("invalid_idempotency_key");
+    }
+    Ok(value.clone())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -823,27 +834,23 @@ fn sanitize_upstream_json(status: StatusCode, value: Value) -> Value {
     json!({ "ok": false, "error": code })
 }
 
-fn take_schedule_name(body: &mut Value) -> Result<String, Response> {
-    let object = body
-        .as_object_mut()
-        .ok_or_else(|| bad_request("invalid_schedule"))?;
+fn take_schedule_name(body: &mut Value) -> Result<String, &'static str> {
+    let object = body.as_object_mut().ok_or("invalid_schedule")?;
     let name = object
         .remove("name")
         .and_then(|value| value.as_str().map(str::to_string))
-        .ok_or_else(|| bad_request("schedule_name_required"))?;
+        .ok_or("schedule_name_required")?;
     if !valid_schedule_name(&name) {
-        return Err(bad_request("invalid_schedule_name"));
+        return Err("invalid_schedule_name");
     }
     Ok(name)
 }
 
-fn validated_function_body(mut body: Value) -> Result<Value, Response> {
-    let object = body
-        .as_object_mut()
-        .ok_or_else(|| bad_request("invalid_function"))?;
+fn validated_function_body(mut body: Value) -> Result<Value, &'static str> {
+    let object = body.as_object_mut().ok_or("invalid_function")?;
     if let Some(runtime) = object.get("runtime").and_then(Value::as_str) {
         if runtime != "nodejs" {
-            return Err(bad_request("unsupported_function_runtime"));
+            return Err("unsupported_function_runtime");
         }
     }
     object.insert("runtime".to_string(), Value::String("nodejs".to_string()));
@@ -854,14 +861,14 @@ fn validated_function_body(mut body: Value) -> Result<Value, Response> {
         || object.get("environment").is_some()
         || object.get("container").is_some()
     {
-        return Err(bad_request("unsupported_function_configuration"));
+        return Err("unsupported_function_configuration");
     }
     let slug = object
         .get("slug")
         .and_then(Value::as_str)
         .unwrap_or_default();
     if !valid_slug(slug) {
-        return Err(bad_request("invalid_function_slug"));
+        return Err("invalid_function_slug");
     }
     let source = object
         .get("functionBody")
@@ -869,7 +876,7 @@ fn validated_function_body(mut body: Value) -> Result<Value, Response> {
         .and_then(Value::as_str)
         .unwrap_or_default();
     if source.is_empty() || source.len() > MAX_FUNCTION_SOURCE_BYTES {
-        return Err(bad_request("invalid_function_source"));
+        return Err("invalid_function_source");
     }
     let max_run_ms = object
         .get("maxRunMs")
@@ -877,7 +884,7 @@ fn validated_function_body(mut body: Value) -> Result<Value, Response> {
         .and_then(Value::as_u64)
         .unwrap_or(30_000);
     if max_run_ms == 0 || max_run_ms > MAX_RUN_MS {
-        return Err(bad_request("invalid_function_timeout"));
+        return Err("invalid_function_timeout");
     }
     Ok(body)
 }
@@ -1095,7 +1102,7 @@ async fn create_function_form(
         "labels": ["cron"]
     })) {
         Ok(body) => body,
-        Err(response) => return response,
+        Err(code) => return bad_request(code),
     };
     let idempotency = match HeaderValue::from_str(form.idempotency_key.trim()) {
         Ok(value) => value,
