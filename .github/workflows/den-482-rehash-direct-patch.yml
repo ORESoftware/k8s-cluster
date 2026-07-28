@@ -49,3 +49,5 @@ jobs:
           git diff --cached --check
           git commit -m 'ci(DEN-482): repair direct rebuild patch checksum'
           git push origin HEAD:agent/den-482-wal-gateway-openapi
+
+# Activation commit: compute the checksum from the exact reviewable branch bytes.
