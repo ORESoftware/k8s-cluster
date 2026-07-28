@@ -1,0 +1,208 @@
+name: Apply DEN-424 AI/ML runtime contracts
+
+on:
+  push:
+    branches:
+      - agent/den-424-ai-ml-runtime-contracts
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-424-ai-ml-runtime-contracts
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-424-ai-ml-runtime-contracts
+          persist-credentials: true
+      - name: Reconcile tests and runbook with deployable single-node runtime policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          test_path = Path('remote/tests/general/ai-ml-platform-config.test.ts')
+          text = test_path.read_text(encoding='utf-8')
+
+          old_ai_strategy = r'''  assert.match(
+            deployment,
+            /strategy:[\s\S]*type:\s*RollingUpdate[\s\S]*maxSurge:\s*1[\s\S]*maxUnavailable:\s*0/,
+          );
+          '''
+          new_ai_strategy = r'''  assert.match(
+            deployment,
+            /strategy:[\s\S]*type:\s*RollingUpdate[\s\S]*maxSurge:\s*0[\s\S]*maxUnavailable:\s*1/,
+          );
+          assert.match(
+            deployment,
+            /single-node and pod-slot constrained[\s\S]*instead of requiring a surge pod/,
+          );
+          '''
+          if old_ai_strategy in text:
+              text = text.replace(old_ai_strategy, new_ai_strategy, 1)
+          elif new_ai_strategy not in text:
+              raise SystemExit('AI/ML rollout assertion block was not found')
+
+          old_ai_runtime = r'''  assert.match(deployment, /image:\s*docker\.io\/library\/dd-ai-ml-pipeline:dev/);
+          assert.doesNotMatch(deployment, /docker\.io\/library\/python:3\.12-slim/);
+          assert.doesNotMatch(deployment, /hostPath:/);
+          assert.doesNotMatch(deployment, /mountPath:\s*\/opt\/dd-next-1/);
+          assert.doesNotMatch(deployment, /cd \/opt\/dd-next-1\/remote\/deployments\/ai-ml-pipeline/);
+          '''
+          new_ai_runtime = r'''  assert.match(
+            deployment,
+            /image:\s*docker\.io\/library\/python:3\.12-slim@sha256:[a-f0-9]{64}/,
+          );
+          assert.match(deployment, /imagePullPolicy:\s*IfNotPresent/);
+          assert.match(
+            deployment,
+            /command:[\s\S]*- \/bin\/bash[\s\S]*- -lc[\s\S]*cd \/opt\/dd-next-1\/remote\/deployments\/ai-ml-pipeline[\s\S]*exec python3 -u src\/dd_ai_ml_pipeline\.py/,
+          );
+          assert.match(
+            deployment,
+            /volumeMounts:[\s\S]*name:\s*repo[\s\S]*mountPath:\s*\/opt\/dd-next-1[\s\S]*readOnly:\s*true/,
+          );
+          assert.match(
+            deployment,
+            /volumes:[\s\S]*name:\s*repo[\s\S]*hostPath:[\s\S]*path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1[\s\S]*type:\s*Directory/,
+          );
+          assert.doesNotMatch(deployment, /pip install|git clone|git fetch/);
+          '''
+          if old_ai_runtime in text:
+              text = text.replace(old_ai_runtime, new_ai_runtime, 1)
+          elif new_ai_runtime not in text:
+              raise SystemExit('AI/ML runtime image assertion block was not found')
+
+          old_spark_runtime = r'''  assert.match(sparkPipelineDeployment, /image:\s*docker\.io\/library\/dd-spark-pipeline-server:dev/);
+          assert.doesNotMatch(sparkPipelineDeployment, /docker\.io\/library\/maven/);
+          assert.doesNotMatch(sparkPipelineDeployment, /hostPath:/);
+          assert.doesNotMatch(sparkPipelineDeployment, /mountPath:\s*\/opt\/dd-next-1/);
+          assert.doesNotMatch(sparkPipelineDeployment, /MAVEN_CONFIG/);
+          assert.match(
+            sparkPipelineDeployment,
+            /strategy:[\s\S]*type:\s*RollingUpdate[\s\S]*maxSurge:\s*1[\s\S]*maxUnavailable:\s*0/,
+          );
+          '''
+          new_spark_runtime = r'''  assert.match(
+            sparkPipelineDeployment,
+            /image:\s*docker\.io\/library\/maven:3\.9\.9-eclipse-temurin-17/,
+          );
+          assert.doesNotMatch(sparkPipelineDeployment, /dd-spark-pipeline-server:dev/);
+          assert.match(
+            sparkPipelineDeployment,
+            /cp -R \/opt\/dd-next-1\/remote\/deployments\/spark-pipeline-server[\s\S]*cp -R \/opt\/dd-next-1\/remote\/libs\/pg-defs\/generated\/jvm\/jooq[\s\S]*mvn -B -e -DskipTests[\s\S]*exec java \$JAVA_OPTS/,
+          );
+          assert.match(
+            sparkPipelineDeployment,
+            /volumeMounts:[\s\S]*name:\s*repo[\s\S]*mountPath:\s*\/opt\/dd-next-1[\s\S]*readOnly:\s*true/,
+          );
+          assert.match(
+            sparkPipelineDeployment,
+            /volumes:[\s\S]*name:\s*repo[\s\S]*hostPath:[\s\S]*path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1[\s\S]*type:\s*Directory/,
+          );
+          assert.match(sparkPipelineDeployment, /MAVEN_CONFIG[\s\S]*value:\s*\/work\/\.m2/);
+          assert.match(
+            sparkPipelineDeployment,
+            /strategy:[\s\S]*type:\s*RollingUpdate[\s\S]*maxSurge:\s*0[\s\S]*maxUnavailable:\s*1/,
+          );
+          assert.match(
+            sparkPipelineDeployment,
+            /single-node and pod-slot constrained[\s\S]*instead of requiring a surge pod/,
+          );
+          '''
+          if old_spark_runtime in text:
+              text = text.replace(old_spark_runtime, new_spark_runtime, 1)
+          elif new_spark_runtime not in text:
+              raise SystemExit('Spark runtime image assertion block was not found')
+
+          test_path.write_text(text, encoding='utf-8')
+
+          readme_path = Path('remote/deployments/spark-pipeline-server/readme.md')
+          readme = readme_path.read_text(encoding='utf-8')
+          old_readme = '''The EC2 deployment runs in the `ai-ml` namespace from the prebuilt shaded-jar image instead of
+          mounting the repo with `hostPath` or fetching Maven dependencies at runtime. Rollouts use
+          `maxUnavailable: 0` plus the PDB so an ordinary deploy does not intentionally drop the API to zero
+          ready pods. The NetworkPolicy allows DNS for service/RDS resolution and keeps optional TCP 5432
+          Postgres traffic on private CIDRs only. The optional `RDS_DATABASE_URL` key is read from
+          `dd-remote-rest-api-secrets`, mirrored into `ai-ml` by the AI/ML seed layer, so the manifest reuses
+          the existing External Secrets bridge instead of depending on an uncreated service-specific secret.
+          '''
+          new_readme = '''The EC2 deployment runs in the `ai-ml` namespace from the reviewed Maven toolchain image,
+          mounts the node's pinned checkout read-only, copies this module plus generated JVM pg-defs into a
+          bounded `emptyDir`, and self-builds the shaded jar there before starting Java. This avoids a hidden
+          dependency on a locally prebuilt `dd-spark-pipeline-server:dev` image while keeping Maven writes and
+          runtime temp files off the read-only root filesystem. The single-node, pod-slot-constrained cluster
+          rolls this singleton in place with `maxSurge: 0` and `maxUnavailable: 1`; the PDB continues to guard
+          voluntary disruptions, but an intentional deployment rollout may briefly replace the sole ready pod.
+          The NetworkPolicy allows DNS for service/RDS resolution and keeps optional TCP 5432 Postgres traffic
+          on private CIDRs only. The optional `RDS_DATABASE_URL` key is read from
+          `dd-remote-rest-api-secrets`, mirrored into `ai-ml` by the AI/ML seed layer, so the manifest reuses
+          the existing External Secrets bridge instead of depending on an uncreated service-specific secret.
+          '''
+          if old_readme in readme:
+              readme = readme.replace(old_readme, new_readme, 1)
+          elif new_readme not in readme:
+              raise SystemExit('stale Spark Kubernetes layout paragraph was not found')
+          readme_path.write_text(readme, encoding='utf-8')
+          PY
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Run the two AI/ML deployment-policy contracts
+        id: focused-contracts
+        shell: bash
+        working-directory: remote/tests
+        run: |
+          set +e
+          log="${RUNNER_TEMP}/den-424-ai-ml-runtime-contracts.log"
+          pnpm exec tsx --test \
+            --test-name-pattern='ai/ml platform bundle deploys|open-source ai/ml platform tools' \
+            general/ai-ml-platform-config.test.ts \
+            >"$log" 2>&1
+          status=$?
+          tail -500 "$log"
+          exit "$status"
+      - name: Upload focused diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-424-ai-ml-runtime-contract-diagnostics
+          path: ${{ runner.temp }}/den-424-ai-ml-runtime-contracts.log
+          retention-days: 1
+          if-no-files-found: error
+      - name: Scan for unresolved conflict markers
+        if: success()
+        run: |
+          if git grep -n -E '^(<<<<<<< |=======$|>>>>>>> )' -- . ':(exclude)*.lock'; then
+            exit 1
+          fi
+      - name: Commit verified semantic reconciliation
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- \
+            remote/tests/general/ai-ml-platform-config.test.ts \
+            remote/deployments/spark-pipeline-server/readme.md
+          if git diff --cached --quiet; then
+            echo 'DEN-424 AI/ML runtime contracts already reconciled.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-424 reconcile AI/ML single-node runtime contracts'
+          git push origin HEAD:agent/den-424-ai-ml-runtime-contracts
