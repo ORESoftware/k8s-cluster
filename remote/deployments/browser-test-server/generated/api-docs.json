@@ -16,7 +16,7 @@
       "get": {
         "operationId": "browser_test_server_get_api_docs_9fcd645a3eb1",
         "summary": "Return the Scalar reference for the fail-closed public contract.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -35,7 +35,7 @@
       "get": {
         "operationId": "browser_test_server_get_api_docs_json_aeee36ad5e79",
         "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -54,7 +54,7 @@
       "get": {
         "operationId": "browser_test_server_get_docs_api_03e6dc5fb010",
         "summary": "Return the Scalar reference for the fail-closed public contract.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -73,7 +73,7 @@
       "get": {
         "operationId": "browser_test_server_get_healthz_4722a067e6ee",
         "summary": "Return a public liveness response for Kubernetes probes.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -92,7 +92,7 @@
       "get": {
         "operationId": "browser_test_server_get_metrics_73d9974b01c6",
         "summary": "Return bounded Prometheus text exposition.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -111,7 +111,7 @@
       "get": {
         "operationId": "browser_test_server_get_openapi_json_db092e1508a9",
         "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],

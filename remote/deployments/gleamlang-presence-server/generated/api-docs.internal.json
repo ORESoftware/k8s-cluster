@@ -22,7 +22,7 @@
       "get": {
         "operationId": "gleamlang_presence_server_get_23af72802f06",
         "summary": "Presence service help",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -53,7 +53,7 @@
       "get": {
         "operationId": "gleamlang_presence_server_get_api_docs_7955b2b65374",
         "summary": "Interactive API reference",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -84,7 +84,7 @@
       "get": {
         "operationId": "gleamlang_presence_server_get_api_docs_json_33894b4d682c",
         "summary": "Public OpenAPI contract alias",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -115,7 +115,7 @@
       "post": {
         "operationId": "gleamlang_presence_server_post_conv_conv_id_broadcast_bdefd4562386",
         "summary": "Broadcast to a conversation",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "user-generated"
         ],
@@ -154,7 +154,7 @@
       "get": {
         "operationId": "gleamlang_presence_server_get_conv_conv_id_members_3d199fbe158f",
         "summary": "List conversation members",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "user-generated"
         ],
@@ -193,7 +193,7 @@
       "post": {
         "operationId": "gleamlang_presence_server_post_conv_conv_id_members_user_id_d9864dcea2d6",
         "summary": "Add a conversation member",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "user-generated"
         ],
@@ -239,7 +239,7 @@
       "delete": {
         "operationId": "gleamlang_presence_server_delete_conv_conv_id_members_user_id_e80911a1a01b",
         "summary": "Add a conversation member",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "user-generated"
         ],
@@ -287,7 +287,7 @@
       "get": {
         "operationId": "gleamlang_presence_server_get_docs_api_dfad3d725db1",
         "summary": "Interactive API reference alias",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -318,7 +318,7 @@
       "get": {
         "operationId": "gleamlang_presence_server_get_healthz_65610a4485ce",
         "summary": "Presence process health",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -448,7 +448,7 @@
       "get": {
         "operationId": "gleamlang_presence_server_get_nodes_20dcc24257a3",
         "summary": "List connected BEAM nodes",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -478,7 +478,7 @@
       "get": {
         "operationId": "gleamlang_presence_server_get_openapi_json_3b3a44f2453e",
         "summary": "Public OpenAPI contract",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -509,7 +509,7 @@
       "post": {
         "operationId": "gleamlang_presence_server_post_user_user_id_broadcast_b2d312d610ce",
         "summary": "Broadcast to a user",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "user-generated"
         ],
@@ -548,7 +548,7 @@
       "post": {
         "operationId": "gleamlang_presence_server_post_user_user_id_devices_device_id_logout_031ce93d07d6",
         "summary": "Log out one user device",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "user-generated"
         ],
@@ -595,7 +595,7 @@
       "get": {
         "operationId": "gleamlang_presence_server_get_ws_001e441dcc2a",
         "summary": "Open a presence WebSocket",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "user-generated"
         ],

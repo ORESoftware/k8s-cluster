@@ -329,9 +329,7 @@ function extractOpenApiRoutes(document, sourceFile) {
               ? operation.description
               : '',
         notes:
-          document['x-dd-language'] === 'node'
-            ? 'Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.'
-            : 'Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.',
+          'Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.',
         visibilityHint,
         authHint: explicitAuthHint ?? openApiAuthHint(operation, method, path),
         routeTypeHint: operation['x-dd-route-type'],

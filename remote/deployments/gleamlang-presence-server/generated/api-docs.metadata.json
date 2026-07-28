@@ -31,7 +31,7 @@
       "sourceFiles": [
         "remote/deployments/gleamlang-presence-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/docs",
@@ -49,7 +49,7 @@
       "sourceFiles": [
         "remote/deployments/gleamlang-presence-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/docs.json",
@@ -67,7 +67,7 @@
       "sourceFiles": [
         "remote/deployments/gleamlang-presence-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/conv/{conv_id}/broadcast",
@@ -85,7 +85,7 @@
       "sourceFiles": [
         "remote/deployments/gleamlang-presence-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/conv/{conv_id}/members",
@@ -103,7 +103,7 @@
       "sourceFiles": [
         "remote/deployments/gleamlang-presence-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/conv/{conv_id}/members/{user_id}",
@@ -123,7 +123,7 @@
       "sourceFiles": [
         "remote/deployments/gleamlang-presence-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/docs/api",
@@ -141,7 +141,7 @@
       "sourceFiles": [
         "remote/deployments/gleamlang-presence-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/healthz",
@@ -159,7 +159,7 @@
       "sourceFiles": [
         "remote/deployments/gleamlang-presence-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/internal/runtime-config",
@@ -228,7 +228,7 @@
       "sourceFiles": [
         "remote/deployments/gleamlang-presence-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/openapi.json",
@@ -246,7 +246,7 @@
       "sourceFiles": [
         "remote/deployments/gleamlang-presence-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/user/{user_id}/broadcast",
@@ -264,7 +264,7 @@
       "sourceFiles": [
         "remote/deployments/gleamlang-presence-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/user/{user_id}/devices/{device_id}/logout",
@@ -282,7 +282,7 @@
       "sourceFiles": [
         "remote/deployments/gleamlang-presence-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/ws",
@@ -300,7 +300,7 @@
       "sourceFiles": [
         "remote/deployments/gleamlang-presence-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     }
   ]
 }

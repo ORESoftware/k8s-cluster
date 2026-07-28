@@ -19,7 +19,7 @@
       "get": {
         "operationId": "wal_gateway_rs_get_81138a5d044f",
         "summary": "Service descriptor, home redirect, or root RPC endpoint.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -50,7 +50,7 @@
       "get": {
         "operationId": "wal_gateway_rs_get_api_docs_04ae0a7546bc",
         "summary": "Human-readable generated API documentation.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -81,7 +81,7 @@
       "get": {
         "operationId": "wal_gateway_rs_get_api_docs_json_6c9a38cfa455",
         "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -112,7 +112,7 @@
       "get": {
         "operationId": "wal_gateway_rs_get_docs_api_430cec7c04e7",
         "summary": "Human-readable generated API documentation.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -143,7 +143,7 @@
       "get": {
         "operationId": "wal_gateway_rs_get_healthz_13ad4ec5056b",
         "summary": "Health check.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -273,7 +273,7 @@
       "get": {
         "operationId": "wal_gateway_rs_get_metrics_b8a63d88661c",
         "summary": "Prometheus metrics.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -303,7 +303,7 @@
       "get": {
         "operationId": "wal_gateway_rs_get_openapi_json_4460f2bd801d",
         "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -334,7 +334,7 @@
       "get": {
         "operationId": "wal_gateway_rs_get_readyz_12a0d2292af6",
         "summary": "Readiness check.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],

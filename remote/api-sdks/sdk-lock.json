@@ -7,8 +7,8 @@
   "scopes": {
     "public": {
       "catalogPath": "remote/api-sdks/contracts/public.json",
-      "catalogSha256": "ee475773694284526262e7e8e4850f0553dfee799c012c53e2735b7db8194888",
-      "catalogFileSha256": "23bf7693305820bf80565239ae406c4dfd7e42edb831f516e37c33fd944e463e",
+      "catalogSha256": "a4b15b4d00a5a70d8b985325ba2008f1aade9c7ec165cc95015e29260c9cfaf2",
+      "catalogFileSha256": "ee2fc808f205c56e3c304d01869ef0cef6429f1f4a3b9bbae5058e77d569fff6",
       "serviceCount": 44,
       "operationCount": 279,
       "skippedServices": [
@@ -82,7 +82,7 @@
         {
           "service": "browser-test-server",
           "specPath": "remote/deployments/browser-test-server/generated/api-docs.json",
-          "specSha256": "82fa66043fd6515be5a6963afc8109d704be4c433cc8419842c4e6800bd42deb",
+          "specSha256": "a313a4b7543a59bc6bccdf33a5f39f986d318e3f4b3eea8699fb5d4a2efd04d9",
           "operationCount": 6
         },
         {
@@ -136,7 +136,7 @@
         {
           "service": "dd-embeddings-rs",
           "specPath": "remote/deployments/dd-embeddings-rs/generated/api-docs.json",
-          "specSha256": "dd637682023ee92fc15fb99e1a0e1eaa3ee4cd35c95f8db4c68f9ce32f60d3af",
+          "specSha256": "6a02dc3a2caf43ff55d0b6358e6bc572b6c85379317b4ad8ebc1037817fda704",
           "operationCount": 7
         },
         {
@@ -208,7 +208,7 @@
         {
           "service": "gleamlang-presence-server",
           "specPath": "remote/deployments/gleamlang-presence-server/generated/api-docs.json",
-          "specSha256": "1997ac3766a678f412bc7d41702bad1a14ea7d7c4090b1dfafb96d8845f4c92e",
+          "specSha256": "fd3973031ccdc5d526ec6560848661ead7b132c37c5260104697a525fb8614f7",
           "operationCount": 5
         },
         {
@@ -286,7 +286,7 @@
         {
           "service": "wal-gateway-rs",
           "specPath": "remote/deployments/wal-gateway-rs/generated/api-docs.json",
-          "specSha256": "4f79205e816e34b0b8975feff6a6fb3a21ed4656f56586388a96cbcc41629228",
+          "specSha256": "bd3950b6ccd95e8e2846b8b2b1afa39bf85e76c5f40ea98dc89a6dee87cf5a57",
           "operationCount": 5
         },
         {
@@ -317,8 +317,8 @@
     },
     "internal": {
       "catalogPath": "remote/api-sdks/contracts/internal.json",
-      "catalogSha256": "5e3d4d825b548fbb43ca4272426f2a10808ecb0588fedfcbdc3f1ded723b51da",
-      "catalogFileSha256": "a34eb13d2eae96abf0f4820fc5d4b8e82756d505f16212e3e77ad983a60facd1",
+      "catalogSha256": "9b29673d472338cab7c3903d6c3288123e74ee931a44c9ab33da83f2bd6bafa9",
+      "catalogFileSha256": "b5eaa5b0393a8ac3c0ab12fa5ec068edcc6bca399b5dd7eca1603bf0d6314248",
       "serviceCount": 44,
       "operationCount": 942,
       "skippedServices": [
@@ -392,7 +392,7 @@
         {
           "service": "browser-test-server",
           "specPath": "remote/deployments/browser-test-server/generated/api-docs.internal.json",
-          "specSha256": "4c8ad6801ed28ba5d0c5c76fbb173cfb77a17fb12616d7fc44e534ea76646e3d",
+          "specSha256": "4875e3a90c3508ea64f13322fed1a8044f784c27d162b07c31026e2daa0a1d1f",
           "operationCount": 17
         },
         {
@@ -446,7 +446,7 @@
         {
           "service": "dd-embeddings-rs",
           "specPath": "remote/deployments/dd-embeddings-rs/generated/api-docs.internal.json",
-          "specSha256": "e92a8be01827d9e70ac2a6c4a38a6b83f71678dd052a9d5cad31c160280bf66d",
+          "specSha256": "64d7f1b5084dacb29c61ae509ca3750cc77adcec5683bcfb277e15d170f32023",
           "operationCount": 23
         },
         {
@@ -518,7 +518,7 @@
         {
           "service": "gleamlang-presence-server",
           "specPath": "remote/deployments/gleamlang-presence-server/generated/api-docs.internal.json",
-          "specSha256": "e15296508ba2f064510ce4cf8de1c4fe43cc974549324105d6e3d96c60b25a98",
+          "specSha256": "c9def3c93af542abf72d83c1fd0a0d391f5940646767346e920697e5617ce399",
           "operationCount": 17
         },
         {
@@ -596,7 +596,7 @@
         {
           "service": "wal-gateway-rs",
           "specPath": "remote/deployments/wal-gateway-rs/generated/api-docs.internal.json",
-          "specSha256": "b657ae5fca262c6e37abfb93c20a11029f07552283e119d2cb85566622ec455a",
+          "specSha256": "51c6aa86dc5c52f5723ac038d2b176bab6c6f19677401f490217cf9adbd4df04",
           "operationCount": 11
         },
         {
@@ -633,8 +633,8 @@
       "packageName": "oresoftware_k8s_api_sdk_internal",
       "path": "remote/api-sdks/dart/internal",
       "manifestPath": "remote/api-sdks/dart/internal/sdk-manifest.json",
-      "manifestSha256": "00891559b8b8618a7f16d77aea6a25464a56859776e528541d58f2a8e6bdbf1b",
-      "catalogSha256": "5e3d4d825b548fbb43ca4272426f2a10808ecb0588fedfcbdc3f1ded723b51da",
+      "manifestSha256": "25cf0000dae158c976c27413b67ae03d914bb74c90a149f831f50c23abf3937b",
+      "catalogSha256": "9b29673d472338cab7c3903d6c3288123e74ee931a44c9ab33da83f2bd6bafa9",
       "operationCount": 942
     },
     {
@@ -643,8 +643,8 @@
       "packageName": "oresoftware_k8s_api_sdk_public",
       "path": "remote/api-sdks/dart/public",
       "manifestPath": "remote/api-sdks/dart/public/sdk-manifest.json",
-      "manifestSha256": "8769bf54f2dd230eeeb05de448e2fe8320011ec018e3de42bbd2e35c155a337e",
-      "catalogSha256": "ee475773694284526262e7e8e4850f0553dfee799c012c53e2735b7db8194888",
+      "manifestSha256": "2efb478b424f0a3e996b9f073b7889178befa614e5cb0545d537550d063b1c12",
+      "catalogSha256": "a4b15b4d00a5a70d8b985325ba2008f1aade9c7ec165cc95015e29260c9cfaf2",
       "operationCount": 279
     },
     {
@@ -653,8 +653,8 @@
       "packageName": "oresoftware_k8s_api_sdk_internal",
       "path": "remote/api-sdks/gleam/internal",
       "manifestPath": "remote/api-sdks/gleam/internal/sdk-manifest.json",
-      "manifestSha256": "eb0e64a84bcff74f5d5a5b6c3792d3e0928bbc4256993305e0e2502f566ddd5c",
-      "catalogSha256": "5e3d4d825b548fbb43ca4272426f2a10808ecb0588fedfcbdc3f1ded723b51da",
+      "manifestSha256": "bc346252002f6b8147655ad9c0694c8cb827c75ff5e0728688fce9d383ee841e",
+      "catalogSha256": "9b29673d472338cab7c3903d6c3288123e74ee931a44c9ab33da83f2bd6bafa9",
       "operationCount": 942
     },
     {
@@ -663,8 +663,8 @@
       "packageName": "oresoftware_k8s_api_sdk_public",
       "path": "remote/api-sdks/gleam/public",
       "manifestPath": "remote/api-sdks/gleam/public/sdk-manifest.json",
-      "manifestSha256": "5c20da185e5a76e2a036fb67c9d981c9be7fda68f8ea475747c1fd3a55b90e3b",
-      "catalogSha256": "ee475773694284526262e7e8e4850f0553dfee799c012c53e2735b7db8194888",
+      "manifestSha256": "6b7725b88be0c61ffaee95c0ebab967b6d2243cec07b810386b0a14c9024bd95",
+      "catalogSha256": "a4b15b4d00a5a70d8b985325ba2008f1aade9c7ec165cc95015e29260c9cfaf2",
       "operationCount": 279
     },
     {
@@ -673,8 +673,8 @@
       "packageName": "oresoftware-k8s-api-sdk-internal",
       "path": "remote/api-sdks/rust/internal",
       "manifestPath": "remote/api-sdks/rust/internal/sdk-manifest.json",
-      "manifestSha256": "7632146cc7b64f8bbe8000f17900fd7071b9e7d96fbb5f6412d55a51414bb9b0",
-      "catalogSha256": "5e3d4d825b548fbb43ca4272426f2a10808ecb0588fedfcbdc3f1ded723b51da",
+      "manifestSha256": "b5df73ec6b497f8068bd46acbe2aa21b7be0cfa204aa0443bef2d22cc56ca7a7",
+      "catalogSha256": "9b29673d472338cab7c3903d6c3288123e74ee931a44c9ab33da83f2bd6bafa9",
       "operationCount": 942
     },
     {
@@ -683,8 +683,8 @@
       "packageName": "oresoftware-k8s-api-sdk-public",
       "path": "remote/api-sdks/rust/public",
       "manifestPath": "remote/api-sdks/rust/public/sdk-manifest.json",
-      "manifestSha256": "5af8d14c08c6309c2ff973bd5cb9bba0bc87f3d76a7412e3078356a9d2f7ca21",
-      "catalogSha256": "ee475773694284526262e7e8e4850f0553dfee799c012c53e2735b7db8194888",
+      "manifestSha256": "ad43c52d4c71ca2746d46436ba9c3351690c0d62b7ab0b02f6c7720188e24863",
+      "catalogSha256": "a4b15b4d00a5a70d8b985325ba2008f1aade9c7ec165cc95015e29260c9cfaf2",
       "operationCount": 279
     },
     {
@@ -693,8 +693,8 @@
       "packageName": "@oresoftware/k8s-api-sdk-internal",
       "path": "remote/api-sdks/typescript/internal",
       "manifestPath": "remote/api-sdks/typescript/internal/sdk-manifest.json",
-      "manifestSha256": "ccae58d37622f2630897841a5ea1f327b517f337471b000d5655d93d0e9b6520",
-      "catalogSha256": "5e3d4d825b548fbb43ca4272426f2a10808ecb0588fedfcbdc3f1ded723b51da",
+      "manifestSha256": "3800dfa5a525a6bd784b4c8fa5ea486a309f73ac8b72f09ae844b2d0d023c0f7",
+      "catalogSha256": "9b29673d472338cab7c3903d6c3288123e74ee931a44c9ab33da83f2bd6bafa9",
       "operationCount": 942
     },
     {
@@ -703,8 +703,8 @@
       "packageName": "@oresoftware/k8s-api-sdk-public",
       "path": "remote/api-sdks/typescript/public",
       "manifestPath": "remote/api-sdks/typescript/public/sdk-manifest.json",
-      "manifestSha256": "839ca917ab2f6057b6626e212353f4752cc5fbadc7100b8ccfe9a57b94132269",
-      "catalogSha256": "ee475773694284526262e7e8e4850f0553dfee799c012c53e2735b7db8194888",
+      "manifestSha256": "c339fbb73aad497018af363457395680371b6bbc99190e87324a07d01fe18eba",
+      "catalogSha256": "a4b15b4d00a5a70d8b985325ba2008f1aade9c7ec165cc95015e29260c9cfaf2",
       "operationCount": 279
     }
   ]

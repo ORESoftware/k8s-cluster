@@ -16,7 +16,7 @@
       "get": {
         "operationId": "gleamlang_presence_server_get_23af72802f06",
         "summary": "Presence service help",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -35,7 +35,7 @@
       "get": {
         "operationId": "gleamlang_presence_server_get_api_docs_7955b2b65374",
         "summary": "Interactive API reference",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -54,7 +54,7 @@
       "get": {
         "operationId": "gleamlang_presence_server_get_api_docs_json_33894b4d682c",
         "summary": "Public OpenAPI contract alias",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -73,7 +73,7 @@
       "get": {
         "operationId": "gleamlang_presence_server_get_docs_api_dfad3d725db1",
         "summary": "Interactive API reference alias",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -92,7 +92,7 @@
       "get": {
         "operationId": "gleamlang_presence_server_get_openapi_json_3b3a44f2453e",
         "summary": "Public OpenAPI contract",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],

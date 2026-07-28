@@ -30,7 +30,7 @@
       "sourceFiles": [
         "remote/deployments/wal-gateway-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/docs",
@@ -48,7 +48,7 @@
       "sourceFiles": [
         "remote/deployments/wal-gateway-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/docs.json",
@@ -66,7 +66,7 @@
       "sourceFiles": [
         "remote/deployments/wal-gateway-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/docs/api",
@@ -84,7 +84,7 @@
       "sourceFiles": [
         "remote/deployments/wal-gateway-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/healthz",
@@ -102,7 +102,7 @@
       "sourceFiles": [
         "remote/deployments/wal-gateway-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/internal/runtime-config",
@@ -171,7 +171,7 @@
       "sourceFiles": [
         "remote/deployments/wal-gateway-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/openapi.json",
@@ -189,7 +189,7 @@
       "sourceFiles": [
         "remote/deployments/wal-gateway-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/readyz",
@@ -207,7 +207,7 @@
       "sourceFiles": [
         "remote/deployments/wal-gateway-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     }
   ]
 }
