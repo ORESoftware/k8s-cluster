@@ -14,6 +14,8 @@ The durable pull consumer defaults to `push-notification-server-v1`.
 
 The job stream uses WorkQueue retention, a seven-day maximum age, explicit acknowledgements, a 120-second ack wait, and five delivery attempts by default. Result events are retained for seven days and dead-letter audit events for 30 days.
 
+All duration, delivery, payload, and concurrency environment overrides must be positive integers. Invalid values fail startup instead of silently falling back to unsafe limits.
+
 ## Envelope
 
 Producers publish:
