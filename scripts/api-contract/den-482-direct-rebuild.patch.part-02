@@ -1,0 +1,270 @@
+-            "leader": state.metrics.leader.load(Ordering::Relaxed),
+-            "atMs": now_ms(),
+-        })),
++        Json(ReadinessResponse {
++            ok,
++            service: SERVICE_NAME,
++            leader: state.metrics.leader.load(Ordering::Relaxed),
++            at_ms: now_ms(),
++        }),
+     )
+ }
+ 
++#[utoipa::path(
++    get,
++    path = "/metrics",
++    operation_id = "getWalGatewayPrometheusMetrics",
++    tag = "operations",
++    security(()),
++    responses((status = 200, description = "Prometheus text exposition", body = String, content_type = "text/plain"))
++)]
+ async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
+     // Build a minimal Prometheus exposition text manually; we use the
+     // prometheus crate only for the encoder type, to stay consistent with
+@@ -919,11 +1000,91 @@ async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse {
+     )
+ }
+ 
++#[utoipa::path(
++    get,
++    path = "/openapi.json",
++    operation_id = "getWalGatewayPublicOpenApiDocument",
++    tag = "documentation",
++    security(()),
++    responses((status = 200, description = "Fail-closed public OpenAPI 3.1 contract", content_type = "application/vnd.oai.openapi+json;version=3.1"))
++)]
++async fn openapi_json(Extension(docs): Extension<SharedApiDocs>) -> Response {
++    public_openapi_response(docs)
++}
++
++#[utoipa::path(
++    get,
++    path = "/api/docs.json",
++    operation_id = "getWalGatewayPublicOpenApiDocumentCompatibilityAlias",
++    tag = "documentation",
++    security(()),
++    responses((status = 200, description = "Compatibility alias for the fail-closed public OpenAPI 3.1 contract", content_type = "application/vnd.oai.openapi+json;version=3.1"))
++)]
++async fn api_docs_json(Extension(docs): Extension<SharedApiDocs>) -> Response {
++    public_openapi_response(docs)
++}
++
++#[utoipa::path(
++    get,
++    path = "/api/docs",
++    operation_id = "getWalGatewayPublicApiReference",
++    tag = "documentation",
++    security(()),
++    responses((status = 200, description = "Interactive Scalar reference for the fail-closed public contract", body = String, content_type = "text/html"))
++)]
++async fn api_docs_ui(Extension(docs): Extension<SharedApiDocs>) -> Response {
++    public_scalar_response(docs)
++}
++
++#[utoipa::path(
++    get,
++    path = "/docs/api",
++    operation_id = "getWalGatewayPublicApiReferenceCompatibilityAlias",
++    tag = "documentation",
++    security(()),
++    responses((status = 200, description = "Compatibility alias for the public Scalar API reference", body = String, content_type = "text/html"))
++)]
++async fn docs_api_ui(Extension(docs): Extension<SharedApiDocs>) -> Response {
++    public_scalar_response(docs)
++}
++
++fn public_openapi_response(docs: SharedApiDocs) -> Response {
++    (
++        [(header::CONTENT_TYPE, OPENAPI_CONTENT_TYPE)],
++        docs.public_json.clone(),
++    )
++        .into_response()
++}
++
++fn public_scalar_response(docs: SharedApiDocs) -> Response {
++    (
++        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
++        docs.public_scalar_html.clone(),
++    )
++        .into_response()
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++    use axum::body::to_bytes;
++    use std::collections::BTreeSet;
+     use std::sync::Mutex;
+ 
++    const EXPECTED_OPENAPI_PATHS: &[&str] = &[
++        "/",
++        "/api/docs",
++        "/api/docs.json",
++        "/docs/api",
++        "/healthz",
++        "/internal/runtime-config",
++        "/internal/runtime-config/reset",
++        "/internal/update-runtime-config",
++        "/metrics",
++        "/openapi.json",
++        "/readyz",
++    ];
++
+     // ── env-var test scaffolding ──────────────────────────────────────────
+     //
+     // `Config::from_env` and the `env_*` helpers read process-global state,
+@@ -1605,6 +1766,192 @@ mod tests {
+         assert_eq!(parts.op, "update");
+     }
+ 
++    // ── Executable HTTP/OpenAPI contract invariants ──────────────────────
++
++    #[test]
++    fn openapi_is_deterministic_complete_and_fail_closed() {
++        let first = docs::canonical_json(&openapi_document()).expect("serialize first contract");
++        let second = docs::canonical_json(&openapi_document()).expect("serialize second contract");
++        assert_eq!(
++            first, second,
++            "OpenAPI generation must be byte deterministic"
++        );
++
++        let document: Value = serde_json::from_str(&first).expect("parse generated OpenAPI");
++        assert_eq!(document["openapi"], "3.1.0");
++        assert_eq!(document["info"]["title"], "wal-gateway-rs API");
++        assert_eq!(document["x-dd-contract-scope"], "internal");
++        assert_eq!(document["x-dd-source-of-truth"], "utoipa-axum");
++        assert!(document["components"]["securitySchemes"]
++            ["runtime_config_server_auth"]
++            .is_object());
++
++        let paths = document["paths"].as_object().expect("paths object");
++        let actual = paths.keys().map(String::as_str).collect::<BTreeSet<_>>();
++        let expected = EXPECTED_OPENAPI_PATHS
++            .iter()
++            .copied()
++            .collect::<BTreeSet<_>>();
++        assert_eq!(actual, expected, "router/spec path parity changed");
++
++        let public = BTreeSet::from([
++            "/",
++            "/api/docs",
++            "/api/docs.json",
++            "/docs/api",
++            "/openapi.json",
++        ]);
++        let mut operation_ids = BTreeSet::new();
++        let mut operation_count = 0;
++        for (path, item) in paths {
++            let item = item.as_object().expect("path item object");
++            for (method, operation) in item {
++                if ![
++                    "get", "post", "put", "patch", "delete", "head", "options", "trace",
++                ]
++                .contains(&method.as_str())
++                {
++                    continue;
++                }
++                operation_count += 1;
++                let operation_id = operation["operationId"]
++                    .as_str()
++                    .unwrap_or_else(|| panic!("{method} {path} has no operationId"));
++                assert!(
++                    operation_ids.insert(operation_id.to_string()),
++                    "duplicate operationId {operation_id}"
++                );
++                assert!(
++                    operation["responses"]
++                        .as_object()
++                        .is_some_and(|responses| !responses.is_empty()),
++                    "{method} {path} has no responses"
++                );
++                assert_eq!(
++                    operation["x-dd-visibility"],
++                    if public.contains(path.as_str()) {
++                        "public"
++                    } else {
++                        "internal"
++                    },
++                    "{method} {path} has the wrong visibility"
++                );
++            }
++        }
++        assert_eq!(operation_count, EXPECTED_OPENAPI_PATHS.len());
++        assert_eq!(operation_ids.len(), EXPECTED_OPENAPI_PATHS.len());
++
++        let root_schema = &document["components"]["schemas"]["RootResponse"];
++        let root_properties = root_schema["properties"]
++            .as_object()
++            .expect("RootResponse properties");
++        assert_eq!(
++            root_properties.keys().map(String::as_str).collect::<BTreeSet<_>>(),
++            BTreeSet::from(["ok", "schemaVersion", "service"])
++        );
++        let encoded_root = root_schema.to_string().to_ascii_lowercase();
++        for forbidden in [
++            "pod",
++            "slot",
++            "stream",
++            "subjectprefix",
++            "leader",
++            "lastlsn",
++            "database_url",
++            "nats_url",
++        ] {
++            assert!(
++                !encoded_root.contains(forbidden),
++                "public RootResponse leaked {forbidden}"
++            );
++        }
++    }
++
++    #[tokio::test]
++    async fn runtime_docs_serve_only_the_embedded_public_contract() {
++        let openapi = openapi_document();
++        let canonical = docs::canonical_json(&openapi).expect("canonical internal JSON");
++        let public = docs::public_json();
++        assert_ne!(
++            public, canonical,
++            "public and internal contracts must differ"
++        );
++
++        let public_document: Value = serde_json::from_str(public).expect("parse public OpenAPI");
++        assert_eq!(public_document["x-dd-contract-scope"], "public");
++        let public_paths = public_document["paths"]
++            .as_object()
++            .expect("public paths")
++            .keys()
++            .map(String::as_str)
++            .collect::<BTreeSet<_>>();
++        assert_eq!(
++            public_paths,
++            BTreeSet::from([
++                "/",
++                "/api/docs",
++                "/api/docs.json",
++                "/docs/api",
++                "/openapi.json",
++            ])
++        );
++        assert!(public_document["paths"]["/healthz"].is_null());
++        assert!(public_document["paths"]["/internal/runtime-config"].is_null());
++
++        let shared = Arc::new(ApiDocs::new(&openapi).expect("runtime docs"));
++        assert_eq!(shared.internal_json.as_ref(), canonical.as_bytes());
++
++        for response in [
++            openapi_json(Extension(shared.clone())).await,
++            api_docs_json(Extension(shared.clone())).await,
++        ] {
++            assert_eq!(response.status(), StatusCode::OK);
++            assert_eq!(response.headers()[header::CONTENT_TYPE], OPENAPI_CONTENT_TYPE);
++            let body = to_bytes(response.into_body(), usize::MAX)
++                .await
++                .expect("read public OpenAPI body");
++            assert_eq!(body.as_ref(), public.as_bytes());
++        }
++
++        for response in [
++            api_docs_ui(Extension(shared.clone())).await,
++            docs_api_ui(Extension(shared.clone())).await,
++        ] {
