@@ -1,0 +1,229 @@
+name: Apply DEN-426 container-pool contracts
+
+on:
+  push:
+    branches:
+      - agent/den-426-container-pool-contracts
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-426-container-pool-contracts
+  cancel-in-progress: false
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-426-container-pool-contracts
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+          persist-credentials: true
+      - name: Initialize the exact recursive shared-library gitlink
+        env:
+          SUBMODULE_AUTH_MODE: ssh
+        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
+      - name: Follow the registered container-pool modules and complete the seed contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/tests/general/container-pool-config.test.ts')
+          text = path.read_text(encoding='utf-8')
+
+          anchor = """async function readRepoFile(relativePath: string): Promise<string> {
+            return readFile(resolve(repoRoot, relativePath), 'utf8');
+          }
+          """
+          helper = r"""
+          async function readContainerPoolSource(): Promise<string> {
+            const modules = [
+              'background',
+              'config',
+              'dispatch',
+              'engine',
+              'http_api',
+              'lifecycle',
+              'pool_config',
+              'redis_lock',
+              'types',
+              'util',
+            ];
+            const main = await readRepoFile('remote/deployments/container-pool-rs/src/main.rs');
+            for (const moduleName of modules) {
+              assert.match(main, new RegExp(`mod ${moduleName};`), `container-pool-rs main.rs must register ${moduleName}.rs`);
+            }
+            const moduleSources = await Promise.all(
+              modules.map((moduleName) =>
+                readRepoFile(`remote/deployments/container-pool-rs/src/${moduleName}.rs`),
+              ),
+            );
+            return [main, ...moduleSources].join('\n');
+          }
+          """
+          old_source = "await readRepoFile('remote/deployments/container-pool-rs/src/main.rs')"
+          if 'async function readContainerPoolSource()' not in text:
+              if text.count(old_source) != 1:
+                  raise SystemExit(f'expected one container-pool main.rs read, found {text.count(old_source)}')
+              text = text.replace(old_source, 'await readContainerPoolSource()', 1)
+              if text.count(anchor) != 1:
+                  raise SystemExit(f'expected one readRepoFile anchor, found {text.count(anchor)}')
+              text = text.replace(anchor, anchor + helper, 1)
+          elif text.count(old_source) != 1:
+              raise SystemExit('container-pool source helper must retain one authoritative main.rs read')
+
+          pool_list_marker = """    [
+              'nodejs',
+              'nodejs-chat-claude-k8s-cluster-dev',
+          """
+          pool_list_replacement = """    [
+              'nodejs',
+              'dd-document',
+              'nodejs-chat-claude-k8s-cluster-dev',
+          """
+          if pool_list_marker in text:
+              text = text.replace(pool_list_marker, pool_list_replacement, 1)
+          elif pool_list_replacement not in text:
+              raise SystemExit('container-pool expected slug list was not found')
+
+          start_marker = "  const baseImageByRuntime = new Map(parsed.baseImages.map((entry) => [entry.runtime, entry]));\n"
+          end_marker = "    assert.equal(pool.natsSubject, `dd.remote.container_pool.${pool.slug}.requests`);\n  }\n});"
+          start = text.find(start_marker)
+          end = text.find(end_marker, start)
+          if start == -1 or end == -1:
+              raise SystemExit('could not bound container-pool runtime validation loop')
+          end += len(end_marker)
+          replacement = r'''  const baseImageByRuntime = new Map(parsed.baseImages.map((entry) => [entry.runtime, entry]));
+          for (const pool of parsed.pools) {
+            if (pool.slug === 'dd-document') {
+              assert.match(pool.image, /^docker\.io\/library\/dd-document-rs:/);
+              assert.equal(pool.requestPath, '/convert');
+              assert.equal(pool.healthPath, '/healthz');
+              assert.equal(pool.containerPort, 8122);
+              assert.equal(pool.minWarm, 1);
+              assert.equal(pool.maxWarm, 3);
+              assert.equal(pool.maxConcurrencyPerContainer, 4);
+              assert.equal(pool.requestTimeoutMs, 120_000);
+              assert.equal(pool.idleTtlSeconds, 1_800);
+              assert.equal(pool.env.DOCUMENT_MAX_INPUT_BYTES, '67108864');
+              assert.equal(pool.env.DOCUMENT_MAX_OUTPUT_BYTES, '67108864');
+              assert.equal(pool.env.DOCUMENT_MAX_IMAGE_BYTES, '67108864');
+              assert.equal(pool.env.DOCUMENT_MAX_STREAM_BYTES, '134217728');
+              assert.equal(pool.env.DOCUMENT_IMAGE_CONCURRENCY, '4');
+              assert.equal(pool.natsSubject, 'dd.remote.container_pool.dd-document.requests');
+              continue;
+            }
+
+            const baseImage =
+              baseImageByRuntime.get(pool.slug) ??
+              (pool.slug.startsWith('nodejs-chat-claude-')
+                ? baseImageByRuntime.get('nodejs-chat-claude')
+                : undefined);
+            assert.ok(baseImage, `pool ${pool.slug} should have a matching base image`);
+            assert.equal(pool.image, baseImage.image);
+            if (pool.slug === 'browser-jobs') {
+              // Not a language runtime: the per-job Playwright/Puppeteer worker image,
+              // built from the browser-job-runner crate's worker/ directory. It serves
+              // /run + /healthz over HTTP (the manager bridges NATS) and self-exits after
+              // one job, so the pool reconciles a fresh container each time.
+              assert.equal(baseImage.dockerfile, 'remote/deployments/browser-job-runner-rs/worker/Dockerfile');
+              assert.equal(baseImage.buildContext, 'remote/deployments/browser-job-runner-rs/worker');
+              assert.equal(pool.requestPath, '/run');
+            } else if (pool.slug.startsWith('nodejs-chat-claude-')) {
+              assert.equal(baseImage.dockerfile, 'remote/deployments/dev-server/Dockerfile');
+              assert.equal(baseImage.buildContext, 'remote/deployments/dev-server');
+              assert.equal(pool.requestPath, '/tasks');
+              assert.equal(pool.env.WORKER_BIND_MODE, 'repo');
+              const expectedRepoBySlug = new Map([
+                ['nodejs-chat-claude-live-mutex-dev', 'git@github.com:ORESoftware/live-mutex.git'],
+                ['nodejs-chat-claude-k8s-cluster-dev', 'git@github.com:ORESoftware/k8s-cluster.git'],
+                [
+                  'nodejs-chat-claude-us-anti-corruption-court-project-main',
+                  'git@github.com:ORESoftware/us-anti-corruption-court-project.git',
+                ],
+              ]);
+              assert.equal(pool.env.DD_REPO_URL, expectedRepoBySlug.get(pool.slug));
+              assert.equal(pool.env.AGENT_PROVIDER, 'claude-sdk');
+              assert.equal(pool.readOnly, false);
+              assert.equal(pool.user, '1000:1000');
+            } else {
+              assert.equal(
+                baseImage.dockerfile,
+                `remote/deployments/container-pool-rs/runtime-images/${pool.slug}.Dockerfile`,
+              );
+              assert.equal(baseImage.buildContext, 'remote/deployments/container-pool-rs');
+              assert.equal(pool.requestPath, parsed.runtimeContract.defaultRequestPath);
+              assert.equal(pool.env.DD_POOL_RUNTIME, pool.slug);
+              assert.ok(pool.env.DD_POOL_HANDLER.length > 0, `pool ${pool.slug} should define a handler`);
+            }
+            assert.equal(pool.healthPath, parsed.runtimeContract.defaultHealthPath);
+            assert.equal(pool.containerPort, parsed.runtimeContract.defaultContainerPort);
+            if (pool.slug.startsWith('nodejs-chat-claude-')) {
+              assert.ok(pool.minWarm >= 2, `pool ${pool.slug} should keep at least two warm workers`);
+            } else {
+              assert.ok(pool.minWarm >= 0, `pool ${pool.slug} should allow disabled prewarm`);
+            }
+            assert.ok(pool.maxWarm >= pool.minWarm, `pool ${pool.slug} maxWarm should cover minWarm`);
+            assert.equal(pool.maxConcurrencyPerContainer, 1);
+            assert.ok(pool.requestTimeoutMs >= 30_000);
+            assert.ok(pool.idleTtlSeconds >= 900);
+            assert.equal(pool.natsSubject, `dd.remote.container_pool.${pool.slug}.requests`);
+          }
+          });'''
+          text = text[:start] + replacement + text[end:]
+          path.write_text(text, encoding='utf-8')
+          PY
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Run the complete container-pool contract
+        id: focused-contract
+        shell: bash
+        working-directory: remote/tests
+        run: |
+          set +e
+          log="${RUNNER_TEMP}/den-426-container-pool-contract.log"
+          pnpm exec tsx --test general/container-pool-config.test.ts >"$log" 2>&1
+          status=$?
+          tail -500 "$log"
+          exit "$status"
+      - name: Upload focused diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: den-426-container-pool-contract-diagnostics
+          path: ${{ runner.temp }}/den-426-container-pool-contract.log
+          retention-days: 1
+          if-no-files-found: error
+      - name: Scan for unresolved conflict markers
+        if: success()
+        run: |
+          if git grep -n -E '^(<<<<<<< |=======$|>>>>>>> )' -- . ':(exclude)*.lock'; then
+            exit 1
+          fi
+      - name: Commit verified contract repair
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -- remote/tests/general/container-pool-config.test.ts
+          if git diff --cached --quiet; then
+            echo 'DEN-426 container-pool contract already repaired.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-426 align container-pool contracts with modules and document pool'
+          git push origin HEAD:agent/den-426-container-pool-contracts
