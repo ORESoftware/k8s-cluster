@@ -22,18 +22,25 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
+          set +e
           mkdir -p /tmp/customer-cron/extracted
           cat .agent/cron-payload/part-* | base64 -d > /tmp/customer-cron/payload.tgz
+          decode_status=$?
           {
+            echo "decode_status=$decode_status"
             sha256sum /tmp/customer-cron/payload.tgz
             wc -c /tmp/customer-cron/payload.tgz
             tar -tzf /tmp/customer-cron/payload.tgz
           } > /tmp/customer-cron/diagnostic.txt 2>&1
-          status=$?
-          if [ "$status" -eq 0 ]; then
+          archive_status=$?
+          if [ "$decode_status" -eq 0 ] && [ "$archive_status" -eq 0 ]; then
             tar -xzf /tmp/customer-cron/payload.tgz -C /tmp/customer-cron/extracted
+            extract_status=$?
+          else
+            extract_status=1
           fi
-          echo "$status" > /tmp/customer-cron/status.txt
+          printf 'decode=%s\narchive=%s\nextract=%s\n' "$decode_status" "$archive_status" "$extract_status" > /tmp/customer-cron/status.txt
+          exit 0
       - name: Upload decoded payload
         uses: actions/upload-artifact@v4
         with:
