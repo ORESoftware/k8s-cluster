@@ -99,13 +99,24 @@ jobs:
                   raise SystemExit('expected one REST server declaration')
               text = text.replace(server_declaration, server_declaration + subject_declarations, 1)
 
-          import_start_marker = "  assert.match(\n    server,\n    /use dd_nats_subject_defs::\\{"
-          import_start = text.find(import_start_marker)
-          if import_start != -1:
-              import_end = text.find("  );\n", import_start)
-              if import_end == -1:
-                  raise SystemExit('could not locate the end of the monolithic NATS import assertion')
-              import_end += len("  );\n")
+          if 'natsEventsSource,' not in text or 'natsSharedSource,' not in text:
+              lines = text.splitlines(keepends=True)
+              start = None
+              end = None
+              for index in range(len(lines) - 2):
+                  if (
+                      lines[index].strip() == 'assert.match('
+                      and lines[index + 1].strip() == 'server,'
+                      and 'use dd_nats_subject_defs' in lines[index + 2]
+                  ):
+                      start = index
+                      for candidate in range(index + 3, len(lines)):
+                          if lines[candidate].strip() == ');':
+                              end = candidate + 1
+                              break
+                      break
+              if start is None or end is None:
+                  raise SystemExit('could not structurally locate the monolithic NATS import assertion')
               replacement = r'''  assert.match(
             natsEventsSource,
             /use dd_nats_subject_defs::cdc_table_filter_subject;/,
@@ -114,10 +125,9 @@ jobs:
             natsSharedSource,
             /use dd_nats_subject_defs::\{[\s\S]*?thread_tasks_subject[\s\S]*?DD_REMOTE_TASKS_STREAM_NAME[\s\S]*?GIT_REPOS_CHANGES_SUBJECT[\s\S]*?LAMBDAS_FUNCTIONS_SUBJECT[\s\S]*?ORCHESTRATOR_WAKEUP_SUBJECT[\s\S]*?RUNTIME_EVENTS_SUBJECT[\s\S]*?THREAD_TASKS_WILDCARD[\s\S]*?\};/,
           );
-          '''
-              text = text[:import_start] + replacement + text[import_end:]
-          elif 'natsEventsSource,' not in text or 'natsSharedSource,' not in text:
-              raise SystemExit('monolithic NATS import assertion was not found or migrated')
+          '''.splitlines(keepends=True)
+              lines[start:end] = replacement
+              text = ''.join(lines)
 
           old_assertion = "  assert.doesNotMatch(consumer, /Command::new|tokio::process|std::process/);\n"
           new_assertion = (
