@@ -1,0 +1,6 @@
+name: oresoftware_k8s_api_sdk_public
+version: 0.1.0
+description: public fleet HTTP SDK generated from k8s-cluster OpenAPI contracts
+repository: https://github.com/ORESoftware/k8s-cluster
+environment:
+  sdk: ">=3.4.0 <4.0.0"
