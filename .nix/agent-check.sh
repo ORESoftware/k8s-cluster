@@ -32,14 +32,30 @@ ensure_rust_toolchain() {
   rustup component add --toolchain "$rust_toolchain" clippy rustfmt
 }
 
-ensure_cargo_audit() {
+installed_cargo_audit_version() {
+  cargo audit --version 2>/dev/null || true
+}
+
+prepare_cargo_audit() {
   local installed_version
-  installed_version="$(cargo audit --version 2>/dev/null || true)"
+  installed_version="$(installed_cargo_audit_version)"
   if [[ "$installed_version" != "cargo-audit $cargo_audit_version" ]]; then
     cargo install cargo-audit \
       --version "$cargo_audit_version" \
       --locked \
-      --root "$CARGO_INSTALL_ROOT" >&2
+      --root "$CARGO_INSTALL_ROOT"
+  fi
+  require_cargo_audit
+}
+
+require_cargo_audit() {
+  local installed_version
+  installed_version="$(installed_cargo_audit_version)"
+  if [[ "$installed_version" != "cargo-audit $cargo_audit_version" ]]; then
+    printf 'cargo-audit %s is required, found: %s\n' \
+      "$cargo_audit_version" \
+      "${installed_version:-not installed}" >&2
+    return 69
   fi
 }
 
@@ -71,12 +87,16 @@ run_stage() {
     test)
       cargo test --locked --all-features
       ;;
+    audit-prepare)
+      prepare_cargo_audit
+      cargo audit --version
+      ;;
     audit)
-      ensure_cargo_audit
+      prepare_cargo_audit
       cargo audit
       ;;
     audit-json)
-      ensure_cargo_audit
+      require_cargo_audit
       cargo audit --json
       ;;
     *)
@@ -92,11 +112,11 @@ case "${1:-all}" in
       run_stage "$stage"
     done
     ;;
-  preflight | fmt | check | clippy | test | audit | audit-json)
+  preflight | fmt | check | clippy | test | audit-prepare | audit | audit-json)
     run_stage "$1"
     ;;
   *)
-    printf 'usage: %s [all|preflight|fmt|check|clippy|test|audit|audit-json]\n' "$0" >&2
+    printf 'usage: %s [all|preflight|fmt|check|clippy|test|audit-prepare|audit|audit-json]\n' "$0" >&2
     exit 64
     ;;
 esac
