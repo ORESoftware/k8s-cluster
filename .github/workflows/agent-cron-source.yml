@@ -1,16 +1,20 @@
 name: apply customer cron control plane
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/cron-customer-control-plane
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
 
 jobs:
   apply:
-    if: github.actor != 'github-actions[bot]'
+    if: github.event.pull_request.head.ref == 'agent/cron-customer-control-plane' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
