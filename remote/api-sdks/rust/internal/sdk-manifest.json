@@ -5,8 +5,8 @@
   "packageName": "oresoftware-k8s-api-sdk-internal",
   "generatedBy": "remote/tools/generate-api-sdks.mjs",
   "catalogPath": "remote/api-sdks/contracts/internal.json",
-  "catalogSha256": "94540173dd010e9faf26ab0996911bc31a0fdc75ba1a460295154cde51a04939",
-  "catalogFileSha256": "a7b94caea1f09e88ead670334b5c8832200ff4147cb64406d4e54da5fb041fc8",
+  "catalogSha256": "5ea0759ea8117e34fbf44478e27072f5fd02b40675bfca80e586f166015d16f4",
+  "catalogFileSha256": "6edb3dda14d165ec2b3d11a8843b10f60557b03894f6fe9099a17a1b4878b210",
   "serviceCount": 44,
   "operationCount": 940,
   "skippedServices": [
@@ -53,7 +53,7 @@
     },
     {
       "path": "src/lib.rs",
-      "sha256": "791fef91467e505ed13f0746e13f4ef0bef1414ef5f9a0be6377a6866e48d315"
+      "sha256": "73409e40a5e74398bfb1ac5708cbaa945c1fdcba19d8a3b0a4cabd9806c7325b"
     }
   ]
 }

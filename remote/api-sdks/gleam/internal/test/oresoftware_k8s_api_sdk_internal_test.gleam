@@ -9,7 +9,7 @@ pub fn main() {
 
 pub fn builds_canonical_docs_request_test() {
   assert dd_api_sdk.sdk_scope == "internal"
-  assert dd_api_sdk.catalog_sha256 == "94540173dd010e9faf26ab0996911bc31a0fdc75ba1a460295154cde51a04939" // gitleaks:allow
+  assert dd_api_sdk.catalog_sha256 == "5ea0759ea8117e34fbf44478e27072f5fd02b40675bfca80e586f166015d16f4" // gitleaks:allow
   assert list.length(dd_api_sdk.operations()) == 940
   let assert Ok(request) = dd_api_sdk.build_request(
     "https://example.test/",

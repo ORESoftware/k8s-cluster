@@ -1900,229 +1900,13 @@
       "service": "browser-test-server",
       "language": "node",
       "specPath": "remote/deployments/browser-test-server/generated/api-docs.internal.json",
-      "specSha256": "4c8ad6801ed28ba5d0c5c76fbb173cfb77a17fb12616d7fc44e534ea76646e3d",
+      "specSha256": "72c4c19ada9b3bb3ff7a594d7e2bb960cf44acbad8944903c765f69745fae469",
       "operationCount": 17,
       "operations": [
         {
           "service": "browser-test-server",
           "serviceLanguage": "node",
-          "operationId": "browser_test_server_get_api_docs_9fcd645a3eb1",
-          "method": "GET",
-          "path": "/api/docs",
-          "summary": "Return the Scalar reference for the fail-closed public contract.",
-          "visibility": "public",
-          "routeType": "service",
-          "auth": "public",
-          "pathParameters": [],
-          "queryParameters": [],
-          "requestBody": {
-            "required": false,
-            "content": []
-          },
-          "responses": [
-            {
-              "status": "default",
-              "content": []
-            }
-          ],
-          "contractSha256": "e249fc233b3862bfbdc5339cb1903c1115da4a1d629c25bf6baa1a823750d0b3"
-        },
-        {
-          "service": "browser-test-server",
-          "serviceLanguage": "node",
-          "operationId": "browser_test_server_get_api_docs_json_aeee36ad5e79",
-          "method": "GET",
-          "path": "/api/docs.json",
-          "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
-          "visibility": "public",
-          "routeType": "service",
-          "auth": "public",
-          "pathParameters": [],
-          "queryParameters": [],
-          "requestBody": {
-            "required": false,
-            "content": []
-          },
-          "responses": [
-            {
-              "status": "default",
-              "content": []
-            }
-          ],
-          "contractSha256": "69abb183c3d58ee4b8600e3c5a3a023bf193869c096624e8ce7ec1c0b37bd2e2"
-        },
-        {
-          "service": "browser-test-server",
-          "serviceLanguage": "node",
-          "operationId": "browser_test_server_get_browser_test_985dc1d9fb3b",
-          "method": "GET",
-          "path": "/browser-test",
-          "summary": "Describe the browser-test service and supported HTTP endpoints.",
-          "visibility": "internal",
-          "routeType": "service",
-          "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
-          "pathParameters": [],
-          "queryParameters": [],
-          "requestBody": {
-            "required": false,
-            "content": []
-          },
-          "responses": [
-            {
-              "status": "default",
-              "content": []
-            }
-          ],
-          "contractSha256": "0a580e7d431eb09b393e917f5486299dcefd6a859ddc3df5830e516ad7ac9d1b"
-        },
-        {
-          "service": "browser-test-server",
-          "serviceLanguage": "node",
-          "operationId": "browser_test_server_get_browser_test_healthz_03cb9eeca5b7",
-          "method": "GET",
-          "path": "/browser-test/healthz",
-          "summary": "Authenticated compatibility alias for browser-test liveness.",
-          "visibility": "internal",
-          "routeType": "service",
-          "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
-          "pathParameters": [],
-          "queryParameters": [],
-          "requestBody": {
-            "required": false,
-            "content": []
-          },
-          "responses": [
-            {
-              "status": "default",
-              "content": []
-            }
-          ],
-          "contractSha256": "318b873978e025f71bcbfdb6d3a8e770c8f8af02ba9bd7c1fd0638aede07671c"
-        },
-        {
-          "service": "browser-test-server",
-          "serviceLanguage": "node",
-          "operationId": "browser_test_server_get_browser_test_metrics_015fc7cd1888",
-          "method": "GET",
-          "path": "/browser-test/metrics",
-          "summary": "Authenticated compatibility alias for Prometheus metrics.",
-          "visibility": "internal",
-          "routeType": "service",
-          "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
-          "pathParameters": [],
-          "queryParameters": [],
-          "requestBody": {
-            "required": false,
-            "content": []
-          },
-          "responses": [
-            {
-              "status": "default",
-              "content": []
-            }
-          ],
-          "contractSha256": "cb36fc70f33f07b5d7e02f61dc69b86644bac1d1a4d0f5b2f7305ddb579e5b23"
-        },
-        {
-          "service": "browser-test-server",
-          "serviceLanguage": "node",
-          "operationId": "browser_test_server_get_browser_test_status_e2cef4c14ada",
-          "method": "GET",
-          "path": "/browser-test/status",
-          "summary": "Return bounded browser-test runtime status.",
-          "visibility": "internal",
-          "routeType": "user-generated",
-          "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
-          "pathParameters": [],
-          "queryParameters": [],
-          "requestBody": {
-            "required": false,
-            "content": []
-          },
-          "responses": [
-            {
-              "status": "default",
-              "content": []
-            }
-          ],
-          "contractSha256": "df24b7c358daf6994e0bc074fd1a795ff44c0301fc179cebc0479924b5528fdc"
-        },
-        {
-          "service": "browser-test-server",
-          "serviceLanguage": "node",
-          "operationId": "browser_test_server_get_browser_test_tools_ec32e3d7e202",
-          "method": "GET",
-          "path": "/browser-test/tools",
-          "summary": "List supported browser drivers and their runtime versions.",
-          "visibility": "internal",
-          "routeType": "user-generated",
-          "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
-          "pathParameters": [],
-          "queryParameters": [],
-          "requestBody": {
-            "required": false,
-            "content": []
-          },
-          "responses": [
-            {
-              "status": "default",
-              "content": []
-            }
-          ],
-          "contractSha256": "d41bd6dea5f1dc21ca103b3488af845470c2ca0ca519df2ce0dbeb0d470f0e6f"
-        },
-        {
-          "service": "browser-test-server",
-          "serviceLanguage": "node",
-          "operationId": "browser_test_server_get_d0fcfe74e294",
-          "method": "GET",
-          "path": "/",
-          "summary": "Describe the browser-test service and supported HTTP endpoints.",
-          "visibility": "internal",
-          "routeType": "service",
-          "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
-          "pathParameters": [],
-          "queryParameters": [],
-          "requestBody": {
-            "required": false,
-            "content": []
-          },
-          "responses": [
-            {
-              "status": "default",
-              "content": []
-            }
-          ],
-          "contractSha256": "6cdb0fb97ce75a8a498e302f824538d264cd07b5bec96cc61149f7240f644a34"
-        },
-        {
-          "service": "browser-test-server",
-          "serviceLanguage": "node",
-          "operationId": "browser_test_server_get_docs_api_03e6dc5fb010",
-          "method": "GET",
-          "path": "/docs/api",
-          "summary": "Return the Scalar reference for the fail-closed public contract.",
-          "visibility": "public",
-          "routeType": "service",
-          "auth": "public",
-          "pathParameters": [],
-          "queryParameters": [],
-          "requestBody": {
-            "required": false,
-            "content": []
-          },
-          "responses": [
-            {
-              "status": "default",
-              "content": []
-            }
-          ],
-          "contractSha256": "7f32e5c3470c4ac9dcb2136210f7f26cbaa7bbfc07e751782ea65d514566fd23"
-        },
-        {
-          "service": "browser-test-server",
-          "serviceLanguage": "node",
-          "operationId": "browser_test_server_get_healthz_4722a067e6ee",
+          "operationId": "getBrowserTestHealth",
           "method": "GET",
           "path": "/healthz",
           "summary": "Return a public liveness response for Kubernetes probes.",
@@ -2137,16 +1921,59 @@
           },
           "responses": [
             {
-              "status": "default",
-              "content": []
+              "status": "200",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "be524ec7d1e2e52880f125c2ab70632051fad82252337bffc76040d25e7a9020"
+                }
+              ]
             }
           ],
-          "contractSha256": "e7b892c444d033f8255502d0ed86e79d529454429f102dce3a74f741994c3c25"
+          "contractSha256": "9b2fdd0135afdac639dc6a8e56edaa363b05bcf7322f84e3fd3bc3cdf92e8200"
         },
         {
           "service": "browser-test-server",
           "serviceLanguage": "node",
-          "operationId": "browser_test_server_get_internal_docs_api_f36665cd4912",
+          "operationId": "getBrowserTestHealthCompatibilityAlias",
+          "method": "GET",
+          "path": "/browser-test/healthz",
+          "summary": "Authenticated compatibility alias for browser-test liveness.",
+          "visibility": "internal",
+          "routeType": "service",
+          "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "200",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "be524ec7d1e2e52880f125c2ab70632051fad82252337bffc76040d25e7a9020"
+                }
+              ]
+            },
+            {
+              "status": "401",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "0ff835d51166275212442d999675aedce2d6bb0390b033c4bc3d7461977e20a8"
+                }
+              ]
+            }
+          ],
+          "contractSha256": "2db0287de94545e370ec2bf8dc0b7d3f86695c3f0dc128d4db61b4b04bfc570e"
+        },
+        {
+          "service": "browser-test-server",
+          "serviceLanguage": "node",
+          "operationId": "getBrowserTestInternalApiReference",
           "method": "GET",
           "path": "/internal/docs/api",
           "summary": "Return the Scalar reference for the complete internal contract.",
@@ -2161,16 +1988,30 @@
           },
           "responses": [
             {
-              "status": "default",
-              "content": []
+              "status": "200",
+              "content": [
+                {
+                  "contentType": "text/html",
+                  "schemaSha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
+                }
+              ]
+            },
+            {
+              "status": "401",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "0ff835d51166275212442d999675aedce2d6bb0390b033c4bc3d7461977e20a8"
+                }
+              ]
             }
           ],
-          "contractSha256": "b21107d76530170aebe8b2e443c987ffc94686fb115c9ef1f9533a69d9ad574a"
+          "contractSha256": "e00c6c4d5aed8df19933886a54389260bbe458e65c1eb312c7807a70e76d9f36"
         },
         {
           "service": "browser-test-server",
           "serviceLanguage": "node",
-          "operationId": "browser_test_server_get_internal_openapi_json_bfb533fad608",
+          "operationId": "getBrowserTestInternalOpenApi",
           "method": "GET",
           "path": "/internal/openapi.json",
           "summary": "Return the complete typed OpenAPI contract to trusted callers.",
@@ -2185,16 +2026,30 @@
           },
           "responses": [
             {
-              "status": "default",
-              "content": []
+              "status": "200",
+              "content": [
+                {
+                  "contentType": "application/vnd.oai.openapi+json;version=3.1",
+                  "schemaSha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
+                }
+              ]
+            },
+            {
+              "status": "401",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "0ff835d51166275212442d999675aedce2d6bb0390b033c4bc3d7461977e20a8"
+                }
+              ]
             }
           ],
-          "contractSha256": "78e18e4e6628e7647c0e46118d1baf309d4c87ed77884b8c7f75a3d7e61873ef"
+          "contractSha256": "d9c1241795cfedd852a66c9993acdbf9ffc546cfdba8d674c9010f4c04331013"
         },
         {
           "service": "browser-test-server",
           "serviceLanguage": "node",
-          "operationId": "browser_test_server_get_metrics_73d9974b01c6",
+          "operationId": "getBrowserTestPrometheusMetrics",
           "method": "GET",
           "path": "/metrics",
           "summary": "Return bounded Prometheus text exposition.",
@@ -2209,16 +2064,117 @@
           },
           "responses": [
             {
-              "status": "default",
-              "content": []
+              "status": "200",
+              "content": [
+                {
+                  "contentType": "text/plain",
+                  "schemaSha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
+                }
+              ]
             }
           ],
-          "contractSha256": "c0041ee461709ccdf89abe037ae9f0ba7550290b2f91ae97d03961a0e0b48183"
+          "contractSha256": "0f6eb3bab186377ecb859bd8815a3086000a117f89dccf9c5fde3fc62716cd5b"
         },
         {
           "service": "browser-test-server",
           "serviceLanguage": "node",
-          "operationId": "browser_test_server_get_openapi_json_db092e1508a9",
+          "operationId": "getBrowserTestPrometheusMetricsCompatibilityAlias",
+          "method": "GET",
+          "path": "/browser-test/metrics",
+          "summary": "Authenticated compatibility alias for Prometheus metrics.",
+          "visibility": "internal",
+          "routeType": "service",
+          "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "200",
+              "content": [
+                {
+                  "contentType": "text/plain",
+                  "schemaSha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
+                }
+              ]
+            },
+            {
+              "status": "401",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "0ff835d51166275212442d999675aedce2d6bb0390b033c4bc3d7461977e20a8"
+                }
+              ]
+            }
+          ],
+          "contractSha256": "ee7dddee3dc756d24f7d914d42903a28d855dc453a4feccea8f25abea299fa85"
+        },
+        {
+          "service": "browser-test-server",
+          "serviceLanguage": "node",
+          "operationId": "getBrowserTestPublicApiReference",
+          "method": "GET",
+          "path": "/api/docs",
+          "summary": "Return the Scalar reference for the fail-closed public contract.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "200",
+              "content": [
+                {
+                  "contentType": "text/html",
+                  "schemaSha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
+                }
+              ]
+            }
+          ],
+          "contractSha256": "466304a7681097c95680e3e19f1254888ba9cb6fdec259167576fdc133e93f28"
+        },
+        {
+          "service": "browser-test-server",
+          "serviceLanguage": "node",
+          "operationId": "getBrowserTestPublicApiReferenceCompatibilityAlias",
+          "method": "GET",
+          "path": "/docs/api",
+          "summary": "Return the Scalar reference for the fail-closed public contract.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "200",
+              "content": [
+                {
+                  "contentType": "text/html",
+                  "schemaSha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
+                }
+              ]
+            }
+          ],
+          "contractSha256": "163ccccc8dac973376e07785db7285ffed874c4de6b7266861bc39e81be7ea08"
+        },
+        {
+          "service": "browser-test-server",
+          "serviceLanguage": "node",
+          "operationId": "getBrowserTestPublicOpenApi",
           "method": "GET",
           "path": "/openapi.json",
           "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
@@ -2233,16 +2189,126 @@
           },
           "responses": [
             {
-              "status": "default",
-              "content": []
+              "status": "200",
+              "content": [
+                {
+                  "contentType": "application/vnd.oai.openapi+json;version=3.1",
+                  "schemaSha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
+                }
+              ]
             }
           ],
-          "contractSha256": "fd7a38db59211f4492d7239d8de4d6e402a79c47b5aa8af2fca6f659aae98fbe"
+          "contractSha256": "89bd6744846f71f3585efbbed93f3c8cdf87555ac46ad4be1ddc20a5664ac0f0"
         },
         {
           "service": "browser-test-server",
           "serviceLanguage": "node",
-          "operationId": "browser_test_server_get_status_018e31ad4820",
+          "operationId": "getBrowserTestPublicOpenApiCompatibilityAlias",
+          "method": "GET",
+          "path": "/api/docs.json",
+          "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
+          "visibility": "public",
+          "routeType": "service",
+          "auth": "public",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "200",
+              "content": [
+                {
+                  "contentType": "application/vnd.oai.openapi+json;version=3.1",
+                  "schemaSha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
+                }
+              ]
+            }
+          ],
+          "contractSha256": "6eb35bde497a2d986b42443fdaa4f011ec9f4513cbb8922bef33143a50c64a48"
+        },
+        {
+          "service": "browser-test-server",
+          "serviceLanguage": "node",
+          "operationId": "getBrowserTestService",
+          "method": "GET",
+          "path": "/",
+          "summary": "Describe the browser-test service and supported HTTP endpoints.",
+          "visibility": "internal",
+          "routeType": "service",
+          "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "200",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "821eeca0c37e01d6b641caa17e8c66186c742f787d4a858689bf78ce6ddc2a5c"
+                }
+              ]
+            },
+            {
+              "status": "401",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "0ff835d51166275212442d999675aedce2d6bb0390b033c4bc3d7461977e20a8"
+                }
+              ]
+            }
+          ],
+          "contractSha256": "6645ace4e78c046ffc51478c2f93fd91b80a6ac53ac218011c452958a8823728"
+        },
+        {
+          "service": "browser-test-server",
+          "serviceLanguage": "node",
+          "operationId": "getBrowserTestServiceCompatibilityAlias",
+          "method": "GET",
+          "path": "/browser-test",
+          "summary": "Describe the browser-test service and supported HTTP endpoints.",
+          "visibility": "internal",
+          "routeType": "service",
+          "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "200",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "821eeca0c37e01d6b641caa17e8c66186c742f787d4a858689bf78ce6ddc2a5c"
+                }
+              ]
+            },
+            {
+              "status": "401",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "0ff835d51166275212442d999675aedce2d6bb0390b033c4bc3d7461977e20a8"
+                }
+              ]
+            }
+          ],
+          "contractSha256": "9d83077cd446b61cd959988173959fd8d418f37e142151108d586b4f7d6f7b0e"
+        },
+        {
+          "service": "browser-test-server",
+          "serviceLanguage": "node",
+          "operationId": "getBrowserTestStatus",
           "method": "GET",
           "path": "/status",
           "summary": "Return bounded browser-test runtime status.",
@@ -2257,16 +2323,68 @@
           },
           "responses": [
             {
-              "status": "default",
-              "content": []
+              "status": "200",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "3b2ec31ee435c09690cadeaa330fe5c6d7ca626c77dc7f9c5bb26746c6c3af76"
+                }
+              ]
+            },
+            {
+              "status": "401",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "0ff835d51166275212442d999675aedce2d6bb0390b033c4bc3d7461977e20a8"
+                }
+              ]
             }
           ],
-          "contractSha256": "70571f74bbcca1fc31d28b8fa2fbc45197e83d7816128233e35f5aa9ae306538"
+          "contractSha256": "ad1a8345bedf3205d10dac7b6cb7b120181b957a09cbdd562bc343dec462b4b1"
         },
         {
           "service": "browser-test-server",
           "serviceLanguage": "node",
-          "operationId": "browser_test_server_get_tools_888ba4d4028f",
+          "operationId": "getBrowserTestStatusCompatibilityAlias",
+          "method": "GET",
+          "path": "/browser-test/status",
+          "summary": "Return bounded browser-test runtime status.",
+          "visibility": "internal",
+          "routeType": "user-generated",
+          "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "200",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "3b2ec31ee435c09690cadeaa330fe5c6d7ca626c77dc7f9c5bb26746c6c3af76"
+                }
+              ]
+            },
+            {
+              "status": "401",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "0ff835d51166275212442d999675aedce2d6bb0390b033c4bc3d7461977e20a8"
+                }
+              ]
+            }
+          ],
+          "contractSha256": "02df6db84bc65957f2f82d0705c5e20b0033a6cf6fbbf793713af0587b154adf"
+        },
+        {
+          "service": "browser-test-server",
+          "serviceLanguage": "node",
+          "operationId": "listBrowserAutomationTools",
           "method": "GET",
           "path": "/tools",
           "summary": "List supported browser drivers and their runtime versions.",
@@ -2281,19 +2399,33 @@
           },
           "responses": [
             {
-              "status": "default",
-              "content": []
+              "status": "200",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "7b701d37c36febf7c43df62df40767ff4c50a1b6283872fb6f8748def83fd9ab"
+                }
+              ]
+            },
+            {
+              "status": "401",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "0ff835d51166275212442d999675aedce2d6bb0390b033c4bc3d7461977e20a8"
+                }
+              ]
             }
           ],
-          "contractSha256": "5cba7219f41b94b66c587bd6fc8be6ffd18ace67712043282fd75841a65b4bbe"
+          "contractSha256": "486da938030377a22790c8693b61b15ea294caeed2233827e0fec441e1f7b8a8"
         },
         {
           "service": "browser-test-server",
           "serviceLanguage": "node",
-          "operationId": "browser_test_server_post_run_f002ed3660fc",
-          "method": "POST",
-          "path": "/run",
-          "summary": "Run a bounded browser scenario with Playwright, Puppeteer, or Selenium.",
+          "operationId": "listBrowserAutomationToolsCompatibilityAlias",
+          "method": "GET",
+          "path": "/browser-test/tools",
+          "summary": "List supported browser drivers and their runtime versions.",
           "visibility": "internal",
           "routeType": "user-generated",
           "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
@@ -2305,11 +2437,104 @@
           },
           "responses": [
             {
-              "status": "default",
-              "content": []
+              "status": "200",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "7b701d37c36febf7c43df62df40767ff4c50a1b6283872fb6f8748def83fd9ab"
+                }
+              ]
+            },
+            {
+              "status": "401",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "0ff835d51166275212442d999675aedce2d6bb0390b033c4bc3d7461977e20a8"
+                }
+              ]
             }
           ],
-          "contractSha256": "0fb7f113636d320cde710b6f74f6295e6def2c10722b8767d81fdb79d6410b84"
+          "contractSha256": "fb77646ae32fe8a07c10b43f399bc76bc9a88831eb9b9229ae6572dad2e6d0fd"
+        },
+        {
+          "service": "browser-test-server",
+          "serviceLanguage": "node",
+          "operationId": "runBrowserScenario",
+          "method": "POST",
+          "path": "/run",
+          "summary": "Run a bounded browser scenario with Playwright, Puppeteer, or Selenium.",
+          "visibility": "internal",
+          "routeType": "user-generated",
+          "auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": true,
+            "content": [
+              {
+                "contentType": "application/json",
+                "schemaSha256": "5a51dcceca568364fd5ef7a1c1c3824f1d3110a8210ea8ab7285e73fdea2be01"
+              }
+            ]
+          },
+          "responses": [
+            {
+              "status": "200",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "f3a1634170706b75cf3f6440055830620c9c1a194d26b013dc5cbb811cfd69a2"
+                }
+              ]
+            },
+            {
+              "status": "400",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "df74a7719e4abf4766ce5cde936cd2f390bf7b7c848a6ab55b3d547eb5e9e3c2"
+                }
+              ]
+            },
+            {
+              "status": "401",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "0ff835d51166275212442d999675aedce2d6bb0390b033c4bc3d7461977e20a8"
+                }
+              ]
+            },
+            {
+              "status": "422",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "f3a1634170706b75cf3f6440055830620c9c1a194d26b013dc5cbb811cfd69a2"
+                }
+              ]
+            },
+            {
+              "status": "429",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "362297697395c80fcda45c05e6f37aa9ef3147c1178bb75f1d7b78066a79ac4f"
+                }
+              ]
+            },
+            {
+              "status": "500",
+              "content": [
+                {
+                  "contentType": "application/json",
+                  "schemaSha256": "f3a1634170706b75cf3f6440055830620c9c1a194d26b013dc5cbb811cfd69a2"
+                }
+              ]
+            }
+          ],
+          "contractSha256": "c4569b8ca6596fa0b6084a78e97e63b7b70cf58e2bf16e08ceef909852b0a84e"
         }
       ]
     },
@@ -24070,5 +24295,5 @@
   ],
   "serviceCount": 44,
   "operationCount": 940,
-  "catalogSha256": "94540173dd010e9faf26ab0996911bc31a0fdc75ba1a460295154cde51a04939"
+  "catalogSha256": "5ea0759ea8117e34fbf44478e27072f5fd02b40675bfca80e586f166015d16f4"
 }

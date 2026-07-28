@@ -32,7 +32,7 @@ export interface ApiClientOptions {
 }
 
 export const SDK_SCOPE: SdkScope = "public";
-export const CATALOG_SHA256 = "8b13a51a18433272657ee6c5e51b159c0a1d68a03ff6ae964d9bc553af5d2510";
+export const CATALOG_SHA256 = "6efa34dcaa32999c9265b34c503b99e9a824be3cda1c398871bb7a174f8e7721";
 export const OPERATION_COUNT = 281;
 export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
   {
@@ -356,69 +356,69 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
   },
   {
     "service": "browser-test-server",
-    "operationId": "browser_test_server_get_api_docs_9fcd645a3eb1",
-    "method": "GET",
-    "path": "/api/docs",
-    "pathParameters": [],
-    "requiredQueryParameters": [],
-    "optionalQueryParameters": [],
-    "requestBodyRequired": false,
-    "contractSha256": "f9d8219e1511073edaffd8d942443d5d75c86beafb0dacd31a1582529cde25a9"
-  },
-  {
-    "service": "browser-test-server",
-    "operationId": "browser_test_server_get_api_docs_json_aeee36ad5e79",
-    "method": "GET",
-    "path": "/api/docs.json",
-    "pathParameters": [],
-    "requiredQueryParameters": [],
-    "optionalQueryParameters": [],
-    "requestBodyRequired": false,
-    "contractSha256": "e093a8331bef715e5b4f047327d04d1d34b2e2b5f5fe42958b2af68d27daa9be"
-  },
-  {
-    "service": "browser-test-server",
-    "operationId": "browser_test_server_get_docs_api_03e6dc5fb010",
-    "method": "GET",
-    "path": "/docs/api",
-    "pathParameters": [],
-    "requiredQueryParameters": [],
-    "optionalQueryParameters": [],
-    "requestBodyRequired": false,
-    "contractSha256": "bb35d1b6ed8426f431607e394355980935fd1d34a66cfa2a92445df05abb7558"
-  },
-  {
-    "service": "browser-test-server",
-    "operationId": "browser_test_server_get_healthz_4722a067e6ee",
+    "operationId": "getBrowserTestHealth",
     "method": "GET",
     "path": "/healthz",
     "pathParameters": [],
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "14ae48c27d1382bab824232c4cb0eec9205ec2a5db3207e7d4cd8a90a87f3f61"
+    "contractSha256": "e46b134416c9a47da9e3da05fbbeb8b4f3642d52e9fba10d80a57106a57780b2"
   },
   {
     "service": "browser-test-server",
-    "operationId": "browser_test_server_get_metrics_73d9974b01c6",
+    "operationId": "getBrowserTestPrometheusMetrics",
     "method": "GET",
     "path": "/metrics",
     "pathParameters": [],
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "377d1dec9953b1c44f251d7cd5410cdde54a6f284a8e380ce90c47dac88afd90"
+    "contractSha256": "d2c1c4a292ff9fb9db85429af5eba5d65b76ab3a4c1dd29acc1f4483eec87ab6"
   },
   {
     "service": "browser-test-server",
-    "operationId": "browser_test_server_get_openapi_json_db092e1508a9",
+    "operationId": "getBrowserTestPublicApiReference",
+    "method": "GET",
+    "path": "/api/docs",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "4b25d32c1b32129382a13133419e188ce9460b0f77394451c00b0f6128bbcba4"
+  },
+  {
+    "service": "browser-test-server",
+    "operationId": "getBrowserTestPublicApiReferenceCompatibilityAlias",
+    "method": "GET",
+    "path": "/docs/api",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "019594fb3c4df74cfc932438fdb9960af02b8bcd415a7cbd313b02b548f7e8e4"
+  },
+  {
+    "service": "browser-test-server",
+    "operationId": "getBrowserTestPublicOpenApi",
     "method": "GET",
     "path": "/openapi.json",
     "pathParameters": [],
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "6f1789f370fd12eadd9afa1de631b49fe6d1d55a7b7c60cde203d5105ee03fdd"
+    "contractSha256": "e5bbceb5a0518181d55f405fa318c5e9e23adfe1ff7a6680b8497293a30295f1"
+  },
+  {
+    "service": "browser-test-server",
+    "operationId": "getBrowserTestPublicOpenApiCompatibilityAlias",
+    "method": "GET",
+    "path": "/api/docs.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "a756191fe3244f48769e2b65c0ec400b14a612f8b549494f24f53be62e6cb875"
   },
   {
     "service": "build-server-rs",
