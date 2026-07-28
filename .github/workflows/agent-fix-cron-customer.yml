@@ -1,3 +1,4 @@
+# One-shot compiler-directed patch; removed after the source commit lands.
 name: fix customer cron compile findings
 
 on:
