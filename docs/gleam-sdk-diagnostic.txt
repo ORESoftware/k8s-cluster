@@ -2,7 +2,7 @@
 package_dir=/home/runner/work/k8s-cluster/k8s-cluster/remote/api-sdks/gleam/public
   Resolving versions
 Downloading packages
- Downloaded 2 packages in 0.10s
+ Downloaded 2 packages in 0.05s
       Added gleam_stdlib v1.0.3
       Added gleeunit v1.11.0
 dependency_exit_code=0
@@ -10,13 +10,13 @@ dependency_exit_code=0
   Compiling gleam_stdlib
   Compiling gleeunit
   Compiling oresoftware_k8s_api_sdk_public
-error: Unknown module value
-     ┌─ /home/runner/work/k8s-cluster/k8s-cluster/remote/api-sdks/gleam/public/src/dd_api_sdk.gleam:3168:20
-     │
-3168 │     True -> string.drop_right(base_url, 1)
-     │                    ^^^^^^^^^^
+   Compiled in 0.96s
+error: Module does not exist
 
-The module `gleam/string` does not have a `drop_right` value.
+Module `oresoftware_k8s_api_sdk_public_test` was not found.
+
+Hint: Try creating the file
+`test/oresoftware_k8s_api_sdk_public_test.gleam`.
 
 test_exit_code=1
 ===== internal: gleam deps download =====
@@ -31,12 +31,12 @@ dependency_exit_code=0
   Compiling gleam_stdlib
   Compiling gleeunit
   Compiling oresoftware_k8s_api_sdk_internal
-error: Unknown module value
-      ┌─ /home/runner/work/k8s-cluster/k8s-cluster/remote/api-sdks/gleam/internal/src/dd_api_sdk.gleam:10208:20
-      │
-10208 │     True -> string.drop_right(base_url, 1)
-      │                    ^^^^^^^^^^
+   Compiled in 1.00s
+error: Module does not exist
 
-The module `gleam/string` does not have a `drop_right` value.
+Module `oresoftware_k8s_api_sdk_internal_test` was not found.
+
+Hint: Try creating the file
+`test/oresoftware_k8s_api_sdk_internal_test.gleam`.
 
 test_exit_code=1
