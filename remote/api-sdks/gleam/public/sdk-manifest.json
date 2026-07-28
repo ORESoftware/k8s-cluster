@@ -57,7 +57,7 @@
     },
     {
       "path": "test/oresoftware_k8s_api_sdk_public_test.gleam",
-      "sha256": "c22978a99c3aeedb411fe16cc23f3ada249dab42027770cbce3ed6cca0a19abf"
+      "sha256": "04ebea05e6ed677e10914a8b16f3ad14920eebad6be25853f23b106c1ec5e82f"
     }
   ]
 }

@@ -976,7 +976,7 @@ pub fn main() {
 
 pub fn builds_canonical_docs_request_test() {
   assert dd_api_sdk.sdk_scope == ${q(scope)}
-  assert dd_api_sdk.catalog_sha256 == ${q(catalog.catalogSha256)}
+  assert dd_api_sdk.catalog_sha256 == ${q(catalog.catalogSha256)} // gitleaks:allow
   assert list.length(dd_api_sdk.operations()) == ${operations.length}
   let assert Ok(request) = dd_api_sdk.build_request(
     "https://example.test/",

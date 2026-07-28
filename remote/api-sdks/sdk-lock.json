@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedBy": "remote/tools/generate-api-sdks.mjs",
-  "generatorSha256": "ef07b77374baef4db848e6aa281273626c7ae48400e0bf484f0dcbc090df80a3",
+  "generatorSha256": "a6a810aca72aa204db09ab15ff184c83feab086d4bb1c178f096affbadbb42ee",
   "indexPath": "remote/deployments/generated-api-docs-index.json",
   "indexSha256": "a5acfff8f95249be4a8e5a92955573ae8aee1464163d610f5a52943f9a2b44ad",
   "scopes": {
@@ -641,7 +641,7 @@
       "packageName": "oresoftware_k8s_api_sdk_internal",
       "path": "remote/api-sdks/gleam/internal",
       "manifestPath": "remote/api-sdks/gleam/internal/sdk-manifest.json",
-      "manifestSha256": "b683a091b54805031a9de0b15e7d6d69fbaee0e9e6eb804294bd80fa823cc62a",
+      "manifestSha256": "c200c0b3d2669526850c6a01da4f519be419a6f61d162dd495f397da31eff97b",
       "catalogSha256": "936fd83e3f4c565e871b07b4608d3191ab9a0235d5d4a970bf0d613854e18b94",
       "operationCount": 914
     },
@@ -651,7 +651,7 @@
       "packageName": "oresoftware_k8s_api_sdk_public",
       "path": "remote/api-sdks/gleam/public",
       "manifestPath": "remote/api-sdks/gleam/public/sdk-manifest.json",
-      "manifestSha256": "12305aa6fcc2dffc9bd6bbfc25558647fa019676dfaa5c328f55385f28aef6d9",
+      "manifestSha256": "cd130b041dd80ca18a85b53e7dd6c93e9e66243c2437278cb409b5ae0244b91b",
       "catalogSha256": "f1c583218baeeb1998f1ddf927b48d0868bfe3e7fbf04570d46309f149c824a1",
       "operationCount": 274
     },
