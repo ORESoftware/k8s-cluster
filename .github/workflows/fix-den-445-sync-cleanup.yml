@@ -1,0 +1,74 @@
+# One-shot fix for the branch-local DEN-445 integration workflow.
+name: Fix DEN-445 sync cleanup
+
+on:
+  push:
+    branches:
+      - agent/den-445-native-openapi-fresh
+    paths:
+      - '.github/workflows/fix-den-445-sync-cleanup.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/fix-den-445-sync-cleanup.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-den-445-sync-cleanup
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    if: github.repository == 'ORESoftware/k8s-cluster'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-445-native-openapi-fresh
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Preserve the remote/libs gitlink during cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/sync-public-private-openapi-den-445-v2.yml')
+          text = path.read_text(encoding='utf-8')
+          old = '''      - name: Commit reviewed source and generated artifacts only
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    rm -rf remote/libs
+                    git rm \\
+          '''
+          new = '''      - name: Commit reviewed source and generated artifacts only
+                  shell: bash
+                  run: |
+                    set -euo pipefail
+                    rm -rf remote/libs
+                    git checkout -- remote/libs
+                    git rm \\
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f'cleanup block: expected one match, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
+          git rm .github/workflows/fix-den-445-sync-cleanup.yml
+          git diff --check
+          git diff -- .github/workflows/sync-public-private-openapi-den-445-v2.yml
+          git add .github/workflows/sync-public-private-openapi-den-445-v2.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'ci(DEN-445): preserve private gitlink during generated-artifact commit'
+          git push origin HEAD:agent/den-445-native-openapi-fresh
