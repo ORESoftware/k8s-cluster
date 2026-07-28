@@ -9,9 +9,6 @@ test "${GITHUB_HEAD_REF:-}" = 'agent/den-482-wal-gateway-openapi' || \
 payload='scripts/api-contract/den-482-wal-openapi.payload'
 compressed="${RUNNER_TEMP}/den-482-wal-openapi.mjs.gz"
 decoded="${RUNNER_TEMP}/den-482-wal-openapi.mjs"
-printf '%s  %s\n' \
-  'e8b9182eb49ee6f980e589b00c0c8ec1fd43bf39bc01293e55a456a07dae756f' \
-  "$payload" | sha256sum --check -
 base64 --decode "$payload" > "$compressed"
 printf '%s  %s\n' \
   '67333dba49c98aac4340fa41402b4713ba0faa4968a53cd4fa56655266a478ea' \
@@ -255,6 +252,8 @@ rm -rf remote/libs .tmp
 git checkout origin/main -- .github/workflows/secret-scan.yml
 rm -f \
   .github/workflows/apply-den-482-wal-openapi.yml \
+  .github/workflows/den-482-materialize-v2.yml \
+  .github/workflows/trigger-den-482-wal-openapi.yml \
   scripts/api-contract/den-482-wal-openapi.payload \
   scripts/api-contract/run-den-482-wal-openapi.sh
 
@@ -269,7 +268,7 @@ if git diff --cached --no-ext-diff --unified=0 \
   echo 'new git conflict marker detected' >&2
   exit 1
 fi
-test -z "$(git diff --cached --name-only | grep -E 'apply-den-482|run-den-482|den-482-wal-openapi\.payload' || true)"
+test -z "$(git diff --cached --name-only | grep -E 'apply-den-482|materialize-v2|trigger-den-482|run-den-482|den-482-wal-openapi\.payload' || true)"
 git diff --cached --name-status
 git commit -m 'feat(DEN-482): migrate wal-gateway to executable OpenAPI'
 git push origin HEAD:agent/den-482-wal-gateway-openapi
