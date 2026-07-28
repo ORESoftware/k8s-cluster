@@ -1,0 +1,48 @@
+name: Google Chat upload-artifact v7 contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/bootstrap-clasp-and-export-chat.yml'
+      - '.github/workflows/ephemeral-google-chat-relay-get.yml'
+      - '.github/workflows/ephemeral-google-chat-relay.yml'
+      - '.github/workflows/google-chat-apps-script-sync.yml'
+      - '.github/workflows/google-chat-upload-artifact-v7-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate Google Chat workflows
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: >-
+            .github/workflows/bootstrap-clasp-and-export-chat.yml
+            .github/workflows/ephemeral-google-chat-relay-get.yml
+            .github/workflows/ephemeral-google-chat-relay.yml
+            .github/workflows/google-chat-apps-script-sync.yml
+            .github/workflows/google-chat-upload-artifact-v7-contract.yml
+      - name: Create harmless encrypted-artifact-shaped fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          printf 'encrypted-fixture\n' > "${RUNNER_TEMP}/fixture.tar.gz.gpg"
+          sha256sum "${RUNNER_TEMP}/fixture.tar.gz.gpg" > "${RUNNER_TEMP}/fixture.tar.gz.gpg.sha256"
+      - name: Exercise upload-artifact v7 contract
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: google-chat-upload-v7-contract-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/fixture.tar.gz.gpg
+            ${{ runner.temp }}/fixture.tar.gz.gpg.sha256
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
