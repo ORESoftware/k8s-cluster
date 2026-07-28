@@ -30,12 +30,9 @@ pub use providers::apns::{ApnsConfig, ApnsConfigError, ApnsProvider};
 pub use providers::expo::{ExpoConfig, ExpoConfigError, ExpoProvider, ExpoReceiptRequest};
 pub use providers::fcm::{FcmConfig, FcmConfigError, FcmProvider};
 pub use providers::web_push::{
-    WebPushConfig, WebPushConfigError, WebPushHostPolicy, WebPushProvider,
-    redact_web_push_endpoint,
+    WebPushConfig, WebPushConfigError, WebPushHostPolicy, WebPushProvider, redact_web_push_endpoint,
 };
 pub use redaction::{TargetFingerprint, fingerprint_target, truncate_utf8};
 pub use retry::{RetryDecision, classify_http_status, parse_retry_after};
-pub use runtime::{
-    RuntimeConfigError, provider_registry_from_env, request_authenticator_from_env,
-};
+pub use runtime::{RuntimeConfigError, provider_registry_from_env, request_authenticator_from_env};
 pub use validation::{ValidationError, validate_push_job};

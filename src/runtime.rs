@@ -56,8 +56,7 @@ pub fn provider_registry_from_env() -> Result<ProviderRegistry, RuntimeConfigErr
             non_empty_env("FCM_PROJECT_ID").as_deref(),
         )
         .map_err(|error| invalid_provider("fcm", error))?;
-        let provider =
-            FcmProvider::new(config).map_err(|error| invalid_provider("fcm", error))?;
+        let provider = FcmProvider::new(config).map_err(|error| invalid_provider("fcm", error))?;
         registry = registry.with_provider(ProviderSlot::Fcm, Arc::new(provider))?;
     }
 
@@ -66,24 +65,27 @@ pub fn provider_registry_from_env() -> Result<ProviderRegistry, RuntimeConfigErr
     Ok(registry)
 }
 
-pub fn request_authenticator_from_env(
-) -> Result<Arc<dyn RequestAuthenticator>, RuntimeConfigError> {
+pub fn request_authenticator_from_env() -> Result<Arc<dyn RequestAuthenticator>, RuntimeConfigError>
+{
     if !environment_flag("ENABLE_SHARED_SECRET_AUTH") {
         return Ok(Arc::new(DenyAllAuthenticator));
     }
-    let secret = non_empty_env("SERVER_AUTH_SECRET")
-        .ok_or(RuntimeConfigError::MissingSharedSecret)?;
+    let secret =
+        non_empty_env("SERVER_AUTH_SECRET").ok_or(RuntimeConfigError::MissingSharedSecret)?;
     Ok(Arc::new(SharedSecretAuthenticator::new(secret)?))
 }
 
-fn configure_apns(
-    registry: ProviderRegistry,
-) -> Result<ProviderRegistry, RuntimeConfigError> {
+fn configure_apns(registry: ProviderRegistry) -> Result<ProviderRegistry, RuntimeConfigError> {
     let key = non_empty_env("APNS_KEY_P8");
     let key_id = non_empty_env("APNS_KEY_ID");
     let team_id = non_empty_env("APNS_TEAM_ID");
     let topic = non_empty_env("APNS_TOPIC");
-    let values_present = [key.is_some(), key_id.is_some(), team_id.is_some(), topic.is_some()];
+    let values_present = [
+        key.is_some(),
+        key_id.is_some(),
+        team_id.is_some(),
+        topic.is_some(),
+    ];
     if !values_present.iter().any(|value| *value) {
         return Ok(registry);
     }
@@ -108,8 +110,7 @@ fn configure_apns(
         environment,
     )
     .map_err(|error| invalid_provider("apns", error))?;
-    let provider =
-        ApnsProvider::new(config).map_err(|error| invalid_provider("apns", error))?;
+    let provider = ApnsProvider::new(config).map_err(|error| invalid_provider("apns", error))?;
     let slot = match environment {
         ProviderEnvironment::Production => ProviderSlot::ApnsProduction,
         ProviderEnvironment::Sandbox => ProviderSlot::ApnsSandbox,
@@ -117,14 +118,12 @@ fn configure_apns(
     Ok(registry.with_provider(slot, Arc::new(provider))?)
 }
 
-fn configure_web_push(
-    registry: ProviderRegistry,
-) -> Result<ProviderRegistry, RuntimeConfigError> {
+fn configure_web_push(registry: ProviderRegistry) -> Result<ProviderRegistry, RuntimeConfigError> {
     let Some(private_key) = non_empty_env("VAPID_PRIVATE_KEY") else {
         return Ok(registry);
     };
-    let subject = non_empty_env("VAPID_SUBJECT")
-        .ok_or(RuntimeConfigError::IncompleteProvider("web_push"))?;
+    let subject =
+        non_empty_env("VAPID_SUBJECT").ok_or(RuntimeConfigError::IncompleteProvider("web_push"))?;
     let policy = match non_empty_env("WEBPUSH_ALLOWED_HOSTS") {
         None => WebPushHostPolicy::strict_default(),
         Some(value) if value == "*" => WebPushHostPolicy::any_public(),
@@ -146,8 +145,8 @@ fn configure_web_push(
             .with_default_ttl(ttl)
             .map_err(|error| invalid_provider("web_push", error))?;
     }
-    let provider = WebPushProvider::new(config)
-        .map_err(|error| invalid_provider("web_push", error))?;
+    let provider =
+        WebPushProvider::new(config).map_err(|error| invalid_provider("web_push", error))?;
     Ok(registry.with_provider(ProviderSlot::WebPush, Arc::new(provider))?)
 }
 
@@ -159,15 +158,15 @@ fn non_empty_env(name: &str) -> Option<String> {
 }
 
 fn environment_flag(name: &str) -> bool {
-    env::var(name)
-        .ok()
-        .is_some_and(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+    env::var(name).ok().is_some_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
 }
 
-fn invalid_provider(
-    provider: &'static str,
-    error: impl std::fmt::Display,
-) -> RuntimeConfigError {
+fn invalid_provider(provider: &'static str, error: impl std::fmt::Display) -> RuntimeConfigError {
     RuntimeConfigError::InvalidProvider {
         provider,
         safe_detail: error.to_string(),
@@ -180,7 +179,9 @@ mod tests {
 
     #[test]
     fn environment_flag_is_false_for_absent_values() {
-        assert!(!environment_flag("PUSH_NOTIFICATION_TEST_FLAG_THAT_IS_NOT_SET"));
+        assert!(!environment_flag(
+            "PUSH_NOTIFICATION_TEST_FLAG_THAT_IS_NOT_SET"
+        ));
     }
 
     #[test]

@@ -106,10 +106,7 @@ pub struct ApiState {
 }
 
 impl ApiState {
-    pub fn new(
-        registry: ProviderRegistry,
-        authenticator: Arc<dyn RequestAuthenticator>,
-    ) -> Self {
+    pub fn new(registry: ProviderRegistry, authenticator: Arc<dyn RequestAuthenticator>) -> Self {
         Self {
             registry,
             authenticator,
