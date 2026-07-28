@@ -61,5 +61,30 @@ jobs:
       - name: Apply, validate, generate, and commit the reviewed migration
         shell: bash
         run: |
-          set -euo pipefail
-          bash scripts/api-contract/run-den-482-wal-openapi.sh
+          set -uo pipefail
+          log="${RUNNER_TEMP}/den-482-materialize.log"
+          bash scripts/api-contract/run-den-482-wal-openapi.sh 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          if [ "$status" -eq 0 ]; then
+            exit 0
+          fi
+
+          diagnostic='scripts/api-contract/den-482-last-run.log'
+          {
+            printf 'exit_status=%s\n' "$status"
+            printf 'head=%s\n' "$(git rev-parse HEAD)"
+            printf '\n== working tree ==\n'
+            git status --short || true
+            printf '\n== diff stat ==\n'
+            git diff --stat || true
+            printf '\n== last 300 log lines ==\n'
+            tail -n 300 "$log"
+          } > "$diagnostic"
+
+          git reset -- "$diagnostic" 2>/dev/null || true
+          git add -- "$diagnostic"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore(DEN-482): capture bounded migration failure'
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
+          exit "$status"
