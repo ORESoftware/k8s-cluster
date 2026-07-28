@@ -109,6 +109,7 @@ jobs:
 
       - name: Compile and test Gleam SDKs first
         id: gleam_sdk
+        continue-on-error: true
         run: bash scripts/api-contract/capture-gleam-sdk-failure.sh
 
       - name: Commit exact Gleam diagnostic
