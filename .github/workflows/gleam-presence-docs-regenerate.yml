@@ -97,6 +97,23 @@ jobs:
           log="${RUNNER_TEMP}/framework-neutral-api-docs.log"
           {
             set -euo pipefail
+            python3 - <<'PY'
+            from pathlib import Path
+
+            path = Path('remote/tools/generate-api-docs.mjs')
+            source = path.read_text(encoding='utf-8')
+            old = """        notes:
+                      document['x-dd-language'] === 'node'
+                        ? 'Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.'
+                        : 'Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.',"""
+            new = """        notes:
+                      'Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.',"""
+            count = source.count(old)
+            if count != 1:
+                raise SystemExit(f'expected one framework-specific notes block, found {count}')
+            path.write_text(source.replace(old, new, 1), encoding='utf-8')
+            PY
+            node --check remote/tools/generate-api-docs.mjs
             node remote/tools/generate-api-docs.mjs
             node remote/tools/generate-api-sdks.mjs
             node remote/tools/check-openapi-contracts.mjs --service gleamlang-presence-server
