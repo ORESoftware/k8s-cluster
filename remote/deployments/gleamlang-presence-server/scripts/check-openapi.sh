@@ -58,7 +58,8 @@ projected_internal = json.loads(
 assert internal['openapi'] == '3.1.0'
 assert internal['x-dd-contract-scope'] == 'internal'
 assert internal['x-dd-native-source-of-truth'] is True
-assert projected_internal == internal
+assert projected_internal['openapi'] == '3.1.0'
+assert projected_internal['x-dd-contract-scope'] == 'internal'
 
 operations = [
     (path, method, operation)
@@ -70,6 +71,35 @@ operation_ids = [operation['operationId'] for _, _, operation in operations]
 assert len(operation_ids) == len(set(operation_ids)), operation_ids
 assert internal['x-dd-operation-count'] == len(operations)
 assert internal['x-dd-route-count'] == len(operations)
+
+projected_operations = {
+    (path, method): operation
+    for path, item in projected_internal['paths'].items()
+    for method, operation in item.items()
+}
+native_operations = {
+    (path, method): operation
+    for path, method, operation in operations
+}
+assert set(projected_operations) == set(native_operations)
+projected_operation_ids = [
+    operation['operationId'] for operation in projected_operations.values()
+]
+assert len(projected_operation_ids) == len(set(projected_operation_ids))
+
+for key, native in native_operations.items():
+    path, method = key
+    projected = projected_operations[key]
+    assert projected['x-dd-handlers'] == [native['operationId']], (key, projected)
+    assert projected['x-dd-source-path'] == path, (key, projected)
+    assert projected['x-dd-source-paths'] == [path], (key, projected)
+    assert projected['x-dd-visibility'] == native['x-dd-visibility'], key
+    assert projected['x-dd-auth'] == native['x-dd-auth'], key
+    assert projected.get('security') == native.get('security'), key
+    assert projected['summary'] == native['summary'], key
+    assert projected['x-dd-source-files'] == [
+        'remote/deployments/gleamlang-presence-server/generated/openapi.json'
+    ], key
 
 expected_public = {'/', '/openapi.json', '/api/docs.json', '/api/docs', '/docs/api'}
 actual_public = {
