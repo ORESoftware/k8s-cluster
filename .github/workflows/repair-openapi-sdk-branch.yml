@@ -1,3 +1,4 @@
+# Triggered after workflow registration so GitHub evaluates the push hook.
 name: Repair OpenAPI SDK branch
 
 on:
@@ -82,8 +83,29 @@ jobs:
                 ;;
             esac
           done
-          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- . ':!*.lock' ':!*.json'; then
-            echo 'conflict markers detected' >&2
+
+          git diff --check origin/main -- \
+            .github/workflows/openapi-sdks.yml \
+            remote/api-sdks \
+            remote/tools/api-sdk-common.mjs \
+            remote/tools/generate-api-sdks.mjs \
+            remote/tools/validate-api-sdks.mjs
+          diff_file="${RUNNER_TEMP}/openapi-sdk-hygiene.diff"
+          added_file="${RUNNER_TEMP}/openapi-sdk-added-lines.txt"
+          git diff --no-ext-diff --unified=0 origin/main -- \
+            .github/workflows/openapi-sdks.yml \
+            remote/api-sdks \
+            remote/tools/api-sdk-common.mjs \
+            remote/tools/generate-api-sdks.mjs \
+            remote/tools/validate-api-sdks.mjs \
+            > "$diff_file"
+          sed -n '/^+/ { /^+++/d; s/^+//; p; }' "$diff_file" > "$added_file"
+          if grep -nE '^(<<<<<<< |=======$|>>>>>>> )' "$added_file"; then
+            echo 'conflict marker introduced by SDK work' >&2
+            exit 1
+          fi
+          if grep -nE '(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})' "$added_file"; then
+            echo 'credential-shaped value introduced by SDK work' >&2
             exit 1
           fi
 
