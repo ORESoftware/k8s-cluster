@@ -9,10 +9,12 @@ repository = "https://github.com/ORESoftware/push-notification-server.rs"
 publish = false
 
 [dependencies]
+async-nats = "=0.38.0"
 async-trait = "0.1"
 axum = "0.8"
 base64 = "0.22"
 ece = "2.3"
+futures-util = "0.3"
 hex = "0.4"
 httpdate = "1"
 jsonwebtoken = "9"
