@@ -94,6 +94,7 @@ observe(session)                      → inspect forms, controls, refs, revisio
   fill value; the reference is resolved only inside the worker, never returned or
   logged. Password/SSN/tax-id/card fields are returned as `value_state:
   "redacted"` and never scraped.
+* **Sensitive-field writes fail closed**: SSN/tax identifiers, bank and payment-card fields, and MFA/OTP/PIN controls cannot be filled by the agent. Literal credentials are rejected; credentials may only use a domain-bound `secret_ref`.
 * **Uploads are bounded**: `upload` accepts either an inline file of at most
   256 KiB decoded or an opaque token for an operator-staged regular file of at
   most 25 MiB. Inline bytes stay in memory; filenames, MIME types, canonical

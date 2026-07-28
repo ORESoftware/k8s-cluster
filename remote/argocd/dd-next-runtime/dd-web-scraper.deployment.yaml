@@ -23,7 +23,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-07-25-containerized-browser-worker'
+        dd.dev/telemetry-revision: '2026-07-27-den-267-sensitive-field-98d6f2adeb01'
       labels:
         app: dd-web-scraper
     spec:
@@ -40,7 +40,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: web-scraper
-          image: ghcr.io/oresoftware/dd-web-scraper@sha256:fec450d14e203d7e747b9eb8046c18e48c8e617798228ac914296a994decde1f
+          image: ghcr.io/oresoftware/dd-web-scraper@sha256:24d891d671d00f97e183d3a9f0ac972418f39c8e5b847e4e6186e39aa30f6cac
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
