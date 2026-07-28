@@ -27,16 +27,16 @@ permissions:
   contents: read
 
 concurrency:
-  group: dd-embeddings-openapi-${{ github.ref }}
+  group: dd-embeddings-openapi-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   contract:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 75
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           show-progress: false
@@ -64,6 +64,7 @@ jobs:
           TOML
           cat > remote/libs/telemetry-rs/src/lib.rs <<'RS'
           use std::time::Duration;
+
           use http::{Request, Response};
           use tower_http::classify::{ServerErrorsAsFailures, SharedClassifier};
           use tower_http::trace::{DefaultOnRequest, MakeSpan, OnResponse, TraceLayer};
@@ -71,7 +72,10 @@ jobs:
 
           #[must_use]
           pub struct OtelGuard;
-          pub fn init(_: &str) -> OtelGuard { OtelGuard }
+
+          pub fn init(_: &str) -> OtelGuard {
+              OtelGuard
+          }
 
           pub fn http_trace_layer() -> TraceLayer<
               SharedClassifier<ServerErrorsAsFailures>,
@@ -86,6 +90,7 @@ jobs:
 
           #[derive(Clone, Copy, Debug, Default)]
           pub struct OtelMakeSpan;
+
           impl<B> MakeSpan<B> for OtelMakeSpan {
               fn make_span(&mut self, request: &Request<B>) -> Span {
                   tracing::info_span!(
@@ -99,6 +104,7 @@ jobs:
 
           #[derive(Clone, Copy, Debug, Default)]
           pub struct OtelOnResponse;
+
           impl<B> OnResponse<B> for OtelOnResponse {
               fn on_response(self, response: &Response<B>, _: Duration, span: &Span) {
                   span.record("http.response.status_code", response.status().as_u16() as u64);
@@ -106,55 +112,67 @@ jobs:
           }
           RS
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
         with:
+          toolchain: stable
           components: rustfmt
 
-      - uses: actions/setup-node@v7
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: '22'
 
-      - name: Format, compile, and test Rust service
+      - name: Verify Rust formatting
         working-directory: remote/deployments/dd-embeddings-rs
         shell: bash
         run: |
-          set -o pipefail
-          {
-            cargo fmt --all -- --check
-            cargo check --locked
-            cargo test --locked
-          } 2>&1 | tee "${RUNNER_TEMP}/dd-embeddings-rust.log"
+          set -euo pipefail
+          cargo fmt --all -- --check
+
+      - name: Compile Rust service
+        working-directory: remote/deployments/dd-embeddings-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo check --locked
+
+      - name: Test Rust service
+        working-directory: remote/deployments/dd-embeddings-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked
 
       - name: Prove deterministic committed OpenAPI
         working-directory: remote/deployments/dd-embeddings-rs
         shell: bash
         run: |
-          set -o pipefail
-          {
-            cargo run --locked --quiet -- --export-openapi > "${RUNNER_TEMP}/openapi.1.json"
-            cargo run --locked --quiet -- --export-openapi > "${RUNNER_TEMP}/openapi.2.json"
-            cmp "${RUNNER_TEMP}/openapi.1.json" "${RUNNER_TEMP}/openapi.2.json"
-            cmp "${RUNNER_TEMP}/openapi.1.json" generated/openapi.json
-            python3 -m json.tool generated/openapi.json >/dev/null
-          } 2>&1 | tee "${RUNNER_TEMP}/dd-embeddings-openapi.log"
+          set -euo pipefail
+          cargo run --locked --quiet -- --export-openapi > "${RUNNER_TEMP}/openapi.1.json"
+          cargo run --locked --quiet -- --export-openapi > "${RUNNER_TEMP}/openapi.2.json"
+          cmp "${RUNNER_TEMP}/openapi.1.json" "${RUNNER_TEMP}/openapi.2.json"
+          cmp "${RUNNER_TEMP}/openapi.1.json" generated/openapi.json
+          python3 -m json.tool generated/openapi.json >/dev/null
 
       - name: Verify native contract and compatibility artifacts
         shell: bash
         run: |
-          set -o pipefail
-          {
-            node remote/tools/check-openapi-contracts.mjs --service dd-embeddings-rs
-            node remote/tools/generate-api-docs.mjs --check --service dd-embeddings-rs
-          } 2>&1 | tee "${RUNNER_TEMP}/dd-embeddings-invariants.log"
+          set -euo pipefail
+          node --check remote/tools/check-openapi-contracts.mjs
+          node --check remote/tools/generate-api-docs.mjs
+          node --check remote/tools/generate-openapi-sdks.mjs
+          node remote/tools/check-openapi-contracts.mjs --service dd-embeddings-rs
+          node remote/tools/generate-api-docs.mjs --check --service dd-embeddings-rs
 
       - name: Generate Rust, TypeScript, and Dart SDK smoke clients
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
+          rm -rf .tmp/dd-embeddings-sdk
           node remote/tools/generate-openapi-sdks.mjs \
             --service dd-embeddings-rs \
-            --output .tmp/dd-embeddings-sdk \
-            2>&1 | tee "${RUNNER_TEMP}/dd-embeddings-sdk-generation.log"
+            --output .tmp/dd-embeddings-sdk
 
       - name: Compile generated Rust SDK
         working-directory: .tmp/dd-embeddings-sdk/rust
@@ -172,7 +190,8 @@ jobs:
           npm install --ignore-scripts --no-audit --no-fund
           npm run build
 
-      - uses: dart-lang/setup-dart@v1
+      - name: Install Dart
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260
 
       - name: Analyze generated Dart SDK
         working-directory: .tmp/dd-embeddings-sdk/dart
@@ -182,17 +201,10 @@ jobs:
           dart pub get
           dart analyze
 
-      - name: Upload focused failure diagnostics
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: dd-embeddings-openapi-contract-diagnostics
-          path: |
-            ${{ runner.temp }}/dd-embeddings-rust.log
-            ${{ runner.temp }}/dd-embeddings-openapi.log
-            ${{ runner.temp }}/dd-embeddings-invariants.log
-            ${{ runner.temp }}/dd-embeddings-sdk-generation.log
-            ${{ runner.temp }}/openapi.1.json
-            ${{ runner.temp }}/openapi.2.json
-          retention-days: 2
-          if-no-files-found: warn
+      - name: Verify tracked repository cleanliness
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .tmp remote/libs
+          git diff --check
+          test -z "$(git status --short --untracked-files=no)"
