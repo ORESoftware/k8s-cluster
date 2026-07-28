@@ -176,7 +176,7 @@ jobs:
             dart analyze
           )
 
-          rm -rf remote/libs .tmp
+          rm -rf remote/libs .tmp scripts/api-contract/__pycache__
           git checkout origin/main -- .github/workflows/secret-scan.yml
           rm -f \
             .github/workflows/apply-den-482-wal-openapi.yml \
