@@ -1,0 +1,359 @@
+name: OpenAPI SDK contracts
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/openapi-sdks.yml'
+      - 'docs/api-sdk-generation.md'
+      - 'docs/http-api-openapi-sdk-contract.md'
+      - 'remote/config/api-contracts.json'
+      - 'remote/config/api-sdks.json'
+      - 'remote/deployments/**/generated/api-docs.json'
+      - 'remote/deployments/**/generated/api-docs.internal.json'
+      - 'remote/deployments/generated-api-docs-index.json'
+      - 'remote/deployments/generated-api-sdk-index.json'
+      - 'remote/tools/generate-api-sdk*.mjs'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/openapi-sdks.yml'
+      - 'docs/api-sdk-generation.md'
+      - 'docs/http-api-openapi-sdk-contract.md'
+      - 'remote/config/api-contracts.json'
+      - 'remote/config/api-sdks.json'
+      - 'remote/deployments/**/generated/api-docs.json'
+      - 'remote/deployments/**/generated/api-docs.internal.json'
+      - 'remote/deployments/generated-api-docs-index.json'
+      - 'remote/deployments/generated-api-sdk-index.json'
+      - 'remote/tools/generate-api-sdk*.mjs'
+  workflow_dispatch:
+    inputs:
+      full_fleet:
+        description: Generate, compile, test, and pack every service SDK
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openapi-sdks-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  API_SDK_SAMPLE_SERVICE: auth-server-rs
+
+jobs:
+  contract:
+    name: inventory, maturity, and CLI contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/openapi-sdks.yml
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Check SDK tooling syntax and tests
+        run: |
+          set -euo pipefail
+          node --check remote/tools/generate-api-sdk-index.mjs
+          node --check remote/tools/generate-api-sdk.mjs
+          node --test \
+            remote/tools/generate-api-sdk-index.test.mjs \
+            remote/tools/generate-api-sdk.test.mjs
+
+      - name: Reject stale fleet SDK inventory
+        run: node remote/tools/generate-api-sdk-index.mjs --check
+
+      - name: Verify every service, scope, and language can be selected
+        run: node remote/tools/generate-api-sdk.mjs --all --dry-run --force
+
+  typescript-preview:
+    name: TypeScript public and internal preview
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Generate and compile representative TypeScript clients
+        run: |
+          set -euo pipefail
+          for scope in public internal; do
+            node remote/tools/generate-api-sdk.mjs \
+              --service="$API_SDK_SAMPLE_SERVICE" \
+              --scope="$scope" \
+              --language=typescript \
+              --check \
+              --pack \
+              --force
+          done
+
+      - name: Upload TypeScript previews
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-sdk-typescript-preview-${{ github.sha }}
+          path: .artifacts/api-sdks/typescript
+          if-no-files-found: error
+          retention-days: 7
+
+  rust-preview:
+    name: Rust public and internal preview
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Setup Rust 1.97.1
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: 1.97.1
+          components: rustfmt
+
+      - name: Generate and compile representative Rust clients
+        run: |
+          set -euo pipefail
+          for scope in public internal; do
+            node remote/tools/generate-api-sdk.mjs \
+              --service="$API_SDK_SAMPLE_SERVICE" \
+              --scope="$scope" \
+              --language=rust \
+              --check \
+              --pack \
+              --force
+          done
+
+      - name: Upload Rust previews
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-sdk-rust-preview-${{ github.sha }}
+          path: .artifacts/api-sdks/rust
+          if-no-files-found: error
+          retention-days: 7
+
+  dart-preview:
+    name: Dart public and internal preview
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Provide pinned Dart 3.11.6 through Docker
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin" "$RUNNER_TEMP/dart-pub-cache"
+          cat > "$RUNNER_TEMP/bin/dart" <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          workspace="${GITHUB_WORKSPACE:?}"
+          case "$PWD" in
+            "$workspace") workdir=/workspace ;;
+            "$workspace"/*) workdir="/workspace/${PWD#"$workspace"/}" ;;
+            *) echo "dart wrapper cwd is outside GITHUB_WORKSPACE: $PWD" >&2; exit 1 ;;
+          esac
+          exec docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            --env HOME=/tmp \
+            --env PUB_CACHE=/pub-cache \
+            --volume "$workspace:/workspace" \
+            --volume "$RUNNER_TEMP/dart-pub-cache:/pub-cache" \
+            --workdir "$workdir" \
+            dart:3.11.6 \
+            dart "$@"
+          SCRIPT
+          chmod +x "$RUNNER_TEMP/bin/dart"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Generate and compile representative Dart clients
+        run: |
+          set -euo pipefail
+          dart --version
+          for scope in public internal; do
+            node remote/tools/generate-api-sdk.mjs \
+              --service="$API_SDK_SAMPLE_SERVICE" \
+              --scope="$scope" \
+              --language=dart \
+              --check \
+              --pack \
+              --force
+          done
+
+      - name: Upload Dart previews
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-sdk-dart-preview-${{ github.sha }}
+          path: .artifacts/api-sdks/dart
+          if-no-files-found: error
+          retention-days: 7
+
+  gleam-preview:
+    name: Gleam public and internal preview
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Setup Erlang and Gleam
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
+        with:
+          otp-version: '28'
+          gleam-version: '1.17.0'
+          rebar3-version: '3'
+
+      - name: Generate and compile representative Gleam clients
+        run: |
+          set -euo pipefail
+          for scope in public internal; do
+            node remote/tools/generate-api-sdk.mjs \
+              --service="$API_SDK_SAMPLE_SERVICE" \
+              --scope="$scope" \
+              --language=gleam \
+              --check \
+              --pack \
+              --force
+          done
+
+      - name: Upload Gleam previews
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-sdk-gleam-preview-${{ github.sha }}
+          path: .artifacts/api-sdks/gleam
+          if-no-files-found: error
+          retention-days: 7
+
+  full-fleet:
+    name: Full fleet ${{ matrix.language }} ${{ matrix.scope }}
+    if: github.event_name == 'workflow_dispatch' && inputs.full_fleet
+    needs: contract
+    strategy:
+      fail-fast: false
+      matrix:
+        language:
+          - typescript
+          - rust
+          - dart
+          - gleam
+        scope:
+          - public
+          - internal
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Setup Rust 1.97.1
+        if: matrix.language == 'rust'
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: 1.97.1
+          components: rustfmt
+
+      - name: Setup Erlang and Gleam
+        if: matrix.language == 'gleam'
+        uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1
+        with:
+          otp-version: '28'
+          gleam-version: '1.17.0'
+          rebar3-version: '3'
+
+      - name: Provide pinned Dart 3.11.6 through Docker
+        if: matrix.language == 'dart'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin" "$RUNNER_TEMP/dart-pub-cache"
+          cat > "$RUNNER_TEMP/bin/dart" <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          workspace="${GITHUB_WORKSPACE:?}"
+          case "$PWD" in
+            "$workspace") workdir=/workspace ;;
+            "$workspace"/*) workdir="/workspace/${PWD#"$workspace"/}" ;;
+            *) echo "dart wrapper cwd is outside GITHUB_WORKSPACE: $PWD" >&2; exit 1 ;;
+          esac
+          exec docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            --env HOME=/tmp \
+            --env PUB_CACHE=/pub-cache \
+            --volume "$workspace:/workspace" \
+            --volume "$RUNNER_TEMP/dart-pub-cache:/pub-cache" \
+            --workdir "$workdir" \
+            dart:3.11.6 \
+            dart "$@"
+          SCRIPT
+          chmod +x "$RUNNER_TEMP/bin/dart"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Generate, compile, test, and pack fleet slice
+        run: |
+          set -euo pipefail
+          node remote/tools/generate-api-sdk.mjs \
+            --all \
+            --scope="${{ matrix.scope }}" \
+            --language="${{ matrix.language }}" \
+            --check \
+            --pack \
+            --force
+
+      - name: Upload fleet slice
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-sdk-${{ matrix.language }}-${{ matrix.scope }}-${{ github.sha }}
+          path: .artifacts/api-sdks/${{ matrix.language }}/${{ matrix.scope }}
+          if-no-files-found: error
+          retention-days: 14
