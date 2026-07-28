@@ -13,35 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.88.0
       - uses: Swatinem/rust-cache@v2
-      - name: Normalize source with permanent-CI rustfmt
-        run: cargo fmt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: den-331-stable-formatted-source
-          path: |
-            src/lib.rs
-            tests/*.rs
-          if-no-files-found: error
-      - name: Run real-socket HTTP integration tests with diagnostics
-        run: |
-          set +e
-          cargo test --locked --test http_process -- --nocapture > http-process.log 2>&1
-          status=$?
-          echo "$status" > http-process.exit
-          exit 0
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: den-331-http-process-diagnostics
-          path: http-process.log
-          if-no-files-found: error
-      - name: Enforce HTTP process test result
-        run: exit "$(cat http-process.exit)"
+      - name: Run real-socket HTTP integration tests
+        run: cargo test --locked --test http_process -- --nocapture
 
   nats-jetstream:
     runs-on: ubuntu-latest
@@ -51,7 +27,7 @@ jobs:
       matrix:
         nats-version: ["2.11.17", "2.14.0"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.88.0
       - uses: Swatinem/rust-cache@v2
       - name: Start NATS with JetStream
@@ -70,23 +46,10 @@ jobs:
           done
           docker logs nats-e2e
           exit 1
-      - name: Run live JetStream test with diagnostics
+      - name: Run live JetStream retry and dead-letter test
         env:
           NATS_URL: nats://127.0.0.1:4222
-        run: |
-          set +e
-          cargo test --locked --test nats_jetstream -- --ignored --nocapture --test-threads=1 > nats-jetstream.log 2>&1
-          status=$?
-          echo "$status" > nats-jetstream.exit
-          exit 0
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: den-331-nats-${{ matrix.nats-version }}-diagnostics
-          path: nats-jetstream.log
-          if-no-files-found: error
-      - name: Enforce JetStream test result
-        run: exit "$(cat nats-jetstream.exit)"
+        run: cargo test --locked --test nats_jetstream -- --ignored --nocapture --test-threads=1
       - name: Show NATS logs
         if: always()
         run: docker logs nats-e2e || true
