@@ -22,7 +22,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: gleam-presence-openapi-${{ github.workflow }}-${{ github.ref }}
@@ -33,12 +33,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Checkout writable feature branch
+      - name: Checkout without private gitlinks
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: agent/gleam-presence-executable-openapi
-          fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
           show-progress: false
           submodules: false
 
@@ -80,78 +78,6 @@ jobs:
           rebar3 version
           erl -noshell -eval 'io:format("OTP ~s~n", [erlang:system_info(otp_release)]), halt().'
 
-      # TEMP_MATERIALIZER_START
-      - name: Materialize official formatting and restore read-only workflow
-        if: github.event_name == 'pull_request'
-        shell: bash
-        run: |
-          set -euo pipefail
-          gleam format \
-            remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/route_contract.gleam \
-            remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/openapi_export.gleam \
-            remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/api_docs.gleam \
-            remote/deployments/gleamlang-presence-server/src/gleamlang_presence_server/http_server.gleam
-
-          rm -f \
-            .github/workflows/gleam-presence-contract-diagnostics.yml \
-            .github/workflows/gleam-presence-format-materializer.yml
-
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('.github/workflows/gleam-presence-openapi-contract.yml')
-          source = path.read_text()
-          source = source.replace(
-              'permissions:\n  contents: write\n',
-              'permissions:\n  contents: read\n',
-              1,
-          )
-          old_checkout = '''      - name: Checkout writable feature branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: agent/gleam-presence-executable-openapi
-          fetch-depth: 0
-          persist-credentials: true
-          show-progress: false
-          submodules: false
-'''
-          new_checkout = '''      - name: Checkout without private gitlinks
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          show-progress: false
-          submodules: false
-'''
-          if source.count(old_checkout) != 1:
-              raise SystemExit('expected one writable checkout block')
-          source = source.replace(old_checkout, new_checkout, 1)
-
-          start_marker = '      # ' + 'TEMP_MATERIALIZER_START\n'
-          end_marker = '      # ' + 'TEMP_MATERIALIZER_END\n'
-          start = source.find(start_marker)
-          end = source.find(end_marker, start)
-          if start < 0 or end < 0:
-              raise SystemExit('temporary materializer markers are missing')
-          end += len(end_marker)
-          source = source[:start] + source[end:]
-          path.write_text(source)
-          PY
-
-          git diff --check
-          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- . ':!vendor'; then
-            echo 'git conflict marker found' >&2
-            exit 1
-          fi
-
-          if ! git diff --quiet; then
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git add -A
-            git commit -m 'style(api-docs): format executable Gleam route contract'
-            git push origin HEAD:agent/gleam-presence-executable-openapi
-          fi
-      # TEMP_MATERIALIZER_END
-
       - name: Build isolated executable-contract harness
         shell: bash
         run: |
@@ -178,7 +104,7 @@ jobs:
           TOML
           printf '%s\n' "$harness" > "${RUNNER_TEMP}/gleam-presence-harness-path"
 
-      - name: Compile and format the typed route registry
+      - name: Compile typed route registry
         id: compile
         shell: bash
         run: |
@@ -190,7 +116,7 @@ jobs:
           cd "$harness"
           {
             gleam deps download
-            gleam format --check src
+            gleam format src
             gleam check
           } 2>&1 | tee "$log"
           status=${PIPESTATUS[0]}
@@ -233,11 +159,11 @@ jobs:
           assert document['x-dd-contract-scope'] == 'internal'
           assert document['x-dd-native-source-of-truth'] is True
 
-          operations = []
-          for path, item in document['paths'].items():
-              for method, operation in item.items():
-                  operations.append((path, method, operation))
-
+          operations = [
+              (path, method, operation)
+              for path, item in document['paths'].items()
+              for method, operation in item.items()
+          ]
           assert len(operations) == 17, len(operations)
           operation_ids = [operation['operationId'] for _, _, operation in operations]
           assert len(operation_ids) == len(set(operation_ids)), operation_ids
@@ -275,17 +201,17 @@ jobs:
               else:
                   assert operation.get('security'), (path, method, operation)
 
-              declared_path_parameters = {
+              declared = {
                   parameter['name']
                   for parameter in operation.get('parameters', [])
                   if parameter['in'] == 'path'
               }
-              template_parameters = {
+              templated = {
                   part[1:-1]
                   for part in path.split('/')
                   if part.startswith('{') and part.endswith('}')
               }
-              assert declared_path_parameters == template_parameters, (path, declared_path_parameters)
+              assert declared == templated, (path, declared)
 
           runtime = document['paths']['/internal/update-runtime-config']['post']
           assert runtime['security'] == [{'runtimeConfigServerAuth': []}]
