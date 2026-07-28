@@ -66,6 +66,10 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: remote/tests
 
+      - name: Install Chromium for static UI contracts
+        run: pnpm exec playwright install --with-deps chromium
+        working-directory: remote/tests
+
       - name: Verify generated API docs are current
         run: pnpm run check:api-docs
         working-directory: remote/tests
