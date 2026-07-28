@@ -2,12 +2,6 @@
 name: Apply browser-test executable OpenAPI migration
 
 on:
-  push:
-    branches:
-      - agent/browser-test-executable-openapi
-    paths:
-      - '.github/workflows/apply-browser-test-executable-openapi.yml'
-      - '.github/scripts/apply-browser-test-executable-openapi.py'
   pull_request:
     branches:
       - main
@@ -24,7 +18,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: apply-browser-test-executable-openapi
+  group: apply-browser-test-executable-openapi-pr-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 env:
