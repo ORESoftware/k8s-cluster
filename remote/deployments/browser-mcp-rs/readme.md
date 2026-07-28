@@ -114,9 +114,8 @@ Machine-readable error codes: `invalid_request`, `session_not_found`,
 
 ## Public exposure checklist
 
-The MCP surface is temporarily anonymous by explicit operator decision. OAuth
-routes are dormant while disabled; the implementation and secret wiring remain
-ready for a one-line re-enable. Before relying on the no-auth posture, confirm:
+The MCP surface is OAuth-protected; only OAuth discovery/authorization endpoints
+and `/healthz` are anonymous. Before relying on it, confirm:
 
 1. **Set a domain allowlist.** With an empty `BROWSER_MCP_ALLOWED_DOMAINS` /
    `BROWSER_AGENT_ALLOWED_DOMAINS` it is an open browser proxy to the whole
@@ -133,20 +132,24 @@ ready for a one-line re-enable. Before relying on the no-auth posture, confirm:
    `{"value": "...", "domains": ["irs.gov"]}` — a bound secret is only typed
    into a matching origin, never an attacker page. Bare-string secrets have no
    domain binding.
-4. **Temporary no-auth posture.** Production currently sets
-   `BROWSER_MCP_REQUIRE_AUTH=false`. Keep both domain ceilings identical and
-   non-empty, retain browser confirmation/payment/signature blockers, and keep
-   the OAuth secrets configured. Restore `true` when anonymous access is no
-   longer required. The gateway still rate-limits OAuth POSTs and MCP calls.
+4. **OAuth posture.** Keep `BROWSER_MCP_REQUIRE_AUTH=true`, rotate the signing
+   and operator secrets independently, retain short access-token lifetimes, and
+   keep Redis reachable for single-use authorization codes and rotating refresh
+   grants. The gateway separately rate-limits OAuth POSTs and MCP calls.
 5. **Webpage text is untrusted** and is only ever returned under
    `visible_text.untrusted_content`; page titles are kept out of the model's
    text/summary stream.
+
+The binary also supports `BROWSER_MCP_REQUIRE_AUTH=false` for isolated local or
+disposable compatibility tests. That mode advertises `{"type":"noauth"}` in
+`tools/list`; it must not be used on the public AWS or Hetzner write-capable
+edges.
 
 ## Endpoints
 
 | Path                                        | Method     | Notes                                      |
 | ------------------------------------------- | ---------- | ------------------------------------------ |
-| `/mcp`                                      | POST (GET) | Temporarily anonymous MCP-over-HTTP JSON-RPC. |
+| `/mcp`                                      | POST (GET) | OAuth-protected MCP-over-HTTP JSON-RPC.    |
 | `/.well-known/oauth-protected-resource`     | GET        | RFC 9728 resource metadata.                |
 | `/.well-known/oauth-authorization-server`   | GET        | RFC 8414 authorization-server metadata.    |
 | `/oauth/register`                           | POST       | Dynamic public-client registration.        |
@@ -168,7 +171,7 @@ Public URLs:
 | `PORT`                               | `8092`                                                 | Bind port.                                             |
 | `BROWSER_MCP_WORKER_URL`             | `http://dd-web-scraper.default.svc.cluster.local:8097` | Private browser worker.                                |
 | `SERVER_AUTH_SECRET`                 | —                                                      | Required worker credential.                            |
-| `BROWSER_MCP_REQUIRE_AUTH`           | `false` in code and temporary production posture       | Enable OAuth-protected MCP access when set to `true`.  |
+| `BROWSER_MCP_REQUIRE_AUTH`           | `false` in code; `true` in production                  | Enable OAuth-protected MCP access.                     |
 | `BROWSER_MCP_PUBLIC_BASE_URLS`       | —                                                      | Trusted public MCP resource/issuer URLs.               |
 | `BROWSER_MCP_OAUTH_SIGNING_SECRET`   | —                                                      | Required 32+ byte token/signature key.                 |
 | `BROWSER_MCP_OAUTH_OPERATOR_SECRET`  | —                                                      | Required 20+ byte human consent secret.                |
@@ -205,8 +208,9 @@ SERVER_AUTH_SECRET=dev-secret \
 
 ## Temporary Fiducia portal profile
 
-The production hostname profile was explicitly set on 2026-07-26 for the active
-Fiducia credit-redemption, startup-application, and conference-CFP workstream:
+The OAuth-protected production profile was explicitly widened on 2026-07-26 for the
+active Fiducia credit-redemption, startup-application, and conference-CFP
+workstream:
 
 ```text
 confluent.cloud
@@ -236,16 +240,14 @@ www.gstatic.com
 ssl.gstatic.com
 fonts.googleapis.com
 fonts.gstatic.com
+httpbingo.org
 ```
 
-The ceiling is exposed only through the server-defined
-`fiducia-applications` workflow profile. Callers select its `workflow_id`; they
-cannot define a profile or widen its hostnames. Unrelated smoke-test and product
-domains are deliberately excluded while this endpoint is anonymous.
-
-When `BROWSER_MCP_REQUIRE_AUTH=false`, `tools/list` advertises the MCP
-`noauth` security scheme. Restoring the setting to `true` changes the same tool
-descriptors back to OAuth 2.0 with their least-privilege scopes.
+The ceiling is divided into server-defined `fiducia-applications`,
+`benefactor-site`, and `smoke-test` workflow profiles. Callers select a
+`workflow_id`; they cannot define a profile or widen its hostnames.
+`httpbingo.org` is isolated in `smoke-test` for the reproducible harmless-form
+verification script and is not reachable from the application profiles.
 
 Root vendor hostnames include that vendor's subdomains. The PostHog, Together
 AI, Snyk, OVHcloud, Wufoo, Pulumi, Google static-asset, and AWS CFP entries are
@@ -254,11 +256,12 @@ intentionally exact hosts. Filing sites (`irs.gov`,
 domains are not allowed. Keep the Rust MCP and Playwright worker values
 identical, and shrink or replace this profile when the workstream ends.
 
-The public ChatGPT connector temporarily uses **No authentication**. Anonymous
-MCP calls are accepted, while the portal hostname ceiling, SSRF defenses,
-confirmation gates, and gateway limits remain enforced. OAuth discovery, DCR,
-PKCE, and scoped-token support remain deployed and can be restored by setting
-`BROWSER_MCP_REQUIRE_AUTH=true`.
+The public ChatGPT connector uses OAuth because ChatGPT custom apps cannot
+attach an arbitrary static operator bearer. An unauthenticated MCP request gets
+HTTP 401 with a `WWW-Authenticate: Bearer` challenge pointing at protected
+resource metadata. ChatGPT then registers as a public client, uses PKCE S256,
+shows the operator authorization page, and receives scoped tokens bound to the
+exact AWS or Hetzner MCP resource URL.
 
 Build / test / lint:
 
@@ -283,15 +286,14 @@ before connecting a real client.
 ## Connect an MCP client
 
 **ChatGPT (eligible Developer mode account, web).** Enable Developer mode,
-create a custom app, choose **No authentication**, and scan one of the public
-URLs above. Verify exactly `browser_act` and `browser_state`, and keep
-write-action approvals enabled. After re-enabling OAuth, reconnect the app using
-OAuth and enter the operator secret only on the server's HTTPS consent page.
+create a custom app, choose OAuth, and scan one of the public URLs above. Enter the
+operator authorization secret only on the server's HTTPS consent page. Verify
+exactly `browser_act` and `browser_state`, and keep write-action approvals
+enabled.
 
 **Claude / API clients.** Point the client's MCP/tool configuration at the same
-URL as a Streamable-HTTP MCP server. The current deployment needs no
-credentials. After OAuth is re-enabled, follow its discovery metadata; access
-tokens belong in `Authorization: Bearer`, never in a query string.
+URL as a Streamable-HTTP MCP server and follow its OAuth discovery metadata.
+Access tokens belong in `Authorization: Bearer`, never in a query string.
 
 ## Deploy
 
