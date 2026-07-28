@@ -201,3 +201,5 @@ jobs:
           path: ${{ runner.temp }}/den-482-direct-rebuild.log
           if-no-files-found: warn
           retention-days: 1
+
+# Activation commit: the workflow already existed on the feature branch before this synchronize event.
