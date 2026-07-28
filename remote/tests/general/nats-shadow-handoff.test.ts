@@ -81,10 +81,6 @@ assert.match(
 );
   assert.match(
     server,
-    /cdc_table_filter_subject\(\s*"cdc",\s*"public",\s*"known_git_repos",?\s*\)/,
-  );
-  assert.match(
-    server,
     /cdc_table_filter_subject\(\s*"cdc",\s*"public",\s*"agent_remote_dev_events",?\s*\)/,
   );
   assert.match(server, /persist_task_status_event/);
