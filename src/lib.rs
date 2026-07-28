@@ -37,6 +37,7 @@ mod server;
 mod shared_auth;
 mod signal_api;
 mod signal_bundle_store;
+mod signal_maintenance;
 #[expect(
     dead_code,
     reason = "terminal Signal revocation is transactionally implemented and tested but the live device endpoint still uses the legacy revocation path"
@@ -49,6 +50,9 @@ mod vault_blob;
 
 pub use flags::apply_cli_flags;
 pub use server::run;
+
+#[cfg(test)]
+mod signal_postgres_tests;
 
 #[cfg(test)]
 mod architecture_tests {
