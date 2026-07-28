@@ -85,6 +85,23 @@ jobs:
             --no-default-features \
             --features openapi
 
+      - name: Prove deterministic committed shared fragment
+        run: |
+          set -euo pipefail
+          cargo run --locked --quiet \
+            --manifest-path runtime-config-client-rs/Cargo.toml \
+            --no-default-features \
+            --features openapi \
+            --example export_openapi > "${RUNNER_TEMP}/runtime-config-openapi.1.json"
+          cargo run --locked --quiet \
+            --manifest-path runtime-config-client-rs/Cargo.toml \
+            --no-default-features \
+            --features openapi \
+            --example export_openapi > "${RUNNER_TEMP}/runtime-config-openapi.2.json"
+          cmp "${RUNNER_TEMP}/runtime-config-openapi.1.json" "${RUNNER_TEMP}/runtime-config-openapi.2.json"
+          cmp "${RUNNER_TEMP}/runtime-config-openapi.1.json" runtime-config-client-rs/generated/openapi.json
+          python3 -m json.tool runtime-config-client-rs/generated/openapi.json >/dev/null
+
       - name: Reject drift and conflict markers
         run: |
           set -euo pipefail
