@@ -1,6 +1,6 @@
 const String sdkScope = "internal";
-const String catalogSha256 = "94540173dd010e9faf26ab0996911bc31a0fdc75ba1a460295154cde51a04939";
-const int operationCount = 940;
+const String catalogSha256 = "331bacb861a9309b41c9d5f6dc6f8bfa58b745c91bf44fdd49ba4ebc5822063a";
+const int operationCount = 941;
 
 class ApiOperation {
   const ApiOperation({
@@ -9170,7 +9170,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "d8b4200d7759051284c6c6b15207e6edd95b9c9926faccc6baf5049055dca799",
+    contractSha256: "8f4ed2db80a608edee36bd1f7d77fc4948626ba0febe04c3e1fa95a620f57c2e",
   ),
   ApiOperation(
     service: "wal-gateway-rs",
@@ -9181,7 +9181,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "4e7121a90dd644b2bd5a44dec927df1b64823d60d325d89adc6ec00d62f70c27",
+    contractSha256: "05c3afebd67006a793aaa234b7fd3eacfd949aa0c34c3677c9ebf42afd0f0050",
   ),
   ApiOperation(
     service: "wal-gateway-rs",
@@ -9192,7 +9192,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "a91a3f24e6dd563358e2330de61b204631317015b73e275e32481cd2b379c3f9",
+    contractSha256: "641924988daedaed0ba7ca8fa76771712e8b3e71ae56f400cf816ca8fec3921c",
   ),
   ApiOperation(
     service: "wal-gateway-rs",
@@ -9203,7 +9203,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "2f80f8d6f2c9bc4a29a0583f5e8b6609bbd526c6bb7053957dbbd47ccad7beaf",
+    contractSha256: "b5edade458f680248f36c91904571c97601118daf147c95f3fc20d0acc2f3a28",
   ),
   ApiOperation(
     service: "wal-gateway-rs",
@@ -9214,7 +9214,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "34eb6aa5c576b69f7e2c84406258f85c99aef39a5aef3ab8c66a63967c1a237a",
+    contractSha256: "816bd3169765d836f2382f2dab5b786fece47ec0d9e1b739ef29c320e6e2aac7",
   ),
   ApiOperation(
     service: "wal-gateway-rs",
@@ -9236,7 +9236,18 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "21a81d3c933eabeded57d244560985e7dc801edd547d4766747ffa49e3ffc857",
+    contractSha256: "ca8abdf4738adfc2b9c08f2e86f9cd34e6a94e48870d4ae63c74ca74c8a6cf4d",
+  ),
+  ApiOperation(
+    service: "wal-gateway-rs",
+    operationId: "wal_gateway_rs_get_openapi_json_4460f2bd801d",
+    method: "GET",
+    path: "/openapi.json",
+    pathParameters: [],
+    requiredQueryParameters: [],
+    optionalQueryParameters: [],
+    requestBodyRequired: false,
+    contractSha256: "97321e74cd044d7aa1aa492246d912dcd5dd26ec48fdfbb9da69bec0318385a9",
   ),
   ApiOperation(
     service: "wal-gateway-rs",
@@ -9247,7 +9258,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "1ffe212ec3ca0cd3e698df2e998c481efd960cd4895ed6aafc08349a7d2b8b41",
+    contractSha256: "785f0c075054f1ae6754de3d9b240975fa951b92a401eba4ed192043c06077b0",
   ),
   ApiOperation(
     service: "wal-gateway-rs",
