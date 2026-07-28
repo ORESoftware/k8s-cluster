@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "language": "dart",
+  "scope": "internal",
+  "packageName": "oresoftware_k8s_api_sdk_internal",
+  "generatedBy": "remote/tools/generate-api-sdks.mjs",
+  "catalogPath": "remote/api-sdks/contracts/internal.json",
+  "catalogSha256": "936fd83e3f4c565e871b07b4608d3191ab9a0235d5d4a970bf0d613854e18b94",
+  "catalogFileSha256": "555295ae939e2fadfc215be56343231297786307422d495fa095e1469755b384",
+  "serviceCount": 43,
+  "operationCount": 914,
+  "skippedServices": [
+    {
+      "service": "billing-server-rs",
+      "language": "rust",
+      "deploymentPath": "remote/deployments/billing-server-rs",
+      "sourceRepository": "git@github.com:quaestor-ledger/billing-server.rs.git",
+      "reason": "uninitialized-deployment-gitlink"
+    },
+    {
+      "service": "dart-server",
+      "language": "dart",
+      "deploymentPath": "remote/deployments/dart-server",
+      "sourceRepository": "git@github.com:sagitta-stack/dart-server.git",
+      "reason": "uninitialized-deployment-gitlink"
+    },
+    {
+      "service": "fiducia-customer.rs",
+      "language": "rust",
+      "deploymentPath": "remote/deployments/fiducia-customer.rs",
+      "sourceRepository": "https://github.com/fiducia-cloud/fiducia-customer.rs.git",
+      "reason": "uninitialized-deployment-gitlink"
+    },
+    {
+      "service": "gleam-lambda-runner",
+      "language": "gleam",
+      "deploymentPath": "remote/deployments/gleam-lambda-runner",
+      "sourceRepository": "git@github.com:scintilla-run/gleam-lambda-runner.git",
+      "reason": "uninitialized-deployment-gitlink"
+    },
+    {
+      "service": "usacc-rest-api-backend-rs",
+      "language": "rust",
+      "deploymentPath": "remote/deployments/usacc-rest-api-backend-rs",
+      "sourceRepository": "git@github.com:usa-acc/rest-api-backend.rs.git",
+      "reason": "uninitialized-deployment-gitlink"
+    }
+  ],
+  "generatedFiles": [
+    {
+      "path": "analysis_options.yaml",
+      "sha256": "946b7f3fd0bc57ddc0864a05f86a71732aec4dcaba3e93c756e329afcfbc1569"
+    },
+    {
+      "path": "bin/smoke.dart",
+      "sha256": "b7d8f50d37074eefd6fa2688dd3e175b04a4c4c43a3b64d0b6ee093101b61774"
+    },
+    {
+      "path": "lib/dd_api_sdk.dart",
+      "sha256": "99bf62be86624f19b874144b13e38dbe1ec22844b5ee6cc0f1fc9bd030bbba00"
+    },
+    {
+      "path": "pubspec.yaml",
+      "sha256": "8af35f9a5e9721e042bcca4bb67c7d9262d1d0084bd95a018664e0f38c994a1d"
+    }
+  ]
+}

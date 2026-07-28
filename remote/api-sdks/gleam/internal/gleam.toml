@@ -1,0 +1,12 @@
+name = "oresoftware_k8s_api_sdk_internal"
+version = "0.1.0"
+description = "internal fleet HTTP SDK generated from k8s-cluster OpenAPI contracts"
+licences = ["MIT"]
+repository = { type = "github", user = "ORESoftware", repo = "k8s-cluster" }
+target = "erlang"
+
+[dependencies]
+gleam_stdlib = ">= 1.0.3 and < 2.0.0"
+
+[dev-dependencies]
+gleeunit = ">= 1.11.0 and < 2.0.0"

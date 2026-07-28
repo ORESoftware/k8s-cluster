@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "language": "gleam",
+  "scope": "internal",
+  "packageName": "oresoftware_k8s_api_sdk_internal",
+  "generatedBy": "remote/tools/generate-api-sdks.mjs",
+  "catalogPath": "remote/api-sdks/contracts/internal.json",
+  "catalogSha256": "936fd83e3f4c565e871b07b4608d3191ab9a0235d5d4a970bf0d613854e18b94",
+  "catalogFileSha256": "555295ae939e2fadfc215be56343231297786307422d495fa095e1469755b384",
+  "serviceCount": 43,
+  "operationCount": 914,
+  "skippedServices": [
+    {
+      "service": "billing-server-rs",
+      "language": "rust",
+      "deploymentPath": "remote/deployments/billing-server-rs",
+      "sourceRepository": "git@github.com:quaestor-ledger/billing-server.rs.git",
+      "reason": "uninitialized-deployment-gitlink"
+    },
+    {
+      "service": "dart-server",
+      "language": "dart",
+      "deploymentPath": "remote/deployments/dart-server",
+      "sourceRepository": "git@github.com:sagitta-stack/dart-server.git",
+      "reason": "uninitialized-deployment-gitlink"
+    },
+    {
+      "service": "fiducia-customer.rs",
+      "language": "rust",
+      "deploymentPath": "remote/deployments/fiducia-customer.rs",
+      "sourceRepository": "https://github.com/fiducia-cloud/fiducia-customer.rs.git",
+      "reason": "uninitialized-deployment-gitlink"
+    },
+    {
+      "service": "gleam-lambda-runner",
+      "language": "gleam",
+      "deploymentPath": "remote/deployments/gleam-lambda-runner",
+      "sourceRepository": "git@github.com:scintilla-run/gleam-lambda-runner.git",
+      "reason": "uninitialized-deployment-gitlink"
+    },
+    {
+      "service": "usacc-rest-api-backend-rs",
+      "language": "rust",
+      "deploymentPath": "remote/deployments/usacc-rest-api-backend-rs",
+      "sourceRepository": "git@github.com:usa-acc/rest-api-backend.rs.git",
+      "reason": "uninitialized-deployment-gitlink"
+    }
+  ],
+  "generatedFiles": [
+    {
+      "path": "gleam.toml",
+      "sha256": "2b1384b6fd483b8bfa0e5ec414765dc62ddeb0e0d6b8d7b1f9ec15b26172b48c"
+    },
+    {
+      "path": "src/dd_api_sdk.gleam",
+      "sha256": "8b9d4c647571672d83ccd6a41e400e072726a8560a048bcd3446ee1f11582035"
+    },
+    {
+      "path": "test/oresoftware_k8s_api_sdk_internal_test.gleam",
+      "sha256": "8fa2b6937b6508e4423ec69b88d00bb44330a2c69ceebaecd8c518d0512879fb"
+    }
+  ]
+}
