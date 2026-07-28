@@ -2,8 +2,8 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 pub const SDK_SCOPE: &str = "public";
-pub const CATALOG_SHA256: &str = "8b13a51a18433272657ee6c5e51b159c0a1d68a03ff6ae964d9bc553af5d2510";
-pub const OPERATION_COUNT: usize = 281;
+pub const CATALOG_SHA256: &str = "23a49b456e478b3498a905f8ee905adcc639ba25d867705ed69fee205d3c55c3";
+pub const OPERATION_COUNT: usize = 279;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ApiOperation {
@@ -2734,7 +2734,7 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "c89ac1380475fdc7d55c7df0016e906ec86f9fcaffc66048a11c896aa4c466c0",
+        contract_sha256: "ed0e81e56c84c64de6d54ecd3aee0607d94800963f82d71f2f7f1531842860cf",
     },
     ApiOperation {
         service: "wal-gateway-rs",
@@ -2745,7 +2745,7 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "84457bce2cead929d5cf95c9aee44974a0f819bf44f27f375e3ef952ca13d808",
+        contract_sha256: "711569a9cf9b3410eaf4551e5400668ea76a23c7f9131519e578d65eb8d4740a",
     },
     ApiOperation {
         service: "wal-gateway-rs",
@@ -2756,7 +2756,7 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "45502dcc514cdc5da2b2c049700dcd5947e6a6033d40c9663b25020fbeaff900",
+        contract_sha256: "102d5ed6a7ebe684f095fe70470fbceef2eaa130c7c0146e46711de9a349d969",
     },
     ApiOperation {
         service: "wal-gateway-rs",
@@ -2767,40 +2767,18 @@ pub static OPERATIONS: &[ApiOperation] = &[
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "92b5f85b870f44a5503294d197549e49432b45da1b052dc3dce00d4de42b3fc9",
+        contract_sha256: "86c4f68e057109a794129d5c848a174e7df644296dd0326d518885c8095a944f",
     },
     ApiOperation {
         service: "wal-gateway-rs",
-        operation_id: "wal_gateway_rs_get_healthz_13ad4ec5056b",
+        operation_id: "wal_gateway_rs_get_openapi_json_4460f2bd801d",
         method: "GET",
-        path: "/healthz",
+        path: "/openapi.json",
         path_parameters: &[],
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "fe2f36ed94a7dd12428b00facc0be094bfdca1cbc13fe6400a8f80879bb8fb7a",
-    },
-    ApiOperation {
-        service: "wal-gateway-rs",
-        operation_id: "wal_gateway_rs_get_metrics_b8a63d88661c",
-        method: "GET",
-        path: "/metrics",
-        path_parameters: &[],
-        required_query_parameters: &[],
-        optional_query_parameters: &[],
-        request_body_required: false,
-        contract_sha256: "7bf0825cc5c1659cd98949b4d8522467578b75fa168a8730c89eed88407472cf",
-    },
-    ApiOperation {
-        service: "wal-gateway-rs",
-        operation_id: "wal_gateway_rs_get_readyz_12a0d2292af6",
-        method: "GET",
-        path: "/readyz",
-        path_parameters: &[],
-        required_query_parameters: &[],
-        optional_query_parameters: &[],
-        request_body_required: false,
-        contract_sha256: "6d8ece15d56eb2ab78e4c4e45bc309478c0dd3886a75e5ed520214fc61d1d811",
+        contract_sha256: "1988a72b5639727a34c57bec9986844b83e9fdf1ca146b1ee7395480dde8552b",
     },
     ApiOperation {
         service: "web-home-rs",
@@ -3247,8 +3225,8 @@ mod tests {
     #[test]
     fn builds_canonical_docs_request() {
         assert_eq!(SDK_SCOPE, "public");
-        assert_eq!(CATALOG_SHA256, "8b13a51a18433272657ee6c5e51b159c0a1d68a03ff6ae964d9bc553af5d2510");
-        assert_eq!(OPERATIONS.len(), 281);
+        assert_eq!(CATALOG_SHA256, "23a49b456e478b3498a905f8ee905adcc639ba25d867705ed69fee205d3c55c3");
+        assert_eq!(OPERATIONS.len(), 279);
         let request = build_request(
             "https://example.test/",
             "agent_worker_broker_rs_get_api_docs_2fc0dbab70df",

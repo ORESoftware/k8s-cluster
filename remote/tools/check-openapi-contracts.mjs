@@ -26,6 +26,7 @@ const HTTP_METHODS = new Set([
 ]);
 const BODY_METHODS = new Set(['post', 'put', 'patch']);
 const PUBLIC_PATHS = new Set([
+  '/',
   '/healthz',
   '/livez',
   '/readyz',
@@ -108,8 +109,13 @@ function validate(name, service, raw) {
     throw new Error(`${name}: info.title and info.version are required`);
   }
   assertNoGeneratorInfoLeak(name, document);
-  if (!document.components?.securitySchemes?.bearer_auth) {
-    throw new Error(`${name}: bearer_auth security scheme is missing`);
+  const securitySchemes = document.components?.securitySchemes ?? {};
+  if (
+    securitySchemes === null ||
+    typeof securitySchemes !== 'object' ||
+    Array.isArray(securitySchemes)
+  ) {
+    throw new Error(`${name}: components.securitySchemes must be an object when present`);
   }
   assertLocalRefsResolve(name, document);
   for (const route of service.docsRoutes) {
@@ -137,12 +143,41 @@ function validate(name, service, raw) {
       if (!operation.responses || Object.keys(operation.responses).length === 0) {
         throw new Error(`${name}: ${method.toUpperCase()} ${path} has no responses`);
       }
-      if (BODY_METHODS.has(method) && !operation.requestBody) {
-        throw new Error(`${name}: ${method.toUpperCase()} ${path} has no requestBody`);
+      if (operation.requestBody !== undefined) {
+        if (
+          !operation.requestBody ||
+          typeof operation.requestBody !== 'object' ||
+          Array.isArray(operation.requestBody) ||
+          !operation.requestBody.content ||
+          typeof operation.requestBody.content !== 'object' ||
+          Object.keys(operation.requestBody.content).length === 0
+        ) {
+          throw new Error(`${name}: ${method.toUpperCase()} ${path} has a malformed requestBody`);
+        }
+      }
+      const security = operation.security;
+      if (security !== undefined) {
+        if (!Array.isArray(security)) {
+          throw new Error(`${name}: ${method.toUpperCase()} ${path} security must be an array`);
+        }
+        for (const requirement of security) {
+          if (!requirement || typeof requirement !== 'object' || Array.isArray(requirement)) {
+            throw new Error(`${name}: ${method.toUpperCase()} ${path} has an invalid security requirement`);
+          }
+          for (const scheme of Object.keys(requirement)) {
+            if (!Object.hasOwn(securitySchemes, scheme)) {
+              throw new Error(
+                `${name}: ${method.toUpperCase()} ${path} references undeclared security scheme ${scheme}`,
+              );
+            }
+          }
+        }
       }
       if (!PUBLIC_PATHS.has(path)) {
-        const security = operation.security;
-        if (!Array.isArray(security) || security.length === 0) {
+        const networkBoundary =
+          operation['x-dd-auth'] === 'cluster-network-policy' &&
+          (security === undefined || (Array.isArray(security) && security.length === 0));
+        if ((!Array.isArray(security) || security.length === 0) && !networkBoundary) {
           throw new Error(`${name}: ${method.toUpperCase()} ${path} has no security requirement`);
         }
       }

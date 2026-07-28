@@ -32,8 +32,8 @@ export interface ApiClientOptions {
 }
 
 export const SDK_SCOPE: SdkScope = "public";
-export const CATALOG_SHA256 = "8b13a51a18433272657ee6c5e51b159c0a1d68a03ff6ae964d9bc553af5d2510";
-export const OPERATION_COUNT = 281;
+export const CATALOG_SHA256 = "23a49b456e478b3498a905f8ee905adcc639ba25d867705ed69fee205d3c55c3";
+export const OPERATION_COUNT = 279;
 export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
   {
     "service": "agent-worker-broker-rs",
@@ -2750,7 +2750,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "c89ac1380475fdc7d55c7df0016e906ec86f9fcaffc66048a11c896aa4c466c0"
+    "contractSha256": "ed0e81e56c84c64de6d54ecd3aee0607d94800963f82d71f2f7f1531842860cf"
   },
   {
     "service": "wal-gateway-rs",
@@ -2761,7 +2761,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "84457bce2cead929d5cf95c9aee44974a0f819bf44f27f375e3ef952ca13d808"
+    "contractSha256": "711569a9cf9b3410eaf4551e5400668ea76a23c7f9131519e578d65eb8d4740a"
   },
   {
     "service": "wal-gateway-rs",
@@ -2772,7 +2772,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "45502dcc514cdc5da2b2c049700dcd5947e6a6033d40c9663b25020fbeaff900"
+    "contractSha256": "102d5ed6a7ebe684f095fe70470fbceef2eaa130c7c0146e46711de9a349d969"
   },
   {
     "service": "wal-gateway-rs",
@@ -2783,40 +2783,18 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "92b5f85b870f44a5503294d197549e49432b45da1b052dc3dce00d4de42b3fc9"
+    "contractSha256": "86c4f68e057109a794129d5c848a174e7df644296dd0326d518885c8095a944f"
   },
   {
     "service": "wal-gateway-rs",
-    "operationId": "wal_gateway_rs_get_healthz_13ad4ec5056b",
+    "operationId": "wal_gateway_rs_get_openapi_json_4460f2bd801d",
     "method": "GET",
-    "path": "/healthz",
+    "path": "/openapi.json",
     "pathParameters": [],
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "fe2f36ed94a7dd12428b00facc0be094bfdca1cbc13fe6400a8f80879bb8fb7a"
-  },
-  {
-    "service": "wal-gateway-rs",
-    "operationId": "wal_gateway_rs_get_metrics_b8a63d88661c",
-    "method": "GET",
-    "path": "/metrics",
-    "pathParameters": [],
-    "requiredQueryParameters": [],
-    "optionalQueryParameters": [],
-    "requestBodyRequired": false,
-    "contractSha256": "7bf0825cc5c1659cd98949b4d8522467578b75fa168a8730c89eed88407472cf"
-  },
-  {
-    "service": "wal-gateway-rs",
-    "operationId": "wal_gateway_rs_get_readyz_12a0d2292af6",
-    "method": "GET",
-    "path": "/readyz",
-    "pathParameters": [],
-    "requiredQueryParameters": [],
-    "optionalQueryParameters": [],
-    "requestBodyRequired": false,
-    "contractSha256": "6d8ece15d56eb2ab78e4c4e45bc309478c0dd3886a75e5ed520214fc61d1d811"
+    "contractSha256": "1988a72b5639727a34c57bec9986844b83e9fdf1ca146b1ee7395480dde8552b"
   },
   {
     "service": "web-home-rs",
