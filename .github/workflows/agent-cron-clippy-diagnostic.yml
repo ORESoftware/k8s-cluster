@@ -1,0 +1,54 @@
+name: diagnose customer cron Clippy
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: github.event.pull_request.head.ref == 'agent/cron-customer-control-plane-v2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          path: repo
+          submodules: recursive
+          show-progress: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          repository: fiducia-cloud/fiducia-interfaces
+          ref: 2c5c806174e067fbe83ad48b724366323ba390a2
+          path: fiducia-interfaces
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          repository: fiducia-cloud/fiducia-payments.rs
+          ref: 0c8b735949f90514545fd03dadcf3ba337a1e948
+          path: fiducia-payments.rs
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: "1.97.0"
+          components: clippy
+      - name: Capture strict Clippy output
+        working-directory: repo
+        shell: bash
+        run: |
+          set +e
+          cargo clippy --locked --all-targets --all-features -- -D warnings > /tmp/customer-cron-clippy.log 2>&1
+          status=$?
+          echo "$status" > /tmp/customer-cron-clippy.status
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: customer-cron-clippy-${{ github.run_id }}
+          path: |
+            /tmp/customer-cron-clippy.log
+            /tmp/customer-cron-clippy.status
+          if-no-files-found: error
