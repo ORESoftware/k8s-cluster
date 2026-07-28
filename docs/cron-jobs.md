@@ -70,4 +70,5 @@ invocation policies as the final authority.
 
 The pull request must pass the repository's ordinary format, Clippy, unit-test,
 CLI-contract, and dependency-audit checks after all one-shot migration workflows
-are removed.
+are removed. CI compiles the ordinary Rust source directly; encoded payloads or
+self-modifying installer steps are not part of the reviewable implementation.
