@@ -18,7 +18,7 @@ function findRepoRoot(): string {
 const repoRoot = findRepoRoot();
 
 async function readWebHomeSource(): Promise<string> {
-  return readFile(resolve(repoRoot, 'remote/deployments/web-home-rs/src/main.rs'), 'utf8');
+  return readFile(resolve(repoRoot, 'remote/deployments/web-home-rs/src/agents.rs'), 'utf8');
 }
 
 function rawStringConst(source: string, name: string): string {

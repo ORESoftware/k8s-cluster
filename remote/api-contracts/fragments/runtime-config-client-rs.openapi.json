@@ -1,0 +1,429 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "utoipa-axum",
+    "description": "Utoipa's axum bindings for seamless integration for the two",
+    "contact": {
+      "name": "Juha Kukkonen",
+      "email": "juha7kukkonen@gmail.com"
+    },
+    "license": {
+      "name": "MIT OR Apache-2.0",
+      "identifier": "MIT OR Apache-2.0"
+    },
+    "version": "0.2.0"
+  },
+  "paths": {
+    "/internal/runtime-config": {
+      "get": {
+        "tags": [
+          "runtime-config"
+        ],
+        "operationId": "getRuntimeConfigSnapshot",
+        "responses": {
+          "200": {
+            "description": "Current in-process runtime configuration snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeConfigSnapshotResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid server authentication",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeConfigErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "runtime_config_server_auth": []
+          }
+        ]
+      }
+    },
+    "/internal/update-runtime-config": {
+      "post": {
+        "tags": [
+          "runtime-config"
+        ],
+        "operationId": "applyRuntimeConfigSnapshot",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeConfigApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Snapshot applied or acknowledged as stale",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeConfigApplyResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid server authentication",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeConfigErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime-config authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeConfigErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "runtime_config_server_auth": []
+          }
+        ]
+      }
+    },
+    "/internal/runtime-config/reset": {
+      "post": {
+        "tags": [
+          "runtime-config"
+        ],
+        "operationId": "resetRuntimeConfigSnapshot",
+        "responses": {
+          "200": {
+            "description": "Runtime overrides cleared",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeConfigResetResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid server authentication",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeConfigErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime-config authentication is not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeConfigErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "runtime_config_server_auth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "RuntimeConfigApplyReason": {
+        "type": "string",
+        "description": "Why this push happened. 'cron' = periodic sweep, 'admin' = on-demand UI button, 'register' = subscriber just joined, 'manual' = explicit API call, 'initial' = subscriber boot-time pull.",
+        "enum": [
+          "cron",
+          "admin",
+          "register",
+          "manual",
+          "initial"
+        ]
+      },
+      "RuntimeConfigApplyRequest": {
+        "type": "object",
+        "description": "Payload POSTed by the control plane to each subscriber's /internal/update-runtime-config endpoint.",
+        "required": [
+          "pushId",
+          "reason",
+          "snapshot"
+        ],
+        "properties": {
+          "pushId": {
+            "type": "string",
+            "description": "Opaque id for tracing (UUIDv4 recommended)."
+          },
+          "reason": {
+            "$ref": "#/components/schemas/RuntimeConfigApplyReason"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/RuntimeConfigSnapshot"
+          }
+        }
+      },
+      "RuntimeConfigApplyResponse": {
+        "type": "object",
+        "description": "What a subscriber returns to the control plane after applying (or rejecting) a snapshot.",
+        "required": [
+          "ok",
+          "service",
+          "appliedAt",
+          "appliedVersion"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "service": {
+            "type": "string",
+            "description": "Subscriber-reported service name (matches the subscriber registration)."
+          },
+          "appliedAt": {
+            "type": "string"
+          },
+          "appliedVersion": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Snapshot version the subscriber now holds. May equal previously-held version if no change was needed."
+          },
+          "previousVersion": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Snapshot version the subscriber held before applying (or 0 on initial apply)."
+          },
+          "stale": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "True when the subscriber acknowledged but ignored an older snapshot."
+          },
+          "ignoredVersion": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Older snapshot version ignored when stale=true."
+          },
+          "errors": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RuntimeConfigEntry": {
+        "type": "object",
+        "description": "One config entry. `value` is a free-form JSON value so callers can ship simple strings/numbers or richer JSON objects without rev'ing the schema.",
+        "required": [
+          "env",
+          "scope",
+          "key",
+          "version",
+          "updatedAt"
+        ],
+        "properties": {
+          "env": {
+            "$ref": "#/components/schemas/RuntimeConfigEnv"
+          },
+          "scope": {
+            "type": "string",
+            "description": "Target service or logical grouping (e.g. 'dd-remote-web-home', 'dd-dev-server', or 'default' for cluster-wide values)."
+          },
+          "key": {
+            "type": "string",
+            "description": "Stable per-scope key. Recommend SCREAMING_SNAKE_CASE so it can sit alongside env vars."
+          },
+          "value": {
+            "description": "Arbitrary JSON value. Producers SHOULD NOT embed secrets here; this payload is logged at every subscriber."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Monotonic per-entry version; the control plane bumps this whenever the value changes."
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "ISO-8601 UTC instant at which the control plane wrote this version."
+          },
+          "labels": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional free-form labels (e.g. 'feature-flag', 'rate-limit')."
+          },
+          "meta": {
+            "description": "Optional metadata: who-changed-it, change-reason, jira ticket, etc."
+          }
+        }
+      },
+      "RuntimeConfigEnv": {
+        "type": "string",
+        "description": "Top-level namespace for every runtime-config record. Every Redis key, every snapshot, every subscriber registration is scoped to exactly one env. Stage and prod are isolated.",
+        "enum": [
+          "stage",
+          "prod"
+        ]
+      },
+      "RuntimeConfigErrorResponse": {
+        "type": "object",
+        "required": [
+          "ok",
+          "error"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "RuntimeConfigResetResponse": {
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RuntimeConfigSnapshot": {
+        "type": "object",
+        "description": "The full set of active entries that apply to a given (env, scope) at a point in time. Subscribers receive this on every push.",
+        "required": [
+          "env",
+          "scope",
+          "generatedAt",
+          "snapshotVersion",
+          "entries"
+        ],
+        "properties": {
+          "env": {
+            "$ref": "#/components/schemas/RuntimeConfigEnv"
+          },
+          "scope": {
+            "type": "string",
+            "description": "Subscriber-targeted scope (e.g. 'dd-remote-web-home'). Use '*' for fan-out across all scopes."
+          },
+          "generatedAt": {
+            "type": "string"
+          },
+          "snapshotVersion": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Monotonic env generation assigned by the control plane. Subscribers MAY ignore an older apply if they already store a greater version."
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeConfigEntry"
+            }
+          }
+        }
+      },
+      "RuntimeConfigSnapshotResponse": {
+        "type": "object",
+        "required": [
+          "snapshotVersion",
+          "entries"
+        ],
+        "properties": {
+          "service": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scope": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "env": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "snapshotVersion": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "appliedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "entries": {
+            "type": "object",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "lastPushId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "runtime_config_server_auth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-server-auth",
+        "description": "Shared server-to-server secret configured through RUNTIME_CONFIG_SERVER_SECRET."
+      }
+    }
+  }
+}
