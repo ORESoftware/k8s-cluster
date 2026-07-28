@@ -20,6 +20,32 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
+async function readWebHomeSource(): Promise<string> {
+  const modules = [
+    'agents',
+    'container_pool',
+    'grafana',
+    'handlers',
+    'home',
+    'jello',
+    'labs',
+    'lambda',
+    'metrics',
+    'shared',
+    'state',
+  ];
+  const main = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  for (const moduleName of modules) {
+    assert.match(main, new RegExp(`mod ${moduleName};`), `web-home-rs main.rs must register ${moduleName}.rs`);
+  }
+  const moduleSources = await Promise.all(
+    modules.map((moduleName) =>
+      readRepoFile(`remote/deployments/web-home-rs/src/${moduleName}.rs`),
+    ),
+  );
+  return [main, ...moduleSources].join('\n');
+}
+
 function csvValuesFromYamlEnv(source: string, name: string): Set<string> {
   const match = source.match(new RegExp(`name:\\s*${name}[\\s\\S]*?value:\\s*([^\\n]+)`));
   assert.ok(match, `expected ${name} env var`);
@@ -731,7 +757,7 @@ test('gateway, observability, and homepage expose the ai/ml pipeline', async () 
   const exporterDeployment = await readRepoFile(
     'remote/argocd/observability/k8s-resource-exporter.deployment.yaml',
   );
-  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const home = await readWebHomeSource();
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
   const remoteReadme = await readRepoFile('remote/readme.md');
   const watchedApps = csvValuesFromYamlEnv(exporterDeployment, 'WATCH_APPS');
