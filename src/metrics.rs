@@ -95,8 +95,7 @@ fn render() -> String {
         "# HELP {PREFIX}_build_info Build and version information for fiducia-backend."
     )
     .expect("writing to String cannot fail");
-    writeln!(output, "# TYPE {PREFIX}_build_info gauge")
-        .expect("writing to String cannot fail");
+    writeln!(output, "# TYPE {PREFIX}_build_info gauge").expect("writing to String cannot fail");
     writeln!(
         output,
         "{PREFIX}_build_info{{version=\"{}\"}} 1",
@@ -109,8 +108,7 @@ fn render() -> String {
         "# HELP {PREFIX}_process_up Whether the fiducia-backend process is serving metrics."
     )
     .expect("writing to String cannot fail");
-    writeln!(output, "# TYPE {PREFIX}_process_up gauge")
-        .expect("writing to String cannot fail");
+    writeln!(output, "# TYPE {PREFIX}_process_up gauge").expect("writing to String cannot fail");
     writeln!(output, "{PREFIX}_process_up 1").expect("writing to String cannot fail");
 
     writeln!(
@@ -224,9 +222,7 @@ mod tests {
         let body = render();
         assert!(body.contains("# TYPE fiducia_backend_process_up gauge"));
         assert!(body.contains("fiducia_backend_process_up 1"));
-        assert!(body.contains(
-            "fiducia_backend_http_requests_total{method=\"GET\",status=\"200\"}"
-        ));
+        assert!(body.contains("fiducia_backend_http_requests_total{method=\"GET\",status=\"200\"}"));
         assert!(body.contains("# TYPE fiducia_backend_http_request_duration_seconds summary"));
         assert!(!body.contains("org_id"));
         assert!(!body.contains("raw_path"));
