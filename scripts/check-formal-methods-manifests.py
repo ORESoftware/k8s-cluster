@@ -312,6 +312,12 @@ def main() -> int:
     for relative_repo, models, _ in results:
         model_names = ", ".join(model.name for model in models)
         print(f"validated {relative_repo}: {model_names}")
+    if args.scope == "public":
+        private_adopters = sorted(set(EXPECTED_ADOPTERS) - set(PUBLIC_ADOPTERS))
+        print(
+            "deferred private adopters to token-gated fleet validation: "
+            + ", ".join(private_adopters)
+        )
     if args.self_test:
         print("validated fail-closed manifest self-tests")
     return 0

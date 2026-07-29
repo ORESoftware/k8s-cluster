@@ -9,7 +9,12 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 test("fmctl schema-v1 manifests validate and malformed contracts fail closed", () => {
   const output = execFileSync(
     "python3",
-    ["scripts/check-formal-methods-manifests.py", "--self-test"],
+    [
+      "scripts/check-formal-methods-manifests.py",
+      "--scope",
+      "public",
+      "--self-test",
+    ],
     {
       cwd: root,
       encoding: "utf8",
@@ -19,11 +24,10 @@ test("fmctl schema-v1 manifests validate and malformed contracts fail closed", (
 
   for (const repository of [
     "fiducia-node.rs",
-    "fiducia-ai-agent-bridge.rs",
     "fiducia-brain.rs",
-    "fiducia-ai-agent-control-plane",
   ]) {
     assert.match(output, new RegExp(`validated apps/${repository}:`));
   }
+  assert.match(output, /deferred private adopters to token-gated fleet validation/);
   assert.match(output, /validated fail-closed manifest self-tests/);
 });
