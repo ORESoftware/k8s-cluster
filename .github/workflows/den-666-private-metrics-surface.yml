@@ -1,0 +1,55 @@
+name: apply-den-666-private-metrics-surface
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/den-666-private-metrics-surface.yml
+      - remote/tools/block-public-application-metrics.py
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: agent/den-666-prometheus-fleet
+          persist-credentials: true
+
+      - name: Install Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Apply public-gateway deny rules and tests
+        run: python3 remote/tools/block-public-application-metrics.py
+
+      - name: Install focused test dependencies
+        working-directory: remote/tests
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+          pnpm install --frozen-lockfile
+
+      - name: Verify direct scraping and private public surface
+        working-directory: remote/tests
+        run: pnpm run test:cli:prometheus-direct-scrape
+
+      - name: Commit product guards and remove branch helper
+        shell: bash
+        run: |
+          git rm \
+            .github/workflows/den-666-private-metrics-surface.yml \
+            remote/tools/block-public-application-metrics.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml \
+            remote/tests/general/prometheus-direct-scrape-contract.test.ts
+          git commit -m "DEN-666 keep application metrics off public gateway routes"
+          git push origin HEAD:agent/den-666-prometheus-fleet
