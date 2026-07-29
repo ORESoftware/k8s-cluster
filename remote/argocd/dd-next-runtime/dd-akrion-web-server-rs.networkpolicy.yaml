@@ -40,8 +40,8 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # Explicit OTLP/HTTP export to the in-cluster collector. Prometheus reads
-    # application metrics from the collector's prometheus exporter.
+    # OTLP/HTTP export to the collector remains enabled. The ingress rule above
+    # also lets dd-prometheus scrape the application's /metrics endpoint on 8127.
     - to:
         - namespaceSelector:
             matchLabels:
