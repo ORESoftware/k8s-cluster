@@ -6,7 +6,14 @@ import test from "node:test";
 
 function findRepoRoot(): string {
   for (const candidate of [process.cwd(), resolve(process.cwd(), "..", "..")]) {
-    if (existsSync(resolve(candidate, "remote/argocd/observability/prometheus.configmap.yaml"))) {
+    if (
+      existsSync(
+        resolve(
+          candidate,
+          "remote/argocd/observability/prometheus.configmap.yaml",
+        ),
+      )
+    ) {
       return candidate;
     }
   }
@@ -45,6 +52,24 @@ function assertPodScrapeAnnotations(
   );
 }
 
+function assertPrometheusIngress(policy: string, port: number): void {
+  assert.match(
+    policy,
+    /kubernetes\.io\/metadata\.name:\s*observability/,
+    "target NetworkPolicy must admit the observability namespace",
+  );
+  assert.match(
+    policy,
+    /(?:app:\s*dd-prometheus|-\s*dd-prometheus)/,
+    "target NetworkPolicy must select only the Prometheus workload",
+  );
+  assert.match(
+    policy,
+    new RegExp(`port:\\s*${port}(?:\\s|$)`),
+    `target NetworkPolicy must admit TCP ${port}`,
+  );
+}
+
 test("first-wave application Services are registered for direct Prometheus scraping", async () => {
   const prometheus = await readRepoFile(
     "remote/argocd/observability/prometheus.configmap.yaml",
@@ -71,7 +96,10 @@ test("first-wave application Services are registered for direct Prometheus scrap
     "dd-sonus-auris-site.default.svc.cluster.local:9113",
   );
 
-  assert.match(prometheus, /alert:\s*DDFirstPartyApplicationMetricsTargetDown/);
+  assert.match(
+    prometheus,
+    /alert:\s*DDFirstPartyApplicationMetricsTargetDown/,
+  );
   assert.match(
     prometheus,
     /up\{job=~"fiducia-backend\|canonical-cloud-web\|dd-akrion-web-server-rs\|dd-sonus-auris-site"\}\s*==\s*0/,
@@ -94,6 +122,36 @@ test("dynamic Rust deployments advertise the same direct scrape path and port", 
   assertPodScrapeAnnotations(akrion, 8127);
 });
 
+test("NetworkPolicies admit the labeled central Prometheus pod on every scrape port", async () => {
+  const prometheusDeployment = await readRepoFile(
+    "remote/argocd/observability/prometheus.deployment.yaml",
+  );
+  const fiduciaPolicy = await readRepoFile(
+    "remote/argocd/fiducia/fiducia-backend.networkpolicy.yaml",
+  );
+  const canonicalPolicy = await readRepoFile(
+    "remote/argocd/canonical-cloud/web.networkpolicy.yaml",
+  );
+  const akrionPolicy = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.networkpolicy.yaml",
+  );
+  const sonusResources = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-sonus-auris-site.service.yaml",
+  );
+  const sonusPolicyStart = sonusResources.indexOf("kind: NetworkPolicy");
+
+  assert.match(prometheusDeployment, /app:\s*dd-prometheus/);
+  assertPrometheusIngress(fiduciaPolicy, 8117);
+  assertPrometheusIngress(canonicalPolicy, 8081);
+  assertPrometheusIngress(akrionPolicy, 8127);
+  assert.notEqual(
+    sonusPolicyStart,
+    -1,
+    "Sonus Service resource must carry its companion NetworkPolicy",
+  );
+  assertPrometheusIngress(sonusResources.slice(sonusPolicyStart), 9113);
+});
+
 test("static Sonus site uses a locked-down nginx exporter sidecar", async () => {
   const config = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-sonus-auris-site.configmap.yaml",
@@ -104,6 +162,7 @@ test("static Sonus site uses a locked-down nginx exporter sidecar", async () => 
   const service = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-sonus-auris-site.service.yaml",
   );
+  const networkPolicy = service.slice(service.indexOf("kind: NetworkPolicy"));
 
   assert.match(config, /location = \/stub_status/);
   assert.match(config, /allow 127\.0\.0\.1;/);
@@ -122,10 +181,18 @@ test("static Sonus site uses a locked-down nginx exporter sidecar", async () => 
   assert.match(deployment, /readOnlyRootFilesystem:\s*true/);
   assert.match(deployment, /runAsNonRoot:\s*true/);
   assert.match(deployment, /capabilities:\s*\n\s*drop:\s*\n\s*- ALL/);
-  assert.doesNotMatch(deployment, /--nginx\.scrape-uri=http:\/\/dd-sonus-auris-site/);
+  assert.doesNotMatch(
+    deployment,
+    /--nginx\.scrape-uri=http:\/\/dd-sonus-auris-site/,
+  );
 
   assert.match(service, /name:\s*metrics\n\s*port:\s*9113/);
   assert.match(service, /targetPort:\s*metrics/);
+  assert.match(networkPolicy, /app:\s*dd-remote-gateway/);
+  assert.match(networkPolicy, /port:\s*8080/);
+  assertPrometheusIngress(networkPolicy, 9113);
+  assert.match(networkPolicy, /kubernetes\.io\/metadata\.name:\s*kube-system/);
+  assert.match(networkPolicy, /port:\s*53/);
 });
 
 test("machine-readable inventory routes every discovered project workstream to Linear", async () => {
@@ -149,6 +216,9 @@ test("machine-readable inventory routes every discovered project workstream to L
   ]) {
     assert.ok(inventory.includes(issue), `inventory must include ${issue}`);
   }
-  assert.match(inventory, /public_gateway_exposure:\s*forbidden-by-default/);
+  assert.match(
+    inventory,
+    /public_gateway_exposure:\s*forbidden-by-default/,
+  );
   assert.match(inventory, /label_policy:\s*bounded-non-sensitive/);
 });
