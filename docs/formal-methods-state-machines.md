@@ -1,17 +1,25 @@
 # Formal-methods state-machine inventory
 
 Fiducia keeps executable specifications beside the production code they
-describe. Each adopter exposes `formal/fm.toml`, a schema-v1 manifest that an
-`fmctl`-compatible runner can discover without moving product semantics into a
-central package. Until the shared runner is published, each repository's pinned
-GitHub Actions workflow executes the same manifest-declared toolchain and
-bounds directly.
+describe. Each adopter exposes a default `formal/fm.toml` schema-v1 manifest
+consumed by the incubating `fmctl` runner; repositories with another model use
+an explicit secondary manifest (currently brain's
+`formal/fm-reconfiguration.toml`). Until `fmctl` is extracted into the shared
+DEN-580 repository, each product's pinned workflow executes the same
+manifest-declared toolchain and exploration sizes directly.
+
+The compatibility baseline is
+`opto-sync/opto-sync-clients@c2146ef9f054d24e1488c216547852aa148285cf`
+under `tools/fmctl`. All five manifests in this inventory pass that binary's
+strict `validate` command; DEN-580 owns preserving the contract during
+extraction.
 
 The monorepo validates manifests at reviewed gitlink commits with
-`scripts/check-formal-methods-manifests.py --self-test`. Validation normalizes
-single- and multi-model manifests, checks every referenced spec/test/implemented
-adapter path, requires exact toolchain versions and finite bounds, and rejects
-malformed contracts before model execution.
+`scripts/check-formal-methods-manifests.py --self-test`. Validation mirrors
+`fmctl`'s strict schema-v1 fields, checks every referenced spec and adapter
+target, rejects path traversal and unknown fields, validates execution limits,
+and requires active adapters to declare executable command arrays. Planned
+adapters remain explicit without being reported as implementation conformance.
 
 ## Current verified surfaces
 

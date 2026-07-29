@@ -22,11 +22,12 @@ test("fmctl schema-v1 manifests validate and malformed contracts fail closed", (
     },
   );
 
-  for (const repository of [
-    "fiducia-node.rs",
-    "fiducia-brain.rs",
+  for (const manifest of [
+    "fiducia-node.rs/formal/fm.toml",
+    "fiducia-brain.rs/formal/fm.toml",
+    "fiducia-brain.rs/formal/fm-reconfiguration.toml",
   ]) {
-    assert.match(output, new RegExp(`validated apps/${repository}:`));
+    assert.match(output, new RegExp(`validated apps/${manifest}:`));
   }
   assert.match(output, /deferred private adopters to token-gated fleet validation/);
   assert.match(output, /validated fail-closed manifest self-tests/);
