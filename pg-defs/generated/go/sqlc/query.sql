@@ -226,6 +226,21 @@ update sound_recorder_cloud_connections set account_id = $2, created_by_device_i
 -- name: DeleteSoundRecorderCloudConnections :exec
 delete from sound_recorder_cloud_connections where id = $1;
 
+-- name: ListSoundRecorderCloudConnectionProjectionOutbox :many
+select seq, connection_id, attempts, available_at, locked_until, processed_at, last_error, created_at, updated_at from sound_recorder_cloud_connection_projection_outbox;
+
+-- name: GetSoundRecorderCloudConnectionProjectionOutbox :one
+select seq, connection_id, attempts, available_at, locked_until, processed_at, last_error, created_at, updated_at from sound_recorder_cloud_connection_projection_outbox where seq = $1 limit 1;
+
+-- name: CreateSoundRecorderCloudConnectionProjectionOutbox :one
+insert into sound_recorder_cloud_connection_projection_outbox (seq, connection_id, attempts, available_at, locked_until, processed_at, last_error, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning seq, connection_id, attempts, available_at, locked_until, processed_at, last_error, created_at, updated_at;
+
+-- name: UpdateSoundRecorderCloudConnectionProjectionOutbox :one
+update sound_recorder_cloud_connection_projection_outbox set connection_id = $2, attempts = $3, available_at = $4, locked_until = $5, processed_at = $6, last_error = $7, updated_at = $8 where seq = $1 returning seq, connection_id, attempts, available_at, locked_until, processed_at, last_error, created_at, updated_at;
+
+-- name: DeleteSoundRecorderCloudConnectionProjectionOutbox :exec
+delete from sound_recorder_cloud_connection_projection_outbox where seq = $1;
+
 -- name: ListSoundRecorderCloudCopyJobs :many
 select id, account_id, connection_id, segment_id, provider, status, destination_key, provider_file_id, attempts, locked_until, started_at, completed_at, last_error, meta_data, created_at, updated_at from sound_recorder_cloud_copy_jobs;
 

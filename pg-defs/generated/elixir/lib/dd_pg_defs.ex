@@ -26,6 +26,7 @@ defmodule DdPgDefs do
     DdPgDefs.SoundRecorderAuditEvents,
     DdPgDefs.SoundRecorderOauthStates,
     DdPgDefs.SoundRecorderCloudConnections,
+    DdPgDefs.SoundRecorderCloudConnectionProjectionOutbox,
     DdPgDefs.SoundRecorderCloudCopyJobs,
     DdPgDefs.ContainerPoolConfigs,
     DdPgDefs.KnownGitRepos,

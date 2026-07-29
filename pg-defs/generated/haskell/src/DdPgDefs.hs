@@ -476,18 +476,24 @@ soundRecorderDevicesColumns = ["id", "account_id", "platform", "status", "instal
 soundRecorderDevicesSelectSql :: Text
 soundRecorderDevicesSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      platform,\n      status,\n      install_id,\n      device_label,\n      app_version,\n      os_version,\n      token_hash,\n      token_last4,\n      consent_version,\n      to_char(consent_accepted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consent_accepted_at,\n      recording_indicator_acknowledged,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      transfer_paused,\n      transfer_pause_reason,\n      network_policy,\n      battery_level,\n      charging,\n      to_char(transfer_state_updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as transfer_state_updated_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_devices"
 
-data SoundRecorderDevicesPlatform = SoundRecorderDevicesPlatformIos | SoundRecorderDevicesPlatformAndroid
+data SoundRecorderDevicesPlatform = SoundRecorderDevicesPlatformIos | SoundRecorderDevicesPlatformAndroid | SoundRecorderDevicesPlatformMacos | SoundRecorderDevicesPlatformWindows | SoundRecorderDevicesPlatformLinux
   deriving (Eq, Show)
 
 soundRecorderDevicesPlatformToText :: SoundRecorderDevicesPlatform -> Text
 soundRecorderDevicesPlatformToText value = case value of
   SoundRecorderDevicesPlatformIos -> "ios"
   SoundRecorderDevicesPlatformAndroid -> "android"
+  SoundRecorderDevicesPlatformMacos -> "macos"
+  SoundRecorderDevicesPlatformWindows -> "windows"
+  SoundRecorderDevicesPlatformLinux -> "linux"
 
 parseSoundRecorderDevicesPlatform :: Text -> Either Text SoundRecorderDevicesPlatform
 parseSoundRecorderDevicesPlatform value = case value of
   "ios" -> Right SoundRecorderDevicesPlatformIos
   "android" -> Right SoundRecorderDevicesPlatformAndroid
+  "macos" -> Right SoundRecorderDevicesPlatformMacos
+  "windows" -> Right SoundRecorderDevicesPlatformWindows
+  "linux" -> Right SoundRecorderDevicesPlatformLinux
   _ -> Left (T.append "unsupported sound_recorder_devices.platform: " value)
 
 data SoundRecorderDevicesStatus = SoundRecorderDevicesStatusActive | SoundRecorderDevicesStatusRevoked | SoundRecorderDevicesStatusLost | SoundRecorderDevicesStatusReplaced | SoundRecorderDevicesStatusDeleted
@@ -956,7 +962,7 @@ soundRecorderOauthStatesColumns = ["id", "account_id", "device_id", "provider", 
 soundRecorderOauthStatesSelectSql :: Text
 soundRecorderOauthStatesSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      provider,\n      state_hash,\n      redirect_uri,\n      folder_path,\n      status,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consumed_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_oauth_states"
 
-data SoundRecorderOauthStatesProvider = SoundRecorderOauthStatesProviderGoogleDrive | SoundRecorderOauthStatesProviderMicrosoftOnedrive | SoundRecorderOauthStatesProviderAppleIcloud
+data SoundRecorderOauthStatesProvider = SoundRecorderOauthStatesProviderGoogleDrive | SoundRecorderOauthStatesProviderMicrosoftOnedrive | SoundRecorderOauthStatesProviderAppleIcloud | SoundRecorderOauthStatesProviderDropbox
   deriving (Eq, Show)
 
 soundRecorderOauthStatesProviderToText :: SoundRecorderOauthStatesProvider -> Text
@@ -964,12 +970,14 @@ soundRecorderOauthStatesProviderToText value = case value of
   SoundRecorderOauthStatesProviderGoogleDrive -> "google_drive"
   SoundRecorderOauthStatesProviderMicrosoftOnedrive -> "microsoft_onedrive"
   SoundRecorderOauthStatesProviderAppleIcloud -> "apple_icloud"
+  SoundRecorderOauthStatesProviderDropbox -> "dropbox"
 
 parseSoundRecorderOauthStatesProvider :: Text -> Either Text SoundRecorderOauthStatesProvider
 parseSoundRecorderOauthStatesProvider value = case value of
   "google_drive" -> Right SoundRecorderOauthStatesProviderGoogleDrive
   "microsoft_onedrive" -> Right SoundRecorderOauthStatesProviderMicrosoftOnedrive
   "apple_icloud" -> Right SoundRecorderOauthStatesProviderAppleIcloud
+  "dropbox" -> Right SoundRecorderOauthStatesProviderDropbox
   _ -> Left (T.append "unsupported sound_recorder_oauth_states.provider: " value)
 
 data SoundRecorderOauthStatesStatus = SoundRecorderOauthStatesStatusPending | SoundRecorderOauthStatesStatusConsumed | SoundRecorderOauthStatesStatusExpired | SoundRecorderOauthStatesStatusRevoked
@@ -1033,7 +1041,7 @@ soundRecorderCloudConnectionsColumns = ["id", "account_id", "created_by_device_i
 soundRecorderCloudConnectionsSelectSql :: Text
 soundRecorderCloudConnectionsSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      created_by_device_id::text as created_by_device_id,\n      provider,\n      link_mode,\n      status,\n      display_name,\n      provider_account_id,\n      provider_subject_hash,\n      root_folder_id,\n      folder_path,\n      oauth_scope,\n      token_ciphertext,\n      token_nonce,\n      token_aad,\n      token_version,\n      to_char(token_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as token_expires_at,\n      to_char(last_sync_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_sync_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_connections"
 
-data SoundRecorderCloudConnectionsProvider = SoundRecorderCloudConnectionsProviderGoogleDrive | SoundRecorderCloudConnectionsProviderMicrosoftOnedrive | SoundRecorderCloudConnectionsProviderAppleIcloud
+data SoundRecorderCloudConnectionsProvider = SoundRecorderCloudConnectionsProviderGoogleDrive | SoundRecorderCloudConnectionsProviderMicrosoftOnedrive | SoundRecorderCloudConnectionsProviderAppleIcloud | SoundRecorderCloudConnectionsProviderDropbox | SoundRecorderCloudConnectionsProviderAmazonS3 | SoundRecorderCloudConnectionsProviderCloudflareR2
   deriving (Eq, Show)
 
 soundRecorderCloudConnectionsProviderToText :: SoundRecorderCloudConnectionsProvider -> Text
@@ -1041,12 +1049,18 @@ soundRecorderCloudConnectionsProviderToText value = case value of
   SoundRecorderCloudConnectionsProviderGoogleDrive -> "google_drive"
   SoundRecorderCloudConnectionsProviderMicrosoftOnedrive -> "microsoft_onedrive"
   SoundRecorderCloudConnectionsProviderAppleIcloud -> "apple_icloud"
+  SoundRecorderCloudConnectionsProviderDropbox -> "dropbox"
+  SoundRecorderCloudConnectionsProviderAmazonS3 -> "amazon_s3"
+  SoundRecorderCloudConnectionsProviderCloudflareR2 -> "cloudflare_r2"
 
 parseSoundRecorderCloudConnectionsProvider :: Text -> Either Text SoundRecorderCloudConnectionsProvider
 parseSoundRecorderCloudConnectionsProvider value = case value of
   "google_drive" -> Right SoundRecorderCloudConnectionsProviderGoogleDrive
   "microsoft_onedrive" -> Right SoundRecorderCloudConnectionsProviderMicrosoftOnedrive
   "apple_icloud" -> Right SoundRecorderCloudConnectionsProviderAppleIcloud
+  "dropbox" -> Right SoundRecorderCloudConnectionsProviderDropbox
+  "amazon_s3" -> Right SoundRecorderCloudConnectionsProviderAmazonS3
+  "cloudflare_r2" -> Right SoundRecorderCloudConnectionsProviderCloudflareR2
   _ -> Left (T.append "unsupported sound_recorder_cloud_connections.provider: " value)
 
 data SoundRecorderCloudConnectionsLinkMode = SoundRecorderCloudConnectionsLinkModeServerOauth | SoundRecorderCloudConnectionsLinkModeClientManaged
@@ -1148,6 +1162,41 @@ validateSoundRecorderCloudConnectionsTokenVersion value
   | value < 1 = Left "sound_recorder_cloud_connections.token_version is below the minimum"
   | otherwise = Right value
 
+soundRecorderCloudConnectionProjectionOutboxTable :: Text
+soundRecorderCloudConnectionProjectionOutboxTable = "sound_recorder_cloud_connection_projection_outbox"
+
+soundRecorderCloudConnectionProjectionOutboxColumns :: [Text]
+soundRecorderCloudConnectionProjectionOutboxColumns = ["seq", "connection_id", "attempts", "available_at", "locked_until", "processed_at", "last_error", "created_at", "updated_at"]
+
+soundRecorderCloudConnectionProjectionOutboxSelectSql :: Text
+soundRecorderCloudConnectionProjectionOutboxSelectSql = "select\n      seq,\n      connection_id::text as connection_id,\n      attempts,\n      to_char(available_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as available_at,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as processed_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_connection_projection_outbox"
+
+data SoundRecorderCloudConnectionProjectionOutboxRow = SoundRecorderCloudConnectionProjectionOutboxRow
+  { soundRecorderCloudConnectionProjectionOutboxSeq :: Int
+  , soundRecorderCloudConnectionProjectionOutboxConnectionId :: Text
+  , soundRecorderCloudConnectionProjectionOutboxAttempts :: Int
+  , soundRecorderCloudConnectionProjectionOutboxAvailableAt :: Text
+  , soundRecorderCloudConnectionProjectionOutboxLockedUntil :: (Maybe Text)
+  , soundRecorderCloudConnectionProjectionOutboxProcessedAt :: (Maybe Text)
+  , soundRecorderCloudConnectionProjectionOutboxLastError :: (Maybe Text)
+  , soundRecorderCloudConnectionProjectionOutboxCreatedAt :: Text
+  , soundRecorderCloudConnectionProjectionOutboxUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow SoundRecorderCloudConnectionProjectionOutboxRow where
+  fromRow = SoundRecorderCloudConnectionProjectionOutboxRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateSoundRecorderCloudConnectionProjectionOutboxAttempts :: Int -> Either Text Int
+validateSoundRecorderCloudConnectionProjectionOutboxAttempts value
+  | value < 0 = Left "sound_recorder_cloud_connection_projection_outbox.attempts is below the minimum"
+  | value > 50 = Left "sound_recorder_cloud_connection_projection_outbox.attempts is above the maximum"
+  | otherwise = Right value
+
+validateSoundRecorderCloudConnectionProjectionOutboxLastError :: Text -> Either Text Text
+validateSoundRecorderCloudConnectionProjectionOutboxLastError value
+  | T.length value > 500 = Left "sound_recorder_cloud_connection_projection_outbox.last_error must be at most 500 characters"
+  | otherwise = Right value
+
 soundRecorderCloudCopyJobsTable :: Text
 soundRecorderCloudCopyJobsTable = "sound_recorder_cloud_copy_jobs"
 
@@ -1157,7 +1206,7 @@ soundRecorderCloudCopyJobsColumns = ["id", "account_id", "connection_id", "segme
 soundRecorderCloudCopyJobsSelectSql :: Text
 soundRecorderCloudCopyJobsSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      connection_id::text as connection_id,\n      segment_id::text as segment_id,\n      provider,\n      status,\n      destination_key,\n      provider_file_id,\n      attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as completed_at,\n      last_error,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_copy_jobs"
 
-data SoundRecorderCloudCopyJobsProvider = SoundRecorderCloudCopyJobsProviderGoogleDrive | SoundRecorderCloudCopyJobsProviderMicrosoftOnedrive | SoundRecorderCloudCopyJobsProviderAppleIcloud
+data SoundRecorderCloudCopyJobsProvider = SoundRecorderCloudCopyJobsProviderGoogleDrive | SoundRecorderCloudCopyJobsProviderMicrosoftOnedrive | SoundRecorderCloudCopyJobsProviderAppleIcloud | SoundRecorderCloudCopyJobsProviderDropbox | SoundRecorderCloudCopyJobsProviderAmazonS3 | SoundRecorderCloudCopyJobsProviderCloudflareR2
   deriving (Eq, Show)
 
 soundRecorderCloudCopyJobsProviderToText :: SoundRecorderCloudCopyJobsProvider -> Text
@@ -1165,12 +1214,18 @@ soundRecorderCloudCopyJobsProviderToText value = case value of
   SoundRecorderCloudCopyJobsProviderGoogleDrive -> "google_drive"
   SoundRecorderCloudCopyJobsProviderMicrosoftOnedrive -> "microsoft_onedrive"
   SoundRecorderCloudCopyJobsProviderAppleIcloud -> "apple_icloud"
+  SoundRecorderCloudCopyJobsProviderDropbox -> "dropbox"
+  SoundRecorderCloudCopyJobsProviderAmazonS3 -> "amazon_s3"
+  SoundRecorderCloudCopyJobsProviderCloudflareR2 -> "cloudflare_r2"
 
 parseSoundRecorderCloudCopyJobsProvider :: Text -> Either Text SoundRecorderCloudCopyJobsProvider
 parseSoundRecorderCloudCopyJobsProvider value = case value of
   "google_drive" -> Right SoundRecorderCloudCopyJobsProviderGoogleDrive
   "microsoft_onedrive" -> Right SoundRecorderCloudCopyJobsProviderMicrosoftOnedrive
   "apple_icloud" -> Right SoundRecorderCloudCopyJobsProviderAppleIcloud
+  "dropbox" -> Right SoundRecorderCloudCopyJobsProviderDropbox
+  "amazon_s3" -> Right SoundRecorderCloudCopyJobsProviderAmazonS3
+  "cloudflare_r2" -> Right SoundRecorderCloudCopyJobsProviderCloudflareR2
   _ -> Left (T.append "unsupported sound_recorder_cloud_copy_jobs.provider: " value)
 
 data SoundRecorderCloudCopyJobsStatus = SoundRecorderCloudCopyJobsStatusPending | SoundRecorderCloudCopyJobsStatusRunning | SoundRecorderCloudCopyJobsStatusWaitingClient | SoundRecorderCloudCopyJobsStatusCompleted | SoundRecorderCloudCopyJobsStatusFailed | SoundRecorderCloudCopyJobsStatusSkipped

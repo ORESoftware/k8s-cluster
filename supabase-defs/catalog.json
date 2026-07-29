@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "organizations": [
+    {
+      "id": "jmbygwiszypdbkgkhehu",
+      "name": "3fa-app",
+      "projects": []
+    },
+    {
+      "id": "zmkmcdyrryxxhleytdho",
+      "name": "alexander.d.mills@gmail.com's Org",
+      "projects": [
+        {
+          "ref": "gtbeuxcolbpuipvqiibn",
+          "name": "alexander.d.mills@gmail.com's Project",
+          "region": "us-east-2",
+          "schemas": []
+        }
+      ]
+    },
+    {
+      "id": "cotkzcsotxmedqfqyfuo",
+      "name": "athlet-o-store",
+      "projects": [
+        {
+          "ref": "gpdrkgogyyvsajrqauyl",
+          "name": "alexander.d.mills@gmail.com's Project",
+          "region": "ca-central-1",
+          "schemas": []
+        }
+      ]
+    },
+    {
+      "id": "mkwkyvjiprtmdepshkys",
+      "name": "fiducia-cloud",
+      "projects": [
+        {
+          "ref": "ruxctrzdvugxztbjcpoi",
+          "name": "fiducia-cloud-supabase-project",
+          "region": "eu-central-1",
+          "schemas": []
+        }
+      ]
+    },
+    {
+      "id": "ngixgitdtrbwnaimwsbb",
+      "name": "sonus-auris",
+      "projects": [
+        {
+          "ref": "mckxblyvfzyoxpwvrnjm",
+          "name": "alexander.d.mills@gmail.com's Project",
+          "region": "us-east-2",
+          "schemas": [
+            {
+              "name": "public",
+              "definition": "projects/mckxblyvfzyoxpwvrnjm/schemas/public.sql"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

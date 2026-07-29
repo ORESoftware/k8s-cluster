@@ -328,6 +328,21 @@ class SoundRecorderCloudConnections(BaseModel):
         table_name = "sound_recorder_cloud_connections"
 
 
+class SoundRecorderCloudConnectionProjectionOutbox(BaseModel):
+    seq = BigAutoField(primary_key=True)
+    connection_id = UUIDField()
+    attempts = IntegerField()
+    available_at = DateTimeField()
+    locked_until = DateTimeField(null=True)
+    processed_at = DateTimeField(null=True)
+    last_error = CharField(max_length=500, null=True)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "sound_recorder_cloud_connection_projection_outbox"
+
+
 class SoundRecorderCloudCopyJobs(BaseModel):
     id = UUIDField(primary_key=True)
     account_id = UUIDField()

@@ -336,6 +336,22 @@ model SoundRecorderCloudConnections {
   @@map("sound_recorder_cloud_connections")
 }
 
+model SoundRecorderCloudConnectionProjectionOutbox {
+  seq BigInt @id @default(autoincrement()) @db.BigInt
+  connectionId String @map("connection_id") @db.Uuid
+  attempts Int @default(0)
+  availableAt DateTime @map("available_at") @default(now()) @db.Timestamptz(6)
+  lockedUntil DateTime? @map("locked_until") @db.Timestamptz(6)
+  processedAt DateTime? @map("processed_at") @db.Timestamptz(6)
+  lastError String? @map("last_error") @db.VarChar(500)
+  createdAt DateTime @map("created_at") @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @map("updated_at") @default(now()) @db.Timestamptz(6)
+  // sound_recorder_cloud_connection_projection_outbox_pending_uq is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // sound_recorder_cloud_connection_projection_outbox_ready_idx is defined in schema.sql because Prisma cannot fully model partial/expression indexes.
+  // Check constraints live in schema.sql and must be migrated from the SQL contract.
+  @@map("sound_recorder_cloud_connection_projection_outbox")
+}
+
 model SoundRecorderCloudCopyJobs {
   id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   accountId String @map("account_id") @db.Uuid

@@ -135,7 +135,7 @@ module DdPgDefs
 
     validates :account_id, presence: true
     validates :platform, presence: true
-    validates :platform, inclusion: { in: ["ios", "android"] }
+    validates :platform, inclusion: { in: ["ios", "android", "macos", "windows", "linux"] }
     validates :status, inclusion: { in: ["active", "revoked", "lost", "replaced", "deleted"] }
     validates :install_id, presence: true
     validates :install_id, length: { maximum: 160 }
@@ -236,7 +236,7 @@ module DdPgDefs
     validates :account_id, presence: true
     validates :device_id, presence: true
     validates :provider, presence: true
-    validates :provider, inclusion: { in: ["google_drive", "microsoft_onedrive", "apple_icloud"] }
+    validates :provider, inclusion: { in: ["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox"] }
     validates :state_hash, presence: true
     validates :state_hash, length: { maximum: 64 }
     validates :state_hash, format: { with: Regexp.new("\\A[a-f0-9]{64}\\z") }
@@ -253,7 +253,7 @@ module DdPgDefs
 
     validates :account_id, presence: true
     validates :provider, presence: true
-    validates :provider, inclusion: { in: ["google_drive", "microsoft_onedrive", "apple_icloud"] }
+    validates :provider, inclusion: { in: ["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"] }
     validates :link_mode, inclusion: { in: ["server_oauth", "client_managed"] }
     validates :status, inclusion: { in: ["active", "paused", "revoked", "failed"] }
     validates :display_name, length: { maximum: 160 }, allow_nil: true
@@ -267,6 +267,15 @@ module DdPgDefs
     validates :token_version, numericality: { only_integer: true, greater_than_or_equal_to: 1 }, allow_nil: true
   end
 
+  class SoundRecorderCloudConnectionProjectionOutbox < ActiveRecord::Base
+    self.table_name = "sound_recorder_cloud_connection_projection_outbox"
+    self.primary_key = "seq"
+
+    validates :connection_id, presence: true
+    validates :attempts, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 50 }
+    validates :last_error, length: { maximum: 500 }, allow_nil: true
+  end
+
   class SoundRecorderCloudCopyJobs < ActiveRecord::Base
     self.table_name = "sound_recorder_cloud_copy_jobs"
     self.primary_key = "id"
@@ -275,7 +284,7 @@ module DdPgDefs
     validates :connection_id, presence: true
     validates :segment_id, presence: true
     validates :provider, presence: true
-    validates :provider, inclusion: { in: ["google_drive", "microsoft_onedrive", "apple_icloud"] }
+    validates :provider, inclusion: { in: ["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"] }
     validates :status, inclusion: { in: ["pending", "running", "waiting_client", "completed", "failed", "skipped"] }
     validates :destination_key, presence: true
     validates :destination_key, length: { maximum: 2048 }

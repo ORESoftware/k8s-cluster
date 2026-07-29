@@ -731,6 +731,39 @@ export class SoundRecorderCloudConnectionsEntity {
 
 }
 
+@Index("sound_recorder_cloud_connection_projection_outbox_pending_uq", ["connectionId"], { unique: true, where: "processed_at is null" })
+// sound_recorder_cloud_connection_projection_outbox_ready_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "sound_recorder_cloud_connection_projection_outbox" })
+export class SoundRecorderCloudConnectionProjectionOutboxEntity {
+  @PrimaryGeneratedColumn("increment", { name: "seq", type: "bigint" })
+  seq!: number;
+
+  @Column({ name: "connection_id", type: "uuid" })
+  connectionId!: string;
+
+  @Column({ name: "attempts", type: "integer", default: () => "0" })
+  attempts!: number;
+
+  @Column({ name: "available_at", type: "timestamptz", default: () => "now()" })
+  availableAt!: Date;
+
+  @Column({ name: "locked_until", type: "timestamptz", nullable: true })
+  lockedUntil!: Date | null;
+
+  @Column({ name: "processed_at", type: "timestamptz", nullable: true })
+  processedAt!: Date | null;
+
+  @Column({ name: "last_error", type: "varchar", length: 500, nullable: true })
+  lastError!: string | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
 @Index("sound_recorder_cloud_copy_jobs_connection_segment_uq", ["connectionId", "segmentId"], { unique: true })
 // sound_recorder_cloud_copy_jobs_account_status_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
 // sound_recorder_cloud_copy_jobs_connection_status_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.

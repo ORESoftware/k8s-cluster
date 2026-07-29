@@ -43,7 +43,7 @@ defmodule DdPgDefs.SoundRecorderDevices do
     struct
     |> cast(attrs, @required_fields ++ @optional_fields)
     |> validate_required(@required_fields)
-    |> validate_inclusion(:platform, ["ios", "android"])
+    |> validate_inclusion(:platform, ["ios", "android", "macos", "windows", "linux"])
     |> validate_inclusion(:status, ["active", "revoked", "lost", "replaced", "deleted"])
     |> validate_length(:install_id, max: 160)
     |> validate_length(:device_label, max: 160)

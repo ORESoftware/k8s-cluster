@@ -30,7 +30,7 @@ func (SoundRecorderOauthStates) Fields() []ent.Field {
 		field.UUID("id", uuid.UUID{}).StorageKey("id"),
 		field.UUID("account_id", uuid.UUID{}).StorageKey("account_id"),
 		field.UUID("device_id", uuid.UUID{}).StorageKey("device_id"),
-		field.Enum("provider").Values("google_drive", "microsoft_onedrive", "apple_icloud").StorageKey("provider"),
+		field.Enum("provider").Values("google_drive", "microsoft_onedrive", "apple_icloud", "dropbox").StorageKey("provider"),
 		field.String("state_hash").MaxLen(64).Match(regexp.MustCompile(`^[a-f0-9]{64}$`)).StorageKey("state_hash"),
 		field.String("redirect_uri").MaxLen(512).StorageKey("redirect_uri"),
 		field.String("folder_path").MaxLen(512).Optional().Nillable().StorageKey("folder_path"),

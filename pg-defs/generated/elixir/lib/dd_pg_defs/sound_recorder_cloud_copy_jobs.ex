@@ -37,7 +37,7 @@ defmodule DdPgDefs.SoundRecorderCloudCopyJobs do
     struct
     |> cast(attrs, @required_fields ++ @optional_fields)
     |> validate_required(@required_fields)
-    |> validate_inclusion(:provider, ["google_drive", "microsoft_onedrive", "apple_icloud"])
+    |> validate_inclusion(:provider, ["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"])
     |> validate_inclusion(:status, ["pending", "running", "waiting_client", "completed", "failed", "skipped"])
     |> validate_length(:destination_key, max: 2048)
     |> validate_length(:provider_file_id, max: 512)

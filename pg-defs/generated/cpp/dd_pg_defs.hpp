@@ -640,17 +640,23 @@ inline const char* sound_recorder_devices_select_sql = R"SQL(select
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_devices)SQL";
 
-enum class SoundRecorderDevicesPlatform { Ios, Android };
+enum class SoundRecorderDevicesPlatform { Ios, Android, Macos, Windows, Linux };
 inline std::string sound_recorder_devices_platform_to_string(SoundRecorderDevicesPlatform value) {
     switch (value) {
         case SoundRecorderDevicesPlatform::Ios: return "ios";
         case SoundRecorderDevicesPlatform::Android: return "android";
+        case SoundRecorderDevicesPlatform::Macos: return "macos";
+        case SoundRecorderDevicesPlatform::Windows: return "windows";
+        case SoundRecorderDevicesPlatform::Linux: return "linux";
     }
     return "";
 }
 inline std::optional<SoundRecorderDevicesPlatform> parse_sound_recorder_devices_platform(const std::string& value) {
     if (value == "ios") return SoundRecorderDevicesPlatform::Ios;
     if (value == "android") return SoundRecorderDevicesPlatform::Android;
+    if (value == "macos") return SoundRecorderDevicesPlatform::Macos;
+    if (value == "windows") return SoundRecorderDevicesPlatform::Windows;
+    if (value == "linux") return SoundRecorderDevicesPlatform::Linux;
     return std::nullopt;
 }
 
@@ -1265,12 +1271,13 @@ inline const char* sound_recorder_oauth_states_select_sql = R"SQL(select
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_oauth_states)SQL";
 
-enum class SoundRecorderOauthStatesProvider { GoogleDrive, MicrosoftOnedrive, AppleIcloud };
+enum class SoundRecorderOauthStatesProvider { GoogleDrive, MicrosoftOnedrive, AppleIcloud, Dropbox };
 inline std::string sound_recorder_oauth_states_provider_to_string(SoundRecorderOauthStatesProvider value) {
     switch (value) {
         case SoundRecorderOauthStatesProvider::GoogleDrive: return "google_drive";
         case SoundRecorderOauthStatesProvider::MicrosoftOnedrive: return "microsoft_onedrive";
         case SoundRecorderOauthStatesProvider::AppleIcloud: return "apple_icloud";
+        case SoundRecorderOauthStatesProvider::Dropbox: return "dropbox";
     }
     return "";
 }
@@ -1278,6 +1285,7 @@ inline std::optional<SoundRecorderOauthStatesProvider> parse_sound_recorder_oaut
     if (value == "google_drive") return SoundRecorderOauthStatesProvider::GoogleDrive;
     if (value == "microsoft_onedrive") return SoundRecorderOauthStatesProvider::MicrosoftOnedrive;
     if (value == "apple_icloud") return SoundRecorderOauthStatesProvider::AppleIcloud;
+    if (value == "dropbox") return SoundRecorderOauthStatesProvider::Dropbox;
     return std::nullopt;
 }
 
@@ -1373,12 +1381,15 @@ inline const char* sound_recorder_cloud_connections_select_sql = R"SQL(select
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_cloud_connections)SQL";
 
-enum class SoundRecorderCloudConnectionsProvider { GoogleDrive, MicrosoftOnedrive, AppleIcloud };
+enum class SoundRecorderCloudConnectionsProvider { GoogleDrive, MicrosoftOnedrive, AppleIcloud, Dropbox, AmazonS3, CloudflareR2 };
 inline std::string sound_recorder_cloud_connections_provider_to_string(SoundRecorderCloudConnectionsProvider value) {
     switch (value) {
         case SoundRecorderCloudConnectionsProvider::GoogleDrive: return "google_drive";
         case SoundRecorderCloudConnectionsProvider::MicrosoftOnedrive: return "microsoft_onedrive";
         case SoundRecorderCloudConnectionsProvider::AppleIcloud: return "apple_icloud";
+        case SoundRecorderCloudConnectionsProvider::Dropbox: return "dropbox";
+        case SoundRecorderCloudConnectionsProvider::AmazonS3: return "amazon_s3";
+        case SoundRecorderCloudConnectionsProvider::CloudflareR2: return "cloudflare_r2";
     }
     return "";
 }
@@ -1386,6 +1397,9 @@ inline std::optional<SoundRecorderCloudConnectionsProvider> parse_sound_recorder
     if (value == "google_drive") return SoundRecorderCloudConnectionsProvider::GoogleDrive;
     if (value == "microsoft_onedrive") return SoundRecorderCloudConnectionsProvider::MicrosoftOnedrive;
     if (value == "apple_icloud") return SoundRecorderCloudConnectionsProvider::AppleIcloud;
+    if (value == "dropbox") return SoundRecorderCloudConnectionsProvider::Dropbox;
+    if (value == "amazon_s3") return SoundRecorderCloudConnectionsProvider::AmazonS3;
+    if (value == "cloudflare_r2") return SoundRecorderCloudConnectionsProvider::CloudflareR2;
     return std::nullopt;
 }
 
@@ -1505,6 +1519,56 @@ inline std::optional<std::string> validate_sound_recorder_cloud_connections_toke
     return std::nullopt;
 }
 
+inline const char* sound_recorder_cloud_connection_projection_outbox_table = "sound_recorder_cloud_connection_projection_outbox";
+inline const std::vector<std::string> sound_recorder_cloud_connection_projection_outbox_columns = { "seq", "connection_id", "attempts", "available_at", "locked_until", "processed_at", "last_error", "created_at", "updated_at" };
+inline const char* sound_recorder_cloud_connection_projection_outbox_select_sql = R"SQL(select
+      seq,
+      connection_id::text as connection_id,
+      attempts,
+      to_char(available_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as available_at,
+      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as locked_until,
+      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as processed_at,
+      last_error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_cloud_connection_projection_outbox)SQL";
+
+struct SoundRecorderCloudConnectionProjectionOutboxRow {
+    int64_t seq;
+    std::string connection_id;
+    int32_t attempts;
+    std::string available_at;
+    std::optional<std::string> locked_until;
+    std::optional<std::string> processed_at;
+    std::optional<std::string> last_error;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline SoundRecorderCloudConnectionProjectionOutboxRow sound_recorder_cloud_connection_projection_outbox_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    SoundRecorderCloudConnectionProjectionOutboxRow row;
+    (void)is_null;
+    row.seq = std::stoll(get(0));
+    row.connection_id = get(1);
+    row.attempts = std::stoi(get(2));
+    row.available_at = get(3);
+    row.locked_until = is_null(4) ? std::nullopt : std::optional<std::string>(get(4));
+    row.processed_at = is_null(5) ? std::nullopt : std::optional<std::string>(get(5));
+    row.last_error = is_null(6) ? std::nullopt : std::optional<std::string>(get(6));
+    row.created_at = get(7);
+    row.updated_at = get(8);
+    return row;
+}
+inline std::optional<std::string> validate_sound_recorder_cloud_connection_projection_outbox_attempts(int32_t value) {
+    if (value < 0) return std::string("sound_recorder_cloud_connection_projection_outbox.attempts is below the minimum");
+    if (value > 50) return std::string("sound_recorder_cloud_connection_projection_outbox.attempts is above the maximum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_sound_recorder_cloud_connection_projection_outbox_last_error(const std::string& value) {
+    if (value.size() > 500) return std::string("sound_recorder_cloud_connection_projection_outbox.last_error must be at most 500 characters");
+    return std::nullopt;
+}
+
 inline const char* sound_recorder_cloud_copy_jobs_table = "sound_recorder_cloud_copy_jobs";
 inline const std::vector<std::string> sound_recorder_cloud_copy_jobs_columns = { "id", "account_id", "connection_id", "segment_id", "provider", "status", "destination_key", "provider_file_id", "attempts", "locked_until", "started_at", "completed_at", "last_error", "meta_data", "created_at", "updated_at" };
 inline const char* sound_recorder_cloud_copy_jobs_select_sql = R"SQL(select
@@ -1526,12 +1590,15 @@ inline const char* sound_recorder_cloud_copy_jobs_select_sql = R"SQL(select
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_cloud_copy_jobs)SQL";
 
-enum class SoundRecorderCloudCopyJobsProvider { GoogleDrive, MicrosoftOnedrive, AppleIcloud };
+enum class SoundRecorderCloudCopyJobsProvider { GoogleDrive, MicrosoftOnedrive, AppleIcloud, Dropbox, AmazonS3, CloudflareR2 };
 inline std::string sound_recorder_cloud_copy_jobs_provider_to_string(SoundRecorderCloudCopyJobsProvider value) {
     switch (value) {
         case SoundRecorderCloudCopyJobsProvider::GoogleDrive: return "google_drive";
         case SoundRecorderCloudCopyJobsProvider::MicrosoftOnedrive: return "microsoft_onedrive";
         case SoundRecorderCloudCopyJobsProvider::AppleIcloud: return "apple_icloud";
+        case SoundRecorderCloudCopyJobsProvider::Dropbox: return "dropbox";
+        case SoundRecorderCloudCopyJobsProvider::AmazonS3: return "amazon_s3";
+        case SoundRecorderCloudCopyJobsProvider::CloudflareR2: return "cloudflare_r2";
     }
     return "";
 }
@@ -1539,6 +1606,9 @@ inline std::optional<SoundRecorderCloudCopyJobsProvider> parse_sound_recorder_cl
     if (value == "google_drive") return SoundRecorderCloudCopyJobsProvider::GoogleDrive;
     if (value == "microsoft_onedrive") return SoundRecorderCloudCopyJobsProvider::MicrosoftOnedrive;
     if (value == "apple_icloud") return SoundRecorderCloudCopyJobsProvider::AppleIcloud;
+    if (value == "dropbox") return SoundRecorderCloudCopyJobsProvider::Dropbox;
+    if (value == "amazon_s3") return SoundRecorderCloudCopyJobsProvider::AmazonS3;
+    if (value == "cloudflare_r2") return SoundRecorderCloudCopyJobsProvider::CloudflareR2;
     return std::nullopt;
 }
 

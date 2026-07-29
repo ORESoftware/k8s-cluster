@@ -29,7 +29,7 @@ func (SoundRecorderDevices) Fields() []ent.Field {
 	return []ent.Field{
 		field.UUID("id", uuid.UUID{}).StorageKey("id"),
 		field.UUID("account_id", uuid.UUID{}).StorageKey("account_id"),
-		field.Enum("platform").Values("ios", "android").StorageKey("platform"),
+		field.Enum("platform").Values("ios", "android", "macos", "windows", "linux").StorageKey("platform"),
 		field.Enum("status").Values("active", "revoked", "lost", "replaced", "deleted").StorageKey("status"),
 		field.String("install_id").MaxLen(160).StorageKey("install_id"),
 		field.String("device_label").MaxLen(160).Optional().Nillable().StorageKey("device_label"),

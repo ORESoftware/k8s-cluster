@@ -877,6 +877,49 @@ pub struct SoundRecorderCloudConnectionsDieselInsert {
 
 diesel::table! {
     use diesel::sql_types::*;
+    sound_recorder_cloud_connection_projection_outbox (seq) {
+        seq -> Int8,
+        connection_id -> Uuid,
+        attempts -> Int4,
+        available_at -> Timestamptz,
+        locked_until -> Nullable<Timestamptz>,
+        processed_at -> Nullable<Timestamptz>,
+        last_error -> Nullable<Varchar>,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_cloud_connection_projection_outbox)]
+pub struct SoundRecorderCloudConnectionProjectionOutboxDieselRow {
+    pub seq: i64,
+    pub connection_id: Uuid,
+    pub attempts: i32,
+    pub available_at: DateTime<Utc>,
+    pub locked_until: Option<DateTime<Utc>>,
+    pub processed_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = sound_recorder_cloud_connection_projection_outbox)]
+pub struct SoundRecorderCloudConnectionProjectionOutboxDieselInsert {
+    pub seq: Option<i64>,
+    pub connection_id: Option<Uuid>,
+    pub attempts: Option<i32>,
+    pub available_at: Option<DateTime<Utc>>,
+    pub locked_until: Option<DateTime<Utc>>,
+    pub processed_at: Option<DateTime<Utc>>,
+    pub last_error: Option<String>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
     sound_recorder_cloud_copy_jobs (id) {
         id -> Uuid,
         account_id -> Uuid,

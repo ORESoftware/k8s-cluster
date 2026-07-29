@@ -1352,6 +1352,70 @@ class SoundRecorderCloudConnectionsObjectBox {
 }
 
 @Entity()
+class SoundRecorderCloudConnectionProjectionOutboxObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  int seq;
+
+  String connectionId;
+
+  int attempts;
+
+  String availableAt;
+
+  String? lockedUntil;
+
+  String? processedAt;
+
+  String? lastError;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  SoundRecorderCloudConnectionProjectionOutboxObjectBox({
+    required this.seq,
+    required this.connectionId,
+    required this.attempts,
+    required this.availableAt,
+    this.lockedUntil,
+    this.processedAt,
+    this.lastError,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "seq": seq,
+    "connectionId": connectionId,
+    "attempts": attempts,
+    "availableAt": availableAt,
+    "lockedUntil": lockedUntil,
+    "processedAt": processedAt,
+    "lastError": lastError,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static SoundRecorderCloudConnectionProjectionOutboxObjectBox fromJson(Map<String, Object?> json) {
+    return SoundRecorderCloudConnectionProjectionOutboxObjectBox(
+      seq: (json["seq"] as num).toInt(),
+      connectionId: json["connectionId"] as String,
+      attempts: (json["attempts"] as num).toInt(),
+      availableAt: json["availableAt"] as String,
+      lockedUntil: json["lockedUntil"] as String?,
+      processedAt: json["processedAt"] as String?,
+      lastError: json["lastError"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
 class SoundRecorderCloudCopyJobsObjectBox {
   @Id()
   int obxId = 0;

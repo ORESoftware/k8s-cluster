@@ -511,7 +511,7 @@ const SoundRecorderDevicesSelectSQL = `select
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_devices`
 
-var SoundRecorderDevicesPlatformValues = []string{"ios", "android"}
+var SoundRecorderDevicesPlatformValues = []string{"ios", "android", "macos", "windows", "linux"}
 var SoundRecorderDevicesStatusValues = []string{"active", "revoked", "lost", "replaced", "deleted"}
 var SoundRecorderDevicesTransferPauseReasonValues = []string{"low_battery", "network_constraint", "offline", "manual"}
 var SoundRecorderDevicesNetworkPolicyValues = []string{"any", "wifi_only", "cellular_only"}
@@ -848,7 +848,7 @@ const SoundRecorderOauthStatesSelectSQL = `select
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_oauth_states`
 
-var SoundRecorderOauthStatesProviderValues = []string{"google_drive", "microsoft_onedrive", "apple_icloud"}
+var SoundRecorderOauthStatesProviderValues = []string{"google_drive", "microsoft_onedrive", "apple_icloud", "dropbox"}
 var SoundRecorderOauthStatesStatusValues = []string{"pending", "consumed", "expired", "revoked"}
 
 type SoundRecorderOauthStatesBun struct {
@@ -907,7 +907,7 @@ const SoundRecorderCloudConnectionsSelectSQL = `select
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_cloud_connections`
 
-var SoundRecorderCloudConnectionsProviderValues = []string{"google_drive", "microsoft_onedrive", "apple_icloud"}
+var SoundRecorderCloudConnectionsProviderValues = []string{"google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"}
 var SoundRecorderCloudConnectionsLinkModeValues = []string{"server_oauth", "client_managed"}
 var SoundRecorderCloudConnectionsStatusValues = []string{"active", "paused", "revoked", "failed"}
 
@@ -964,6 +964,42 @@ func (value SoundRecorderCloudConnectionsBun) Validate() error {
 	return nil
 }
 
+const SoundRecorderCloudConnectionProjectionOutboxTable = "sound_recorder_cloud_connection_projection_outbox"
+const SoundRecorderCloudConnectionProjectionOutboxSelectSQL = `select
+      seq,
+      connection_id::text as connection_id,
+      attempts,
+      to_char(available_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as available_at,
+      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as locked_until,
+      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as processed_at,
+      last_error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_cloud_connection_projection_outbox`
+
+type SoundRecorderCloudConnectionProjectionOutboxBun struct {
+	bun.BaseModel `bun:"table:sound_recorder_cloud_connection_projection_outbox"`
+	Seq int64 `bun:"seq,type:bigserial,pk" json:"seq"`
+	ConnectionId uuid.UUID `bun:"connection_id,type:uuid" json:"connectionId"`
+	Attempts int32 `bun:"attempts,type:integer,default:0" json:"attempts"`
+	AvailableAt time.Time `bun:"available_at,type:timestamptz,default:now()" json:"availableAt"`
+	LockedUntil *time.Time `bun:"locked_until,type:timestamptz,nullzero" json:"lockedUntil,omitempty"`
+	ProcessedAt *time.Time `bun:"processed_at,type:timestamptz,nullzero" json:"processedAt,omitempty"`
+	LastError *string `bun:"last_error,type:varchar(500),nullzero" json:"lastError,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value SoundRecorderCloudConnectionProjectionOutboxBun) Validate() error {
+	if value.Attempts < 0 { return errors.New("sound_recorder_cloud_connection_projection_outbox.attempts is below the minimum") }
+	if value.Attempts > 50 { return errors.New("sound_recorder_cloud_connection_projection_outbox.attempts is above the maximum") }
+	if value.LastError != nil {
+		if len([]byte(*value.LastError)) > 500 { return errors.New("sound_recorder_cloud_connection_projection_outbox.last_error exceeds 500 bytes") }
+		if len([]byte(*value.LastError)) < 1 { return errors.New("sound_recorder_cloud_connection_projection_outbox.last_error is below 1 bytes") }
+	}
+	return nil
+}
+
 const SoundRecorderCloudCopyJobsTable = "sound_recorder_cloud_copy_jobs"
 const SoundRecorderCloudCopyJobsSelectSQL = `select
       id::text as id,
@@ -984,7 +1020,7 @@ const SoundRecorderCloudCopyJobsSelectSQL = `select
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_cloud_copy_jobs`
 
-var SoundRecorderCloudCopyJobsProviderValues = []string{"google_drive", "microsoft_onedrive", "apple_icloud"}
+var SoundRecorderCloudCopyJobsProviderValues = []string{"google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"}
 var SoundRecorderCloudCopyJobsStatusValues = []string{"pending", "running", "waiting_client", "completed", "failed", "skipped"}
 
 type SoundRecorderCloudCopyJobsBun struct {

@@ -514,16 +514,25 @@ let soundRecorderDevicesSelectSql = "select\n      id::text as id,\n      accoun
 type SoundRecorderDevicesPlatform =
     | Ios
     | Android
+    | Macos
+    | Windows
+    | Linux
 
 let soundRecorderDevicesPlatformToString (value: SoundRecorderDevicesPlatform) : string =
     match value with
     | SoundRecorderDevicesPlatform.Ios -> "ios"
     | SoundRecorderDevicesPlatform.Android -> "android"
+    | SoundRecorderDevicesPlatform.Macos -> "macos"
+    | SoundRecorderDevicesPlatform.Windows -> "windows"
+    | SoundRecorderDevicesPlatform.Linux -> "linux"
 
 let parseSoundRecorderDevicesPlatform (value: string) : Result<SoundRecorderDevicesPlatform, string> =
     match value with
     | "ios" -> Ok SoundRecorderDevicesPlatform.Ios
     | "android" -> Ok SoundRecorderDevicesPlatform.Android
+    | "macos" -> Ok SoundRecorderDevicesPlatform.Macos
+    | "windows" -> Ok SoundRecorderDevicesPlatform.Windows
+    | "linux" -> Ok SoundRecorderDevicesPlatform.Linux
     | _ -> Error ("unsupported sound_recorder_devices.platform: " + value)
 
 [<RequireQualifiedAccess>]
@@ -1073,18 +1082,21 @@ type SoundRecorderOauthStatesProvider =
     | GoogleDrive
     | MicrosoftOnedrive
     | AppleIcloud
+    | Dropbox
 
 let soundRecorderOauthStatesProviderToString (value: SoundRecorderOauthStatesProvider) : string =
     match value with
     | SoundRecorderOauthStatesProvider.GoogleDrive -> "google_drive"
     | SoundRecorderOauthStatesProvider.MicrosoftOnedrive -> "microsoft_onedrive"
     | SoundRecorderOauthStatesProvider.AppleIcloud -> "apple_icloud"
+    | SoundRecorderOauthStatesProvider.Dropbox -> "dropbox"
 
 let parseSoundRecorderOauthStatesProvider (value: string) : Result<SoundRecorderOauthStatesProvider, string> =
     match value with
     | "google_drive" -> Ok SoundRecorderOauthStatesProvider.GoogleDrive
     | "microsoft_onedrive" -> Ok SoundRecorderOauthStatesProvider.MicrosoftOnedrive
     | "apple_icloud" -> Ok SoundRecorderOauthStatesProvider.AppleIcloud
+    | "dropbox" -> Ok SoundRecorderOauthStatesProvider.Dropbox
     | _ -> Error ("unsupported sound_recorder_oauth_states.provider: " + value)
 
 [<RequireQualifiedAccess>]
@@ -1163,18 +1175,27 @@ type SoundRecorderCloudConnectionsProvider =
     | GoogleDrive
     | MicrosoftOnedrive
     | AppleIcloud
+    | Dropbox
+    | AmazonS3
+    | CloudflareR2
 
 let soundRecorderCloudConnectionsProviderToString (value: SoundRecorderCloudConnectionsProvider) : string =
     match value with
     | SoundRecorderCloudConnectionsProvider.GoogleDrive -> "google_drive"
     | SoundRecorderCloudConnectionsProvider.MicrosoftOnedrive -> "microsoft_onedrive"
     | SoundRecorderCloudConnectionsProvider.AppleIcloud -> "apple_icloud"
+    | SoundRecorderCloudConnectionsProvider.Dropbox -> "dropbox"
+    | SoundRecorderCloudConnectionsProvider.AmazonS3 -> "amazon_s3"
+    | SoundRecorderCloudConnectionsProvider.CloudflareR2 -> "cloudflare_r2"
 
 let parseSoundRecorderCloudConnectionsProvider (value: string) : Result<SoundRecorderCloudConnectionsProvider, string> =
     match value with
     | "google_drive" -> Ok SoundRecorderCloudConnectionsProvider.GoogleDrive
     | "microsoft_onedrive" -> Ok SoundRecorderCloudConnectionsProvider.MicrosoftOnedrive
     | "apple_icloud" -> Ok SoundRecorderCloudConnectionsProvider.AppleIcloud
+    | "dropbox" -> Ok SoundRecorderCloudConnectionsProvider.Dropbox
+    | "amazon_s3" -> Ok SoundRecorderCloudConnectionsProvider.AmazonS3
+    | "cloudflare_r2" -> Ok SoundRecorderCloudConnectionsProvider.CloudflareR2
     | _ -> Error ("unsupported sound_recorder_cloud_connections.provider: " + value)
 
 [<RequireQualifiedAccess>]
@@ -1296,6 +1317,43 @@ let validateSoundRecorderCloudConnectionsTokenVersion (value: int) : Result<int,
     if value < 1 then Error "sound_recorder_cloud_connections.token_version is below the minimum"
     else Ok value
 
+let soundRecorderCloudConnectionProjectionOutboxTable = "sound_recorder_cloud_connection_projection_outbox"
+let soundRecorderCloudConnectionProjectionOutboxColumns = [ "seq"; "connection_id"; "attempts"; "available_at"; "locked_until"; "processed_at"; "last_error"; "created_at"; "updated_at" ]
+let soundRecorderCloudConnectionProjectionOutboxSelectSql = "select\n      seq,\n      connection_id::text as connection_id,\n      attempts,\n      to_char(available_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as available_at,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as processed_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_connection_projection_outbox"
+
+type SoundRecorderCloudConnectionProjectionOutboxRow =
+    { SoundRecorderCloudConnectionProjectionOutboxSeq: int64
+      SoundRecorderCloudConnectionProjectionOutboxConnectionId: string
+      SoundRecorderCloudConnectionProjectionOutboxAttempts: int
+      SoundRecorderCloudConnectionProjectionOutboxAvailableAt: string
+      SoundRecorderCloudConnectionProjectionOutboxLockedUntil: string option
+      SoundRecorderCloudConnectionProjectionOutboxProcessedAt: string option
+      SoundRecorderCloudConnectionProjectionOutboxLastError: string option
+      SoundRecorderCloudConnectionProjectionOutboxCreatedAt: string
+      SoundRecorderCloudConnectionProjectionOutboxUpdatedAt: string
+    }
+
+let soundRecorderCloudConnectionProjectionOutboxRowOfRow (get: int -> string) (isNullAt: int -> bool) : SoundRecorderCloudConnectionProjectionOutboxRow =
+    { SoundRecorderCloudConnectionProjectionOutboxSeq = int64 (get 0)
+      SoundRecorderCloudConnectionProjectionOutboxConnectionId = get 1
+      SoundRecorderCloudConnectionProjectionOutboxAttempts = int (get 2)
+      SoundRecorderCloudConnectionProjectionOutboxAvailableAt = get 3
+      SoundRecorderCloudConnectionProjectionOutboxLockedUntil = (if isNullAt 4 then None else Some (get 4))
+      SoundRecorderCloudConnectionProjectionOutboxProcessedAt = (if isNullAt 5 then None else Some (get 5))
+      SoundRecorderCloudConnectionProjectionOutboxLastError = (if isNullAt 6 then None else Some (get 6))
+      SoundRecorderCloudConnectionProjectionOutboxCreatedAt = get 7
+      SoundRecorderCloudConnectionProjectionOutboxUpdatedAt = get 8
+    }
+
+let validateSoundRecorderCloudConnectionProjectionOutboxAttempts (value: int) : Result<int, string> =
+    if value < 0 then Error "sound_recorder_cloud_connection_projection_outbox.attempts is below the minimum"
+    elif value > 50 then Error "sound_recorder_cloud_connection_projection_outbox.attempts is above the maximum"
+    else Ok value
+
+let validateSoundRecorderCloudConnectionProjectionOutboxLastError (value: string) : Result<string, string> =
+    if value.Length > 500 then Error "sound_recorder_cloud_connection_projection_outbox.last_error must be at most 500 characters"
+    else Ok value
+
 let soundRecorderCloudCopyJobsTable = "sound_recorder_cloud_copy_jobs"
 let soundRecorderCloudCopyJobsColumns = [ "id"; "account_id"; "connection_id"; "segment_id"; "provider"; "status"; "destination_key"; "provider_file_id"; "attempts"; "locked_until"; "started_at"; "completed_at"; "last_error"; "meta_data"; "created_at"; "updated_at" ]
 let soundRecorderCloudCopyJobsSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      connection_id::text as connection_id,\n      segment_id::text as segment_id,\n      provider,\n      status,\n      destination_key,\n      provider_file_id,\n      attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as completed_at,\n      last_error,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_copy_jobs"
@@ -1305,18 +1363,27 @@ type SoundRecorderCloudCopyJobsProvider =
     | GoogleDrive
     | MicrosoftOnedrive
     | AppleIcloud
+    | Dropbox
+    | AmazonS3
+    | CloudflareR2
 
 let soundRecorderCloudCopyJobsProviderToString (value: SoundRecorderCloudCopyJobsProvider) : string =
     match value with
     | SoundRecorderCloudCopyJobsProvider.GoogleDrive -> "google_drive"
     | SoundRecorderCloudCopyJobsProvider.MicrosoftOnedrive -> "microsoft_onedrive"
     | SoundRecorderCloudCopyJobsProvider.AppleIcloud -> "apple_icloud"
+    | SoundRecorderCloudCopyJobsProvider.Dropbox -> "dropbox"
+    | SoundRecorderCloudCopyJobsProvider.AmazonS3 -> "amazon_s3"
+    | SoundRecorderCloudCopyJobsProvider.CloudflareR2 -> "cloudflare_r2"
 
 let parseSoundRecorderCloudCopyJobsProvider (value: string) : Result<SoundRecorderCloudCopyJobsProvider, string> =
     match value with
     | "google_drive" -> Ok SoundRecorderCloudCopyJobsProvider.GoogleDrive
     | "microsoft_onedrive" -> Ok SoundRecorderCloudCopyJobsProvider.MicrosoftOnedrive
     | "apple_icloud" -> Ok SoundRecorderCloudCopyJobsProvider.AppleIcloud
+    | "dropbox" -> Ok SoundRecorderCloudCopyJobsProvider.Dropbox
+    | "amazon_s3" -> Ok SoundRecorderCloudCopyJobsProvider.AmazonS3
+    | "cloudflare_r2" -> Ok SoundRecorderCloudCopyJobsProvider.CloudflareR2
     | _ -> Error ("unsupported sound_recorder_cloud_copy_jobs.provider: " + value)
 
 [<RequireQualifiedAccess>]

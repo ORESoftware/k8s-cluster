@@ -658,6 +658,41 @@ impl ActiveModelBehavior for ActiveModel {}
 pub use sound_recorder_cloud_connections::Entity as SoundRecorderCloudConnectionsEntity;
 pub use sound_recorder_cloud_connections::Model as SoundRecorderCloudConnectionsModel;
 
+pub mod sound_recorder_cloud_connection_projection_outbox {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "sound_recorder_cloud_connection_projection_outbox")]
+pub struct Model {
+    #[sea_orm(primary_key)]
+    pub seq: i64,
+    #[sea_orm(column_name = "connection_id")]
+    pub connection_id: Uuid,
+    pub attempts: i32,
+    #[sea_orm(column_name = "available_at")]
+    pub available_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "locked_until")]
+    pub locked_until: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "processed_at")]
+    pub processed_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_error")]
+    pub last_error: Option<String>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use sound_recorder_cloud_connection_projection_outbox::Entity as SoundRecorderCloudConnectionProjectionOutboxEntity;
+pub use sound_recorder_cloud_connection_projection_outbox::Model as SoundRecorderCloudConnectionProjectionOutboxModel;
+
 pub mod sound_recorder_cloud_copy_jobs {
     use super::*;
 

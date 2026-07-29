@@ -278,6 +278,18 @@ public final class Tables {
     public static final Field<OffsetDateTime> SOUND_RECORDER_CLOUD_CONNECTIONS_CREATED_AT = DSL.field(DSL.name("sound_recorder_cloud_connections", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<OffsetDateTime> SOUND_RECORDER_CLOUD_CONNECTIONS_UPDATED_AT = DSL.field(DSL.name("sound_recorder_cloud_connections", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
 
+    public static final Name SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_NAME = DSL.name("sound_recorder_cloud_connection_projection_outbox");
+    public static final Table<org.jooq.Record> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX = DSL.table(SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_NAME);
+    public static final Field<Long> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_SEQ = DSL.field(DSL.name("sound_recorder_cloud_connection_projection_outbox", "seq"), SQLDataType.BIGINT);
+    public static final Field<UUID> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_CONNECTION_ID = DSL.field(DSL.name("sound_recorder_cloud_connection_projection_outbox", "connection_id"), SQLDataType.UUID);
+    public static final Field<Integer> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_ATTEMPTS = DSL.field(DSL.name("sound_recorder_cloud_connection_projection_outbox", "attempts"), SQLDataType.INTEGER);
+    public static final Field<OffsetDateTime> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_AVAILABLE_AT = DSL.field(DSL.name("sound_recorder_cloud_connection_projection_outbox", "available_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_LOCKED_UNTIL = DSL.field(DSL.name("sound_recorder_cloud_connection_projection_outbox", "locked_until"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_PROCESSED_AT = DSL.field(DSL.name("sound_recorder_cloud_connection_projection_outbox", "processed_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<String> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_LAST_ERROR = DSL.field(DSL.name("sound_recorder_cloud_connection_projection_outbox", "last_error"), SQLDataType.VARCHAR(500));
+    public static final Field<OffsetDateTime> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_CREATED_AT = DSL.field(DSL.name("sound_recorder_cloud_connection_projection_outbox", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_UPDATED_AT = DSL.field(DSL.name("sound_recorder_cloud_connection_projection_outbox", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
     public static final Name SOUND_RECORDER_CLOUD_COPY_JOBS_NAME = DSL.name("sound_recorder_cloud_copy_jobs");
     public static final Table<org.jooq.Record> SOUND_RECORDER_CLOUD_COPY_JOBS = DSL.table(SOUND_RECORDER_CLOUD_COPY_JOBS_NAME);
     public static final Field<UUID> SOUND_RECORDER_CLOUD_COPY_JOBS_ID = DSL.field(DSL.name("sound_recorder_cloud_copy_jobs", "id"), SQLDataType.UUID);

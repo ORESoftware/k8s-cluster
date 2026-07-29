@@ -409,6 +409,26 @@ class SoundRecorderCloudConnectionsTable extends Table {
   };
 }
 
+@DataClassName("SoundRecorderCloudConnectionProjectionOutboxData")
+class SoundRecorderCloudConnectionProjectionOutboxTable extends Table {
+  @override String get tableName => "sound_recorder_cloud_connection_projection_outbox";
+
+  Int64Column get seq => int64().named("seq").customConstraint("BIGSERIAL")();
+  TextColumn get connectionId => text().named("connection_id").customConstraint("UUID REFERENCES sound_recorder_cloud_connections (id)")();
+  IntColumn get attempts => integer().named("attempts").clientDefault(() => 0)();
+  DateTimeColumn get availableAt => dateTime().named("available_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lockedUntil => dateTime().named("locked_until").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get processedAt => dateTime().named("processed_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get lastError => text().named("last_error").withLength(max: 500).nullable()();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        seq,
+  };
+}
+
 @DataClassName("SoundRecorderCloudCopyJobsData")
 class SoundRecorderCloudCopyJobsTable extends Table {
   @override String get tableName => "sound_recorder_cloud_copy_jobs";
@@ -4359,6 +4379,7 @@ const List<Type> registeredDriftTables = <Type>[
   SoundRecorderAuditEventsTable,
   SoundRecorderOauthStatesTable,
   SoundRecorderCloudConnectionsTable,
+  SoundRecorderCloudConnectionProjectionOutboxTable,
   SoundRecorderCloudCopyJobsTable,
   ContainerPoolConfigsTable,
   KnownGitRepoTable,

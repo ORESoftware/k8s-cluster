@@ -235,7 +235,7 @@ class SoundRecorderDevices extends Model
     {
         return [
             'account_id' => ['required', 'uuid'],
-            'platform' => ['required', 'string', 'in:ios,android'],
+            'platform' => ['required', 'string', 'in:ios,android,macos,windows,linux'],
             'status' => ['nullable', 'string', 'in:active,revoked,lost,replaced,deleted'],
             'install_id' => ['required', 'string', 'max:160'],
             'device_label' => ['nullable', 'string', 'max:160'],
@@ -404,7 +404,7 @@ class SoundRecorderOauthStates extends Model
         return [
             'account_id' => ['required', 'uuid'],
             'device_id' => ['required', 'uuid'],
-            'provider' => ['required', 'string', 'in:google_drive,microsoft_onedrive,apple_icloud'],
+            'provider' => ['required', 'string', 'in:google_drive,microsoft_onedrive,apple_icloud,dropbox'],
             'state_hash' => ['required', 'string', 'max:64', 'regex:/^[a-f0-9]{64}$/'],
             'redirect_uri' => ['required', 'string', 'max:512'],
             'folder_path' => ['nullable', 'string', 'max:512'],
@@ -432,7 +432,7 @@ class SoundRecorderCloudConnections extends Model
         return [
             'account_id' => ['required', 'uuid'],
             'created_by_device_id' => ['nullable', 'uuid'],
-            'provider' => ['required', 'string', 'in:google_drive,microsoft_onedrive,apple_icloud'],
+            'provider' => ['required', 'string', 'in:google_drive,microsoft_onedrive,apple_icloud,dropbox,amazon_s3,cloudflare_r2'],
             'link_mode' => ['nullable', 'string', 'in:server_oauth,client_managed'],
             'status' => ['nullable', 'string', 'in:active,paused,revoked,failed'],
             'display_name' => ['nullable', 'string', 'max:160'],
@@ -448,6 +448,28 @@ class SoundRecorderCloudConnections extends Model
             'token_expires_at' => ['nullable', 'date'],
             'last_sync_at' => ['nullable', 'date'],
             'meta_data' => ['nullable', 'array'],
+        ];
+    }
+}
+
+class SoundRecorderCloudConnectionProjectionOutbox extends Model
+{
+    protected $table = 'sound_recorder_cloud_connection_projection_outbox';
+    protected $primaryKey = 'seq';
+    public $timestamps = true;
+    protected $fillable = ['connection_id', 'attempts', 'available_at', 'locked_until', 'processed_at', 'last_error', 'created_at', 'updated_at'];
+    protected $casts = ['seq' => 'integer', 'attempts' => 'integer', 'available_at' => 'datetime', 'locked_until' => 'datetime', 'processed_at' => 'datetime', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'connection_id' => ['required', 'uuid'],
+            'attempts' => ['nullable', 'integer', 'min:0', 'max:50'],
+            'available_at' => ['nullable', 'date'],
+            'locked_until' => ['nullable', 'date'],
+            'processed_at' => ['nullable', 'date'],
+            'last_error' => ['nullable', 'string', 'max:500'],
         ];
     }
 }
@@ -469,7 +491,7 @@ class SoundRecorderCloudCopyJobs extends Model
             'account_id' => ['required', 'uuid'],
             'connection_id' => ['required', 'uuid'],
             'segment_id' => ['required', 'uuid'],
-            'provider' => ['required', 'string', 'in:google_drive,microsoft_onedrive,apple_icloud'],
+            'provider' => ['required', 'string', 'in:google_drive,microsoft_onedrive,apple_icloud,dropbox,amazon_s3,cloudflare_r2'],
             'status' => ['nullable', 'string', 'in:pending,running,waiting_client,completed,failed,skipped'],
             'destination_key' => ['required', 'string', 'max:2048'],
             'provider_file_id' => ['nullable', 'string', 'max:512'],

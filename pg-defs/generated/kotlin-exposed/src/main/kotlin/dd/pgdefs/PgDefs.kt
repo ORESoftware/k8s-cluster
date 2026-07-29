@@ -295,6 +295,20 @@ object SoundRecorderCloudConnections : Table("sound_recorder_cloud_connections")
     override val primaryKey = PrimaryKey(id)
 }
 
+object SoundRecorderCloudConnectionProjectionOutbox : Table("sound_recorder_cloud_connection_projection_outbox") {
+    val seq = long("seq")
+    val connectionId = uuid("connection_id")
+    val attempts = integer("attempts")
+    val availableAt = timestampWithTimeZone("available_at")
+    val lockedUntil = timestampWithTimeZone("locked_until").nullable()
+    val processedAt = timestampWithTimeZone("processed_at").nullable()
+    val lastError = varchar("last_error", 500).nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(seq)
+}
+
 object SoundRecorderCloudCopyJobs : Table("sound_recorder_cloud_copy_jobs") {
     val id = uuid("id")
     val accountId = uuid("account_id")
@@ -3550,6 +3564,30 @@ fun toSoundRecorderCloudConnectionsRow(row: ResultRow): SoundRecorderCloudConnec
     row[SoundRecorderCloudConnections.metaData],
     row[SoundRecorderCloudConnections.createdAt],
     row[SoundRecorderCloudConnections.updatedAt],
+)
+
+data class SoundRecorderCloudConnectionProjectionOutboxRow(
+    val seq: Long,
+    val connectionId: UUID,
+    val attempts: Int,
+    val availableAt: OffsetDateTime,
+    val lockedUntil: OffsetDateTime?,
+    val processedAt: OffsetDateTime?,
+    val lastError: String?,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toSoundRecorderCloudConnectionProjectionOutboxRow(row: ResultRow): SoundRecorderCloudConnectionProjectionOutboxRow = SoundRecorderCloudConnectionProjectionOutboxRow(
+    row[SoundRecorderCloudConnectionProjectionOutbox.seq],
+    row[SoundRecorderCloudConnectionProjectionOutbox.connectionId],
+    row[SoundRecorderCloudConnectionProjectionOutbox.attempts],
+    row[SoundRecorderCloudConnectionProjectionOutbox.availableAt],
+    row[SoundRecorderCloudConnectionProjectionOutbox.lockedUntil],
+    row[SoundRecorderCloudConnectionProjectionOutbox.processedAt],
+    row[SoundRecorderCloudConnectionProjectionOutbox.lastError],
+    row[SoundRecorderCloudConnectionProjectionOutbox.createdAt],
+    row[SoundRecorderCloudConnectionProjectionOutbox.updatedAt],
 )
 
 data class SoundRecorderCloudCopyJobsRow(
