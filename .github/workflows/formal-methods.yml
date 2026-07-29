@@ -1,0 +1,65 @@
+name: formal methods
+
+on:
+  pull_request:
+    paths:
+      - 'remote/deployments/formal-methods-server-rs/**'
+      - 'remote/deployments/formal-methods-service-rs/**'
+      - 'remote/libs/runtime-config-client-rs/**'
+      - 'remote/libs/telemetry-rs/**'
+      - '.github/workflows/formal-methods.yml'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - 'remote/deployments/formal-methods-server-rs/**'
+      - 'remote/deployments/formal-methods-service-rs/**'
+      - 'remote/libs/runtime-config-client-rs/**'
+      - 'remote/libs/telemetry-rs/**'
+      - '.github/workflows/formal-methods.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: formal-methods-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  service-contracts:
+    name: formal service contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Require private-submodule read token
+        env:
+          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
+        run: test -n "$K8S_SUBMODULE_TOKEN"
+
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Initialize shared Rust libraries
+        env:
+          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
+        run: |
+          set -euo pipefail
+          token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
+          git config --global url."${token_url}".insteadOf "git@github.com:"
+          trap 'git config --global --unset-all url."${token_url}".insteadOf || true' EXIT
+          git submodule update --init --recursive --depth 1 -- remote/libs
+
+      - name: Install Z3
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes z3
+
+      - name: Test annotation analyzer
+        run: cargo test --locked
+        working-directory: remote/deployments/formal-methods-server-rs
+
+      - name: Test repository analyzer service
+        run: cargo test --locked --all-targets
+        working-directory: remote/deployments/formal-methods-service-rs
