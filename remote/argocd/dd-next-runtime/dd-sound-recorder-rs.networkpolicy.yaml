@@ -17,6 +17,9 @@ spec:
         - podSelector:
             matchLabels:
               app: dd-remote-gateway
+        - podSelector:
+            matchLabels:
+              app: dd-sound-recorder-cloud-projection
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability
