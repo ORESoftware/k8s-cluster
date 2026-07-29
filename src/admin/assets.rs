@@ -76,7 +76,10 @@ pub async fn serve(Path(file): Path<String>) -> Response {
     (
         StatusCode::OK,
         [
-            (header::CONTENT_TYPE, "application/javascript; charset=utf-8"),
+            (
+                header::CONTENT_TYPE,
+                "application/javascript; charset=utf-8",
+            ),
             // The URL is hash-pinned — safe to cache for a year.
             (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
             (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
@@ -129,6 +132,8 @@ mod tests {
         assert!(!is_htmx_filename("htmx-../etc/passwd.js"));
         assert!(!is_htmx_filename("../etc/passwd"));
         assert!(!is_htmx_filename("htmx-A.css"));
-        assert!(!is_htmx_filename("htmx-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.js"));
+        assert!(!is_htmx_filename(
+            "htmx-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.js"
+        ));
     }
 }

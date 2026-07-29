@@ -5,8 +5,8 @@
 //! reconciliation breaks for unseen monetary activity and leave exact posting
 //! to the balance-statement parser.
 
-use sea_orm::ConnectionTrait;
 use chrono::{Duration, Utc};
+use sea_orm::ConnectionTrait;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};

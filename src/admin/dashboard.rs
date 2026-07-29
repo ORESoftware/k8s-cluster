@@ -8,8 +8,7 @@ use crate::scheduler::JobCounts;
 use crate::state::AppState;
 
 use super::layout::{
-    self, NavSection, caption, empty_row, job_run_status_badge, section_header, short_id,
-    stat_card,
+    self, NavSection, caption, empty_row, job_run_status_badge, section_header, short_id, stat_card,
 };
 use super::time::rel;
 
@@ -32,11 +31,19 @@ pub async fn page(State(state): State<AppState>) -> Markup {
     });
     let conn_counts = conn_r.unwrap_or_else(|e| {
         tracing::warn!(error = %e, "admin dashboard: connection counts failed");
-        ConnectionCounts { total: 0, active: 0, failing: 0 }
+        ConnectionCounts {
+            total: 0,
+            active: 0,
+            failing: 0,
+        }
     });
     let job_counts = job_r.unwrap_or_else(|e| {
         tracing::warn!(error = %e, "admin dashboard: job counts failed");
-        JobCounts { total: 0, enabled: 0, due_now: 0 }
+        JobCounts {
+            total: 0,
+            enabled: 0,
+            due_now: 0,
+        }
     });
     let recent_runs = runs_r.unwrap_or_else(|e| {
         tracing::warn!(error = %e, "admin dashboard: recent runs failed");

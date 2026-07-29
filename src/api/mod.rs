@@ -13,11 +13,11 @@ pub mod vendors;
 pub mod verify;
 pub mod webhooks;
 
+use axum::Router;
 use axum::http::StatusCode;
 use axum::middleware;
 use axum::response::{Html, IntoResponse};
 use axum::routing::{get, post};
-use axum::Router;
 use std::time::Duration;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;

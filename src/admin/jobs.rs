@@ -12,10 +12,7 @@ use super::errors;
 use super::layout::{empty_row, enabled_badge, section_header, short_id};
 use super::time::rel;
 
-pub async fn table_fragment(
-    State(state): State<AppState>,
-    Path(tenant_id): Path<Uuid>,
-) -> Markup {
+pub async fn table_fragment(State(state): State<AppState>, Path(tenant_id): Path<Uuid>) -> Markup {
     render_table(&state, tenant_id).await
 }
 
@@ -66,7 +63,9 @@ pub async fn run_now(
 ) -> AppResult<Markup> {
     let job = state.scheduler.get(job_id).await?;
     if job.tenant_id != Some(tenant_id) {
-        return Err(AppError::NotFound(format!("job {job_id} not found in tenant")));
+        return Err(AppError::NotFound(format!(
+            "job {job_id} not found in tenant"
+        )));
     }
     state.scheduler.run_now(job_id).await?;
     let job = state.scheduler.get(job_id).await?;
@@ -88,7 +87,9 @@ pub async fn toggle(
 ) -> AppResult<Markup> {
     let job = state.scheduler.get(job_id).await?;
     if job.tenant_id != Some(tenant_id) {
-        return Err(AppError::NotFound(format!("job {job_id} not found in tenant")));
+        return Err(AppError::NotFound(format!(
+            "job {job_id} not found in tenant"
+        )));
     }
     let new_enabled = !job.enabled;
     state.scheduler.set_enabled(job_id, new_enabled).await?;

@@ -32,18 +32,16 @@ pub async fn sync_plaid(
         .connections
         .load_credential(ctx.tenant_id, conn.id)
         .await?;
-    let cred: PlaidCredential = serde_json::from_slice(&plaintext)
-        .map_err(|e| AppError::Provider {
+    let cred: PlaidCredential =
+        serde_json::from_slice(&plaintext).map_err(|e| AppError::Provider {
             provider: "plaid".into(),
             message: format!("decode sealed credential: {e}"),
         })?;
     let link = PlaidLink::new(ctx.cfg);
 
-    let mut cursor: Option<String> = caller_cursor.map(str::to_string).or_else(|| {
-        conn.last_sync_cursor
-            .clone()
-            .filter(|s| !s.is_empty())
-    });
+    let mut cursor: Option<String> = caller_cursor
+        .map(str::to_string)
+        .or_else(|| conn.last_sync_cursor.clone().filter(|s| !s.is_empty()));
 
     let mut total_added: i64 = 0;
     let mut total_postings: i64 = 0;
@@ -155,7 +153,10 @@ async fn post_added(ctx: &SyncCtx<'_>, tx: &PlaidTransaction) -> AppResult<PostO
         idempotency_key: format!("plaid:tx:{}", tx.transaction_id),
         description: Some(format!(
             "plaid {} {} ({})",
-            tx.merchant_name.as_deref().or(tx.name.as_deref()).unwrap_or("transaction"),
+            tx.merchant_name
+                .as_deref()
+                .or(tx.name.as_deref())
+                .unwrap_or("transaction"),
             tx.date.as_deref().unwrap_or(""),
             tx.transaction_id
         )),
@@ -221,7 +222,9 @@ async fn open_modified_break(
         "#,
             [
                 ctx.tenant_id.into(),
-                crate::shard::ShardKey::derive(ctx.tenant_id, ctx.region).0.into(),
+                crate::shard::ShardKey::derive(ctx.tenant_id, ctx.region)
+                    .0
+                    .into(),
                 conn.provider.tag().into(),
                 conn.id.into(),
                 tx.iso_currency_code
@@ -279,7 +282,9 @@ async fn open_removed_break(
         "#,
             [
                 ctx.tenant_id.into(),
-                crate::shard::ShardKey::derive(ctx.tenant_id, ctx.region).0.into(),
+                crate::shard::ShardKey::derive(ctx.tenant_id, ctx.region)
+                    .0
+                    .into(),
                 conn.provider.tag().into(),
                 conn.id.into(),
                 tx.transaction_id.clone().into(),

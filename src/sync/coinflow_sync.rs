@@ -2,8 +2,8 @@
 //! delivery log) so we catch anything we missed from direct webhook
 //! deliveries. Idempotent via `coinflow:evt:<event_id>` keys.
 
-use sea_orm::ConnectionTrait;
 use chrono::{Duration, Utc};
+use sea_orm::ConnectionTrait;
 use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};

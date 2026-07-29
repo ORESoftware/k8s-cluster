@@ -2,8 +2,8 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Redirect, Response};
 use chrono::{Duration, Utc};
-use sea_orm::ConnectionTrait;
 use rand::{RngExt, rng};
+use sea_orm::ConnectionTrait;
 use serde::Deserialize;
 use uuid::Uuid;
 

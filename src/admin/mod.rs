@@ -85,14 +85,8 @@ fn build_router_with_security(sec: std::sync::Arc<security::AdminSecurity>) -> R
             "/tenants/{id}/notifications",
             get(notifications::page_fragment),
         )
-        .route(
-            "/tenants/{tid}/jobs/{job_id}/run-now",
-            post(jobs::run_now),
-        )
-        .route(
-            "/tenants/{tid}/jobs/{job_id}/toggle",
-            post(jobs::toggle),
-        )
+        .route("/tenants/{tid}/jobs/{job_id}/run-now", post(jobs::run_now))
+        .route("/tenants/{tid}/jobs/{job_id}/toggle", post(jobs::toggle))
         .route(
             "/tenants/{tid}/connections/{conn_id}/sync",
             post(connections::sync_now),
@@ -103,8 +97,14 @@ fn build_router_with_security(sec: std::sync::Arc<security::AdminSecurity>) -> R
         // request path): auth -> csrf -> headers. So security_headers is
         // attached last (innermost) but observes every response.
         .layer(middleware::from_fn(security::security_headers))
-        .layer(middleware::from_fn_with_state(sec.clone(), security::csrf_guard))
-        .layer(middleware::from_fn_with_state(sec, security::require_admin_auth))
+        .layer(middleware::from_fn_with_state(
+            sec.clone(),
+            security::csrf_guard,
+        ))
+        .layer(middleware::from_fn_with_state(
+            sec,
+            security::require_admin_auth,
+        ))
 }
 
 /// Discourage indexing if the admin somehow leaks through a misconfigured
@@ -202,8 +202,14 @@ mod tests {
         assert_eq!(h.get("referrer-policy").unwrap(), "same-origin");
         assert!(h.contains_key("permissions-policy"));
         assert_eq!(h.get("cross-origin-opener-policy").unwrap(), "same-origin");
-        assert_eq!(h.get("cross-origin-resource-policy").unwrap(), "same-origin");
-        assert_eq!(h.get("x-robots-tag").unwrap(), "noindex, nofollow, noarchive");
+        assert_eq!(
+            h.get("cross-origin-resource-policy").unwrap(),
+            "same-origin"
+        );
+        assert_eq!(
+            h.get("x-robots-tag").unwrap(),
+            "noindex, nofollow, noarchive"
+        );
     }
 
     #[tokio::test]
@@ -215,10 +221,7 @@ mod tests {
             .strip_prefix("/admin")
             .unwrap()
             .to_string();
-        let r = router(open())
-            .oneshot(req("GET", &path))
-            .await
-            .unwrap();
+        let r = router(open()).oneshot(req("GET", &path)).await.unwrap();
         assert_eq!(r.status(), StatusCode::OK);
         assert_eq!(
             r.headers().get("content-type").unwrap(),
@@ -241,17 +244,17 @@ mod tests {
             "/static/htmx-A.css",
             "/static/htmx-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.js",
         ] {
-            let r = router(open())
-                .oneshot(req("GET", bad))
-                .await
-                .unwrap();
+            let r = router(open()).oneshot(req("GET", bad)).await.unwrap();
             assert_eq!(r.status(), StatusCode::NOT_FOUND, "{bad}");
         }
     }
 
     #[tokio::test]
     async fn robots_txt_disallows_all() {
-        let r = router(open()).oneshot(req("GET", "/robots.txt")).await.unwrap();
+        let r = router(open())
+            .oneshot(req("GET", "/robots.txt"))
+            .await
+            .unwrap();
         assert_eq!(r.status(), StatusCode::OK);
         let body = to_bytes(r.into_body(), usize::MAX).await.unwrap();
         assert!(std::str::from_utf8(&body).unwrap().contains("Disallow: /"));
@@ -404,7 +407,10 @@ mod tests {
             bearer: Some("super-secret-token".into()),
             allowed_origins: vec![],
         };
-        let r = router(sec).oneshot(req("GET", &assets::htmx_asset_path())).await.unwrap();
+        let r = router(sec)
+            .oneshot(req("GET", &assets::htmx_asset_path()))
+            .await
+            .unwrap();
         assert_eq!(r.status(), StatusCode::UNAUTHORIZED);
     }
 }

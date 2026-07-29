@@ -113,7 +113,8 @@ mod tests {
         Mac::update(&mut mac, body);
         let sig = B64.encode(Mac::finalize(mac).into_bytes());
         // Same body + key, but the verifier is told a different URL → reject.
-        let err = verify_webhook_signature("https://wrong.example/wh", body, &sig, key).unwrap_err();
+        let err =
+            verify_webhook_signature("https://wrong.example/wh", body, &sig, key).unwrap_err();
         assert!(matches!(err, AppError::Unauthorized));
     }
 

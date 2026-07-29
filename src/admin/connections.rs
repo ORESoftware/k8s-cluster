@@ -13,10 +13,7 @@ use super::layout::{connection_status_badge, empty_row, section_header, short_id
 use super::time::rel_opt;
 
 /// Full table fragment (used for both initial tab paint and HTMX tab swap).
-pub async fn table_fragment(
-    State(state): State<AppState>,
-    Path(tenant_id): Path<Uuid>,
-) -> Markup {
+pub async fn table_fragment(State(state): State<AppState>, Path(tenant_id): Path<Uuid>) -> Markup {
     render_table(&state, tenant_id).await
 }
 

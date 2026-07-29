@@ -445,6 +445,12 @@ ExternalSecrets.
   `pg_advisory_xact_lock(tenant_part, hash(idempotency_key))` so two
   concurrent calls with the same key always see the same (committed)
   result.
+- **Ledger posting is bounded-model checked.**
+  [`formal/ledger-model`](formal/ledger-model/README.md) exhaustively explores
+  two same-key callers, balanced and unbalanced drafts, partial posting
+  insertion, rollback/crash, commit, replay, and post-commit event publication.
+  Run it with
+  `cargo test --manifest-path formal/ledger-model/Cargo.toml --locked`.
 - **Customer snapshots are transactionally consistent.** Fiducia excludes
   cooperating cross-service writers while a Postgres repeatable-read, read-only
   transaction gives all component queries one MVCC snapshot.
