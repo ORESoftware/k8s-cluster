@@ -177,7 +177,7 @@ scripts/with-flags2env.sh --port 8080 --static-dir ../fiducia-marketing.web/dist
 The backend consumes generated Rust and database contracts from
 `fiducia-interfaces` and security-critical webhook verification from
 `fiducia-payments.rs`. CI and the Dockerfile pin those dependencies to commits
-`2c5c806174e067fbe83ad48b724366323ba390a2` and
+`bd718cd72d72aa330534f3688f8fb1ce90c19d10` and
 `0c8b735949f90514545fd03dadcf3ba337a1e948`; neither follows a moving branch.
 The container checks each commit out detached and verifies its full `HEAD`
 before compiling with the committed Cargo lockfile. CI,
