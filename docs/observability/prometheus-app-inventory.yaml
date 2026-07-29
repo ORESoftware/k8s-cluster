@@ -67,27 +67,61 @@ first_wave:
 project_workstreams:
   - project: github.com/ORESoftware
     issue: DEN-671
+    deployed_scope: k8s-cluster-owned application services
     status: in-progress
   - project: github.com/daedalus-fab
     issue: DEN-672
+    deployed_scope: fabrication and monorepo services
     status: backlog
   - project: github.com/athlet-o
     issue: DEN-673
+    deployed_scope: app and backend services
     status: backlog
   - project: github.com/usa-acc
     issue: DEN-674
+    deployed_scope: REST API backend
     status: backlog
   - project: github.com/shared-auth
     issue: DEN-675
+    deployed_scope: auth service and NATS bridge
     status: backlog
   - project: github.com/quaestor-ledger
     issue: DEN-676
+    deployed_scope: billing and ledger services
     status: backlog
   - project: github.com/benefactor-cc
     issue: DEN-677
+    deployed_scope: benefactor backend
     status: backlog
   - project: github.com/messaging-intel
     issue: DEN-678
+    deployed_scope: capture and research services
+    status: backlog
+  - project: github.com/ORESoftware/mip-solver-node.rs
+    issue: DEN-679
+    deployed_scope: in-house MIP solver node
+    status: backlog
+  - project: github.com/ORESoftware/ai-agent-bridge.rs
+    issue: DEN-680
+    deployed_scope: live HTTP and TCP agent bridge
+    status: backlog
+  - project: github.com/claritas-viz
+    issue: DEN-681
+    deployed_scope: data visualization server
+    status: backlog
+  - project: github.com/sagitta-stack
+    issue: DEN-682
+    deployed_scope: Dart HTTP and WebSocket server
+    status: backlog
+  - project: github.com/scintilla-run
+    issue: DEN-683
+    deployed_scope: Gleam lambda runner and monorepo services
+    status: backlog
+
+fleet_follow_ups:
+  - issue: DEN-684
+    project: Shared Platform & Portfolio Architecture
+    scope: replace static Service targets with least-privilege per-pod Kubernetes discovery
     status: backlog
 
 completion_rule:
