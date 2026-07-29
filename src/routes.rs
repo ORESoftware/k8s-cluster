@@ -20,7 +20,7 @@ use crate::{
     app::{asset_dir, AppState, PublicConfig},
     data::DashboardStats,
     database::DatabaseReadiness,
-    telemetry, views,
+    metrics, telemetry, views,
 };
 
 pub(crate) fn router(state: AppState) -> Router {
@@ -41,6 +41,7 @@ pub(crate) fn router(state: AppState) -> Router {
             header_state,
             security_headers,
         ))
+        .layer(middleware::from_fn(metrics::record_http))
         .layer(middleware::from_fn(telemetry::record_http_metrics))
         .with_state(state)
 }
@@ -50,6 +51,7 @@ fn app_routes() -> Router<AppState> {
         .route("/", get(home))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
+        .route("/metrics", get(metrics::endpoint))
         .route("/config", get(public_config))
         .route("/portal", get(portal))
         .route("/partials/overview", get(overview_partial))
