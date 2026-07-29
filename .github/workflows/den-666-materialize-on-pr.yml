@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/den-666-materialize-on-pr.yml
       - .github/workflows/den-666-wire-prometheus-fleet.yml
+      - remote/tools/materialize-prometheus-first-wave.py
 
 permissions:
   contents: write
@@ -27,13 +28,7 @@ jobs:
           node-version: '22'
 
       - name: Execute the reviewed branch materializer
-        shell: bash
-        run: |
-          sed -n "/python3 - <<'PY'/,/^          PY$/p" \
-            .github/workflows/den-666-wire-prometheus-fleet.yml \
-            | sed '1d;$d;s/^          //' > /tmp/den-666-materialize.py
-          test -s /tmp/den-666-materialize.py
-          python3 /tmp/den-666-materialize.py
+        run: python3 remote/tools/materialize-prometheus-first-wave.py
 
       - name: Install focused test dependencies
         working-directory: remote/tests
@@ -53,7 +48,8 @@ jobs:
         run: |
           git rm \
             .github/workflows/den-666-materialize-on-pr.yml \
-            .github/workflows/den-666-wire-prometheus-fleet.yml
+            .github/workflows/den-666-wire-prometheus-fleet.yml \
+            remote/tools/materialize-prometheus-first-wave.py
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add \
