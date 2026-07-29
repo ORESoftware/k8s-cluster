@@ -21,6 +21,7 @@ first_wave:
     port: 8117
     implementation: in-process-rust
     network_policy: observability/app=dd-prometheus -> tcp/8117
+    public_route: app.fiducia.cloud returns 404 for /metrics
     rollout_dependency: merge application PR before merging the scrape target
     source_verification: green
     status: source-ready-rollout-pending
@@ -34,6 +35,7 @@ first_wave:
     port: 8081
     implementation: in-process-rust
     network_policy: observability/app=dd-prometheus -> tcp/8081
+    public_route: dormant service is not referenced by the public gateway
     rollout_dependency: publish and pin an image containing the endpoint before merging the scrape target
     source_verification: green
     status: source-ready-image-pending
@@ -47,6 +49,7 @@ first_wave:
     port: 8127
     implementation: in-process-rust
     network_policy: observability/app=dd-prometheus -> tcp/8127
+    public_route: gateway returns 404 for /akrion-sim/metrics
     rollout_dependency: merge the application PR and bump the k8s-cluster submodule/revision before merging the scrape target
     source_verification: green
     status: source-ready-revision-bump-pending
@@ -60,6 +63,7 @@ first_wave:
     port: 9113
     implementation: nginx-prometheus-exporter-sidecar
     network_policy: observability/app=dd-prometheus -> tcp/9113
+    public_route: gateway proxies site port 8080 only and never exporter port 9113
     rollout_dependency: merge this k8s-cluster change
     source_verification: direct-scrape-contract-green
     status: cluster-rollout-pending
@@ -127,6 +131,7 @@ fleet_follow_ups:
 completion_rule:
   application: endpoint test passes and merged source is represented by the deployed revision
   cluster: service DNS and port match the Prometheus target and NetworkPolicy admits the labeled Prometheus pod
+  gateway: metrics are not publicly routed unless explicitly reviewed
   monitoring: live Prometheus reports up == 1 and target-down alert is loaded
   replica_follow_up: migrate replica-local metrics from static Service targets to Kubernetes discovery
   evidence: CI logs and live verification are attached to the owning Linear issue
