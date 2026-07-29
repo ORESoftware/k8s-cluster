@@ -213,6 +213,12 @@ test("machine-readable inventory routes every discovered project workstream to L
     "DEN-676",
     "DEN-677",
     "DEN-678",
+    "DEN-679",
+    "DEN-680",
+    "DEN-681",
+    "DEN-682",
+    "DEN-683",
+    "DEN-684",
   ]) {
     assert.ok(inventory.includes(issue), `inventory must include ${issue}`);
   }
@@ -221,4 +227,5 @@ test("machine-readable inventory routes every discovered project workstream to L
     /public_gateway_exposure:\s*forbidden-by-default/,
   );
   assert.match(inventory, /label_policy:\s*bounded-non-sensitive/);
+  assert.match(inventory, /replica_coverage:\s*service-level-not-guaranteed-per-pod/);
 });
