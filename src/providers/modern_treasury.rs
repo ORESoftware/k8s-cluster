@@ -385,7 +385,11 @@ fn provider_err(provider: &str, message: String) -> AppError {
 /// with HMAC-SHA256 keyed by the webhook secret and delivers the hex digest
 /// in the `X-Signature` header. Constant-time compare; tolerant of a
 /// `sha256=` prefix some proxies add.
-pub fn verify_webhook_signature(body: &[u8], signature_header: &str, secret: &str) -> AppResult<()> {
+pub fn verify_webhook_signature(
+    body: &[u8],
+    signature_header: &str,
+    secret: &str,
+) -> AppResult<()> {
     use hmac::{Hmac, KeyInit, Mac};
     use sha2::Sha256;
 

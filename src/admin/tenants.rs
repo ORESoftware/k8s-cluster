@@ -148,7 +148,10 @@ pub async fn create(
     let display_name = input.display_name.trim().to_string();
     let country_code = input.country_code.trim().to_uppercase();
     let us_state = input.us_state.and_then(non_empty).map(|s| s.to_uppercase());
-    let base_currency = input.base_currency.and_then(non_empty).map(|s| s.to_uppercase());
+    let base_currency = input
+        .base_currency
+        .and_then(non_empty)
+        .map(|s| s.to_uppercase());
 
     validation::slug(&slug).map_err(|m| AppError::BadRequest(m.into()))?;
     validation::display_name(&display_name).map_err(|m| AppError::BadRequest(m.into()))?;
@@ -182,7 +185,9 @@ pub async fn create(
         return Ok(tenant_row(&tenant).into_response());
     }
     // Non-HTMX fallback: re-render the list page.
-    list_page(State(state)).await.map(IntoResponse::into_response)
+    list_page(State(state))
+        .await
+        .map(IntoResponse::into_response)
 }
 
 pub async fn detail_page(
@@ -192,7 +197,11 @@ pub async fn detail_page(
     headers: HeaderMap,
 ) -> AppResult<Response> {
     let tenant = state.tenants.by_id(id).await?;
-    let active = q.tab.as_deref().and_then(Tab::from_slug).unwrap_or(Tab::Connections);
+    let active = q
+        .tab
+        .as_deref()
+        .and_then(Tab::from_slug)
+        .unwrap_or(Tab::Connections);
 
     // Inner content rendered server-side on first paint; HTMX swaps it for
     // subsequent tab clicks.
@@ -264,7 +273,11 @@ fn status_badge(status: &str) -> Markup {
 
 fn non_empty(s: String) -> Option<String> {
     let t = s.trim();
-    if t.is_empty() { None } else { Some(t.to_string()) }
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
+    }
 }
 
 #[derive(Debug, Deserialize)]

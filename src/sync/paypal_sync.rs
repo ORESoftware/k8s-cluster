@@ -232,11 +232,7 @@ const ACCT_FEES: &str = "expense/fees/paypal";
 const ACCT_REFUNDS: &str = "expense/refunds/paypal";
 const ACCT_BANK_PENDING: &str = "asset/bank/pending";
 
-async fn post_one(
-    ctx: &SyncCtx<'_>,
-    merchant_id: &str,
-    info: &TxInfo,
-) -> AppResult<PostOutcome> {
+async fn post_one(ctx: &SyncCtx<'_>, merchant_id: &str, info: &TxInfo) -> AppResult<PostOutcome> {
     let amount = match &info.transaction_amount {
         Some(m) => m.clone(),
         None => return Ok(PostOutcome::Unrecognized),

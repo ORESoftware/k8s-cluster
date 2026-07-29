@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
-use sea_orm::{ConnectionTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryOrder, QuerySelect, Set};
+use sea_orm::{
+    ConnectionTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryOrder, QuerySelect, Set,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 

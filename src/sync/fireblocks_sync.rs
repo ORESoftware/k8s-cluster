@@ -151,7 +151,10 @@ async fn post_one(
     let cur = currency.as_str().to_string();
 
     let direction_is_inflow = source_is_external(tx);
-    let workspace_id = conn.external_account_id.clone().unwrap_or_else(|| "default".into());
+    let workspace_id = conn
+        .external_account_id
+        .clone()
+        .unwrap_or_else(|| "default".into());
     let clearing = format!("{CLEARING_PREFIX}{}/{}", workspace_id, fiat.to_lowercase());
 
     let (cp_acct, cp_kind): (&str, AccountKind) = if direction_is_inflow {
@@ -179,10 +182,7 @@ async fn post_one(
         "fiat_equivalent": fiat,
     });
 
-    for (code, kind) in &[
-        (clearing.as_str(), AccountKind::Asset),
-        (cp_acct, cp_kind),
-    ] {
+    for (code, kind) in &[(clearing.as_str(), AccountKind::Asset), (cp_acct, cp_kind)] {
         ctx.ledger
             .ensure_account(
                 ctx.tenant_id,

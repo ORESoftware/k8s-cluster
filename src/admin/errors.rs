@@ -55,7 +55,10 @@ mod tests {
             (AppError::Unauthorized, "unauthorized"),
             (AppError::Forbidden, "forbidden"),
             (AppError::Conflict("x".into()), "conflict"),
-            (AppError::LedgerInvariant("x".into()), "ledger invariant violation"),
+            (
+                AppError::LedgerInvariant("x".into()),
+                "ledger invariant violation",
+            ),
             (
                 AppError::Provider {
                     provider: "stripe".into(),

@@ -146,10 +146,7 @@ mod tests {
     /// here, but the check itself is the load-bearing fix; keep its
     /// behavior pinned with a unit test that mirrors the handler's
     /// branch order.
-    fn validate_body_tenant(
-        path_tenant_id: Uuid,
-        draft: &DraftTransaction,
-    ) -> Result<(), String> {
+    fn validate_body_tenant(path_tenant_id: Uuid, draft: &DraftTransaction) -> Result<(), String> {
         if !draft.tenant_id.is_nil() && draft.tenant_id != path_tenant_id {
             return Err(format!(
                 "body.tenant_id {} does not match path tenant_id {}",

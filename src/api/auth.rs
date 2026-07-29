@@ -124,11 +124,7 @@ pub async fn require_api_auth(
     if !provided.is_empty() && const_time_eq(provided.as_bytes(), expected.as_bytes()) {
         return next.run(req).await;
     }
-    let mut resp = (
-        StatusCode::UNAUTHORIZED,
-        "api authentication required\n",
-    )
-        .into_response();
+    let mut resp = (StatusCode::UNAUTHORIZED, "api authentication required\n").into_response();
     resp.headers_mut().insert(
         header::WWW_AUTHENTICATE,
         HeaderValue::from_static("Bearer realm=\"billing-api\""),
@@ -377,14 +373,8 @@ mod tests {
             )
             .route("/v1/webhooks/stripe", post(|| async { "ok-stripe" }))
             .route("/v1/verify/x/y", get(|| async { "ok-verify" }))
-            .route(
-                "/v1/oauth/stripe/start",
-                get(|| async { "ok-oauth-start" }),
-            )
-            .route(
-                "/v1/oauth/stripe/callback",
-                get(|| async { "ok-oauth-cb" }),
-            )
+            .route("/v1/oauth/stripe/start", get(|| async { "ok-oauth-start" }))
+            .route("/v1/oauth/stripe/callback", get(|| async { "ok-oauth-cb" }))
             .route("/healthz", get(|| async { "ok-health" }))
             .layer(axum::middleware::from_fn_with_state(
                 auth.clone(),
@@ -443,13 +433,7 @@ mod tests {
     async fn bearer_configured_rejects_wrong_token() {
         let app = build_test_router(auth_arc(Some("hunter2")));
         assert_eq!(
-            status_of(
-                app,
-                "POST",
-                "/v1/tenants",
-                Some("Bearer not-the-token")
-            )
-            .await,
+            status_of(app, "POST", "/v1/tenants", Some("Bearer not-the-token")).await,
             StatusCode::UNAUTHORIZED
         );
     }

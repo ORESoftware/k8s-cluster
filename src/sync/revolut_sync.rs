@@ -23,8 +23,8 @@ pub async fn sync_revolut(
         .connections
         .load_credential(ctx.tenant_id, conn.id)
         .await?;
-    let cred: RevolutCredential = serde_json::from_slice(&plaintext)
-        .map_err(|e| AppError::Provider {
+    let cred: RevolutCredential =
+        serde_json::from_slice(&plaintext).map_err(|e| AppError::Provider {
             provider: "revolut".into(),
             message: format!("decode sealed credential: {e}"),
         })?;

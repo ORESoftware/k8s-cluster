@@ -6,9 +6,7 @@ use chrono::{Duration, Utc};
 
 use crate::error::{AppError, AppResult};
 use crate::providers::connection::ProviderConnection;
-use crate::providers::gocardless::{
-    self, GoCardlessApi, GoCardlessCredential, GoCardlessPayment,
-};
+use crate::providers::gocardless::{self, GoCardlessApi, GoCardlessCredential, GoCardlessPayment};
 
 use super::handler::{SyncCtx, SyncSummary};
 

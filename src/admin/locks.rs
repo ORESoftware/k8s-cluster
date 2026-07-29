@@ -10,10 +10,7 @@ use super::errors;
 use super::layout::{empty_row, section_header, short_id};
 use super::time::rel;
 
-pub async fn table_fragment(
-    State(state): State<AppState>,
-    Path(tenant_id): Path<Uuid>,
-) -> Markup {
+pub async fn table_fragment(State(state): State<AppState>, Path(tenant_id): Path<Uuid>) -> Markup {
     render_table(&state, tenant_id).await
 }
 

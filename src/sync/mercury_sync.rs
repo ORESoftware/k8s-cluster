@@ -92,10 +92,8 @@ pub async fn sync_mercury(
                         skipped += 1;
                     }
                     Err(e) => {
-                        cursor_map.insert(
-                            account.id.clone(),
-                            serde_json::json!({ "offset": offset }),
-                        );
+                        cursor_map
+                            .insert(account.id.clone(), serde_json::json!({ "offset": offset }));
                         let _ = ctx
                             .connections
                             .merge_metadata(
@@ -118,10 +116,7 @@ pub async fn sync_mercury(
             has_more = true;
         }
 
-        cursor_map.insert(
-            account.id.clone(),
-            serde_json::json!({ "offset": offset }),
-        );
+        cursor_map.insert(account.id.clone(), serde_json::json!({ "offset": offset }));
     }
 
     ctx.connections

@@ -188,7 +188,10 @@ mod tests {
     fn derive_is_deterministic() {
         let tenant = Uuid::from_u128(0xDEADBEEF_0000_0000_0000_000000000042);
         let region = Region::Us { state: *b"WA" };
-        assert_eq!(ShardKey::derive(tenant, region), ShardKey::derive(tenant, region));
+        assert_eq!(
+            ShardKey::derive(tenant, region),
+            ShardKey::derive(tenant, region)
+        );
     }
 
     #[test]

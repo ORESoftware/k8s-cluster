@@ -42,11 +42,9 @@ pub async fn sync_coinbase_prime(
     let api = CoinbasePrimeApi::new(cred)?;
     let portfolio_id = api.portfolio_id()?.to_string();
 
-    let mut cursor: Option<String> = caller_cursor.map(str::to_string).or_else(|| {
-        conn.last_sync_cursor
-            .clone()
-            .filter(|s| !s.is_empty())
-    });
+    let mut cursor: Option<String> = caller_cursor
+        .map(str::to_string)
+        .or_else(|| conn.last_sync_cursor.clone().filter(|s| !s.is_empty()));
     let mut pages = 0u32;
     let mut total_events: i64 = 0;
     let mut total_postings: i64 = 0;
@@ -54,9 +52,7 @@ pub async fn sync_coinbase_prime(
     let mut has_more = true;
 
     while has_more && pages < MAX_PAGES_PER_RUN {
-        let page = api
-            .list_transactions(cursor.as_deref(), PAGE_SIZE)
-            .await?;
+        let page = api.list_transactions(cursor.as_deref(), PAGE_SIZE).await?;
         pages += 1;
 
         for tx in &page.transactions {
@@ -154,7 +150,11 @@ async fn post_one(
     let kind = tx.type_.as_str();
     let (cp_acct, cp_kind, deposit_like): (&str, AccountKind, bool) = match kind {
         "DEPOSIT" => ("revenue/coinbase_prime/deposits", AccountKind::Income, true),
-        "WITHDRAWAL" => ("expense/coinbase_prime/withdrawals", AccountKind::Expense, false),
+        "WITHDRAWAL" => (
+            "expense/coinbase_prime/withdrawals",
+            AccountKind::Expense,
+            false,
+        ),
         "FEE" => (ACCT_FEES, AccountKind::Expense, false),
         "REWARD" => ("revenue/coinbase_prime/rewards", AccountKind::Income, true),
         "INTERNAL" | "CONVERSION" => {
@@ -225,9 +225,7 @@ async fn post_one(
         idempotency_key: format!("coinbase_prime:tx:{}", tx.id),
         description: Some(format!(
             "coinbase prime {} {symbol} {} ({})",
-            kind,
-            amount_str,
-            tx.id
+            kind, amount_str, tx.id
         )),
         metadata: meta,
         postings,
