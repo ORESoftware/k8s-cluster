@@ -1,4 +1,5 @@
 /target/
+/formal/ledger-model/target/
 .direnv/
 .env
 result
