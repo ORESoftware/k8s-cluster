@@ -6,11 +6,15 @@ on:
       - .github/workflows/prometheus-direct-scrape-contract.yml
       - docs/observability/prometheus-app-inventory.yaml
       - remote/argocd/observability/prometheus.configmap.yaml
+      - remote/argocd/observability/prometheus.deployment.yaml
       - remote/argocd/fiducia/fiducia-backend.deployment.yaml
+      - remote/argocd/fiducia/fiducia-backend.networkpolicy.yaml
       - remote/argocd/canonical-cloud/web.deployment.yaml
       - remote/argocd/canonical-cloud/web.service.yaml
+      - remote/argocd/canonical-cloud/web.networkpolicy.yaml
       - remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.deployment.yaml
       - remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.service.yaml
+      - remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.networkpolicy.yaml
       - remote/argocd/dd-next-runtime/dd-sonus-auris-site.configmap.yaml
       - remote/argocd/dd-next-runtime/dd-sonus-auris-site.deployment.yaml
       - remote/argocd/dd-next-runtime/dd-sonus-auris-site.service.yaml
@@ -23,11 +27,15 @@ on:
       - .github/workflows/prometheus-direct-scrape-contract.yml
       - docs/observability/prometheus-app-inventory.yaml
       - remote/argocd/observability/prometheus.configmap.yaml
+      - remote/argocd/observability/prometheus.deployment.yaml
       - remote/argocd/fiducia/fiducia-backend.deployment.yaml
+      - remote/argocd/fiducia/fiducia-backend.networkpolicy.yaml
       - remote/argocd/canonical-cloud/web.deployment.yaml
       - remote/argocd/canonical-cloud/web.service.yaml
+      - remote/argocd/canonical-cloud/web.networkpolicy.yaml
       - remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.deployment.yaml
       - remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.service.yaml
+      - remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.networkpolicy.yaml
       - remote/argocd/dd-next-runtime/dd-sonus-auris-site.configmap.yaml
       - remote/argocd/dd-next-runtime/dd-sonus-auris-site.deployment.yaml
       - remote/argocd/dd-next-runtime/dd-sonus-auris-site.service.yaml
@@ -70,6 +78,6 @@ jobs:
           corepack prepare pnpm@10.33.0 --activate
           pnpm install --frozen-lockfile
 
-      - name: Verify application endpoints, Service ports, scrape jobs, and alerts
+      - name: Verify endpoints, Service ports, scrape jobs, network reachability, and alerts
         working-directory: remote/tests
         run: pnpm run test:cli:prometheus-direct-scrape
