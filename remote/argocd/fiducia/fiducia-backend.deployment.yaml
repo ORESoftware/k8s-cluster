@@ -26,6 +26,9 @@ spec:
       annotations:
         dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-customer.rs + apps/fiducia-marketing.web)'
         dd.dev/fiducia-build: '2026-06-27-raft-locks-merge'
+        prometheus.io/scrape: 'true'
+        prometheus.io/path: '/metrics'
+        prometheus.io/port: '8117'
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
@@ -177,6 +180,10 @@ metadata:
   namespace: fiducia
   labels:
     app: fiducia-backend
+  annotations:
+    prometheus.io/scrape: 'true'
+    prometheus.io/path: '/metrics'
+    prometheus.io/port: '8117'
 spec:
   type: ClusterIP
   selector:

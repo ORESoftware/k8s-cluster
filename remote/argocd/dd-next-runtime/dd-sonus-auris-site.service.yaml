@@ -5,6 +5,10 @@ metadata:
   namespace: default
   labels:
     app: dd-sonus-auris-site
+  annotations:
+    prometheus.io/scrape: 'true'
+    prometheus.io/path: '/metrics'
+    prometheus.io/port: '9113'
 spec:
   type: ClusterIP
   selector:
@@ -13,3 +17,8 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+    - name: metrics
+      port: 9113
+      targetPort: metrics
+      protocol: TCP
+      appProtocol: http

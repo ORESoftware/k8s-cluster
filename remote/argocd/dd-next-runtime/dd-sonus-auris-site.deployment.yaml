@@ -23,6 +23,9 @@ spec:
     metadata:
       annotations:
         dd.dev/sonus-auris-site-revision: '2f94949c6a36533cec3cfe36022f7f9da50648de'
+        prometheus.io/scrape: 'true'
+        prometheus.io/path: '/metrics'
+        prometheus.io/port: '9113'
       labels:
         app: dd-sonus-auris-site
     spec:
@@ -135,6 +138,55 @@ spec:
               mountPath: /var/run
             - name: nginx-tmp
               mountPath: /tmp
+        - name: nginx-prometheus-exporter
+          image: docker.io/nginx/nginx-prometheus-exporter:1.5.1
+          imagePullPolicy: IfNotPresent
+          args:
+            - --nginx.scrape-uri=http://127.0.0.1:8080/stub_status
+            - --web.listen-address=:9113
+            - --log.format=json
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: metrics
+              containerPort: 9113
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          startupProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            periodSeconds: 5
+            failureThreshold: 12
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
       volumes:
         - name: build-work
           emptyDir: {}

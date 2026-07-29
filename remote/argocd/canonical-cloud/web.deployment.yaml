@@ -28,6 +28,9 @@ spec:
         app.kubernetes.io/component: web
       annotations:
         canonical.cloud/release-sha: "e245ed408810455b7a0c43b9f4e81fd60b172100"
+        prometheus.io/scrape: 'true'
+        prometheus.io/path: '/metrics'
+        prometheus.io/port: '8081'
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
