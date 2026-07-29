@@ -8,7 +8,9 @@ with expected_tables(table_schema, table_name) as (
         ('public'::name, 'acoustic_events'::name),
         ('public'::name, 'client_telemetry'::name),
         ('public'::name, 'user_consents'::name),
-        ('public'::name, 'user_settings'::name)
+        ('public'::name, 'user_settings'::name),
+        ('public'::name, 'devices'::name),
+        ('public'::name, 'entitlements'::name)
 ),
 expected_commands(table_schema, table_name, command) as (
     values
@@ -22,7 +24,12 @@ expected_commands(table_schema, table_name, command) as (
         ('public'::name, 'user_consents'::name, 'INSERT'::text),
         ('public'::name, 'user_settings'::name, 'SELECT'::text),
         ('public'::name, 'user_settings'::name, 'INSERT'::text),
-        ('public'::name, 'user_settings'::name, 'UPDATE'::text)
+        ('public'::name, 'user_settings'::name, 'UPDATE'::text),
+        ('public'::name, 'devices'::name, 'SELECT'::text),
+        ('public'::name, 'devices'::name, 'INSERT'::text),
+        ('public'::name, 'devices'::name, 'UPDATE'::text),
+        ('public'::name, 'devices'::name, 'DELETE'::text),
+        ('public'::name, 'entitlements'::name, 'SELECT'::text)
 ),
 relations as (
     select
@@ -99,7 +106,7 @@ violations(severity, code, object_name, detail) as (
         'critical',
         'missing_owner_policy',
         format('%I.%I:%s', e.table_schema, e.table_name, lower(e.command)),
-        'no policy for this command (or ALL) binds the row to auth.uid()'
+        'no policy for this command (or ALL) binds the row to auth.uid() and requires aal2'
     from expected_commands e
     where not exists (
         select 1
@@ -108,11 +115,17 @@ violations(severity, code, object_name, detail) as (
           and p.table_name = e.table_name
           and p.command in (e.command, 'ALL')
           and case e.command
-                when 'INSERT' then p.check_expression ~* 'auth[.]uid\s*[(]\s*[)]'
+                when 'INSERT' then
+                    p.check_expression ~* 'auth[.]uid\s*[(]\s*[)]'
+                    and p.check_expression ~* 'auth[.]jwt\s*[(]\s*[)].*aal.*aal2'
                 when 'UPDATE' then
                     p.using_expression ~* 'auth[.]uid\s*[(]\s*[)]'
                     and p.check_expression ~* 'auth[.]uid\s*[(]\s*[)]'
-                else p.using_expression ~* 'auth[.]uid\s*[(]\s*[)]'
+                    and p.using_expression ~* 'auth[.]jwt\s*[(]\s*[)].*aal.*aal2'
+                    and p.check_expression ~* 'auth[.]jwt\s*[(]\s*[)].*aal.*aal2'
+                else
+                    p.using_expression ~* 'auth[.]uid\s*[(]\s*[)]'
+                    and p.using_expression ~* 'auth[.]jwt\s*[(]\s*[)].*aal.*aal2'
               end
     )
 
