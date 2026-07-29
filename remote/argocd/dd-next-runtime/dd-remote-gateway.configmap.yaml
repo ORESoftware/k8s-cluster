@@ -1748,6 +1748,12 @@ data:
         proxy_pass http://dd-akrion-web-server-rs.default.svc.cluster.local:8127;
       }
 
+      # The portal has an operator-authenticated public prefix, but metrics
+      # remain an in-cluster-only control-plane surface.
+      location ^~ /akrion-sim/metrics {
+        return 404;
+      }
+
       location /akrion-sim/ {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
@@ -2815,6 +2821,12 @@ data:
       # endpoint churn; variable upstreams require an explicit DNS resolver.
       resolver kube-dns.kube-system.svc.cluster.local valid=10s ipv6=off;
       resolver_timeout 2s;
+
+      # Prometheus reaches this endpoint directly through the ClusterIP Service.
+      # Never publish process or request metrics on the customer-facing origin.
+      location ^~ /metrics {
+        return 404;
+      }
 
       location / {
         proxy_http_version 1.1;

@@ -195,6 +195,31 @@ test("static Sonus site uses a locked-down nginx exporter sidecar", async () => 
   assert.match(networkPolicy, /port:\s*53/);
 });
 
+test("public gateway routes do not publish application metrics", async () => {
+  const gateway = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml",
+  );
+
+  assert.match(
+    gateway,
+    /server_name app\.fiducia\.cloud;[\s\S]*?location \^~ \/metrics \{\s*return 404;/,
+  );
+  assert.match(
+    gateway,
+    /location \^~ \/akrion-sim\/metrics \{\s*return 404;/,
+  );
+  assert.doesNotMatch(
+    gateway,
+    /canonical-cloud-web\.canonical-cloud\.svc\.cluster\.local/,
+    "the dormant Canonical Service must not be publicly routed before activation",
+  );
+  assert.doesNotMatch(
+    gateway,
+    /dd-sonus-auris-site\.default\.svc\.cluster\.local:9113/,
+    "the Sonus exporter port must never be exposed by the gateway",
+  );
+});
+
 test("machine-readable inventory routes every discovered project workstream to Linear", async () => {
   const inventory = await readRepoFile(
     "docs/observability/prometheus-app-inventory.yaml",
