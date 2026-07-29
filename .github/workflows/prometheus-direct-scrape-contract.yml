@@ -18,6 +18,7 @@ on:
       - remote/argocd/dd-next-runtime/dd-sonus-auris-site.configmap.yaml
       - remote/argocd/dd-next-runtime/dd-sonus-auris-site.deployment.yaml
       - remote/argocd/dd-next-runtime/dd-sonus-auris-site.service.yaml
+      - remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml
       - remote/tests/general/prometheus-direct-scrape-contract.test.ts
       - remote/tests/package.json
       - remote/tests/pnpm-lock.yaml
@@ -39,6 +40,7 @@ on:
       - remote/argocd/dd-next-runtime/dd-sonus-auris-site.configmap.yaml
       - remote/argocd/dd-next-runtime/dd-sonus-auris-site.deployment.yaml
       - remote/argocd/dd-next-runtime/dd-sonus-auris-site.service.yaml
+      - remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml
       - remote/tests/general/prometheus-direct-scrape-contract.test.ts
       - remote/tests/package.json
       - remote/tests/pnpm-lock.yaml
@@ -78,6 +80,6 @@ jobs:
           corepack prepare pnpm@10.33.0 --activate
           pnpm install --frozen-lockfile
 
-      - name: Verify endpoints, Service ports, scrape jobs, network reachability, and alerts
+      - name: Verify endpoints, Services, network reachability, private gateway surface, and alerts
         working-directory: remote/tests
         run: pnpm run test:cli:prometheus-direct-scrape
