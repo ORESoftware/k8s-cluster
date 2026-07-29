@@ -5,9 +5,9 @@ import test from "node:test";
 
 const dist = resolve("dist");
 const site = new URL(
-  process.env.SONUS_AURIS_SITE_URL ?? "https://sonus-auris.github.io",
+  process.env.SONUS_AURIS_SITE_URL ?? "https://sonusauris.app",
 );
-const base = (process.env.SONUS_AURIS_SITE_BASE ?? "/sonus-auris-site.web")
+const base = (process.env.SONUS_AURIS_SITE_BASE ?? "/")
   .replace(/\/+$/, "");
 
 function walk(directory) {
