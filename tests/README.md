@@ -14,3 +14,6 @@ CI checks out submodules recursively before running them.
   `apps/fiducia-interfaces` (SQL), `apps/fiducia-sync` (Rust core), and its
   TS/JS transport decoders. Skips with an actionable message when the app
   submodules are not checked out.
+- `formal-methods-manifest-contract.test.mjs` — validates the four public
+  `formal/fm.toml` adopters at their reviewed gitlinks and runs fail-closed
+  schema/path/status self-tests for the future `fmctl` contract.
