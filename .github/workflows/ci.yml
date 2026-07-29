@@ -26,6 +26,13 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+
+      - name: Test repository and submodule contract
+        run: python -m unittest tests/test_repository_contract.py
+
       - name: Validate declared submodule gitlinks
         run: |
           set -euo pipefail
