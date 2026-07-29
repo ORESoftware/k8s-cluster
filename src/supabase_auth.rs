@@ -47,6 +47,10 @@ impl SupabaseIdentity {
 #[derive(Debug, Deserialize)]
 struct SupabaseClaims {
     sub: String,
+    /// Supabase raises this claim to `aal2` only after a verified MFA
+    /// challenge. Passwordless email OTP alone establishes `aal1`.
+    #[serde(default)]
+    aal: Option<String>,
     #[serde(default)]
     email: Option<String>,
     /// Supabase places email confirmation state here. It is a top-level claim on
@@ -65,6 +69,11 @@ struct UserMetadata {
 }
 
 impl SupabaseClaims {
+    /// Whether the current access token proves the mandatory second factor.
+    fn has_aal2(&self) -> bool {
+        self.aal.as_deref() == Some("aal2")
+    }
+
     /// Whether Supabase has confirmed the caller actually controls this address.
     ///
     /// Every email-keyed decision downstream (account display identity, cloud
@@ -164,6 +173,9 @@ impl SupabaseVerifier {
                 .map_err(|_| ServiceError::Unauthorized)?
                 .claims
         };
+        if !claims.has_aal2() {
+            return Err(ServiceError::Unauthorized);
+        }
         let subject = claims.sub.trim().to_string();
         if subject.is_empty()
             || subject.len() > 160
@@ -355,6 +367,7 @@ mod tests {
         let mut body = serde_json::json!({
             "sub": "00000000-0000-4000-8000-000000000001",
             "email": "listener@example.test",
+            "aal": "aal2",
             "aud": "authenticated",
             "iss": TEST_ISSUER,
             "exp": exp,
@@ -419,6 +432,7 @@ mod tests {
     fn claims(email: &str, verified: Option<bool>, meta_verified: Option<bool>) -> SupabaseClaims {
         SupabaseClaims {
             sub: "user-1".to_string(),
+            aal: Some("aal2".to_string()),
             email: Some(email.to_string()),
             email_verified: verified,
             user_metadata: meta_verified.map(|v| UserMetadata {
@@ -435,6 +449,30 @@ mod tests {
         assert!(!claims("listener@example.test", Some(false), None).email_is_confirmed());
         // A token with no confirmation claim at all must fail closed.
         assert!(!claims("listener@example.test", None, None).email_is_confirmed());
+    }
+
+    #[tokio::test]
+    async fn aal1_and_missing_aal_are_rejected() {
+        let verifier = SupabaseVerifier::from_config(&pinned_config()).expect("verifier");
+        let http = reqwest::Client::new();
+
+        for aal in [Some("aal1"), None] {
+            let mut body = token_body(Some(true));
+            match aal {
+                Some(value) => {
+                    body["aal"] = serde_json::Value::String(value.to_string());
+                }
+                None => {
+                    body.as_object_mut()
+                        .expect("token body object")
+                        .remove("aal");
+                }
+            }
+            assert!(
+                verifier.verify(&http, &hs256_token(body)).await.is_err(),
+                "tokens below AAL2 must fail closed"
+            );
+        }
     }
 
     #[test]
