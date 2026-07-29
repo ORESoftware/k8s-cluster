@@ -52,7 +52,7 @@ jobs:
       - name: Report unavailable integration tests
         if: steps.shared_libs.outcome != 'success'
         run: |
-          echo "::warning::The private shared-library token is unavailable or expired; source checks passed, but service integration tests were skipped."
+          echo "::warning::The private shared-library token is unavailable or expired; service integration tests were skipped."
 
       - name: Initialize shared Rust libraries
         if: steps.shared_libs.outcome == 'success'
