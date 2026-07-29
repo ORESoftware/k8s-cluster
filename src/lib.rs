@@ -128,6 +128,7 @@ mod realtime;
 mod recomposition_catalog_content;
 mod release_catalog_content;
 mod release_gate_catalog_content;
+pub mod release_policy;
 mod release_preflight_content;
 mod root_inventory_content;
 mod safety_catalog_content;

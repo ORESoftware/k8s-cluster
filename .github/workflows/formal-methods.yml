@@ -1,0 +1,143 @@
+name: Formal methods
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: formal-methods-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  machine-release:
+    name: Quint machine-release policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      QUINT_PACKAGE: '@informalsystems/quint@0.32.0'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Java for TLC
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Prepare evidence directory
+        run: mkdir -p .formal-artifacts
+
+      - name: Typecheck the specification
+        shell: bash
+        run: |
+          set +e
+          npx --yes --package="$QUINT_PACKAGE" quint typecheck \
+            formal/release_gate.qnt 2>&1 \
+            | tee .formal-artifacts/typecheck.log
+          status=${PIPESTATUS[0]}
+          set -e
+          exit "$status"
+
+      - name: Exercise rejection and safe-release witnesses
+        shell: bash
+        run: |
+          set +e
+          npx --yes --package="$QUINT_PACKAGE" quint run \
+            formal/release_gate.qnt \
+            --max-samples=20000 \
+            --max-steps=45 \
+            --seed=0x31f899ea7b1d5878 \
+            --invariant=release_safety \
+            --witnesses \
+              stale_evidence_rejection_reached \
+              preview_without_authorization_reached \
+              blocked_authorization_reached \
+              safe_release_reached \
+              duplicate_authorization_reached \
+            --verbosity=1 2>&1 \
+            | tee .formal-artifacts/simulation.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          if grep -q 'was witnessed in 0 trace(s)' .formal-artifacts/simulation.log; then
+            echo "a required release-policy witness was unreachable"
+            exit 1
+          fi
+
+      - name: Replay authorized-revision invalidation
+        shell: bash
+        run: |
+          set +e
+          npx --yes --package="$QUINT_PACKAGE" quint run \
+            formal/release_gate.qnt \
+            --init=init_authorized \
+            --step=revision_step \
+            --max-samples=1 \
+            --max-steps=1 \
+            --invariant=release_safety \
+            --witnesses revision_invalidation_reached \
+            --verbosity=1 2>&1 \
+            | tee .formal-artifacts/revision-invalidation.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          if grep -q 'was witnessed in 0 trace(s)' .formal-artifacts/revision-invalidation.log; then
+            echo "the revision-invalidation witness was unreachable"
+            exit 1
+          fi
+
+      - name: Exhaustively verify the finite state graph
+        shell: bash
+        run: |
+          set +e
+          npx --yes --package="$QUINT_PACKAGE" quint verify \
+            formal/release_gate.qnt \
+            --backend=tlc \
+            --invariant=release_safety 2>&1 \
+            | tee .formal-artifacts/tlc.log
+          status=${PIPESTATUS[0]}
+          set -e
+          exit "$status"
+
+      - name: Generate implementation replay traces
+        shell: bash
+        run: |
+          set +e
+          npx --yes --package="$QUINT_PACKAGE" quint run \
+            formal/release_gate.qnt \
+            --max-samples=500 \
+            --max-steps=30 \
+            --n-traces=8 \
+            --mbt \
+            --out-itf='.formal-artifacts/release-gate-{seq}.itf.json' 2>&1 \
+            | tee .formal-artifacts/trace-generation.log
+          status=${PIPESTATUS[0]}
+          set -e
+          exit "$status"
+
+      - name: Upload formal-methods evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fabrication-release-formal-methods
+          path: .formal-artifacts/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
