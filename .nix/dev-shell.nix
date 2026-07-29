@@ -1,6 +1,8 @@
-{ pkgs }:
+{ pkgs, agentCheck }:
 let
   shellPackages = with pkgs; [
+    agentCheck
+    actionlint
     argocd
     awscli2
     bacon
@@ -12,18 +14,22 @@ let
     git
     gleam
     go
+    gh
     jq
     just
     kubectl
     kustomize
     kubernetes-helm
     nodejs_22
+    nixfmt
     opentofu
     pnpm_10
     postgresql_16
+    python312
     rust-analyzer
     rustc
     rustfmt
+    ruff
     shellcheck
     shfmt
     yq-go
