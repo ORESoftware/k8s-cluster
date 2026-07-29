@@ -38,7 +38,7 @@ jobs:
         with:
           persist-credentials: false
           repository: fiducia-cloud/fiducia-interfaces
-          ref: 2c5c806174e067fbe83ad48b724366323ba390a2
+          ref: bd718cd72d72aa330534f3688f8fb1ce90c19d10
           path: fiducia-interfaces
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
