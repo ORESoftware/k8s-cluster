@@ -1,0 +1,353 @@
+name: wire-den-666-prometheus-fleet
+
+on:
+  push:
+    branches:
+      - agent/den-666-prometheus-fleet
+    paths:
+      - .github/workflows/den-666-wire-prometheus-fleet.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: agent/den-666-prometheus-fleet
+          persist-credentials: true
+
+      - name: Install Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Patch the four first-wave workloads and central scraper
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(relative: str, old: str, new: str) -> None:
+              path = Path(relative)
+              text = path.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{relative}: expected one anchor, found {count}: {old!r}")
+              path.write_text(text.replace(old, new))
+
+          replace_once(
+              "remote/argocd/observability/prometheus.configmap.yaml",
+              """      - job_name: dd-webrtc-signaling
+          metrics_path: /metrics
+""",
+              """      # First-party application scrape contract (DEN-666). These jobs
+      # intentionally coexist with OTLP export through the shared collector.
+      - job_name: fiducia-backend
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - fiducia-backend.fiducia.svc.cluster.local:8117
+      - job_name: canonical-cloud-web
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - canonical-cloud-web.canonical-cloud.svc.cluster.local:8081
+      - job_name: dd-akrion-web-server-rs
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-akrion-web-server-rs.default.svc.cluster.local:8127
+      - job_name: dd-sonus-auris-site
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-sonus-auris-site.default.svc.cluster.local:9113
+      - job_name: dd-webrtc-signaling
+        metrics_path: /metrics
+""",
+          )
+          replace_once(
+              "remote/argocd/observability/prometheus.configmap.yaml",
+              """          - alert: DDPromtailTargetMissing
+""",
+              """          - alert: DDFirstPartyApplicationMetricsTargetDown
+            expr: up{job=~\"fiducia-backend|canonical-cloud-web|dd-akrion-web-server-rs|dd-sonus-auris-site\"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: first-party-applications
+            annotations:
+              summary: \"Application metrics target {{ $labels.job }} is down\"
+              description: \"Prometheus cannot scrape {{ $labels.instance }}/metrics for {{ $labels.job }}.\"
+          - alert: DDPromtailTargetMissing
+""",
+          )
+
+          replace_once(
+              "remote/argocd/fiducia/fiducia-backend.deployment.yaml",
+              """        dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-customer.rs + apps/fiducia-marketing.web)'
+        dd.dev/fiducia-build: '2026-06-27-raft-locks-merge'
+""",
+              """        dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-customer.rs + apps/fiducia-marketing.web)'
+        dd.dev/fiducia-build: '2026-06-27-raft-locks-merge'
+        prometheus.io/scrape: 'true'
+        prometheus.io/path: '/metrics'
+        prometheus.io/port: '8117'
+""",
+          )
+          replace_once(
+              "remote/argocd/fiducia/fiducia-backend.deployment.yaml",
+              """---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-backend
+  namespace: fiducia
+  labels:
+    app: fiducia-backend
+spec:
+""",
+              """---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-backend
+  namespace: fiducia
+  labels:
+    app: fiducia-backend
+  annotations:
+    prometheus.io/scrape: 'true'
+    prometheus.io/path: '/metrics'
+    prometheus.io/port: '8117'
+spec:
+""",
+          )
+
+          replace_once(
+              "remote/argocd/canonical-cloud/web.deployment.yaml",
+              """      annotations:
+        canonical.cloud/release-sha: \"e245ed408810455b7a0c43b9f4e81fd60b172100\"
+""",
+              """      annotations:
+        canonical.cloud/release-sha: \"e245ed408810455b7a0c43b9f4e81fd60b172100\"
+        prometheus.io/scrape: 'true'
+        prometheus.io/path: '/metrics'
+        prometheus.io/port: '8081'
+""",
+          )
+          replace_once(
+              "remote/argocd/canonical-cloud/web.service.yaml",
+              """  labels:
+    app.kubernetes.io/name: canonical-web-server
+    app.kubernetes.io/component: web
+spec:
+""",
+              """  labels:
+    app.kubernetes.io/name: canonical-web-server
+    app.kubernetes.io/component: web
+  annotations:
+    prometheus.io/scrape: 'true'
+    prometheus.io/path: '/metrics'
+    prometheus.io/port: '8081'
+spec:
+""",
+          )
+
+          replace_once(
+              "remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.deployment.yaml",
+              """      annotations:
+        dd.dev/akrion-web-server-revision: 'f692449e7fc3b1c376e5c02a567fd5803c7d388d'
+""",
+              """      annotations:
+        dd.dev/akrion-web-server-revision: 'f692449e7fc3b1c376e5c02a567fd5803c7d388d'
+        prometheus.io/scrape: 'true'
+        prometheus.io/path: '/metrics'
+        prometheus.io/port: '8127'
+""",
+          )
+          replace_once(
+              "remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.service.yaml",
+              """  labels:
+    app: dd-akrion-web-server-rs
+spec:
+""",
+              """  labels:
+    app: dd-akrion-web-server-rs
+  annotations:
+    prometheus.io/scrape: 'true'
+    prometheus.io/path: '/metrics'
+    prometheus.io/port: '8127'
+spec:
+""",
+          )
+
+          replace_once(
+              "remote/argocd/dd-next-runtime/dd-sonus-auris-site.configmap.yaml",
+              """      location / {
+        try_files $uri $uri/ /index.html;
+      }
+""",
+              """      # Only the exporter sidecar may read nginx connection counters.
+      location = /stub_status {
+        access_log off;
+        allow 127.0.0.1;
+        deny all;
+        stub_status;
+      }
+
+      location / {
+        try_files $uri $uri/ /index.html;
+      }
+""",
+          )
+          replace_once(
+              "remote/argocd/dd-next-runtime/dd-sonus-auris-site.deployment.yaml",
+              """      annotations:
+        dd.dev/sonus-auris-site-revision: '2f94949c6a36533cec3cfe36022f7f9da50648de'
+""",
+              """      annotations:
+        dd.dev/sonus-auris-site-revision: '2f94949c6a36533cec3cfe36022f7f9da50648de'
+        prometheus.io/scrape: 'true'
+        prometheus.io/path: '/metrics'
+        prometheus.io/port: '9113'
+""",
+          )
+          replace_once(
+              "remote/argocd/dd-next-runtime/dd-sonus-auris-site.deployment.yaml",
+              """            - name: nginx-tmp
+              mountPath: /tmp
+      volumes:
+""",
+              """            - name: nginx-tmp
+              mountPath: /tmp
+        - name: nginx-prometheus-exporter
+          image: docker.io/nginx/nginx-prometheus-exporter:1.5.1
+          imagePullPolicy: IfNotPresent
+          args:
+            - --nginx.scrape-uri=http://127.0.0.1:8080/stub_status
+            - --web.listen-address=:9113
+            - --log.format=json
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: metrics
+              containerPort: 9113
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          startupProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            periodSeconds: 5
+            failureThreshold: 12
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+""",
+          )
+          replace_once(
+              "remote/argocd/dd-next-runtime/dd-sonus-auris-site.service.yaml",
+              """  labels:
+    app: dd-sonus-auris-site
+spec:
+""",
+              """  labels:
+    app: dd-sonus-auris-site
+  annotations:
+    prometheus.io/scrape: 'true'
+    prometheus.io/path: '/metrics'
+    prometheus.io/port: '9113'
+spec:
+""",
+          )
+          replace_once(
+              "remote/argocd/dd-next-runtime/dd-sonus-auris-site.service.yaml",
+              """    - name: http
+      port: 8080
+      targetPort: http
+""",
+              """    - name: http
+      port: 8080
+      targetPort: http
+    - name: metrics
+      port: 9113
+      targetPort: metrics
+      protocol: TCP
+      appProtocol: http
+""",
+          )
+
+          replace_once(
+              "remote/tests/package.json",
+              '    "test:cli:observability-config": "pnpm exec tsx --test general/observability-config.test.ts",\n',
+              '    "test:cli:observability-config": "pnpm exec tsx --test general/observability-config.test.ts",\n    "test:cli:prometheus-direct-scrape": "pnpm exec tsx --test general/prometheus-direct-scrape-contract.test.ts",\n',
+          )
+          PY
+
+      - name: Install focused test dependencies
+        working-directory: remote/tests
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+          pnpm install --frozen-lockfile
+
+      - name: Run direct-scrape and Sonus contracts
+        working-directory: remote/tests
+        run: |
+          pnpm run test:cli:prometheus-direct-scrape
+          pnpm run test:cli:sonus-auris-site-config
+
+      - name: Commit product changes and remove temporary workflow
+        shell: bash
+        run: |
+          git rm .github/workflows/den-666-wire-prometheus-fleet.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            docs/observability/prometheus-app-inventory.yaml \
+            remote/argocd/observability/prometheus.configmap.yaml \
+            remote/argocd/fiducia/fiducia-backend.deployment.yaml \
+            remote/argocd/canonical-cloud/web.deployment.yaml \
+            remote/argocd/canonical-cloud/web.service.yaml \
+            remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.deployment.yaml \
+            remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.service.yaml \
+            remote/argocd/dd-next-runtime/dd-sonus-auris-site.configmap.yaml \
+            remote/argocd/dd-next-runtime/dd-sonus-auris-site.deployment.yaml \
+            remote/argocd/dd-next-runtime/dd-sonus-auris-site.service.yaml \
+            remote/tests/general/prometheus-direct-scrape-contract.test.ts \
+            remote/tests/package.json
+          git commit -m "DEN-666 wire first-wave Prometheus application scraping"
+          git push origin HEAD:agent/den-666-prometheus-fleet
