@@ -39,8 +39,6 @@ jobs:
           apps/fiducia-interfaces
           apps/fiducia-sync
           apps/fiducia-auth.rs
-          apps/fiducia-ai-agent-bridge.rs
-          apps/fiducia-ai-agent-control-plane
           apps/fiducia-brain.rs
           apps/fiducia-customer.rs
           apps/fiducia-admin.rs
@@ -67,7 +65,7 @@ jobs:
         with:
           version: "v1.32.2"
       - name: Validate fmctl manifests
-        run: python3 scripts/check-formal-methods-manifests.py --self-test
+        run: python3 scripts/check-formal-methods-manifests.py --scope public --self-test
       - run: npm ci --ignore-scripts
       - run: npm audit --omit=dev
       - run: npm test
@@ -104,6 +102,8 @@ jobs:
           node-version: "22.22.1"
       - name: Compile complete generated-interface consumer fleet
         run: scripts/check-interface-consumers.sh full
+      - name: Validate complete fmctl manifest fleet
+        run: python3 scripts/check-formal-methods-manifests.py --scope fleet --self-test
       - run: npm ci --ignore-scripts
       - run: npm audit --omit=dev
       - run: npm test

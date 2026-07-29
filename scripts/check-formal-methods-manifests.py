@@ -19,6 +19,10 @@ EXPECTED_ADOPTERS = (
     "apps/fiducia-brain.rs",
     "apps/fiducia-ai-agent-control-plane",
 )
+PUBLIC_ADOPTERS = (
+    "apps/fiducia-node.rs",
+    "apps/fiducia-brain.rs",
+)
 REQUIRED_OUTPUT_FORMATS = {"human", "json", "junit", "sarif", "itf"}
 EXACT_VERSION = re.compile(r"^[0-9]+(?:\.[0-9]+)*$")
 
@@ -214,9 +218,12 @@ def validate_manifest(repo: Path, data: dict[str, Any]) -> list[Model]:
     return models
 
 
-def load_and_validate(root: Path) -> list[tuple[str, list[Model], dict[str, Any]]]:
+def load_and_validate(
+    root: Path,
+    adopters: tuple[str, ...],
+) -> list[tuple[str, list[Model], dict[str, Any]]]:
     results = []
-    for relative_repo in EXPECTED_ADOPTERS:
+    for relative_repo in adopters:
         repo = root / relative_repo
         manifest_path = repo / "formal" / "fm.toml"
         require(
@@ -240,8 +247,10 @@ def expect_invalid(repo: Path, data: dict[str, Any], expected: str) -> None:
 
 
 def run_self_tests(results: list[tuple[str, list[Model], dict[str, Any]]], root: Path) -> None:
-    _, _, single = results[0]
-    single_repo = root / EXPECTED_ADOPTERS[0]
+    results_by_repo = {relative: data for relative, _, data in results}
+    single_repo_name = PUBLIC_ADOPTERS[0]
+    single = results_by_repo[single_repo_name]
+    single_repo = root / single_repo_name
 
     invalid = copy.deepcopy(single)
     invalid["schema_version"] = 2
@@ -259,10 +268,11 @@ def run_self_tests(results: list[tuple[str, list[Model], dict[str, Any]]], root:
     invalid["outputs"]["artifact_directory"] = "/tmp/formal"
     expect_invalid(single_repo, invalid, "inside the repository")
 
-    brain_data = copy.deepcopy(results[2][2])
+    brain_repo_name = PUBLIC_ADOPTERS[1]
+    brain_data = copy.deepcopy(results_by_repo[brain_repo_name])
     brain_data["models"].append(copy.deepcopy(brain_data["models"][0]))
     expect_invalid(
-        root / EXPECTED_ADOPTERS[2],
+        root / brain_repo_name,
         brain_data,
         "model names must be unique",
     )
@@ -281,11 +291,18 @@ def main() -> int:
         action="store_true",
         help="also prove malformed manifests fail closed",
     )
+    parser.add_argument(
+        "--scope",
+        choices=("public", "fleet"),
+        default="fleet",
+        help="validate public adopters or the complete public/private fleet",
+    )
     args = parser.parse_args()
 
     try:
         root = args.root.resolve()
-        results = load_and_validate(root)
+        adopters = PUBLIC_ADOPTERS if args.scope == "public" else EXPECTED_ADOPTERS
+        results = load_and_validate(root, adopters)
         if args.self_test:
             run_self_tests(results, root)
     except (ManifestError, tomllib.TOMLDecodeError, OSError) as error:
