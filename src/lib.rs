@@ -45,6 +45,7 @@ mod signal_bundle_store;
     )
 )]
 mod signal_maintenance;
+mod signal_prekey_publish;
 #[expect(
     dead_code,
     reason = "terminal Signal revocation is transactionally implemented and tested but the live device endpoint still uses the legacy revocation path"
