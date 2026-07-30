@@ -22,6 +22,7 @@
           name = "agent-check";
           runtimeInputs = with pkgs; [
             actionlint
+            check-jsonschema
             gh
             git
             nix
@@ -30,6 +31,7 @@
             ruff
             shellcheck
             shfmt
+            yq-go
           ];
           text = builtins.readFile ./.nix/agent-check.sh;
         };
