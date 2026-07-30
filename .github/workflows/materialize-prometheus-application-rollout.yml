@@ -1,0 +1,53 @@
+name: materialize prometheus application rollout
+
+on:
+  push:
+    branches:
+      - agent/den-666-prometheus-rollout-dev
+    paths:
+      - .github/workflows/materialize-prometheus-application-rollout.yml
+      - remote/tools/materialize-prometheus-application-rollout.py
+
+permissions:
+  contents: write
+
+jobs:
+  materialize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out rollout branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: agent/den-666-prometheus-rollout-dev
+          persist-credentials: true
+          submodules: false
+
+      - name: Apply deterministic patches
+        run: python3 remote/tools/materialize-prometheus-application-rollout.py
+
+      - name: Verify inserted control-plane boundaries
+        run: |
+          set -euo pipefail
+          grep -F 'job_name: fiducia-backend' remote/argocd/observability/prometheus.configmap.yaml
+          grep -F 'job_name: canonical-cloud-web' remote/argocd/observability/prometheus.configmap.yaml
+          grep -F 'job_name: dd-akrion-web-server-rs' remote/argocd/observability/prometheus.configmap.yaml
+          grep -F 'job_name: dd-sonus-auris-site' remote/argocd/observability/prometheus.configmap.yaml
+          grep -F 'DDSonusAurisNginxExporterScrapeFailed' remote/argocd/observability/prometheus.configmap.yaml
+          grep -F 'location ^~ /metrics' remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml
+          grep -F 'location ^~ /akrion-sim/metrics' remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml
+
+      - name: Commit product changes and remove the one-shot helper
+        shell: bash
+        run: |
+          git rm \
+            .github/workflows/materialize-prometheus-application-rollout.yml \
+            remote/tools/materialize-prometheus-application-rollout.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            remote/argocd/observability/prometheus.configmap.yaml \
+            remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml
+          git commit -m 'DEN-666 add Prometheus jobs, alerts, and private gateway guards'
+          git push origin HEAD:agent/den-666-prometheus-rollout-dev
