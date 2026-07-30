@@ -144,10 +144,44 @@ begin
       '22222222-2222-2222-2222-222222222222',
       'billing_notice', '["email"]'::jsonb
     );
-    raise exception 'owner inserted a preference for another user';
+    raise exception 'owner inserted a preference for another identity';
   exception
     when insufficient_privilege then null;
   end;
+
+  begin
+    insert into communications.preferences (
+      tenant_id, application_id, shared_user_id, supabase_user_id,
+      purpose, channel_order
+    ) values (
+      'tenant-a', 'app-a', 'shared-other',
+      '11111111-1111-1111-1111-111111111111',
+      'identity_link_attack', '["email"]'::jsonb
+    );
+    raise exception 'own Supabase subject incorrectly authorized another shared identity';
+  exception
+    when insufficient_privilege then null;
+  end;
+
+  perform set_config('request.jwt.claims', '{}', true);
+
+  select count(*) into visible_count
+  from communications.preferences;
+  if visible_count <> 0 then
+    raise exception 'missing shared-auth claims exposed preferences';
+  end if;
+
+  select count(*) into visible_count
+  from communications.endpoint_summaries;
+  if visible_count <> 0 then
+    raise exception 'missing shared-auth claims exposed endpoint summaries';
+  end if;
+
+  select count(*) into visible_count
+  from communications.user_communication_history;
+  if visible_count <> 0 then
+    raise exception 'missing shared-auth claims exposed communication history';
+  end if;
 end
 $$;
 
