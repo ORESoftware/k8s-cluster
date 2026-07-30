@@ -4,19 +4,28 @@ on:
   push:
     branches:
       - agent/den-675-shared-auth-observability
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
+
+concurrency:
+  group: den-675-shared-auth-observability-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
 
 jobs:
   apply-validate-and-clean:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      TARGET_BRANCH: ${{ github.head_ref || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: false
+          ref: ${{ env.TARGET_BRANCH }}
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -205,4 +214,4 @@ remote/tests/general/prometheus-application-scrape.test.ts"
             remote/tests/general/prometheus-application-scrape.test.ts \
             .github/workflows/den-675-shared-auth-observability.yml
           git commit -m 'feat(DEN-675): scrape and alert on Shared Auth services'
-          git push origin HEAD:agent/den-675-shared-auth-observability
+          git push origin "HEAD:${TARGET_BRANCH}"
