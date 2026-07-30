@@ -1,9 +1,11 @@
-//! Provider-neutral contracts, provider adapters, and authenticated ingestion boundaries.
+//! Provider-neutral notification contracts, adapters, and authenticated ingestion boundaries.
 //!
-//! Provider adapters implement [`provider::PushProvider`] and consume the
-//! versioned types in [`contracts`]. HTTP, NATS, and database integrations depend
-//! on these contracts rather than provider-specific request shapes.
+//! Push delivery remains isolated behind [`provider::PushProvider`] and
+//! [`contracts::PushJob`]. Optional SendGrid email and Twilio SMS lanes use the
+//! separate [`contact::ContactJob`] contract so fallback delivery cannot weaken
+//! push-target validation or accept provider credentials from producers.
 
+pub mod contact;
 pub mod contracts;
 pub mod dispatch;
 pub mod http_api;
@@ -15,6 +17,16 @@ pub mod retry;
 pub mod runtime;
 pub mod validation;
 
+pub use contact::{
+    ContactApiState, ContactBatchRequest, ContactBatchResponse, ContactContent, ContactJob,
+    ContactOutcome, ContactOutcomeClass, ContactProvider, ContactProviderError,
+    ContactProviderKind, ContactProviderReadinessView, ContactProviderRegistry,
+    ContactRegistryReadiness, ContactRuntimeConfigError, ContactTarget, ContactTargetFingerprint,
+    ContactValidationError, SendGridConfig, SendGridConfigError, SendGridProvider, SendGridRegion,
+    TwilioConfig, TwilioConfigError, TwilioCredentials, TwilioProvider, TwilioSender,
+    contact_registry_from_env, contact_router, valid_e164, valid_email_address,
+    validate_contact_job,
+};
 pub use contracts::{
     ContractVersion, Notification, OutcomeClass, ProviderEnvironment, ProviderKind, PushJob,
     PushOptions, PushOutcome, PushPriority, PushTarget, TraceMetadata,
