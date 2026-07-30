@@ -46,10 +46,10 @@
     {
       "service": "apostille-services-server-rs",
       "language": "rust",
-      "routeCount": 23,
+      "routeCount": 24,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 16
+        "user-generated": 17
       },
       "generated": [
         "remote/deployments/apostille-services-server-rs/generated/api-docs.json",
@@ -61,10 +61,10 @@
     {
       "service": "auth-server-rs",
       "language": "rust",
-      "routeCount": 11,
+      "routeCount": 13,
       "routeTypeCounts": {
         "service": 5,
-        "user-generated": 3,
+        "user-generated": 5,
         "runtime-config": 3
       },
       "generated": [
@@ -123,10 +123,10 @@
     {
       "service": "build-server-rs",
       "language": "rust",
-      "routeCount": 18,
+      "routeCount": 19,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 8,
+        "user-generated": 9,
         "runtime-config": 3
       },
       "generated": [
@@ -139,10 +139,10 @@
     {
       "service": "cluster-mcp-rs",
       "language": "rust",
-      "routeCount": 13,
+      "routeCount": 15,
       "routeTypeCounts": {
-        "service": 7,
-        "user-generated": 3,
+        "service": 8,
+        "user-generated": 4,
         "runtime-config": 3
       },
       "generated": [
@@ -202,10 +202,10 @@
     {
       "service": "dataset-labeling-rs",
       "language": "rust",
-      "routeCount": 17,
+      "routeCount": 18,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 10
+        "user-generated": 11
       },
       "generated": [
         "remote/deployments/dataset-labeling-rs/generated/api-docs.json",
@@ -217,10 +217,10 @@
     {
       "service": "dd-benefactor-marketing-rs",
       "language": "rust",
-      "routeCount": 64,
+      "routeCount": 76,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 57
+        "user-generated": 69
       },
       "generated": [
         "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.json",
@@ -232,10 +232,10 @@
     {
       "service": "dd-compliance-rs",
       "language": "rust",
-      "routeCount": 36,
+      "routeCount": 37,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 26,
+        "user-generated": 27,
         "runtime-config": 3
       },
       "generated": [
@@ -295,10 +295,10 @@
     {
       "service": "dd-git-rs",
       "language": "rust",
-      "routeCount": 15,
+      "routeCount": 17,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 8
+        "user-generated": 10
       },
       "generated": [
         "remote/deployments/dd-git-rs/generated/api-docs.json",
@@ -357,9 +357,9 @@
     {
       "service": "dev-server",
       "language": "node",
-      "routeCount": 19,
+      "routeCount": 20,
       "routeTypeCounts": {
-        "user-generated": 10,
+        "user-generated": 11,
         "service": 6,
         "runtime-config": 3
       },
@@ -404,10 +404,10 @@
     {
       "service": "formal-methods-server-rs",
       "language": "rust",
-      "routeCount": 15,
+      "routeCount": 16,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 6,
+        "user-generated": 7,
         "runtime-config": 3
       },
       "generated": [
@@ -467,10 +467,10 @@
     {
       "service": "gleam-mcp-server",
       "language": "gleam",
-      "routeCount": 12,
+      "routeCount": 14,
       "routeTypeCounts": {
-        "service": 6,
-        "user-generated": 3,
+        "service": 7,
+        "user-generated": 4,
         "runtime-config": 3
       },
       "generated": [
@@ -483,10 +483,10 @@
     {
       "service": "gleamlang-presence-server",
       "language": "gleam",
-      "routeCount": 16,
+      "routeCount": 17,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 6,
+        "user-generated": 7,
         "runtime-config": 3
       },
       "generated": [
@@ -530,10 +530,10 @@
     {
       "service": "gleamlang-ws-server",
       "language": "gleam",
-      "routeCount": 21,
+      "routeCount": 22,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 12,
+        "user-generated": 13,
         "runtime-config": 3
       },
       "generated": [
@@ -608,11 +608,11 @@
     {
       "service": "rest-api-rs",
       "language": "rust",
-      "routeCount": 47,
+      "routeCount": 58,
       "routeTypeCounts": {
-        "user-generated": 26,
+        "user-generated": 31,
         "service": 8,
-        "internal-db": 10,
+        "internal-db": 16,
         "runtime-config": 3
       },
       "generated": [
@@ -625,10 +625,10 @@
     {
       "service": "runtime-config-rs",
       "language": "rust",
-      "routeCount": 19,
+      "routeCount": 21,
       "routeTypeCounts": {
         "service": 7,
-        "user-generated": 12
+        "user-generated": 14
       },
       "generated": [
         "remote/deployments/runtime-config-rs/generated/api-docs.json",
@@ -656,10 +656,10 @@
     {
       "service": "spark-pipeline-server",
       "language": "java",
-      "routeCount": 9,
+      "routeCount": 10,
       "routeTypeCounts": {
         "service": 6,
-        "user-generated": 3
+        "user-generated": 4
       },
       "generated": [
         "remote/deployments/spark-pipeline-server/generated/api-docs.json",
@@ -733,10 +733,10 @@
     {
       "service": "web-scraper-service",
       "language": "node",
-      "routeCount": 13,
+      "routeCount": 14,
       "routeTypeCounts": {
         "service": 8,
-        "user-generated": 5
+        "user-generated": 6
       },
       "generated": [
         "remote/deployments/web-scraper-service/generated/api-docs.json",

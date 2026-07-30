@@ -5,7 +5,7 @@ repo_root="$(git rev-parse --show-toplevel)"
 service="$repo_root/remote/deployments/gleamlang-presence-server"
 harness="$(mktemp -d "${TMPDIR:-/tmp}/gleam-presence-openapi.XXXXXX")"
 cleanup() {
-  rm -rf "$harness"
+  find "$harness" -depth -delete
 }
 trap cleanup EXIT
 

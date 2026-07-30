@@ -1,142 +1,214 @@
 {
-  "openapi": "3.1.0",
-  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "components": {},
   "info": {
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included.",
     "title": "browser-test-server API (public)",
-    "version": "0.1.0",
-    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
+    "version": "0.1.0"
   },
-  "tags": [
-    {
-      "name": "service"
-    }
-  ],
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "openapi": "3.1.0",
   "paths": {
     "/api/docs": {
       "get": {
-        "operationId": "browser_test_server_get_api_docs_9fcd645a3eb1",
-        "summary": "Return the Scalar reference for the fail-closed public contract.",
-        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
-        "tags": [
-          "service"
-        ],
-        "parameters": [],
+        "description": "Return the Scalar reference for the fail-closed public contract.",
+        "operationId": "getBrowserTestPublicApiReference",
         "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Human-readable public API reference."
           }
         },
+        "security": [],
+        "summary": "Return the Scalar reference for the fail-closed public contract.",
+        "tags": [
+          "documentation"
+        ],
         "x-dd-route-type": "service",
-        "x-dd-visibility": "public",
-        "security": []
+        "x-dd-visibility": "public"
       }
     },
     "/api/docs.json": {
       "get": {
-        "operationId": "browser_test_server_get_api_docs_json_aeee36ad5e79",
-        "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
-        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
-        "tags": [
-          "service"
-        ],
-        "parameters": [],
+        "description": "Return the fail-closed public OpenAPI 3.1 contract.",
+        "operationId": "getBrowserTestPublicOpenApiCompatibilityAlias",
         "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
+          "200": {
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Canonical public OpenAPI document."
           }
         },
+        "security": [],
+        "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
+        "tags": [
+          "documentation"
+        ],
         "x-dd-route-type": "service",
-        "x-dd-visibility": "public",
-        "security": []
+        "x-dd-visibility": "public"
       }
     },
     "/docs/api": {
       "get": {
-        "operationId": "browser_test_server_get_docs_api_03e6dc5fb010",
-        "summary": "Return the Scalar reference for the fail-closed public contract.",
-        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
-        "tags": [
-          "service"
-        ],
-        "parameters": [],
+        "description": "Return the Scalar reference for the fail-closed public contract.",
+        "operationId": "getBrowserTestPublicApiReferenceCompatibilityAlias",
         "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Human-readable public API reference."
           }
         },
+        "security": [],
+        "summary": "Return the Scalar reference for the fail-closed public contract.",
+        "tags": [
+          "documentation"
+        ],
         "x-dd-route-type": "service",
-        "x-dd-visibility": "public",
-        "security": []
+        "x-dd-visibility": "public"
       }
     },
     "/healthz": {
       "get": {
-        "operationId": "browser_test_server_get_healthz_4722a067e6ee",
-        "summary": "Return a public liveness response for Kubernetes probes.",
-        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
-        "tags": [
-          "service"
-        ],
-        "parameters": [],
+        "description": "Return a public liveness response for Kubernetes probes.",
+        "operationId": "getBrowserTestHealth",
         "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "inFlight": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": true
+                    },
+                    "serverInstanceId": {
+                      "type": "string"
+                    },
+                    "serverStartedAt": {
+                      "type": "string"
+                    },
+                    "service": {
+                      "enum": [
+                        "dd-browser-test-server"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "dd-browser-test-server"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "service",
+                    "serverStartedAt",
+                    "serverInstanceId",
+                    "inFlight"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Browser-test process is alive."
           }
         },
+        "security": [],
+        "summary": "Return a public liveness response for Kubernetes probes.",
+        "tags": [
+          "operations"
+        ],
         "x-dd-route-type": "service",
-        "x-dd-visibility": "public",
-        "security": []
+        "x-dd-visibility": "public"
       }
     },
     "/metrics": {
       "get": {
-        "operationId": "browser_test_server_get_metrics_73d9974b01c6",
-        "summary": "Return bounded Prometheus text exposition.",
-        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
-        "tags": [
-          "service"
-        ],
-        "parameters": [],
+        "description": "Return bounded Prometheus text exposition.",
+        "operationId": "getBrowserTestPrometheusMetrics",
         "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Prometheus metrics for browser-test execution."
           }
         },
+        "security": [],
+        "summary": "Return bounded Prometheus text exposition.",
+        "tags": [
+          "operations"
+        ],
         "x-dd-route-type": "service",
-        "x-dd-visibility": "public",
-        "security": []
+        "x-dd-visibility": "public"
       }
     },
     "/openapi.json": {
       "get": {
-        "operationId": "browser_test_server_get_openapi_json_db092e1508a9",
-        "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
-        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
-        "tags": [
-          "service"
-        ],
-        "parameters": [],
+        "description": "Return the fail-closed public OpenAPI 3.1 contract.",
+        "operationId": "getBrowserTestPublicOpenApi",
         "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
+          "200": {
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Canonical public OpenAPI document."
           }
         },
+        "security": [],
+        "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
+        "tags": [
+          "documentation"
+        ],
         "x-dd-route-type": "service",
-        "x-dd-visibility": "public",
-        "security": []
+        "x-dd-visibility": "public"
       }
     }
   },
-  "components": {},
+  "tags": [
+    {
+      "name": "documentation"
+    },
+    {
+      "name": "operations"
+    }
+  ],
   "x-dd-contract-scope": "public",
-  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-generated-by": "browser-test-server executable Fastify/Zod route registry",
   "x-dd-language": "node",
   "x-dd-operation-count": 6,
   "x-dd-route-count": 6,
   "x-dd-service": "browser-test-server",
   "x-dd-standard-docs-routes": [
-    "/docs/api",
+    "/openapi.json",
+    "/api/docs.json",
     "/api/docs",
-    "/api/docs.json"
+    "/docs/api"
   ]
 }

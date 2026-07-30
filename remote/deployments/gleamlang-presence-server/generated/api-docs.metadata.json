@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "gleamlang-presence-server",
   "language": "gleam",
-  "routeCount": 16,
+  "routeCount": 17,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 6,
+    "user-generated": 7,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -108,8 +108,25 @@
     {
       "path": "/conv/{conv_id}/members/{user_id}",
       "methods": [
-        "POST",
         "DELETE"
+      ],
+      "routeType": "user-generated",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
+      "purpose": "Remove a conversation member",
+      "handlers": [
+        "removePresenceConversationMember"
+      ],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/conv/{conv_id}/members/{user_id}",
+      "methods": [
+        "POST"
       ],
       "routeType": "user-generated",
       "implementation": "openapi-code-first",
@@ -117,8 +134,7 @@
       "visibility": "internal",
       "purpose": "Add a conversation member",
       "handlers": [
-        "addPresenceConversationMember",
-        "removePresenceConversationMember"
+        "addPresenceConversationMember"
       ],
       "sourceFiles": [
         "remote/deployments/gleamlang-presence-server/generated/openapi.json"
@@ -167,16 +183,17 @@
         "GET"
       ],
       "routeType": "runtime-config",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "visibility": "internal",
+      "purpose": "Get applied runtime configuration",
       "handlers": [
-        "dd_runtime_config_client::handle_get"
+        "getPresenceRuntimeConfig"
       ],
       "sourceFiles": [
-        "remote/libs/runtime-config-client-gleam/src/dd_runtime_config_client.gleam"
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/internal/runtime-config/reset",
@@ -184,16 +201,17 @@
         "POST"
       ],
       "routeType": "runtime-config",
-      "implementation": "code-first",
+      "implementation": "openapi-code-first",
       "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-      "purpose": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+      "visibility": "internal",
+      "purpose": "Reset runtime configuration",
       "handlers": [
-        "dd_runtime_config_client::handle_reset"
+        "resetPresenceRuntimeConfig"
       ],
       "sourceFiles": [
-        "remote/libs/runtime-config-client-gleam/src/dd_runtime_config_client.gleam"
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/internal/update-runtime-config",
@@ -201,16 +219,17 @@
         "POST"
       ],
       "routeType": "runtime-config",
-      "implementation": "code-first",
+      "implementation": "openapi-code-first",
       "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-      "purpose": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+      "visibility": "internal",
+      "purpose": "Apply runtime configuration",
       "handlers": [
-        "dd_runtime_config_client::handle_apply"
+        "applyPresenceRuntimeConfig"
       ],
       "sourceFiles": [
-        "remote/libs/runtime-config-client-gleam/src/dd_runtime_config_client.gleam"
+        "remote/deployments/gleamlang-presence-server/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/nodes",

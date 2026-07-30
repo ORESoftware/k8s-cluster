@@ -2,7 +2,7 @@ import 'package:oresoftware_k8s_api_sdk_public/dd_api_sdk.dart';
 
 void main() {
   if (sdkScope != "public") throw StateError('scope drift');
-  if (catalogSha256 != "a4b15b4d00a5a70d8b985325ba2008f1aade9c7ec165cc95015e29260c9cfaf2") throw StateError('catalog drift');
+  if (catalogSha256 != "c9762b2640f40bc77601c40d27435d12096ec4ba96aab05d84f9e0526dcd2da9") throw StateError('catalog drift');
   if (operations.length != 279) throw StateError('operation count drift');
   final ApiRequest request = buildRequest(
     baseUrl: 'https://example.test/',

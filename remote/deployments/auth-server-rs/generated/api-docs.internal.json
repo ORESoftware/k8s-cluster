@@ -447,7 +447,7 @@
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "rust",
   "x-dd-operation-count": 13,
-  "x-dd-route-count": 11,
+  "x-dd-route-count": 13,
   "x-dd-service": "auth-server-rs",
   "x-dd-standard-docs-routes": [
     "/docs/api",

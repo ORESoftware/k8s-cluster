@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "runtime-config-rs",
   "language": "rust",
-  "routeCount": 19,
+  "routeCount": 21,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 12
+    "user-generated": 14
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -136,7 +136,24 @@
     {
       "path": "/entries/:env",
       "methods": [
-        "GET",
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "list_entries",
+        "upsert_entry_handler"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/entries/:env",
+      "methods": [
         "POST"
       ],
       "routeType": "user-generated",
@@ -155,8 +172,25 @@
     {
       "path": "/entries/:env/:scope/:key",
       "methods": [
-        "GET",
         "DELETE"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "delete_entry_handler",
+        "get_entry"
+      ],
+      "sourceFiles": [
+        "remote/deployments/runtime-config-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/entries/:env/:scope/:key",
+      "methods": [
+        "GET"
       ],
       "routeType": "user-generated",
       "implementation": "code-first",

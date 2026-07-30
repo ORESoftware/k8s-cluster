@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "web-scraper-service",
   "language": "node",
-  "routeCount": 13,
+  "routeCount": 14,
   "routeTypeCounts": {
     "service": 8,
-    "user-generated": 5
+    "user-generated": 6
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -107,7 +107,21 @@
     {
       "path": "/scrape",
       "methods": [
-        "GET",
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/web-scraper-service/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/scrape",
+      "methods": [
         "POST"
       ],
       "routeType": "user-generated",

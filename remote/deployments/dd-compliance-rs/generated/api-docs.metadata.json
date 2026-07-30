@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dd-compliance-rs",
   "language": "rust",
-  "routeCount": 36,
+  "routeCount": 37,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 26,
+    "user-generated": 27,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -86,7 +86,24 @@
     {
       "path": "/audits",
       "methods": [
-        "GET",
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "list_audits",
+        "submit_audit"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-compliance-rs/src/routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/audits",
+      "methods": [
         "POST"
       ],
       "routeType": "user-generated",

@@ -84,7 +84,36 @@ const restApiMetadata = readJson(repoRoot, restApiMetadataPath);
 assert.equal(restApiPublic.openapi, '3.1.0');
 assert.equal(restApiPublic['x-dd-contract-scope'], 'public');
 assert.equal(restApiInternal['x-dd-contract-scope'], 'internal');
-assert.equal(restApiMetadata.routeTypeCounts['user-generated'], 26);
+const userGeneratedRoutes = restApiMetadata.routes.filter(
+  (route) => route.routeType === 'user-generated',
+);
+assert.equal(
+  restApiMetadata.routeTypeCounts['user-generated'],
+  31,
+  'method-aware metadata must count each user-generated HTTP operation',
+);
+assert.equal(
+  new Set(userGeneratedRoutes.map((route) => route.path)).size,
+  26,
+  'the 31 user-generated operations must continue to cover 26 distinct paths',
+);
+for (const [path, methods] of [
+  ['/api/agents/git-repos', ['GET', 'POST']],
+  ['/api/graphql', ['GET', 'POST']],
+  ['/api/lambdas/functions', ['GET', 'POST']],
+  ['/api/lambdas/functions/:id', ['GET', 'PATCH']],
+  ['/graphql', ['GET', 'POST']],
+]) {
+  const actualMethods = userGeneratedRoutes
+    .filter((route) => route.path === path)
+    .flatMap((route) => route.methods)
+    .sort();
+  assert.deepEqual(
+    actualMethods,
+    methods,
+    `rest-api-rs generated metadata must preserve ${methods.join('/')} variants for ${path}`,
+  );
+}
 assert.ok(!Object.prototype.hasOwnProperty.call(restApiMetadata.routeTypeCounts, 'pg' + '-first'));
 for (const route of ['/docs/api', '/api/docs', '/api/docs.json']) {
   assert.ok(

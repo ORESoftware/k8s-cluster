@@ -208,10 +208,10 @@
       }
     },
     "/conv/{conv_id}/members/{user_id}": {
-      "post": {
-        "operationId": "gleamlang_ws_server_post_conv_conv_id_members_user_id_a2d5fc075a8e",
-        "summary": "Add user to conv (PG + cache + cluster broadcast).",
-        "description": "Add user to conv (PG + cache + cluster broadcast).",
+      "delete": {
+        "operationId": "gleamlang_ws_server_delete_conv_conv_id_members_user_id_b6ac08eefa32",
+        "summary": "Remove user from conv.",
+        "description": "Remove user from conv.",
         "tags": [
           "user-generated"
         ],
@@ -251,8 +251,8 @@
         ],
         "x-dd-visibility": "internal"
       },
-      "delete": {
-        "operationId": "gleamlang_ws_server_delete_conv_conv_id_members_user_id_b6ac08eefa32",
+      "post": {
+        "operationId": "gleamlang_ws_server_post_conv_conv_id_members_user_id_a2d5fc075a8e",
         "summary": "Add user to conv (PG + cache + cluster broadcast).",
         "description": "Add user to conv (PG + cache + cluster broadcast).",
         "tags": [
@@ -660,8 +660,8 @@
     "/ws": {
       "get": {
         "operationId": "gleamlang_ws_server_get_ws_52d0f72e30bf",
-        "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
+        "summary": "Route variants for GET /ws",
+        "description": "Runtime route variants:\n- /ws: Custom code-first route derived from the service router.\n- /ws?user=:id: Upgrade to a user-scoped ws.\n- /ws?user=:id&conv=:id: Upgrade to a conv-scoped ws (must be a member).",
         "tags": [
           "user-generated"
         ],
@@ -701,7 +701,24 @@
           "/ws?user=:id",
           "/ws?user=:id&conv=:id"
         ],
-        "x-dd-visibility": "internal"
+        "x-dd-visibility": "internal",
+        "x-dd-source-variants": [
+          {
+            "path": "/ws",
+            "summary": "Custom code-first route derived from the service router.",
+            "description": "Custom code-first route derived from the service router."
+          },
+          {
+            "path": "/ws?user=:id",
+            "summary": "Upgrade to a user-scoped ws.",
+            "description": "Upgrade to a user-scoped ws."
+          },
+          {
+            "path": "/ws?user=:id&conv=:id",
+            "summary": "Upgrade to a conv-scoped ws (must be a member).",
+            "description": "Upgrade to a conv-scoped ws (must be a member)."
+          }
+        ]
       }
     }
   },
@@ -728,7 +745,7 @@
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "gleam",
   "x-dd-operation-count": 20,
-  "x-dd-route-count": 21,
+  "x-dd-route-count": 22,
   "x-dd-service": "gleamlang-ws-server",
   "x-dd-standard-docs-routes": [
     "/docs/api",

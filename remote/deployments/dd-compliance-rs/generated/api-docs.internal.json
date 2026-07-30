@@ -1187,7 +1187,7 @@
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "rust",
   "x-dd-operation-count": 37,
-  "x-dd-route-count": 36,
+  "x-dd-route-count": 37,
   "x-dd-service": "dd-compliance-rs",
   "x-dd-standard-docs-routes": [
     "/docs/api",

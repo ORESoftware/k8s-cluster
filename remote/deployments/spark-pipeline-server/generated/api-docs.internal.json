@@ -218,7 +218,6 @@
         "x-dd-auth": "service-defined",
         "x-dd-handlers": [
           "ListJobsHandler",
-          "SubmitJobHandler",
           "authGate"
         ],
         "x-dd-implementation": "code-first",
@@ -247,7 +246,6 @@
         },
         "x-dd-auth": "service-defined",
         "x-dd-handlers": [
-          "ListJobsHandler",
           "SubmitJobHandler",
           "authGate"
         ],
@@ -358,7 +356,7 @@
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "java",
   "x-dd-operation-count": 10,
-  "x-dd-route-count": 9,
+  "x-dd-route-count": 10,
   "x-dd-service": "spark-pipeline-server",
   "x-dd-standard-docs-routes": [
     "/docs/api",

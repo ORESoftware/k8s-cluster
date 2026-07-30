@@ -10,11 +10,15 @@ exporter="$service/scripts/export-openapi.sh"
 work_dir='.tmp/gleam-presence-openapi-check'
 
 cleanup_generated_builds() {
-  rm -rf "$work_dir"
-  find remote/api-sdks -type d \( \
+  if [ -d "$work_dir" ]; then
+    find "$work_dir" -depth -delete
+  fi
+  while IFS= read -r -d '' generated_dir; do
+    find "$generated_dir" -depth -delete
+  done < <(find remote/api-sdks -type d \( \
     -name node_modules -o -name dist -o -name target -o \
     -name .dart_tool -o -name build \
-  \) -prune -exec rm -rf '{}' +
+  \) -prune -print0)
   find remote/api-sdks -type f \( \
     -name package-lock.json -o -name Cargo.lock -o \
     -name pubspec.lock -o -name manifest.toml \
@@ -46,7 +50,6 @@ python3 -m json.tool "$work_dir/openapi.1.json" >/dev/null
 
 python3 - <<'PY'
 import json
-from collections import defaultdict
 from pathlib import Path
 
 service = Path('remote/deployments/gleamlang-presence-server')
@@ -88,24 +91,41 @@ projected_operation_ids = [
 ]
 assert len(projected_operation_ids) == len(set(projected_operation_ids))
 
-native_handlers_by_path = defaultdict(set)
-for (path, _), operation in native_operations.items():
-    native_handlers_by_path[path].add(operation['operationId'])
+def resolved_security(document, operation):
+    requirements = operation.get('security')
+    if requirements is None:
+        return None
+    schemes = document.get('components', {}).get('securitySchemes', {})
+    resolved = []
+    for requirement in requirements:
+        effective_requirement = []
+        for scheme_name, scopes in sorted(requirement.items()):
+            scheme = schemes[scheme_name]
+            effective_requirement.append(
+                (
+                    scheme['type'],
+                    scheme.get('in'),
+                    scheme.get('name'),
+                    tuple(scopes),
+                )
+            )
+        resolved.append(effective_requirement)
+    return resolved
 
 for key, native in native_operations.items():
     path, method = key
     projected = projected_operations[key]
     projected_handlers = projected['x-dd-handlers']
-    assert len(projected_handlers) == len(set(projected_handlers)), (key, projected)
-    assert set(projected_handlers) == native_handlers_by_path[path], (key, projected)
-    assert native['operationId'] in projected_handlers, (key, projected)
+    assert projected_handlers == [native['operationId']], (key, projected)
     assert projected['x-dd-source-path'] == path, (key, projected)
     assert projected['x-dd-source-paths'] == [path], (key, projected)
     assert projected['x-dd-visibility'] == native['x-dd-visibility'], key
     assert projected['x-dd-auth'] == native['x-dd-auth'], key
     assert projected['x-dd-route-type'] == native['x-dd-route-type'], key
     assert projected['x-dd-implementation'] == 'openapi-code-first', key
-    assert projected.get('security') == native.get('security'), key
+    assert resolved_security(projected_internal, projected) == resolved_security(
+        internal, native
+    ), key
     assert projected['summary'] == native['summary'], key
     assert projected['x-dd-source-files'] == [
         'remote/deployments/gleamlang-presence-server/generated/openapi.json'
@@ -258,6 +278,8 @@ if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- . ':!vendor'; then
   echo 'git conflict marker found' >&2
   exit 1
 fi
-git diff --cached --quiet
-git diff --quiet
-test -z "$(git status --short)"
+if [[ "${OPENAPI_CHECK_ALLOW_DIRTY:-0}" != '1' ]]; then
+  git diff --cached --quiet
+  git diff --quiet
+  test -z "$(git status --short)"
+fi
