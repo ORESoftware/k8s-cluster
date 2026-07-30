@@ -37,13 +37,25 @@ spec:
         - name: rabbitmq
           image: rabbitmq:3.13-management-alpine
           imagePullPolicy: IfNotPresent
+          # Sourced from the gcs-rabbitmq ExternalSecret, never inline: the
+          # Erlang cookie is RCE-equivalent on the distribution port and the
+          # broker login gates every AMQP producer/consumer.
           env:
             - name: RABBITMQ_DEFAULT_USER
-              value: gcs
+              valueFrom:
+                secretKeyRef:
+                  name: gcs-rabbitmq
+                  key: RABBITMQ_DEFAULT_USER
             - name: RABBITMQ_DEFAULT_PASS
-              value: gcs
+              valueFrom:
+                secretKeyRef:
+                  name: gcs-rabbitmq
+                  key: RABBITMQ_DEFAULT_PASS
             - name: RABBITMQ_ERLANG_COOKIE
-              value: gcs-cookie
+              valueFrom:
+                secretKeyRef:
+                  name: gcs-rabbitmq
+                  key: RABBITMQ_ERLANG_COOKIE
           ports:
             - name: amqp
               containerPort: 5672
