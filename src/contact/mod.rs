@@ -20,7 +20,7 @@ pub use contracts::{
 pub use dispatch::{
     ContactProviderReadinessView, ContactProviderRegistry, ContactRegistryReadiness,
 };
-pub use http::{ContactApiState, contact_router};
+pub use http::{ContactApiState, ContactBatchRequest, ContactBatchResponse, contact_router};
 pub use provider::{ContactProvider, ContactProviderError};
 pub use runtime::{ContactRuntimeConfigError, contact_registry_from_env};
 pub use sendgrid::{
