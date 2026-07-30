@@ -40,7 +40,15 @@ const browserLaunchArgs = Object.freeze([
   '--no-sandbox',
 ]);
 
-const compiledFunctions = new Map();
+// One sandbox (vm context + its own compiled-function cache) per function
+// identity. Worker processes are pooled by runtime — `pool:host:nodejs` is
+// shared by every function that does not set reuseKey/maxConcurrency — so a
+// single module-level context would put unrelated functions in one mutable
+// global object, where one function can leave a getter or Proxy behind and read
+// the next function's request, context, and result. Keying the sandbox by
+// function identity keeps that state inside one tenant.
+const sandboxes = new Map();
+const maxSandboxes = positiveInt(env.LAMBDA_SANDBOX_CACHE_MAX, 64);
 let buffer = '';
 
 function positiveInt(value, fallback) {
@@ -67,37 +75,91 @@ globalThis.console = safeConsole;
 // User functions execute in a context with an explicit safe-global surface.
 // This keeps process/require/Buffer and host module loading unavailable without
 // mutating globals that Playwright, Puppeteer, and their dependencies require.
-const lambdaGlobals = Object.assign(Object.create(null), {
-  AbortController,
-  AbortSignal,
-  Headers,
-  Request,
-  Response,
-  TextDecoder,
-  TextEncoder,
-  URL,
-  URLSearchParams,
-  clearInterval,
-  clearTimeout,
-  console: safeConsole,
-  fetch,
-  queueMicrotask,
-  setInterval,
-  setTimeout,
-  structuredClone,
-});
-const lambdaContext = createContext(lambdaGlobals, {
-  name: 'dd-lambda-user-code',
-  codeGeneration: { strings: false, wasm: false },
-});
+//
+// NOTE ON THE TRUST BOUNDARY: node:vm is not a security sandbox, and this one is
+// not either. The bridged values below (fetch, Headers, Response, URL, …) are
+// host-realm functions, so `Headers.constructor` is the host realm's Function
+// constructor and reaches code generation that this context's
+// `codeGeneration: { strings: false }` does not govern. The enforced isolation
+// boundary for untrusted code is therefore the container
+// (`containerized: true`), not this context. What the context does buy is
+// keeping ordinary function code away from process/require and keeping one
+// tenant's globals out of another's — see `sandboxes` above.
+function createLambdaGlobals() {
+  // A fresh object per context: sharing one globals object across contexts
+  // would re-introduce the cross-function channel this split exists to close.
+  return Object.assign(Object.create(null), {
+    AbortController,
+    AbortSignal,
+    Headers,
+    Request,
+    Response,
+    TextDecoder,
+    TextEncoder,
+    URL,
+    URLSearchParams,
+    clearInterval,
+    clearTimeout,
+    console: safeConsole,
+    fetch,
+    queueMicrotask,
+    setInterval,
+    setTimeout,
+    structuredClone,
+  });
+}
+
+// Stable per-tenant sandbox identity. Prefer the immutable revision, then the
+// function id, then the slug; an unidentifiable definition gets its own
+// single-use sandbox rather than sharing the fallback with every other one.
+function sandboxIdentity(definition, envelope) {
+  return (
+    definition.revisionId ||
+    definition.id ||
+    definition.slug ||
+    envelope.slug ||
+    `anonymous:${randomUUID()}`
+  );
+}
+
+function getSandbox(identity) {
+  const existing = sandboxes.get(identity);
+  if (existing) {
+    // Refresh LRU position.
+    sandboxes.delete(identity);
+    sandboxes.set(identity, existing);
+    return existing;
+  }
+  const sandbox = {
+    context: createContext(createLambdaGlobals(), {
+      name: `dd-lambda-user-code:${identity}`,
+      codeGeneration: { strings: false, wasm: false },
+    }),
+    compiled: new Map(),
+  };
+  sandboxes.set(identity, sandbox);
+  while (sandboxes.size > maxSandboxes) {
+    const oldestKey = sandboxes.keys().next().value;
+    sandboxes.delete(oldestKey);
+  }
+  return sandbox;
+}
 
 function hashBody(body) {
   return createHash('sha256').update(body).digest('hex');
 }
 
-function compileFunction(functionBody) {
+function countCompiledFunctions() {
+  let total = 0;
+  for (const sandbox of sandboxes.values()) {
+    total += sandbox.compiled.size;
+  }
+  return total;
+}
+
+function compileFunction(sandbox, functionBody) {
   const cacheKey = hashBody(functionBody);
-  const cached = compiledFunctions.get(cacheKey);
+  const cached = sandbox.compiled.get(cacheKey);
   if (cached) {
     return cached;
   }
@@ -105,12 +167,12 @@ function compileFunction(functionBody) {
   const fn = compileVmFunction(
     `"use strict"; return (async () => {\n${functionBody}\n})();`,
     ['request', 'context', 'console', 'process', 'require', 'Buffer'],
-    { parsingContext: lambdaContext },
+    { parsingContext: sandbox.context },
   );
-  compiledFunctions.set(cacheKey, fn);
-  while (compiledFunctions.size > maxCompiledFunctions) {
-    const oldestKey = compiledFunctions.keys().next().value;
-    compiledFunctions.delete(oldestKey);
+  sandbox.compiled.set(cacheKey, fn);
+  while (sandbox.compiled.size > maxCompiledFunctions) {
+    const oldestKey = sandbox.compiled.keys().next().value;
+    sandbox.compiled.delete(oldestKey);
   }
   return fn;
 }
@@ -485,7 +547,7 @@ async function invoke(line) {
     throw new Error('functionBody exceeds configured byte limit');
   }
 
-  const fn = compileFunction(functionBody);
+  const fn = compileFunction(getSandbox(sandboxIdentity(definition, envelope)), functionBody);
   if (envelope.checkOnly === true || envelope.mode === 'check') {
     return {
       ok: true,
@@ -495,7 +557,7 @@ async function invoke(line) {
         browserAutomation,
         browserEngines: browserAutomation ? ['playwright', 'puppeteer'] : [],
       },
-      cachedFunctions: compiledFunctions.size,
+      cachedFunctions: countCompiledFunctions(),
     };
   }
 
@@ -513,14 +575,14 @@ async function invoke(line) {
         result: result ?? null,
         actor: actorSession.snapshot(),
         invocationId: context.invocationId,
-        cachedFunctions: compiledFunctions.size,
+        cachedFunctions: countCompiledFunctions(),
       };
     }
     return {
       ok: true,
       result: result ?? null,
       invocationId: context.invocationId,
-      cachedFunctions: compiledFunctions.size,
+      cachedFunctions: countCompiledFunctions(),
     };
   } finally {
     await browserSession?.closeAll();

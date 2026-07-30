@@ -1097,8 +1097,13 @@ host_command(Runtime) ->
 host_command_from_env(Name, Default) ->
     {ok, dd_cli_config_client_ffi:getenv(Name, Default)}.
 
+%% Host execution runs user code directly inside this process's container, where
+%% the only isolation is Node's permission model and a node:vm context — neither
+%% of which is a security boundary against hostile code. The container
+%% (`containerized: true`) is the boundary, so the allowlist defaults to empty
+%% and every host runtime must be named explicitly by an operator.
 host_runtime_allowed(Runtime) ->
-    lists:member(Runtime, csv_env("LAMBDA_ALLOW_HOST_RUNTIMES", <<"nodejs">>)).
+    lists:member(Runtime, csv_env("LAMBDA_ALLOW_HOST_RUNTIMES", <<>>)).
 
 container_command(Runtime, DefinitionJson) ->
     BuildStatus = json_string_field(DefinitionJson, <<"containerBuildStatus">>),
@@ -1111,8 +1116,16 @@ container_command(Runtime, DefinitionJson) ->
         _ -> Image0
     end,
     EntryCommand = json_string_field(DefinitionJson, <<"entryCommand">>),
-    case {safe_container_image(Image), safe_entry_command(EntryCommand)} of
-        {true, true} ->
+    case {safe_container_image(Image), safe_entry_command(EntryCommand), host_network_allowed()} of
+        {_, _, false} ->
+            {error, <<
+                "LAMBDA_CONTAINER_NETWORK=host puts user code in the node's network "
+                "namespace, where it can reach the instance metadata service and "
+                "node-local ports and is not covered by this pod's NetworkPolicy; "
+                "use a CNI network or set LAMBDA_ALLOW_CONTAINER_HOST_NETWORK=true "
+                "to accept that exposure"
+            >>};
+        {true, true, true} ->
             %% Default to a dedicated namespace so we do not collide with kubelet's
             %% CRI plugin and so periodic reapers can target our containers safely.
             Namespace = env_binary("LAMBDA_CONTAINER_NAMESPACE", <<"dd-lambda">>),
@@ -1158,10 +1171,21 @@ container_command(Runtime, DefinitionJson) ->
                         Other
                     ])}
             end;
-        {false, _} ->
+        {false, _, _} ->
             {error, <<"containerImage contains unsupported characters">>};
-        {_, false} ->
+        {_, false, _} ->
             {error, <<"entryCommand contains unsupported characters or exceeds 512 bytes">>}
+    end.
+
+%% Host networking is only permitted with an explicit operator acknowledgement.
+%% `--net-host` / `--network host` hands the user-code container the node's
+%% network namespace: cloud instance metadata (169.254.169.254), kubelet, and
+%% every node-local listener become reachable, and the traffic no longer
+%% originates from this pod's IP, so the pod NetworkPolicy stops constraining it.
+host_network_allowed() ->
+    case env_binary("LAMBDA_CONTAINER_NETWORK", <<"bridge">>) of
+        <<"host">> -> env_bool("LAMBDA_ALLOW_CONTAINER_HOST_NETWORK", false);
+        _Other -> true
     end.
 
 %% Test-only inspection surface used by the Gleam contract suite. It has no

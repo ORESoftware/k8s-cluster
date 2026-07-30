@@ -22,6 +22,9 @@ import mist
 @external(erlang, "lambda_runtime_env", "getenv")
 fn env_get(name: String) -> String
 
+@external(erlang, "lambda_runtime_env", "secret_equals")
+fn secret_equals(provided: String, expected: String) -> Bool
+
 const default_host = "0.0.0.0"
 
 const default_port = 8083
@@ -131,12 +134,24 @@ fn route(
       require_authenticated_post(req, fn() { workflow_signal(req, run_id) })
     Post, ["workflows", "runs", run_id, "cancel"] ->
       require_authenticated_post(req, fn() { workflow_cancel(run_id) })
+    // These delegate to dd_runtime_config_client, which authenticates against
+    // RUNTIME_CONFIG_SERVER_SECRET — a different secret from this service's
+    // own, and one whose read path stays open when it is unset. The snapshot
+    // lists every pushed config value, and the mutating routes can rewrite
+    // LAMBDA_*_HOST_COMMAND / LAMBDA_ALLOW_HOST_RUNTIMES, so gate them behind
+    // this service's secret as well rather than relying on that default.
     Get, ["internal", "runtime-config"] ->
-      dd_runtime_config_client.handle_snapshot(req)
+      require_authenticated(req, fn() {
+        dd_runtime_config_client.handle_snapshot(req)
+      })
     Post, ["internal", "update-runtime-config"] ->
-      dd_runtime_config_client.handle_apply(req)
+      require_authenticated_post(req, fn() {
+        dd_runtime_config_client.handle_apply(req)
+      })
     Post, ["internal", "runtime-config", "reset"] ->
-      dd_runtime_config_client.handle_reset(req)
+      require_authenticated_post(req, fn() {
+        dd_runtime_config_client.handle_reset(req)
+      })
     _, ["invoke", _] -> method_not_allowed()
     _, ["invoke", _, "aliases", _] -> method_not_allowed()
     _, ["invoke", _, "revisions", _] -> method_not_allowed()
@@ -885,13 +900,13 @@ fn request_is_authorized(
   secret: String,
 ) -> Bool {
   case request.get_header(req, "x-server-auth") {
-    Ok(value) -> value == secret
+    Ok(value) -> secret_equals(value, secret)
     Error(_) -> {
       case request.get_header(req, "x-lambda-runner-auth") {
-        Ok(value) -> value == secret
+        Ok(value) -> secret_equals(value, secret)
         Error(_) -> {
           case request.get_header(req, "x-agent-auth") {
-            Ok(value) -> value == secret
+            Ok(value) -> secret_equals(value, secret)
             Error(_) -> False
           }
         }

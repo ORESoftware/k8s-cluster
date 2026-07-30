@@ -209,8 +209,20 @@ spec:
               value: k8s.io
             - name: LAMBDA_CONTAINER_INVOKE_TIMEOUT_SECONDS
               value: '120'
+            # OUTSTANDING RISK — host networking puts every user-code container
+            # in the node's network namespace. From there user code can reach
+            # the EC2 instance metadata service (169.254.169.254, i.e. the node
+            # IAM role's credentials), the kubelet, and any node-local listener,
+            # and its egress no longer originates from this pod's IP, so
+            # dd-gleam-lambda-runner.networkpolicy.yaml does not constrain it.
+            # The acknowledgement below is what keeps the runner from refusing
+            # to build the command; remove both once CNI networking is
+            # provisioned for the nested ctr runner, and prefer:
+            #   LAMBDA_CONTAINER_NETWORK: bridge   (-> ctr --cni)
             - name: LAMBDA_CONTAINER_NETWORK
               value: host
+            - name: LAMBDA_ALLOW_CONTAINER_HOST_NETWORK
+              value: 'true'
             - name: LAMBDA_CONTAINER_RUNNER
               value: ctr
             - name: LAMBDA_CONTAINER_CTR

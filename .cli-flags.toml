@@ -76,6 +76,15 @@ env = "LAMBDA_FUNCTION_CACHE_MAX"
 aliases = ["lambda-function-cache-max"]
 type = "integer"
 
+# Per-function vm sandboxes retained in one pooled Node worker. Worker processes
+# are shared across functions, so each function gets its own context and
+# compiled-function cache; this bounds how many are held resident.
+[flags.lambda_sandbox_cache_max]
+env = "LAMBDA_SANDBOX_CACHE_MAX"
+aliases = ["lambda-sandbox-cache-max"]
+type = "integer"
+default = 64
+
 [flags.lambda_function_body_max_bytes]
 env = "LAMBDA_FUNCTION_BODY_MAX_BYTES"
 aliases = ["lambda-function-body-max-bytes"]
@@ -133,6 +142,15 @@ type = "string"
 env = "LAMBDA_CONTAINER_NETWORK"
 aliases = ["lambda-container-network"]
 type = "string"
+
+# Acknowledges that LAMBDA_CONTAINER_NETWORK=host exposes instance metadata,
+# node-local ports, and NetworkPolicy-free egress to user code. Without it the
+# runner refuses to build a host-networked container command.
+[flags.lambda_allow_container_host_network]
+env = "LAMBDA_ALLOW_CONTAINER_HOST_NETWORK"
+aliases = ["lambda-allow-container-host-network"]
+type = "boolean"
+default = false
 
 [flags.lambda_container_runner]
 env = "LAMBDA_CONTAINER_RUNNER"
