@@ -40,7 +40,7 @@ jobs:
           source = path.read_text()
 
           option = '          - sync-agent-gh-pat\n'
-          env_line = '          REMOTE_DEV_GH_PAT: ${{ secrets.REMOTE_DEV_GH_PAT }}\n'
+          env_line = '          REMOTE_DEV_GH_PAT: $' + '{{ secrets.REMOTE_DEV_GH_PAT }}\n'
           case_start = '            sync-agent-gh-pat)\n'
           next_case = '            bootstrap-thread-go-services)\n'
 
