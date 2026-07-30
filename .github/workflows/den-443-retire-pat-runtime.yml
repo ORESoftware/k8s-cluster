@@ -1,6 +1,12 @@
 name: DEN-443 retire PAT runtime propagation
 
 on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/den-443-retire-pat-runtime.yml'
+      - '.github/workflows/remote-k8s-maintenance.yml'
   push:
     branches:
       - agent/den-443-remove-pat-runtime-propagation
@@ -10,11 +16,12 @@ permissions:
   contents: write
 
 concurrency:
-  group: den-443-retire-pat-runtime
+  group: den-443-retire-pat-runtime-${{ github.event_name }}
   cancel-in-progress: false
 
 jobs:
   patch:
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/den-443-remove-pat-runtime-propagation')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -37,6 +44,12 @@ jobs:
           case_start = '            sync-agent-gh-pat)\n'
           next_case = '            bootstrap-thread-go-services)\n'
 
+          already_removed = all(
+              needle not in source
+              for needle in (option, env_line, case_start)
+          )
+          if already_removed:
+              raise SystemExit(0)
           for needle, label in [
               (option, 'workflow-dispatch option'),
               (env_line, 'job environment injection'),
