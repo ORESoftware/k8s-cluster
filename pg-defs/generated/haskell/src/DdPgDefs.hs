@@ -11512,10 +11512,24 @@ sessionsTable :: Text
 sessionsTable = "shared_auth.sessions"
 
 sessionsColumns :: [Text]
-sessionsColumns = ["session_id", "shared_user_id", "refresh_token_hash", "provider", "provider_tenant", "provider_subject", "created_at", "updated_at", "last_seen_at", "expires_at", "revoked_at", "rotated_from"]
+sessionsColumns = ["session_id", "shared_user_id", "refresh_token_hash", "provider", "provider_tenant", "provider_subject", "auth_level", "auth_methods", "created_at", "updated_at", "last_seen_at", "expires_at", "revoked_at", "rotated_from"]
 
 sessionsSelectSql :: Text
-sessionsSelectSql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+sessionsSelectSql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      auth_level,\n      auth_methods::text as auth_methods_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+
+data SessionsAuthLevel = SessionsAuthLevel1 | SessionsAuthLevel2
+  deriving (Eq, Show)
+
+sessionsAuthLevelToText :: SessionsAuthLevel -> Text
+sessionsAuthLevelToText value = case value of
+  SessionsAuthLevel1 -> "1"
+  SessionsAuthLevel2 -> "2"
+
+parseSessionsAuthLevel :: Text -> Either Text SessionsAuthLevel
+parseSessionsAuthLevel value = case value of
+  "1" -> Right SessionsAuthLevel1
+  "2" -> Right SessionsAuthLevel2
+  _ -> Left (T.append "unsupported sessions.auth_level: " value)
 
 data SessionsRow = SessionsRow
   { sessionsSessionId :: Text
@@ -11524,6 +11538,8 @@ data SessionsRow = SessionsRow
   , sessionsProvider :: Text
   , sessionsProviderTenant :: Text
   , sessionsProviderSubject :: Text
+  , sessionsAuthLevel :: Text
+  , sessionsAuthMethods :: Text
   , sessionsCreatedAt :: Text
   , sessionsUpdatedAt :: Text
   , sessionsLastSeenAt :: Text
@@ -11533,7 +11549,57 @@ data SessionsRow = SessionsRow
   } deriving (Eq, Show)
 
 instance FromRow SessionsRow where
-  fromRow = SessionsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+  fromRow = SessionsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+magicLinkTokensTable :: Text
+magicLinkTokensTable = "shared_auth.magic_link_tokens"
+
+magicLinkTokensColumns :: [Text]
+magicLinkTokensColumns = ["token_hash", "otp_hash", "shared_user_id", "identifier_hash", "failed_attempts", "created_at", "expires_at", "consumed_at"]
+
+magicLinkTokensSelectSql :: Text
+magicLinkTokensSelectSql = "select\n      token_hash,\n      otp_hash,\n      shared_user_id::text as shared_user_id,\n      identifier_hash,\n      failed_attempts,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consumed_at\n    from shared_auth.magic_link_tokens"
+
+data MagicLinkTokensRow = MagicLinkTokensRow
+  { magicLinkTokensTokenHash :: Text
+  , magicLinkTokensOtpHash :: Text
+  , magicLinkTokensSharedUserId :: Text
+  , magicLinkTokensIdentifierHash :: Text
+  , magicLinkTokensFailedAttempts :: Int
+  , magicLinkTokensCreatedAt :: Text
+  , magicLinkTokensExpiresAt :: Text
+  , magicLinkTokensConsumedAt :: (Maybe Text)
+  } deriving (Eq, Show)
+
+instance FromRow MagicLinkTokensRow where
+  fromRow = MagicLinkTokensRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateMagicLinkTokensFailedAttempts :: Int -> Either Text Int
+validateMagicLinkTokensFailedAttempts value
+  | value < 0 = Left "magic_link_tokens.failed_attempts is below the minimum"
+  | value > 5 = Left "magic_link_tokens.failed_attempts is above the maximum"
+  | otherwise = Right value
+
+mfaSmsChallengesTable :: Text
+mfaSmsChallengesTable = "shared_auth.mfa_sms_challenges"
+
+mfaSmsChallengesColumns :: [Text]
+mfaSmsChallengesColumns = ["challenge_id", "shared_user_id", "phone_e164", "created_at", "expires_at", "verified_at"]
+
+mfaSmsChallengesSelectSql :: Text
+mfaSmsChallengesSelectSql = "select\n      challenge_id::text as challenge_id,\n      shared_user_id::text as shared_user_id,\n      phone_e164,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(verified_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as verified_at\n    from shared_auth.mfa_sms_challenges"
+
+data MfaSmsChallengesRow = MfaSmsChallengesRow
+  { mfaSmsChallengesChallengeId :: Text
+  , mfaSmsChallengesSharedUserId :: Text
+  , mfaSmsChallengesPhoneE164 :: Text
+  , mfaSmsChallengesCreatedAt :: Text
+  , mfaSmsChallengesExpiresAt :: Text
+  , mfaSmsChallengesVerifiedAt :: (Maybe Text)
+  } deriving (Eq, Show)
+
+instance FromRow MfaSmsChallengesRow where
+  fromRow = MfaSmsChallengesRow <$> field <*> field <*> field <*> field <*> field <*> field
 
 rolesTable :: Text
 rolesTable = "shared_auth.roles"

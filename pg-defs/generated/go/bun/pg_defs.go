@@ -117,6 +117,7 @@ var paymentMethodsLast4Pattern = regexp.MustCompile(`^[0-9]{4}$`)
 var invoicesCurrencyPattern = regexp.MustCompile(`^[a-z]{3}$`)
 var paymentsCurrencyPattern = regexp.MustCompile(`^[a-z]{3}$`)
 var billingWebhookEventsPayloadSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var mfaSmsChallengesPhoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
 var rolesRoleNamePattern = regexp.MustCompile(`^[a-z][a-z0-9:_-]{0,63}$`)
 
 const AccountsTable = "threefa.accounts"
@@ -8183,6 +8184,8 @@ const SessionsSelectSQL = `select
       provider,
       provider_tenant,
       provider_subject,
+      auth_level,
+      auth_methods,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
       to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
@@ -8190,6 +8193,8 @@ const SessionsSelectSQL = `select
       to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revoked_at,
       rotated_from::text as rotated_from
     from shared_auth.sessions`
+
+var SessionsAuthLevelValues = []string{"1", "2"}
 
 type SessionsBun struct {
 	bun.BaseModel `bun:"table:shared_auth.sessions"`
@@ -8199,6 +8204,8 @@ type SessionsBun struct {
 	Provider string `bun:"provider,type:text" json:"provider"`
 	ProviderTenant string `bun:"provider_tenant,type:text,default:'default'" json:"providerTenant"`
 	ProviderSubject string `bun:"provider_subject,type:text" json:"providerSubject"`
+	AuthLevel string `bun:"auth_level,type:smallint,default:1" json:"authLevel"`
+	AuthMethods json.RawMessage `bun:"auth_methods,type:jsonb,default:'[]'::jsonb" json:"authMethods"`
 	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
 	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
 	LastSeenAt time.Time `bun:"last_seen_at,type:timestamptz,default:now()" json:"lastSeenAt"`
@@ -8214,6 +8221,63 @@ func (value SessionsBun) Validate() error {
 	if len([]byte(value.ProviderTenant)) < 1 { return errors.New("sessions.provider_tenant is below 1 bytes") }
 	if len([]byte(value.ProviderSubject)) > 512 { return errors.New("sessions.provider_subject exceeds 512 bytes") }
 	if len([]byte(value.ProviderSubject)) < 1 { return errors.New("sessions.provider_subject is below 1 bytes") }
+	if !containsString(SessionsAuthLevelValues, value.AuthLevel) { return errors.New("unsupported sessions.auth_level") }
+	if !validateRawJSON(value.AuthMethods) { return errors.New("sessions.auth_methods must be valid JSON") }
+	return nil
+}
+
+const MagicLinkTokensTable = "shared_auth.magic_link_tokens"
+const MagicLinkTokensSelectSQL = `select
+      token_hash,
+      otp_hash,
+      shared_user_id::text as shared_user_id,
+      identifier_hash,
+      failed_attempts,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as consumed_at
+    from shared_auth.magic_link_tokens`
+
+type MagicLinkTokensBun struct {
+	bun.BaseModel `bun:"table:shared_auth.magic_link_tokens"`
+	TokenHash string `bun:"token_hash,type:text,pk" json:"tokenHash"`
+	OtpHash string `bun:"otp_hash,type:text" json:"otpHash"`
+	SharedUserId uuid.UUID `bun:"shared_user_id,type:uuid" json:"sharedUserId"`
+	IdentifierHash string `bun:"identifier_hash,type:text" json:"identifierHash"`
+	FailedAttempts int32 `bun:"failed_attempts,type:integer,default:0" json:"failedAttempts"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	ExpiresAt time.Time `bun:"expires_at,type:timestamptz" json:"expiresAt"`
+	ConsumedAt *time.Time `bun:"consumed_at,type:timestamptz,nullzero" json:"consumedAt,omitempty"`
+}
+
+func (value MagicLinkTokensBun) Validate() error {
+	if value.FailedAttempts < 0 { return errors.New("magic_link_tokens.failed_attempts is below the minimum") }
+	if value.FailedAttempts > 5 { return errors.New("magic_link_tokens.failed_attempts is above the maximum") }
+	return nil
+}
+
+const MfaSmsChallengesTable = "shared_auth.mfa_sms_challenges"
+const MfaSmsChallengesSelectSQL = `select
+      challenge_id::text as challenge_id,
+      shared_user_id::text as shared_user_id,
+      phone_e164,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(verified_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as verified_at
+    from shared_auth.mfa_sms_challenges`
+
+type MfaSmsChallengesBun struct {
+	bun.BaseModel `bun:"table:shared_auth.mfa_sms_challenges"`
+	ChallengeId uuid.UUID `bun:"challenge_id,type:uuid,pk,default:gen_random_uuid()" json:"challengeId"`
+	SharedUserId uuid.UUID `bun:"shared_user_id,type:uuid" json:"sharedUserId"`
+	PhoneE164 string `bun:"phone_e164,type:text" json:"phoneE164"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	ExpiresAt time.Time `bun:"expires_at,type:timestamptz" json:"expiresAt"`
+	VerifiedAt *time.Time `bun:"verified_at,type:timestamptz,nullzero" json:"verifiedAt,omitempty"`
+}
+
+func (value MfaSmsChallengesBun) Validate() error {
+	if !mfaSmsChallengesPhoneE164Pattern.MatchString(value.PhoneE164) { return errors.New("mfa_sms_challenges.phone_e164 does not match the required pattern") }
 	return nil
 }
 

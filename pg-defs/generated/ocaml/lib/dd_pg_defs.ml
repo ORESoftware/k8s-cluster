@@ -12569,9 +12569,22 @@ let validate_local_credentials_failed_attempts (value : int) : (int, string) res
 
 let sessions_table = "shared_auth.sessions"
 
-let sessions_columns = ["session_id"; "shared_user_id"; "refresh_token_hash"; "provider"; "provider_tenant"; "provider_subject"; "created_at"; "updated_at"; "last_seen_at"; "expires_at"; "revoked_at"; "rotated_from"]
+let sessions_columns = ["session_id"; "shared_user_id"; "refresh_token_hash"; "provider"; "provider_tenant"; "provider_subject"; "auth_level"; "auth_methods"; "created_at"; "updated_at"; "last_seen_at"; "expires_at"; "revoked_at"; "rotated_from"]
 
-let sessions_select_sql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+let sessions_select_sql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      auth_level,\n      auth_methods::text as auth_methods_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+
+type sessions_auth_level = [ `1 | `2 ]
+
+let sessions_auth_level_to_string (value : sessions_auth_level) : string =
+  match value with
+  | `1 -> "1"
+  | `2 -> "2"
+
+let parse_sessions_auth_level (value : string) : (sessions_auth_level, string) result =
+  match value with
+  | "1" -> Ok `1
+  | "2" -> Ok `2
+  | _ -> Error ("unsupported sessions.auth_level: " ^ value)
 
 type sessions_row = {
   sessions_session_id : string;
@@ -12580,6 +12593,8 @@ type sessions_row = {
   sessions_provider : string;
   sessions_provider_tenant : string;
   sessions_provider_subject : string;
+  sessions_auth_level : string;
+  sessions_auth_methods : string;
   sessions_created_at : string;
   sessions_updated_at : string;
   sessions_last_seen_at : string;
@@ -12596,12 +12611,73 @@ let sessions_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : sessio
     sessions_provider = get 3;
     sessions_provider_tenant = get 4;
     sessions_provider_subject = get 5;
-    sessions_created_at = get 6;
-    sessions_updated_at = get 7;
-    sessions_last_seen_at = get 8;
-    sessions_expires_at = get 9;
-    sessions_revoked_at = (if is_null 10 then None else Some (get 10));
-    sessions_rotated_from = (if is_null 11 then None else Some (get 11));
+    sessions_auth_level = get 6;
+    sessions_auth_methods = get 7;
+    sessions_created_at = get 8;
+    sessions_updated_at = get 9;
+    sessions_last_seen_at = get 10;
+    sessions_expires_at = get 11;
+    sessions_revoked_at = (if is_null 12 then None else Some (get 12));
+    sessions_rotated_from = (if is_null 13 then None else Some (get 13));
+  }
+
+let magic_link_tokens_table = "shared_auth.magic_link_tokens"
+
+let magic_link_tokens_columns = ["token_hash"; "otp_hash"; "shared_user_id"; "identifier_hash"; "failed_attempts"; "created_at"; "expires_at"; "consumed_at"]
+
+let magic_link_tokens_select_sql = "select\n      token_hash,\n      otp_hash,\n      shared_user_id::text as shared_user_id,\n      identifier_hash,\n      failed_attempts,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consumed_at\n    from shared_auth.magic_link_tokens"
+
+type magic_link_tokens_row = {
+  magic_link_tokens_token_hash : string;
+  magic_link_tokens_otp_hash : string;
+  magic_link_tokens_shared_user_id : string;
+  magic_link_tokens_identifier_hash : string;
+  magic_link_tokens_failed_attempts : int;
+  magic_link_tokens_created_at : string;
+  magic_link_tokens_expires_at : string;
+  magic_link_tokens_consumed_at : string option;
+}
+
+let magic_link_tokens_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : magic_link_tokens_row =
+  {
+    magic_link_tokens_token_hash = get 0;
+    magic_link_tokens_otp_hash = get 1;
+    magic_link_tokens_shared_user_id = get 2;
+    magic_link_tokens_identifier_hash = get 3;
+    magic_link_tokens_failed_attempts = int_of_string (get 4);
+    magic_link_tokens_created_at = get 5;
+    magic_link_tokens_expires_at = get 6;
+    magic_link_tokens_consumed_at = (if is_null 7 then None else Some (get 7));
+  }
+
+let validate_magic_link_tokens_failed_attempts (value : int) : (int, string) result =
+  if value < 0 then Error "magic_link_tokens.failed_attempts is below the minimum"
+  else if value > 5 then Error "magic_link_tokens.failed_attempts is above the maximum"
+  else Ok value
+
+let mfa_sms_challenges_table = "shared_auth.mfa_sms_challenges"
+
+let mfa_sms_challenges_columns = ["challenge_id"; "shared_user_id"; "phone_e164"; "created_at"; "expires_at"; "verified_at"]
+
+let mfa_sms_challenges_select_sql = "select\n      challenge_id::text as challenge_id,\n      shared_user_id::text as shared_user_id,\n      phone_e164,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(verified_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as verified_at\n    from shared_auth.mfa_sms_challenges"
+
+type mfa_sms_challenges_row = {
+  mfa_sms_challenges_challenge_id : string;
+  mfa_sms_challenges_shared_user_id : string;
+  mfa_sms_challenges_phone_e164 : string;
+  mfa_sms_challenges_created_at : string;
+  mfa_sms_challenges_expires_at : string;
+  mfa_sms_challenges_verified_at : string option;
+}
+
+let mfa_sms_challenges_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : mfa_sms_challenges_row =
+  {
+    mfa_sms_challenges_challenge_id = get 0;
+    mfa_sms_challenges_shared_user_id = get 1;
+    mfa_sms_challenges_phone_e164 = get 2;
+    mfa_sms_challenges_created_at = get 3;
+    mfa_sms_challenges_expires_at = get 4;
+    mfa_sms_challenges_verified_at = (if is_null 5 then None else Some (get 5));
   }
 
 let roles_table = "shared_auth.roles"

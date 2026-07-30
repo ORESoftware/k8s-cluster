@@ -13761,6 +13761,8 @@ class LocalCredentialsInsert(BaseModel):
             raise ValueError("local_credentials.password_hash exceeds 512 bytes")
         return value
 
+SessionsAuthLevel = Literal["1", "2"]
+
 class Sessions(Base):
     __tablename__ = "sessions"
     __table_args__ = (
@@ -13768,6 +13770,8 @@ class Sessions(Base):
         CheckConstraint("octet_length(provider) between 1 and 64", name="shared_auth_sessions_provider_size_chk"),
         CheckConstraint("octet_length(provider_tenant) between 1 and 255", name="shared_auth_sessions_tenant_size_chk"),
         CheckConstraint("octet_length(provider_subject) between 1 and 512", name="shared_auth_sessions_subject_size_chk"),
+        CheckConstraint("auth_level in (1, 2)", name="shared_auth_sessions_level_chk"),
+        CheckConstraint("jsonb_typeof(auth_methods) = 'array'", name="shared_auth_sessions_methods_array_chk"),
         CheckConstraint("expires_at > created_at", name="shared_auth_sessions_expiry_chk"),
         Index("shared_auth_sessions_user_idx", "shared_user_id"),
         Index("shared_auth_sessions_active_expiry_idx", "expires_at", postgresql_where=text("revoked_at is null")),
@@ -13780,6 +13784,8 @@ class Sessions(Base):
     provider: Mapped[str] = mapped_column(Text(), nullable=False)
     provider_tenant: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'default'"))
     provider_subject: Mapped[str] = mapped_column(Text(), nullable=False)
+    auth_level: Mapped[str] = mapped_column(SmallInteger(), nullable=False, server_default=text("1"))
+    auth_methods: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
@@ -13796,6 +13802,8 @@ class SessionsRow(BaseModel):
     provider: str
     providerTenant: str
     providerSubject: str
+    authLevel: SessionsAuthLevel
+    authMethods: list[Any]
     createdAt: datetime
     updatedAt: datetime
     lastSeenAt: datetime
@@ -13833,6 +13841,8 @@ class SessionsInsert(BaseModel):
     provider: str
     providerTenant: str | None = "default"
     providerSubject: str
+    authLevel: SessionsAuthLevel | None = 1
+    authMethods: list[Any] | None = Field(default_factory=list)
     createdAt: datetime | None = None
     updatedAt: datetime | None = None
     lastSeenAt: datetime | None = None
@@ -13860,6 +13870,90 @@ class SessionsInsert(BaseModel):
         if value is not None and len(value.encode("utf-8")) > 512:
             raise ValueError("sessions.provider_subject exceeds 512 bytes")
         return value
+
+class MagicLinkTokens(Base):
+    __tablename__ = "magic_link_tokens"
+    __table_args__ = (
+        CheckConstraint("octet_length(token_hash) = 43", name="shared_auth_magic_link_token_hash_size_chk"),
+        CheckConstraint("octet_length(otp_hash) = 43", name="shared_auth_magic_link_otp_hash_size_chk"),
+        CheckConstraint("octet_length(identifier_hash) = 43", name="shared_auth_magic_link_identifier_hash_size_chk"),
+        CheckConstraint("failed_attempts between 0 and 5", name="shared_auth_magic_link_failed_attempts_chk"),
+        CheckConstraint("expires_at > created_at", name="shared_auth_magic_link_expiry_chk"),
+        Index("shared_auth_magic_link_tokens_user_idx", "shared_user_id"),
+        Index("shared_auth_magic_link_tokens_active_expiry_idx", "expires_at", postgresql_where=text("consumed_at is null")),
+        Index("shared_auth_magic_link_tokens_identifier_created_idx", "identifier_hash", text("created_at desc")),
+        {"schema": "shared_auth"},
+    )
+
+    token_hash: Mapped[str] = mapped_column(Text(), primary_key=True)
+    otp_hash: Mapped[str] = mapped_column(Text(), nullable=False)
+    shared_user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    identifier_hash: Mapped[str] = mapped_column(Text(), nullable=False)
+    failed_attempts: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+class MagicLinkTokensRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    tokenHash: str
+    otpHash: str
+    sharedUserId: UUID
+    identifierHash: str
+    failedAttempts: int = Field(..., ge=0, le=5)
+    createdAt: datetime
+    expiresAt: datetime
+    consumedAt: datetime | None = None
+
+class MagicLinkTokensInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tokenHash: str
+    otpHash: str
+    sharedUserId: UUID
+    identifierHash: str
+    failedAttempts: int | None = Field(0, ge=0, le=5)
+    createdAt: datetime | None = None
+    expiresAt: datetime
+    consumedAt: datetime | None = None
+
+class MfaSmsChallenges(Base):
+    __tablename__ = "mfa_sms_challenges"
+    __table_args__ = (
+        CheckConstraint("phone_e164 ~ '^\\+[1-9][0-9]{7,14}$'", name="shared_auth_mfa_sms_phone_chk"),
+        CheckConstraint("expires_at > created_at", name="shared_auth_mfa_sms_expiry_chk"),
+        Index("shared_auth_mfa_sms_challenges_user_created_idx", "shared_user_id", text("created_at desc")),
+        Index("shared_auth_mfa_sms_challenges_active_expiry_idx", "expires_at", postgresql_where=text("verified_at is null")),
+        {"schema": "shared_auth"},
+    )
+
+    challenge_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    shared_user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    phone_e164: Mapped[str] = mapped_column(Text(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+class MfaSmsChallengesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    challengeId: UUID
+    sharedUserId: UUID
+    phoneE164: str = Field(..., pattern="^\\+[1-9][0-9]{7,14}$")
+    createdAt: datetime
+    expiresAt: datetime
+    verifiedAt: datetime | None = None
+
+class MfaSmsChallengesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    challengeId: UUID | None = None
+    sharedUserId: UUID
+    phoneE164: str = Field(..., pattern="^\\+[1-9][0-9]{7,14}$")
+    createdAt: datetime | None = None
+    expiresAt: datetime
+    verifiedAt: datetime | None = None
 
 class Roles(Base):
     __tablename__ = "roles"

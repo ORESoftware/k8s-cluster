@@ -7542,6 +7542,12 @@ export class SessionsEntity {
   @Column({ name: "provider_subject", type: "text" })
   providerSubject!: string;
 
+  @Column({ name: "auth_level", type: "smallint", default: () => "1" })
+  authLevel!: string;
+
+  @Column({ name: "auth_methods", type: "jsonb", default: () => "'[]'::jsonb" })
+  authMethods!: unknown[];
+
   @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
   createdAt!: Date;
 
@@ -7559,6 +7565,61 @@ export class SessionsEntity {
 
   @Column({ name: "rotated_from", type: "uuid", nullable: true })
   rotatedFrom!: string | null;
+
+}
+
+@Index("shared_auth_magic_link_tokens_user_idx", ["sharedUserId"])
+@Index("shared_auth_magic_link_tokens_active_expiry_idx", ["expiresAt"], { where: "consumed_at is null" })
+// shared_auth_magic_link_tokens_identifier_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ schema: "shared_auth", name: "magic_link_tokens" })
+export class MagicLinkTokensEntity {
+  @PrimaryColumn({ name: "token_hash", type: "text" })
+  tokenHash!: string;
+
+  @Column({ name: "otp_hash", type: "text" })
+  otpHash!: string;
+
+  @Column({ name: "shared_user_id", type: "uuid" })
+  sharedUserId!: string;
+
+  @Column({ name: "identifier_hash", type: "text" })
+  identifierHash!: string;
+
+  @Column({ name: "failed_attempts", type: "integer", default: () => "0" })
+  failedAttempts!: number;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "expires_at", type: "timestamptz" })
+  expiresAt!: Date;
+
+  @Column({ name: "consumed_at", type: "timestamptz", nullable: true })
+  consumedAt!: Date | null;
+
+}
+
+// shared_auth_mfa_sms_challenges_user_created_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Index("shared_auth_mfa_sms_challenges_active_expiry_idx", ["expiresAt"], { where: "verified_at is null" })
+@Entity({ schema: "shared_auth", name: "mfa_sms_challenges" })
+export class MfaSmsChallengesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "challenge_id" })
+  challengeId!: string;
+
+  @Column({ name: "shared_user_id", type: "uuid" })
+  sharedUserId!: string;
+
+  @Column({ name: "phone_e164", type: "text" })
+  phoneE164!: string;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "expires_at", type: "timestamptz" })
+  expiresAt!: Date;
+
+  @Column({ name: "verified_at", type: "timestamptz", nullable: true })
+  verifiedAt!: Date | null;
 
 }
 

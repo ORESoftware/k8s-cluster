@@ -14088,6 +14088,11 @@ class SessionsObjectBox {
 
   String providerSubject;
 
+  String authLevel;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String authMethods;
+
   String createdAt;
 
   String updatedAt;
@@ -14108,6 +14113,8 @@ class SessionsObjectBox {
     required this.provider,
     required this.providerTenant,
     required this.providerSubject,
+    required this.authLevel,
+    required this.authMethods,
     required this.createdAt,
     required this.updatedAt,
     required this.lastSeenAt,
@@ -14123,6 +14130,8 @@ class SessionsObjectBox {
     "provider": provider,
     "providerTenant": providerTenant,
     "providerSubject": providerSubject,
+    "authLevel": authLevel,
+    "authMethods": jsonDecode(authMethods),
     "createdAt": createdAt,
     "updatedAt": updatedAt,
     "lastSeenAt": lastSeenAt,
@@ -14139,12 +14148,122 @@ class SessionsObjectBox {
       provider: json["provider"] as String,
       providerTenant: json["providerTenant"] as String,
       providerSubject: json["providerSubject"] as String,
+      authLevel: json["authLevel"] as String,
+      authMethods: json["authMethods"] is String ? json["authMethods"] as String : jsonEncode(json["authMethods"]),
       createdAt: json["createdAt"] as String,
       updatedAt: json["updatedAt"] as String,
       lastSeenAt: json["lastSeenAt"] as String,
       expiresAt: json["expiresAt"] as String,
       revokedAt: json["revokedAt"] as String?,
       rotatedFrom: json["rotatedFrom"] as String?,
+    );
+  }
+}
+
+@Entity()
+class MagicLinkTokensObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String tokenHash;
+
+  String otpHash;
+
+  String sharedUserId;
+
+  String identifierHash;
+
+  int failedAttempts;
+
+  String createdAt;
+
+  String expiresAt;
+
+  String? consumedAt;
+
+
+  MagicLinkTokensObjectBox({
+    required this.tokenHash,
+    required this.otpHash,
+    required this.sharedUserId,
+    required this.identifierHash,
+    required this.failedAttempts,
+    required this.createdAt,
+    required this.expiresAt,
+    this.consumedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "tokenHash": tokenHash,
+    "otpHash": otpHash,
+    "sharedUserId": sharedUserId,
+    "identifierHash": identifierHash,
+    "failedAttempts": failedAttempts,
+    "createdAt": createdAt,
+    "expiresAt": expiresAt,
+    "consumedAt": consumedAt,
+  };
+
+  static MagicLinkTokensObjectBox fromJson(Map<String, Object?> json) {
+    return MagicLinkTokensObjectBox(
+      tokenHash: json["tokenHash"] as String,
+      otpHash: json["otpHash"] as String,
+      sharedUserId: json["sharedUserId"] as String,
+      identifierHash: json["identifierHash"] as String,
+      failedAttempts: (json["failedAttempts"] as num).toInt(),
+      createdAt: json["createdAt"] as String,
+      expiresAt: json["expiresAt"] as String,
+      consumedAt: json["consumedAt"] as String?,
+    );
+  }
+}
+
+@Entity()
+class MfaSmsChallengesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String challengeId;
+
+  String sharedUserId;
+
+  String phoneE164;
+
+  String createdAt;
+
+  String expiresAt;
+
+  String? verifiedAt;
+
+
+  MfaSmsChallengesObjectBox({
+    required this.challengeId,
+    required this.sharedUserId,
+    required this.phoneE164,
+    required this.createdAt,
+    required this.expiresAt,
+    this.verifiedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "challengeId": challengeId,
+    "sharedUserId": sharedUserId,
+    "phoneE164": phoneE164,
+    "createdAt": createdAt,
+    "expiresAt": expiresAt,
+    "verifiedAt": verifiedAt,
+  };
+
+  static MfaSmsChallengesObjectBox fromJson(Map<String, Object?> json) {
+    return MfaSmsChallengesObjectBox(
+      challengeId: json["challengeId"] as String,
+      sharedUserId: json["sharedUserId"] as String,
+      phoneE164: json["phoneE164"] as String,
+      createdAt: json["createdAt"] as String,
+      expiresAt: json["expiresAt"] as String,
+      verifiedAt: json["verifiedAt"] as String?,
     );
   }
 }

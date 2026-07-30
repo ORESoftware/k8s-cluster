@@ -12053,7 +12053,27 @@ pub fn validate_local_credentials_slug(value: String) -> Result(String, String) 
 }
 
 pub const sessions_table = "shared_auth.sessions"
-pub const sessions_select_sql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+pub const sessions_select_sql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      auth_level,\n      auth_methods::text as auth_methods_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+
+pub type SessionsAuthLevel {
+  SessionsAuthLevel1
+  SessionsAuthLevel2
+}
+
+pub fn sessions_auth_level_to_string(value: SessionsAuthLevel) -> String {
+  case value {
+    SessionsAuthLevel1 -> "1"
+    SessionsAuthLevel2 -> "2"
+  }
+}
+
+pub fn parse_sessions_auth_level(value: String) -> Result(SessionsAuthLevel, String) {
+  case value {
+    "1" -> Ok(SessionsAuthLevel1)
+    "2" -> Ok(SessionsAuthLevel2)
+    _ -> Error("unsupported sessions.auth_level: " <> value)
+  }
+}
 
 pub type SessionsRow {
   SessionsRow(
@@ -12063,6 +12083,8 @@ pub type SessionsRow {
     provider: String,
     provider_tenant: String,
     provider_subject: String,
+    auth_level: String,
+    auth_methods_json: String,
     created_at: String,
     updated_at: String,
     last_seen_at: String,
@@ -12077,6 +12099,59 @@ pub fn validate_sessions_slug(value: String) -> Result(String, String) {
   case length >= 3 && length <= 120 && is_slug_text(value) {
     True -> Ok(value)
     False -> Error("sessions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_sessions_auth_level(value: String) -> Result(String, String) {
+  case list.contains(["1", "2"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sessions.auth_level: " <> value)
+  }
+}
+
+pub const magic_link_tokens_table = "shared_auth.magic_link_tokens"
+pub const magic_link_tokens_select_sql = "select\n      token_hash,\n      otp_hash,\n      shared_user_id::text as shared_user_id,\n      identifier_hash,\n      failed_attempts,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consumed_at\n    from shared_auth.magic_link_tokens"
+
+pub type MagicLinkTokensRow {
+  MagicLinkTokensRow(
+    token_hash: String,
+    otp_hash: String,
+    shared_user_id: String,
+    identifier_hash: String,
+    failed_attempts: Int,
+    created_at: String,
+    expires_at: String,
+    consumed_at: Option(String),
+  )
+}
+
+pub fn validate_magic_link_tokens_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("magic_link_tokens.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const mfa_sms_challenges_table = "shared_auth.mfa_sms_challenges"
+pub const mfa_sms_challenges_select_sql = "select\n      challenge_id::text as challenge_id,\n      shared_user_id::text as shared_user_id,\n      phone_e164,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(verified_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as verified_at\n    from shared_auth.mfa_sms_challenges"
+
+pub type MfaSmsChallengesRow {
+  MfaSmsChallengesRow(
+    challenge_id: String,
+    shared_user_id: String,
+    phone_e164: String,
+    created_at: String,
+    expires_at: String,
+    verified_at: Option(String),
+  )
+}
+
+pub fn validate_mfa_sms_challenges_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("mfa_sms_challenges.slug must be a lowercase slug 3-120 characters long")
   }
 }
 

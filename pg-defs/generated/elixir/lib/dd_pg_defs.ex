@@ -174,6 +174,8 @@ defmodule DdPgDefs do
     DdPgDefs.ProviderIdentities,
     DdPgDefs.LocalCredentials,
     DdPgDefs.Sessions,
+    DdPgDefs.MagicLinkTokens,
+    DdPgDefs.MfaSmsChallenges,
     DdPgDefs.Roles,
     DdPgDefs.WebhookEvents,
     DdPgDefs.FabJobs,

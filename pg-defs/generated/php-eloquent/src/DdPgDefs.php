@@ -4649,8 +4649,8 @@ class Sessions extends Model
     public $incrementing = false;
     protected $keyType = 'string';
     public $timestamps = true;
-    protected $fillable = ['shared_user_id', 'refresh_token_hash', 'provider', 'provider_tenant', 'provider_subject', 'created_at', 'updated_at', 'last_seen_at', 'expires_at', 'revoked_at', 'rotated_from'];
-    protected $casts = ['created_at' => 'datetime', 'updated_at' => 'datetime', 'last_seen_at' => 'datetime', 'expires_at' => 'datetime', 'revoked_at' => 'datetime'];
+    protected $fillable = ['shared_user_id', 'refresh_token_hash', 'provider', 'provider_tenant', 'provider_subject', 'auth_level', 'auth_methods', 'created_at', 'updated_at', 'last_seen_at', 'expires_at', 'revoked_at', 'rotated_from'];
+    protected $casts = ['auth_methods' => 'array', 'created_at' => 'datetime', 'updated_at' => 'datetime', 'last_seen_at' => 'datetime', 'expires_at' => 'datetime', 'revoked_at' => 'datetime'];
 
     /** @return array<string, array<int, string>> */
     public static function rules(): array
@@ -4661,10 +4661,56 @@ class Sessions extends Model
             'provider' => ['required', 'string'],
             'provider_tenant' => ['nullable', 'string'],
             'provider_subject' => ['required', 'string'],
+            'auth_level' => ['nullable', 'string', 'in:1,2'],
+            'auth_methods' => ['nullable', 'array'],
             'last_seen_at' => ['nullable', 'date'],
             'expires_at' => ['required', 'date'],
             'revoked_at' => ['nullable', 'date'],
             'rotated_from' => ['nullable', 'uuid'],
+        ];
+    }
+}
+
+class MagicLinkTokens extends Model
+{
+    protected $table = 'shared_auth.magic_link_tokens';
+    protected $primaryKey = 'token_hash';
+    public $timestamps = false;
+    protected $fillable = ['otp_hash', 'shared_user_id', 'identifier_hash', 'failed_attempts', 'created_at', 'expires_at', 'consumed_at'];
+    protected $casts = ['failed_attempts' => 'integer', 'created_at' => 'datetime', 'expires_at' => 'datetime', 'consumed_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'otp_hash' => ['required', 'string'],
+            'shared_user_id' => ['required', 'uuid'],
+            'identifier_hash' => ['required', 'string'],
+            'failed_attempts' => ['nullable', 'integer', 'min:0', 'max:5'],
+            'expires_at' => ['required', 'date'],
+            'consumed_at' => ['nullable', 'date'],
+        ];
+    }
+}
+
+class MfaSmsChallenges extends Model
+{
+    protected $table = 'shared_auth.mfa_sms_challenges';
+    protected $primaryKey = 'challenge_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['shared_user_id', 'phone_e164', 'created_at', 'expires_at', 'verified_at'];
+    protected $casts = ['created_at' => 'datetime', 'expires_at' => 'datetime', 'verified_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'shared_user_id' => ['required', 'uuid'],
+            'phone_e164' => ['required', 'string', 'regex:/^\\+[1-9][0-9]{7,14}$/'],
+            'expires_at' => ['required', 'date'],
+            'verified_at' => ['nullable', 'date'],
         ];
     }
 }

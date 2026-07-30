@@ -3482,6 +3482,8 @@ class Sessions(models.Model):
     provider = models.TextField()
     provider_tenant = models.TextField(default="default")
     provider_subject = models.TextField()
+    auth_level = models.TextField(choices=[("1", "1"), ("2", "2")], default=1)
+    auth_methods = models.JSONField(default=list)
     created_at = models.DateTimeField()
     updated_at = models.DateTimeField()
     last_seen_at = models.DateTimeField()
@@ -3493,6 +3495,36 @@ class Sessions(models.Model):
         managed = False
         app_label = "dd_pg_defs"
         db_table = "shared_auth\".\"sessions"
+
+
+class MagicLinkTokens(models.Model):
+    token_hash = models.TextField(primary_key=True)
+    otp_hash = models.TextField()
+    shared_user_id = models.UUIDField()
+    identifier_hash = models.TextField()
+    failed_attempts = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(5)])
+    created_at = models.DateTimeField()
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "shared_auth\".\"magic_link_tokens"
+
+
+class MfaSmsChallenges(models.Model):
+    challenge_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    shared_user_id = models.UUIDField()
+    phone_e164 = models.TextField(validators=[RegexValidator(regex="^\\+[1-9][0-9]{7,14}$")])
+    created_at = models.DateTimeField()
+    expires_at = models.DateTimeField()
+    verified_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "shared_auth\".\"mfa_sms_challenges"
 
 
 class Roles(models.Model):

@@ -13381,8 +13381,24 @@ let validateLocalCredentialsFailedAttempts (value: int) : Result<int, string> =
     else Ok value
 
 let sessionsTable = "shared_auth.sessions"
-let sessionsColumns = [ "session_id"; "shared_user_id"; "refresh_token_hash"; "provider"; "provider_tenant"; "provider_subject"; "created_at"; "updated_at"; "last_seen_at"; "expires_at"; "revoked_at"; "rotated_from" ]
-let sessionsSelectSql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+let sessionsColumns = [ "session_id"; "shared_user_id"; "refresh_token_hash"; "provider"; "provider_tenant"; "provider_subject"; "auth_level"; "auth_methods"; "created_at"; "updated_at"; "last_seen_at"; "expires_at"; "revoked_at"; "rotated_from" ]
+let sessionsSelectSql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      auth_level,\n      auth_methods::text as auth_methods_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+
+[<RequireQualifiedAccess>]
+type SessionsAuthLevel =
+    | 1
+    | 2
+
+let sessionsAuthLevelToString (value: SessionsAuthLevel) : string =
+    match value with
+    | SessionsAuthLevel.1 -> "1"
+    | SessionsAuthLevel.2 -> "2"
+
+let parseSessionsAuthLevel (value: string) : Result<SessionsAuthLevel, string> =
+    match value with
+    | "1" -> Ok SessionsAuthLevel.1
+    | "2" -> Ok SessionsAuthLevel.2
+    | _ -> Error ("unsupported sessions.auth_level: " + value)
 
 type SessionsRow =
     { SessionsSessionId: string
@@ -13391,6 +13407,8 @@ type SessionsRow =
       SessionsProvider: string
       SessionsProviderTenant: string
       SessionsProviderSubject: string
+      SessionsAuthLevel: string
+      SessionsAuthMethods: string
       SessionsCreatedAt: string
       SessionsUpdatedAt: string
       SessionsLastSeenAt: string
@@ -13406,13 +13424,72 @@ let sessionsRowOfRow (get: int -> string) (isNullAt: int -> bool) : SessionsRow 
       SessionsProvider = get 3
       SessionsProviderTenant = get 4
       SessionsProviderSubject = get 5
-      SessionsCreatedAt = get 6
-      SessionsUpdatedAt = get 7
-      SessionsLastSeenAt = get 8
-      SessionsExpiresAt = get 9
-      SessionsRevokedAt = (if isNullAt 10 then None else Some (get 10))
-      SessionsRotatedFrom = (if isNullAt 11 then None else Some (get 11))
+      SessionsAuthLevel = get 6
+      SessionsAuthMethods = get 7
+      SessionsCreatedAt = get 8
+      SessionsUpdatedAt = get 9
+      SessionsLastSeenAt = get 10
+      SessionsExpiresAt = get 11
+      SessionsRevokedAt = (if isNullAt 12 then None else Some (get 12))
+      SessionsRotatedFrom = (if isNullAt 13 then None else Some (get 13))
     }
+
+let magicLinkTokensTable = "shared_auth.magic_link_tokens"
+let magicLinkTokensColumns = [ "token_hash"; "otp_hash"; "shared_user_id"; "identifier_hash"; "failed_attempts"; "created_at"; "expires_at"; "consumed_at" ]
+let magicLinkTokensSelectSql = "select\n      token_hash,\n      otp_hash,\n      shared_user_id::text as shared_user_id,\n      identifier_hash,\n      failed_attempts,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consumed_at\n    from shared_auth.magic_link_tokens"
+
+type MagicLinkTokensRow =
+    { MagicLinkTokensTokenHash: string
+      MagicLinkTokensOtpHash: string
+      MagicLinkTokensSharedUserId: string
+      MagicLinkTokensIdentifierHash: string
+      MagicLinkTokensFailedAttempts: int
+      MagicLinkTokensCreatedAt: string
+      MagicLinkTokensExpiresAt: string
+      MagicLinkTokensConsumedAt: string option
+    }
+
+let magicLinkTokensRowOfRow (get: int -> string) (isNullAt: int -> bool) : MagicLinkTokensRow =
+    { MagicLinkTokensTokenHash = get 0
+      MagicLinkTokensOtpHash = get 1
+      MagicLinkTokensSharedUserId = get 2
+      MagicLinkTokensIdentifierHash = get 3
+      MagicLinkTokensFailedAttempts = int (get 4)
+      MagicLinkTokensCreatedAt = get 5
+      MagicLinkTokensExpiresAt = get 6
+      MagicLinkTokensConsumedAt = (if isNullAt 7 then None else Some (get 7))
+    }
+
+let validateMagicLinkTokensFailedAttempts (value: int) : Result<int, string> =
+    if value < 0 then Error "magic_link_tokens.failed_attempts is below the minimum"
+    elif value > 5 then Error "magic_link_tokens.failed_attempts is above the maximum"
+    else Ok value
+
+let mfaSmsChallengesTable = "shared_auth.mfa_sms_challenges"
+let mfaSmsChallengesColumns = [ "challenge_id"; "shared_user_id"; "phone_e164"; "created_at"; "expires_at"; "verified_at" ]
+let mfaSmsChallengesSelectSql = "select\n      challenge_id::text as challenge_id,\n      shared_user_id::text as shared_user_id,\n      phone_e164,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(verified_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as verified_at\n    from shared_auth.mfa_sms_challenges"
+
+type MfaSmsChallengesRow =
+    { MfaSmsChallengesChallengeId: string
+      MfaSmsChallengesSharedUserId: string
+      MfaSmsChallengesPhoneE164: string
+      MfaSmsChallengesCreatedAt: string
+      MfaSmsChallengesExpiresAt: string
+      MfaSmsChallengesVerifiedAt: string option
+    }
+
+let mfaSmsChallengesRowOfRow (get: int -> string) (isNullAt: int -> bool) : MfaSmsChallengesRow =
+    { MfaSmsChallengesChallengeId = get 0
+      MfaSmsChallengesSharedUserId = get 1
+      MfaSmsChallengesPhoneE164 = get 2
+      MfaSmsChallengesCreatedAt = get 3
+      MfaSmsChallengesExpiresAt = get 4
+      MfaSmsChallengesVerifiedAt = (if isNullAt 5 then None else Some (get 5))
+    }
+
+let validateMfaSmsChallengesPhoneE164 (value: string) : Result<string, string> =
+    if not (Regex.IsMatch(value, @"^\\+[1-9][0-9]{7,14}$")) then Error "mfa_sms_challenges.phone_e164 does not match the required pattern"
+    else Ok value
 
 let rolesTable = "shared_auth.roles"
 let rolesColumns = [ "role_id"; "shared_user_id"; "role_name"; "granted_at"; "granted_by" ]

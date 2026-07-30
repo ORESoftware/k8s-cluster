@@ -14593,8 +14593,26 @@ pub fn validateLocalCredentialsFailedAttempts(value: i32) ?[]const u8 {
 }
 
 pub const sessions_table: []const u8 = "shared_auth.sessions";
-pub const sessions_columns = [_][]const u8{ "session_id", "shared_user_id", "refresh_token_hash", "provider", "provider_tenant", "provider_subject", "created_at", "updated_at", "last_seen_at", "expires_at", "revoked_at", "rotated_from" };
-pub const sessions_select_sql: []const u8 = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions";
+pub const sessions_columns = [_][]const u8{ "session_id", "shared_user_id", "refresh_token_hash", "provider", "provider_tenant", "provider_subject", "auth_level", "auth_methods", "created_at", "updated_at", "last_seen_at", "expires_at", "revoked_at", "rotated_from" };
+pub const sessions_select_sql: []const u8 = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      auth_level,\n      auth_methods::text as auth_methods_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions";
+
+pub const SessionsAuthLevel = enum {
+    @"1",
+    @"2",
+
+    pub fn toString(self: SessionsAuthLevel) []const u8 {
+        return switch (self) {
+            .@"1" => "1",
+            .@"2" => "2",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?SessionsAuthLevel {
+        if (std.mem.eql(u8, value, "1")) return .@"1";
+        if (std.mem.eql(u8, value, "2")) return .@"2";
+        return null;
+    }
+};
 
 pub const SessionsRow = struct {
     session_id: []const u8,
@@ -14603,6 +14621,8 @@ pub const SessionsRow = struct {
     provider: []const u8,
     provider_tenant: []const u8,
     provider_subject: []const u8,
+    auth_level: []const u8,
+    auth_methods: []const u8,
     created_at: []const u8,
     updated_at: []const u8,
     last_seen_at: []const u8,
@@ -14618,12 +14638,72 @@ pub const SessionsRow = struct {
             .provider = reader.text(3),
             .provider_tenant = reader.text(4),
             .provider_subject = reader.text(5),
-            .created_at = reader.text(6),
-            .updated_at = reader.text(7),
-            .last_seen_at = reader.text(8),
-            .expires_at = reader.text(9),
-            .revoked_at = if (reader.is_null(10)) null else reader.text(10),
-            .rotated_from = if (reader.is_null(11)) null else reader.text(11),
+            .auth_level = reader.text(6),
+            .auth_methods = reader.text(7),
+            .created_at = reader.text(8),
+            .updated_at = reader.text(9),
+            .last_seen_at = reader.text(10),
+            .expires_at = reader.text(11),
+            .revoked_at = if (reader.is_null(12)) null else reader.text(12),
+            .rotated_from = if (reader.is_null(13)) null else reader.text(13),
+        };
+    }
+};
+
+pub const magic_link_tokens_table: []const u8 = "shared_auth.magic_link_tokens";
+pub const magic_link_tokens_columns = [_][]const u8{ "token_hash", "otp_hash", "shared_user_id", "identifier_hash", "failed_attempts", "created_at", "expires_at", "consumed_at" };
+pub const magic_link_tokens_select_sql: []const u8 = "select\n      token_hash,\n      otp_hash,\n      shared_user_id::text as shared_user_id,\n      identifier_hash,\n      failed_attempts,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consumed_at\n    from shared_auth.magic_link_tokens";
+
+pub const MagicLinkTokensRow = struct {
+    token_hash: []const u8,
+    otp_hash: []const u8,
+    shared_user_id: []const u8,
+    identifier_hash: []const u8,
+    failed_attempts: i32,
+    created_at: []const u8,
+    expires_at: []const u8,
+    consumed_at: ?[]const u8,
+
+    pub fn fromRow(reader: RowReader) MagicLinkTokensRow {
+        return MagicLinkTokensRow{
+            .token_hash = reader.text(0),
+            .otp_hash = reader.text(1),
+            .shared_user_id = reader.text(2),
+            .identifier_hash = reader.text(3),
+            .failed_attempts = @as(i32, @intCast(reader.int(4))),
+            .created_at = reader.text(5),
+            .expires_at = reader.text(6),
+            .consumed_at = if (reader.is_null(7)) null else reader.text(7),
+        };
+    }
+};
+
+pub fn validateMagicLinkTokensFailedAttempts(value: i32) ?[]const u8 {
+    if (value < 0) return "magic_link_tokens.failed_attempts is below the minimum";
+    if (value > 5) return "magic_link_tokens.failed_attempts is above the maximum";
+    return null;
+}
+
+pub const mfa_sms_challenges_table: []const u8 = "shared_auth.mfa_sms_challenges";
+pub const mfa_sms_challenges_columns = [_][]const u8{ "challenge_id", "shared_user_id", "phone_e164", "created_at", "expires_at", "verified_at" };
+pub const mfa_sms_challenges_select_sql: []const u8 = "select\n      challenge_id::text as challenge_id,\n      shared_user_id::text as shared_user_id,\n      phone_e164,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(verified_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as verified_at\n    from shared_auth.mfa_sms_challenges";
+
+pub const MfaSmsChallengesRow = struct {
+    challenge_id: []const u8,
+    shared_user_id: []const u8,
+    phone_e164: []const u8,
+    created_at: []const u8,
+    expires_at: []const u8,
+    verified_at: ?[]const u8,
+
+    pub fn fromRow(reader: RowReader) MfaSmsChallengesRow {
+        return MfaSmsChallengesRow{
+            .challenge_id = reader.text(0),
+            .shared_user_id = reader.text(1),
+            .phone_e164 = reader.text(2),
+            .created_at = reader.text(3),
+            .expires_at = reader.text(4),
+            .verified_at = if (reader.is_null(5)) null else reader.text(5),
         };
     }
 };

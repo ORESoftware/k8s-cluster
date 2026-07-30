@@ -3,11 +3,11 @@
 # Generated ORM/client code is an adapter only; do not infer migrations from it.
 # MIGRATION SAFETY: never run or apply migrations automatically. Require explicit human review and approval before any database write.
 
-defmodule DdPgDefs.Sessions do
+defmodule DdPgDefs.MfaSmsChallenges do
   use Ecto.Schema
   import Ecto.Changeset
 
-  @table "sessions"
+  @table "mfa_sms_challenges"
   @schema_prefix "shared_auth"
 
   @primary_key {:id, :binary_id, autogenerate: true}
@@ -15,27 +15,19 @@ defmodule DdPgDefs.Sessions do
 
   schema @table do
     field :shared_user_id, :binary_id
-    field :refresh_token_hash, :string
-    field :provider, :string
-    field :provider_tenant, :string, default: "default"
-    field :provider_subject, :string
-    field :auth_level, :string, default: 1
-    field :auth_methods, {:array, :map}, default: []
-    field :last_seen_at, :utc_datetime_usec
+    field :phone_e164, :string
     field :expires_at, :utc_datetime_usec
-    field :revoked_at, :utc_datetime_usec
-    field :rotated_from, :binary_id
-    timestamps(inserted_at: :created_at, type: :utc_datetime_usec)
+    field :verified_at, :utc_datetime_usec
   end
 
-  @required_fields ~w(shared_user_id refresh_token_hash provider provider_subject expires_at)a
-  @optional_fields ~w(provider_tenant auth_level auth_methods last_seen_at revoked_at rotated_from)a
+  @required_fields ~w(shared_user_id phone_e164 expires_at)a
+  @optional_fields ~w(verified_at)a
 
   @doc "Builds an Ecto changeset enforcing every constraint exposed in schema.sql."
   def changeset(struct, attrs) do
     struct
     |> cast(attrs, @required_fields ++ @optional_fields)
     |> validate_required(@required_fields)
-    |> validate_inclusion(:auth_level, ["1", "2"])
+    |> validate_format(:phone_e164, ~r/^\+[1-9][0-9]{7,14}$/)
   end
 end

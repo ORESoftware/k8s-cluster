@@ -15154,7 +15154,9 @@ class LocalCredentialsRow {
 }
 
 const sessionsTable = "shared_auth.sessions";
-const sessionsSelectSql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions";
+const sessionsSelectSql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      auth_level,\n      auth_methods::text as auth_methods_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions";
+
+const sessionsAuthLevelValues = <String>["1", "2"];
 
 class SessionsRow {
   const SessionsRow({
@@ -15164,6 +15166,8 @@ class SessionsRow {
     required this.provider,
     required this.providerTenant,
     required this.providerSubject,
+    required this.authLevel,
+    required this.authMethods,
     required this.createdAt,
     required this.updatedAt,
     required this.lastSeenAt,
@@ -15178,6 +15182,8 @@ class SessionsRow {
   final String provider;
   final String providerTenant;
   final String providerSubject;
+  final String authLevel;
+  final List<Object?> authMethods;
   final String createdAt;
   final String updatedAt;
   final String lastSeenAt;
@@ -15193,6 +15199,8 @@ class SessionsRow {
       provider: _readRequiredString(json, "provider"),
       providerTenant: _readRequiredString(json, "providerTenant"),
       providerSubject: _readRequiredString(json, "providerSubject"),
+      authLevel: _readRequiredString(json, "authLevel"),
+      authMethods: _readRequiredArray(json, "authMethods"),
       createdAt: _readRequiredString(json, "createdAt"),
       updatedAt: _readRequiredString(json, "updatedAt"),
       lastSeenAt: _readRequiredString(json, "lastSeenAt"),
@@ -15209,6 +15217,8 @@ class SessionsRow {
     "provider": provider,
     "providerTenant": providerTenant,
     "providerSubject": providerSubject,
+    "authLevel": authLevel,
+    "authMethods": authMethods,
     "createdAt": createdAt,
     "updatedAt": updatedAt,
     "lastSeenAt": lastSeenAt,
@@ -15236,6 +15246,118 @@ class SessionsRow {
     }
     if (utf8.encode(providerSubject).length < 1) {
       errors.add("sessions.provider_subject is below 1 bytes");
+    }
+    if (!sessionsAuthLevelValues.contains(authLevel)) {
+      errors.add("unsupported sessions.auth_level");
+    }
+    return errors;
+  }
+}
+
+const magicLinkTokensTable = "shared_auth.magic_link_tokens";
+const magicLinkTokensSelectSql = "select\n      token_hash,\n      otp_hash,\n      shared_user_id::text as shared_user_id,\n      identifier_hash,\n      failed_attempts,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consumed_at\n    from shared_auth.magic_link_tokens";
+
+class MagicLinkTokensRow {
+  const MagicLinkTokensRow({
+    required this.tokenHash,
+    required this.otpHash,
+    required this.sharedUserId,
+    required this.identifierHash,
+    required this.failedAttempts,
+    required this.createdAt,
+    required this.expiresAt,
+    this.consumedAt,
+  });
+
+  final String tokenHash;
+  final String otpHash;
+  final String sharedUserId;
+  final String identifierHash;
+  final int failedAttempts;
+  final String createdAt;
+  final String expiresAt;
+  final String? consumedAt;
+
+  factory MagicLinkTokensRow.fromJson(Map<String, Object?> json) {
+    return MagicLinkTokensRow(
+      tokenHash: _readRequiredString(json, "tokenHash"),
+      otpHash: _readRequiredString(json, "otpHash"),
+      sharedUserId: _readRequiredString(json, "sharedUserId"),
+      identifierHash: _readRequiredString(json, "identifierHash"),
+      failedAttempts: _readRequiredInt(json, "failedAttempts"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      expiresAt: _readRequiredString(json, "expiresAt"),
+      consumedAt: _readOptionalString(json, "consumedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "tokenHash": tokenHash,
+    "otpHash": otpHash,
+    "sharedUserId": sharedUserId,
+    "identifierHash": identifierHash,
+    "failedAttempts": failedAttempts,
+    "createdAt": createdAt,
+    "expiresAt": expiresAt,
+    "consumedAt": consumedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (failedAttempts < 0) {
+      errors.add("magic_link_tokens.failed_attempts is below the minimum");
+    }
+    if (failedAttempts > 5) {
+      errors.add("magic_link_tokens.failed_attempts is above the maximum");
+    }
+    return errors;
+  }
+}
+
+const mfaSmsChallengesTable = "shared_auth.mfa_sms_challenges";
+const mfaSmsChallengesSelectSql = "select\n      challenge_id::text as challenge_id,\n      shared_user_id::text as shared_user_id,\n      phone_e164,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(verified_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as verified_at\n    from shared_auth.mfa_sms_challenges";
+
+class MfaSmsChallengesRow {
+  const MfaSmsChallengesRow({
+    required this.challengeId,
+    required this.sharedUserId,
+    required this.phoneE164,
+    required this.createdAt,
+    required this.expiresAt,
+    this.verifiedAt,
+  });
+
+  final String challengeId;
+  final String sharedUserId;
+  final String phoneE164;
+  final String createdAt;
+  final String expiresAt;
+  final String? verifiedAt;
+
+  factory MfaSmsChallengesRow.fromJson(Map<String, Object?> json) {
+    return MfaSmsChallengesRow(
+      challengeId: _readRequiredString(json, "challengeId"),
+      sharedUserId: _readRequiredString(json, "sharedUserId"),
+      phoneE164: _readRequiredString(json, "phoneE164"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      expiresAt: _readRequiredString(json, "expiresAt"),
+      verifiedAt: _readOptionalString(json, "verifiedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "challengeId": challengeId,
+    "sharedUserId": sharedUserId,
+    "phoneE164": phoneE164,
+    "createdAt": createdAt,
+    "expiresAt": expiresAt,
+    "verifiedAt": verifiedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^\+[1-9][0-9]{7,14}$').hasMatch(phoneE164)) {
+      errors.add("mfa_sms_challenges.phone_e164 does not match the required pattern");
     }
     return errors;
   }

@@ -2486,6 +2486,28 @@ module DdPgDefs
     validates :refresh_token_hash, presence: true
     validates :provider, presence: true
     validates :provider_subject, presence: true
+    validates :auth_level, inclusion: { in: ["1", "2"] }
+    validates :expires_at, presence: true
+  end
+
+  class MagicLinkTokens < ActiveRecord::Base
+    self.table_name = "shared_auth.magic_link_tokens"
+    self.primary_key = "token_hash"
+
+    validates :otp_hash, presence: true
+    validates :shared_user_id, presence: true
+    validates :identifier_hash, presence: true
+    validates :failed_attempts, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 5 }
+    validates :expires_at, presence: true
+  end
+
+  class MfaSmsChallenges < ActiveRecord::Base
+    self.table_name = "shared_auth.mfa_sms_challenges"
+    self.primary_key = "challenge_id"
+
+    validates :shared_user_id, presence: true
+    validates :phone_e164, presence: true
+    validates :phone_e164, format: { with: Regexp.new("\\A\\+[1-9][0-9]{7,14}\\z") }
     validates :expires_at, presence: true
   end
 

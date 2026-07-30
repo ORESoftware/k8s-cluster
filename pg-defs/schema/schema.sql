@@ -7717,6 +7717,10 @@ create table if not exists shared_auth.sessions (
   provider text not null,
   provider_tenant text default 'default' not null,
   provider_subject text not null,
+  -- Provider-neutral assurance. AAL2 means a second factor was verified for
+  -- this session; AMR records the signed-in methods without provider coupling.
+  auth_level smallint default 1 not null,
+  auth_methods jsonb default '[]'::jsonb not null,
   created_at timestamptz default now() not null,
   updated_at timestamptz default now() not null,
   last_seen_at timestamptz default now() not null,
@@ -7732,6 +7736,10 @@ create table if not exists shared_auth.sessions (
     check (octet_length(provider_tenant) between 1 and 255),
   constraint shared_auth_sessions_subject_size_chk
     check (octet_length(provider_subject) between 1 and 512),
+  constraint shared_auth_sessions_level_chk
+    check (auth_level in (1, 2)),
+  constraint shared_auth_sessions_methods_array_chk
+    check (jsonb_typeof(auth_methods) = 'array'),
   constraint shared_auth_sessions_expiry_chk
     check (expires_at > created_at)
 );
@@ -7742,6 +7750,62 @@ create index if not exists shared_auth_sessions_user_idx
 create index if not exists shared_auth_sessions_active_expiry_idx
   on shared_auth.sessions (expires_at)
   where revoked_at is null;
+
+-- Passwordless credentials are single-use. Only SHA-256/HMAC digests are
+-- persisted; plaintext magic-link tokens and numeric OTPs exist only in the
+-- email delivery request.
+create table if not exists shared_auth.magic_link_tokens (
+  token_hash text primary key,
+  otp_hash text not null,
+  shared_user_id uuid not null references shared_auth.principals(shared_user_id) on delete cascade,
+  identifier_hash text not null,
+  failed_attempts integer default 0 not null,
+  created_at timestamptz default now() not null,
+  expires_at timestamptz not null,
+  consumed_at timestamptz,
+  constraint shared_auth_magic_link_token_hash_size_chk
+    check (octet_length(token_hash) = 43),
+  constraint shared_auth_magic_link_otp_hash_size_chk
+    check (octet_length(otp_hash) = 43),
+  constraint shared_auth_magic_link_identifier_hash_size_chk
+    check (octet_length(identifier_hash) = 43),
+  constraint shared_auth_magic_link_failed_attempts_chk
+    check (failed_attempts between 0 and 5),
+  constraint shared_auth_magic_link_expiry_chk
+    check (expires_at > created_at)
+);
+
+create index if not exists shared_auth_magic_link_tokens_user_idx
+  on shared_auth.magic_link_tokens (shared_user_id);
+
+create index if not exists shared_auth_magic_link_tokens_active_expiry_idx
+  on shared_auth.magic_link_tokens (expires_at)
+  where consumed_at is null;
+
+create index if not exists shared_auth_magic_link_tokens_identifier_created_idx
+  on shared_auth.magic_link_tokens (identifier_hash, created_at desc);
+
+-- Twilio Verify owns the SMS code and its attempt controls. Postgres binds one
+-- short-lived challenge to the signed-in shared-auth principal and phone.
+create table if not exists shared_auth.mfa_sms_challenges (
+  challenge_id uuid primary key default gen_random_uuid(),
+  shared_user_id uuid not null references shared_auth.principals(shared_user_id) on delete cascade,
+  phone_e164 text not null,
+  created_at timestamptz default now() not null,
+  expires_at timestamptz not null,
+  verified_at timestamptz,
+  constraint shared_auth_mfa_sms_phone_chk
+    check (phone_e164 ~ '^\+[1-9][0-9]{7,14}$'),
+  constraint shared_auth_mfa_sms_expiry_chk
+    check (expires_at > created_at)
+);
+
+create index if not exists shared_auth_mfa_sms_challenges_user_created_idx
+  on shared_auth.mfa_sms_challenges (shared_user_id, created_at desc);
+
+create index if not exists shared_auth_mfa_sms_challenges_active_expiry_idx
+  on shared_auth.mfa_sms_challenges (expires_at)
+  where verified_at is null;
 
 create table if not exists shared_auth.roles (
   role_id uuid primary key default gen_random_uuid(),

@@ -9074,6 +9074,8 @@ diesel::table! {
         provider -> Text,
         provider_tenant -> Text,
         provider_subject -> Text,
+        auth_level -> Int2,
+        auth_methods -> Jsonb,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
         last_seen_at -> Timestamptz,
@@ -9092,6 +9094,8 @@ pub struct SessionsDieselRow {
     pub provider: String,
     pub provider_tenant: String,
     pub provider_subject: String,
+    pub auth_level: i16,
+    pub auth_methods: Value,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub last_seen_at: DateTime<Utc>,
@@ -9109,12 +9113,88 @@ pub struct SessionsDieselInsert {
     pub provider: Option<String>,
     pub provider_tenant: Option<String>,
     pub provider_subject: Option<String>,
+    pub auth_level: Option<i16>,
+    pub auth_methods: Option<Value>,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
     pub last_seen_at: Option<DateTime<Utc>>,
     pub expires_at: Option<DateTime<Utc>>,
     pub revoked_at: Option<DateTime<Utc>>,
     pub rotated_from: Option<Uuid>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    magic_link_tokens (token_hash) {
+        token_hash -> Text,
+        otp_hash -> Text,
+        shared_user_id -> Uuid,
+        identifier_hash -> Text,
+        failed_attempts -> Int4,
+        created_at -> Timestamptz,
+        expires_at -> Timestamptz,
+        consumed_at -> Nullable<Timestamptz>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = magic_link_tokens)]
+pub struct MagicLinkTokensDieselRow {
+    pub token_hash: String,
+    pub otp_hash: String,
+    pub shared_user_id: Uuid,
+    pub identifier_hash: String,
+    pub failed_attempts: i32,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub consumed_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = magic_link_tokens)]
+pub struct MagicLinkTokensDieselInsert {
+    pub token_hash: Option<String>,
+    pub otp_hash: Option<String>,
+    pub shared_user_id: Option<Uuid>,
+    pub identifier_hash: Option<String>,
+    pub failed_attempts: Option<i32>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub consumed_at: Option<DateTime<Utc>>,
+}
+
+diesel::table! {
+    use diesel::sql_types::*;
+    mfa_sms_challenges (challenge_id) {
+        challenge_id -> Uuid,
+        shared_user_id -> Uuid,
+        phone_e164 -> Text,
+        created_at -> Timestamptz,
+        expires_at -> Timestamptz,
+        verified_at -> Nullable<Timestamptz>,
+    }
+}
+
+#[derive(Clone, Debug, Queryable, Selectable, Serialize, Deserialize)]
+#[diesel(table_name = mfa_sms_challenges)]
+pub struct MfaSmsChallengesDieselRow {
+    pub challenge_id: Uuid,
+    pub shared_user_id: Uuid,
+    pub phone_e164: String,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub verified_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Insertable, AsChangeset, Serialize, Deserialize)]
+#[diesel(table_name = mfa_sms_challenges)]
+pub struct MfaSmsChallengesDieselInsert {
+    pub challenge_id: Option<Uuid>,
+    pub shared_user_id: Option<Uuid>,
+    pub phone_e164: Option<String>,
+    pub created_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub verified_at: Option<DateTime<Utc>>,
 }
 
 diesel::table! {

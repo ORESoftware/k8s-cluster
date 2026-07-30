@@ -34,6 +34,12 @@ public class SessionsEntity {
     @Column(name = "provider_subject", nullable = false)
     private String providerSubject;
 
+    @Column(name = "auth_level", nullable = false)
+    private String authLevel;
+
+    @Column(name = "auth_methods", nullable = false, columnDefinition = "jsonb")
+    private String authMethods;
+
     @Column(name = "created_at", nullable = false, columnDefinition = "timestamptz")
     private OffsetDateTime createdAt;
 
@@ -98,6 +104,22 @@ public class SessionsEntity {
 
     public void setProviderSubject(String providerSubject) {
         this.providerSubject = providerSubject;
+    }
+
+    public String getAuthLevel() {
+        return authLevel;
+    }
+
+    public void setAuthLevel(String authLevel) {
+        this.authLevel = authLevel;
+    }
+
+    public String getAuthMethods() {
+        return authMethods;
+    }
+
+    public void setAuthMethods(String authMethods) {
+        this.authMethods = authMethods;
     }
 
     public OffsetDateTime getCreatedAt() {

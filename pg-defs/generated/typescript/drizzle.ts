@@ -11696,6 +11696,10 @@ export type LocalCredentialsRow = z.infer<typeof localCredentialsRowSchema>;
 export type LocalCredentialsInsert = z.infer<typeof localCredentialsInsertSchema>;
 export type LocalCredentialsUpdate = z.infer<typeof localCredentialsUpdateSchema>;
 
+export const sessionsAuthLevelValues = ["1","2"] as const;
+export const sessionsAuthLevelSchema = z.enum(sessionsAuthLevelValues);
+export type SessionsAuthLevel = z.infer<typeof sessionsAuthLevelSchema>;
+
 export const sessions = sharedAuthSchema.table(
   "sessions",
   {
@@ -11705,6 +11709,8 @@ export const sessions = sharedAuthSchema.table(
     provider: text("provider").notNull(),
     providerTenant: text("provider_tenant").default(sql`'default'`).notNull(),
     providerSubject: text("provider_subject").notNull(),
+    authLevel: smallint("auth_level").default(sql`1`).notNull(),
+    authMethods: jsonb("auth_methods").default(sql`'[]'::jsonb`).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
@@ -11717,6 +11723,8 @@ export const sessions = sharedAuthSchema.table(
     sharedAuthSessionsProviderSizeChk: check("shared_auth_sessions_provider_size_chk", sql.raw("octet_length(provider) between 1 and 64")),
     sharedAuthSessionsTenantSizeChk: check("shared_auth_sessions_tenant_size_chk", sql.raw("octet_length(provider_tenant) between 1 and 255")),
     sharedAuthSessionsSubjectSizeChk: check("shared_auth_sessions_subject_size_chk", sql.raw("octet_length(provider_subject) between 1 and 512")),
+    sharedAuthSessionsLevelChk: check("shared_auth_sessions_level_chk", sql.raw("auth_level in (1, 2)")),
+    sharedAuthSessionsMethodsArrayChk: check("shared_auth_sessions_methods_array_chk", sql.raw("jsonb_typeof(auth_methods) = 'array'")),
     sharedAuthSessionsExpiryChk: check("shared_auth_sessions_expiry_chk", sql.raw("expires_at > created_at")),
     sharedAuthSessionsUserIdx: index("shared_auth_sessions_user_idx").on(table.sharedUserId),
     sharedAuthSessionsActiveExpiryIdx: index("shared_auth_sessions_active_expiry_idx").on(table.expiresAt).where(sql.raw("revoked_at is null")),
@@ -11730,6 +11738,8 @@ export const sessionsRowSchema = z.object({
   provider: z.string().refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes"),
   providerTenant: z.string().refine((value) => byteLength(value) <= 255, "Must be at most 255 bytes"),
   providerSubject: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  authLevel: sessionsAuthLevelSchema,
+  authMethods: jsonArraySchema,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   lastSeenAt: z.string().datetime(),
@@ -11745,6 +11755,8 @@ export const sessionsInsertSchema = z.object({
   provider: z.string().refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes"),
   providerTenant: z.string().refine((value) => byteLength(value) <= 255, "Must be at most 255 bytes").optional().default("default"),
   providerSubject: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  authLevel: sessionsAuthLevelSchema.optional().default(1),
+  authMethods: jsonArraySchema.optional().default([]),
   createdAt: z.string().datetime().optional(),
   updatedAt: z.string().datetime().optional(),
   lastSeenAt: z.string().datetime().optional(),
@@ -11757,6 +11769,98 @@ export const sessionsUpdateSchema = sessionsInsertSchema.partial();
 export type SessionsRow = z.infer<typeof sessionsRowSchema>;
 export type SessionsInsert = z.infer<typeof sessionsInsertSchema>;
 export type SessionsUpdate = z.infer<typeof sessionsUpdateSchema>;
+
+export const magicLinkTokens = sharedAuthSchema.table(
+  "magic_link_tokens",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    otpHash: text("otp_hash").notNull(),
+    sharedUserId: uuid("shared_user_id").notNull(),
+    identifierHash: text("identifier_hash").notNull(),
+    failedAttempts: integer("failed_attempts").default(sql`0`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+    consumedAt: timestamp("consumed_at", { withTimezone: true, mode: "string" }),
+  },
+  (table) => ({
+    sharedAuthMagicLinkTokenHashSizeChk: check("shared_auth_magic_link_token_hash_size_chk", sql.raw("octet_length(token_hash) = 43")),
+    sharedAuthMagicLinkOtpHashSizeChk: check("shared_auth_magic_link_otp_hash_size_chk", sql.raw("octet_length(otp_hash) = 43")),
+    sharedAuthMagicLinkIdentifierHashSizeChk: check("shared_auth_magic_link_identifier_hash_size_chk", sql.raw("octet_length(identifier_hash) = 43")),
+    sharedAuthMagicLinkFailedAttemptsChk: check("shared_auth_magic_link_failed_attempts_chk", sql.raw("failed_attempts between 0 and 5")),
+    sharedAuthMagicLinkExpiryChk: check("shared_auth_magic_link_expiry_chk", sql.raw("expires_at > created_at")),
+    sharedAuthMagicLinkTokensUserIdx: index("shared_auth_magic_link_tokens_user_idx").on(table.sharedUserId),
+    sharedAuthMagicLinkTokensActiveExpiryIdx: index("shared_auth_magic_link_tokens_active_expiry_idx").on(table.expiresAt).where(sql.raw("consumed_at is null")),
+    sharedAuthMagicLinkTokensIdentifierCreatedIdx: index("shared_auth_magic_link_tokens_identifier_created_idx").on(table.identifierHash, table.createdAt.desc()),
+  }),
+);
+
+export const magicLinkTokensRowSchema = z.object({
+  tokenHash: z.string(),
+  otpHash: z.string(),
+  sharedUserId: z.string().uuid(),
+  identifierHash: z.string(),
+  failedAttempts: z.number().int().min(0).max(5),
+  createdAt: z.string().datetime(),
+  expiresAt: z.string().datetime(),
+  consumedAt: z.string().datetime().nullable(),
+});
+
+export const magicLinkTokensInsertSchema = z.object({
+  tokenHash: z.string(),
+  otpHash: z.string(),
+  sharedUserId: z.string().uuid(),
+  identifierHash: z.string(),
+  failedAttempts: z.number().int().min(0).max(5).optional().default(0),
+  createdAt: z.string().datetime().optional(),
+  expiresAt: z.string().datetime(),
+  consumedAt: z.string().datetime().nullable().optional(),
+});
+
+export const magicLinkTokensUpdateSchema = magicLinkTokensInsertSchema.partial();
+export type MagicLinkTokensRow = z.infer<typeof magicLinkTokensRowSchema>;
+export type MagicLinkTokensInsert = z.infer<typeof magicLinkTokensInsertSchema>;
+export type MagicLinkTokensUpdate = z.infer<typeof magicLinkTokensUpdateSchema>;
+
+export const mfaSmsChallenges = sharedAuthSchema.table(
+  "mfa_sms_challenges",
+  {
+    challengeId: uuid("challenge_id").default(sql`gen_random_uuid()`).primaryKey(),
+    sharedUserId: uuid("shared_user_id").notNull(),
+    phoneE164: text("phone_e164").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true, mode: "string" }),
+  },
+  (table) => ({
+    sharedAuthMfaSmsPhoneChk: check("shared_auth_mfa_sms_phone_chk", sql.raw("phone_e164 ~ '^\\+[1-9][0-9]{7,14}$'")),
+    sharedAuthMfaSmsExpiryChk: check("shared_auth_mfa_sms_expiry_chk", sql.raw("expires_at > created_at")),
+    sharedAuthMfaSmsChallengesUserCreatedIdx: index("shared_auth_mfa_sms_challenges_user_created_idx").on(table.sharedUserId, table.createdAt.desc()),
+    sharedAuthMfaSmsChallengesActiveExpiryIdx: index("shared_auth_mfa_sms_challenges_active_expiry_idx").on(table.expiresAt).where(sql.raw("verified_at is null")),
+  }),
+);
+
+export const mfaSmsChallengesRowSchema = z.object({
+  challengeId: z.string().uuid(),
+  sharedUserId: z.string().uuid(),
+  phoneE164: z.string().regex(new RegExp("^\\+[1-9][0-9]{7,14}$")),
+  createdAt: z.string().datetime(),
+  expiresAt: z.string().datetime(),
+  verifiedAt: z.string().datetime().nullable(),
+});
+
+export const mfaSmsChallengesInsertSchema = z.object({
+  challengeId: z.string().uuid().optional(),
+  sharedUserId: z.string().uuid(),
+  phoneE164: z.string().regex(new RegExp("^\\+[1-9][0-9]{7,14}$")),
+  createdAt: z.string().datetime().optional(),
+  expiresAt: z.string().datetime(),
+  verifiedAt: z.string().datetime().nullable().optional(),
+});
+
+export const mfaSmsChallengesUpdateSchema = mfaSmsChallengesInsertSchema.partial();
+export type MfaSmsChallengesRow = z.infer<typeof mfaSmsChallengesRowSchema>;
+export type MfaSmsChallengesInsert = z.infer<typeof mfaSmsChallengesInsertSchema>;
+export type MfaSmsChallengesUpdate = z.infer<typeof mfaSmsChallengesUpdateSchema>;
 
 export const roles = sharedAuthSchema.table(
   "roles",
