@@ -31,7 +31,7 @@
       "sourceFiles": [
         "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/docs.json",
@@ -49,7 +49,7 @@
       "sourceFiles": [
         "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/docs/api",
@@ -67,7 +67,7 @@
       "sourceFiles": [
         "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/health",
@@ -85,7 +85,7 @@
       "sourceFiles": [
         "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/internal/runtime-config",
@@ -93,16 +93,17 @@
         "GET"
       ],
       "routeType": "runtime-config",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "visibility": "internal",
+      "purpose": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
       "handlers": [
-        "dd_runtime_config_client::handle_get"
+        "getRuntimeConfigSnapshot"
       ],
       "sourceFiles": [
-        "remote/libs/runtime-config-client-rs/src/lib.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/internal/runtime-config/reset",
@@ -110,16 +111,17 @@
         "POST"
       ],
       "routeType": "runtime-config",
-      "implementation": "code-first",
+      "implementation": "openapi-code-first",
       "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-      "purpose": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+      "visibility": "internal",
+      "purpose": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
       "handlers": [
-        "dd_runtime_config_client::handle_reset"
+        "resetRuntimeConfigSnapshot"
       ],
       "sourceFiles": [
-        "remote/libs/runtime-config-client-rs/src/lib.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/internal/update-runtime-config",
@@ -127,16 +129,17 @@
         "POST"
       ],
       "routeType": "runtime-config",
-      "implementation": "code-first",
+      "implementation": "openapi-code-first",
       "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-      "purpose": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+      "visibility": "internal",
+      "purpose": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
       "handlers": [
-        "dd_runtime_config_client::handle_apply"
+        "applyRuntimeConfigSnapshot"
       ],
       "sourceFiles": [
-        "remote/libs/runtime-config-client-rs/src/lib.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/metrics",
@@ -154,7 +157,7 @@
       "sourceFiles": [
         "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/openapi.json",
@@ -172,7 +175,7 @@
       "sourceFiles": [
         "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/ready",
@@ -190,7 +193,7 @@
       "sourceFiles": [
         "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/webhook/github",
@@ -208,7 +211,7 @@
       "sourceFiles": [
         "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     }
   ]
 }

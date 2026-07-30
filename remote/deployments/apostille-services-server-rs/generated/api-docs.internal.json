@@ -803,7 +803,7 @@
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "rust",
   "x-dd-operation-count": 24,
-  "x-dd-route-count": 23,
+  "x-dd-route-count": 24,
   "x-dd-service": "apostille-services-server-rs",
   "x-dd-standard-docs-routes": [
     "/docs/api",

@@ -184,6 +184,40 @@
           "vendored": "remote/api-contracts/fragments/runtime-config-client-rs.openapi.json"
         }
       ]
+    },
+    "gleamlang-presence-server": {
+      "contract": "remote/deployments/gleamlang-presence-server/generated/openapi.json",
+      "directory": "remote/deployments/gleamlang-presence-server",
+      "docsRoutes": [
+        "/openapi.json",
+        "/api/docs.json",
+        "/api/docs",
+        "/docs/api"
+      ],
+      "export": [
+        "bash",
+        "remote/deployments/gleamlang-presence-server/scripts/export-openapi.sh"
+      ],
+      "implementation": "gleam-typed-route-registry",
+      "language": "gleam",
+      "sdk": {
+        "dart": {
+          "generator": "dart",
+          "packageName": "dd_presence_client"
+        },
+        "rust": {
+          "generator": "rust",
+          "packageName": "dd_presence_client"
+        },
+        "sourceOfTruthRepository": "ORESoftware/k8s-libs-and-shared-defs",
+        "typescript": {
+          "generator": "typescript-fetch",
+          "packageName": "@oresoftware/dd-presence-client"
+        }
+      },
+      "visibility": "private",
+      "publicContract": "remote/deployments/gleamlang-presence-server/generated/api-docs.json",
+      "runtimeContractPolicy": "Unauthenticated standard documentation routes and the service help route serve only the fail-closed public contract. Health, topology, WebSocket, conversation, user, and runtime-configuration operations remain in the unserved internal contract."
     }
   }
 }

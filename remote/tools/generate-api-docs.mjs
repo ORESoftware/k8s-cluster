@@ -329,9 +329,7 @@ function extractOpenApiRoutes(document, sourceFile) {
               ? operation.description
               : '',
         notes:
-          document['x-dd-language'] === 'node'
-            ? 'Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router.'
-            : 'Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.',
+          'Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.',
         visibilityHint,
         authHint: explicitAuthHint ?? openApiAuthHint(operation, method, path),
         routeTypeHint: operation['x-dd-route-type'],
@@ -748,44 +746,75 @@ function routeAuth(routeType, route) {
 }
 
 function mergeRoutes(routes) {
-  const byPath = new Map();
+  const byPathAndMethod = new Map();
   for (const route of routes) {
-    if (!route.path || route.path === '//' || route.path.includes('..')) {
+    if (!route.path) {
       continue;
     }
-    const key = route.path;
-    const current = byPath.get(key) ?? {
-      ...route,
-      methods: [],
-      handlers: [],
-      sourceFiles: new Set(),
-    };
-    current.methods = sortMethods([...(current.methods ?? []), ...(route.methods ?? [])]);
-    current.handlers = [...new Set([...(current.handlers ?? []), ...(route.handlers ?? [])])].sort();
-    current.sourceFiles.add(route.sourceFile);
-    for (const hint of ['visibilityHint', 'authHint', 'routeTypeHint']) {
-      if (route[hint] === undefined) continue;
-      if (current[hint] !== undefined && current[hint] !== route[hint]) {
-        throw new Error(
-          `ambiguous ${hint} for ${route.path}: ${JSON.stringify(current[hint])} versus ${JSON.stringify(route[hint])}`,
-        );
+    const methods = sortMethods(route.methods ?? []);
+    if (methods.length === 0) {
+      throw new Error(`route ${route.path} has no HTTP method`);
+    }
+
+    for (const method of methods) {
+      const key = JSON.stringify([route.path, method]);
+      let current = byPathAndMethod.get(key);
+      if (!current) {
+        current = {
+          ...route,
+          methods: [method],
+          handlers: [],
+          sourceFiles: new Set(),
+        };
+        byPathAndMethod.set(key, current);
       }
-      current[hint] = route[hint];
+
+      if (route.handler) {
+        current.handlers.push(route.handler);
+      }
+      for (const handler of route.handlers ?? []) {
+        current.handlers.push(handler);
+      }
+      if (route.sourceFile) {
+        current.sourceFiles.add(route.sourceFile);
+      }
+      for (const sourceFile of route.sourceFiles ?? []) {
+        current.sourceFiles.add(sourceFile);
+      }
+
+      for (const hint of ['visibilityHint', 'authHint', 'routeTypeHint']) {
+        if (route[hint] === undefined) continue;
+        if (current[hint] !== undefined && current[hint] !== route[hint]) {
+          throw new Error(
+            `ambiguous ${hint} for ${method} ${route.path}: ${JSON.stringify(current[hint])} versus ${JSON.stringify(route[hint])}`,
+          );
+        }
+        current[hint] = route[hint];
+      }
+
+      for (const hint of ['purposeHint', 'notes']) {
+        if (!route[hint]) continue;
+        if (current[hint] && current[hint] !== route[hint]) {
+          throw new Error(
+            `ambiguous ${hint} for ${method} ${route.path}: ${JSON.stringify(current[hint])} versus ${JSON.stringify(route[hint])}`,
+          );
+        }
+        current[hint] = route[hint];
+      }
     }
-    if (route.purposeHint && !current.purposeHint) {
-      current.purposeHint = route.purposeHint;
-    }
-    if (route.notes && !current.notes) {
-      current.notes = route.notes;
-    }
-    byPath.set(key, current);
   }
-  return [...byPath.values()]
+
+  return [...byPathAndMethod.values()]
     .map((route) => ({
       ...route,
+      handlers: [...new Set(route.handlers)].sort(),
       sourceFiles: [...route.sourceFiles].sort(),
     }))
-    .sort((left, right) => left.path.localeCompare(right.path));
+    .sort((left, right) => {
+      const pathOrder = left.path.localeCompare(right.path);
+      if (pathOrder !== 0) return pathOrder;
+      return left.methods[0].localeCompare(right.methods[0]);
+    });
 }
 
 function normalizeRoutes(serviceName, rawRoutes) {
@@ -860,21 +889,39 @@ async function nodeRegistersRuntimeConfigRoutes(file) {
 }
 
 function injectRuntimeConfigRoutes(rawRoutes, sourceFile) {
-  // Drop any locally-parsed copies first so the injected entries are
-  // authoritative on methods/auth/etc. Path-only Gleam routers (e.g.
-  // gleamlang-server, gleam-lambda-runner) infer both GET and POST for
-  // every arm; we want the docs to reflect the actual canonical methods
-  // exposed by the shared client.
+  const comesFromNativeOpenApi = (route) =>
+    [route.sourceFile, ...(route.sourceFiles ?? [])]
+      .filter((file) => typeof file === 'string')
+      .some((file) => file.split(sep).join('/').endsWith('/generated/openapi.json'));
+  const routeMethodKey = (path, method) => JSON.stringify([path, method]);
   const canonicalPaths = new Set(RUNTIME_CONFIG_SUBSCRIBER_ROUTES.map((route) => route.path));
+  const nativeOpenApiMethods = new Set(
+    rawRoutes
+      .filter(comesFromNativeOpenApi)
+      .flatMap((route) =>
+        (route.methods ?? []).map((method) => routeMethodKey(route.path, method)),
+      ),
+  );
+
+  // Drop locally scanned copies so path-only routers cannot invent extra
+  // methods. Preserve executable native OpenAPI operations: their typed auth,
+  // visibility, handler identity, and schemas are more precise than the
+  // language-neutral fallback metadata below.
   for (let index = rawRoutes.length - 1; index >= 0; index -= 1) {
-    if (canonicalPaths.has(rawRoutes[index].path)) {
+    if (canonicalPaths.has(rawRoutes[index].path) && !comesFromNativeOpenApi(rawRoutes[index])) {
       rawRoutes.splice(index, 1);
     }
   }
   for (const route of RUNTIME_CONFIG_SUBSCRIBER_ROUTES) {
+    const missingMethods = route.methods.filter(
+      (method) => !nativeOpenApiMethods.has(routeMethodKey(route.path, method)),
+    );
+    if (missingMethods.length === 0) {
+      continue;
+    }
     rawRoutes.push({
       path: route.path,
-      methods: route.methods.slice(),
+      methods: missingMethods,
       handlers: route.handlers.slice(),
       purposeHint: route.purposeHint,
       sourceFile,
@@ -1062,8 +1109,11 @@ async function discoverExtraServices() {
     }
     const deploymentDir = resolve(repoRoot, spec.deploymentDir ?? dirname(dirname(files[0])));
     const openapiFile = join(deploymentDir, 'generated/openapi.json');
-    const rawRoutes = (await pathExists(openapiFile))
-      ? extractOpenApiRoutes(JSON.parse(await readUtf8(openapiFile)), openapiFile)
+    const canonicalOpenApi = (await pathExists(openapiFile))
+      ? JSON.parse(await readUtf8(openapiFile))
+      : null;
+    const rawRoutes = canonicalOpenApi
+      ? extractOpenApiRoutes(canonicalOpenApi, openapiFile)
       : [];
     if (rawRoutes.length === 0) {
       for (const file of files) {
@@ -1097,6 +1147,7 @@ async function discoverExtraServices() {
       deploymentDir,
       moduleDir: dirname(files[0]),
       outputName: spec.outputName ?? 'api-docs',
+      canonicalOpenApi: spec.service === 'browser-test-server' ? canonicalOpenApi : null,
       routes: normalizeRoutes(spec.service, rawRoutes),
     });
   }
@@ -1215,9 +1266,73 @@ function buildOpenApi(docs) {
       const visibility = openApiVisibility(route);
       const existing = pathItem[methodName];
       if (existing) {
-        if (existing['x-dd-auth'] !== route.auth || existing['x-dd-visibility'] !== visibility || existing['x-dd-route-type'] !== route.routeType) {
-          throw new Error(`ambiguous OpenAPI merge for ${docs.service} ${method} ${path}: query/path variants must share auth, visibility, and route type`);
+        const invariantFields = {
+          'x-dd-auth': route.auth,
+          'x-dd-implementation': route.implementation,
+          'x-dd-route-type': route.routeType,
+          'x-dd-visibility': visibility,
+        };
+        for (const [field, value] of Object.entries(invariantFields)) {
+          if (existing[field] !== value) {
+            throw new Error(
+              `ambiguous OpenAPI ${field} for ${docs.service} ${method} ${path}: ${JSON.stringify(existing[field])} versus ${JSON.stringify(value)}`,
+            );
+          }
         }
+        const expectedSecurity = openApiSecurity(route);
+        if (JSON.stringify(existing.security ?? null) !== JSON.stringify(expectedSecurity ?? null)) {
+          throw new Error(
+            `ambiguous OpenAPI security for ${docs.service} ${method} ${path}: query/path variants must share effective security`,
+          );
+        }
+
+        const variants = existing['x-dd-source-variants'] ?? [
+          {
+            path: existing['x-dd-source-path'],
+            summary: existing.summary,
+            description: existing.description,
+          },
+        ];
+        const candidate = {
+          path: route.path,
+          summary: route.purpose,
+          description: route.notes || route.purpose,
+        };
+        const samePath = variants.find((variant) => variant.path === candidate.path);
+        if (
+          samePath &&
+          (samePath.summary !== candidate.summary || samePath.description !== candidate.description)
+        ) {
+          throw new Error(
+            `ambiguous OpenAPI source variant for ${docs.service} ${method} ${candidate.path}`,
+          );
+        }
+        if (!samePath) {
+          variants.push(candidate);
+        }
+        variants.sort((left, right) => {
+          const pathOrder = left.path.localeCompare(right.path);
+          if (pathOrder !== 0) return pathOrder;
+          const summaryOrder = left.summary.localeCompare(right.summary);
+          if (summaryOrder !== 0) return summaryOrder;
+          return left.description.localeCompare(right.description);
+        });
+        existing['x-dd-source-variants'] = variants;
+
+        const summaries = [...new Set(variants.map((variant) => variant.summary))];
+        const descriptions = [...new Set(variants.map((variant) => variant.description))];
+        existing.summary =
+          summaries.length === 1 ? summaries[0] : `Route variants for ${method} ${path}`;
+        existing.description =
+          descriptions.length === 1
+            ? descriptions[0]
+            : [
+                'Runtime route variants:',
+                ...variants.map(
+                  (variant) => `- ${variant.path}: ${variant.description}`,
+                ),
+              ].join('\n');
+
         existing.parameters = mergeOpenApiParameters(
           existing.parameters ?? [],
           openApiQueryParameters(route.path),
@@ -1669,7 +1784,9 @@ async function main() {
   for (const service of services) {
     assertStandardDocsRoutes(service);
     const docs = buildDocs(service);
-    const internalOpenapi = buildOpenApi(docs);
+    const internalOpenapi = service.canonicalOpenApi
+      ? structuredClone(service.canonicalOpenApi)
+      : buildOpenApi(docs);
     const publicOpenapi = buildPublicOpenApi(internalOpenapi);
     const publicDocs = buildPublicDocs(docs);
     const outputBase = service.outputName ?? 'api-docs';

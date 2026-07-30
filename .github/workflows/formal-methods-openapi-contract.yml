@@ -188,7 +188,9 @@ jobs:
       - name: Generate service-specific interoperability clients
         run: |
           set -euo pipefail
-          rm -rf .tmp/formal-methods-sdk
+          if [ -d .tmp/formal-methods-sdk ]; then
+            find .tmp/formal-methods-sdk -depth -delete
+          fi
           node remote/tools/generate-openapi-sdks.mjs \
             --service formal-methods-service-rs \
             --output .tmp/formal-methods-sdk
@@ -214,11 +216,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf .tmp remote/libs
-          find remote/api-sdks -type d \( \
+          if [ -d .tmp ]; then
+            find .tmp -depth -delete
+          fi
+          if [ -d remote/libs ]; then
+            find remote/libs -depth -delete
+          fi
+          while IFS= read -r -d '' generated_dir; do
+            find "$generated_dir" -depth -delete
+          done < <(find remote/api-sdks -type d \( \
             -name node_modules -o -name dist -o -name target -o \
             -name .dart_tool -o -name build \
-          \) -prune -exec rm -rf '{}' +
+          \) -prune -print0)
           find remote/api-sdks -type f \( \
             -name package-lock.json -o -name Cargo.lock -o \
             -name pubspec.lock -o -name manifest.toml \

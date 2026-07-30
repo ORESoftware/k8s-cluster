@@ -453,7 +453,7 @@
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "gleam",
   "x-dd-operation-count": 14,
-  "x-dd-route-count": 12,
+  "x-dd-route-count": 14,
   "x-dd-service": "gleam-mcp-server",
   "x-dd-standard-docs-routes": [
     "/docs/api",

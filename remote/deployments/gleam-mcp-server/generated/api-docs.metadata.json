@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "gleam-mcp-server",
   "language": "gleam",
-  "routeCount": 12,
+  "routeCount": 14,
   "routeTypeCounts": {
-    "service": 6,
-    "user-generated": 3,
+    "service": 7,
+    "user-generated": 4,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -18,7 +18,21 @@
     {
       "path": "/",
       "methods": [
-        "GET",
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/",
+      "methods": [
         "POST"
       ],
       "routeType": "service",
@@ -160,7 +174,21 @@
     {
       "path": "/mcp",
       "methods": [
-        "GET",
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleam-mcp-server/src/gleam_mcp_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/mcp",
+      "methods": [
         "POST"
       ],
       "routeType": "user-generated",

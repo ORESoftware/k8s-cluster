@@ -14,7 +14,9 @@ printf '%s  %s\n' \
 # dependency surfaces required to compile and exercise this service's contract.
 # Cargo manifests mirror the accepted shared package manifests so Cargo.lock
 # remains valid when the real immutable gitlink is present in release builds.
-rm -rf remote/libs
+if [ -d remote/libs ]; then
+  find remote/libs -depth -delete
+fi
 
 mkdir -p remote/libs/telemetry-rs/src
 cat > remote/libs/telemetry-rs/Cargo.toml <<'TOML'

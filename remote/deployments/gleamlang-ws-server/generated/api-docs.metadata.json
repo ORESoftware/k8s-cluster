@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "gleamlang-ws-server",
   "language": "gleam",
-  "routeCount": 21,
+  "routeCount": 22,
   "routeTypeCounts": {
     "service": 6,
-    "user-generated": 12,
+    "user-generated": 13,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -108,8 +108,22 @@
     {
       "path": "/conv/:conv_id/members/:user_id",
       "methods": [
-        "POST",
         "DELETE"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Remove user from conv.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/gleamlang-ws-server/src/gleamlang_ws_server/http_server.gleam"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/conv/:conv_id/members/:user_id",
+      "methods": [
+        "POST"
       ],
       "routeType": "user-generated",
       "implementation": "code-first",

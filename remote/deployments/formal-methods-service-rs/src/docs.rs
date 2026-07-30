@@ -19,6 +19,15 @@ const HTTP_METHODS: &[&str] = &[
     "get", "post", "put", "patch", "delete", "head", "options", "trace",
 ];
 const PUBLIC_PATHS: &[&str] = &["/openapi.json", "/api/docs.json", "/api/docs", "/docs/api"];
+const ANY_JSON_TYPES: [&str; 7] = [
+    "object", "array", "string", "number", "integer", "boolean", "null",
+];
+const SHARED_FREE_FORM_VALUE_POINTERS: [&str; 2] = [
+    "/components/schemas/RuntimeConfigEntry/properties/value",
+    "/components/schemas/RuntimeConfigEntry/properties/meta",
+];
+const SHARED_FREE_FORM_MAP_POINTER: &str =
+    "/components/schemas/RuntimeConfigSnapshotResponse/properties/entries/additionalProperties";
 
 #[derive(Clone)]
 pub struct ApiDocs {
@@ -75,7 +84,8 @@ pub fn public_json() -> &'static str {
 /// this prevents a host service from silently shadowing a shared route model.
 pub fn compose(local: OpenApi, shared: OpenApi) -> OpenApi {
     let mut document = serde_json::to_value(local).expect("serialize local OpenAPI");
-    let shared = serde_json::to_value(shared).expect("serialize shared OpenAPI");
+    let mut shared = serde_json::to_value(shared).expect("serialize shared OpenAPI");
+    make_shared_free_form_schemas_utoipa_compatible(&mut shared);
 
     merge_object_section(&mut document, &shared, "paths");
     merge_component_sections(&mut document, &shared);
@@ -257,14 +267,41 @@ fn finalize_value(document: &mut Value) {
     }
 }
 
+fn make_shared_free_form_schemas_utoipa_compatible(value: &mut Value) {
+    let any_json_types = serde_json::json!(ANY_JSON_TYPES);
+    for pointer in SHARED_FREE_FORM_VALUE_POINTERS {
+        let schema = value
+            .pointer_mut(pointer)
+            .unwrap_or_else(|| panic!("missing shared free-form schema at {pointer}"))
+            .as_object_mut()
+            .unwrap_or_else(|| panic!("shared free-form schema at {pointer} must be an object"));
+        match schema.get("type") {
+            None => {
+                schema.insert("type".to_string(), any_json_types.clone());
+            }
+            Some(existing) if existing == &any_json_types => {}
+            Some(_) => panic!("shared free-form schema at {pointer} was unexpectedly narrowed"),
+        }
+    }
+
+    let schema = value
+        .pointer_mut(SHARED_FREE_FORM_MAP_POINTER)
+        .unwrap_or_else(|| {
+            panic!("missing shared free-form schema at {SHARED_FREE_FORM_MAP_POINTER}")
+        });
+    let compatible = serde_json::json!({"type": ANY_JSON_TYPES});
+    assert!(
+        schema.as_object().is_some_and(Map::is_empty) || schema == &compatible,
+        "shared free-form schema at {SHARED_FREE_FORM_MAP_POINTER} was unexpectedly narrowed"
+    );
+    *schema = compatible;
+}
+
 fn restore_shared_free_form_schemas(value: &mut Value) {
     // Shared runtime-config fields intentionally accept arbitrary JSON. Keep
     // that OpenAPI 3.1 meaning instead of narrowing generated SDK input to a
     // temporary Utoipa-deserializable union.
-    for pointer in [
-        "/components/schemas/RuntimeConfigEntry/properties/value",
-        "/components/schemas/RuntimeConfigEntry/properties/meta",
-    ] {
+    for pointer in SHARED_FREE_FORM_VALUE_POINTERS {
         let schema = value
             .pointer_mut(pointer)
             .unwrap_or_else(|| panic!("missing shared free-form schema at {pointer}"))
@@ -273,11 +310,11 @@ fn restore_shared_free_form_schemas(value: &mut Value) {
         schema.remove("type");
     }
 
-    let pointer =
-        "/components/schemas/RuntimeConfigSnapshotResponse/properties/entries/additionalProperties";
     let schema = value
-        .pointer_mut(pointer)
-        .unwrap_or_else(|| panic!("missing shared free-form schema at {pointer}"));
+        .pointer_mut(SHARED_FREE_FORM_MAP_POINTER)
+        .unwrap_or_else(|| {
+            panic!("missing shared free-form schema at {SHARED_FREE_FORM_MAP_POINTER}")
+        });
     *schema = Value::Object(Map::new());
 }
 
@@ -320,6 +357,22 @@ mod tests {
         assert_eq!(
             PUBLIC_PATHS,
             ["/openapi.json", "/api/docs.json", "/api/docs", "/docs/api"]
+        );
+    }
+
+    #[test]
+    fn canonical_contract_restores_shared_free_form_json() {
+        let json = canonical_json(&crate::routes::openapi_document()).expect("canonical OpenAPI");
+        let value: Value = serde_json::from_str(&json).expect("parse canonical OpenAPI");
+        for pointer in SHARED_FREE_FORM_VALUE_POINTERS {
+            let schema = value
+                .pointer(pointer)
+                .unwrap_or_else(|| panic!("missing shared free-form schema at {pointer}"));
+            assert!(schema.get("type").is_none());
+        }
+        assert_eq!(
+            value.pointer(SHARED_FREE_FORM_MAP_POINTER),
+            Some(&Value::Object(Map::new()))
         );
     }
 }

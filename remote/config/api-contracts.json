@@ -56,7 +56,6 @@
     "fsharp-ws-server",
     "gleam-lambda-runner",
     "gleam-mcp-server",
-    "gleamlang-presence-server",
     "gleamlang-server",
     "gleamlang-server-nats-bridge",
     "gleamlang-ws-server",
