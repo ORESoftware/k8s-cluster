@@ -170,13 +170,7 @@ use utoipa::openapi::OpenApi;
 const OPENAPI_JSON: &str =
     include_str!("../../../api-contracts/fragments/runtime-config-client-rs.openapi.json");
 const ANY_JSON_TYPES: [&str; 7] = [
-    "object",
-    "array",
-    "string",
-    "number",
-    "integer",
-    "boolean",
-    "null",
+    "object", "array", "string", "number", "integer", "boolean", "null",
 ];
 
 async fn snapshot() -> Json<Value> {
