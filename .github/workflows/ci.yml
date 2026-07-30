@@ -34,6 +34,15 @@ jobs:
         with:
           path: akrion-soccer-engine.rs
           persist-credentials: false
+      - name: Formal match manifest and lifecycle model
+        working-directory: akrion-soccer-engine.rs
+        run: python3 formal/match_model.py
+      - name: Formal match JSON-lines replay witness
+        working-directory: akrion-soccer-engine.rs
+        run: |
+          printf '%s\n' \
+            '{"op":"replay","events":["start","home_goal","restart","tick","finish"]}' \
+            | python3 formal/match_model.py --json-stdin
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ORESoftware/discrete-event-system.rs
