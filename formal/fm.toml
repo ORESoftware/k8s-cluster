@@ -1,0 +1,46 @@
+schema_version = 1
+id = "akrion-match-lifecycle"
+repository = "akrion-sim/akrion-soccer-engine-rs"
+issue = "DEN-80"
+model = "formal/match_model.py"
+runner = "python3"
+adapter_protocol = "json-stdin/v1"
+command = ["python3", "formal/match_model.py"]
+replay_command = ["python3", "formal/match_model.py", "--json-stdin"]
+claim = "finite-match-lifecycle-specification"
+timeout_seconds = 30
+
+[limits]
+transition_depth = 7
+max_ticks = 4
+score_cap = 2
+abstract_actions = 9
+
+[[invariants]]
+id = "monotonic-clock-and-score"
+description = "Ticks and both scores never decrease."
+
+[[invariants]]
+id = "goal-enters-stoppage"
+description = "A goal increments exactly one side, clears possession, and enters stoppage."
+
+[[invariants]]
+id = "restart-opponent-kickoff"
+description = "After a goal, the conceding side owns the restart."
+
+[[invariants]]
+id = "single-possession"
+description = "Possession is represented by at most one side and is absent in stoppage/finished phases."
+
+[[invariants]]
+id = "finished-absorbing"
+description = "No action can alter a finished match."
+
+[[invariants]]
+id = "deterministic-replay"
+description = "The same abstract event sequence yields the same state trace."
+
+[refinement]
+status = "planned"
+production_symbols = ["SoccerMatch", "SoccerRealtimeSession"]
+notes = "This PR establishes the lifecycle specification and trace contract. A Rust ITF/JSON-lines adapter is required before claiming production refinement."
