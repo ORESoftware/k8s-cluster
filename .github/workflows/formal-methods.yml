@@ -34,7 +34,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          show-progress: false
 
       - name: Probe shared-library access
         id: shared_libs
@@ -45,9 +48,8 @@ jobs:
           set -euo pipefail
           test -n "$K8S_SUBMODULE_TOKEN"
           token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
-          git config --global url."${token_url}".insteadOf "git@github.com:"
-          trap 'git config --global --unset-all url."${token_url}".insteadOf || true' EXIT
-          git ls-remote git@github.com:ORESoftware/k8s-libs-and-shared-defs.git HEAD >/dev/null
+          git -c "url.${token_url}.insteadOf=git@github.com:" \
+            ls-remote git@github.com:ORESoftware/k8s-libs-and-shared-defs.git HEAD >/dev/null
 
       - name: Report unavailable integration tests
         if: steps.shared_libs.outcome != 'success'
@@ -61,9 +63,8 @@ jobs:
         run: |
           set -euo pipefail
           token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
-          git config --global url."${token_url}".insteadOf "git@github.com:"
-          trap 'git config --global --unset-all url."${token_url}".insteadOf || true' EXIT
-          git submodule update --init --recursive --depth 1 -- remote/libs
+          git -c "url.${token_url}.insteadOf=git@github.com:" \
+            submodule update --init --recursive --depth 1 -- remote/libs
 
       - name: Install Z3
         if: steps.shared_libs.outcome == 'success'

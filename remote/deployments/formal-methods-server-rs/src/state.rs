@@ -162,7 +162,7 @@ pub(crate) fn config_from_env() -> Config {
         z3_bin: resolve_bin(&env_value("FORMAL_METHODS_Z3_BIN", "z3")),
         allowed_repo_prefixes: parse_csv(&env_value(
             "FORMAL_METHODS_ALLOWED_REPO_PREFIXES",
-            "",
+            "https://github.com/,git@github.com:,ssh://git@github.com/",
         )),
         allowed_extensions: parse_extensions(&env_value(
             "FORMAL_METHODS_ALLOWED_EXTENSIONS",

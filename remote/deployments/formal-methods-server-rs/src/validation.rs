@@ -9,6 +9,7 @@ use axum::{
     Json,
 };
 use serde_json::json;
+use subtle::ConstantTimeEq;
 
 use crate::{
     state::{AppState, Config},
@@ -22,7 +23,7 @@ fn request_is_authorized(headers: &HeaderMap, secret: &str) -> bool {
         .or_else(|| headers.get("x-formal-methods-auth"))
         .or_else(|| headers.get("x-agent-auth"))
         .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value == secret)
+        .is_some_and(|value| value.as_bytes().ct_eq(secret.as_bytes()).into())
 }
 
 pub(crate) fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Response> {
@@ -61,11 +62,35 @@ pub(crate) fn ensure_allowed_prefix(
     prefixes: &[String],
     env_name: &str,
 ) -> Result<(), String> {
-    if prefixes.is_empty() || prefixes.iter().any(|prefix| value.starts_with(prefix)) {
+    let allowed = prefixes.is_empty()
+        || prefixes.iter().any(|prefix| {
+            let prefix = prefix.trim();
+            value == prefix
+                || value.strip_prefix(prefix).is_some_and(|remainder| {
+                    prefix.ends_with(['/', ':']) || remainder.starts_with(['/', ':'])
+                })
+        });
+    if allowed {
         Ok(())
     } else {
         Err(format!("{name} is not allowed by {env_name}"))
     }
+}
+
+fn repo_path_is_safe(path: &str) -> bool {
+    let path = path.trim_matches('/');
+    !path.is_empty()
+        && path.len() <= 512
+        && path.split('/').all(|part| {
+            !part.is_empty()
+                && part != "."
+                && part != ".."
+                && !part.chars().any(|character| {
+                    character.is_control()
+                        || character.is_whitespace()
+                        || matches!(character, '\\' | '?' | '#')
+                })
+        })
 }
 
 pub(crate) fn validate_repo_url(repo_url: &str) -> Result<(), String> {
@@ -79,14 +104,72 @@ pub(crate) fn validate_repo_url(repo_url: &str) -> Result<(), String> {
     if repo_url.chars().any(char::is_control) {
         return Err("repoUrl must not contain control characters".to_string());
     }
-    if repo_url.starts_with("https://")
-        || repo_url.starts_with("ssh://")
-        || repo_url.starts_with("git@")
+    let lower_repo_url = repo_url.to_ascii_lowercase();
+    if lower_repo_url.contains("/../")
+        || lower_repo_url.contains("/./")
+        || lower_repo_url.contains("%2e")
     {
-        Ok(())
-    } else {
-        Err("repoUrl must use https://, ssh://, or git@".to_string())
+        return Err("repoUrl repository path must be normalized".to_string());
     }
+    if let Some(scp_style) = repo_url.strip_prefix("git@") {
+        let Some((host, path)) = scp_style.split_once(':') else {
+            return Err("git@ repoUrl must include a host and repository path".to_string());
+        };
+        if host.is_empty()
+            || !host
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-'))
+            || !repo_path_is_safe(path)
+        {
+            return Err("git@ repoUrl has an invalid host or repository path".to_string());
+        }
+        return Ok(());
+    }
+
+    let parsed = reqwest::Url::parse(repo_url)
+        .map_err(|_| "repoUrl must be a valid https:// or ssh:// URL".to_string())?;
+    if !matches!(parsed.scheme(), "https" | "ssh") {
+        return Err("repoUrl must use https://, ssh://, or git@".to_string());
+    }
+    if parsed.host_str().is_none()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+        || !repo_path_is_safe(parsed.path())
+    {
+        return Err("repoUrl must contain only a host and repository path".to_string());
+    }
+    if parsed.scheme() == "https" && (!parsed.username().is_empty() || parsed.password().is_some())
+    {
+        return Err("https repoUrl must not embed credentials".to_string());
+    }
+    if parsed.scheme() == "ssh"
+        && ((!parsed.username().is_empty() && parsed.username() != "git")
+            || parsed.password().is_some())
+    {
+        return Err("ssh repoUrl may only use the git username and no password".to_string());
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_git_ref(git_ref: &str) -> Result<(), String> {
+    if git_ref.is_empty() || git_ref.len() > 180 {
+        return Err("gitRef must contain between 1 and 180 bytes".to_string());
+    }
+    if git_ref.starts_with('-')
+        || git_ref.starts_with('/')
+        || git_ref.ends_with('/')
+        || git_ref.ends_with('.')
+        || git_ref.contains("..")
+        || git_ref.contains("//")
+        || git_ref.contains("@{")
+        || git_ref.ends_with(".lock")
+        || !git_ref
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'/'))
+    {
+        return Err("gitRef is not a safe branch, tag, or commit name".to_string());
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_relative_path(name: &str, value: &str) -> Result<PathBuf, String> {
@@ -117,7 +200,10 @@ pub(crate) fn validate_relative_path(name: &str, value: &str) -> Result<PathBuf,
     Ok(clean)
 }
 
-pub(crate) fn validate_analyze_request(config: &Config, request: &AnalyzeRequest) -> Result<(), String> {
+pub(crate) fn validate_analyze_request(
+    config: &Config,
+    request: &AnalyzeRequest,
+) -> Result<(), String> {
     if let Some(schema_version) = clean_optional(request.schema_version.as_deref()) {
         if schema_version != SCHEMA_VERSION {
             return Err(format!("schemaVersion must be {SCHEMA_VERSION}"));
@@ -141,9 +227,7 @@ pub(crate) fn validate_analyze_request(config: &Config, request: &AnalyzeRequest
             "FORMAL_METHODS_ALLOWED_REPO_PREFIXES",
         )?;
         if let Some(git_ref) = clean_optional(request.git_ref.as_deref()) {
-            if git_ref.len() > 180 || git_ref.chars().any(|c| c.is_control() || c.is_whitespace()) {
-                return Err("gitRef must be a single token of at most 180 chars".to_string());
-            }
+            validate_git_ref(&git_ref)?;
         }
         if let Some(paths) = request.paths.as_ref() {
             if paths.len() > 64 {
@@ -172,4 +256,54 @@ pub(crate) fn validate_analyze_request(config: &Config, request: &AnalyzeRequest
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repository_urls_reject_credentials_and_non_network_schemes() {
+        assert!(validate_repo_url("https://github.com/ORESoftware/repo.git").is_ok());
+        assert!(validate_repo_url("ssh://git@github.com/ORESoftware/repo.git").is_ok());
+        assert!(validate_repo_url("git@github.com:ORESoftware/repo.git").is_ok());
+        assert!(validate_repo_url("https://token@github.com/ORESoftware/repo.git").is_err());
+        assert!(validate_repo_url("file:///etc/passwd").is_err());
+        assert!(validate_repo_url("https://github.com/../admin").is_err());
+    }
+
+    #[test]
+    fn allowed_prefixes_require_a_url_boundary() {
+        let prefixes = vec!["https://github.com/ORESoftware".to_string()];
+        assert!(ensure_allowed_prefix(
+            "repoUrl",
+            "https://github.com/ORESoftware/repo.git",
+            &prefixes,
+            "TEST"
+        )
+        .is_ok());
+        assert!(ensure_allowed_prefix(
+            "repoUrl",
+            "https://github.com/ORESoftware-evil/repo.git",
+            &prefixes,
+            "TEST"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn git_refs_reject_option_and_ref_syntax_injection() {
+        for valid in ["main", "release/v1.2.3", "0123456789abcdef"] {
+            assert!(validate_git_ref(valid).is_ok(), "{valid}");
+        }
+        for invalid in [
+            "--upload-pack=evil",
+            "../main",
+            "refs//heads/main",
+            "main@{1}",
+            "x.lock",
+        ] {
+            assert!(validate_git_ref(invalid).is_err(), "{invalid}");
+        }
+    }
 }

@@ -20,6 +20,7 @@
 // The model NEVER sends JavaScript/XPath, and webpage text returned by
 // `browser_state` is untrusted content -- see the initialize instructions.
 
+mod email_handoff;
 mod oauth;
 
 use std::{
@@ -408,6 +409,32 @@ fn browser_act_schema() -> Value {
                 },
                 "description": "Echo the pending_action.action_digest from a prior 'needs_confirmation' result to authorize one consequential action."
             },
+            "source_context": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "mailbox_alias", "message_id", "thread_id", "sender_domain", "risk_assessment_complete", "risk_signals", "user_approved_open_external_link", "approved_external_url", "issued_at_unix", "expires_at_unix"],
+                "properties": {
+                    "kind": { "type": "string", "const": "gmail" },
+                    "mailbox_alias": { "type": "string", "enum": ["personal", "fiducia"] },
+                    "message_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+                    "thread_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+                    "sender_domain": { "type": "string", "minLength": 3, "maxLength": 253 },
+                    "reply_to_domain": { "type": "string", "minLength": 3, "maxLength": 253 },
+                    "risk_assessment_complete": { "type": "boolean", "const": true },
+                    "risk_signals": {
+                        "type": "array",
+                        "uniqueItems": true,
+                        "maxItems": 10,
+                        "items": { "type": "string", "enum": ["sender_reply_to_mismatch", "lookalike_domain", "artificial_urgency", "requests_credentials", "requests_remote_access", "requests_crypto_or_gift_card", "requests_payment_or_bank", "requests_ssn_or_tax_id", "requests_identity_document_upload", "unexpected_attachment"] }
+                    },
+                    "user_confirmed_risk_review": { "type": "boolean" },
+                    "user_approved_open_external_link": { "type": "boolean", "const": true },
+                    "approved_external_url": { "type": "string", "minLength": 9, "maxLength": 4096 },
+                    "issued_at_unix": { "type": "integer", "minimum": 0 },
+                    "expires_at_unix": { "type": "integer", "minimum": 0 }
+                },
+                "description": "Optional Gmail provenance for an explicitly approved external link. The server validates risk, expiry, URL/profile parity, hashes message/thread identifiers for audit, and removes this object before contacting the browser worker."
+            },
             "timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 60000 }
         },
         "$defs": {
@@ -660,8 +687,45 @@ async fn tools_call_result(
             {
                 map.insert("request_id".to_string(), Value::String(random_request_id()));
             }
+            let request_id = map
+                .get("request_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let request_ref = email_handoff::hash_reference("browser-request", &request_id);
+            let handoff = match map.remove("source_context") {
+                None => None,
+                Some(context) => match email_handoff::validate_gmail_handoff(
+                    &context,
+                    workflow_id,
+                    allowed_domains,
+                    map.get("actions"),
+                ) {
+                    Ok(audit) => Some(audit),
+                    Err(error) => return tool_error(id, error.code, error.message),
+                },
+            };
+            if let Some(audit) = handoff {
+                let reply_to_domain = audit.reply_to_domain.as_deref().unwrap_or("");
+                tracing::info!(
+                    event = "browser_gmail_handoff",
+                    request_ref = %request_ref,
+                    workflow_id = %audit.workflow_id,
+                    mailbox_alias = %audit.mailbox_alias,
+                    message_ref = %audit.message_ref,
+                    thread_ref = %audit.thread_ref,
+                    sender_domain = %audit.sender_domain,
+                    reply_to_domain,
+                    target_host = %audit.target_host,
+                    expires_at_unix = audit.expires_at_unix,
+                    risk_signal_count = audit.risk_signals.len(),
+                    risk_signals = ?audit.risk_signals,
+                    "browser MCP audit"
+                );
+            }
             tracing::info!(
                 event = "browser_workflow_selected",
+                request_ref = %request_ref,
                 workflow_id,
                 allowed_domain_count = allowed_domains.len(),
                 "browser MCP audit"
