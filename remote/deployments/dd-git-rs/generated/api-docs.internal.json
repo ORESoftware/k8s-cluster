@@ -169,8 +169,8 @@
       }
     },
     "/api/v1/repos/{id}": {
-      "get": {
-        "operationId": "dd_git_rs_get_api_v1_repos_id_5ac5580b1aae",
+      "delete": {
+        "operationId": "dd_git_rs_delete_api_v1_repos_id_c7932befa51b",
         "summary": "Custom code-first route derived from the service router.",
         "description": "Custom code-first route derived from the service router.",
         "tags": [
@@ -207,8 +207,8 @@
         ],
         "x-dd-visibility": "internal"
       },
-      "delete": {
-        "operationId": "dd_git_rs_delete_api_v1_repos_id_c7932befa51b",
+      "get": {
+        "operationId": "dd_git_rs_get_api_v1_repos_id_5ac5580b1aae",
         "summary": "Custom code-first route derived from the service router.",
         "description": "Custom code-first route derived from the service router.",
         "tags": [
@@ -627,7 +627,7 @@
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "rust",
   "x-dd-operation-count": 17,
-  "x-dd-route-count": 15,
+  "x-dd-route-count": 17,
   "x-dd-service": "dd-git-rs",
   "x-dd-standard-docs-routes": [
     "/docs/api",

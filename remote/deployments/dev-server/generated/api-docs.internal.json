@@ -648,7 +648,7 @@
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "node",
   "x-dd-operation-count": 20,
-  "x-dd-route-count": 19,
+  "x-dd-route-count": 20,
   "x-dd-service": "dev-server",
   "x-dd-standard-docs-routes": [
     "/docs/api",

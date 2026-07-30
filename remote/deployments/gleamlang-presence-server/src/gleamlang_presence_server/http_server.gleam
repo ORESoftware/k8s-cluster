@@ -1,30 +1,15 @@
-//// mist HTTP / websocket server.
+//// Mist HTTP / WebSocket server.
 ////
-//// Routes:
-////   GET    /                                            Help text.
-////   GET    /healthz                                     JSON health check.
-////   GET    /nodes                                       Plain text list of connected BEAM peers.
-////   GET    /ws?user=<id>                                Upgrade to a user-scoped ws.
-////   GET    /ws?user=<id>&conv=<id>                      Upgrade to a conv-scoped ws (must be a member).
-////                                                       Both variants accept optional `&device=<id>`.
-////   POST   /conv/<conv_id>/members/<user_id>            Add user to conv (PG + cache + cluster broadcast).
-////   DELETE /conv/<conv_id>/members/<user_id>            Remove user from conv.
-////   GET    /conv/<conv_id>/members                      List members (PG-backed).
-////   POST   /conv/<conv_id>/broadcast                    Body is broadcast to every conv-scoped
-////                                                       ws of every current member, on every node, in
-////                                                       O(peer nodes) cross-node sends.
-////   POST   /user/<user_id>/broadcast                    Body is broadcast to every user-scoped ws
-////                                                       of `<user_id>` on every node.
-////   POST   /user/<user_id>/devices/<device_id>/logout   Closes every ws (user- and conv-scoped) of
-////                                                       this device of this user, cluster-wide.
-////                                                       Body is the optional reason (default: "logout").
+//// Every non-OPTIONS operation is matched through `route_contract.routes()`.
+//// That typed registry is also the source of the OpenAPI document and SDK
+//// inputs, so runtime route registration and documentation cannot drift.
 
 import dd_otel_client
 import dd_runtime_config_client
 import gleam/bit_array
 import gleam/bytes_tree
 import gleam/erlang/atom
-import gleam/http.{Delete, Get, Options, Post}
+import gleam/http.{Options}
 import gleam/http/request.{type Request}
 import gleam/http/response.{type Response}
 import gleam/int
@@ -47,6 +32,7 @@ import gleamlang_presence_server/groups.{
 }
 import gleamlang_presence_server/nats_transport.{type Nats}
 import gleamlang_presence_server/registry.{type Registry}
+import gleamlang_presence_server/route_contract
 import gleamlang_presence_server/store.{type Store}
 import mist.{type Connection, type ResponseData, Bytes}
 
@@ -80,10 +66,10 @@ pub fn supervised(
   |> mist.supervised
 }
 
-/// Stamp CORS headers onto every response. Permissive on purpose so
-/// browsers loading the test UI from a different origin (e.g. the
-/// `web-home-rs` page on :8080) can hit `/conv/...` and `/user/...`
-/// directly. No auth lives on this endpoint yet anyway.
+/// Stamp CORS headers onto every response. The Kubernetes ingress and network
+/// policy are the current boundary for operational routes; the public OpenAPI
+/// contract therefore fail-closes them out instead of describing them as
+/// Internet-safe APIs.
 fn with_cors(resp: Response(ResponseData)) -> Response(ResponseData) {
   resp
   |> response.set_header("access-control-allow-origin", "*")
@@ -91,44 +77,63 @@ fn with_cors(resp: Response(ResponseData)) -> Response(ResponseData) {
     "access-control-allow-methods",
     "GET, POST, DELETE, OPTIONS",
   )
-  |> response.set_header("access-control-allow-headers", "content-type")
+  |> response.set_header(
+    "access-control-allow-headers",
+    "content-type, x-server-auth",
+  )
   |> response.set_header("access-control-max-age", "600")
 }
 
 fn route(deps: Deps, req: Request(Connection)) -> Response(ResponseData) {
-  let path = request.path_segments(req)
-  case req.method, path {
-    // CORS preflight. Browsers send this before any cross-origin
-    // POST/DELETE; respond 204 No Content with the allow-* headers
-    // (those are added by `with_cors`).
-    Options, _ ->
+  case req.method {
+    // CORS preflight is generic transport middleware rather than a business
+    // operation, so it is intentionally not duplicated across OpenAPI paths.
+    Options ->
       response.new(204)
       |> response.set_body(Bytes(bytes_tree.from_string("")))
+    _ ->
+      case route_contract.match_route(req.method, request.path_segments(req)) {
+        Ok(matched) -> dispatch(deps, req, matched)
+        Error(_) -> not_found()
+      }
+  }
+}
 
-    Get, [] -> help()
-    Get, ["docs", "api"] -> api_docs.html()
-    Get, ["api", "docs"] -> api_docs.html()
-    Get, ["api", "docs.json"] -> api_docs.json()
-    Get, ["healthz"] -> healthz(deps)
-    Get, ["nodes"] -> nodes_text()
-    Get, ["ws"] -> handle_ws_upgrade(deps, req)
+fn dispatch(
+  deps: Deps,
+  req: Request(Connection),
+  matched: route_contract.RouteMatch,
+) -> Response(ResponseData) {
+  case matched.route.id {
+    route_contract.Help -> help()
+    route_contract.PublicOpenApi -> api_docs.json()
+    route_contract.PublicDocs -> api_docs.html()
+    route_contract.Health -> healthz(deps)
+    route_contract.Nodes -> nodes_text()
+    route_contract.WebSocket -> handle_ws_upgrade(deps, req)
 
-    Post, ["conv", conv_id, "members", user_id] -> {
+    route_contract.AddConversationMember -> {
+      let conv_id = required_parameter(matched, "conv_id")
+      let user_id = required_parameter(matched, "user_id")
       conversations.add_member(deps.conversations, conv_id, user_id)
       ok_text("joined " <> user_id <> " -> " <> conv_id)
     }
 
-    Delete, ["conv", conv_id, "members", user_id] -> {
+    route_contract.RemoveConversationMember -> {
+      let conv_id = required_parameter(matched, "conv_id")
+      let user_id = required_parameter(matched, "user_id")
       conversations.remove_member(deps.conversations, conv_id, user_id)
       ok_text("left " <> user_id <> " -> " <> conv_id)
     }
 
-    Get, ["conv", conv_id, "members"] -> {
+    route_contract.ListConversationMembers -> {
+      let conv_id = required_parameter(matched, "conv_id")
       let users = conversations.members_of(deps.conversations, conv_id)
       ok_text(string.join(users, "\n"))
     }
 
-    Post, ["conv", conv_id, "broadcast"] -> {
+    route_contract.BroadcastConversation -> {
+      let conv_id = required_parameter(matched, "conv_id")
       case mist.read_body(req, 1024 * 64) {
         Ok(req_with_body) -> {
           let payload =
@@ -163,18 +168,14 @@ fn route(deps: Deps, req: Request(Connection)) -> Response(ResponseData) {
       }
     }
 
-    Post, ["user", user_id, "broadcast"] -> {
+    route_contract.BroadcastUser -> {
+      let user_id = required_parameter(matched, "user_id")
       case mist.read_body(req, 1024 * 64) {
         Ok(req_with_body) -> {
           let payload =
             req_with_body.body
             |> bit_array.to_string
             |> result.unwrap("")
-          // Per-user system message: fans out to every user-scoped ws
-          // of this user on every node. Conv-scoped ws's of the same
-          // user are NOT addressed by this — for that, send to each
-          // conv via /conv/<id>/broadcast. NATS mirroring left to a
-          // follow-up if/when external subscribers need it.
           fanout.broadcast(
             deps.fanout,
             deps.registry,
@@ -187,12 +188,11 @@ fn route(deps: Deps, req: Request(Connection)) -> Response(ResponseData) {
       }
     }
 
-    Post, ["user", user_id, "devices", device_id, "logout"] -> {
+    route_contract.LogoutDevice -> {
+      let user_id = required_parameter(matched, "user_id")
+      let device_id = required_parameter(matched, "device_id")
       // Device-targeted kick: closes every ws (user-scoped AND conv-
       // scoped) belonging to this device of this user, cluster-wide.
-      // The connection's `Kick` handler sends a JSON
-      // `{"type":"kick","reason":"<reason>"}` frame and stops the ws.
-      // Body is the optional reason (defaults to "logout").
       let reason = case mist.read_body(req, 1024) {
         Ok(req_with_body) ->
           req_with_body.body
@@ -210,15 +210,21 @@ fn route(deps: Deps, req: Request(Connection)) -> Response(ResponseData) {
       ok_text("logout queued for user=" <> user_id <> " device=" <> device_id)
     }
 
-    Get, ["internal", "runtime-config"] ->
+    route_contract.RuntimeConfigSnapshot ->
       dd_runtime_config_client.handle_snapshot(req)
-    Post, ["internal", "update-runtime-config"] ->
+    route_contract.RuntimeConfigApply ->
       dd_runtime_config_client.handle_apply(req)
-    Post, ["internal", "runtime-config", "reset"] ->
+    route_contract.RuntimeConfigReset ->
       dd_runtime_config_client.handle_reset(req)
-
-    _, _ -> not_found()
   }
+}
+
+fn required_parameter(
+  matched: route_contract.RouteMatch,
+  name: String,
+) -> String {
+  route_contract.parameter(matched.parameters, name)
+  |> result.unwrap("")
 }
 
 fn default_if_blank(s: String, default: String) -> String {
@@ -336,6 +342,10 @@ fn help() -> Response(ResponseData) {
   let body =
     string_tree.from_strings([
       "presence-server\n", "---------------\n",
+      "GET    /openapi.json                     fail-closed public OpenAPI 3.1\n",
+      "GET    /api/docs.json                    OpenAPI alias\n",
+      "GET    /api/docs                         Scalar API reference\n",
+      "GET    /docs/api                         Scalar API reference alias\n",
       "GET    /healthz                          health JSON\n",
       "GET    /nodes                            BEAM cluster peers\n",
       "GET    /ws?user=alice                    open a user-scoped ws as 'alice'\n",

@@ -1,6 +1,6 @@
 const String sdkScope = "internal";
-const String catalogSha256 = "99f0be62a7df7015cc0245308db52ebad595fa5f0c4969275bb7a241c6acea25";
-const int operationCount = 941;
+const String catalogSha256 = "44f420582b613723f6526d057fe1f7f87d999c0fa7558c1f4dc689b0cc6e143e";
+const int operationCount = 942;
 
 class ApiOperation {
   const ApiOperation({
@@ -3978,7 +3978,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "5afa367f8ec0dbb531f7d317309bb79e9e1b7a3870bc90f70091867323750f75",
+    contractSha256: "83f8544a4274e600d6bb61fb4f51861845924a78dc2b0243688bf02dd7b53ec7",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -3989,7 +3989,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "e51604d6b6fa2deebdc27b77a86878d8a70bcdc4ee7525105aed9dbd5e8efd42",
+    contractSha256: "16d168df7ff75a2b28d7f385b20067ef37973d9e601b6eebbc9f39a2ac9701aa",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4000,7 +4000,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "d72a6c360831d5f976044ee2e48974fdd415246bd040e3d3c24491be2fe97fa3",
+    contractSha256: "9056c040f926e742e0212d04d9fb36cd526f1a6d58fa3b77f560a150790b9223",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4011,7 +4011,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "06670a121852fed6e88bb30a616e1700db926ad4841cdbca7e28d919ef0b98f9",
+    contractSha256: "027c24c51274f9b4966b07102a7bb3fd32ad7d128a3d936d3aa2b3209da33d91",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4022,7 +4022,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "427db96d24e114b61c57cdc7ee145b0adaa5caaca255f535dd641a0ae82cd733",
+    contractSha256: "b1ebf60738a5e77e8341422309106c1ea93888e54118cbdc237eb3de0687ccea",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4033,7 +4033,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "fc37d6288326e97d6bdf5ed4d08ff9026f43fed96abfa25d966368311821067f",
+    contractSha256: "68972b9ee95e83c210d474308f782eaf58b37d4ac735d575e61e74444cbad71f",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4044,7 +4044,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "daeb3d2101f0ea760a55e50655da0d062ac93d3663388fefa45e077e9ca90aa4",
+    contractSha256: "107b13b21699da3874ec56cf135ef7eb63a27e5090720ce3bb513dc94ab736b5",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4055,7 +4055,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "d7293488c687f9b62afa92eb4a8cb9fed129695434b9e586fd10e3074d128e5a",
+    contractSha256: "efaa588bf05a18561e103ed7b24342736fd4fff72d3aa7cccad125b3cd09d375",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4066,7 +4066,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "9d7279921dadbdf9cd9f61eca7e9f505b50ad91440599e7f0d968049b02898a1",
+    contractSha256: "7f997dea95625f27769b0e183bbd9ddd6e4780e97f2b9347f21c639c651ab94b",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4077,7 +4077,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "49a5a4ae100b41cdfc00ddbb83014769653ac50133508ced7202ccacde4e419a",
+    contractSha256: "4301d5b57bfda5123f2522dd3f160a467e5678c1beb6dbfffa4595f2aa91f29b",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4088,7 +4088,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "c8731de7dbfb938e7cd4bab6e53b8540471c02e098e1a07e866c22cacf995562",
+    contractSha256: "450f83f4b726f587cdd72aa2cdc294bef3d2d3068b738325ac30d98180ee9c89",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4099,7 +4099,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "1dc791f40a5797eaed2911a67a3ee9c344159e3382f467b45827a94009ce09bb",
+    contractSha256: "3ebb403df53d228e19b545fbce60bf4459e876f7933ee8f9edf22eed72de0604",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4110,7 +4110,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "476e7b3bb5c13ef389f8257b4e4ef51b87857a8c50851b4a68086fc321c3ff06",
+    contractSha256: "ebc3f7f5008f0e1fa09d3438bc52c38987449037c78ec264bfc9b7c25dd3a79c",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4121,7 +4121,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "4b2ef63d1fb8f8d5f1592a272858f1cc75912f8ce52c562d25eaf1dfa6d9c878",
+    contractSha256: "909559e9779d897277fbc99f67a4a4ca805d1a5968b2ac6c6c3fbd081bb4a43d",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4132,7 +4132,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "bdc689f1b159d90be9c2d25d19ef4274ec56e238faf39652ef3390322b39c404",
+    contractSha256: "b4aeefccb31c9969c9bb666d2b4914a20fa1bbbc2cbe66694ab7d80c49075c3f",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4143,7 +4143,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "57a247552051d9284dc192c89bb1e1528b5b59b2288758ad0557e78812c5c698",
+    contractSha256: "35fb0656259f04242e577221330f7c5366181e8c8473b3b3e538eb74fef0eac6",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4154,7 +4154,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "db474ba5c48975ec57f8f117cb62984ac85dfdf0dd0c9888a219fc82d6cb5383",
+    contractSha256: "fd8656bc208910beaffd844e662fec6e879b34d61bdb6b3bf3afbaa3aa755ea6",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4165,7 +4165,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "ce2f08df71ec5e4d987c4fc754b0f55644c33ba8aaf66d5f235d503f7d81b78e",
+    contractSha256: "fe846dc6dec75fd38277f0a46c4c576554e696e430b3d893df5dd382bc3c6bd2",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4176,7 +4176,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "238a47c35ff7df4f0362337bd29964ce9a460b032b3bc93a1cf96d3f68e33a1d",
+    contractSha256: "6c02814a7f6ce9589215ce123b5017f2fed67b63dd977a966e14deb04254ee7c",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4187,7 +4187,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "6086f8ac4f2b7ca9d97da9eb6dd38514866cafbe2bd921c64cadb30c41fe5ac3",
+    contractSha256: "af51ff4322085ec0ba053bb33ce737d5317a2b8b384e185ee4f8f25311eb9254",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4198,7 +4198,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "2a338fea398daafa8e4f2e003defd8c2ccea0e6b2b89477b15e1fcdf460b1222",
+    contractSha256: "5e266b4e6a872b23afd6367e1a0f0e9ed5de8e341ec05dafad619fe2a3001156",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4209,7 +4209,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "7b58453c265a43d000748b5eee0891e609dc6db76be1a4e1ebb8231c08759226",
+    contractSha256: "e36708ec48cffa4f9926cbfb6a4941c5ed36450393119abe89d2870448943305",
   ),
   ApiOperation(
     service: "dd-embeddings-rs",
@@ -4220,7 +4220,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "d393f0a943c0d56a3189c46b49c22243afd7fff306b201ae84e661314a026128",
+    contractSha256: "96278946916413cf6005fa456d5975ec988dbe65a41b2b077e357cacc19633d2",
   ),
   ApiOperation(
     service: "dd-escrow-rs",
@@ -6420,7 +6420,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "4a681dcd77bf779ccfb677e41c585d25eb337855b11f52f649dddf1bd9321b4a",
+    contractSha256: "5f881ba38f9c0ceca2759aaab8e50aa35a89819f92d50e501f3d9e625fd1aeef",
   ),
   ApiOperation(
     service: "gleamlang-presence-server",
@@ -6431,7 +6431,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "b596be33a8416ac1e1b219140d918fbb1f1ba50ba73340ade6482defda162771",
+    contractSha256: "eaea3179e807d60df3e8692d1ed27d4edf9a4665ef4c4ab3d6222ab4093a8e39",
   ),
   ApiOperation(
     service: "gleamlang-presence-server",
@@ -6442,7 +6442,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "433dd16d8ea4445330fc9299b0b2ae39cce684750545557e8904413e901f7568",
+    contractSha256: "8ce2497c74e1cdfd94f75d8f72bf005cf43fcf53a507373993a95b136c83daa8",
   ),
   ApiOperation(
     service: "gleamlang-presence-server",
@@ -6453,7 +6453,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "ab7fff20c2c3de2a83c211efd95cdee398dcb28b27ed50115f4772dcb1c860d7",
+    contractSha256: "15b697f66041cd15cd059ae4d9cecf2514759272b59d144d8da5e846ffb94d21",
   ),
   ApiOperation(
     service: "gleamlang-presence-server",
@@ -6464,7 +6464,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "0bff42ea034e2f1499c00aebc410ff81e7b05c14539a6a76eb427b7153137604",
+    contractSha256: "c2447596f9f0e51cc0ec83ced1fcf31960def975c81280a85a23081f972f40f3",
   ),
   ApiOperation(
     service: "gleamlang-presence-server",
@@ -6475,7 +6475,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "cb15bcec055d730a8c81b48eda9bcc485effbf150db49be401824be08829fdbd",
+    contractSha256: "607c53fbc24f4257200457c9aed024449522c26920aa9be9300d79180935360f",
   ),
   ApiOperation(
     service: "gleamlang-presence-server",
@@ -6486,7 +6486,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "72e9bfc02dd1b3fc3f46985d5f08813ca29a5bd565bc12ff326c1a3b15980eff",
+    contractSha256: "a437cda1f06a26a6b7be5b387aa2c1f69e9203fc1b13edf97aa652eb282a7abc",
   ),
   ApiOperation(
     service: "gleamlang-presence-server",
@@ -6497,7 +6497,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "d2864cf8ba84dc1c8cc3d8bbdaf5312b02fed466ffd42da30919e2526572cd93",
+    contractSha256: "42601c9417b5c55a39eddc43ba2fa13c52a17bcb69d80251e47bc52b357c092d",
   ),
   ApiOperation(
     service: "gleamlang-presence-server",
@@ -6508,7 +6508,18 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "c80fd494aba85cb5e8f724a6bc30cccc75714b67cabbaf447478778ed6448007",
+    contractSha256: "ed4952b94ff05de2525462aea399f0a4db0cc12154fe87aed6872abb09cd5405",
+  ),
+  ApiOperation(
+    service: "gleamlang-presence-server",
+    operationId: "gleamlang_presence_server_get_openapi_json_3b3a44f2453e",
+    method: "GET",
+    path: "/openapi.json",
+    pathParameters: [],
+    requiredQueryParameters: [],
+    optionalQueryParameters: [],
+    requestBodyRequired: false,
+    contractSha256: "26124614b3671af324597aa03754cb2bdd5e6039ab0891fa4d824cbe5f8c600c",
   ),
   ApiOperation(
     service: "gleamlang-presence-server",
@@ -6517,9 +6528,9 @@ const List<ApiOperation> operations = <ApiOperation>[
     path: "/ws",
     pathParameters: [],
     requiredQueryParameters: [],
-    optionalQueryParameters: ["conv", "user"],
+    optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "9a8b87aa1bb8965bed43f75b7fd971bff797cacde3cae8cb6d2f5413f8b87e5c",
+    contractSha256: "166c0db1a7dedf0af1f74e256f658fc66d20263c3d05a10d32a0a05b04ce7502",
   ),
   ApiOperation(
     service: "gleamlang-presence-server",
@@ -6530,7 +6541,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "1e60a38dd99f57ad170864c40b60ebeb3993ecfd823c46ee35f3b226ab2d2905",
+    contractSha256: "f962d8603526ed059e7e4229ec9ca220a576b1c1070cf4192d7056de0bcce656",
   ),
   ApiOperation(
     service: "gleamlang-presence-server",
@@ -6541,7 +6552,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "e646c8f82a098fff807b49271769178e3193f8557f9a765834efb09193f2cf24",
+    contractSha256: "ed90ce11fe5d08e4fe8414ddd12ff0c250d0652f13d971bcfa23d43d3da7bbba",
   ),
   ApiOperation(
     service: "gleamlang-presence-server",
@@ -6552,7 +6563,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "c8df751805d6642a194f45aeeec644c1649b6e634d22766ff655c8b81d0c341f",
+    contractSha256: "2e3805608d271d0383f6bcacca889e39aea86c4ced82b8b326f596343bef6c46",
   ),
   ApiOperation(
     service: "gleamlang-presence-server",
@@ -6563,7 +6574,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "7249659962d72db492542842bf41b299514b3352a0a3762408523e46e684410e",
+    contractSha256: "d8e7032be43230481dee2530f768e512f3341661a074aa00da07659a0db04c69",
   ),
   ApiOperation(
     service: "gleamlang-presence-server",
@@ -6574,7 +6585,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "b6549cedbbca6eb3fcb5510c16c0354936ba6a40b4f149c45989604d5cf21f5b",
+    contractSha256: "30b7b04fd324512b81cf8565eda9c45546f118097c196a645af9a234cddaa982",
   ),
   ApiOperation(
     service: "gleamlang-presence-server",
@@ -6585,7 +6596,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "eb06ed048e62c5cfc6b8dc0f47f2afaee42061e461846944cf2afaf4453015de",
+    contractSha256: "65420b7b021504cbb6c9048b0c0ca2814142df4de1ad9d95c29d9c4a1c709732",
   ),
   ApiOperation(
     service: "gleamlang-server",
@@ -6794,7 +6805,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "f2137c59a4426fdcc0aa8505e7e28a400472d7f7088781604d6c41a010be67f8",
+    contractSha256: "3428ce8188e32ee768ec94f3271adecc864e171b236bb8fec98b507238985db4",
   ),
   ApiOperation(
     service: "gleamlang-ws-server",
@@ -6926,7 +6937,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: ["conv", "user"],
     requestBodyRequired: false,
-    contractSha256: "15343ecd70ce524181eef7ad21a61a5d0eda4191bc73cd49f9fb4b9930b961aa",
+    contractSha256: "735b984aff437237409166325abb2a021ce62d84be0b4fda3a9928e894e2447e",
   ),
   ApiOperation(
     service: "gleamlang-ws-server",
@@ -8983,7 +8994,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "5bba3e223323eda6cd480ffaa4edbbc6c46941ddf4927f5233d3bc172d4e87ea",
+    contractSha256: "96894c6bc6d12d4763468aa56ffa34e5ba7435af05e027a5d8b81a7a7a7b3c68",
   ),
   ApiOperation(
     service: "spark-pipeline-server",
@@ -9016,7 +9027,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "87a56efb84c253d94597f3d61cd10c8fa5f274216d459af9f62588a923623f50",
+    contractSha256: "3b1108d41d578d284a4f132625583df496f985ef5faa7d45caa0461505321157",
   ),
   ApiOperation(
     service: "trading-server-rs",
@@ -9170,7 +9181,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "8f4ed2db80a608edee36bd1f7d77fc4948626ba0febe04c3e1fa95a620f57c2e",
+    contractSha256: "4e2bf48d6f6342a30286c1d0a47cb085dd18a8b720936ae65ff8e0b269d86c46",
   ),
   ApiOperation(
     service: "wal-gateway-rs",
@@ -9181,7 +9192,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "05c3afebd67006a793aaa234b7fd3eacfd949aa0c34c3677c9ebf42afd0f0050",
+    contractSha256: "02bff8eb385c5d0c43b41157572fb6d88653f424fdeeaefeb8f96daa8b54ae2a",
   ),
   ApiOperation(
     service: "wal-gateway-rs",
@@ -9192,7 +9203,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "641924988daedaed0ba7ca8fa76771712e8b3e71ae56f400cf816ca8fec3921c",
+    contractSha256: "9c0a1e0e83399c9fab06d89407f30fe09a597217a4143d941e9149ba0dede478",
   ),
   ApiOperation(
     service: "wal-gateway-rs",
@@ -9203,7 +9214,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "b5edade458f680248f36c91904571c97601118daf147c95f3fc20d0acc2f3a28",
+    contractSha256: "5339fccd107c9c73346daa1ec6f22be824bd60131d2fa03d8f321a2e525b365f",
   ),
   ApiOperation(
     service: "wal-gateway-rs",
@@ -9214,7 +9225,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "816bd3169765d836f2382f2dab5b786fece47ec0d9e1b739ef29c320e6e2aac7",
+    contractSha256: "dc78a61d6d3dbda8ef3e522fb9a39997141db7e0db6491b3b9b91efe9d30c0ed",
   ),
   ApiOperation(
     service: "wal-gateway-rs",
@@ -9225,7 +9236,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "4f58abd8a89e7d0193ac981f4f78ac14fbeb13ef153b6c2a14faadb1b5f36f98",
+    contractSha256: "d5f6e2afa1927fd48e9307703f6e65b80c8ef7d317e328ec7392ff064cbcd949",
   ),
   ApiOperation(
     service: "wal-gateway-rs",
@@ -9236,7 +9247,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "ca8abdf4738adfc2b9c08f2e86f9cd34e6a94e48870d4ae63c74ca74c8a6cf4d",
+    contractSha256: "1cc38040a75aef40b98c58556bedde7c3a521870dedb53a6eea8197f27b0f1ea",
   ),
   ApiOperation(
     service: "wal-gateway-rs",
@@ -9247,7 +9258,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "97321e74cd044d7aa1aa492246d912dcd5dd26ec48fdfbb9da69bec0318385a9",
+    contractSha256: "f4efe4505110f943c337f08ce55e3fa32f77b73a84b7af2a8e38a5ba0db14d5c",
   ),
   ApiOperation(
     service: "wal-gateway-rs",
@@ -9258,7 +9269,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "785f0c075054f1ae6754de3d9b240975fa951b92a401eba4ed192043c06077b0",
+    contractSha256: "f5b5d9dedbf6620b044312463fba6db44297639a5f62e751bcc8b66a1a0cc769",
   ),
   ApiOperation(
     service: "wal-gateway-rs",
@@ -9269,7 +9280,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "e9f582095b98ae1e39df01bfb0312806b428694a86524f5fa1e23e72d7cf40e2",
+    contractSha256: "7004cf276f541cb0e8a54eba1a86462d9412d5be6da349dbb2e69e5ba6e383c9",
   ),
   ApiOperation(
     service: "wal-gateway-rs",
@@ -9280,7 +9291,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "df66cb0f5a72f8222405df4dd2b5213aa49916878cc3598fa6852690f0898b76",
+    contractSha256: "e5775bf234757c1eaaa5c7aab6b10ffd20267f1c3bc8c3f6d5a7dcdbed51f3ce",
   ),
   ApiOperation(
     service: "web-home-rs",

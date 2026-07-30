@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "spark-pipeline-server",
   "language": "java",
-  "routeCount": 9,
+  "routeCount": 10,
   "routeTypeCounts": {
     "service": 6,
-    "user-generated": 3
+    "user-generated": 4
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -119,8 +119,7 @@
     {
       "path": "/v1/jobs",
       "methods": [
-        "GET",
-        "POST"
+        "GET"
       ],
       "routeType": "user-generated",
       "implementation": "code-first",
@@ -128,6 +127,23 @@
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "ListJobsHandler",
+        "authGate"
+      ],
+      "sourceFiles": [
+        "remote/deployments/spark-pipeline-server/src/main/java/com/oresoftware/dd/sparkpipeline/MainVerticle.java"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/v1/jobs",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
         "SubmitJobHandler",
         "authGate"
       ],
