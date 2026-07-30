@@ -42,12 +42,10 @@
     <h1>rest-api-rs API docs</h1>
     <p>Generated from route declarations in source. Standard routes: <code>/docs/api</code>, <code>/api/docs</code>, <code>/api/docs.json</code>.</p>
     <div class="summary">
-      <span>47 routes</span>
+      <span>6 routes</span>
       <span>rust</span>
-      <span>8 service</span>
-      <span>26 user-generated</span>
-      <span>10 internal-db</span>
-      <span>3 runtime-config</span>
+      <span>6 service</span>
+      <span>0 user-generated</span>
     </div>
   </header>
   <main>
@@ -55,379 +53,51 @@
       <thead><tr><th>Type</th><th>Methods</th><th>Path</th><th>Purpose</th><th>Handlers</th><th>Auth</th></tr></thead>
       <tbody>
 <tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/api/agents/events</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>ingest_agent_event</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/api/agents/git-repos</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>known_git_repos</code> <code>save_known_git_repo</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/api/agents/tasks</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>agents_tasks</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/api/agents/tasks/:task_id/events</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>agent_task_events</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/api/agents/tasks/:task_id/feedback</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>agent_task_feedback</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/api/agents/threads/:thread_id/archive</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>archive_thread</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/api/agents/threads/:thread_id/breadcrumbs</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>ingest_agent_breadcrumb</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/api/agents/threads/:thread_id/breadcrumbs/tail</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>agent_thread_breadcrumb_tail</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/api/agents/threads/:thread_id/context</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>thread_context</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/api/agents/threads/:thread_id/context-candidates</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>thread_context_candidates</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/api/agents/threads/:thread_id/hard-delete</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>hard_delete_thread</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/api/agents/threads/:thread_id/make-commit</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>make_commit_thread</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/api/agents/threads/:thread_id/merge-upstream</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>merge_upstream_thread</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/api/agents/threads/:thread_id/open-pr</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>open_pr_thread</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/api/agents/threads/:thread_id/prepare</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>prepare_thread</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/api/agents/threads/:thread_id/runtime</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>thread_runtime</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/api/agents/threads/:thread_id/sleep</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>sleep_thread</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/api/agents/threads/:thread_id/stream/:task_id</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>stream_thread_task</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/api/agents/threads/:thread_id/tasks</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>dispatch_thread_task</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/api/agents/threads/:thread_id/terminal</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>terminal_thread</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/api/docs</code></td>
   <td data-label="Purpose">Human-readable generated API documentation.</td>
-  <td data-label="Handlers"><code>api_docs</code></td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/api/docs.json</code></td>
-  <td data-label="Purpose">Machine-readable generated API route metadata.</td>
-  <td data-label="Handlers"><code>api_docs</code></td>
+  <td data-label="Purpose">Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.</td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/api/graphql</code></td>
-  <td data-label="Purpose">GraphQL endpoint for typed remote REST API queries, guarded subservice calls, and the optional GraphiQL IDE on GET.</td>
-  <td data-label="Handlers"><code>api_graphiql</code> <code>graphql_handler</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/api/graphql/schema</code></td>
-  <td data-label="Purpose">Machine-readable GraphQL SDL schema for the remote REST API service; protected by internal auth by default.</td>
-  <td data-label="Handlers"><code>graphql_schema_sdl</code></td>
-  <td data-label="Auth">operator secret by default</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/api/lambdas/functions</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>create_lambda_function</code> <code>lambda_functions</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">PATCH</span></div></td>
-  <td data-label="Path"><code>/api/lambdas/functions/:id</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>lambda_function</code> <code>update_lambda_function</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/api/runtime-config/snapshot/:env</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>runtime_config_snapshot</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/docs/api</code></td>
   <td data-label="Purpose">Human-readable generated API documentation.</td>
-  <td data-label="Handlers"><code>api_docs</code></td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/graphql</code></td>
-  <td data-label="Purpose">GraphQL endpoint for typed remote REST API queries, guarded subservice calls, and the optional GraphiQL IDE on GET.</td>
-  <td data-label="Handlers"><code>graphiql</code> <code>graphql_handler</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/graphql/schema</code></td>
-  <td data-label="Purpose">Machine-readable GraphQL SDL schema for the remote REST API service; protected by internal auth by default.</td>
-  <td data-label="Handlers"><code>graphql_schema_sdl</code></td>
-  <td data-label="Auth">operator secret by default</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/healthz</code></td>
   <td data-label="Purpose">Health check.</td>
-  <td data-label="Handlers"><code>healthz</code></td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge internal-db">internal-db</span><div class="muted">internal-operator</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/internal/db/contract/tables</code></td>
-  <td data-label="Purpose">Internal operator database inspection route. Not part of the public REST contract.</td>
-  <td data-label="Handlers"><code>contract_tables</code></td>
-  <td data-label="Auth">operator secret</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge internal-db">internal-db</span><div class="muted">internal-operator</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/internal/db/join</code></td>
-  <td data-label="Purpose">Internal operator database inspection route. Not part of the public REST contract.</td>
-  <td data-label="Handlers"><code>join_rows</code></td>
-  <td data-label="Auth">operator secret</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge internal-db">internal-db</span><div class="muted">internal-operator</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/internal/db/pg-defs/tables</code></td>
-  <td data-label="Purpose">Internal operator database inspection route. Not part of the public REST contract.</td>
-  <td data-label="Handlers"><code>contract_tables</code></td>
-  <td data-label="Auth">operator secret</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge internal-db">internal-db</span><div class="muted">internal-operator</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/internal/db/schemas/:schema/tables/:table</code></td>
-  <td data-label="Purpose">Internal operator database inspection route. Not part of the public REST contract.</td>
-  <td data-label="Handlers"><code>table_metadata_explicit_schema</code></td>
-  <td data-label="Auth">operator secret</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge internal-db">internal-db</span><div class="muted">internal-operator</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/internal/db/schemas/:schema/tables/:table/rows</code></td>
-  <td data-label="Purpose">Internal operator database inspection route. Not part of the public REST contract.</td>
-  <td data-label="Handlers"><code>insert_row_explicit_schema</code> <code>list_rows_explicit_schema</code></td>
-  <td data-label="Auth">operator secret</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge internal-db">internal-db</span><div class="muted">internal-operator</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">PATCH</span><span class="method">DELETE</span></div></td>
-  <td data-label="Path"><code>/internal/db/schemas/:schema/tables/:table/rows/:id</code></td>
-  <td data-label="Purpose">Internal operator database inspection route. Not part of the public REST contract.</td>
-  <td data-label="Handlers"><code>delete_row_explicit_schema</code> <code>get_row_explicit_schema</code> <code>update_row_explicit_schema</code></td>
-  <td data-label="Auth">operator secret</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge internal-db">internal-db</span><div class="muted">internal-operator</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/internal/db/tables</code></td>
-  <td data-label="Purpose">Internal operator database inspection route. Not part of the public REST contract.</td>
-  <td data-label="Handlers"><code>list_tables</code></td>
-  <td data-label="Auth">operator secret</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge internal-db">internal-db</span><div class="muted">internal-operator</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/internal/db/tables/:table</code></td>
-  <td data-label="Purpose">Internal operator database inspection route. Not part of the public REST contract.</td>
-  <td data-label="Handlers"><code>table_metadata_default_schema</code></td>
-  <td data-label="Auth">operator secret</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge internal-db">internal-db</span><div class="muted">internal-operator</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/internal/db/tables/:table/rows</code></td>
-  <td data-label="Purpose">Internal operator database inspection route. Not part of the public REST contract.</td>
-  <td data-label="Handlers"><code>insert_row_default_schema</code> <code>list_rows_default_schema</code></td>
-  <td data-label="Auth">operator secret</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge internal-db">internal-db</span><div class="muted">internal-operator</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span><span class="method">PATCH</span><span class="method">DELETE</span></div></td>
-  <td data-label="Path"><code>/internal/db/tables/:table/rows/:id</code></td>
-  <td data-label="Purpose">Internal operator database inspection route. Not part of the public REST contract.</td>
-  <td data-label="Handlers"><code>delete_row_default_schema</code> <code>get_row_default_schema</code> <code>update_row_default_schema</code></td>
-  <td data-label="Auth">operator secret</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/internal/lambda-images/:function_id/package</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><code>package_lambda_image_internal</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge runtime-config">runtime-config</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
-  <td data-label="Path"><code>/internal/runtime-config</code></td>
-  <td data-label="Purpose">Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.</td>
-  <td data-label="Handlers"><code>dd_runtime_config_client::handle_get</code></td>
-  <td data-label="Auth">service-defined</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge runtime-config">runtime-config</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/internal/runtime-config/reset</code></td>
-  <td data-label="Purpose">Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.</td>
-  <td data-label="Handlers"><code>dd_runtime_config_client::handle_reset</code></td>
-  <td data-label="Auth">X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge runtime-config">runtime-config</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/internal/update-runtime-config</code></td>
-  <td data-label="Purpose">Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.</td>
-  <td data-label="Handlers"><code>dd_runtime_config_client::handle_apply</code></td>
-  <td data-label="Auth">X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/metrics</code></td>
   <td data-label="Purpose">Prometheus metrics.</td>
-  <td data-label="Handlers"><code>metrics</code></td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/readyz</code></td>
   <td data-label="Purpose">Readiness check.</td>
-  <td data-label="Handlers"><code>image_builder_readyz</code></td>
+  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
       </tbody>

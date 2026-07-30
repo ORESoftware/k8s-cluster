@@ -1,0 +1,12 @@
+{
+  "repositories": {
+    "ORESoftware/k8s-cluster": "github.com/ORESoftware"
+  },
+  "organizations": {
+    "ORESoftware": "github.com/ORESoftware",
+    "fiducia-cloud": "github.com/fiducia-cloud",
+    "sonus-auris": "github.com/sonus-auris",
+    "zed-pkg": "github.com/zed-pkg",
+    "cliptown": "github.com/cliptown"
+  }
+}
