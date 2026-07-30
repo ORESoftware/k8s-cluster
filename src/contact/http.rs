@@ -10,7 +10,9 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
-use super::contracts::{ContactJob, ContactOutcome, ContactOutcomeClass, ContactProviderKind};
+#[cfg(test)]
+use super::contracts::ContactProviderKind;
+use super::contracts::{ContactJob, ContactOutcome, ContactOutcomeClass};
 use super::dispatch::{ContactProviderRegistry, ContactRegistryReadiness};
 use super::provider::ContactProviderError;
 use super::validation::validate_contact_job;

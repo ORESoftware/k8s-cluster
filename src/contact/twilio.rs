@@ -557,9 +557,10 @@ mod tests {
         let job = sms_job();
         let outcome = provider.send(&job).await.expect("send succeeds");
         assert_eq!(outcome.class, ContactOutcomeClass::Accepted);
+        let expected_message_sid = fixture_sid("SM");
         assert_eq!(
             outcome.provider_code.as_deref(),
-            Some(fixture_sid("SM").as_str())
+            Some(expected_message_sid.as_str())
         );
         assert!(
             capture

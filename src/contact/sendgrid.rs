@@ -355,7 +355,7 @@ fn classify_sendgrid_failure(
             ContactOutcomeClass::InvalidPayload
         }
         StatusCode::TOO_MANY_REQUESTS => ContactOutcomeClass::Throttled,
-        status if decision.retryable => ContactOutcomeClass::TransientProviderFailure,
+        _ if decision.retryable => ContactOutcomeClass::TransientProviderFailure,
         _ => ContactOutcomeClass::PermanentProviderFailure,
     };
     let safe_field = serde_json::from_str::<SendGridErrorEnvelope>(response_text)
