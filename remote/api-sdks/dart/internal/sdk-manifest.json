@@ -5,10 +5,10 @@
   "packageName": "oresoftware_k8s_api_sdk_internal",
   "generatedBy": "remote/tools/generate-api-sdks.mjs",
   "catalogPath": "remote/api-sdks/contracts/internal.json",
-  "catalogSha256": "44f420582b613723f6526d057fe1f7f87d999c0fa7558c1f4dc689b0cc6e143e",
-  "catalogFileSha256": "f1f774ae4a4616926556c7a7472f366c6007e96c2a4a597b7b9c7c08b3b03989",
+  "catalogSha256": "ae1ce6bfb16657296304863f0dde0395858173c3acd113fcfa93b11dc43e1288",
+  "catalogFileSha256": "64df987084745bbb80725bf6f7e59827f0f5e6fe0f83047d3fe7a64581e4a528",
   "serviceCount": 44,
-  "operationCount": 942,
+  "operationCount": 943,
   "skippedServices": [
     {
       "service": "billing-server-rs",
@@ -53,11 +53,11 @@
     },
     {
       "path": "bin/smoke.dart",
-      "sha256": "a1e4f64a3eab4c2f2e0b85f5ace2b4f463a97700943c7f410ce4cc474e30e29e"
+      "sha256": "155b27ffdcd8bf0112a9208d5e10b369bf713f26151fe357f087353eaa20e361"
     },
     {
       "path": "lib/dd_api_sdk.dart",
-      "sha256": "4a6bfc21feb07772ad0b39a2fed1606494a4037cf505ff55e53a0e5ead08054d"
+      "sha256": "fb5c17b205b2f160f7c87671c1fd6449d7a1a89dcf21cd26c661ff5e7f8d7acb"
     },
     {
       "path": "pubspec.yaml",

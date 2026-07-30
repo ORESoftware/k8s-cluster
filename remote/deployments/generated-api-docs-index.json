@@ -420,9 +420,9 @@
     {
       "service": "formal-methods-service-rs",
       "language": "rust",
-      "routeCount": 10,
+      "routeCount": 11,
       "routeTypeCounts": {
-        "service": 4,
+        "service": 5,
         "user-generated": 3,
         "runtime-config": 3
       },

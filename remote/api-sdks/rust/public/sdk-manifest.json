@@ -5,8 +5,8 @@
   "packageName": "oresoftware-k8s-api-sdk-public",
   "generatedBy": "remote/tools/generate-api-sdks.mjs",
   "catalogPath": "remote/api-sdks/contracts/public.json",
-  "catalogSha256": "c9762b2640f40bc77601c40d27435d12096ec4ba96aab05d84f9e0526dcd2da9",
-  "catalogFileSha256": "d3c61c91cc84ebfcc606015fe54e6993747b7c1a1e0c9c5ffc2d8bffd6f91ccc",
+  "catalogSha256": "dd6cd2dfce13705381cfcc79c99d9f2b7e7307fc846e28609defe908e9859689",
+  "catalogFileSha256": "466aac12982428e724553c9d33f656efaa79df4443536626ccbb06cbc24558f7",
   "serviceCount": 44,
   "operationCount": 279,
   "skippedServices": [
@@ -53,7 +53,7 @@
     },
     {
       "path": "src/lib.rs",
-      "sha256": "d96ce334ce29ac70fac05bfee496aeeba171d1631a3d206a13dbe1a9c184b0b5"
+      "sha256": "888f4fe171d4d0b6cdc102f904f4e6f55c2eccad06d2f0792dc9d62ce25682c5"
     }
   ]
 }

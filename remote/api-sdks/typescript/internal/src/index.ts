@@ -32,8 +32,8 @@ export interface ApiClientOptions {
 }
 
 export const SDK_SCOPE: SdkScope = "internal";
-export const CATALOG_SHA256 = "44f420582b613723f6526d057fe1f7f87d999c0fa7558c1f4dc689b0cc6e143e";
-export const OPERATION_COUNT = 942;
+export const CATALOG_SHA256 = "ae1ce6bfb16657296304863f0dde0395858173c3acd113fcfa93b11dc43e1288";
+export const OPERATION_COUNT = 943;
 export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
   {
     "service": "agent-worker-broker-rs",
@@ -6063,7 +6063,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "14f22d2bc88beb0f62cfc17c217bac6c7710f1c5dc5be60c4c3bbaf51ded4b1a"
+    "contractSha256": "4c5723cb5636a907369dbedb38c59f8cc4d82d620f2c054bd26d46db026366c2"
   },
   {
     "service": "formal-methods-service-rs",
@@ -6074,7 +6074,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "e6312608f561ed74c2288d5be2cd9df984e57ce4c9f024499c07505c29a96b3a"
+    "contractSha256": "16e384b21dcaea70f45059f1901ecf5ed77a390ee768b17ebdb18e0bd407177c"
   },
   {
     "service": "formal-methods-service-rs",
@@ -6085,7 +6085,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "066a5c966fe90b7f68e587f4289a44386cc3bfbfe52b3264444a9cc6f1fb4732"
+    "contractSha256": "78f7d89558882058da4e505f9a6fd2e945e4b3497a5f62c159f302c2b7e9e837"
   },
   {
     "service": "formal-methods-service-rs",
@@ -6096,7 +6096,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "8eb397c155656f38a7435ea11d40d3ab59f3f15ea8b4b661f0a3899a147f17bb"
+    "contractSha256": "eec142a8718470ea209de69508e182767de239bd049ab27730aec6447066ff52"
   },
   {
     "service": "formal-methods-service-rs",
@@ -6107,7 +6107,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "545c7b8778deef02f42492559f915dab3aa7d2051a796f7a28da1562a720f693"
+    "contractSha256": "381d5f489c135cc743ee8504cb5a745161997edfa38b3c4180f56d2d98498617"
   },
   {
     "service": "formal-methods-service-rs",
@@ -6118,7 +6118,18 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "bc606b1e1575ec89cdf86739eda1a50b7171350f52a581420ca0775a60f67249"
+    "contractSha256": "21975b370d841f158349aee3c930afa4bf2bc134df041464328c2caf915c3d2b"
+  },
+  {
+    "service": "formal-methods-service-rs",
+    "operationId": "formal_methods_service_rs_get_openapi_json_c11fbd46dde8",
+    "method": "GET",
+    "path": "/openapi.json",
+    "pathParameters": [],
+    "requiredQueryParameters": [],
+    "optionalQueryParameters": [],
+    "requestBodyRequired": false,
+    "contractSha256": "12a1eec8fb1dccc971f4233ea39c4bffc64bfc5d65444a8fdb9fe85d02abed2d"
   },
   {
     "service": "formal-methods-service-rs",
@@ -6129,7 +6140,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "ff7458daa377a9d0ec4dd34bc56479e2e95fb5b1d254791421247bb17a583a76"
+    "contractSha256": "7f8ef31fcbe7461f77bddfefbbc0d447a283d10d1e942f9d1de218e0fc9f0845"
   },
   {
     "service": "formal-methods-service-rs",
@@ -6140,7 +6151,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "ca0cb103aec825a856810547fd26266fa82cbd4e5143e77602f6398ed971eda4"
+    "contractSha256": "d6464de29c5b1a291ff2212fba3616ea34c1874327d178aeb5b791a6a3770603"
   },
   {
     "service": "formal-methods-service-rs",
@@ -6151,7 +6162,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "7765dde3abd172cd19265a9741ec16375e0596383532ef1cb476ab3b1d00c759"
+    "contractSha256": "0f8fad2adb9d9ec8db0718e4a9905248b1a01505efa5f2eaa76d394f8b8daf9b"
   },
   {
     "service": "formal-methods-service-rs",
@@ -6162,7 +6173,7 @@ export const OPERATIONS: readonly ApiOperation[] = Object.freeze([
     "requiredQueryParameters": [],
     "optionalQueryParameters": [],
     "requestBodyRequired": false,
-    "contractSha256": "d26170d9e2adc6f21b4068b6bc221efdbbb44cf9ca427444339263627e6abc36"
+    "contractSha256": "8565001daf2397e0e3ef554b97c8f1d4013a78b8d4f92a781430e60b5aaf7f1c"
   },
   {
     "service": "fsharp-ws-server",

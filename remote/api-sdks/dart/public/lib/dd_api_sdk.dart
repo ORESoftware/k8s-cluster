@@ -1,5 +1,5 @@
 const String sdkScope = "public";
-const String catalogSha256 = "c9762b2640f40bc77601c40d27435d12096ec4ba96aab05d84f9e0526dcd2da9";
+const String catalogSha256 = "dd6cd2dfce13705381cfcc79c99d9f2b7e7307fc846e28609defe908e9859689";
 const int operationCount = 279;
 
 class ApiOperation {
@@ -1679,7 +1679,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "68bb8cc8bb5a03232f92bd96d745562f87a449d25cf77483e52908449fa24fb8",
+    contractSha256: "1d6aeec904e3e0afe59354c8ab2dc68a23e9a8672b543aea3f7cd83d01afe19c",
   ),
   ApiOperation(
     service: "formal-methods-service-rs",
@@ -1690,7 +1690,7 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "c7766c32f1ef1e4406894574aa907763219c85387863e90345fb88bcce5c03d5",
+    contractSha256: "6b772c5ccc7f9db705ac9dde2702ec9a250057beabe8c5076b0a75f72e6cfcd8",
   ),
   ApiOperation(
     service: "formal-methods-service-rs",
@@ -1701,18 +1701,18 @@ const List<ApiOperation> operations = <ApiOperation>[
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "708edfb3a82ba42a1fb5f084c82bbfcff3327f5214f495eae5f6ae7da65c193d",
+    contractSha256: "f9c8e3dd1cababa9f234af042be8193ab44044875a487a72118ecd647cb389c5",
   ),
   ApiOperation(
     service: "formal-methods-service-rs",
-    operationId: "formal_methods_service_rs_get_metrics_91fecfa1e3e9",
+    operationId: "formal_methods_service_rs_get_openapi_json_c11fbd46dde8",
     method: "GET",
-    path: "/metrics",
+    path: "/openapi.json",
     pathParameters: [],
     requiredQueryParameters: [],
     optionalQueryParameters: [],
     requestBodyRequired: false,
-    contractSha256: "a769ee84f88040ad7abe6ee52cf38db017e12d6d910f66bdb811f811f2121d56",
+    contractSha256: "734d5e7fb3d1fffe97d1b6f60c11794714cdca3919762fc56341764804cca814",
   ),
   ApiOperation(
     service: "fsharp-ws-server",

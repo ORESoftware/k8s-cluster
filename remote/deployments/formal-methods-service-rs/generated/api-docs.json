@@ -16,7 +16,7 @@
       "get": {
         "operationId": "formal_methods_service_rs_get_api_docs_c5a3074a89a9",
         "summary": "Human-readable generated API documentation.",
-        "description": "Human-readable generated API documentation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -35,7 +35,7 @@
       "get": {
         "operationId": "formal_methods_service_rs_get_api_docs_json_4e712a700e26",
         "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
-        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -54,7 +54,7 @@
       "get": {
         "operationId": "formal_methods_service_rs_get_docs_api_a4b22bcd9b65",
         "summary": "Human-readable generated API documentation.",
-        "description": "Human-readable generated API documentation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -69,11 +69,11 @@
         "security": []
       }
     },
-    "/metrics": {
+    "/openapi.json": {
       "get": {
-        "operationId": "formal_methods_service_rs_get_metrics_91fecfa1e3e9",
-        "summary": "Prometheus metrics.",
-        "description": "Prometheus metrics.",
+        "operationId": "formal_methods_service_rs_get_openapi_json_c11fbd46dde8",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
