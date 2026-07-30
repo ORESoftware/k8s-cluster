@@ -211,12 +211,23 @@ impl RevolutApi {
 /// Revolut signs webhooks as `v1=<hex>` HMAC-SHA256 of
 /// `{timestamp}.{raw_body}`, where `timestamp` is the `Revolut-Request-Timestamp`
 /// header and the result lives in `Revolut-Signature`.
+///
+/// `tolerance_seconds` bounds how old the signed timestamp may be. The HMAC
+/// covers the timestamp, so it cannot be forged — but without a freshness
+/// bound a captured delivery replays forever. Checked before the HMAC so a
+/// stale delivery costs no signing work.
 pub fn verify_webhook_signature(
     raw_body: &[u8],
     timestamp_header: &str,
     signature_header: &str,
     webhook_secret: &str,
+    tolerance_seconds: i64,
 ) -> AppResult<()> {
+    crate::providers::amount::verify_timestamp_freshness(
+        timestamp_header,
+        tolerance_seconds,
+        "revolut",
+    )?;
     let provided = parse_provided(signature_header);
     let signed_payload = format!("{timestamp_header}.");
     let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(webhook_secret.as_bytes())
@@ -259,6 +270,8 @@ fn constant_time_eq_str(a: &str, b: &str) -> bool {
 mod tests {
     use super::*;
 
+    const TOLERANCE: i64 = 300;
+
     fn sign(body: &[u8], ts: &str, secret: &str) -> String {
         let signed_payload = format!("{ts}.");
         let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret.as_bytes()).unwrap();
@@ -267,60 +280,110 @@ mod tests {
         hex::encode(Mac::finalize(mac).into_bytes())
     }
 
+    /// Deliveries must be inside the tolerance window, so tests sign against
+    /// "now" rather than a frozen constant.
+    fn fresh_ts() -> String {
+        chrono::Utc::now().timestamp().to_string()
+    }
+
     #[test]
     fn verifies_revolut_v1_signature() {
         let body = br#"{"event":"transaction.state_changed","id":"42"}"#;
-        let ts = "1716423000";
-        let sig = sign(body, ts, "topsecret");
+        let ts = fresh_ts();
+        let sig = sign(body, &ts, "topsecret");
         let header = format!("v1={sig}");
-        verify_webhook_signature(body, ts, &header, "topsecret").unwrap();
+        verify_webhook_signature(body, &ts, &header, "topsecret", TOLERANCE).unwrap();
     }
 
     #[test]
     fn accepts_sha256_prefix_alias() {
         let body = br#"{"id":"x"}"#;
-        let ts = "1";
-        let sig = sign(body, ts, "k");
+        let ts = fresh_ts();
+        let sig = sign(body, &ts, "k");
         let header = format!("sha256={sig}");
-        verify_webhook_signature(body, ts, &header, "k").unwrap();
+        verify_webhook_signature(body, &ts, &header, "k", TOLERANCE).unwrap();
     }
 
     #[test]
     fn accepts_bare_hex_signature() {
         let body = br#"{"id":"x"}"#;
-        let ts = "1";
-        let sig = sign(body, ts, "k");
-        verify_webhook_signature(body, ts, &sig, "k").unwrap();
+        let ts = fresh_ts();
+        let sig = sign(body, &ts, "k");
+        verify_webhook_signature(body, &ts, &sig, "k", TOLERANCE).unwrap();
+    }
+
+    #[test]
+    fn accepts_millisecond_timestamp_header() {
+        // Unit is sniffed, not assumed — a ms header must not read as stale.
+        let body = br#"{"id":"x"}"#;
+        let ts = chrono::Utc::now().timestamp_millis().to_string();
+        let sig = sign(body, &ts, "k");
+        verify_webhook_signature(body, &ts, &sig, "k", TOLERANCE).unwrap();
     }
 
     #[test]
     fn rejects_wrong_secret() {
         let body = br#"{"id":"x"}"#;
-        let ts = "1";
-        let sig = sign(body, ts, "right");
+        let ts = fresh_ts();
+        let sig = sign(body, &ts, "right");
         let header = format!("v1={sig}");
-        let err = verify_webhook_signature(body, ts, &header, "wrong").unwrap_err();
+        let err = verify_webhook_signature(body, &ts, &header, "wrong", TOLERANCE).unwrap_err();
         assert!(matches!(err, AppError::Unauthorized));
     }
 
     #[test]
     fn rejects_tampered_body() {
         let body = br#"{"amount":1}"#;
-        let ts = "1";
-        let sig = sign(body, ts, "k");
+        let ts = fresh_ts();
+        let sig = sign(body, &ts, "k");
         let header = format!("v1={sig}");
         // Verify against a different body — must fail.
-        let err = verify_webhook_signature(b"{\"amount\":99}", ts, &header, "k").unwrap_err();
+        let err =
+            verify_webhook_signature(b"{\"amount\":99}", &ts, &header, "k", TOLERANCE).unwrap_err();
         assert!(matches!(err, AppError::Unauthorized));
     }
 
     #[test]
     fn rejects_tampered_timestamp() {
         let body = br#"{"id":"x"}"#;
-        let sig = sign(body, "1000", "k");
+        let now = chrono::Utc::now().timestamp();
+        let sig = sign(body, &now.to_string(), "k");
         let header = format!("v1={sig}");
-        let err = verify_webhook_signature(body, "1001", &header, "k").unwrap_err();
+        // Both timestamps are fresh, so this isolates the HMAC binding rather
+        // than tripping the freshness check.
+        let err = verify_webhook_signature(body, &(now + 1).to_string(), &header, "k", TOLERANCE)
+            .unwrap_err();
         assert!(matches!(err, AppError::Unauthorized));
+    }
+
+    #[test]
+    fn rejects_replayed_stale_delivery() {
+        // The exact (timestamp, body, signature) triple Revolut sent, captured
+        // and replayed later. The HMAC still verifies — only the freshness
+        // bound rejects it.
+        let body = br#"{"event":"transaction.state_changed","id":"42"}"#;
+        let stale = (chrono::Utc::now().timestamp() - TOLERANCE - 60).to_string();
+        let sig = sign(body, &stale, "topsecret");
+        let header = format!("v1={sig}");
+        let err =
+            verify_webhook_signature(body, &stale, &header, "topsecret", TOLERANCE).unwrap_err();
+        assert!(matches!(err, AppError::Unauthorized));
+    }
+
+    #[test]
+    fn rejects_future_dated_delivery() {
+        let body = br#"{"id":"x"}"#;
+        let future = (chrono::Utc::now().timestamp() + TOLERANCE + 60).to_string();
+        let sig = sign(body, &future, "k");
+        let err = verify_webhook_signature(body, &future, &sig, "k", TOLERANCE).unwrap_err();
+        assert!(matches!(err, AppError::Unauthorized));
+    }
+
+    #[test]
+    fn rejects_unparseable_timestamp() {
+        let body = br#"{"id":"x"}"#;
+        let sig = sign(body, "not-a-number", "k");
+        assert!(verify_webhook_signature(body, "not-a-number", &sig, "k", TOLERANCE).is_err());
     }
 }
 

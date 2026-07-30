@@ -479,7 +479,13 @@ async fn verify_delivery(
             let Some(secret) = secret else {
                 return Ok(false);
             };
-            revolut::verify_webhook_signature(body, ts, sig, &secret)?;
+            revolut::verify_webhook_signature(
+                body,
+                ts,
+                sig,
+                &secret,
+                state.cfg.webhook_signature_tolerance_seconds,
+            )?;
             Ok(true)
         }
         WebhookProvider::GoCardless => {
@@ -512,7 +518,13 @@ async fn verify_delivery(
             let Some(secret) = secret else {
                 return Ok(false);
             };
-            mercury::verify_webhook_signature(body, ts, sig, &secret)?;
+            mercury::verify_webhook_signature(
+                body,
+                ts,
+                sig,
+                &secret,
+                state.cfg.webhook_signature_tolerance_seconds,
+            )?;
             Ok(true)
         }
         WebhookProvider::Bridge => {

@@ -83,6 +83,46 @@ pub fn constant_time_eq_str(a: &str, b: &str) -> bool {
     diff == 0
 }
 
+/// Reject a webhook whose signed timestamp header is outside
+/// `tolerance_seconds` of now, in either direction.
+///
+/// Signing `{timestamp}.{body}` proves an attacker cannot *forge* a fresh
+/// timestamp — the HMAC covers it. It does nothing to stop them replaying
+/// the original `(timestamp, body, signature)` triple verbatim, forever.
+/// Binding the delivery to a time window is what closes that, and it is
+/// why Stripe (`t=` + tolerance) and Bridge (`validate_timestamp_freshness`)
+/// both do it. Providers that sign a timestamp but never check it are the
+/// gap this helper exists to close.
+///
+/// Accepts the header in seconds or milliseconds. Providers document
+/// seconds, but a unit mismatch here would reject every legitimate
+/// delivery — an ingestion outage — so the magnitude is sniffed rather
+/// than assumed. `1e11` splits them unambiguously: as seconds that is the
+/// year 5138, as milliseconds it is 1973.
+pub fn verify_timestamp_freshness(
+    timestamp_header: &str,
+    tolerance_seconds: i64,
+    provider_tag: &str,
+) -> AppResult<()> {
+    let raw: i64 = timestamp_header
+        .trim()
+        .parse()
+        .map_err(|_| AppError::Provider {
+            provider: provider_tag.into(),
+            message: format!("invalid webhook timestamp header: {timestamp_header:?}"),
+        })?;
+    let seconds = if raw.abs() >= 100_000_000_000 {
+        raw / 1000
+    } else {
+        raw
+    };
+    let age = chrono::Utc::now().timestamp().saturating_sub(seconds);
+    if age.saturating_abs() > tolerance_seconds.max(0) {
+        return Err(AppError::Unauthorized);
+    }
+    Ok(())
+}
+
 /// Map a crypto symbol to a fiat-equivalent ISO 4217 currency where
 /// the 1:1 peg is reliable enough to post to a ledger.
 ///
@@ -147,6 +187,54 @@ mod tests {
         assert!(constant_time_eq_str("abc", "abc"));
         assert!(!constant_time_eq_str("abc", "abd"));
         assert!(!constant_time_eq_str("abc", "ab"));
+    }
+
+    #[test]
+    fn freshness_accepts_now_in_seconds_and_millis() {
+        let now = chrono::Utc::now();
+        verify_timestamp_freshness(&now.timestamp().to_string(), 300, "x").unwrap();
+        verify_timestamp_freshness(&now.timestamp_millis().to_string(), 300, "x").unwrap();
+    }
+
+    #[test]
+    fn freshness_rejects_stale_and_future() {
+        let now = chrono::Utc::now().timestamp();
+        assert!(matches!(
+            verify_timestamp_freshness(&(now - 400).to_string(), 300, "x").unwrap_err(),
+            AppError::Unauthorized
+        ));
+        assert!(matches!(
+            verify_timestamp_freshness(&(now + 400).to_string(), 300, "x").unwrap_err(),
+            AppError::Unauthorized
+        ));
+    }
+
+    #[test]
+    fn freshness_accepts_edge_of_window() {
+        let now = chrono::Utc::now().timestamp();
+        // Signed 299s ago against a 300s tolerance: inside the window, and far
+        // enough from the boundary that a slow test run cannot flake it out.
+        verify_timestamp_freshness(&(now - 299).to_string(), 300, "x").unwrap();
+    }
+
+    #[test]
+    fn freshness_rejects_unparseable_and_tolerates_whitespace() {
+        for bad in ["", "abc", "12.5", "1e9", "0x10"] {
+            assert!(
+                verify_timestamp_freshness(bad, 300, "x").is_err(),
+                "should reject {bad:?}"
+            );
+        }
+        let padded = format!("  {}  ", chrono::Utc::now().timestamp());
+        verify_timestamp_freshness(&padded, 300, "x").unwrap();
+    }
+
+    #[test]
+    fn freshness_with_zero_tolerance_rejects_anything_stale() {
+        let now = chrono::Utc::now().timestamp();
+        assert!(verify_timestamp_freshness(&(now - 5).to_string(), 0, "x").is_err());
+        // A negative tolerance clamps to 0 rather than inverting the check.
+        assert!(verify_timestamp_freshness(&(now - 5).to_string(), -100, "x").is_err());
     }
 
     #[test]
