@@ -345,6 +345,12 @@ aliases = ["lp-max-iters"]
 type = "integer"
 help = "Default maximum LP iterations."
 
+[flags.lp_algorithm]
+env = "MIP_SOLVER_LP_ALGORITHM"
+aliases = ["lp-algorithm", "lp-solver", "relaxation-algorithm"]
+type = "string"
+help = "Default LP relaxation algorithm: internal-simplex or internal-ipm."
+
 [flags.int_tol]
 env = "MIP_SOLVER_INT_TOL"
 aliases = ["int-tol", "integer-tolerance"]
