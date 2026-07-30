@@ -40,17 +40,31 @@ jobs:
           K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
         run: test -n "$K8S_LIBS_DEPLOY_KEY"
 
-      - name: Check out repository
+      - name: Check out repository without persisted credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           show-progress: false
-          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
       - name: Initialize exact pinned shared libraries
         env:
+          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
           SUBMODULE_AUTH_MODE: ssh
-        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
+        run: |
+          set -euo pipefail
+          key_file="${RUNNER_TEMP}/k8s-libs-deploy-key"
+          known_hosts="${RUNNER_TEMP}/k8s-libs-known-hosts"
+          cleanup() {
+            git config --local --unset-all core.sshCommand || true
+            rm -f "$key_file" "$known_hosts"
+          }
+          trap cleanup EXIT
+          umask 077
+          printf '%s\n' "$K8S_LIBS_DEPLOY_KEY" > "$key_file"
+          ssh-keyscan -t ed25519,rsa github.com > "$known_hosts"
+          git config --local core.sshCommand \
+            "ssh -i $key_file -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$known_hosts"
+          bash scripts/ci/init-submodules-with-report.sh remote/libs
 
       - name: Install Z3
         run: |
