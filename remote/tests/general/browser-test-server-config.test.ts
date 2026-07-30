@@ -32,7 +32,11 @@ test('browser-test-server source wires playwright + puppeteer + selenium', async
     dependencies: Record<string, string>;
     devDependencies: Record<string, string>;
   };
-  const source = await readRepoFile('remote/deployments/browser-test-server/src/server.ts');
+  const serverSource = await readRepoFile('remote/deployments/browser-test-server/src/server.ts');
+  const schemaSource = await readRepoFile(
+    'remote/deployments/browser-test-server/src/api-schemas.ts',
+  );
+  const source = `${serverSource}\n${schemaSource}`;
   const readme = await readRepoFile('remote/deployments/browser-test-server/readme.md');
   const dockerfile = await readRepoFile('remote/deployments/browser-test-server/Dockerfile');
 
@@ -62,7 +66,11 @@ test('browser-test-server source wires playwright + puppeteer + selenium', async
   assert.match(source, /\/browser-test\/tools/);
 
   // The scenario DSL and its hard limits are part of the security model -
-  // arbitrary script execution must remain opt-in via env var.
+  // arbitrary script execution must remain opt-in via env var. The DSL itself
+  // lives in api-schemas.ts; server.ts imports that canonical source rather than
+  // duplicating the validation contract.
+  assert.match(serverSource, /from '\.\/api-schemas\.js'/);
+  assert.match(schemaSource, /export const StepSchema = z\.discriminatedUnion\('action'/);
   assert.match(source, /BROWSER_TEST_ALLOW_EVALUATE/);
   assert.match(source, /allowEvaluate: readBooleanEnv\('BROWSER_TEST_ALLOW_EVALUATE', false\)/);
   assert.match(source, /BROWSER_TEST_MAX_CONCURRENT/);
@@ -72,7 +80,8 @@ test('browser-test-server source wires playwright + puppeteer + selenium', async
   assert.match(source, /SERVER_AUTH_SECRET/);
   assert.match(source, /x-server-auth/);
 
-  // Scenario DSL — every action used in the readme must exist in the source.
+  // Scenario DSL — every action used in the readme must exist in the canonical
+  // schema module consumed by the server.
   for (const action of [
     'goto',
     'click',
@@ -87,7 +96,11 @@ test('browser-test-server source wires playwright + puppeteer + selenium', async
     'screenshot',
     'evaluate',
   ]) {
-    assert.match(source, new RegExp(`action: z\\.literal\\('${action}'\\)`), `missing step: ${action}`);
+    assert.match(
+      schemaSource,
+      new RegExp(`action: z\\.literal\\('${action}'\\)`),
+      `missing step: ${action}`,
+    );
   }
 
   assert.match(readme, /dd-browser-test-server/);

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "service": "dart-server",
+  "repository": "sagitta-stack/dart-server",
+  "deploymentPath": "remote/deployments/dart-server",
+  "sourcePullRequest": "https://github.com/sagitta-stack/dart-server/pull/1",
+  "sourceHeadCommit": "1c4a5afa8a5439f5b9beb366646a03e614829a80",
+  "acceptedCommit": "b467b6cd8f1ce323166a0796e191e7a69263a095",
+  "rollbackCommit": "df8ab76b4dc6c10e4454f4421755309c80af4574",
+  "contractPath": "generated/http-openapi.json",
+  "contractGitBlobSha": "d000f2fb20fa992a050c6bc7c122cefce6faaefc",
+  "contractVerification": "upstream-ci-verified-parent-digest-pending",
+  "verificationNote": "Upstream CI proved deterministic export and committed-byte equality. Parent SHA-256/public-internal projection and generated interoperability clients remain a separate fully initialized gitlink change before scanner removal."
+}

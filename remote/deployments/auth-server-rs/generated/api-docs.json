@@ -1,210 +1,123 @@
 {
-  "ok": true,
-  "generatedBy": "remote/tools/generate-api-docs.mjs",
-  "service": "auth-server-rs",
-  "language": "rust",
-  "routeCount": 11,
-  "routeTypeCounts": {
-    "service": 5,
-    "user-generated": 3,
-    "runtime-config": 3
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "auth-server-rs API (public)",
+    "version": "0.1.0",
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
   },
-  "standardDocsRoutes": [
+  "tags": [
+    {
+      "name": "service"
+    }
+  ],
+  "paths": {
+    "/api/docs": {
+      "get": {
+        "operationId": "auth_server_rs_get_api_docs_a74a6621fcc9",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "auth_server_rs_get_api_docs_json_82ff253bf2ac",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "auth_server_rs_get_docs_api_7a35c3cb5773",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "auth_server_rs_get_healthz_24f4e0afc640",
+        "summary": "Health check.",
+        "description": "Health check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "auth_server_rs_get_metrics_501d679ddc33",
+        "summary": "Prometheus metrics.",
+        "description": "Prometheus metrics.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    }
+  },
+  "components": {},
+  "x-dd-contract-scope": "public",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "rust",
+  "x-dd-operation-count": 5,
+  "x-dd-route-count": 5,
+  "x-dd-service": "auth-server-rs",
+  "x-dd-standard-docs-routes": [
     "/docs/api",
     "/api/docs",
     "/api/docs.json"
-  ],
-  "routes": [
-    {
-      "path": "/api/docs",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Human-readable generated API documentation.",
-      "handlers": [
-        "api_docs_html"
-      ],
-      "sourceFiles": [
-        "remote/deployments/auth-server-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/docs.json",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Machine-readable generated API route metadata.",
-      "handlers": [
-        "api_docs_json"
-      ],
-      "sourceFiles": [
-        "remote/deployments/auth-server-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/auth",
-      "methods": [
-        "GET",
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "auth_form",
-        "auth_submit"
-      ],
-      "sourceFiles": [
-        "remote/deployments/auth-server-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/auth/",
-      "methods": [
-        "GET",
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "auth_form",
-        "auth_submit"
-      ],
-      "sourceFiles": [
-        "remote/deployments/auth-server-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/auth/status",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [
-        "auth_status"
-      ],
-      "sourceFiles": [
-        "remote/deployments/auth-server-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/docs/api",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Human-readable generated API documentation.",
-      "handlers": [
-        "api_docs_html"
-      ],
-      "sourceFiles": [
-        "remote/deployments/auth-server-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/healthz",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Health check.",
-      "handlers": [
-        "healthz"
-      ],
-      "sourceFiles": [
-        "remote/deployments/auth-server-rs/src/main.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/internal/runtime-config",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "runtime-config",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
-      "handlers": [
-        "dd_runtime_config_client::handle_get"
-      ],
-      "sourceFiles": [
-        "remote/libs/runtime-config-client-rs/src/lib.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/internal/runtime-config/reset",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "runtime-config",
-      "implementation": "code-first",
-      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-      "purpose": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
-      "handlers": [
-        "dd_runtime_config_client::handle_reset"
-      ],
-      "sourceFiles": [
-        "remote/libs/runtime-config-client-rs/src/lib.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/internal/update-runtime-config",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "runtime-config",
-      "implementation": "code-first",
-      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-      "purpose": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
-      "handlers": [
-        "dd_runtime_config_client::handle_apply"
-      ],
-      "sourceFiles": [
-        "remote/libs/runtime-config-client-rs/src/lib.rs"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/metrics",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Prometheus metrics.",
-      "handlers": [
-        "metrics"
-      ],
-      "sourceFiles": [
-        "remote/deployments/auth-server-rs/src/main.rs"
-      ],
-      "notes": ""
-    }
   ]
 }
