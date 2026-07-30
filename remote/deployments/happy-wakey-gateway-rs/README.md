@@ -17,7 +17,8 @@ cluster credential from the desktop.
 - `DELETE /v1/reminders/jobs/:job_id` cancels one pending reminder.
 - `POST /v1/reminders/test` queues a test reminder.
 - A single scheduler process persists jobs as an atomic, mode-`0600` JSON file
-  on a Kubernetes PVC and sends due email requests to the fixed
+  on a Kubernetes PVC using the cross-cloud `dd-block` storage class and sends
+  due email requests to the fixed
   `dd.remote.contact.email.send` lane.
 - `dd-email-sms-contact-rs` owns SendGrid. Twilio, push, geolocation, MCP, and
   task-manager capabilities remain disabled until a connector with an
