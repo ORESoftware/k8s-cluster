@@ -79,3 +79,51 @@ impl Default for Metrics {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exposition_and_router_contract_are_stable_and_content_free() {
+        let metrics = Metrics::new();
+        metrics
+            .exchanges
+            .with_label_values(&["sonus-auris", "ok"])
+            .inc();
+        metrics.verify_failures.inc();
+        metrics
+            .introspections
+            .with_label_values(&["rejected"])
+            .inc();
+
+        let (content_type, bytes) = metrics.render();
+        assert!(content_type.starts_with("text/plain"));
+        let body = String::from_utf8(bytes).expect("Prometheus exposition is UTF-8");
+        for name in [
+            "shared_auth_exchanges_total",
+            "shared_auth_verify_failures_total",
+            "shared_auth_introspections_total",
+        ] {
+            assert!(body.contains(name), "missing metric {name}");
+        }
+        for forbidden_label in [
+            "email=",
+            "identity=",
+            "subject=",
+            "sub=",
+            "jwt=",
+            "token=",
+            "token_prefix=",
+            "url=",
+        ] {
+            assert!(
+                !body.contains(forbidden_label),
+                "sensitive/unbounded label leaked: {forbidden_label}"
+            );
+        }
+
+        let router_source = include_str!("http/mod.rs");
+        assert!(router_source.contains(".route(\"/metrics\", get(metrics::metrics))"));
+    }
+}
