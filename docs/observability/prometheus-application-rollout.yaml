@@ -26,10 +26,13 @@ applications:
     source_repository: canonical-cloud/canonical-web-server.rs
     source_pull_request: 27
     publisher_pull_request: 28
-    release_verification_pull_request: 29
+    release_contract_pull_request: 29
+    package_scope_fix_pull_request: 30
     source_revision: e09bb95160aaf95a836e810eb20b65e74f6317a6
-    web_image: ghcr.io/canonical-cloud/canonical-web-server:e09bb95160aaf95a836e810eb20b65e74f6317a6
-    revoker_image: ghcr.io/canonical-cloud/canonical-session-revoker:e09bb95160aaf95a836e810eb20b65e74f6317a6
+    package: ghcr.io/canonical-cloud/canonical-web-server-rs
+    web_image: ghcr.io/canonical-cloud/canonical-web-server-rs:web-e09bb95160aaf95a836e810eb20b65e74f6317a6
+    revoker_image: ghcr.io/canonical-cloud/canonical-web-server-rs:revoker-e09bb95160aaf95a836e810eb20b65e74f6317a6
+    publication_status_context: canonical-containers/published
     workload: canonical-cloud/canonical-cloud-web
     target: canonical-cloud-web.canonical-cloud.svc.cluster.local:8081
     path: /metrics
@@ -60,6 +63,7 @@ applications:
 
 completion_gates:
   - application source and release artifact are immutable and deployed
+  - Canonical canonical-containers/published status is success
   - Service DNS, port, path, and NetworkPolicy match the scrape job
   - public gateway does not expose application metrics
   - Prometheus configuration and alert rules load successfully
