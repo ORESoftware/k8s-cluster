@@ -42,18 +42,18 @@ jobs:
 
           twilio = Path("src/contact/twilio.rs")
           text = twilio.read_text()
-          old = '''        assert_eq!(
-              outcome.provider_code.as_deref(),
-              Some(fixture_sid("SM").as_str())
-          );'''
-          new = '''        let expected_message_sid = fixture_sid("SM");
-          assert_eq!(
-              outcome.provider_code.as_deref(),
-              Some(expected_message_sid.as_str())
-          );'''
+          anchor = "        assert_eq!(outcome.class, ContactOutcomeClass::Accepted);"
+          if anchor not in text:
+              raise SystemExit("Twilio accepted assertion anchor not found")
+          text = text.replace(
+              anchor,
+              anchor + "\n        let expected_message_sid = fixture_sid(\"SM\");",
+              1,
+          )
+          old = 'Some(fixture_sid("SM").as_str())'
           if old not in text:
-              raise SystemExit("Twilio SID assertion anchor not found")
-          twilio.write_text(text.replace(old, new, 1))
+              raise SystemExit("Twilio temporary SID anchor not found")
+          twilio.write_text(text.replace(old, "Some(expected_message_sid.as_str())", 1))
           PY
           cargo fmt
       - name: Commit compiler fixes
