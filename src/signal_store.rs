@@ -385,7 +385,7 @@ pub async fn publish_prekeys(
     let transaction = db.begin().await?;
 
     let active = transaction
-        .query_one(postgres(
+        .query_one_raw(postgres(
             ACTIVE_DEVICE_SQL,
             vec![request.account_id.into(), request.device_id.into()],
         ))
@@ -396,7 +396,7 @@ pub async fn publish_prekeys(
 
     let bundle = &request.bundle;
     let row = transaction
-        .query_one(postgres(
+        .query_one_raw(postgres(
             UPSERT_BUNDLE_SQL,
             vec![
                 request.device_id.into(),
@@ -428,7 +428,7 @@ pub async fn publish_prekeys(
     }
     for prekey in all_prekeys {
         let result = transaction
-            .execute(postgres(
+            .execute_raw(postgres(
                 INSERT_ONE_TIME_PREKEY_SQL,
                 vec![
                     request.device_id.into(),
@@ -441,7 +441,7 @@ pub async fn publish_prekeys(
     }
 
     let revision_row = transaction
-        .query_one(postgres(
+        .query_one_raw(postgres(
             BUMP_DEVICE_REVISION_SQL,
             vec![request.account_id.into()],
         ))
@@ -454,7 +454,7 @@ pub async fn publish_prekeys(
         "signed_prekey_rotated"
     };
     transaction
-        .execute(postgres(
+        .execute_raw(postgres(
             INSERT_PREKEY_EVENT_SQL,
             vec![
                 request.account_id.into(),
@@ -484,7 +484,7 @@ pub async fn claim_one_time_prekey(
     }
     let transaction = db.begin().await?;
     let row = transaction
-        .query_one(postgres(
+        .query_one_raw(postgres(
             CLAIM_ONE_TIME_PREKEY_SQL,
             vec![
                 account_id.into(),
@@ -541,7 +541,7 @@ pub async fn enqueue_envelope(
             .into(),
     ];
     if let Some(row) = db
-        .query_one(postgres(ENQUEUE_ENVELOPE_SQL, values.clone()))
+        .query_one_raw(postgres(ENQUEUE_ENVELOPE_SQL, values.clone()))
         .await?
     {
         return Ok(EnqueueResult {
@@ -555,7 +555,7 @@ pub async fn enqueue_envelope(
     // Match in a fresh statement so an exact concurrent retry remains
     // idempotent; a missing or non-identical row still fails closed.
     let row = db
-        .query_one(postgres(MATCH_ENVELOPE_SQL, values))
+        .query_one_raw(postgres(MATCH_ENVELOPE_SQL, values))
         .await?
         .ok_or(SignalStoreError::IdempotencyConflict)?;
     Ok(EnqueueResult {
@@ -573,7 +573,7 @@ pub async fn pull_mailbox(
 ) -> Result<Vec<MailboxEnvelope>, SignalStoreError> {
     let limit = limit.clamp(1, MAX_MAILBOX_PULL);
     let rows = db
-        .query_all(postgres(
+        .query_all_raw(postgres(
             PULL_MAILBOX_SQL,
             vec![
                 account_id.into(),
@@ -594,7 +594,7 @@ pub async fn acknowledge_envelope(
     envelope_id: Uuid,
 ) -> Result<i64, SignalStoreError> {
     let row = db
-        .query_one(postgres(
+        .query_one_raw(postgres(
             ACKNOWLEDGE_ENVELOPE_SQL,
             vec![
                 account_id.into(),
@@ -619,7 +619,7 @@ pub async fn revoke_device(
     }
     let transaction = db.begin().await?;
     let actor = transaction
-        .query_one(postgres(
+        .query_one_raw(postgres(
             CHECK_ACTOR_SQL,
             vec![account_id.into(), actor_device_id.into()],
         ))
@@ -629,7 +629,7 @@ pub async fn revoke_device(
     }
 
     let revision = transaction
-        .query_one(postgres(
+        .query_one_raw(postgres(
             CAS_DEVICE_REVISION_SQL,
             vec![account_id.into(), expected_revision.into()],
         ))
@@ -638,7 +638,7 @@ pub async fn revoke_device(
     let new_revision = required_i64(&revision, "signal_device_revision")?;
 
     let revoked = transaction
-        .query_one(postgres(
+        .query_one_raw(postgres(
             REVOKE_DEVICE_SQL,
             vec![account_id.into(), subject_device_id.into()],
         ))
@@ -648,19 +648,19 @@ pub async fn revoke_device(
     }
 
     transaction
-        .execute(postgres(
+        .execute_raw(postgres(
             DELETE_REVOKED_PREKEYS_SQL,
             vec![subject_device_id.into()],
         ))
         .await?;
     transaction
-        .execute(postgres(
+        .execute_raw(postgres(
             DELETE_REVOKED_MAIL_SQL,
             vec![account_id.into(), subject_device_id.into()],
         ))
         .await?;
     transaction
-        .execute(postgres(
+        .execute_raw(postgres(
             INSERT_REVOCATION_EVENT_SQL,
             vec![
                 account_id.into(),

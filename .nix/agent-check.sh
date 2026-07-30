@@ -27,16 +27,16 @@ require_rust_toolchain() {
   cargo_version="$(cargo --version)"
 
   case "$rustc_version" in
-    "rustc 1.88.0 "*) ;;
+    "rustc 1.95.0 "*) ;;
     *)
-      printf 'expected flake-pinned rustc 1.88.0, found: %s\n' "$rustc_version" >&2
+      printf 'expected flake-pinned rustc 1.95.0, found: %s\n' "$rustc_version" >&2
       return 69
       ;;
   esac
   case "$cargo_version" in
-    "cargo 1.88.0 "*) ;;
+    "cargo 1.95.0 "*) ;;
     *)
-      printf 'expected flake-pinned cargo 1.88.0, found: %s\n' "$cargo_version" >&2
+      printf 'expected flake-pinned cargo 1.95.0, found: %s\n' "$cargo_version" >&2
       return 69
       ;;
   esac
@@ -61,52 +61,43 @@ require_cargo_audit() {
   cargo audit --version >&2
 }
 
-verify_rsa_exception() {
-  local rsa_tree
-
-  if ! rsa_tree="$(cargo tree --locked --all-features --target all -i rsa 2>/dev/null)"; then
-    printf '%s\n' 'could not inspect the resolved dependency graph for rsa' >&2
-    return 1
-  fi
-  if [[ -n "$rsa_tree" ]]; then
-    printf '%s\n%s\n' \
-      'RUSTSEC-2023-0071 may only be ignored while rsa is inactive lockfile metadata:' \
-      "$rsa_tree" >&2
-    return 1
-  fi
-
+verify_postgres_only_orm_graph() {
   if ! cargo metadata --locked --format-version 1 |
     jq -e '
-      (.packages
-        | map(select(.name == "rsa" and .version == "0.9.10"))
-        | map(.id)) as $rsa_ids
+      [.packages[] | select(.name == "rsa")] as $forbidden
       | .resolve.root as $root_id
-      | [.resolve.nodes[] as $node
-          | $node.deps[]
-          | select(.pkg == $rsa_ids[0])
-          | $node.id] as $parents
       | [.resolve.nodes[]
           | select(.id == $root_id)
           | .deps[].pkg
           | select(test("#(rsa|sqlx-mysql)@"))] as $direct_dependencies
-      | ($rsa_ids | length == 1)
-        and ($parents | length == 1)
-        and ($parents[0] | contains("#sqlx-mysql@"))
+      | ($forbidden | length == 0)
         and ($direct_dependencies | length == 0)
     ' >/dev/null; then
     printf '%s\n' \
-      'the DEN-538 rsa exception is no longer limited to sqlx-mysql lockfile metadata' >&2
+      'PostgreSQL-only ORM graph unexpectedly contains rsa or sqlx-mysql' >&2
+    return 1
+  fi
+
+  if cargo tree --locked --all-features --target all -i rsa 2>/dev/null |
+    grep -q .; then
+    printf '%s\n' 'rsa unexpectedly resolves in the all-feature graph' >&2
+    return 1
+  fi
+
+  if cargo tree --locked --all-features --target all -i sqlx-mysql 2>/dev/null |
+    grep -q .; then
+    printf '%s\n' 'sqlx-mysql unexpectedly resolves in the all-feature graph' >&2
     return 1
   fi
 
   printf '%s\n' \
-    'verified DEN-538: rsa 0.9.10 is inactive and referenced only by sqlx-mysql lockfile metadata' >&2
+    'verified DEN-538: rsa is absent and sqlx-mysql is not active' >&2
 }
 
 prepare_audit() {
   require_cargo_audit
   cargo fetch --locked
-  verify_rsa_exception
+  verify_postgres_only_orm_graph
 }
 
 run_stage() {

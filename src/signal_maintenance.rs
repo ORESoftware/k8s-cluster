@@ -97,7 +97,7 @@ pub async fn acknowledge_batch(
     let transaction = db.begin().await?;
 
     let active = transaction
-        .query_one(postgres(
+        .query_one_raw(postgres(
             ACTIVE_RECIPIENT_SQL,
             vec![account_id.into(), recipient_device_id.into()],
         ))
@@ -109,7 +109,7 @@ pub async fn acknowledge_batch(
     let mut acknowledged = 0_u64;
     for envelope_id in envelope_ids {
         acknowledged += transaction
-            .execute(postgres(
+            .execute_raw(postgres(
                 ACKNOWLEDGE_ONE_SQL,
                 vec![
                     account_id.into(),
@@ -135,7 +135,7 @@ pub async fn cleanup_expired_state(
         return Err(SignalMaintenanceError::InvalidBatch);
     }
     let row = db
-        .query_one(postgres(
+        .query_one_raw(postgres(
             CLEANUP_SQL,
             vec![
                 now_ms.into(),

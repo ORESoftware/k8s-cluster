@@ -51,7 +51,7 @@ impl From<sea_orm::DbErr> for ApiError {
 /// that a query was wrong. Only these become 503; a genuine query/logic fault
 /// stays an opaque 500 because retrying it would not help.
 ///
-/// The variants are the ones sea-orm 1.1 actually produces on this path (see
+/// The variants are the ones SeaORM actually produces on this path (see
 /// `sea_orm::driver::sqlx_common::sqlx_conn_acquire_err`): pool acquisition
 /// failures become `ConnectionAcquire`, everything else at connect time becomes
 /// `Conn`, and a connection that dies mid-statement surfaces as `Exec`/`Query`
@@ -71,7 +71,7 @@ fn runtime_error_is_transport(error: &sea_orm::RuntimeErr) -> bool {
 
     match error {
         RuntimeErr::SqlxError(error) => matches!(
-            error,
+            &**error,
             SqlxError::Io(_)
                 | SqlxError::Tls(_)
                 | SqlxError::PoolTimedOut
@@ -149,13 +149,14 @@ mod tests {
             sea_orm::DbErr::ConnectionAcquire(sea_orm::ConnAcquireErr::ConnectionClosed),
             sea_orm::DbErr::Conn(sea_orm::RuntimeErr::Internal("Disconnected".to_owned())),
             sea_orm::DbErr::Conn(sea_orm::RuntimeErr::SqlxError(
-                sea_orm::SqlxError::PoolClosed,
+                sea_orm::SqlxError::PoolClosed.into(),
             )),
-            sea_orm::DbErr::Exec(sea_orm::RuntimeErr::SqlxError(sea_orm::SqlxError::Io(
-                std::io::Error::from(std::io::ErrorKind::ConnectionReset),
-            ))),
+            sea_orm::DbErr::Exec(sea_orm::RuntimeErr::SqlxError(
+                sea_orm::SqlxError::Io(std::io::Error::from(std::io::ErrorKind::ConnectionReset))
+                    .into(),
+            )),
             sea_orm::DbErr::Query(sea_orm::RuntimeErr::SqlxError(
-                sea_orm::SqlxError::PoolTimedOut,
+                sea_orm::SqlxError::PoolTimedOut.into(),
             )),
         ] {
             let err: ApiError = error.into();
