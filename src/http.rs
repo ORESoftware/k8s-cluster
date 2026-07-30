@@ -325,4 +325,43 @@ mod tests {
             .unwrap();
         assert_eq!(publish.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
+
+    #[tokio::test]
+    async fn metrics_route_is_prometheus_and_content_free() {
+        let s = state();
+        s.metrics.publishes.with_label_values(&["ok"]).inc();
+        s.metrics
+            .deliveries
+            .with_label_values(&["shared-auth.events.identity", "ok"])
+            .inc();
+        let app = router(s);
+        let response = app
+            .oneshot(
+                axum::http::Request::get("/metrics")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.starts_with("text/plain")));
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains("shared_auth_bridge_publishes_total"));
+        assert!(body.contains("shared_auth_bridge_deliveries_total"));
+        for forbidden_label in [
+            "email=",
+            "identity=",
+            "jwt=",
+            "token=",
+            "token_prefix=",
+            "url=",
+        ] {
+            assert!(!body.contains(forbidden_label));
+        }
+    }
 }
