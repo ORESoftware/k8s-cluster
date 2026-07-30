@@ -68,7 +68,11 @@ test("Prometheus uses a bounded projected token without implicit automount", asy
     /name:\s*kubernetes-api-access[\s\S]*mountPath:\s*\/var\/run\/secrets\/prometheus-discovery[\s\S]*readOnly:\s*true/,
   );
   assert.match(deployment, /serviceAccountToken:/);
-  assert.match(deployment, /audience:\s*https:\/\/kubernetes\.default\.svc\.cluster\.local/);
+  assert.doesNotMatch(
+    deployment,
+    /^\s+audience:\s*/m,
+    "use the API server's configured audience unless the cluster contract names a custom audience",
+  );
   assert.match(deployment, /expirationSeconds:\s*3600/);
   assert.match(deployment, /path:\s*token/);
   assert.match(deployment, /name:\s*kube-root-ca\.crt/);
@@ -87,6 +91,8 @@ test("the versioned contract keeps static targets until duplicate and scale-zero
   assert.match(contract, /prometheus\.io\/scrape:\s*"true"/);
   assert.match(contract, /ready_only:\s*true/);
   assert.match(contract, /terminating_pods_eligible:\s*false/);
+  assert.match(contract, /audience_source:\s*api-server-default/);
+  assert.match(contract, /custom_audience_configured:\s*false/);
   assert.match(contract, /enabled:\s*false/);
   assert.match(contract, /zero overlap with static application jobs/);
   assert.match(contract, /scaled-to-zero workloads do not fire target-missing alerts/);
