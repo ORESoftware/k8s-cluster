@@ -56,11 +56,21 @@ async fn postgres_owns_identity_roles_and_rotating_sessions() {
         .unwrap();
     assert!(db.session_is_active(old_session.session_id).await.unwrap());
 
-    let replacement = RefreshToken::generate();
-    let rotated = db
-        .rotate_session(&old_token.hash, &replacement.hash, expiry)
-        .await
-        .unwrap();
+    // The model checker assumes single-use refresh rotation is atomic. Exercise
+    // the real transaction with two contenders: exactly one may consume the
+    // old token and the loser must observe an authorization failure.
+    let left_replacement = RefreshToken::generate();
+    let right_replacement = RefreshToken::generate();
+    let (left, right) = tokio::join!(
+        db.rotate_session(&old_token.hash, &left_replacement.hash, expiry),
+        db.rotate_session(&old_token.hash, &right_replacement.hash, expiry),
+    );
+    assert_ne!(left.is_ok(), right.is_ok());
+    let (rotated, replacement) = match (left, right) {
+        (Ok(session), Err(_)) => (session, left_replacement),
+        (Err(_), Ok(session)) => (session, right_replacement),
+        _ => unreachable!("exactly one concurrent refresh must win"),
+    };
     assert!(!db.session_is_active(old_session.session_id).await.unwrap());
     assert!(db.session_is_active(rotated.session_id).await.unwrap());
     assert!(db
