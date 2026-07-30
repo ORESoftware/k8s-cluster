@@ -82,6 +82,7 @@ pub struct Transaction {
     pub shard_key: i64,
     pub kind: String,
     pub idempotency_key: String,
+    pub intent_fingerprint: String,
     pub description: Option<String>,
     pub metadata: serde_json::Value,
     pub posted_at: DateTime<Utc>,

@@ -10,6 +10,11 @@
 
 use stateright::{Model, Property};
 
+// Compile and execute the production canonicalization vectors in the
+// standalone formal crate, which is the repository's buildable CI boundary.
+#[path = "../../../src/ledger/fingerprint.rs"]
+mod production_fingerprint;
+
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum Caller {
     A,
@@ -34,6 +39,18 @@ enum DraftKind {
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+enum Intent {
+    Primary,
+    Alternate,
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+enum StoredIntent {
+    Legacy,
+    Versioned(Intent),
+}
+
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum Phase {
     Ready,
     Validated,
@@ -45,6 +62,8 @@ enum Phase {
     NeedsEvent,
     ReturnedNew,
     ReturnedExisting,
+    RejectedConflict,
+    RejectedLegacy,
     Aborted,
 }
 
@@ -60,14 +79,16 @@ impl Phase {
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 struct Attempt {
     draft: DraftKind,
+    intent: Intent,
     phase: Phase,
     result_owner: Option<Caller>,
 }
 
 impl Attempt {
-    const fn new(draft: DraftKind) -> Self {
+    const fn new(draft: DraftKind, intent: Intent) -> Self {
         Self {
             draft,
+            intent,
             phase: Phase::Ready,
             result_owner: None,
         }
@@ -77,6 +98,7 @@ impl Attempt {
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 struct CommittedTransaction {
     owner: Caller,
+    stored_intent: StoredIntent,
     posting_count: u8,
     net_minor: i8,
 }
@@ -87,17 +109,35 @@ struct LedgerState {
     attempts: [Attempt; 2],
     committed: Option<CommittedTransaction>,
     visible_posting_count: u8,
-    event_published: bool,
+    event_publisher: Option<Caller>,
 }
 
 impl LedgerState {
-    fn initial(a: DraftKind, b: DraftKind) -> Self {
+    fn fresh(a: DraftKind, a_intent: Intent, b: DraftKind, b_intent: Intent) -> Self {
         Self {
             lock_owner: None,
-            attempts: [Attempt::new(a), Attempt::new(b)],
+            attempts: [Attempt::new(a, a_intent), Attempt::new(b, b_intent)],
             committed: None,
             visible_posting_count: 0,
-            event_published: false,
+            event_publisher: None,
+        }
+    }
+
+    fn legacy(a_intent: Intent, b_intent: Intent) -> Self {
+        Self {
+            lock_owner: None,
+            attempts: [
+                Attempt::new(DraftKind::Balanced, a_intent),
+                Attempt::new(DraftKind::Balanced, b_intent),
+            ],
+            committed: Some(CommittedTransaction {
+                owner: Caller::A,
+                stored_intent: StoredIntent::Legacy,
+                posting_count: 2,
+                net_minor: 0,
+            }),
+            visible_posting_count: 2,
+            event_publisher: None,
         }
     }
 }
@@ -124,12 +164,25 @@ impl Model for LedgerModel {
 
     fn init_states(&self) -> Vec<Self::State> {
         use DraftKind::{Balanced, Unbalanced};
-        vec![
-            LedgerState::initial(Balanced, Balanced),
-            LedgerState::initial(Balanced, Unbalanced),
-            LedgerState::initial(Unbalanced, Balanced),
-            LedgerState::initial(Unbalanced, Unbalanced),
-        ]
+        use Intent::{Alternate, Primary};
+
+        let mut states = Vec::new();
+        for a_draft in [Balanced, Unbalanced] {
+            for b_draft in [Balanced, Unbalanced] {
+                for a_intent in [Primary, Alternate] {
+                    for b_intent in [Primary, Alternate] {
+                        states.push(LedgerState::fresh(a_draft, a_intent, b_draft, b_intent));
+                    }
+                }
+            }
+        }
+
+        for a_intent in [Primary, Alternate] {
+            for b_intent in [Primary, Alternate] {
+                states.push(LedgerState::legacy(a_intent, b_intent));
+            }
+        }
+        states
     }
 
     fn actions(&self, state: &Self::State, actions: &mut Vec<Self::Action>) {
@@ -157,13 +210,17 @@ impl Model for LedgerModel {
                     actions.push(Action::Abort(caller));
                 }
                 Phase::NeedsEvent => {
-                    if !state.event_published {
+                    if state.event_publisher.is_none() {
                         actions.push(Action::PublishEvent(caller));
                     }
                     actions.push(Action::CrashAfterCommit(caller));
                 }
-                Phase::Rejected | Phase::ReturnedNew | Phase::ReturnedExisting | Phase::Aborted => {
-                }
+                Phase::Rejected
+                | Phase::ReturnedNew
+                | Phase::ReturnedExisting
+                | Phase::RejectedConflict
+                | Phase::RejectedLegacy
+                | Phase::Aborted => {}
                 Phase::Validated => {}
             }
         }
@@ -186,8 +243,18 @@ impl Model for LedgerModel {
             Action::InspectIdempotencyKey(caller) => {
                 let attempt = &mut next.attempts[caller.index()];
                 if let Some(committed) = next.committed {
-                    attempt.phase = Phase::ReturnedExisting;
-                    attempt.result_owner = Some(committed.owner);
+                    match committed.stored_intent {
+                        StoredIntent::Legacy => {
+                            attempt.phase = Phase::RejectedLegacy;
+                        }
+                        StoredIntent::Versioned(intent) if intent == attempt.intent => {
+                            attempt.phase = Phase::ReturnedExisting;
+                            attempt.result_owner = Some(committed.owner);
+                        }
+                        StoredIntent::Versioned(_) => {
+                            attempt.phase = Phase::RejectedConflict;
+                        }
+                    }
                     next.lock_owner = None;
                 } else {
                     attempt.phase = Phase::TransactionStaged;
@@ -200,8 +267,10 @@ impl Model for LedgerModel {
                 next.attempts[caller.index()].phase = Phase::BalancedStaged;
             }
             Action::Commit(caller) => {
+                let intent = next.attempts[caller.index()].intent;
                 next.committed = Some(CommittedTransaction {
                     owner: caller,
+                    stored_intent: StoredIntent::Versioned(intent),
                     posting_count: 2,
                     net_minor: 0,
                 });
@@ -216,7 +285,7 @@ impl Model for LedgerModel {
                 next.lock_owner = None;
             }
             Action::PublishEvent(caller) => {
-                next.event_published = true;
+                next.event_publisher = Some(caller);
                 next.attempts[caller.index()].phase = Phase::ReturnedNew;
             }
             Action::CrashAfterCommit(caller) => {
@@ -262,23 +331,98 @@ impl Model for LedgerModel {
             Property::<Self>::always("replays return the committed identity", |_, state| {
                 state.attempts.iter().all(|attempt| {
                     if attempt.phase == Phase::ReturnedExisting {
-                        attempt.result_owner == state.committed.map(|transaction| transaction.owner)
+                        state.committed.is_some_and(|transaction| {
+                            transaction.stored_intent == StoredIntent::Versioned(attempt.intent)
+                                && attempt.result_owner == Some(transaction.owner)
+                        })
                     } else {
                         true
                     }
                 })
             }),
+            Property::<Self>::always("only the committed intent can succeed", |_, state| {
+                state.attempts.iter().all(|attempt| {
+                    if !matches!(
+                        attempt.phase,
+                        Phase::NeedsEvent | Phase::ReturnedNew | Phase::ReturnedExisting
+                    ) {
+                        return true;
+                    }
+                    state.committed.is_some_and(|transaction| {
+                        transaction.stored_intent == StoredIntent::Versioned(attempt.intent)
+                    })
+                })
+            }),
+            Property::<Self>::always("different-intent replays fail closed", |_, state| {
+                state.attempts.iter().enumerate().all(|(index, attempt)| {
+                    if attempt.phase != Phase::RejectedConflict {
+                        return true;
+                    }
+                    state.committed.is_some_and(|transaction| {
+                        matches!(
+                            transaction.stored_intent,
+                            StoredIntent::Versioned(intent) if intent != attempt.intent
+                        ) && attempt.result_owner.is_none()
+                            && state.lock_owner != Some(Caller::ALL[index])
+                    })
+                })
+            }),
+            Property::<Self>::always("legacy replays fail closed", |_, state| {
+                state.attempts.iter().enumerate().all(|(index, attempt)| {
+                    if attempt.phase != Phase::RejectedLegacy {
+                        return true;
+                    }
+                    state.committed.is_some_and(|transaction| {
+                        transaction.stored_intent == StoredIntent::Legacy
+                            && attempt.result_owner.is_none()
+                            && state.lock_owner != Some(Caller::ALL[index])
+                    })
+                })
+            }),
+            Property::<Self>::always(
+                "rejected replays cannot publish or mutate committed intent",
+                |_, state| {
+                    state.attempts.iter().enumerate().all(|(index, attempt)| {
+                        !matches!(
+                            attempt.phase,
+                            Phase::RejectedConflict | Phase::RejectedLegacy
+                        ) || (state.event_publisher != Some(Caller::ALL[index])
+                            && !attempt.phase.holds_lock())
+                    })
+                },
+            ),
             Property::<Self>::always("events are post-commit and winner-only", |_, state| {
-                if !state.event_published {
+                let Some(publisher) = state.event_publisher else {
                     return true;
-                }
+                };
                 let Some(transaction) = state.committed else {
                     return false;
                 };
-                state.attempts[transaction.owner.index()].phase == Phase::ReturnedNew
+                publisher == transaction.owner
+                    && state.attempts[transaction.owner.index()].phase == Phase::ReturnedNew
             }),
             Property::<Self>::sometimes("a balanced draft can commit", |_, state| {
-                state.committed.is_some()
+                state.committed.is_some_and(|transaction| {
+                    matches!(transaction.stored_intent, StoredIntent::Versioned(_))
+                })
+            }),
+            Property::<Self>::sometimes("an identical intent can replay", |_, state| {
+                state
+                    .attempts
+                    .iter()
+                    .any(|attempt| attempt.phase == Phase::ReturnedExisting)
+            }),
+            Property::<Self>::sometimes("a different intent is rejected", |_, state| {
+                state
+                    .attempts
+                    .iter()
+                    .any(|attempt| attempt.phase == Phase::RejectedConflict)
+            }),
+            Property::<Self>::sometimes("a legacy replay is rejected", |_, state| {
+                state
+                    .attempts
+                    .iter()
+                    .any(|attempt| attempt.phase == Phase::RejectedLegacy)
             }),
         ]
     }

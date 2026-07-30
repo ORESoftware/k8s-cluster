@@ -18,6 +18,9 @@ use crate::events::EventBus;
 use crate::money::Currency;
 use crate::shard::{Region, ShardKey};
 
+use super::fingerprint::{
+    LedgerIntent, LedgerPostingIntent, ReplayFingerprint, classify_replay, intent_fingerprint,
+};
 use super::types::*;
 
 #[derive(Clone)]
@@ -101,7 +104,9 @@ impl LedgerService {
     /// * The DB's deferred constraint trigger enforces the zero-sum invariant
     ///   per currency at COMMIT time.
     /// * Idempotency: a repeat with the same `(tenant_id, idempotency_key)`
-    ///   returns the existing transaction id without writing again.
+    ///   returns the existing transaction id only when its canonical business
+    ///   intent matches. Reusing the key for different or unverifiable legacy
+    ///   intent fails closed.
     pub async fn post_transaction(
         &self,
         draft: &DraftTransaction,
@@ -196,6 +201,7 @@ impl LedgerService {
             }
         }
 
+        let incoming_fingerprint = intent_fingerprint(&intent_from_draft(draft));
         let shard = ShardKey::derive(draft.tenant_id, region).0;
 
         let tx = self.pool.begin().await?;
@@ -228,18 +234,25 @@ impl LedgerService {
         ))
         .await?;
 
-        // Idempotency short-circuit. With the advisory lock above, the
-        // winner has fully committed (or rolled back) before we read,
-        // so the `EXISTS` check is now race-free.
+        // Idempotency short-circuit. With the advisory lock above, the winner
+        // has fully committed (or rolled back) before we read. Compare the
+        // canonical intent while still holding that same lock: a key identifies
+        // one business operation, not merely whichever row arrived first.
         if let Some(row) = tx
             .query_one(stmt(
-                r#"SELECT id FROM transactions
+                r#"SELECT id, intent_fingerprint FROM transactions
                WHERE tenant_id = $1 AND idempotency_key = $2"#,
                 [draft.tenant_id.into(), draft.idempotency_key.clone().into()],
             ))
             .await?
         {
             let existing: Uuid = row.try_get("", "id")?;
+            let existing_fingerprint: String = row.try_get("", "intent_fingerprint")?;
+            require_matching_replay(
+                &draft.idempotency_key,
+                &existing_fingerprint,
+                &incoming_fingerprint,
+            )?;
             customer_lock_guard.fence(&tx, draft.tenant_id).await?;
             tx.commit().await?;
             return Ok((existing, false));
@@ -250,8 +263,9 @@ impl LedgerService {
             .query_one(stmt(
                 r#"
             INSERT INTO transactions
-                (id, tenant_id, shard_key, kind, idempotency_key, description, metadata)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+                (id, tenant_id, shard_key, kind, idempotency_key,
+                 intent_fingerprint, description, metadata)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
             RETURNING id
             "#,
@@ -261,6 +275,7 @@ impl LedgerService {
                     shard.into(),
                     draft.kind.clone().into(),
                     draft.idempotency_key.clone().into(),
+                    incoming_fingerprint.clone().into(),
                     draft.description.clone().into(),
                     draft.metadata.clone().into(),
                 ],
@@ -272,13 +287,19 @@ impl LedgerService {
         let Some(tx_id) = inserted_tx_id else {
             let row = require_row(
                 tx.query_one(stmt(
-                    r#"SELECT id FROM transactions
+                    r#"SELECT id, intent_fingerprint FROM transactions
                    WHERE tenant_id = $1 AND idempotency_key = $2"#,
                     [draft.tenant_id.into(), draft.idempotency_key.clone().into()],
                 ))
                 .await?,
             )?;
             let existing: Uuid = row.try_get("", "id")?;
+            let existing_fingerprint: String = row.try_get("", "intent_fingerprint")?;
+            require_matching_replay(
+                &draft.idempotency_key,
+                &existing_fingerprint,
+                &incoming_fingerprint,
+            )?;
             customer_lock_guard.fence(&tx, draft.tenant_id).await?;
             tx.commit().await?;
             return Ok((existing, false));
@@ -473,6 +494,41 @@ fn direction_to_str(d: Direction) -> &'static str {
     match d {
         Direction::Debit => "debit",
         Direction::Credit => "credit",
+    }
+}
+
+fn intent_from_draft(draft: &DraftTransaction) -> LedgerIntent {
+    LedgerIntent {
+        tenant_id: draft.tenant_id,
+        kind: draft.kind.clone(),
+        description: draft.description.clone(),
+        metadata: draft.metadata.clone(),
+        postings: draft
+            .postings
+            .iter()
+            .map(|posting| LedgerPostingIntent {
+                account_code: posting.account_code.clone(),
+                direction: direction_to_str(posting.direction).into(),
+                amount_minor: posting.amount_minor,
+                currency: posting.currency.clone(),
+                source: posting.source.clone(),
+                source_event_id: posting.source_event_id.clone(),
+                metadata: posting.metadata.clone(),
+            })
+            .collect(),
+    }
+}
+
+fn require_matching_replay(idempotency_key: &str, existing: &str, incoming: &str) -> AppResult<()> {
+    match classify_replay(existing, incoming) {
+        ReplayFingerprint::Exact => Ok(()),
+        ReplayFingerprint::Legacy => Err(AppError::Conflict(format!(
+            "idempotency key {idempotency_key:?} belongs to a legacy transaction whose intent \
+             cannot be verified; submit the operation with a new key"
+        ))),
+        ReplayFingerprint::Mismatch => Err(AppError::Conflict(format!(
+            "idempotency key {idempotency_key:?} was reused with different ledger intent"
+        ))),
     }
 }
 
