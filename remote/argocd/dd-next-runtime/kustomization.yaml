@@ -77,6 +77,11 @@ resources:
   - dd-email-sms-contact-rs.deployment.yaml
   - dd-email-sms-contact-rs.externalsecret.yaml
   - dd-email-sms-contact-rs.service.yaml
+  - dd-happy-wakey-gateway.deployment.yaml
+  - dd-happy-wakey-gateway.externalsecret.yaml
+  - dd-happy-wakey-gateway.networkpolicy.yaml
+  - dd-happy-wakey-gateway.pvc.yaml
+  - dd-happy-wakey-gateway.service.yaml
   - dd-next-1-js.deployment.yaml
   - dd-next-1-js.service.yaml
   - dd-sound-recorder-rs.deployment.yaml
