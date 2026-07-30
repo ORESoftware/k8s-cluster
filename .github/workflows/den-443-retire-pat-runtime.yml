@@ -87,32 +87,41 @@ jobs:
           api="https://api.github.com/repos/${REPOSITORY}"
           base_commit="$(git rev-parse HEAD)"
           base_tree="$(git show -s --format=%T "$base_commit")"
-          encoded="$(base64 -w0 .github/workflows/remote-k8s-maintenance.yml)"
+
+          python3 <<'PY' > /tmp/den-443-blob.json
+          import base64
+          import json
+          from pathlib import Path
+
+          content = base64.b64encode(
+              Path('.github/workflows/remote-k8s-maintenance.yml').read_bytes()
+          ).decode('ascii')
+          print(json.dumps({'content': content, 'encoding': 'base64'}, separators=(',', ':')))
+          PY
 
           blob_sha="$(
-            jq -n --arg content "$encoded" '{content:$content,encoding:"base64"}' \
-              | curl --fail-with-body --silent --show-error \
-                  -X POST \
-                  -H 'Accept: application/vnd.github+json' \
-                  -H "Authorization: Bearer ${GH_API_TOKEN}" \
-                  -H 'X-GitHub-Api-Version: 2022-11-28' \
-                  "${api}/git/blobs" \
-                  --data-binary @- \
-              | jq -er '.sha'
+            curl --fail-with-body --silent --show-error \
+              -X POST \
+              -H 'Accept: application/vnd.github+json' \
+              -H "Authorization: Bearer ${GH_API_TOKEN}" \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "${api}/git/blobs" \
+              --data-binary @/tmp/den-443-blob.json \
+            | jq -er '.sha'
           )"
           tree_sha="$(
             jq -n \
               --arg base_tree "$base_tree" \
               --arg blob_sha "$blob_sha" \
               '{base_tree:$base_tree,tree:[{path:".github/workflows/remote-k8s-maintenance.yml",mode:"100644",type:"blob",sha:$blob_sha}]}' \
-              | curl --fail-with-body --silent --show-error \
-                  -X POST \
-                  -H 'Accept: application/vnd.github+json' \
-                  -H "Authorization: Bearer ${GH_API_TOKEN}" \
-                  -H 'X-GitHub-Api-Version: 2022-11-28' \
-                  "${api}/git/trees" \
-                  --data-binary @- \
-              | jq -er '.sha'
+            | curl --fail-with-body --silent --show-error \
+                -X POST \
+                -H 'Accept: application/vnd.github+json' \
+                -H "Authorization: Bearer ${GH_API_TOKEN}" \
+                -H 'X-GitHub-Api-Version: 2022-11-28' \
+                "${api}/git/trees" \
+                --data-binary @- \
+            | jq -er '.sha'
           )"
           commit_sha="$(
             jq -n \
@@ -120,14 +129,14 @@ jobs:
               --arg tree "$tree_sha" \
               --arg parent "$base_commit" \
               '{message:$message,tree:$tree,parents:[$parent]}' \
-              | curl --fail-with-body --silent --show-error \
-                  -X POST \
-                  -H 'Accept: application/vnd.github+json' \
-                  -H "Authorization: Bearer ${GH_API_TOKEN}" \
-                  -H 'X-GitHub-Api-Version: 2022-11-28' \
-                  "${api}/git/commits" \
-                  --data-binary @- \
-              | jq -er '.sha'
+            | curl --fail-with-body --silent --show-error \
+                -X POST \
+                -H 'Accept: application/vnd.github+json' \
+                -H "Authorization: Bearer ${GH_API_TOKEN}" \
+                -H 'X-GitHub-Api-Version: 2022-11-28' \
+                "${api}/git/commits" \
+                --data-binary @- \
+            | jq -er '.sha'
           )"
 
           echo "detached_commit_sha=${commit_sha}"
