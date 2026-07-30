@@ -92,6 +92,11 @@ data:
         static_configs:
           - targets:
               - dd-sonus-auris-site.default.svc.cluster.local:9113
+      - job_name: usacc-rest-api-backend-rs
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - usacc-rest-api-backend-rs.default.svc.cluster.local:8121
       - job_name: dd-webrtc-signaling
         metrics_path: /metrics
         static_configs:
@@ -333,7 +338,7 @@ data:
               summary: "Observability target {{ $labels.job }} is down"
               description: "Prometheus has not scraped {{ $labels.instance }} for job {{ $labels.job }}."
           - alert: DDFirstPartyApplicationMetricsTargetDown
-            expr: up{job=~"fiducia-backend|canonical-cloud-web|dd-akrion-web-server-rs|dd-sonus-auris-site"} == 0
+            expr: up{job=~"fiducia-backend|canonical-cloud-web|dd-akrion-web-server-rs|dd-sonus-auris-site|usacc-rest-api-backend-rs"} == 0
             for: 2m
             labels:
               severity: warning

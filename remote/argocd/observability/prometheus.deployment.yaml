@@ -23,7 +23,7 @@ spec:
         # for `jobs.batch`). This pickup is what materializes the
         # dd-k8s-resource-exporter scrape_timeout: 25s change into the
         # running config and clears DDObservabilityTargetDown.
-        dd.dev/config-revision: "2026-07-16-k8s-exporter-scrape-timeout"
+        dd.dev/config-revision: "2026-07-29-usacc-application-scrape"
       labels:
         app: dd-prometheus
     spec:

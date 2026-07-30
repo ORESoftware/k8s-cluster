@@ -80,11 +80,16 @@ test("central Prometheus scrapes each first-wave application every 15 seconds", 
     "dd-sonus-auris-site",
     "dd-sonus-auris-site.default.svc.cluster.local:9113",
   );
+  assertTarget(
+    prometheus,
+    "usacc-rest-api-backend-rs",
+    "usacc-rest-api-backend-rs.default.svc.cluster.local:8121",
+  );
 
   assert.match(prometheus, /alert:\s*DDFirstPartyApplicationMetricsTargetDown/);
   assert.match(
     prometheus,
-    /up\{job=~"fiducia-backend\|canonical-cloud-web\|dd-akrion-web-server-rs\|dd-sonus-auris-site"\}\s*==\s*0/,
+    /up\{job=~"fiducia-backend\|canonical-cloud-web\|dd-akrion-web-server-rs\|dd-sonus-auris-site\|usacc-rest-api-backend-rs"\}\s*==\s*0/,
   );
   assert.match(prometheus, /alert:\s*DDSonusAurisNginxExporterScrapeFailed/);
   assert.match(prometheus, /nginx_up\{job="dd-sonus-auris-site"\}\s*==\s*0/);
@@ -138,12 +143,20 @@ test("NetworkPolicies admit only the intended Prometheus workload on scrape port
   const sonus = await read(
     "remote/argocd/dd-next-runtime/dd-sonus-auris-site.service.yaml",
   );
+  const usaccService = await read(
+    "remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.service.yaml",
+  );
+  const usaccPolicy = await read(
+    "remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.networkpolicy.yaml",
+  );
 
   assert.match(prometheus, /app:\s*dd-prometheus/);
   assertPrometheusIngress(fiducia, 8117);
   assertPrometheusIngress(canonical, 8081);
   assertPrometheusIngress(akrion, 8127);
   assertPrometheusIngress(sonus.slice(sonus.indexOf("kind: NetworkPolicy")), 9113);
+  assertScrapeAnnotations(usaccService, 8121);
+  assertPrometheusIngress(usaccPolicy, 8121);
 });
 
 test("Sonus exports nginx status through a hardened digest-pinned sidecar", async () => {
