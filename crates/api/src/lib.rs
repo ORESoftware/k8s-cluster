@@ -20,6 +20,7 @@ use axum::Router;
 use state::AppState;
 use std::time::Duration;
 use tower_http::timeout::TimeoutLayer;
+use tower_http::trace::TraceLayer;
 
 /// Max request body for audio uploads — matches OpenAI Whisper's 25 MB cap and
 /// bounds the DSP/FFT work a single request can trigger.
@@ -88,6 +89,7 @@ pub fn app(state: AppState) -> Router {
             axum::http::StatusCode::REQUEST_TIMEOUT,
             request_timeout(),
         ))
+        .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
 

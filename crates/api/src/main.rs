@@ -22,15 +22,6 @@
 use std::net::SocketAddr;
 use t2v_api::{app, db, state::AppState};
 
-fn init_tracing() {
-    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(fmt::layer())
-        .init();
-}
-
 fn port() -> u16 {
     std::env::var("PORT")
         .ok()
@@ -64,7 +55,9 @@ async fn shutdown_signal() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init_tracing();
+    // Keep the provider alive through graceful shutdown so queued traces,
+    // metrics, and structured warnings are flushed before the pod exits.
+    let _telemetry = fiducia_telemetry::init("dd-t2v-api");
 
     let db = db::connect_and_prepare().await?;
     let state = AppState::new(db);
