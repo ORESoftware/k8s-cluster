@@ -9,9 +9,9 @@ export NO_COLOR="${NO_COLOR:-1}"
 export TF_IN_AUTOMATION="${TF_IN_AUTOMATION:-1}"
 
 if repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
-  :
+	:
 else
-  repo_root="$PWD"
+	repo_root="$PWD"
 fi
 cd "$repo_root"
 
@@ -26,112 +26,112 @@ export npm_config_cache="${npm_config_cache:-$cache_root/npm}"
 mkdir -p "$XDG_CACHE_HOME" "$CARGO_HOME" "$GRADLE_USER_HOME" "$PUB_CACHE" "$npm_config_cache"
 
 root_checks() {
-  git diff --check
-  nixfmt --check flake.nix .nix/dev-shell.nix
-  shellcheck .nix/agent-check.sh
-  shfmt -d .nix/agent-check.sh
-  actionlint \
-    .github/workflows/nix.yml \
-    .github/workflows/nix-agent-profiles.yml \
-    .github/workflows/nix-fleet-audit.yml \
-    .github/workflows/repository-catalog.yml
-  nix flake check --show-trace
+	git diff --check
+	nixfmt --check flake.nix .nix/dev-shell.nix
+	shellcheck .nix/agent-check.sh
+	shfmt -d .nix/agent-check.sh
+	actionlint \
+		.github/workflows/nix.yml \
+		.github/workflows/nix-agent-profiles.yml \
+		.github/workflows/nix-fleet-audit.yml \
+		.github/workflows/repository-catalog.yml
+	nix flake check --show-trace
 }
 
 catalog_static_checks() {
-  ruff check tools/repository_catalog.py tools/test_repository_catalog.py
-  ruff format --check tools/repository_catalog.py tools/test_repository_catalog.py
-  nixfmt --check flake.nix .nix/dev-shell.nix
-  actionlint .github/workflows/repository-catalog.yml
+	ruff check tools/repository_catalog.py tools/test_repository_catalog.py
+	ruff format --check tools/repository_catalog.py tools/test_repository_catalog.py
+	nixfmt --check flake.nix .nix/dev-shell.nix
+	actionlint .github/workflows/repository-catalog.yml
 }
 
 unit_tests() {
-  (
-    cd tools
-    python -m unittest -v test_repository_catalog.py
-  )
+	(
+		cd tools
+		python -m unittest -v test_repository_catalog.py
+	)
 }
 
 validate_fixture() {
-  python tools/repository_catalog.py validate \
-    catalog/repositories.json \
-    --public-safe \
-    --repo-root "$PWD"
-  python tools/repository_catalog.py validate \
-    catalog/fixtures/repositories.v2.json \
-    --public-safe \
-    --repo-root "$PWD"
+	python tools/repository_catalog.py validate \
+		catalog/repositories.json \
+		--public-safe \
+		--repo-root "$PWD"
+	python tools/repository_catalog.py validate \
+		catalog/fixtures/repositories.v2.json \
+		--public-safe \
+		--repo-root "$PWD"
 }
 
 build_artifacts() {
-  mkdir -p artifacts
-  python tools/repository_catalog.py diff \
-    catalog/repositories.json \
-    catalog/repositories.json \
-    --json-output artifacts/repository-catalog-drift.json \
-    --markdown-output artifacts/repository-catalog-drift.md
-  python tools/repository_catalog.py dashboard \
-    catalog/repositories.json \
-    --json-output artifacts/repository-catalog-dashboard.json \
-    --markdown-output artifacts/repository-catalog-dashboard.md
-  python tools/repository_catalog.py merge-den369 \
-    catalog/fixtures/repositories.v2.json \
-    catalog/fixtures/den369-report.json \
-    --source-path catalog/fixtures/den369-report.json \
-    --output artifacts/repository-catalog-with-den369.json
-  python tools/repository_catalog.py validate \
-    artifacts/repository-catalog-with-den369.json \
-    --public-safe \
-    --repo-root "$PWD"
+	mkdir -p artifacts
+	python tools/repository_catalog.py diff \
+		catalog/repositories.json \
+		catalog/repositories.json \
+		--json-output artifacts/repository-catalog-drift.json \
+		--markdown-output artifacts/repository-catalog-drift.md
+	python tools/repository_catalog.py dashboard \
+		catalog/repositories.json \
+		--json-output artifacts/repository-catalog-dashboard.json \
+		--markdown-output artifacts/repository-catalog-dashboard.md
+	python tools/repository_catalog.py merge-den369 \
+		catalog/fixtures/repositories.v2.json \
+		catalog/fixtures/den369-report.json \
+		--source-path catalog/fixtures/den369-report.json \
+		--output artifacts/repository-catalog-with-den369.json
+	python tools/repository_catalog.py validate \
+		artifacts/repository-catalog-with-den369.json \
+		--public-safe \
+		--repo-root "$PWD"
 }
 
 collect_public() {
-  mkdir -p artifacts
-  python tools/repository_catalog.py collect \
-    --owners catalog/owners.json \
-    --visibility public \
-    --repo-root "$PWD" \
-    --output artifacts/repository-catalog.public.json
-  python tools/repository_catalog.py validate \
-    artifacts/repository-catalog.public.json \
-    --public-safe
+	mkdir -p artifacts
+	python tools/repository_catalog.py collect \
+		--owners catalog/owners.json \
+		--visibility public \
+		--repo-root "$PWD" \
+		--output artifacts/repository-catalog.public.json
+	python tools/repository_catalog.py validate \
+		artifacts/repository-catalog.public.json \
+		--public-safe
 }
 
 catalog_ci() {
-  catalog_static_checks
-  unit_tests
-  validate_fixture
-  build_artifacts
+	catalog_static_checks
+	unit_tests
+	validate_fixture
+	build_artifacts
 }
 
 case "$target" in
-  root)
-    root_checks
-    ;;
-  unit)
-    unit_tests
-    ;;
-  static)
-    catalog_static_checks
-    ;;
-  validate)
-    validate_fixture
-    ;;
-  artifacts)
-    build_artifacts
-    ;;
-  collect-public)
-    collect_public
-    ;;
-  ci)
-    catalog_ci
-    ;;
-  all)
-    root_checks
-    catalog_ci
-    ;;
-  *)
-    echo "usage: agent-check [all|root|ci|static|unit|validate|artifacts|collect-public]" >&2
-    exit 2
-    ;;
+root)
+	root_checks
+	;;
+unit)
+	unit_tests
+	;;
+static)
+	catalog_static_checks
+	;;
+validate)
+	validate_fixture
+	;;
+artifacts)
+	build_artifacts
+	;;
+collect-public)
+	collect_public
+	;;
+ci)
+	catalog_ci
+	;;
+all)
+	root_checks
+	catalog_ci
+	;;
+*)
+	echo "usage: agent-check [all|root|ci|static|unit|validate|artifacts|collect-public]" >&2
+	exit 2
+	;;
 esac
