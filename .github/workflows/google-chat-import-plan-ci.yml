@@ -1,0 +1,48 @@
+name: Google Chat import planner
+
+on:
+  pull_request:
+    paths:
+      - tools/google-chat-space-export/import-plan.mjs
+      - tools/google-chat-space-export/test/import-plan.test.mjs
+      - tools/google-chat-space-export/import-project-map.example.json
+      - tools/google-chat-space-export/README.md
+      - .github/workflows/google-chat-import-plan-ci.yml
+  push:
+    branches:
+      - main
+    paths:
+      - tools/google-chat-space-export/import-plan.mjs
+      - tools/google-chat-space-export/test/import-plan.test.mjs
+      - tools/google-chat-space-export/import-project-map.example.json
+      - tools/google-chat-space-export/README.md
+      - .github/workflows/google-chat-import-plan-ci.yml
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Check planner syntax
+        run: node --check tools/google-chat-space-export/import-plan.mjs
+
+      - name: Run deterministic import-planner tests
+        run: node --test tools/google-chat-space-export/test/import-plan.test.mjs
+
+      - name: Verify planner never contains Linear write credentials or endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -InE '(LINEAR_API_KEY|api\.linear\.app|mutation[[:space:]]*\{)' \
+            tools/google-chat-space-export/import-plan.mjs

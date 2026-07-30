@@ -1,0 +1,67 @@
+name: Google Chat API hotfix bot
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - .github/chat-fix-trigger/**
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout same-repository PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Apply exact Apps Script API compatibility fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('tools/google-chat-space-export/App.gs')
+          text = path.read_text()
+
+          old_version = "version: '1.0.0'"
+          new_version = "version: '1.0.1'"
+          if text.count(old_version) != 1:
+              raise SystemExit(f'expected exactly one {old_version!r}')
+
+          bad_order = "    orderBy: 'ASC',\n"
+          if text.count(bad_order) != 2:
+              raise SystemExit("expected exactly two Apps Script orderBy entries")
+
+          text = text.replace(old_version, new_version, 1)
+          text = text.replace(bad_order, '')
+          path.write_text(text)
+          PY
+
+          grep -Fq "version: '1.0.1'" tools/google-chat-space-export/App.gs
+          test "$(grep -Fc "orderBy: 'ASC'" tools/google-chat-space-export/App.gs || true)" = 0
+          node --check <(sed 's/$//' tools/google-chat-space-export/App.gs)
+
+      - name: Commit fix to PR branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo 'No changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tools/google-chat-space-export/App.gs
+          git commit -m 'Fix Apps Script Chat message ordering'
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"

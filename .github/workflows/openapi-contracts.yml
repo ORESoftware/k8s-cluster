@@ -1,0 +1,66 @@
+name: OpenAPI contracts
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/openapi-contracts.yml'
+      - 'AGENTS.md'
+      - 'docs/http-api-openapi-sdk-contract.md'
+      - 'remote/config/api-contracts.json'
+      - 'remote/deployments/**'
+      - 'remote/libs/**'
+      - 'remote/tests/check-rest-api-route-parity.mjs'
+      - 'remote/tests/package.json'
+      - 'remote/tools/generate-api-docs.mjs'
+      - 'remote/tools/validate-openapi-contracts.mjs'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - '.github/workflows/openapi-contracts.yml'
+      - 'AGENTS.md'
+      - 'docs/http-api-openapi-sdk-contract.md'
+      - 'remote/config/api-contracts.json'
+      - 'remote/deployments/**'
+      - 'remote/libs/**'
+      - 'remote/tests/check-rest-api-route-parity.mjs'
+      - 'remote/tests/package.json'
+      - 'remote/tools/generate-api-docs.mjs'
+      - 'remote/tools/validate-openapi-contracts.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openapi-contracts-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Check contract tooling syntax
+        run: |
+          node --check remote/tools/generate-api-docs.mjs
+          node --check remote/tools/validate-openapi-contracts.mjs
+          node --check remote/tests/check-rest-api-route-parity.mjs
+
+      - name: Reject stale generated contracts
+        run: node remote/tools/generate-api-docs.mjs --check
+
+      - name: Validate full and public OpenAPI parity
+        run: node remote/tools/validate-openapi-contracts.mjs
+
+      - name: Verify fleet route coverage
+        run: node remote/tests/check-rest-api-route-parity.mjs

@@ -20,10 +20,94 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
+async function readBuildServerModule(moduleName: string): Promise<string> {
+  const flatPath = `remote/deployments/build-server-rs/src/${moduleName}.rs`;
+  if (existsSync(resolve(repoRoot, flatPath))) {
+    return readRepoFile(flatPath);
+  }
+
+  const directoryPath = `remote/deployments/build-server-rs/src/${moduleName}/mod.rs`;
+  assert.ok(
+    existsSync(resolve(repoRoot, directoryPath)),
+    `build-server-rs module ${moduleName} must resolve to ${flatPath} or ${directoryPath}`,
+  );
+  return readRepoFile(directoryPath);
+}
+
+async function readBuildServerSource(): Promise<string> {
+  const modules = [
+    'config',
+    'db',
+    'ecr',
+    'entity',
+    'events',
+    'exec',
+    'fiducia',
+    'gh_secrets',
+    'http',
+    'jobs',
+    'lambda_exec',
+    'profiles',
+    'state',
+    'types',
+    'util',
+    'validation',
+    'webhooks',
+  ];
+  const main = await readRepoFile('remote/deployments/build-server-rs/src/main.rs');
+  for (const moduleName of modules) {
+    assert.match(
+      main,
+      new RegExp(`mod ${moduleName};`),
+      `build-server-rs main.rs must register ${moduleName}`,
+    );
+  }
+  const moduleSources = await Promise.all(modules.map(readBuildServerModule));
+  return [main, ...moduleSources].join('\n');
+}
+
+async function readWebHomeSource(): Promise<string> {
+  const modules = [
+    'agents',
+    'container_pool',
+    'grafana',
+    'handlers',
+    'home',
+    'jello',
+    'labs',
+    'lambda',
+    'metrics',
+    'shared',
+    'state',
+  ];
+  const main = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  for (const moduleName of modules) {
+    assert.match(
+      main,
+      new RegExp(`mod ${moduleName};`),
+      `web-home-rs main.rs must register ${moduleName}.rs`,
+    );
+  }
+  const moduleSources = await Promise.all(
+    modules.map((moduleName) =>
+      readRepoFile(`remote/deployments/web-home-rs/src/${moduleName}.rs`),
+    ),
+  );
+  return [main, ...moduleSources].join('\n');
+}
+
 test('rust build server queues controlled image builds and deploys', async () => {
   const cargoToml = await readRepoFile('remote/deployments/build-server-rs/Cargo.toml');
-  const source = await readRepoFile('remote/deployments/build-server-rs/src/main.rs');
+  const source = await readBuildServerSource();
+  const jobsSource = await readRepoFile('remote/deployments/build-server-rs/src/jobs.rs');
+  const profilesSource = await readRepoFile('remote/deployments/build-server-rs/src/profiles.rs');
   const readme = await readRepoFile('remote/deployments/build-server-rs/readme.md');
+
+  const executeBuildStart = jobsSource.indexOf('pub(crate) async fn execute_build');
+  const runJobStart = jobsSource.indexOf('pub(crate) async fn run_job');
+  assert.notEqual(executeBuildStart, -1, 'jobs.rs must define execute_build');
+  assert.ok(runJobStart > executeBuildStart, 'run_job must follow execute_build');
+  const executeBuildSource = jobsSource.slice(executeBuildStart, runJobStart);
 
   assert.match(cargoToml, /name = "dd-build-server"/);
   assert.match(cargoToml, /axum/);
@@ -66,8 +150,17 @@ test('rust build server queues controlled image builds and deploys', async () =>
   assert.match(source, /"apply"/);
   assert.match(source, /"rollout"/);
   assert.match(source, /dd_build_server_jobs_submitted_total/);
-  assert.doesNotMatch(source, /\/bin\/bash/);
-  assert.match(readme, /does not accept arbitrary shell commands/);
+
+  // Arbitrary image-build requests remain argv-only. Shell execution is allowed
+  // only inside the fixed, operator-reviewed profile catalog selected by name.
+  assert.doesNotMatch(executeBuildSource, /\/bin\/bash/);
+  assert.match(profilesSource, /Fixed, operator-reviewed CI profiles/);
+  assert.match(jobsSource, /let profile = profiles::find\(&profile_name\)/);
+  assert.match(jobsSource, /step\.script\.to_string\(\)/);
+
+  assert.match(readme, /intentionally does not accept caller-supplied shell commands/);
+  assert.match(readme, /Profile scripts do invoke a\s+shell inside their isolated runner container/);
+  assert.match(readme, /cannot be overridden by the request/);
   assert.match(readme, /not a fully untrusted code sandbox/);
   assert.match(readme, /`deploy.kind`: `kustomize`, `manifest`, or `none`/);
   assert.match(readme, /ECR push support is enabled/);
@@ -89,7 +182,7 @@ test('build server is deployed through Argo runtime manifests, gateway, and obse
   );
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
-  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const home = await readWebHomeSource();
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
 
   assert.match(deployment, /name:\s*dd-build-server/);

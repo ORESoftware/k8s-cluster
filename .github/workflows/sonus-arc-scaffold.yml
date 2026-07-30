@@ -1,0 +1,67 @@
+name: Sonus Auris ARC scaffold
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "remote/argocd/ci-runners/sonus-auris/**"
+      - "remote/argocd/ci-runners/validate-sonus-arc-scaffold.py"
+      - "remote/deployments/sonus-auris-ci-runner/**"
+      - "remote/argocd/apps/canonical-ci-arc-controller.application.yaml"
+      - ".github/workflows/sonus-arc-scaffold.yml"
+  push:
+    branches: [main]
+    paths:
+      - "remote/argocd/ci-runners/sonus-auris/**"
+      - "remote/argocd/ci-runners/validate-sonus-arc-scaffold.py"
+      - "remote/deployments/sonus-auris-ci-runner/**"
+      - "remote/argocd/apps/canonical-ci-arc-controller.application.yaml"
+      - ".github/workflows/sonus-arc-scaffold.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonus-arc-scaffold-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: "3.12"
+      - name: Compile validator
+        run: python -m py_compile remote/argocd/ci-runners/validate-sonus-arc-scaffold.py
+      - name: Validate required scaffold files
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py files
+      - name: Validate inert promotion state
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py inert
+      - name: Validate ARC chart/controller alignment
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py versions
+      - name: Validate non-privileged runner template
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py template
+      - name: Validate ExternalSecret and smoke templates
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py activation
+      - name: Validate pinned runner image contract
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py runner
+      - name: Validate operational documentation
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py docs
+      - name: Validate committed secret boundaries
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py secrets
+      - name: Check repository whitespace and conflict markers
+        run: |
+          git diff --check HEAD^ HEAD
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- \
+            remote/argocd/ci-runners/sonus-auris \
+            remote/deployments/sonus-auris-ci-runner \
+            remote/argocd/ci-runners/validate-sonus-arc-scaffold.py; then
+            echo "conflict marker found" >&2
+            exit 1
+          fi

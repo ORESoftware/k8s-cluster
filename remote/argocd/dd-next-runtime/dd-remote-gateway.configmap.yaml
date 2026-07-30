@@ -1748,6 +1748,12 @@ data:
         proxy_pass http://dd-akrion-web-server-rs.default.svc.cluster.local:8127;
       }
 
+      # Keep Akrion process metrics on the in-cluster Service even for
+      # authenticated gateway users.
+      location ^~ /akrion-sim/metrics {
+        return 404;
+      }
+
       location /akrion-sim/ {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
@@ -2833,6 +2839,12 @@ data:
       # endpoint churn; variable upstreams require an explicit DNS resolver.
       resolver kube-dns.kube-system.svc.cluster.local valid=10s ipv6=off;
       resolver_timeout 2s;
+
+      # Prometheus scrapes the ClusterIP Service directly. Do not publish
+      # process/request telemetry on the customer-facing Fiducia origin.
+      location ^~ /metrics {
+        return 404;
+      }
 
       location / {
         proxy_http_version 1.1;

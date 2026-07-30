@@ -1,0 +1,43 @@
+name: ClipTown monorepo pointer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .gitmodules
+      - .github/workflows/cliptown-monorepo-pointer.yml
+      - remote/deployments/cliptown-monorepo
+      - remote/deployments/cliptown-monorepo.pointer.json
+      - scripts/validate-cliptown-monorepo-pointer.py
+  pull_request:
+    branches: [main]
+    paths:
+      - .gitmodules
+      - .github/workflows/cliptown-monorepo-pointer.yml
+      - remote/deployments/cliptown-monorepo
+      - remote/deployments/cliptown-monorepo.pointer.json
+      - scripts/validate-cliptown-monorepo-pointer.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cliptown-pointer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out cluster metadata only
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: false
+      - name: Compile validator
+        run: python3 -m py_compile scripts/validate-cliptown-monorepo-pointer.py
+      - name: Validate exact gitlink and upstream main
+        run: python3 scripts/validate-cliptown-monorepo-pointer.py

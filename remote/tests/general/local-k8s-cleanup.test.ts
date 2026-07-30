@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
@@ -43,7 +43,15 @@ test('removed local k8s names stay out of tracked files', () => {
       continue;
     }
 
-    const contents = readFileSync(resolve(repoRoot, relativePath));
+    const absolutePath = resolve(repoRoot, relativePath);
+    if (!existsSync(absolutePath) || !statSync(absolutePath).isFile()) {
+      // `git ls-files --recurse-submodules` may include an initialized gitlink
+      // directory. Its path was still checked above; content scanning belongs to
+      // the recursively listed files beneath it, not the directory entry itself.
+      continue;
+    }
+
+    const contents = readFileSync(absolutePath);
     if (contents.includes(0)) {
       continue;
     }

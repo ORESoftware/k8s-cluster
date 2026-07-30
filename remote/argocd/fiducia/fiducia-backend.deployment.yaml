@@ -24,8 +24,11 @@ spec:
       labels:
         app: fiducia-backend
       annotations:
-        dd.dev/fiducia-source: 'fiducia-cloud/fiducia-monorepo@main (apps/fiducia-customer.rs + apps/fiducia-marketing.web)'
-        dd.dev/fiducia-build: '2026-06-27-raft-locks-merge'
+        dd.dev/fiducia-source: 'fiducia-cloud/fiducia-customer.rs@957618c8ff7ca746519889573443b5e9e68dde19 + fiducia-interfaces@main + fiducia-marketing.web@main'
+        dd.dev/fiducia-build: '2026-07-30-prometheus-metrics-957618c8'
+        prometheus.io/scrape: 'true'
+        prometheus.io/path: '/metrics'
+        prometheus.io/port: '8117'
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
@@ -88,11 +91,18 @@ spec:
               set -euo pipefail
               export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
               # Clone the PUBLIC app repos as siblings (the monorepo is private).
+              # The customer server is detached at the reviewed merge commit so
+              # this rollout cannot accidentally build a later moving main head.
               rm -rf /tmp/src && mkdir -p /tmp/src && cd /tmp/src
-              for repo in fiducia-customer.rs fiducia-interfaces; do git clone --depth 1 --branch main "https://github.com/fiducia-cloud/${repo}.git"; done
+              git clone --depth 1 --no-checkout https://github.com/fiducia-cloud/fiducia-customer.rs.git
+              git -C fiducia-customer.rs fetch --depth 1 origin "${FIDUCIA_CUSTOMER_GIT_REF}"
+              git -C fiducia-customer.rs switch --detach FETCH_HEAD
+              git clone --depth 1 --branch main https://github.com/fiducia-cloud/fiducia-interfaces.git
+              echo "[fiducia-backend] source fiducia-customer.rs@$(git -C fiducia-customer.rs rev-parse HEAD)"
               cd /tmp/src/fiducia-customer.rs
               exec /usr/local/cargo/bin/cargo run --release
           env:
+            - { name: FIDUCIA_CUSTOMER_GIT_REF, value: 957618c8ff7ca746519889573443b5e9e68dde19 }
             - { name: HOST, value: 0.0.0.0 }
             - { name: PORT, value: '8117' }
             - { name: STATIC_DIR, value: /site-dist }
@@ -177,6 +187,10 @@ metadata:
   namespace: fiducia
   labels:
     app: fiducia-backend
+  annotations:
+    prometheus.io/scrape: 'true'
+    prometheus.io/path: '/metrics'
+    prometheus.io/port: '8117'
 spec:
   type: ClusterIP
   selector:

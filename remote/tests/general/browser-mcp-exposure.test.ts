@@ -8,9 +8,9 @@ import test from 'node:test';
 // on 2026-07-25.
 //
 // ChatGPT custom MCP apps cannot supply an operator's arbitrary static bearer.
-// OAuth remains implemented for later re-enablement, but production temporarily
-// uses explicit no-auth mode with a narrow domain ceiling and browser safety
-// controls.
+// This deployment therefore implements OAuth discovery, dynamic public-client
+// registration, PKCE, scoped/audience-bound access tokens, and rotating refresh
+// grants while retaining the domain ceiling and browser safety controls.
 //
 // These are cheap file assertions on purpose: they must fail in CI *before*
 // anything reaches a cluster.
@@ -31,7 +31,29 @@ const GATEWAY = 'remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml'
 const AWS_APPS = 'remote/argocd/clusters/aws/applications.yaml';
 const HETZNER_APPS = 'remote/argocd/clusters/hetzner/applications.yaml';
 const CLI_FLAGS = 'remote/deployments/browser-mcp-rs/.cli-flags.toml';
+const PLATFORM_JOB_DOMAINS = [
+  'greenhouse.io',
+  'lever.co',
+  'ashbyhq.com',
+  'myworkdayjobs.com',
+  'workday.com',
+  'smartrecruiters.com',
+  'icims.com',
+  'jobvite.com',
+  'workable.com',
+  'bamboohr.com',
+  'recruitee.com',
+  'applytojob.com',
+  'ats.rippling.com',
+  'breezy.hr',
+  'jobscore.com',
+  'candidateportalin.ceipal.com',
+  'candidateportalnew.ceipal.com',
+] as const;
+const APPOINTMENT_DOMAINS = ['cal.com', 'calendly.com'] as const;
+
 const REVIEWED_BROWSER_CEILING_DOMAINS = [
+  'benefactor.cc',
   'confluent.cloud',
   'confluent.io',
   'signoz.io',
@@ -59,6 +81,9 @@ const REVIEWED_BROWSER_CEILING_DOMAINS = [
   'ssl.gstatic.com',
   'fonts.googleapis.com',
   'fonts.gstatic.com',
+  ...PLATFORM_JOB_DOMAINS,
+  ...APPOINTMENT_DOMAINS,
+  'httpbingo.org',
 ];
 
 function readDeployment(): string {
@@ -90,7 +115,7 @@ function nginxLocation(source: string, declaration: string): string {
   return source.slice(start, end);
 }
 
-test('temporary no-auth browser-mcp has reviewed, server-defined workflow domain ceilings', () => {
+test('OAuth browser-mcp has reviewed, server-defined workflow domain ceilings', () => {
   const manifest = readDeployment();
   if (!manifest) return;
 
@@ -108,15 +133,15 @@ test('temporary no-auth browser-mcp has reviewed, server-defined workflow domain
   );
   assert.equal(
     envValue(manifest, 'BROWSER_MCP_REQUIRE_AUTH'),
-    'false',
-    'The temporary public posture must remain an explicit no-auth decision.',
+    'true',
+    'The public write-capable browser MCP must require OAuth.',
   );
 
   const domains = (value as string).split(',').map((domain) => domain.trim());
   assert.deepEqual(
     domains,
     REVIEWED_BROWSER_CEILING_DOMAINS,
-    'The no-auth production endpoint must contain only the reviewed workflow-profile union.',
+    'The OAuth production endpoint must contain only the reviewed workflow-profile union.',
   );
   assert.ok(
     domains.every(
@@ -148,11 +173,33 @@ test('temporary no-auth browser-mcp has reviewed, server-defined workflow domain
   );
   assert.match(
     manifest,
-    /"fiducia-applications":\["confluent\.cloud".*"fonts\.gstatic\.com"\]/,
+    /"benefactor-site":\["benefactor\.cc"\]/,
   );
-  assert.doesNotMatch(
+  assert.match(
     manifest,
-    /"benefactor-site"|"benefactor-prospect-audit"|"smoke-test"|benefactor\.cc|samsonconstruction\.com|awthome\.com|revduprenovations\.com|httpbingo\.org/,
+    /"smoke-test":\["httpbingo\.org"\]/,
+  );
+
+  const workflowJson = manifest.match(
+    /- name:\s*BROWSER_MCP_WORKFLOW_ALLOWLISTS_JSON\s*\n\s*value:\s*>-\s*\n\s*(\{[^\n]+\})/,
+  )?.[1];
+  assert.ok(workflowJson, 'missing folded Browser MCP workflow profile JSON');
+  const workflows = JSON.parse(workflowJson) as Record<string, string[]>;
+  assert.deepEqual(
+    workflows['platform-jobs'],
+    [...PLATFORM_JOB_DOMAINS],
+    'platform-jobs must be a reviewed, server-defined ATS-only profile.',
+  );
+  assert.deepEqual(
+    workflows.appointments,
+    [...APPOINTMENT_DOMAINS],
+    'appointments must remain a reviewed, server-defined scheduling-only profile.',
+  );
+  assert.ok(
+    ['linkedin.com', 'indeed.com', 'ziprecruiter.com'].every(
+      (domain) => !domains.includes(domain),
+    ),
+    'Broad job marketplaces must not be added to the Browser MCP navigation ceiling.',
   );
 
   const worker = readFileSync(resolve(repoRoot, WORKER_DEPLOYMENT), 'utf8');

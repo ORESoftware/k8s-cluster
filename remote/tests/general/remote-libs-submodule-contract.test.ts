@@ -139,16 +139,29 @@ test('tracked Rust and Gleam consumers resolve to the canonical generated packag
 test('CI and repository documentation preserve recursive pinned checkout semantics', () => {
   const repoRoot = findRepoRoot();
   const repoChecks = readFileSync(resolve(repoRoot, '.github/workflows/repo-checks.yml'), 'utf8');
+  const helper = readFileSync(resolve(repoRoot, 'scripts/ci/init-submodules-with-report.sh'), 'utf8');
   const docs = readFileSync(resolve(repoRoot, 'docs/remote-libs-submodule.md'), 'utf8');
   const submodules = readFileSync(resolve(repoRoot, 'SUBMODULES.md'), 'utf8');
 
-  assert.match(
-    repoChecks,
-    /Initialize required contract submodule[\s\S]{0,800}git submodule update --init --recursive --depth 1 -- remote\/libs/,
-    'Static contracts must recursively initialize the exact remote/libs gitlink.',
+  const staticJob = repoChecks.slice(
+    repoChecks.indexOf('  static-contracts:'),
+    repoChecks.indexOf('  backend-contracts:'),
   );
-  assert.match(docs, /REMOTE_DEV_GH_PAT/);
+  assert.match(staticJob, /K8S_LIBS_DEPLOY_KEY:\s*\$\{\{ secrets\.K8S_LIBS_DEPLOY_KEY \}\}/);
+  assert.match(staticJob, /ssh-key:\s*\$\{\{ secrets\.K8S_LIBS_DEPLOY_KEY \}\}/);
+  assert.match(staticJob, /SUBMODULE_AUTH_MODE:\s*ssh/);
+  assert.match(staticJob, /init-submodules-with-report\.sh remote\/libs/);
+  assert.doesNotMatch(staticJob, /REMOTE_DEV_GH_PAT/);
+
+  assert.match(helper, /git "\$\{git_config\[@\]\}" submodule update --init --recursive --depth 1 -- "\$path"/);
+  assert.match(helper, /git ls-files --stage -- "\$path"/);
+  assert.match(helper, /git -C "\$path" rev-parse HEAD/);
+  assert.match(helper, /pinned-commit-mismatch/);
+
+  assert.match(docs, /K8S_LIBS_DEPLOY_KEY/);
+  assert.match(docs, /init-submodules-with-report\.sh remote\/libs/);
   assert.match(docs, /git submodule update --init --recursive remote\/libs/);
+  assert.doesNotMatch(docs, /repo-checks\.yml` uses the[\s\S]{0,80}REMOTE_DEV_GH_PAT/);
   assert.match(
     submodules,
     /\| `remote\/libs` \| \[ORESoftware\/k8s-libs-and-shared-defs\]\(https:\/\/github\.com\/ORESoftware\/k8s-libs-and-shared-defs\) \| `main` \|/,
