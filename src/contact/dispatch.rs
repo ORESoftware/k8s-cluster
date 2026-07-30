@@ -1,17 +1,10 @@
 use std::sync::Arc;
 
 use serde::Serialize;
-use thiserror::Error;
 
 use super::contracts::{ContactJob, ContactOutcome, ContactProviderKind};
 use super::provider::{ContactProvider, ContactProviderError};
-use crate::provider::{ProviderReadiness, ProviderReadiness as Readiness};
-
-#[derive(Debug, Error)]
-pub enum ContactRegistryError {
-    #[error("provider kind does not match registry slot")]
-    KindMismatch,
-}
+use crate::provider::ProviderReadiness;
 
 #[derive(Clone, Default)]
 pub struct ContactProviderRegistry {
@@ -24,15 +17,12 @@ impl ContactProviderRegistry {
         Self::default()
     }
 
-    pub fn with_provider(
-        mut self,
-        provider: Arc<dyn ContactProvider>,
-    ) -> Result<Self, ContactRegistryError> {
+    pub fn with_provider(mut self, provider: Arc<dyn ContactProvider>) -> Self {
         match provider.kind() {
             ContactProviderKind::Sendgrid => self.sendgrid = Some(provider),
             ContactProviderKind::Twilio => self.twilio = Some(provider),
         }
-        Ok(self)
+        self
     }
 
     pub async fn dispatch(
@@ -75,7 +65,7 @@ impl ContactProviderRegistry {
 fn readiness(provider: Option<&Arc<dyn ContactProvider>>) -> ContactProviderReadinessView {
     provider
         .map(|provider| provider.readiness())
-        .unwrap_or_else(|| Readiness::not_ready("provider is not configured"))
+        .unwrap_or_else(|| ProviderReadiness::not_ready("provider is not configured"))
         .into()
 }
 
@@ -106,9 +96,7 @@ mod tests {
     use async_trait::async_trait;
 
     use super::*;
-    use crate::contact::contracts::{
-        ContactContent, ContactTarget, ContactTargetFingerprint,
-    };
+    use crate::contact::contracts::{ContactContent, ContactTarget};
     use crate::contracts::{ContractVersion, TraceMetadata};
 
     struct AcceptingProvider(ContactProviderKind);
@@ -158,8 +146,7 @@ mod tests {
     #[tokio::test]
     async fn dispatches_to_the_registered_provider() {
         let registry = ContactProviderRegistry::new()
-            .with_provider(Arc::new(AcceptingProvider(ContactProviderKind::Sendgrid)))
-            .expect("registry");
+            .with_provider(Arc::new(AcceptingProvider(ContactProviderKind::Sendgrid)));
         let outcome = registry.dispatch(&email_job()).await.expect("outcome");
         assert_eq!(outcome.provider, ContactProviderKind::Sendgrid);
         assert_eq!(outcome.provider_code.as_deref(), Some("accepted-id"));
@@ -170,6 +157,5 @@ mod tests {
         let readiness = ContactProviderRegistry::new().readiness();
         assert!(!readiness.sendgrid.configured);
         assert!(!readiness.twilio.configured);
-        let _ = ContactTargetFingerprint::clone;
     }
 }
