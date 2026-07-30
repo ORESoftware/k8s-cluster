@@ -90,9 +90,13 @@ jobs:
               raise SystemExit('forbidden database features enabled: ' + ', '.join(forbidden))
           PY
 
+      - name: Install the reviewed RustSec audit version
+        uses: taiki-e/install-action@c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd # v2.84.1
+        with:
+          tool: cargo-audit@0.22.2
+
       - name: Audit locked Rust dependency vulnerabilities
         run: |
-          cargo install cargo-audit --locked
           # RUSTSEC-2023-0071 affects private-key RSA operations. `rsa` appears in
           # Cargo.lock only through SQLx's MySQL package; this service disables
           # SeaORM defaults and enables only sqlx-postgres. The invariant above
