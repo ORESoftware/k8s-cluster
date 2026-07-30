@@ -31,10 +31,7 @@ impl ContactProvider for TaggedContactProvider {
         ProviderReadiness::ready()
     }
 
-    async fn send(
-        &self,
-        job: &ContactJob,
-    ) -> Result<ContactOutcome, ContactProviderError> {
+    async fn send(&self, job: &ContactJob) -> Result<ContactOutcome, ContactProviderError> {
         Ok(ContactOutcome::accepted(job, Some(self.code.to_owned())))
     }
 }
@@ -54,10 +51,7 @@ impl ContactProvider for BlockingContactProvider {
         ProviderReadiness::ready()
     }
 
-    async fn send(
-        &self,
-        job: &ContactJob,
-    ) -> Result<ContactOutcome, ContactProviderError> {
+    async fn send(&self, job: &ContactJob) -> Result<ContactOutcome, ContactProviderError> {
         self.started.notify_waiters();
         self.release.notified().await;
         Ok(ContactOutcome::accepted(job, Some("drained".to_owned())))
@@ -196,10 +190,7 @@ async fn real_socket_contact_routes_email_and_sms_without_recipient_leakage() {
         response_json["outcomes"][0]["provider_code"],
         "sendgrid-mock"
     );
-    assert_eq!(
-        response_json["outcomes"][1]["provider_code"],
-        "twilio-mock"
-    );
+    assert_eq!(response_json["outcomes"][1]["provider_code"], "twilio-mock");
 
     let mut mismatched = email_job("job-mismatch", email_address);
     mismatched.provider = ContactProviderKind::Twilio;
@@ -259,8 +250,14 @@ async fn graceful_shutdown_drains_an_in_flight_contact_request() {
         .expect("contact provider did not start");
     shutdown.send(()).expect("signal graceful shutdown");
     sleep(Duration::from_millis(100)).await;
-    assert!(!request.is_finished(), "contact request ended before release");
-    assert!(!server.is_finished(), "server did not drain contact request");
+    assert!(
+        !request.is_finished(),
+        "contact request ended before release"
+    );
+    assert!(
+        !server.is_finished(),
+        "server did not drain contact request"
+    );
 
     provider.release.notify_waiters();
     let response = timeout(Duration::from_secs(5), request)
