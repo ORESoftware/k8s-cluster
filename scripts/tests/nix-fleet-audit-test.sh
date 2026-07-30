@@ -6,7 +6,12 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 tmp_dir="$(mktemp -d)"
-trap 'rm -rf "$tmp_dir"' EXIT
+cleanup() {
+	if [[ -d "$tmp_dir" ]]; then
+		find "$tmp_dir" -depth -delete
+	fi
+}
+trap cleanup EXIT
 
 mock_gh="$tmp_dir/gh"
 cat >"$mock_gh" <<'EOF'

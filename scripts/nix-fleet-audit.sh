@@ -154,7 +154,12 @@ require_command "$JQ_BIN"
 
 mkdir -p "$output_dir"
 tmp_dir="$(mktemp -d)"
-trap 'rm -rf "$tmp_dir"' EXIT
+cleanup() {
+	if [[ -d "$tmp_dir" ]]; then
+		find "$tmp_dir" -depth -delete
+	fi
+}
+trap cleanup EXIT
 jsonl="$tmp_dir/repositories.jsonl"
 : >"$jsonl"
 
