@@ -30,7 +30,6 @@ use serde::de::DeserializeOwned;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct JsonBody<T>(pub T);
 
-#[axum::async_trait]
 impl<T, S> FromRequest<S> for JsonBody<T>
 where
     T: DeserializeOwned,
