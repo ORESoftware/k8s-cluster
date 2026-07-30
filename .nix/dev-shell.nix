@@ -19,7 +19,7 @@ let
       kubectl
       kustomize
       kubernetes-helm
-      nixfmt-rfc-style
+      nixfmt
       nodejs_22
       opentofu
       pnpm_10

@@ -18,7 +18,7 @@
       pkgsFor = system: import nixpkgs { inherit system; };
     in
     {
-      formatter = forAllSystems (system: (pkgsFor system).nixfmt-rfc-style);
+      formatter = forAllSystems (system: (pkgsFor system).nixfmt);
 
       packages = forAllSystems (
         system:
@@ -30,7 +30,7 @@
               actionlint
               git
               nix
-              nixfmt-rfc-style
+              nixfmt
               shellcheck
               shfmt
             ];
