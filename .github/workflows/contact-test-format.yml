@@ -1,0 +1,31 @@
+name: Contact test formatting
+
+on:
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Apply rustfmt
+        run: cargo fmt
+      - name: Commit formatted contact test
+        run: |
+          if git diff --quiet -- tests/contact_process.rs; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/contact_process.rs
+          git commit -m "Normalize contact process test formatting"
+          git push origin "HEAD:${{ github.head_ref }}"
