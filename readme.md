@@ -16,6 +16,9 @@ Individual app repos keep their own visibility boundaries; see
 
 The fleet reliability contract for Raft, NATS, and telemetry is
 [`docs/messaging-consensus-observability.md`](docs/messaging-consensus-observability.md).
+The verified state-machine inventory and `formal/fm.toml`/`fmctl` contract are
+documented in
+[`docs/formal-methods-state-machines.md`](docs/formal-methods-state-machines.md).
 
 ## Clone
 

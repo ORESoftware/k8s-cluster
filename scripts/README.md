@@ -28,3 +28,8 @@ scripts are `bash`, start with `set -euo pipefail`, never `git push`, and offer
   Normal CI uses `public`; protected fleet audit and production promotion use
   `full`, which also verifies the private application consumers with their
   explicitly pinned Rust toolchains.
+- `check-formal-methods-manifests.py [--scope public|fleet] [--self-test]` —
+  validates every Fiducia schema-v1 `fmctl` manifest at the exact reviewed
+  gitlink. It checks default and explicit secondary manifests, strict fields,
+  source/adapter paths, toolchain tokens, bounded execution settings, and
+  exercises fail-closed negative cases with `--self-test`.
