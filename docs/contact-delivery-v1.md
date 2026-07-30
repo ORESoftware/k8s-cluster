@@ -129,6 +129,10 @@ Twilio:
 
 Partially configured providers fail startup instead of silently accepting requests that cannot be delivered.
 
+## Provider activation acceptance
+
+Before enabling a live lane, exercise the exact release image with SendGrid sandbox mode or Twilio test credentials and prove invalid targets, throttling, provider failures, retry delays, and duplicate idempotency keys remain normalized without recipient data in logs or outcomes. Then run one approved live canary to an operator-controlled address or number, verify the provider request identifier is recorded, and continue treating it only as provider acceptance until the separate signature-verified callback pipeline reports final state.
+
 ## Security invariants
 
 - Recipient email addresses and phone numbers never appear in normalized outcomes.
