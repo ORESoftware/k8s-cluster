@@ -12,7 +12,7 @@ spec:
   source:
     repoURL: https://github.com/ORESoftware/k8s-cluster.git
     targetRevision: dev
-    path: remote/argocd/ai-agent-coordinator-platform
+    path: remote/argocd/projects/ai-agent-coordinator
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
