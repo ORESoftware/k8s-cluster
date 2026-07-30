@@ -102,18 +102,34 @@ Each directory also has its own `README.md` describing what lives there.
 
 ## Things to wire up before launch
 
-- Configure the store listing URLs and R2 custom-domain base URL in the site
-  deployment environment; never link to unsigned or unreviewed artifacts.
-- GitHub links point to `github.com/sonus-auris/sonus-auris` — update if the
-  org/repo name differs.
-- `astro.config.mjs` `site` — set to the real production domain.
-- `Partners.astro` — the footer row now shows **neutral capability badges**
-  (Sound matching, Sleep & snore, Music capture, Clear audio), NOT third-party
+Still open:
+
+- Configure the store listing and download URLs in the site deployment
+  environment — `PUBLIC_APP_STORE_URL`, `PUBLIC_PLAY_STORE_URL`, and
+  `PUBLIC_DOWNLOAD_{BASE,WINDOWS,MACOS,LINUX}_URL`, all read by
+  `StoreButtons.astro`. Never link to unsigned or unreviewed artifacts.
+
+Standing rules, not tasks:
+
+- `Partners.astro` — the footer row shows **neutral capability badges** (Sound
+  matching, Sleep & snore, Music capture, Clear audio), NOT third-party
   endorsements. Do not reintroduce real organisation/brand names without written
   permission — that would imply an affiliation Sonus Auris does not have.
-- Legal pages (`privacy.astro`, `account-deletion.astro`) have placeholder
-  legal-entity name, contact email, and postal address to fill before store
-  submission; a visible "Before publishing" banner shows while placeholders remain.
+- The publisher identity that the legal pages render lives in one place,
+  `src/data/publisher.ts`. Keep it accurate: App Review and the Play Console
+  both check that a privacy policy names a real controller and a reachable
+  contact.
+
+Already done (this section previously said otherwise):
+
+- Legal-entity name, contact email, and postal address are filled in via
+  `src/data/publisher.ts`, and the "Before publishing" banner is gone. The
+  `tests/site/legal.test.mjs` release gate in `sonus-auris-e2e` no longer has
+  placeholders to find — verified against the built `dist/` HTML.
+- `astro.config.mjs` `site` resolves to the production domain
+  (`requestedSite || productionSite`), overridable per build.
+- GitHub links point at `github.com/sonus-auris/sonus-auris-ui.dart`, which
+  exists; the old note here named a repo that does not.
 
 ## Theme
 
