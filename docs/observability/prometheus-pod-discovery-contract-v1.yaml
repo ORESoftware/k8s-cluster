@@ -28,7 +28,8 @@ security:
   automount_service_account_token: false
   projected_token:
     mount_path: /var/run/secrets/prometheus-discovery/token
-    audience: https://kubernetes.default.svc.cluster.local
+    audience_source: api-server-default
+    custom_audience_configured: false
     expiration_seconds: 3600
   allowed_api_access:
     core:
