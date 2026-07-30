@@ -44,9 +44,8 @@ alter table communications.suppressions enable row level security;
 alter table communications.outbox enable row level security;
 
 -- Clients register endpoints through the authenticated service API so plaintext
--- targets can be validated and encrypted before persistence. This SELECT policy
--- exists only for the sanitized endpoint_summary view; the table itself is never
--- granted to ordinary clients.
+-- targets can be validated and encrypted before persistence. This policy is a
+-- defense-in-depth boundary; ordinary clients receive no table grant.
 drop policy if exists endpoints_owner_select on communications.endpoints;
 create policy endpoints_owner_select
   on communications.endpoints
@@ -129,8 +128,11 @@ create policy suppressions_owner_select
     )
   );
 
+-- Views intentionally remain security-definer (the PostgreSQL default), with a
+-- security barrier and an explicit caller-JWT predicate. That lets clients query
+-- a redacted projection without granting direct access to ciphertext tables.
 create or replace view communications.endpoint_summaries
-with (security_invoker = true)
+with (security_barrier = true)
 as
 select
   id,
@@ -153,10 +155,11 @@ select
   status,
   created_at,
   updated_at
-from communications.endpoints;
+from communications.endpoints
+where communications.owns_identity(shared_user_id, supabase_user_id);
 
 create or replace view communications.user_communication_history
-with (security_invoker = true)
+with (security_barrier = true)
 as
 select
   j.id as job_id,
@@ -191,7 +194,8 @@ select
   a.accepted_at as attempt_accepted_at,
   a.completed_at as attempt_completed_at
 from communications.jobs j
-left join communications.attempts a on a.job_id = j.id;
+left join communications.attempts a on a.job_id = j.id
+where communications.owns_identity(j.shared_user_id, j.supabase_user_id);
 
 revoke all on schema communications from public;
 revoke all on all tables in schema communications from public;
