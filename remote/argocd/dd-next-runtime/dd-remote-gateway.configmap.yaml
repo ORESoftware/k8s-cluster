@@ -34,8 +34,8 @@ data:
       1 "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
     }
 
-    # Dedicated read-only MCP bearer token. Scoped to /mcp and /cluster-mcp
-    # only (enforced in those location blocks) so local IDE MCP clients
+    # Dedicated read-only MCP bearer token. Scoped to the three MCP routes
+    # (enforced in those location blocks) so local IDE MCP clients
     # (Cursor, VS Code, Codex) authenticate with a narrow, revocable
     # credential instead of the master operator cookie value. Sourced from the
     # dd-mcp-gateway-token secret (AWS dd/remote-dev/mcp-gateway-token). The
@@ -866,6 +866,7 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         # Never forward the MCP bearer token to the read-only upstream pod.
         proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /cluster-mcp;
@@ -886,6 +887,7 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         # Never forward the MCP bearer token to the read-only upstream pod.
         proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /cluster-mcp;
@@ -906,6 +908,7 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         # Never forward the MCP bearer token to the read-only upstream pod.
         proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /mcp;
@@ -925,24 +928,23 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         # Never forward the MCP bearer token to the read-only upstream pod.
         proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /mcp;
         proxy_pass http://dd-gleam-mcp-server.default.svc.cluster.local:8090/;
       }
 
-      # Public browser-automation MCP server (dd-browser-mcp-rs). Exposes the
-      # browser_act / browser_observe tools to external MCP clients (ChatGPT,
-      # Claude). DELIBERATELY PUBLIC for now: no $dd_mcp_auth_ok gate. To gate it
-      # later, add `if ($dd_mcp_auth_ok = 0) { return 401; }` (as the /mcp and
-      # /cluster-mcp blocks do) and switch to `proxy_set_header Authorization "";`.
-      #
-      # Unlike the read-only MCP servers, the client Authorization header IS
-      # forwarded: dd-browser-mcp-rs treats it as an opaque per-caller ownership
-      # key (to namespace sessions), not as a credential, while REQUIRE_AUTH=false.
+      # Browser automation is stateful and higher impact than the read-only MCP
+      # servers, so it uses the same operator/read-only gateway gate. The caller
+      # Authorization header remains an opaque per-caller ownership key; a
+      # separate cluster secret is injected in X-Server-Auth for backend auth.
       # proxy_buffering is off so MCP-over-HTTP responses flush without gateway
       # buffering, and gzip is disabled on this path for the same reason.
       location = /browser-mcp {
+        if ($dd_mcp_auth_ok = 0) {
+          return 401;
+        }
         limit_req zone=dd_mcp burst=60 nodelay;
         limit_req_status 429;
         proxy_http_version 1.1;
@@ -955,11 +957,15 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Prefix /browser-mcp;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         set $dd_browser_mcp_upstream dd-browser-mcp-rs.default.svc.cluster.local:8092;
         proxy_pass http://$dd_browser_mcp_upstream/mcp;
       }
 
       location /browser-mcp/ {
+        if ($dd_mcp_auth_ok = 0) {
+          return 401;
+        }
         limit_req zone=dd_mcp burst=60 nodelay;
         limit_req_status 429;
         proxy_http_version 1.1;
@@ -972,6 +978,7 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Prefix /browser-mcp;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         set $dd_browser_mcp_upstream dd-browser-mcp-rs.default.svc.cluster.local:8092;
         proxy_pass http://$dd_browser_mcp_upstream/;
       }

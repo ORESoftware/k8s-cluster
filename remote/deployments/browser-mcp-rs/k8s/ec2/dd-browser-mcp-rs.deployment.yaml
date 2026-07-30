@@ -98,18 +98,15 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
-                  optional: true
-            # In-pod bearer gate on POST /mcp. OFF for now: the service is
-            # deliberately public (auth is enforced later at the gateway). Flip
-            # to 'true' and set BROWSER_MCP_AUTH_SECRET to require a bearer.
+            # Defense in depth behind the gateway: POST /mcp also requires the
+            # shared server credential injected by the gateway as X-Server-Auth.
             - name: BROWSER_MCP_REQUIRE_AUTH
-              value: 'false'
+              value: 'true'
             - name: BROWSER_MCP_AUTH_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: dd-browser-mcp-rs-secrets
-                  key: BROWSER_MCP_AUTH_SECRET
-                  optional: true
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
             # Server-side domain allowlist injected AUTHORITATIVELY into every
             # browser_act call (overwrites any caller-supplied allowed_domains).
             # Empty = any public https host (SSRF to private/metadata addresses

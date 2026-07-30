@@ -122,6 +122,111 @@ test("cluster MCP Rust server hardens MCP request and response boundaries", asyn
   assert.match(pdb, /minAvailable:\s*1/);
 });
 
+test("all public and backend MCP hops require authentication", async () => {
+  const gateway = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml",
+  );
+  const clusterDeployment = await readRepoFile(
+    "remote/deployments/cluster-mcp-rs/k8s/ec2/dd-cluster-mcp-rs.deployment.yaml",
+  );
+  const gleamDeployment = await readRepoFile(
+    "remote/deployments/gleam-mcp-server/k8s/ec2/dd-gleam-mcp-server.deployment.yaml",
+  );
+  const browserDeployment = await readRepoFile(
+    "remote/deployments/browser-mcp-rs/k8s/ec2/dd-browser-mcp-rs.deployment.yaml",
+  );
+  const agentEnv = await readRepoFile(
+    "remote/deployments/dev-server/src/agents/index.ts",
+  );
+  const clusterMcpClient = await readRepoFile(
+    "remote/deployments/dev-server/src/agents/cluster-mcp.ts",
+  );
+  const claudeClient = await readRepoFile(
+    "remote/deployments/dev-server/src/agents/claude-sdk.ts",
+  );
+  const openaiClient = await readRepoFile(
+    "remote/deployments/dev-server/src/agents/openai-sdk.ts",
+  );
+
+  for (const path of ["/cluster-mcp", "/mcp", "/browser-mcp"]) {
+    const escapedPath = path.replace("/", "\\/");
+    assert.match(
+      gateway,
+      new RegExp(
+        `location\\s+=\\s+${escapedPath}\\s*\\{[\\s\\S]*?if \\(\\$dd_mcp_auth_ok = 0\\)[\\s\\S]*?proxy_set_header X-Server-Auth "\\$\\{DD_REMOTE_DEV_SERVER_AUTH_VALUE\\}"`,
+      ),
+      `${path} must be gateway-authenticated and use a separate backend credential`,
+    );
+  }
+
+  for (const deployment of [clusterDeployment, gleamDeployment]) {
+    assert.match(deployment, /name:\s*MCP_REQUIRE_AUTH[\s\S]*value:\s*'true'/);
+    assert.match(
+      deployment,
+      /name:\s*MCP_AUTH_SECRET[\s\S]*name:\s*dd-agent-secrets[\s\S]*key:\s*SERVER_AUTH_SECRET/,
+    );
+  }
+  assert.match(
+    browserDeployment,
+    /name:\s*BROWSER_MCP_REQUIRE_AUTH[\s\S]*value:\s*'true'/,
+  );
+  assert.match(
+    browserDeployment,
+    /name:\s*BROWSER_MCP_AUTH_SECRET[\s\S]*name:\s*dd-agent-secrets[\s\S]*key:\s*SERVER_AUTH_SECRET/,
+  );
+
+  assert.match(agentEnv, /base\.AGENT_MCP_AUTH_SECRET = agentMcpAuthSecret/);
+  assert.match(clusterMcpClient, /'x-server-auth': secret/);
+  assert.match(claudeClient, /headers:\s*clusterMcpAuthHeadersFromEnv\(env\)/);
+  assert.match(openaiClient, /requestInit:\s*authHeaders \? \{ headers: authHeaders \} : undefined/);
+});
+
+test("AI agent bridge is authenticated, observable, isolated, and disruption-protected", async () => {
+  const deployment = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-ai-agent-bridge.deployment.yaml",
+  );
+  const networkPolicy = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-ai-agent-bridge.networkpolicy.yaml",
+  );
+  const pdb = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-ai-agent-bridge.pdb.yaml",
+  );
+  const kustomization = await readRepoFile(
+    "remote/argocd/dd-next-runtime/kustomization.yaml",
+  );
+
+  assert.match(deployment, /automountServiceAccountToken:\s*false/);
+  assert.match(deployment, /enableServiceLinks:\s*false/);
+  assert.match(
+    deployment,
+    /name:\s*API_AUTH_BEARER[\s\S]*name:\s*dd-agent-secrets[\s\S]*key:\s*SERVER_AUTH_SECRET/,
+  );
+  assert.match(
+    deployment,
+    /name:\s*AI_AGENT_BRIDGE_TOKEN[\s\S]*name:\s*dd-agent-secrets[\s\S]*key:\s*SERVER_AUTH_SECRET/,
+  );
+  assert.doesNotMatch(deployment, /name:\s*dd-ai-agent-bridge-secrets/);
+  assert.match(deployment, /name:\s*OTEL_SERVICE_NAME[\s\S]*value:\s*dd-ai-agent-bridge/);
+  assert.match(
+    deployment,
+    /name:\s*OTEL_EXPORTER_OTLP_ENDPOINT[\s\S]*dd-otel-collector\.observability\.svc\.cluster\.local:4318/,
+  );
+  assert.match(deployment, /ephemeral-storage:\s*1Gi/);
+  assert.match(deployment, /ephemeral-storage:\s*8Gi/);
+  assert.match(networkPolicy, /kind:\s*NetworkPolicy/);
+  assert.match(networkPolicy, /app:\s*dd-dev-server-api/);
+  assert.match(networkPolicy, /app:\s*dd-agent-worker-broker/);
+  assert.match(networkPolicy, /cidr:\s*172\.31\.0\.0\/16/);
+  assert.match(networkPolicy, /port:\s*8142/);
+  assert.match(networkPolicy, /port:\s*8143/);
+  assert.match(networkPolicy, /port:\s*4318/);
+  assert.match(networkPolicy, /169\.254\.0\.0\/16/);
+  assert.match(pdb, /kind:\s*PodDisruptionBudget/);
+  assert.match(pdb, /minAvailable:\s*1/);
+  assert.match(kustomization, /dd-ai-agent-bridge\.networkpolicy\.yaml/);
+  assert.match(kustomization, /dd-ai-agent-bridge\.pdb\.yaml/);
+});
+
 test("dd-idle-reaper has additive baseline securityContext", async () => {
   const reaper = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-idle-reaper.deployment.yaml",

@@ -23,12 +23,13 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/ai-agent-bridge-revision: 'in-memory-default+http-sse+tcp-jsonl+32-cap+embedding-topics'
+        dd.dev/ai-agent-bridge-revision: '2026-07-30-auth-otel-network-hardening'
       labels:
         app: dd-ai-agent-bridge
     spec:
       automountServiceAccountToken: false
-      terminationGracePeriodSeconds: 20
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
       securityContext:
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
@@ -105,17 +106,32 @@ spec:
               value: json
             - name: RUST_LOG
               value: info,ai_agent_bridge=info,hyper=warn,reqwest=warn
+            # The binary refuses a non-loopback bind without this global bearer.
+            # Reuse the cluster's required server-to-server credential so every
+            # non-health HTTP route and every TCP connection fails closed.
+            - name: API_AUTH_BEARER
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+            - name: OTEL_SERVICE_NAME
+              value: dd-ai-agent-bridge
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: http/protobuf
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: service.namespace=default,deployment.environment=remote-dev
             # claude-inbox backward-compat (supersedes the old ai-agent-bridge-rs):
-            # inbox.jsonl lives on the writable tmp mount; the POST /claude bearer
-            # is optional (open when the secret/key is absent).
+            # inbox.jsonl lives on the writable tmp mount. Use the same required
+            # bearer as the global API so the legacy route cannot drift open.
             - name: AI_AGENT_BRIDGE_DIR
               value: /tmp/claude_bridge
             - name: AI_AGENT_BRIDGE_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: dd-ai-agent-bridge-secrets
-                  key: inbox_token
-                  optional: true
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
             # In-cluster embedder is optional — the built-in deterministic local
             # embedder is used when this is unset. Enable once the endpoint/contract
             # is confirmed:
@@ -155,9 +171,11 @@ spec:
             requests:
               cpu: '50m'
               memory: 512Mi
+              ephemeral-storage: 1Gi
             limits:
               cpu: '2'
               memory: 3Gi
+              ephemeral-storage: 8Gi
           startupProbe:
             httpGet:
               path: /healthz

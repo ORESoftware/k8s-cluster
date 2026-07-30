@@ -5,4 +5,6 @@ resources:
   - namespace.yaml
   - nats.configmap.yaml
   - nats.deployment.yaml
+  - nats.networkpolicy.yaml
+  - nats.pdb.yaml
   - nats.service.yaml
