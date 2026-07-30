@@ -1,0 +1,7 @@
+[advisories]
+# RUSTSEC-2023-0071 has no patched `rsa` release. In this PostgreSQL-only service,
+# rsa 0.9.10 is inactive Cargo.lock metadata whose sole reverse parent is
+# sqlx-mysql; it is neither a root dependency nor present in Cargo's resolved
+# all-target, all-feature graph. DEN-538 tracks removing that metadata.
+# agent-check verifies every constraint above before applying this exception.
+ignore = ["RUSTSEC-2023-0071"]

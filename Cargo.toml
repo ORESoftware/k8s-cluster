@@ -28,7 +28,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"]
 
 # Explicit observability: JSON stdout is collected by Loki, request metrics are
 # scraped by Prometheus, and tracing spans are exported over OTLP/HTTP.
-prometheus = "0.13"
+# Prometheus 0.14 pulls protobuf 3.7.2+, which fixes RUSTSEC-2024-0437.
+prometheus = "0.14"
 tracing-opentelemetry = "0.33"
 opentelemetry = { version = "0.32", default-features = false, features = ["trace"] }
 opentelemetry_sdk = { version = "0.32", default-features = false, features = ["trace"] }
