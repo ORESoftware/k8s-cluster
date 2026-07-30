@@ -1,0 +1,100 @@
+name: DEN-675 bridge metrics route contract
+
+on:
+  push:
+    branches:
+      - agent/den-675-metrics-route-contract
+
+permissions:
+  contents: write
+
+jobs:
+  apply-validate-and-clean:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Add the focused router contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/http.rs")
+          source = path.read_text(encoding="utf-8")
+          marker = "    async fn metrics_route_is_prometheus_and_content_free()"
+          if marker in source:
+              raise SystemExit("metrics route test already exists")
+          prefix, closing = source.rsplit("\n}", 1)
+          test = r'''
+
+    #[tokio::test]
+    async fn metrics_route_is_prometheus_and_content_free() {
+        let s = state();
+        s.metrics.publishes.with_label_values(&["ok"]).inc();
+        s.metrics
+            .deliveries
+            .with_label_values(&["shared-auth.events.identity", "ok"])
+            .inc();
+        let app = router(s);
+        let response = app
+            .oneshot(
+                axum::http::Request::get("/metrics")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.starts_with("text/plain")));
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains("shared_auth_bridge_publishes_total"));
+        assert!(body.contains("shared_auth_bridge_deliveries_total"));
+        for forbidden_label in [
+            "email=",
+            "identity=",
+            "jwt=",
+            "token=",
+            "token_prefix=",
+            "url=",
+        ] {
+            assert!(!body.contains(forbidden_label));
+        }
+    }
+'''
+          path.write_text(prefix + test + "\n}" + closing, encoding="utf-8")
+          PY
+          cargo fmt --all
+          git diff --check
+      - name: Validate
+        run: |
+          cargo test --locked --all-targets
+          cargo clippy --locked --all-targets -- -D warnings
+      - name: Remove bootstrap and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/den-675-metrics-route.yml
+          git diff --check
+          changed="$(git diff --name-only)"
+          test "$changed" = "src/http.rs" || {
+            echo "unexpected final diff:" >&2
+            printf '%s\n' "$changed" >&2
+            exit 1
+          }
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/http.rs .github/workflows/den-675-metrics-route.yml
+          git commit -m 'test(DEN-675): prove bridge metrics route contract'
+          git push origin HEAD:agent/den-675-metrics-route-contract
