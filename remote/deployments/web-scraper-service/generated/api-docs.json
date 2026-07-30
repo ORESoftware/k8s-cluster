@@ -1,214 +1,142 @@
 {
-  "ok": true,
-  "generatedBy": "remote/tools/generate-api-docs.mjs",
-  "service": "web-scraper-service",
-  "language": "node",
-  "routeCount": 13,
-  "routeTypeCounts": {
-    "service": 8,
-    "user-generated": 5
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "web-scraper-service API (public)",
+    "version": "0.1.0",
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
   },
-  "standardDocsRoutes": [
+  "tags": [
+    {
+      "name": "service"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "web_scraper_service_get_e9c5d58c2cbb",
+        "summary": "Service descriptor, home redirect, or root RPC endpoint.",
+        "description": "Service descriptor, home redirect, or root RPC endpoint.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "web_scraper_service_get_api_docs_3d27f67cf9c4",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "web_scraper_service_get_api_docs_json_9a7f22089c74",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "web_scraper_service_get_docs_api_b306c86d9e90",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "web_scraper_service_get_healthz_5ee24827c557",
+        "summary": "Health check.",
+        "description": "Health check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "web_scraper_service_get_metrics_68ade9a283db",
+        "summary": "Prometheus metrics.",
+        "description": "Prometheus metrics.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    }
+  },
+  "components": {},
+  "x-dd-contract-scope": "public",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "node",
+  "x-dd-operation-count": 6,
+  "x-dd-route-count": 6,
+  "x-dd-service": "web-scraper-service",
+  "x-dd-standard-docs-routes": [
     "/docs/api",
     "/api/docs",
     "/api/docs.json"
-  ],
-  "routes": [
-    {
-      "path": "/",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/web-scraper-service/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/docs",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Human-readable generated API documentation.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/web-scraper-service/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/api/docs.json",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Machine-readable generated API route metadata.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/web-scraper-service/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/docs/api",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Human-readable generated API documentation.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/web-scraper-service/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/healthz",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Health check.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/web-scraper-service/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/metrics",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Prometheus metrics.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/web-scraper-service/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/scrape",
-      "methods": [
-        "GET",
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/web-scraper-service/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/scrape/healthz",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "service-defined",
-      "purpose": "Health check.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/web-scraper-service/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/scrape/metrics",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "service-defined",
-      "purpose": "Prometheus metrics.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/web-scraper-service/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/scrape/status",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/web-scraper-service/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/scrape/strategies",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/web-scraper-service/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/status",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/web-scraper-service/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/strategies",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/web-scraper-service/src/server.ts"
-      ],
-      "notes": ""
-    }
   ]
 }

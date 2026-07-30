@@ -140,6 +140,11 @@ and `/healthz` are anonymous. Before relying on it, confirm:
    `visible_text.untrusted_content`; page titles are kept out of the model's
    text/summary stream.
 
+The binary also supports `BROWSER_MCP_REQUIRE_AUTH=false` for isolated local or
+disposable compatibility tests. That mode advertises `{"type":"noauth"}` in
+`tools/list`; it must not be used on the public AWS or Hetzner write-capable
+edges.
+
 ## Endpoints
 
 | Path                                        | Method     | Notes                                      |

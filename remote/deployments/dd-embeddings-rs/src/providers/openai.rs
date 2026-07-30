@@ -11,8 +11,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::{
-    validate_input, EmbedRequest, EmbedResponse, Embedding, EmbeddingProvider, ProviderError,
-    Usage,
+    validate_input, EmbedRequest, EmbedResponse, Embedding, EmbeddingProvider, ProviderError, Usage,
 };
 
 #[derive(Clone, Copy)]
@@ -48,7 +47,11 @@ pub fn default_specs() -> Vec<OpenAiSpec> {
             id: "openai",
             base_url: "https://api.openai.com/v1",
             default_model: "text-embedding-3-small",
-            models: &["text-embedding-3-small", "text-embedding-3-large", "text-embedding-ada-002"],
+            models: &[
+                "text-embedding-3-small",
+                "text-embedding-3-large",
+                "text-embedding-ada-002",
+            ],
             key_env: "OPENAI_API_KEY",
             auth: Auth::Bearer,
             supports_dimensions: true,
@@ -78,7 +81,10 @@ pub fn default_specs() -> Vec<OpenAiSpec> {
             id: "together",
             base_url: "https://api.together.xyz/v1",
             default_model: "BAAI/bge-large-en-v1.5",
-            models: &["BAAI/bge-large-en-v1.5", "togethercomputer/m2-bert-80M-8k-retrieval"],
+            models: &[
+                "BAAI/bge-large-en-v1.5",
+                "togethercomputer/m2-bert-80M-8k-retrieval",
+            ],
             key_env: "TOGETHER_API_KEY",
             auth: Auth::Bearer,
             supports_dimensions: false,
@@ -118,7 +124,8 @@ pub fn default_specs() -> Vec<OpenAiSpec> {
             id: "azure",
             // Set AZURE_OPENAI_BASE_URL to the full resource path; this default
             // is a placeholder that won't resolve without configuration.
-            base_url: "https://YOUR-RESOURCE.openai.azure.com/openai/deployments/text-embedding-3-small",
+            base_url:
+                "https://YOUR-RESOURCE.openai.azure.com/openai/deployments/text-embedding-3-small",
             default_model: "text-embedding-3-small",
             models: &["text-embedding-3-small", "text-embedding-3-large"],
             key_env: "AZURE_OPENAI_API_KEY",
@@ -173,7 +180,11 @@ pub fn default_specs() -> Vec<OpenAiSpec> {
             // GitHub Models (OpenAI-compatible inference endpoint).
             base_url: "https://models.inference.ai.azure.com",
             default_model: "text-embedding-3-small",
-            models: &["text-embedding-3-small", "text-embedding-3-large", "cohere-embed-v3-english"],
+            models: &[
+                "text-embedding-3-small",
+                "text-embedding-3-large",
+                "cohere-embed-v3-english",
+            ],
             key_env: "GITHUB_MODELS_TOKEN",
             auth: Auth::Bearer,
             supports_dimensions: true,
@@ -240,7 +251,12 @@ impl OpenAiCompatible {
         // endpoints) via `<ID_UPPER>_BASE_URL`.
         let override_env = format!("{}_BASE_URL", spec.id.to_uppercase());
         let base_url = std::env::var(override_env).unwrap_or_else(|_| spec.base_url.to_string());
-        Self { spec, api_key, http, base_url }
+        Self {
+            spec,
+            api_key,
+            http,
+            base_url,
+        }
     }
 }
 
@@ -281,7 +297,10 @@ impl EmbeddingProvider for OpenAiCompatible {
 
     async fn embed(&self, req: &EmbedRequest) -> Result<EmbedResponse, ProviderError> {
         validate_input(req)?;
-        let model = req.model.clone().unwrap_or_else(|| self.spec.default_model.to_string());
+        let model = req
+            .model
+            .clone()
+            .unwrap_or_else(|| self.spec.default_model.to_string());
 
         let mut body = json!({
             "model": model,
@@ -325,7 +344,10 @@ impl EmbeddingProvider for OpenAiCompatible {
         let mut embeddings: Vec<Embedding> = parsed
             .data
             .into_iter()
-            .map(|d| Embedding { index: d.index, vector: d.embedding })
+            .map(|d| Embedding {
+                index: d.index,
+                vector: d.embedding,
+            })
             .collect();
         embeddings.sort_by_key(|e| e.index);
 

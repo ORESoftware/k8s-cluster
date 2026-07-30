@@ -1,0 +1,44 @@
+name: Inspect Google Chat clasp deployment
+
+on:
+  pull_request:
+    paths:
+      - .github/chat-relay-trigger/**
+      - .github/workflows/inspect-google-chat-clasp-run.yml
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+jobs:
+  inspect:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      RELAY_ISSUE: '86'
+    steps:
+      - name: Fetch latest main deployment run and publish sanitized status
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          runs="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/google-chat-apps-script-sync.yml/runs?branch=main&event=push&per_page=10")"
+          run_id="$(jq -r '.workflow_runs[0].id // empty' <<<"$runs")"
+          test -n "$run_id" || {
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/issues/${RELAY_ISSUE}/comments" \
+              -f body='CLASP_RUN_DIAGNOSTIC no main push run found' >/dev/null
+            exit 0
+          }
+
+          run_summary="$(jq -c '.workflow_runs[0] | {id,name,status,conclusion,event,head_sha,created_at,updated_at,html_url}' <<<"$runs")"
+          jobs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100")"
+          job_summary="$(jq -c '[.jobs[] | {name,status,conclusion,steps:[.steps[]? | {name,status,conclusion}]}]' <<<"$jobs")"
+          body="CLASP_RUN_DIAGNOSTIC run=${run_summary} jobs=${job_summary}"
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${RELAY_ISSUE}/comments" \
+            -f body="$body" >/dev/null

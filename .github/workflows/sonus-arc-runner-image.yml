@@ -1,0 +1,80 @@
+name: Sonus Auris ARC runner image
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "remote/deployments/sonus-auris-ci-runner/**"
+      - ".github/workflows/sonus-arc-runner-image.yml"
+  push:
+    branches: [main]
+    paths:
+      - "remote/deployments/sonus-auris-ci-runner/**"
+      - ".github/workflows/sonus-arc-runner-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonus-arc-runner-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-without-publishing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Capture the pinned runner image build
+        id: build
+        shell: bash
+        run: |
+          set +e
+          docker build \
+            --progress=plain \
+            --pull \
+            --file remote/deployments/sonus-auris-ci-runner/Dockerfile \
+            --tag sonus-auris-ci-runner:ci \
+            . > "$RUNNER_TEMP/sonus-runner-build.log" 2>&1
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          tail -n 160 "$RUNNER_TEMP/sonus-runner-build.log"
+          exit 0
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: sonus-runner-build-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sonus-runner-build.log
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Require a successful image build
+        run: test '${{ steps.build.outputs.exit_code }}' = 0
+
+      - name: Verify non-root identity and required native tools
+        run: |
+          docker run --rm \
+            --entrypoint /bin/bash \
+            sonus-auris-ci-runner:ci \
+            -lc '
+              set -euo pipefail
+              test "$(id -u)" = 1001
+              test -x /usr/bin/git
+              test -x /usr/bin/curl
+              test -x /usr/bin/python3
+              test -x /usr/bin/cmake
+              test -x /usr/bin/ninja
+              test -x /usr/bin/java
+              pkg-config --exists gtk+-3.0
+              test ! -e /var/run/docker.sock
+              git --version
+              python3 --version
+              cmake --version | head -n 1
+              pkg-config --modversion gtk+-3.0
+              java -version
+            '
