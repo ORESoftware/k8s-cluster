@@ -12,6 +12,18 @@ Rust fabrication planning service for additive including large-format pellet/FGF
 robotic/gantry additive cells, and sheet-lamination/LOM/UAM printers, subtractive, turning,
 mill-turn/swiss-turning, and hybrid machine workflows.
 
+## Formal verification
+
+[`formal/release_gate.qnt`](formal/release_gate.qnt) is the executable
+machine-release specification. Pinned Quint/TLC checks that validation, retained
+evidence, plan revisions, previews, and authorization cannot bypass the five
+release-blocking evidence families. The model's first counterexample established
+an additional rule: an authorized plan revision is immutable, so changed evidence
+must advance the revision before another release. The Rust
+[`ReleasePolicy`](src/release_policy.rs) kernel and regression tests enforce the
+same transitions. See [`formal/README.md`](formal/README.md) for proof bounds and
+non-goals.
+
 ## Authentication
 
 Every fabrication API/worker HTTP route listed below requires a bearer token
