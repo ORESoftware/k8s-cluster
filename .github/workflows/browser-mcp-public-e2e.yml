@@ -87,6 +87,7 @@ jobs:
               workflow_commit: $workflow_commit,
               source_revision: "main",
               status: "not_started",
+              failure_phase: "pending",
               aws_outcome: "pending",
               smoke_outcome: "pending",
               expected_edges: [
@@ -97,8 +98,36 @@ jobs:
               stderr: ""
             }' >"$RESULT_FILE"
 
+      - name: Check live verification prerequisites
+        id: preflight
+        env:
+          ROLE_TO_ASSUME: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+          RESULT_FILE: ${{ runner.temp }}/browser-mcp-public-e2e-result.json
+        run: |
+          set -euo pipefail
+          failure_phase=none
+          if [[ -z "$ROLE_TO_ASSUME" ]]; then
+            failure_phase=aws_role_not_configured
+          elif [[ -z "$INSTANCE_ID" ]]; then
+            failure_phase=aws_ssm_instance_not_configured
+          fi
+
+          jq \
+            --arg failure_phase "$failure_phase" \
+            '.failure_phase = $failure_phase' \
+            "$RESULT_FILE" >"$RESULT_FILE.tmp"
+          mv "$RESULT_FILE.tmp" "$RESULT_FILE"
+
+          if [[ "$failure_phase" == none ]]; then
+            echo 'ready=true' >>"$GITHUB_OUTPUT"
+          else
+            echo 'ready=false' >>"$GITHUB_OUTPUT"
+          fi
+
       - name: Configure AWS credentials
         id: aws
+        if: steps.preflight.outputs.ready == 'true'
         continue-on-error: true
         uses: aws-actions/configure-aws-credentials@v6
         with:
@@ -107,7 +136,7 @@ jobs:
 
       - name: Run full verifier through the trusted SSM target
         id: smoke
-        if: steps.aws.outcome == 'success'
+        if: steps.preflight.outputs.ready == 'true' && steps.aws.outcome == 'success'
         continue-on-error: true
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
@@ -246,6 +275,7 @@ jobs:
               "workflow_commit": workflow_sha,
               "source_revision": "main",
               "status": data.get("Status", "Unknown"),
+              "failure_phase": "none",
               "expected_edges": [
                   "https://98.90.186.114/browser-mcp",
                   "https://hello.95-217-171-250.sslip.io/browser-mcp",
@@ -269,19 +299,36 @@ jobs:
       - name: Finalize sanitized result metadata
         if: always()
         env:
+          PREFLIGHT_OUTCOME: ${{ steps.preflight.outcome }}
           AWS_OUTCOME: ${{ steps.aws.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
           RESULT_FILE: ${{ runner.temp }}/browser-mcp-public-e2e-result.json
         run: |
           set -euo pipefail
+          current_failure_phase="$(jq -r '.failure_phase // "pending"' "$RESULT_FILE")"
+          failure_phase="$current_failure_phase"
+
+          if [[ "$current_failure_phase" == pending || "$PREFLIGHT_OUTCOME" != success ]]; then
+            failure_phase=preflight_internal_error
+          elif [[ "$current_failure_phase" == none && "$AWS_OUTCOME" != success ]]; then
+            failure_phase=aws_oidc_assume_role_failed
+          elif [[ "$current_failure_phase" == none && "$SMOKE_OUTCOME" != success ]]; then
+            failure_phase=ssm_or_live_verifier_failed
+          fi
+
           jq \
+            --arg failure_phase "$failure_phase" \
             --arg aws_outcome "$AWS_OUTCOME" \
             --arg smoke_outcome "$SMOKE_OUTCOME" \
             '
+              .failure_phase = $failure_phase |
               .aws_outcome = $aws_outcome |
               .smoke_outcome = $smoke_outcome |
               if .status == "not_started" then
-                .status = "workflow_precondition_failed"
+                .status = if $failure_phase == "none"
+                  then "workflow_internal_error"
+                  else "workflow_precondition_failed"
+                end
               else . end
             ' "$RESULT_FILE" >"$RESULT_FILE.tmp"
           mv "$RESULT_FILE.tmp" "$RESULT_FILE"
@@ -331,7 +378,16 @@ jobs:
         run: |
           set -euo pipefail
           test -s "$RESULT_FILE"
-          jq -e '.schema_version == 1 and (.status | type == "string")' "$RESULT_FILE" >/dev/null
+          jq -e '.schema_version == 1 and (.status | type == "string") and (.failure_phase | type == "string")' "$RESULT_FILE" >/dev/null
+          failure_phase="$(jq -r '.failure_phase' "$RESULT_FILE")"
+          case "$failure_phase" in
+            none|aws_role_not_configured|aws_ssm_instance_not_configured|preflight_internal_error|aws_oidc_assume_role_failed|ssm_or_live_verifier_failed)
+              ;;
+            *)
+              echo "unexpected Browser MCP failure phase: $failure_phase" >&2
+              exit 1
+              ;;
+          esac
           ! grep -Eqi -- '-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----|ghp_[A-Za-z0-9]+|github_pat_[A-Za-z0-9_]+|Bearer[[:space:]]+eyJ|[?&]code=[^[]|BROWSER_MCP_OAUTH_OPERATOR_SECRET=[^[]' "$RESULT_FILE"
 
       - name: Publish result to the automation branch
