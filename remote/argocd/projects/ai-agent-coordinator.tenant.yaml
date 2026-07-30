@@ -43,6 +43,9 @@ kind: ServiceAccount
 metadata:
   name: ai-agent-coordinator
   namespace: ai-agent-coordinator
+  labels:
+    app.kubernetes.io/name: ai-agent-coordinator
+    app.kubernetes.io/part-of: oresoftware-agent-platform
 automountServiceAccountToken: false
 ---
 # Closed by default. A separately reviewed app-owned NetworkPolicy must name any

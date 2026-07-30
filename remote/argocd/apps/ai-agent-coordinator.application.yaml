@@ -9,7 +9,7 @@ spec:
   project: ai-agent-coordinator
   source:
     repoURL: https://github.com/ORESoftware/ai-agent-coordinator.rs.git
-    targetRevision: f83f8c2ab52c1f686d92d68da234578d7b2674f0
+    targetRevision: 83091cb3b3dc1fc4797e822f7fe2d320ca1c3cd9
     path: deploy/k8s
   destination:
     server: https://kubernetes.default.svc

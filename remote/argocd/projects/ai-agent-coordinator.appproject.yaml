@@ -16,4 +16,3 @@ spec:
     - { group: "", kind: ResourceQuota }
     - { group: "", kind: LimitRange }
     - { group: "", kind: ServiceAccount }
-    - { group: "networking.k8s.io", kind: NetworkPolicy }
