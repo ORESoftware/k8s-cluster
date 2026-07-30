@@ -1,8 +1,9 @@
-use std::sync::atomic::Ordering;
+use std::{sync::atomic::Ordering, time::Instant};
 
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, Query, Request, State},
     http::{HeaderMap, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -98,7 +99,24 @@ pub fn router(state: AppState) -> Router {
         api
     };
 
-    app.with_state(state)
+    app.layer(middleware::from_fn_with_state(
+        state.clone(),
+        observe_http_response,
+    ))
+    .with_state(state)
+}
+
+async fn observe_http_response(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let started = Instant::now();
+    let response = next.run(request).await;
+    state
+        .metrics
+        .observe_http_response(response.status().as_u16(), started.elapsed());
+    response
 }
 
 async fn root(State(state): State<AppState>) -> Json<Value> {
@@ -144,7 +162,7 @@ async fn metrics(State(state): State<AppState>) -> Response {
     (
         [(
             axum::http::header::CONTENT_TYPE,
-            "text/plain; version=0.0.4",
+            "text/plain; version=0.0.4; charset=utf-8",
         )],
         body,
     )
@@ -1129,7 +1147,85 @@ fn nowish_hash(value: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use axum::{
+        body::{to_bytes, Body},
+        http::Request,
+    };
+    use tower::ServiceExt;
+
     use super::*;
+    use crate::config::Config;
+
+    fn test_state() -> AppState {
+        AppState::new(
+            Config {
+                host: "127.0.0.1".into(),
+                port: 8121,
+                database_url: None,
+                auth_secret: None,
+                auth_required: false,
+                contract_service_url: "http://localhost".into(),
+                request_timeout: Duration::from_secs(5),
+                max_page_limit: 250,
+                app_ui_enabled: false,
+                app_base_path: String::new(),
+                app_ui_bearer: None,
+                app_ui_allowed_origins: vec![],
+            },
+            None,
+            reqwest::Client::new(),
+        )
+    }
+
+    #[tokio::test]
+    async fn metrics_route_exposes_prometheus_contract_and_observed_responses() {
+        let app = router(test_state());
+        let healthy = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/healthz")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(healthy.status(), StatusCode::OK);
+
+        let missing = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/does-not-exist")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "text/plain; version=0.0.4; charset=utf-8"
+        );
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = std::str::from_utf8(&body).unwrap();
+        assert!(body.contains("usacc_rest_api_http_responses_total{status_class=\"2xx\"} 1"));
+        assert!(body.contains("usacc_rest_api_http_responses_total{status_class=\"4xx\"} 1"));
+        assert!(body.contains("usacc_rest_api_http_request_duration_seconds_bucket{le=\"+Inf\"} 2"));
+    }
 
     #[test]
     fn ledger_summary_tracks_direction_and_kind() {
