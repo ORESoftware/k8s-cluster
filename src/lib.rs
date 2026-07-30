@@ -37,6 +37,13 @@ mod server;
 mod shared_auth;
 mod signal_api;
 mod signal_bundle_store;
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "bounded Signal retention cleanup is implemented and integration-tested while production scheduler wiring is tracked separately"
+    )
+)]
 mod signal_maintenance;
 #[expect(
     dead_code,

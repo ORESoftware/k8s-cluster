@@ -115,15 +115,13 @@ pub fn router_with_signal(state: AppState, signal_sync_enabled: bool) -> Router 
         .route("/v1/auth/supabase", post(supabase_auth::enroll_provider))
         // Route-only layering preserves the outer router's normal 404 fallback.
         .route_layer(RequestBodyLimitLayer::new(DEFAULT_BODY_LIMIT))
-        .route_layer(GovernorLayer { config: governor });
+        .route_layer(GovernorLayer::new(governor));
 
     let device_routes = Router::new()
         .route("/v1/devices", get(devices::list_handler))
         .route("/v1/devices/revoke", post(devices::revoke_handler))
         .route_layer(RequestBodyLimitLayer::new(DEFAULT_BODY_LIMIT))
-        .route_layer(GovernorLayer {
-            config: Arc::clone(&authed_governor),
-        });
+        .route_layer(GovernorLayer::new(Arc::clone(&authed_governor)));
 
     // The one route that legitimately carries a large body. Kept in its own
     // sub-router so the larger cap cannot leak onto anything else; the GET on
@@ -141,17 +139,13 @@ pub fn router_with_signal(state: AppState, signal_sync_enabled: bool) -> Router 
         )
         .route_layer(DefaultBodyLimit::max(VAULT_BODY_LIMIT))
         .route_layer(RequestBodyLimitLayer::new(VAULT_BODY_LIMIT))
-        .route_layer(GovernorLayer {
-            config: Arc::clone(&authed_governor),
-        });
+        .route_layer(GovernorLayer::new(Arc::clone(&authed_governor)));
 
     let signal_routes = if signal_sync_enabled {
         signal_api::routes()
             .route_layer(DefaultBodyLimit::max(VAULT_BODY_LIMIT))
             .route_layer(RequestBodyLimitLayer::new(VAULT_BODY_LIMIT))
-            .route_layer(GovernorLayer {
-                config: authed_governor,
-            })
+            .route_layer(GovernorLayer::new(authed_governor))
     } else {
         Router::<AppState>::new()
     };
@@ -345,9 +339,39 @@ mod tests {
     async fn authed_routes_are_rate_limited_but_probes_are_not() {
         let app = router(test_state());
 
+        // The unauthenticated enrollment budget is intentionally smaller than
+        // the sync budget. Exercise that independent GovernorLayer instance so
+        // an API migration cannot silently leave the highest-risk routes
+        // unthrottled while the authed layer below still works.
+        let mut auth_throttled = None;
+        for _ in 0..16 {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/v1/auth/shared")
+                        .header("x-forwarded-for", "203.0.113.6")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            if response.status() == StatusCode::TOO_MANY_REQUESTS {
+                auth_throttled = Some(response);
+                break;
+            }
+        }
+        let auth_throttled =
+            auth_throttled.expect("/v1/auth/shared must carry the per-IP governor");
+        assert!(
+            auth_throttled.headers().contains_key(header::RETRY_AFTER),
+            "the limiter response must tell clients when retrying is safe"
+        );
+
         // Drive one client IP past the authed burst budget: the governor must
         // start rejecting with 429 before the handler runs.
-        let mut throttled = false;
+        let mut throttled = None;
         for _ in 0..40 {
             let response = app
                 .clone()
@@ -361,11 +385,15 @@ mod tests {
                 .await
                 .unwrap();
             if response.status() == StatusCode::TOO_MANY_REQUESTS {
-                throttled = true;
+                throttled = Some(response);
                 break;
             }
         }
-        assert!(throttled, "/v1/vault must carry the per-IP governor");
+        let throttled = throttled.expect("/v1/vault must carry the per-IP governor");
+        assert!(
+            throttled.headers().contains_key(header::RETRY_AFTER),
+            "the limiter response must tell clients when retrying is safe"
+        );
 
         // Probe routes share the kubelet's node IP and must stay unthrottled.
         for _ in 0..40 {

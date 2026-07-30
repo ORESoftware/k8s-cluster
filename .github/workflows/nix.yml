@@ -3,29 +3,7 @@ name: nix
 on:
   push:
     branches: [main]
-    paths:
-      - flake.nix
-      - flake.lock
-      - .nix/**
-      - Cargo.toml
-      - Cargo.lock
-      - rust-toolchain.toml
-      - src/**
-      - tests/**
-      - .github/workflows/ci.yml
-      - .github/workflows/nix.yml
   pull_request:
-    paths:
-      - flake.nix
-      - flake.lock
-      - .nix/**
-      - Cargo.toml
-      - Cargo.lock
-      - rust-toolchain.toml
-      - src/**
-      - tests/**
-      - .github/workflows/ci.yml
-      - .github/workflows/nix.yml
   workflow_dispatch:
 
 permissions:
@@ -36,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
+  nix-check:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -52,43 +30,44 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
+      - name: Evaluate and build flake checks
+        run: nix flake check --no-update-lock-file --show-trace
+
       - name: Check Nix formatting
-        run: nix develop -c nixfmt --check flake.nix .nix/devshell.nix
+        run: nix develop --no-update-lock-file -c nixfmt --check flake.nix .nix/devshell.nix
 
       - name: Lint the agent shell
-        run: nix develop -c shellcheck .nix/agent-check.sh
+        run: nix develop --no-update-lock-file -c shellcheck .nix/agent-check.sh
 
       - name: Check agent shell formatting
-        run: nix develop -c shfmt -i 2 -ci -d .nix/agent-check.sh
+        run: nix develop --no-update-lock-file -c shfmt -i 2 -ci -d .nix/agent-check.sh
 
       - name: Check GitHub Actions
-        run: nix develop -c actionlint .github/workflows/ci.yml .github/workflows/nix.yml
-
-      - name: Evaluate and build flake checks
-        run: nix flake check --show-trace
+        run: nix develop --no-update-lock-file -c actionlint
 
       - name: Report pinned toolchains
         run: |
-          nix develop -c rustc --version
-          nix develop -c cargo --version
+          nix develop --no-update-lock-file -c rustc --version
+          nix develop --no-update-lock-file -c cargo --version
 
       - name: Check Rust formatting
-        run: nix develop -c agent-check fmt
+        run: nix develop --no-update-lock-file -c agent-check fmt
 
       - name: Check all Rust targets
-        run: nix develop -c agent-check check
+        run: nix develop --no-update-lock-file -c agent-check check
 
       - name: Lint all Rust targets
-        run: nix develop -c agent-check clippy
+        run: nix develop --no-update-lock-file -c agent-check clippy
 
       - name: Run Rust tests
-        run: nix develop -c agent-check test
+        run: nix develop --no-update-lock-file -c agent-check test
 
-  audit-scan:
+      - name: Prove the packaged default check
+        run: nix run --no-update-lock-file .#agent-check
+
+  audit:
     runs-on: ubuntu-latest
     timeout-minutes: 35
-    outputs:
-      diagnostics: ${{ steps.diagnostics.outputs.matrix }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -102,90 +81,5 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Prepare pinned RustSec scanner
-        run: nix develop -c agent-check audit-prepare
-
-      - name: Collect RustSec diagnostics
-        id: diagnostics
-        run: |
-          set +e
-          nix develop -c agent-check audit-json >audit.json 2>audit.stderr
-          audit_status=$?
-          set -e
-          AUDIT_STATUS="$audit_status" python3 - <<'PY' >audit-matrix.json
-          import json
-          import os
-          import re
-
-          status = int(os.environ["AUDIT_STATUS"])
-          diagnostics = []
-          seen = set()
-
-          def add(identifier, package):
-              item = {
-                  "id": str(identifier or "unknown-advisory"),
-                  "package": str(package or "unknown-package"),
-              }
-              key = (item["id"], item["package"])
-              if key not in seen:
-                  seen.add(key)
-                  diagnostics.append(item)
-
-          def add_finding(finding, fallback_id):
-              advisory = finding.get("advisory") or {}
-              package = finding.get("package") or {}
-              if isinstance(package, dict):
-                  package_name = package.get("name")
-              else:
-                  package_name = package
-              add(
-                  advisory.get("id") or fallback_id,
-                  package_name or advisory.get("package") or "unknown-package",
-              )
-
-          report = None
-          try:
-              with open("audit.json", encoding="utf-8") as stream:
-                  report = json.load(stream)
-          except (OSError, json.JSONDecodeError):
-              report = None
-
-          if isinstance(report, dict):
-              for finding in report.get("vulnerabilities", {}).get("list", []):
-                  add_finding(finding, "vulnerability")
-              for category, findings in (report.get("warnings") or {}).items():
-                  for finding in findings or []:
-                      add_finding(finding, f"warning-{category}")
-
-          if status != 0 and not diagnostics:
-              try:
-                  with open("audit.stderr", encoding="utf-8", errors="replace") as stream:
-                      lines = [line.strip() for line in stream if line.strip()]
-              except OSError:
-                  lines = []
-              tail = lines[-1] if lines else "no-diagnostic-output"
-              tail = re.sub(r"[^A-Za-z0-9._+-]+", "-", tail).strip("-")[:72]
-              add(f"scan-error-{status}", tail or "no-diagnostic-output")
-
-          if not diagnostics:
-              add("clean", "none")
-
-          print(json.dumps({"include": diagnostics}, separators=(",", ":")))
-          PY
-          printf 'matrix=%s\n' "$(cat audit-matrix.json)" >>"$GITHUB_OUTPUT"
-
-  audit-diagnostics:
-    needs: audit-scan
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJson(needs.audit-scan.outputs.diagnostics) }}
-    name: Audit ${{ matrix.id }} in ${{ matrix.package }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Enforce advisory result
-        env:
-          ADVISORY_ID: ${{ matrix.id }}
-        run: |
-          if [ "$ADVISORY_ID" != clean ]; then
-            exit 1
-          fi
+      - name: Audit the locked dependency graph
+        run: nix develop --no-update-lock-file -c agent-check audit

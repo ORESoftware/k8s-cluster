@@ -23,11 +23,9 @@ jobs:
           show-progress: false
       - name: Validate GitHub Actions
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 # v1.7.12
-        with:
-          args: ./.github/workflows/ci.yml
       - name: No build artifacts or env files tracked
         run: |
-          bad=$(git ls-files | grep -E '(^|/)(target/|\.cache/|\.direnv/|\.env$|result$)' || true)
+          bad=$(git ls-files | grep -E '(^|/)(target/|\.cache/|\.direnv/|\.env($|\.))|^result(-[^/]*)?(/|$)' || true)
           if [ -n "$bad" ]; then echo "forbidden tracked files:"; echo "$bad"; exit 1; fi
       - name: Sensitive DTOs cannot regain raw Debug
         run: python3 scripts/check_sensitive_debug.py
@@ -36,71 +34,16 @@ jobs:
       - name: Test all features
         run: cargo test --quiet --locked --all-features
 
-  clippy-scan:
+  clippy:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    outputs:
-      diagnostics: ${{ steps.diagnostics.outputs.matrix }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
           show-progress: false
-      - name: Collect Clippy diagnostics
-        id: diagnostics
-        run: |
-          set +e
-          cargo clippy --quiet --message-format=json --locked --all-targets --all-features -- -D warnings >clippy.json 2>clippy.stderr
-          clippy_status=$?
-          set -e
-          python3 - <<'PY' >clippy-matrix.json
-          import json
-
-          diagnostics = []
-          seen = set()
-          with open("clippy.json", encoding="utf-8") as stream:
-              for raw_line in stream:
-                  try:
-                      event = json.loads(raw_line)
-                  except json.JSONDecodeError:
-                      continue
-                  if event.get("reason") != "compiler-message":
-                      continue
-                  message = event.get("message") or {}
-                  if message.get("level") != "error":
-                      continue
-                  code = (message.get("code") or {}).get("code") or "rustc-error"
-                  primary = next((span for span in message.get("spans", []) if span.get("is_primary")), {})
-                  item = {"code": code, "path": primary.get("file_name", "unknown"), "line": primary.get("line_start", 0)}
-                  key = (item["code"], item["path"], item["line"])
-                  if key not in seen:
-                      seen.add(key)
-                      diagnostics.append(item)
-          if not diagnostics:
-              diagnostics.append({"code": "clean", "path": "none", "line": 0})
-          print(json.dumps({"include": diagnostics}, separators=(",", ":")))
-          PY
-          printf 'matrix=%s\n' "$(cat clippy-matrix.json)" >>"$GITHUB_OUTPUT"
-          if [ "$clippy_status" -ne 0 ] && grep -qv '"code":"clean"' clippy-matrix.json; then
-            exit 0
-          fi
-          exit "$clippy_status"
-
-  clippy-diagnostics:
-    needs: clippy-scan
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJson(needs.clippy-scan.outputs.diagnostics) }}
-    name: Clippy ${{ matrix.code }} at ${{ matrix.path }}:${{ matrix.line }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Enforce diagnostic
-        env:
-          CLIPPY_CODE: ${{ matrix.code }}
-        run: |
-          if [ "$CLIPPY_CODE" != clean ]; then
-            exit 1
-          fi
+      - name: Lint all targets
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
   fmt:
     runs-on: ubuntu-latest
