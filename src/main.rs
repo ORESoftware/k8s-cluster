@@ -1,8 +1,8 @@
 use std::{env, net::SocketAddr};
 
 use push_notification_server::{
-    ApiState, NatsConfig, provider_registry_from_env, request_authenticator_from_env, router,
-    run_nats_consumer,
+    ApiState, ContactApiState, NatsConfig, contact_registry_from_env, contact_router,
+    provider_registry_from_env, request_authenticator_from_env, router, run_nats_consumer,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -18,6 +18,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let address = bind_address()?;
     let registry = provider_registry_from_env()?;
+    let contact_registry = contact_registry_from_env()?;
     let authenticator = request_authenticator_from_env()?;
 
     if let Some(nats_config) = NatsConfig::from_env()? {
@@ -31,10 +32,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing::info!("JetStream push ingestion disabled because NATS_URL is not configured");
     }
 
-    let app = router(ApiState::new(registry, authenticator));
+    let app = router(ApiState::new(registry, authenticator.clone())).merge(contact_router(
+        ContactApiState::new(contact_registry, authenticator),
+    ));
     let listener = tokio::net::TcpListener::bind(address).await?;
 
-    tracing::info!(%address, "push notification server listening");
+    tracing::info!(%address, "notification server listening");
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
@@ -74,7 +77,9 @@ async fn shutdown_signal() {
 mod tests {
     use std::sync::Arc;
 
-    use push_notification_server::{DenyAllAuthenticator, ProviderRegistry};
+    use push_notification_server::{
+        ContactProviderRegistry, DenyAllAuthenticator, ProviderRegistry,
+    };
 
     use super::*;
 
@@ -85,10 +90,15 @@ mod tests {
     }
 
     #[test]
-    fn router_can_be_constructed_without_runtime_credentials() {
+    fn routers_can_be_constructed_without_runtime_credentials() {
+        let authenticator = Arc::new(DenyAllAuthenticator);
         let _ = router(ApiState::new(
             ProviderRegistry::new(),
-            Arc::new(DenyAllAuthenticator),
-        ));
+            authenticator.clone(),
+        ))
+        .merge(contact_router(ContactApiState::new(
+            ContactProviderRegistry::new(),
+            authenticator,
+        )));
     }
 }
