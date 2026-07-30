@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "application_status": "applied",
+  "repository": "cliptown/cliptown-monorepo",
+  "url": "https://github.com/cliptown/cliptown-monorepo.git",
+  "branch": "main",
+  "commit": "dc2b24795ab1e1749cd35407b0f83024db90a7ef",
+  "path": "remote/deployments/cliptown-monorepo",
+  "deployment_authorized": false
+}

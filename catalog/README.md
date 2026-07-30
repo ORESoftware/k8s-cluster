@@ -1,0 +1,111 @@
+# Canonical repository catalog
+
+DEN-627 defines a deterministic catalog contract for the 24 installed GitHub
+owners governed by DEN-598. The catalog separates facts from hypotheses:
+metadata-derived classifications are `present-unverified`, unknowns stay in the
+review queue, and dependency edges are only `verified` when their source
+evidence and immutable pin are recorded.
+
+## Data boundary
+
+This repository is public. It may contain:
+
+- complete records for public repositories;
+- aggregate counts for private repositories; and
+- public fixtures that exercise the schema and DEN-369 import contract.
+
+It must not contain private repository names, private dependency edges, or
+private DEN-369 records. A full collection therefore requires an explicit flag
+and refuses an output path inside this checkout. The approved access-controlled
+destination for the confidential overlay is still an operator decision tracked
+by DEN-627.
+
+`catalog/repositories.json` is the complete current public-safe snapshot.
+`catalog/fixtures/repositories.v2.json` is the small reviewed contract fixture.
+`catalog/baselines/2026-07-28.summary.json` preserves the governed aggregate
+baseline without leaking private names. Generated current public snapshots are
+safe to commit after review; full snapshots are not.
+
+The July 29 public snapshot currently reports 548 total repositories
+(387 public records and 161 private aggregate records). Its
+`inventory.baseline_deltas` object preserves count-level drift from the July 28
+547-repository baseline.
+
+## Nix workflow
+
+Enter the locked environment with:
+
+```console
+nix develop
+```
+
+Run the complete local gate:
+
+```console
+nix develop -c agent-check all
+```
+
+Collect the current public-safe inventory:
+
+```console
+nix develop -c agent-check collect-public
+```
+
+Collect a confidential full overlay only to an approved path outside the
+repository:
+
+```console
+nix develop -c python tools/repository_catalog.py collect \
+  --owners catalog/owners.json \
+  --visibility full \
+  --allow-private-output \
+  --repo-root "$PWD" \
+  --output /approved/access-controlled/repository-catalog.json
+```
+
+Collection is read-only and uses the authenticated `gh api /user/repos`
+endpoint. It filters results to the exact owner contract in
+`catalog/owners.json`.
+
+## Drift and dashboard
+
+```console
+nix develop -c python tools/repository_catalog.py diff \
+  catalog/repositories.json catalog/repositories.json \
+  --json-output artifacts/repository-catalog-drift.json \
+  --markdown-output artifacts/repository-catalog-drift.md
+
+nix develop -c python tools/repository_catalog.py dashboard \
+  catalog/repositories.json \
+  --json-output artifacts/repository-catalog-dashboard.json \
+  --markdown-output artifacts/repository-catalog-dashboard.md
+```
+
+Drift covers additions, removals, canonical-location or ownership moves,
+default-branch changes, dependency pin changes, conformance regressions,
+classification changes, and Zed package evidence. Dashboard actions route to
+the owning Linear conformance issue; client/SDK Zed gaps also route to DEN-637.
+
+## Zed package contract
+
+Client and SDK candidates are required to carry a package contract compatible
+with [github.com/zed-pkg](https://github.com/zed-pkg). The catalog records
+evidence states for the manifest, lock, immutable source pin, and CI gate.
+Name-based discovery only marks a candidate and routes it to DEN-637; it does
+not claim that a repository is conformant until those four fields have reviewed
+evidence.
+
+## DEN-369 import
+
+The importer consumes the `nix-fleet-audit/report.json@v1` array emitted by
+DEN-369 and records its SHA-256:
+
+```console
+nix develop -c python tools/repository_catalog.py merge-den369 \
+  catalog/fixtures/repositories.v2.json catalog/fixtures/den369-report.json \
+  --source-path catalog/fixtures/den369-report.json \
+  --output artifacts/repository-catalog-with-den369.json
+```
+
+Validation checks the recorded artifact hash when `--repo-root` is supplied.
+The fixture proves the contract without publishing any private repository data.

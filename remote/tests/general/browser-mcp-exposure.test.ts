@@ -50,6 +50,7 @@ const PLATFORM_JOB_DOMAINS = [
   'candidateportalin.ceipal.com',
   'candidateportalnew.ceipal.com',
 ] as const;
+const APPOINTMENT_DOMAINS = ['cal.com', 'calendly.com'] as const;
 
 const REVIEWED_BROWSER_CEILING_DOMAINS = [
   'benefactor.cc',
@@ -81,6 +82,7 @@ const REVIEWED_BROWSER_CEILING_DOMAINS = [
   'fonts.googleapis.com',
   'fonts.gstatic.com',
   ...PLATFORM_JOB_DOMAINS,
+  ...APPOINTMENT_DOMAINS,
   'httpbingo.org',
 ];
 
@@ -187,6 +189,11 @@ test('OAuth browser-mcp has reviewed, server-defined workflow domain ceilings', 
     workflows['platform-jobs'],
     [...PLATFORM_JOB_DOMAINS],
     'platform-jobs must be a reviewed, server-defined ATS-only profile.',
+  );
+  assert.deepEqual(
+    workflows.appointments,
+    [...APPOINTMENT_DOMAINS],
+    'appointments must remain a reviewed, server-defined scheduling-only profile.',
   );
   assert.ok(
     ['linkedin.com', 'indeed.com', 'ziprecruiter.com'].every(

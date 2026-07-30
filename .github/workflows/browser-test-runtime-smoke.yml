@@ -1,0 +1,190 @@
+name: browser-test production HTTP smoke
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/browser-test-runtime-smoke.yml'
+      - 'remote/deployments/browser-test-server/**'
+      - 'remote/api-contracts/**'
+      - 'remote/config/api-contracts.json'
+      - 'remote/tools/check-openapi-contracts.mjs'
+      - 'remote/tools/generate-api-docs.mjs'
+      - 'remote/tools/validate-openapi-contracts.mjs'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/browser-test-runtime-smoke.yml'
+      - 'remote/deployments/browser-test-server/**'
+      - 'remote/api-contracts/**'
+      - 'remote/config/api-contracts.json'
+      - 'remote/tools/check-openapi-contracts.mjs'
+      - 'remote/tools/generate-api-docs.mjs'
+      - 'remote/tools/validate-openapi-contracts.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-test-runtime-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+  PUPPETEER_SKIP_DOWNLOAD: 'true'
+
+jobs:
+  production-http-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout without private gitlinks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          show-progress: false
+          submodules: false
+
+      - name: Reject mutable workflow dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('.github/workflows/browser-test-runtime-smoke.yml')
+          failures = []
+          for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+              match = re.match(r'^\s*uses:\s*([^\s#]+)', line)
+              if match:
+                  reference = match.group(1)
+                  if not reference.startswith('./') and not re.fullmatch(r'[^@]+@[0-9a-fA-F]{40}', reference):
+                      failures.append(f'{path}:{number}: mutable action reference: {reference}')
+              if re.search(r'^\s*runs-on:\s*ubuntu-latest\s*$', line):
+                  failures.append(f'{path}:{number}: mutable runner label: ubuntu-latest')
+          if failures:
+              raise SystemExit('\n'.join(failures))
+          PY
+
+      - name: Create contract-only telemetry package shim
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-node
+          cat > remote/libs/telemetry-node/package.json <<'JSON'
+          {
+            "name": "@dd/telemetry",
+            "version": "0.0.0-contract-shim",
+            "type": "module",
+            "exports": {
+              ".": {
+                "types": "./index.d.ts",
+                "default": "./index.js"
+              }
+            }
+          }
+          JSON
+          cat > remote/libs/telemetry-node/index.js <<'JS'
+          export function initTelemetry() {
+            return { shutdown: async () => undefined };
+          }
+          export function instrumentFastify() {}
+          export function loggerMixin() {
+            return {};
+          }
+          JS
+          cat > remote/libs/telemetry-node/index.d.ts <<'TS'
+          export interface TelemetryGuard {
+            shutdown(): Promise<void>;
+          }
+          export function initTelemetry(service: string): TelemetryGuard;
+          export function instrumentFastify(app: unknown, options?: { service?: string }): void;
+          export function loggerMixin(): Record<string, unknown>;
+          TS
+
+      - name: Setup Node.js 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Install locked service dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@9.15.4 --activate
+          test "$(pnpm --version)" = '9.15.4'
+          pnpm --dir remote/deployments/browser-test-server install \
+            --frozen-lockfile \
+            --ignore-workspace
+
+      - name: Compile and run in-process contract tests
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            pnpm --dir remote/deployments/browser-test-server run typecheck
+            pnpm --dir remote/deployments/browser-test-server run build
+            pnpm --dir remote/deployments/browser-test-server run test:contract
+          } 2>&1 | tee "${RUNNER_TEMP}/browser-test-build-and-contract.log"
+
+      - name: Exercise compiled production HTTP boundary
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm --dir remote/deployments/browser-test-server run test:runtime \
+            2>&1 | tee "${RUNNER_TEMP}/browser-test-runtime-smoke.log"
+
+      - name: Re-export and validate exact committed contracts
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            pnpm --dir remote/deployments/browser-test-server run --silent export:openapi \
+              > "${RUNNER_TEMP}/browser-test-openapi.1.json"
+            pnpm --dir remote/deployments/browser-test-server run --silent export:openapi \
+              > "${RUNNER_TEMP}/browser-test-openapi.2.json"
+            cmp "${RUNNER_TEMP}/browser-test-openapi.1.json" \
+              "${RUNNER_TEMP}/browser-test-openapi.2.json"
+            cmp "${RUNNER_TEMP}/browser-test-openapi.1.json" \
+              remote/deployments/browser-test-server/generated/openapi.json
+            node remote/tools/check-openapi-contracts.mjs --service browser-test-server
+            node remote/tools/generate-api-docs.mjs --check --service browser-test-server
+            node remote/tools/validate-openapi-contracts.mjs
+          } 2>&1 | tee "${RUNNER_TEMP}/browser-test-contract-validation.log"
+
+      - name: Reject conflict markers and stale tracked output
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- . ':!vendor'; then
+            echo 'git conflict marker found' >&2
+            exit 1
+          fi
+          rm -rf remote/libs \
+            remote/deployments/browser-test-server/node_modules \
+            remote/deployments/browser-test-server/dist
+          test "$(git ls-files --stage remote/libs | awk '{print $1}')" = '160000'
+          git diff --check
+          git diff --quiet -- . ':(exclude)remote/libs'
+          test -z "$(git status --short --untracked-files=no -- . ':(exclude)remote/libs')"
+
+      - name: Upload focused failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+        with:
+          name: browser-test-runtime-smoke-diagnostics
+          path: |
+            ${{ runner.temp }}/browser-test-build-and-contract.log
+            ${{ runner.temp }}/browser-test-runtime-smoke.log
+            ${{ runner.temp }}/browser-test-contract-validation.log
+            ${{ runner.temp }}/browser-test-openapi.1.json
+            ${{ runner.temp }}/browser-test-openapi.2.json
+            remote/deployments/browser-test-server/generated/openapi.json
+            remote/deployments/browser-test-server/generated/api-docs.json
+          retention-days: 3
+          if-no-files-found: warn
