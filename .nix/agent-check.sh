@@ -1,8 +1,44 @@
+#!/usr/bin/env bash
 set -euo pipefail
 
 target="${1:-all}"
 
-static_checks() {
+export CI="${CI:-1}"
+export CHECKPOINT_DISABLE="${CHECKPOINT_DISABLE:-1}"
+export NO_COLOR="${NO_COLOR:-1}"
+export TF_IN_AUTOMATION="${TF_IN_AUTOMATION:-1}"
+
+if repo_root="$(git rev-parse --show-toplevel 2>/dev/null)"; then
+  :
+else
+  repo_root="$PWD"
+fi
+cd "$repo_root"
+
+cache_root="${NIX_AGENT_CACHE_ROOT:-$repo_root/.cache/nix-agent}"
+mkdir -p "$cache_root"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$cache_root/xdg}"
+export CARGO_HOME="${CARGO_HOME:-$cache_root/cargo}"
+export GRADLE_USER_HOME="${GRADLE_USER_HOME:-$cache_root/gradle}"
+export PUB_CACHE="${PUB_CACHE:-$cache_root/dart-pub}"
+export npm_config_cache="${npm_config_cache:-$cache_root/npm}"
+
+mkdir -p "$XDG_CACHE_HOME" "$CARGO_HOME" "$GRADLE_USER_HOME" "$PUB_CACHE" "$npm_config_cache"
+
+root_checks() {
+  git diff --check
+  nixfmt --check flake.nix .nix/dev-shell.nix
+  shellcheck .nix/agent-check.sh
+  shfmt -d .nix/agent-check.sh
+  actionlint \
+    .github/workflows/nix.yml \
+    .github/workflows/nix-agent-profiles.yml \
+    .github/workflows/nix-fleet-audit.yml \
+    .github/workflows/repository-catalog.yml
+  nix flake check --show-trace
+}
+
+catalog_static_checks() {
   ruff check tools/repository_catalog.py tools/test_repository_catalog.py
   ruff format --check tools/repository_catalog.py tools/test_repository_catalog.py
   nixfmt --check flake.nix .nix/dev-shell.nix
@@ -61,12 +97,22 @@ collect_public() {
     --public-safe
 }
 
+catalog_ci() {
+  catalog_static_checks
+  unit_tests
+  validate_fixture
+  build_artifacts
+}
+
 case "$target" in
+  root)
+    root_checks
+    ;;
   unit)
     unit_tests
     ;;
   static)
-    static_checks
+    catalog_static_checks
     ;;
   validate)
     validate_fixture
@@ -77,14 +123,15 @@ case "$target" in
   collect-public)
     collect_public
     ;;
-  ci | all)
-    static_checks
-    unit_tests
-    validate_fixture
-    build_artifacts
+  ci)
+    catalog_ci
+    ;;
+  all)
+    root_checks
+    catalog_ci
     ;;
   *)
-    echo "usage: agent-check [all|ci|static|unit|validate|artifacts|collect-public]" >&2
+    echo "usage: agent-check [all|root|ci|static|unit|validate|artifacts|collect-public]" >&2
     exit 2
     ;;
 esac

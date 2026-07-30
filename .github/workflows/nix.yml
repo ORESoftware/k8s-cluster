@@ -1,0 +1,57 @@
+name: nix
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - flake.nix
+      - flake.lock
+      - .nix/**
+      - .github/workflows/nix.yml
+  pull_request:
+    paths:
+      - flake.nix
+      - flake.lock
+      - .nix/**
+      - .github/workflows/nix.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Check Nix formatting
+        run: nix develop -c nixfmt --check flake.nix .nix/dev-shell.nix
+
+      - name: Check agent shell
+        run: |
+          nix develop -c shellcheck .nix/agent-check.sh
+          nix develop -c shfmt -d .nix/agent-check.sh
+
+      - name: Check Nix workflow
+        run: nix develop -c actionlint .github/workflows/nix.yml
+
+      - name: Evaluate and build flake checks
+        run: nix flake check --show-trace
+
+      - name: Run the agent contract
+        run: nix develop -c agent-check
