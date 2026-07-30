@@ -20,7 +20,10 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/t2v-api-revision: 'gitops-source'
+        dd.dev/t2v-api-revision: '2026-07-29-otel'
+        prometheus.io/scrape: 'true'
+        prometheus.io/port: '8130'
+        prometheus.io/path: /metrics
       labels:
         app: dd-t2v-api
     spec:
@@ -103,6 +106,15 @@ spec:
               value: /var/cache/dd-t2v-api/target
             - name: CARGO_BUILD_JOBS
               value: '1'
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4317
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: >-
+                service.namespace=oresoftware,
+                deployment.environment.name=remote-dev,
+                github.repository=ORESoftware/t2v-v2t.rs
             - name: T2V_GIT_URL
               value: https://github.com/ORESoftware/k8s-cluster.git
             - name: T2V_GIT_REF

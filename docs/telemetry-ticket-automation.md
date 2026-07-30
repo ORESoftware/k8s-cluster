@@ -101,14 +101,38 @@ Create these JSON bundles in the secret backend used by
 The coordinator and model runner fail closed when required bundles or keys are
 missing. Confirm both External Secrets are Ready before merging the GitOps PR.
 
+## Upstream GitOps promotion
+
+Instrumented service repositories use their `request k8s promotion` workflow
+after a change lands on the default branch. The workflow sends only the exact
+repository name and full commit SHA to this repository. The
+`telemetry upstream promotion` workflow accepts an explicit allowlist, fetches
+that SHA from the configured submodule origin, advances the submodule on a new
+`agent/promote-*` branch, and opens a draft PR against `dev`. It never merges or
+deploys the result.
+
+Configure these repository secrets:
+
+- `K8S_CLUSTER_DISPATCH_TOKEN` in each instrumented upstream repository: a
+  fine-grained token or GitHub App token permitted to create repository
+  dispatches in `ORESoftware/k8s-cluster`;
+- `ORG_GITOPS_TOKEN` in `ORESoftware/k8s-cluster`: contents and pull-request
+  write access here plus read access to the allowlisted upstream repositories,
+  so promotion pushes trigger the normal PR checks.
+
+Keep these automation credentials separate from the two cluster runtime secret
+bundles above.
+
 ## Delivery sequence
 
 1. Merge and release `ORESoftware/ai-agent-coordinator.rs`.
 2. Let its OCI workflow open the draft immutable-image promotion PR; validate
    and merge that PR.
-3. Provision the two secret bundles above.
-4. Merge this repository's GitOps PR into `dev`.
-5. Verify Alertmanager, Loki ruler, OTEL span metrics, the coordinator, and the
+3. Merge the service instrumentation PRs and review their automatically opened
+   draft submodule-promotion PRs.
+4. Provision the two runtime secret bundles and promotion credentials above.
+5. Merge this repository's GitOps PR into `dev`.
+6. Verify Alertmanager, Loki ruler, OTEL span metrics, the coordinator, and the
    runner are healthy before enabling repository-specific alert thresholds.
 
 No workflow in this design merges a PR automatically. Argo CD observes only
