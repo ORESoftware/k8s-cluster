@@ -96,7 +96,10 @@ test("Fiducia and Akrion build the reviewed merged revisions", async () => {
   assertScrapeAnnotations(fiducia, 8117);
 
   assert.ok(akrion.includes(AKRION_RELEASE));
-  assert.match(akrion, /git -C "\$app_dir" fetch --depth 1 origin/);
+  assert.match(
+    akrion,
+    /git -C "\$app_dir" "\$\{git_auth_args\[@\]\}" fetch --depth 1 origin/,
+  );
   assert.match(akrion, /actual_ref=.*rev-parse HEAD/);
   assertScrapeAnnotations(akrion, 8127);
   assert.doesNotMatch(akrion, /AKRION_WEB_GIT_REF\n\s*value:\s*dev/);
