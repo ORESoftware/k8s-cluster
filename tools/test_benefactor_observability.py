@@ -11,6 +11,9 @@ SERVICE = (
     / "remote/argocd/benefactor-backend-rs"
     / "benefactor-backend-rs.service.yaml"
 )
+PROMETHEUS_DEPLOYMENT = (
+    ROOT / "remote/argocd/observability/prometheus.deployment.yaml"
+)
 
 
 class BenefactorObservabilityContractTest(unittest.TestCase):
@@ -28,6 +31,12 @@ class BenefactorObservabilityContractTest(unittest.TestCase):
         self.assertIn("BenefactorBackendPipelineFailuresIncreasing", manifest)
         self.assertIn("BenefactorBackendCpuNearLimit", manifest)
         self.assertIn("BenefactorBackendMemoryNearLimit", manifest)
+
+        deployment = PROMETHEUS_DEPLOYMENT.read_text(encoding="utf-8")
+        self.assertIn(
+            'dd.dev/config-revision: "2026-07-30-benefactor-backend"',
+            deployment,
+        )
 
     def test_service_exposes_the_annotated_metrics_port(self) -> None:
         manifest = SERVICE.read_text(encoding="utf-8")
