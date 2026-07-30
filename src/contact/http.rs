@@ -10,9 +10,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
-use super::contracts::{
-    ContactJob, ContactOutcome, ContactOutcomeClass, ContactProviderKind,
-};
+use super::contracts::{ContactJob, ContactOutcome, ContactOutcomeClass, ContactProviderKind};
 use super::dispatch::{ContactProviderRegistry, ContactRegistryReadiness};
 use super::provider::ContactProviderError;
 use super::validation::validate_contact_job;
@@ -266,9 +264,9 @@ mod tests {
     use super::*;
     use crate::contact::contracts::{ContactContent, ContactTarget};
     use crate::contact::provider::ContactProvider;
+    use crate::contracts::TraceMetadata;
     use crate::http_api::{DenyAllAuthenticator, SharedSecretAuthenticator};
     use crate::provider::ProviderReadiness;
-    use crate::contracts::TraceMetadata;
 
     struct AcceptingProvider;
 
@@ -282,10 +280,7 @@ mod tests {
             ProviderReadiness::ready()
         }
 
-        async fn send(
-            &self,
-            job: &ContactJob,
-        ) -> Result<ContactOutcome, ContactProviderError> {
+        async fn send(&self, job: &ContactJob) -> Result<ContactOutcome, ContactProviderError> {
             Ok(ContactOutcome::accepted(job, Some("message-1".to_owned())))
         }
     }
@@ -330,9 +325,7 @@ mod tests {
             .oneshot(
                 Request::post("/v1/contact/jobs")
                     .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(
-                        serde_json::to_vec(&job()).expect("job JSON"),
-                    ))
+                    .body(Body::from(serde_json::to_vec(&job()).expect("job JSON")))
                     .expect("request"),
             )
             .await
@@ -348,9 +341,7 @@ mod tests {
                 Request::post("/v1/contact/jobs")
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::AUTHORIZATION, format!("Bearer {}", "x".repeat(32)))
-                    .body(Body::from(
-                        serde_json::to_vec(&job()).expect("job JSON"),
-                    ))
+                    .body(Body::from(serde_json::to_vec(&job()).expect("job JSON")))
                     .expect("request"),
             )
             .await
@@ -376,9 +367,7 @@ mod tests {
                 Request::post("/v1/contact/jobs")
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::AUTHORIZATION, format!("Bearer {}", "x".repeat(32)))
-                    .body(Body::from(
-                        serde_json::to_vec(&invalid).expect("job JSON"),
-                    ))
+                    .body(Body::from(serde_json::to_vec(&invalid).expect("job JSON")))
                     .expect("request"),
             )
             .await

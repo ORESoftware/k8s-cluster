@@ -61,10 +61,7 @@ impl ContactTarget {
             hasher.update(part.as_bytes());
         }
         let digest = hex::encode(hasher.finalize());
-        ContactTargetFingerprint(format!(
-            "{provider}:{}",
-            &digest[..FINGERPRINT_HEX_LENGTH]
-        ))
+        ContactTargetFingerprint(format!("{provider}:{}", &digest[..FINGERPRINT_HEX_LENGTH]))
     }
 }
 

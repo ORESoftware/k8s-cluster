@@ -365,9 +365,7 @@ fn outcome_for_twilio_error(
             ContactOutcomeClass::InvalidTarget
         }
         Some(21_602 | 21_617) => ContactOutcomeClass::InvalidPayload,
-        Some(20_003 | 20_404 | 21_606 | 21_608) => {
-            ContactOutcomeClass::PermanentProviderFailure
-        }
+        Some(20_003 | 20_404 | 21_606 | 21_608) => ContactOutcomeClass::PermanentProviderFailure,
         _ if status == StatusCode::TOO_MANY_REQUESTS => ContactOutcomeClass::Throttled,
         _ if decision.retryable => ContactOutcomeClass::TransientProviderFailure,
         _ if status == StatusCode::BAD_REQUEST => ContactOutcomeClass::InvalidPayload,
@@ -381,10 +379,7 @@ fn outcome_for_twilio_error(
             "Twilio rejected the request with provider code {code} and HTTP {}",
             status.as_u16()
         ),
-        None => format!(
-            "Twilio rejected the request with HTTP {}",
-            status.as_u16()
-        ),
+        None => format!("Twilio rejected the request with HTTP {}", status.as_u16()),
     };
     ContactOutcome {
         version: job.version,
@@ -485,16 +480,13 @@ mod tests {
     #[test]
     fn classifies_invalid_targets_and_throttling_without_recipient_leakage() {
         let job = sms_job();
-        let invalid = outcome_for_twilio_error(
-            &job,
-            StatusCode::BAD_REQUEST,
-            Some(21_211),
-            None,
-        );
+        let invalid = outcome_for_twilio_error(&job, StatusCode::BAD_REQUEST, Some(21_211), None);
         assert_eq!(invalid.class, ContactOutcomeClass::InvalidTarget);
-        assert!(!serde_json::to_string(&invalid)
-            .expect("JSON")
-            .contains("+15551234567"));
+        assert!(
+            !serde_json::to_string(&invalid)
+                .expect("JSON")
+                .contains("+15551234567")
+        );
 
         let throttled = outcome_for_twilio_error(
             &job,
@@ -565,13 +557,18 @@ mod tests {
         let job = sms_job();
         let outcome = provider.send(&job).await.expect("send succeeds");
         assert_eq!(outcome.class, ContactOutcomeClass::Accepted);
-        assert_eq!(outcome.provider_code.as_deref(), Some(fixture_sid("SM").as_str()));
-        assert!(capture
-            .authorization
-            .lock()
-            .await
-            .as_deref()
-            .is_some_and(|value| value.starts_with("Basic ")));
+        assert_eq!(
+            outcome.provider_code.as_deref(),
+            Some(fixture_sid("SM").as_str())
+        );
+        assert!(
+            capture
+                .authorization
+                .lock()
+                .await
+                .as_deref()
+                .is_some_and(|value| value.starts_with("Basic "))
+        );
         assert_eq!(
             capture
                 .form
@@ -582,9 +579,11 @@ mod tests {
                 .map(String::as_str),
             Some("+15551234567")
         );
-        assert!(!serde_json::to_string(&outcome)
-            .expect("outcome JSON")
-            .contains("+15551234567"));
+        assert!(
+            !serde_json::to_string(&outcome)
+                .expect("outcome JSON")
+                .contains("+15551234567")
+        );
         server.abort();
     }
 }

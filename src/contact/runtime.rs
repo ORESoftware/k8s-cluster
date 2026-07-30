@@ -5,9 +5,7 @@ use thiserror::Error;
 use url::Url;
 
 use super::dispatch::ContactProviderRegistry;
-use super::sendgrid::{
-    SendGridConfig, SendGridConfigError, SendGridProvider, SendGridRegion,
-};
+use super::sendgrid::{SendGridConfig, SendGridConfigError, SendGridProvider, SendGridRegion};
 use super::twilio::{
     TwilioConfig, TwilioConfigError, TwilioCredentials, TwilioProvider, TwilioSender,
 };
@@ -39,8 +37,7 @@ pub enum ContactRuntimeConfigError {
     Twilio(#[from] TwilioConfigError),
 }
 
-pub fn contact_registry_from_env(
-) -> Result<ContactProviderRegistry, ContactRuntimeConfigError> {
+pub fn contact_registry_from_env() -> Result<ContactProviderRegistry, ContactRuntimeConfigError> {
     let registry = ContactProviderRegistry::new();
     let registry = configure_sendgrid(registry)?;
     configure_twilio(registry)
@@ -50,14 +47,12 @@ fn configure_sendgrid(
     registry: ContactProviderRegistry,
 ) -> Result<ContactProviderRegistry, ContactRuntimeConfigError> {
     let api_key = non_empty_env("SENDGRID_API_KEY");
-    let from_email = non_empty_env("SENDGRID_FROM_EMAIL")
-        .or_else(|| non_empty_env("EMAIL_FROM"));
+    let from_email = non_empty_env("SENDGRID_FROM_EMAIL").or_else(|| non_empty_env("EMAIL_FROM"));
     if api_key.is_none() && from_email.is_none() {
         return Ok(registry);
     }
     let api_key = api_key.ok_or(ContactRuntimeConfigError::IncompleteProvider("sendgrid"))?;
-    let from_email =
-        from_email.ok_or(ContactRuntimeConfigError::IncompleteProvider("sendgrid"))?;
+    let from_email = from_email.ok_or(ContactRuntimeConfigError::IncompleteProvider("sendgrid"))?;
     let region = parse_sendgrid_region(non_empty_env("SENDGRID_REGION").as_deref())?;
     let config = SendGridConfig::new(
         api_key,
@@ -98,8 +93,7 @@ fn configure_twilio(
         return Ok(registry);
     }
 
-    let account_sid =
-        account_sid.ok_or(ContactRuntimeConfigError::IncompleteProvider("twilio"))?;
+    let account_sid = account_sid.ok_or(ContactRuntimeConfigError::IncompleteProvider("twilio"))?;
     let credentials = twilio_credentials(auth_token, api_key_sid, api_key_secret)?;
     let sender = twilio_sender(messaging_service_sid, from_number)?;
     let mut config = TwilioConfig::new(account_sid, credentials, sender)?;
@@ -120,9 +114,7 @@ fn configure_twilio(
     Ok(registry.with_provider(Arc::new(provider)))
 }
 
-fn parse_sendgrid_region(
-    value: Option<&str>,
-) -> Result<SendGridRegion, ContactRuntimeConfigError> {
+fn parse_sendgrid_region(value: Option<&str>) -> Result<SendGridRegion, ContactRuntimeConfigError> {
     match value
         .unwrap_or("global")
         .trim()

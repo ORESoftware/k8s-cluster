@@ -25,10 +25,7 @@ impl ContactProviderRegistry {
         self
     }
 
-    pub async fn dispatch(
-        &self,
-        job: &ContactJob,
-    ) -> Result<ContactOutcome, ContactProviderError> {
+    pub async fn dispatch(&self, job: &ContactJob) -> Result<ContactOutcome, ContactProviderError> {
         let provider = match job.provider {
             ContactProviderKind::Sendgrid => self.sendgrid.as_ref(),
             ContactProviderKind::Twilio => self.twilio.as_ref(),
@@ -111,11 +108,11 @@ mod tests {
             ProviderReadiness::ready()
         }
 
-        async fn send(
-            &self,
-            job: &ContactJob,
-        ) -> Result<ContactOutcome, ContactProviderError> {
-            Ok(ContactOutcome::accepted(job, Some("accepted-id".to_owned())))
+        async fn send(&self, job: &ContactJob) -> Result<ContactOutcome, ContactProviderError> {
+            Ok(ContactOutcome::accepted(
+                job,
+                Some("accepted-id".to_owned()),
+            ))
         }
     }
 

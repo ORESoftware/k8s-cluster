@@ -90,9 +90,10 @@ impl SendGridConfig {
         let from_name = from_name
             .map(|value| value.trim().to_owned())
             .filter(|value| !value.is_empty());
-        if from_name.as_ref().is_some_and(|value| {
-            value.len() > 256 || value.chars().any(char::is_control)
-        }) {
+        if from_name
+            .as_ref()
+            .is_some_and(|value| value.len() > 256 || value.chars().any(char::is_control))
+        {
             return Err(SendGridConfigError::InvalidFromName);
         }
 
@@ -154,10 +155,9 @@ impl SendGridProvider {
     }
 
     fn mail_send_url(&self) -> Result<Url, ContactProviderError> {
-        self.config
-            .api_base_url
-            .join("v3/mail/send")
-            .map_err(|_| ContactProviderError::internal("SendGrid endpoint could not be constructed"))
+        self.config.api_base_url.join("v3/mail/send").map_err(|_| {
+            ContactProviderError::internal("SendGrid endpoint could not be constructed")
+        })
     }
 
     async fn send_email(&self, job: &ContactJob) -> Result<ContactOutcome, ContactProviderError> {
@@ -277,7 +277,10 @@ fn build_mail_send_body(
     }
 
     let mut personalization = Map::new();
-    personalization.insert("to".to_owned(), Value::Array(vec![Value::Object(recipient)]));
+    personalization.insert(
+        "to".to_owned(),
+        Value::Array(vec![Value::Object(recipient)]),
+    );
     if !dynamic_template_data.is_empty() {
         personalization.insert(
             "dynamic_template_data".to_owned(),
@@ -291,10 +294,7 @@ fn build_mail_send_body(
     }
 
     let mut sender = Map::new();
-    sender.insert(
-        "email".to_owned(),
-        Value::String(config.from_email.clone()),
-    );
+    sender.insert("email".to_owned(), Value::String(config.from_email.clone()));
     if let Some(name) = &config.from_name {
         sender.insert("name".to_owned(), Value::String(name.clone()));
     }
@@ -309,10 +309,7 @@ fn build_mail_send_body(
         root.insert("reply_to".to_owned(), json!({"email": reply_to}));
     }
     if let Some(template_id) = template_id {
-        root.insert(
-            "template_id".to_owned(),
-            Value::String(template_id.clone()),
-        );
+        root.insert("template_id".to_owned(), Value::String(template_id.clone()));
     } else {
         root.insert(
             "subject".to_owned(),
@@ -385,9 +382,9 @@ fn classify_sendgrid_failure(
 fn sanitize_error_field(value: String) -> Option<String> {
     if value.len() > 128
         || value.is_empty()
-        || value
-            .chars()
-            .any(|character| !(character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '[' | ']')))
+        || value.chars().any(|character| {
+            !(character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '[' | ']'))
+        })
     {
         return None;
     }
@@ -462,7 +459,10 @@ mod tests {
         .with_sandbox_mode(true);
         let explicit = build_mail_send_body(&explicit_job(), &config).expect("payload");
         assert_eq!(explicit["from"]["email"], "verified@example.com");
-        assert_eq!(explicit["personalizations"][0]["to"][0]["email"], "person@example.com");
+        assert_eq!(
+            explicit["personalizations"][0]["to"][0]["email"],
+            "person@example.com"
+        );
         assert_eq!(explicit["mail_settings"]["sandbox_mode"]["enable"], true);
 
         let mut template = explicit_job();
@@ -476,7 +476,10 @@ mod tests {
         };
         let payload = build_mail_send_body(&template, &config).expect("template payload");
         assert_eq!(payload["template_id"], "d-0123456789abcdef");
-        assert_eq!(payload["personalizations"][0]["dynamic_template_data"]["name"], "Person");
+        assert_eq!(
+            payload["personalizations"][0]["dynamic_template_data"]["name"],
+            "Person"
+        );
         assert!(payload.get("content").is_none());
     }
 
@@ -486,8 +489,7 @@ mod tests {
         let body = format!(
             r#"{{"errors":[{{"message":"invalid recipient {target}","field":"personalizations.0.to.0.email"}}]}}"#
         );
-        let (class, detail, code) =
-            classify_sendgrid_failure(StatusCode::BAD_REQUEST, &body, None);
+        let (class, detail, code) = classify_sendgrid_failure(StatusCode::BAD_REQUEST, &body, None);
         assert_eq!(class, ContactOutcomeClass::InvalidPayload);
         assert!(!detail.contains(target));
         assert_eq!(code.as_deref(), Some("http_400"));
@@ -511,7 +513,10 @@ mod tests {
         *capture.body.lock().await = Some(body);
         (
             AxumStatusCode::ACCEPTED,
-            [(axum::http::HeaderName::from_static("x-message-id"), "message-1")],
+            [(
+                axum::http::HeaderName::from_static("x-message-id"),
+                "message-1",
+            )],
         )
     }
 

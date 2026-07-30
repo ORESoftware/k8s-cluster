@@ -36,7 +36,9 @@ pub enum ContactValidationError {
     #[error("email content must use either a dynamic template or explicit subject/body content")]
     InvalidEmailContentMode,
 
-    #[error("dynamic template IDs must start with 'd-' and contain only ASCII letters, digits, or '-'")]
+    #[error(
+        "dynamic template IDs must start with 'd-' and contain only ASCII letters, digits, or '-'"
+    )]
     InvalidTemplateId,
 
     #[error("dynamic template data requires template_id")]
@@ -88,7 +90,12 @@ pub fn validate_contact_job(job: &ContactJob) -> Result<(), Vec<ContactValidatio
             if !valid_email_address(address) {
                 errors.push(ContactValidationError::InvalidEmailAddress);
             }
-            validate_optional_length("target.email.name", name.as_deref(), MAX_EMAIL_NAME_BYTES, &mut errors);
+            validate_optional_length(
+                "target.email.name",
+                name.as_deref(),
+                MAX_EMAIL_NAME_BYTES,
+                &mut errors,
+            );
             if let Some(reply_to) = reply_to {
                 if !valid_email_address(reply_to) {
                     errors.push(ContactValidationError::InvalidEmailAddress);
@@ -108,7 +115,9 @@ pub fn validate_contact_job(job: &ContactJob) -> Result<(), Vec<ContactValidatio
                 errors.push(ContactValidationError::InvalidE164);
             }
             if body.trim().is_empty() {
-                errors.push(ContactValidationError::Required { field: "content.body" });
+                errors.push(ContactValidationError::Required {
+                    field: "content.body",
+                });
             }
             if body.chars().count() > MAX_SMS_CHARACTERS {
                 errors.push(ContactValidationError::SmsTooLong {
@@ -116,7 +125,9 @@ pub fn validate_contact_job(job: &ContactJob) -> Result<(), Vec<ContactValidatio
                 });
             }
             if body.chars().any(|character| character == '\0') {
-                errors.push(ContactValidationError::InvalidCharacters { field: "content.body" });
+                errors.push(ContactValidationError::InvalidCharacters {
+                    field: "content.body",
+                });
             }
         }
         _ => errors.push(ContactValidationError::ProviderChannelMismatch),
@@ -212,7 +223,10 @@ pub fn valid_email_address(value: &str) -> bool {
     if value.len() < 3 || value.len() > MAX_EMAIL_ADDRESS_BYTES || !value.is_ascii() {
         return false;
     }
-    if value.chars().any(|character| character.is_control() || character.is_whitespace()) {
+    if value
+        .chars()
+        .any(|character| character.is_control() || character.is_whitespace())
+    {
         return false;
     }
     let mut parts = value.split('@');
@@ -237,7 +251,28 @@ pub fn valid_email_address(value: &str) -> bool {
     }
     if local.chars().any(|character| {
         !(character.is_ascii_alphanumeric()
-            || matches!(character, '!' | '#' | '$' | '%' | '&' | '\'' | '*' | '+' | '-' | '/' | '=' | '?' | '^' | '_' | '`' | '{' | '|' | '}' | '~' | '.'))
+            || matches!(
+                character,
+                '!' | '#'
+                    | '$'
+                    | '%'
+                    | '&'
+                    | '\''
+                    | '*'
+                    | '+'
+                    | '-'
+                    | '/'
+                    | '='
+                    | '?'
+                    | '^'
+                    | '_'
+                    | '`'
+                    | '{'
+                    | '|'
+                    | '}'
+                    | '~'
+                    | '.'
+            ))
     }) {
         return false;
     }
@@ -301,7 +336,10 @@ mod tests {
             text: None,
             html: None,
             template_id: Some("d-0123456789abcdef".to_owned()),
-            dynamic_template_data: BTreeMap::from([("name".to_owned(), serde_json::json!("Person"))]),
+            dynamic_template_data: BTreeMap::from([(
+                "name".to_owned(),
+                serde_json::json!("Person"),
+            )]),
             reply_to: None,
         }))
         .expect("template email");

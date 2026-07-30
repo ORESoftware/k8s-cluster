@@ -23,9 +23,7 @@ pub use dispatch::{
 pub use http::{ContactApiState, ContactBatchRequest, ContactBatchResponse, contact_router};
 pub use provider::{ContactProvider, ContactProviderError};
 pub use runtime::{ContactRuntimeConfigError, contact_registry_from_env};
-pub use sendgrid::{
-    SendGridConfig, SendGridConfigError, SendGridProvider, SendGridRegion,
-};
+pub use sendgrid::{SendGridConfig, SendGridConfigError, SendGridProvider, SendGridRegion};
 pub use twilio::{
     TwilioConfig, TwilioConfigError, TwilioCredentials, TwilioProvider, TwilioSender,
 };

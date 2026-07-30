@@ -3,9 +3,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use thiserror::Error;
 
-use super::contracts::{
-    ContactJob, ContactOutcome, ContactOutcomeClass, ContactProviderKind,
-};
+use super::contracts::{ContactJob, ContactOutcome, ContactOutcomeClass, ContactProviderKind};
 use crate::provider::ProviderReadiness;
 use crate::redaction::truncate_utf8;
 
