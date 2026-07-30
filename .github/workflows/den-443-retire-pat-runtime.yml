@@ -1,0 +1,77 @@
+name: DEN-443 retire PAT runtime propagation
+
+on:
+  push:
+    branches:
+      - agent/den-443-remove-pat-runtime-propagation
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-443-retire-pat-runtime
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-443-remove-pat-runtime-propagation
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Remove the compromised PAT operation and environment injection
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/remote-k8s-maintenance.yml')
+          source = path.read_text()
+
+          option = '          - sync-agent-gh-pat\n'
+          env_line = '          REMOTE_DEV_GH_PAT: ${{ secrets.REMOTE_DEV_GH_PAT }}\n'
+          case_start = '            sync-agent-gh-pat)\n'
+          next_case = '            bootstrap-thread-go-services)\n'
+
+          for needle, label in [
+              (option, 'workflow-dispatch option'),
+              (env_line, 'job environment injection'),
+              (case_start, 'maintenance case'),
+              (next_case, 'following maintenance case'),
+          ]:
+              if needle not in source:
+                  raise SystemExit(f'missing expected {label}')
+
+          source = source.replace(option, '', 1)
+          source = source.replace(env_line, '', 1)
+          start = source.index(case_start)
+          end = source.index(next_case, start)
+          source = source[:start] + source[end:]
+
+          for forbidden in [
+              'sync-agent-gh-pat',
+              'REMOTE_DEV_GH_PAT',
+              'data["GH_PAT"]',
+              'env REMOTE_DEV_GH_PAT=',
+          ]:
+              if forbidden in source:
+                  raise SystemExit(f'forbidden PAT propagation remains: {forbidden}')
+
+          path.write_text(source)
+          PY
+      - name: Commit only the maintenance workflow patch
+        run: |
+          set -euo pipefail
+          git add .github/workflows/remote-k8s-maintenance.yml
+          if git diff --cached --quiet; then
+            echo 'PAT runtime propagation is already removed.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-443 remove PAT runtime propagation'
+          git push origin HEAD:agent/den-443-remove-pat-runtime-propagation
