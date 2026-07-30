@@ -8,6 +8,10 @@ const FIDUCIA_RELEASE = "957618c8ff7ca746519889573443b5e9e68dde19";
 const AKRION_RELEASE = "1bd5dc5a050ce05f9a495e08038cc02e9647e092";
 const CANONICAL_RELEASE = "e09bb95160aaf95a836e810eb20b65e74f6317a6";
 const CANONICAL_PACKAGE = "ghcr.io/canonical-cloud/canonical-web-server-rs";
+const CANONICAL_WEB_DIGEST =
+  "sha256:61ec2bc5ca5f73bee07f3da1ef29149defbb0e7f14a4070d43dff311dec9421e";
+const CANONICAL_REVOKER_DIGEST =
+  "sha256:beb1b3414f429836be78cd41005070bf86dfd367389dbe7b202a89a5308d297b";
 const SONUS_EXPORTER =
   "docker.io/nginx/nginx-prometheus-exporter:1.5.1@sha256:9f6d963bb2b19d706d401cc3e2c3ea8de2f1c471b96a2156ca45e76f650b1625";
 
@@ -107,13 +111,13 @@ test("Fiducia and Akrion build the reviewed merged revisions", async () => {
   assert.doesNotMatch(akrion, /AKRION_WEB_GIT_REF\n\s*value:\s*dev/);
 });
 
-test("Canonical pins matching immutable component tags in one repository-owned package", async () => {
+test("Canonical pins matching immutable tags and verified registry digests", async () => {
   const web = await read("remote/argocd/canonical-cloud/web.deployment.yaml");
   const revoker = await read("remote/argocd/canonical-cloud/revoker.deployment.yaml");
   const service = await read("remote/argocd/canonical-cloud/web.service.yaml");
 
-  const webImage = `${CANONICAL_PACKAGE}:web-${CANONICAL_RELEASE}`;
-  const revokerImage = `${CANONICAL_PACKAGE}:revoker-${CANONICAL_RELEASE}`;
+  const webImage = `${CANONICAL_PACKAGE}:web-${CANONICAL_RELEASE}@${CANONICAL_WEB_DIGEST}`;
+  const revokerImage = `${CANONICAL_PACKAGE}:revoker-${CANONICAL_RELEASE}@${CANONICAL_REVOKER_DIGEST}`;
   assert.ok(web.includes(`image: ${webImage}`));
   assert.ok(revoker.includes(`image: ${revokerImage}`));
   assert.ok(web.includes(`canonical.cloud/release-sha: "${CANONICAL_RELEASE}"`));
