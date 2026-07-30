@@ -26,7 +26,10 @@ applications:
     source_repository: canonical-cloud/canonical-web-server.rs
     source_pull_request: 27
     publisher_pull_request: 28
-    source_revision: pending-publisher-merge
+    release_verification_pull_request: 29
+    source_revision: e09bb95160aaf95a836e810eb20b65e74f6317a6
+    web_image: ghcr.io/canonical-cloud/canonical-web-server:e09bb95160aaf95a836e810eb20b65e74f6317a6
+    revoker_image: ghcr.io/canonical-cloud/canonical-session-revoker:e09bb95160aaf95a836e810eb20b65e74f6317a6
     workload: canonical-cloud/canonical-cloud-web
     target: canonical-cloud-web.canonical-cloud.svc.cluster.local:8081
     path: /metrics
