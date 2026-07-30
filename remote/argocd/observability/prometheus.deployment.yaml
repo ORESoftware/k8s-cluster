@@ -82,7 +82,9 @@ spec:
             defaultMode: 0440
             sources:
               - serviceAccountToken:
-                  audience: https://kubernetes.default.svc.cluster.local
+                  # Omit a custom audience so Kubernetes uses the API server's
+                  # configured identifier. A hard-coded DNS audience can yield
+                  # a structurally valid token that this cluster rejects.
                   expirationSeconds: 3600
                   path: token
               - configMap:
