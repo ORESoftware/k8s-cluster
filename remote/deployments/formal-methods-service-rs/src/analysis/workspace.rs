@@ -48,6 +48,7 @@ pub struct CheckoutSpec {
 /// Clone the given repo into a temp directory under `workdir_root` and check
 /// out `head_sha`. Performs a shallow fetch of the single commit.
 pub async fn checkout(spec: CheckoutSpec) -> Result<Workspace> {
+    validate_checkout_spec(&spec)?;
     tokio::fs::create_dir_all(&spec.workdir_root)
         .await
         .with_context(|| {
@@ -122,12 +123,53 @@ pub async fn checkout(spec: CheckoutSpec) -> Result<Workspace> {
     .await;
     ensure_ok(&checkout, "git checkout")?;
 
+    // The origin may contain an embedded short-lived GitHub token. Remove it
+    // before any analyzer executes untrusted PR code, so the checkout cannot
+    // recover credentials from .git/config.
+    let remove_remote = runner::run(
+        "git",
+        &["remote", "remove", "origin"],
+        &root,
+        &[],
+        spec.clone_timeout,
+    )
+    .await;
+    ensure_ok(&remove_remote, "git remote remove")?;
+
     Ok(Workspace {
         _tmp: tmp,
         root,
         head_sha: spec.head_sha,
         repo_full_name: spec.repo_full_name,
     })
+}
+
+fn validate_checkout_spec(spec: &CheckoutSpec) -> Result<()> {
+    if !matches!(spec.head_sha.len(), 40 | 64)
+        || !spec.head_sha.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(anyhow!(
+            "head SHA must be a 40- or 64-character hexadecimal digest"
+        ));
+    }
+    if spec.head_ref.is_empty()
+        || spec.head_ref.len() > 255
+        || spec.head_ref.starts_with('-')
+        || spec.head_ref.starts_with('/')
+        || spec.head_ref.ends_with('/')
+        || spec.head_ref.ends_with('.')
+        || spec.head_ref.ends_with(".lock")
+        || spec.head_ref.contains("..")
+        || spec.head_ref.contains("//")
+        || spec.head_ref.contains("@{")
+        || !spec
+            .head_ref
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'/'))
+    {
+        return Err(anyhow!("head ref is not a safe Git branch name"));
+    }
+    Ok(())
 }
 
 fn ensure_ok(outcome: &runner::ProcessOutcome, label: &str) -> Result<()> {
@@ -138,5 +180,32 @@ fn ensure_ok(outcome: &runner::ProcessOutcome, label: &str) -> Result<()> {
             redact_url(&outcome.command),
             redact_url(&outcome.stderr_tail)
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn checkout_spec() -> CheckoutSpec {
+        CheckoutSpec {
+            clone_url: "https://github.com/owner/repo.git".into(),
+            head_sha: "a".repeat(40),
+            head_ref: "feature/harden-formal".into(),
+            repo_full_name: "owner/repo".into(),
+            workdir_root: std::env::temp_dir(),
+            clone_timeout: Duration::from_secs(30),
+        }
+    }
+
+    #[test]
+    fn checkout_spec_rejects_unsafe_sha_and_ref() {
+        assert!(validate_checkout_spec(&checkout_spec()).is_ok());
+        let mut bad_sha = checkout_spec();
+        bad_sha.head_sha = "not-a-sha".into();
+        assert!(validate_checkout_spec(&bad_sha).is_err());
+        let mut bad_ref = checkout_spec();
+        bad_ref.head_ref = "--upload-pack=evil".into();
+        assert!(validate_checkout_spec(&bad_ref).is_err());
     }
 }
