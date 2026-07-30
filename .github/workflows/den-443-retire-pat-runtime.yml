@@ -1,4 +1,4 @@
-name: DEN-443 retire PAT runtime propagation
+name: DEN-443 export PAT-removal patch
 
 on:
   pull_request:
@@ -13,44 +13,34 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: den-443-retire-pat-runtime-${{ github.event_name }}
-  cancel-in-progress: false
+  group: den-443-export-pat-removal-${{ github.event_name }}
+  cancel-in-progress: true
 
 jobs:
   patch:
-    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/den-443-remove-pat-runtime-propagation')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: agent/den-443-remove-pat-runtime-propagation
-          fetch-depth: 0
           persist-credentials: false
-      - name: Remove the compromised PAT operation and environment injection
+      - name: Generate the exact maintenance-workflow deletion
         run: |
           set -euo pipefail
+          cp .github/workflows/remote-k8s-maintenance.yml /tmp/remote-k8s-maintenance.before.yml
           python3 <<'PY'
           from pathlib import Path
 
           path = Path('.github/workflows/remote-k8s-maintenance.yml')
           source = path.read_text()
-
           option = '          - sync-agent-gh-pat\n'
           env_line = '          REMOTE_DEV_GH_PAT: $' + '{{ secrets.REMOTE_DEV_GH_PAT }}\n'
           case_start = '            sync-agent-gh-pat)\n'
           next_case = '            bootstrap-thread-go-services)\n'
 
-          already_removed = all(
-              needle not in source
-              for needle in (option, env_line, case_start)
-          )
-          if already_removed:
-              Path('/tmp/den-443-already-removed').write_text('true\n')
-              raise SystemExit(0)
           for needle, label in [
               (option, 'workflow-dispatch option'),
               (env_line, 'job environment injection'),
@@ -65,7 +55,6 @@ jobs:
           start = source.index(case_start)
           end = source.index(next_case, start)
           source = source[:start] + source[end:]
-
           for forbidden in [
               'sync-agent-gh-pat',
               'REMOTE_DEV_GH_PAT',
@@ -74,80 +63,20 @@ jobs:
           ]:
               if forbidden in source:
                   raise SystemExit(f'forbidden PAT propagation remains: {forbidden}')
-
           path.write_text(source)
           PY
-      - name: Create an unattached Git commit object for the reviewed patch
-        if: hashFiles('/tmp/den-443-already-removed') == ''
-        env:
-          GH_API_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          api="https://api.github.com/repos/${REPOSITORY}"
-          base_commit="$(git rev-parse HEAD)"
-          base_tree="$(git show -s --format=%T "$base_commit")"
-
-          python3 <<'PY' > /tmp/den-443-blob.json
-          import base64
-          import json
-          from pathlib import Path
-
-          content = base64.b64encode(
-              Path('.github/workflows/remote-k8s-maintenance.yml').read_bytes()
-          ).decode('ascii')
-          print(json.dumps({'content': content, 'encoding': 'base64'}, separators=(',', ':')))
-          PY
-
-          blob_sha="$(
-            curl --fail-with-body --silent --show-error \
-              -X POST \
-              -H 'Accept: application/vnd.github+json' \
-              -H "Authorization: Bearer ${GH_API_TOKEN}" \
-              -H 'X-GitHub-Api-Version: 2022-11-28' \
-              "${api}/git/blobs" \
-              --data-binary @/tmp/den-443-blob.json \
-            | jq -er '.sha'
-          )"
-          tree_sha="$(
-            jq -n \
-              --arg base_tree "$base_tree" \
-              --arg blob_sha "$blob_sha" \
-              '{base_tree:$base_tree,tree:[{path:".github/workflows/remote-k8s-maintenance.yml",mode:"100644",type:"blob",sha:$blob_sha}]}' \
-            | curl --fail-with-body --silent --show-error \
-                -X POST \
-                -H 'Accept: application/vnd.github+json' \
-                -H "Authorization: Bearer ${GH_API_TOKEN}" \
-                -H 'X-GitHub-Api-Version: 2022-11-28' \
-                "${api}/git/trees" \
-                --data-binary @- \
-            | jq -er '.sha'
-          )"
-          commit_sha="$(
-            jq -n \
-              --arg message 'DEN-443 remove PAT runtime propagation' \
-              --arg tree "$tree_sha" \
-              --arg parent "$base_commit" \
-              '{message:$message,tree:$tree,parents:[$parent]}' \
-            | curl --fail-with-body --silent --show-error \
-                -X POST \
-                -H 'Accept: application/vnd.github+json' \
-                -H "Authorization: Bearer ${GH_API_TOKEN}" \
-                -H 'X-GitHub-Api-Version: 2022-11-28' \
-                "${api}/git/commits" \
-                --data-binary @- \
-            | jq -er '.sha'
-          )"
-
-          echo "detached_commit_sha=${commit_sha}"
-          printf '%s\n' "$commit_sha" > /tmp/den-443-detached-commit-sha
-      - name: Upload detached commit evidence
-        if: always()
-        uses: actions/upload-artifact@v6
+          diff -u \
+            --label a/.github/workflows/remote-k8s-maintenance.yml \
+            --label b/.github/workflows/remote-k8s-maintenance.yml \
+            /tmp/remote-k8s-maintenance.before.yml \
+            .github/workflows/remote-k8s-maintenance.yml \
+            > /tmp/den-443-remove-pat-runtime-propagation.patch || test "$?" = 1
+          test -s /tmp/den-443-remove-pat-runtime-propagation.patch
+          grep -q 'sync-agent-gh-pat' /tmp/den-443-remove-pat-runtime-propagation.patch
+          grep -q 'REMOTE_DEV_GH_PAT' /tmp/den-443-remove-pat-runtime-propagation.patch
+      - uses: actions/upload-artifact@v6
         with:
-          name: den-443-detached-maintenance-commit
-          path: |
-            /tmp/den-443-detached-commit-sha
-            .github/workflows/remote-k8s-maintenance.yml
-          if-no-files-found: warn
+          name: den-443-pat-removal-patch
+          path: /tmp/den-443-remove-pat-runtime-propagation.patch
+          if-no-files-found: error
           retention-days: 2
