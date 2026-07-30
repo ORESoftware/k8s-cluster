@@ -56,9 +56,14 @@ async fn sendgrid_sandbox_accepts_the_canonical_email_contract() {
         "eu" | "europe" => SendGridRegion::Europe,
         value => panic!("unsupported SENDGRID_CANARY_REGION: {value}"),
     };
-    let config = SendGridConfig::new(api_key, from_email, Some("Provider Canary".to_owned()), region)
-        .expect("valid SendGrid canary configuration")
-        .with_sandbox_mode(true);
+    let config = SendGridConfig::new(
+        api_key,
+        from_email,
+        Some("Provider Canary".to_owned()),
+        region,
+    )
+    .expect("valid SendGrid canary configuration")
+    .with_sandbox_mode(true);
     let provider = SendGridProvider::new(config).expect("SendGrid provider");
     let job = contact_job(
         "sendgrid-sandbox",
