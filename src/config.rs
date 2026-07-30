@@ -44,8 +44,9 @@ impl Config {
         let deliveries: Vec<DeliveryRoute> = serde_json::from_str(&deliveries_raw)
             .context("BRIDGE_DELIVERIES must be a JSON array of {subject, webhook}")?;
         for route in &deliveries {
-            validate_delivery_webhook(&route.webhook)
-                .map_err(|reason| anyhow::anyhow!("invalid delivery webhook '{}': {reason}", route.webhook))?;
+            validate_delivery_webhook(&route.webhook).map_err(|reason| {
+                anyhow::anyhow!("invalid delivery webhook '{}': {reason}", route.webhook)
+            })?;
             // Delivery subscriptions may use wildcards, but still only under
             // the bridge's own prefix — this bridge is not a generic NATS tap.
             anyhow::ensure!(
@@ -109,7 +110,9 @@ pub fn validate_delivery_webhook(webhook: &str) -> Result<(), &'static str> {
     let raw = webhook.trim();
     if raw.is_empty()
         || raw.len() > 2_048
-        || raw.chars().any(|character| character.is_control() || character.is_whitespace())
+        || raw
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
     {
         return Err("URL is empty, too long, or contains invalid characters");
     }
@@ -224,10 +227,14 @@ mod tests {
 
         assert!(validate_delivery_webhook("http://hooks.example.com/events").is_err());
         assert!(validate_delivery_webhook("http://169.254.169.254/latest/meta-data").is_err());
-        assert!(validate_delivery_webhook("http://metadata.google.internal/computeMetadata/v1")
-            .is_err());
+        assert!(
+            validate_delivery_webhook("http://metadata.google.internal/computeMetadata/v1")
+                .is_err()
+        );
         assert!(validate_delivery_webhook("https://user:pass@hooks.example.com/events").is_err());
-        assert!(validate_delivery_webhook("https://hooks.example.com/events?token=secret").is_err());
+        assert!(
+            validate_delivery_webhook("https://hooks.example.com/events?token=secret").is_err()
+        );
         assert!(validate_delivery_webhook("file:///tmp/hook").is_err());
     }
 }
