@@ -1,0 +1,85 @@
+schema_version = 1
+procedure_version = 1
+repository = "daedalus-fab/fabrication-server.rs"
+
+[policy]
+claim_classes = ["typechecked-specification", "randomized-exploration", "bounded-exhaustive-verification", "implementation-replay", "differential-replay", "unbounded-proof"]
+required_evidence = ["method", "bounds", "assumptions", "model-hash", "implementation-and-schema-revisions", "coordination-and-persistence-modes", "tool-versions"]
+counterexample = "Retain and minimize delivery, lease, store, planner, and retention traces with identities, modes, expected/actual state, and revisions; classify and add a Rust regression."
+change_trigger = "Review this inventory with job identity, transport, lease, store, learning, retention, artifact, planner, or replica semantic changes."
+
+[[machine]]
+id = "fabrication-job-deduplication"
+risk = "critical"
+status = "planned"
+backend = "quint+itf-rust-replay"
+owner = "daedalus-jobs"
+source_paths = ["src/stores.rs"]
+safety = [
+  "one kind/request_id pair identifies one logical fabrication job",
+  "NATS redelivery of the same request does not create a second job or artifact set",
+  "different requests reusing one identity produce an explicit displacement/conflict signal",
+  "a store error is never reported as an empty or missing successful result",
+  "persisted job payload remains decodable and finite",
+]
+liveness = ["with an available store and recurring delivery, one valid request eventually persists one explicit job outcome"]
+faults = ["duplicate delivery", "response lost after upsert", "two replicas insert", "request ID collision", "payload encoding failure", "database unavailable"]
+bounds = ["two replicas", "two request identities", "two deliveries", "two artifact sets", "finite payload variants"]
+review_triggers = ["job ID derivation", "upsert", "displaced outcome", "NATS ack", "payload encoding", "store error"]
+
+[[machine]]
+id = "distributed-work-lease"
+risk = "critical"
+status = "planned"
+backend = "quint+apalache+itf-rust-replay"
+owner = "daedalus-coordination"
+source_paths = ["src/coordination.rs"]
+safety = [
+  "at most one live distributed holder is authoritative for one work key",
+  "renewal preserves the exact holder, key set, and fencing token",
+  "renew failure or mismatched response immediately removes authority",
+  "a stale worker cannot perform a fenced side effect",
+  "unavailable or forbidden Fiducia responses never degrade into a granted lease",
+  "Noop tokens are never treated as globally comparable across processes",
+]
+liveness = ["with healthy Fiducia, advancing logical time, and recurring retry, an unconflicted work key eventually grants or returns an explicit failure"]
+faults = ["ambiguous acquire response", "renew timeout", "lease expiry", "stale worker", "release failure", "wrong-scope credential", "Noop multi-replica deployment"]
+bounds = ["two workers", "two keys", "two fencing generations", "bounded TTL and renewal intervals", "Noop and Fiducia modes"]
+review_triggers = ["holder identity", "acquire", "renew", "release", "fencing token", "TTL", "coordination mode", "replica assumption"]
+
+[[machine]]
+id = "shared-learning-state"
+risk = "high"
+status = "planned"
+backend = "quint+property-tests+postgres-itf-replay"
+owner = "daedalus-learning"
+source_paths = ["src/stores.rs", "src/persistence.rs"]
+safety = [
+  "replicas observe one shared persisted outcome set when PostgreSQL mode is required",
+  "nonfinite computed values are normalized before they can create unreadable rows or undefined aggregates",
+  "a backend or decode failure is explicit and not converted to an empty policy snapshot",
+  "the same bounded outcome set produces one deterministic learning-policy snapshot",
+]
+liveness = ["with available shared persistence and recurring writes/reads, accepted outcomes eventually influence the next policy snapshot"]
+faults = ["two replicas write", "NaN or infinity", "payload decode failure", "database unavailable", "response lost", "persistence disabled"]
+bounds = ["two replicas", "three outcomes", "finite reward bands", "memory and PostgreSQL modes"]
+review_triggers = ["outcome schema", "finite sanitization", "aggregate", "store selection", "persistence requirement", "planner policy"]
+
+[[machine]]
+id = "store-retention-convergence"
+risk = "high"
+status = "planned"
+backend = "quint+postgres-itf-replay"
+owner = "daedalus-persistence"
+source_paths = ["src/stores.rs", "src/persistence.rs"]
+safety = [
+  "retention deletion preserves the newest rows under the documented stable ordering",
+  "one sweep deletes no more than its configured batch",
+  "concurrent idempotent sweeps cannot delete a row that a single equivalent sweep would retain",
+  "reads remain bounded even when writes temporarily exceed the retention target",
+  "the procedure never claims PostgreSQL row count is a hard cap",
+]
+liveness = ["with recurring writes/sweeps and finite incoming load, an oversized table eventually converges toward the retention target"]
+faults = ["two concurrent sweeps", "new write during sweep", "large backlog", "equal creation time", "database response lost"]
+bounds = ["two sweepers", "finite ordered rows", "bounded delete batch", "finite incoming writes"]
+review_triggers = ["retention target", "sweep frequency", "delete batch", "ordering", "query limit", "hard-cap wording"]
