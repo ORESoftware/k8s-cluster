@@ -1,3 +1,4 @@
+mod fingerprint;
 pub mod service;
 pub mod types;
 

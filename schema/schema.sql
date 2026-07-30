@@ -214,6 +214,10 @@ create index if not exists accounts_user_idx on accounts (user_id) where user_id
 ------------------------------------------------------------------------------
 -- Transactions (header) + postings (rows)
 -- A transaction is a set of N>=2 postings that MUST sum to zero per currency.
+-- `intent_fingerprint` binds an idempotency key to the canonical accounting
+-- request. The legacy default is deliberately fail-closed: rows that predate
+-- fingerprinting cannot be safely claimed by an arbitrary post-upgrade replay,
+-- so the application requires callers to use a new key for those operations.
 ------------------------------------------------------------------------------
 
 create table if not exists transactions (
@@ -222,9 +226,14 @@ create table if not exists transactions (
   shard_key       bigint not null,
   kind            text not null,
   idempotency_key text not null,
+  intent_fingerprint text not null default 'legacy:v0',
   description     text,
   metadata        jsonb not null default '{}'::jsonb,
   posted_at       timestamptz not null default now(),
+  constraint transactions_intent_fingerprint_format check (
+    intent_fingerprint = 'legacy:v0'
+    or intent_fingerprint ~ '^sha256:v1:[0-9a-f]{64}$'
+  ),
   unique (tenant_id, idempotency_key)
 );
 
