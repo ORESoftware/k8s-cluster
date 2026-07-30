@@ -1,0 +1,26 @@
+[package]
+name = "happy-wakey-gateway-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-nats = "=0.38.0"
+async-trait = "0.1"
+axum = { version = "0.8", features = ["macros"] }
+chrono = { version = "0.4", features = ["serde"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "http2"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tower-http = { version = "0.6", features = ["trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+utoipa = { version = "=5.5.0", features = ["axum_extras", "preserve_order", "preserve_path_order"] }
+utoipa-axum = "=0.2.0"
+utoipa-scalar = "=0.3.0"
+url = "2"
+
+[dev-dependencies]
+http-body-util = "0.1"
+tempfile = "3"
+tower = { version = "0.5", features = ["util"] }

@@ -70,6 +70,13 @@ data:
         static_configs:
           - targets:
               - dd-k8s-resource-exporter.observability.svc.cluster.local:9102
+      # Benefactor owns its endpoint in benefactor-cc/backend.rs, while this
+      # central job makes that endpoint an explicit fleet scrape contract.
+      - job_name: benefactor-backend-rs
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - benefactor-backend-rs.default.svc.cluster.local:80
       # DEN-666 first-party application endpoints. These direct scrapes
       # complement the existing OTLP pipeline and retain the global 15s cadence.
       - job_name: fiducia-backend
@@ -185,6 +192,11 @@ data:
         static_configs:
           - targets:
               - dd-public-data-server.default.svc.cluster.local:8115
+      - job_name: dd-happy-wakey-gateway
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-happy-wakey-gateway.default.svc.cluster.local:8128
       - job_name: dd-patent-filing-rs
         metrics_path: /metrics
         static_configs:
@@ -346,6 +358,69 @@ data:
             annotations:
               summary: "Application metrics target {{ $labels.job }} is down"
               description: "Prometheus cannot scrape {{ $labels.instance }}/metrics for {{ $labels.job }}."
+          - alert: BenefactorBackendTargetMissing
+            expr: absent(up{job="benefactor-backend-rs"})
+            for: 2m
+            labels:
+              severity: warning
+              service: benefactor-backend-rs
+            annotations:
+              summary: Benefactor backend scrape target is missing
+              description: "Prometheus has no benefactor-backend-rs target; backend metrics and target-down detection are unavailable."
+          - alert: BenefactorBackendTargetDown
+            expr: up{job="benefactor-backend-rs"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: benefactor-backend-rs
+            annotations:
+              summary: Benefactor backend scrape target is down
+              description: "Prometheus cannot scrape benefactor-backend-rs /metrics."
+          - alert: BenefactorBackendDependencyNotReady
+            expr: benefactor_backend_dependency_ready == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: benefactor-backend-rs
+            annotations:
+              summary: Benefactor backend dependency is not ready
+              description: "A bounded backend dependency readiness gauge has remained zero for two minutes."
+          - alert: BenefactorBackendPipelineFailuresIncreasing
+            expr: sum(rate(benefactor_backend_pipeline_runs_total{outcome="error"}[10m])) > 0
+            for: 2m
+            labels:
+              severity: warning
+              service: benefactor-backend-rs
+            annotations:
+              summary: Benefactor background pipeline failures are increasing
+              description: "The Gmail reply poller or HubSpot synchronization worker is reporting failed runs."
+          - alert: BenefactorBackendWorkloadUnavailable
+            expr: dd:k8s_workload:available_ratio{namespace="default", workload="benefactor-backend-rs"} < 1
+            for: 5m
+            labels:
+              severity: warning
+              service: benefactor-backend-rs
+            annotations:
+              summary: Benefactor backend deployment has unavailable replicas
+              description: "The benefactor-backend-rs Deployment has fewer available replicas than desired."
+          - alert: BenefactorBackendCpuNearLimit
+            expr: (max(dd_k8s_pod_container_cpu_usage_cores{namespace="default",app="benefactor-backend-rs",container="api"}) / max(dd_k8s_pod_container_cpu_limit_cores{namespace="default",app="benefactor-backend-rs",container="api"})) > 0.85
+            for: 10m
+            labels:
+              severity: warning
+              service: benefactor-backend-rs
+            annotations:
+              summary: Benefactor backend CPU usage is near its limit
+              description: "The serving container is using more than 85% of its configured CPU limit."
+          - alert: BenefactorBackendMemoryNearLimit
+            expr: (max(dd_k8s_pod_container_memory_usage_bytes{namespace="default",app="benefactor-backend-rs",container="api"}) / max(dd_k8s_pod_container_memory_limit_bytes{namespace="default",app="benefactor-backend-rs",container="api"})) > 0.85
+            for: 10m
+            labels:
+              severity: warning
+              service: benefactor-backend-rs
+            annotations:
+              summary: Benefactor backend memory usage is near its limit
+              description: "The serving container is using more than 85% of its configured memory limit."
           - alert: DDSonusAurisNginxExporterScrapeFailed
             expr: absent(nginx_up{job="dd-sonus-auris-site"}) or nginx_up{job="dd-sonus-auris-site"} == 0
             for: 2m
@@ -544,6 +619,24 @@ data:
             annotations:
               summary: Fabrication server scrape target is down
               description: "Prometheus cannot scrape dd-fabrication-server /metrics; planning, instruction validation, and learning telemetry may be unavailable."
+          - alert: DDDaedalusApiServerTargetDown
+            expr: up{job="dd-daedalus-api-server"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-daedalus-api-server
+            annotations:
+              summary: Daedalus API server scrape target is down
+              description: "Prometheus cannot scrape dd-daedalus-api-server /metrics; API authorization and rejection telemetry may be unavailable."
+          - alert: DDDaedalusWebServerTargetDown
+            expr: up{job="dd-daedalus-web-server"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-daedalus-web-server
+            annotations:
+              summary: Daedalus web server scrape target is down
+              description: "Prometheus cannot scrape dd-daedalus-web-server /metrics; web request, authorization, rejection, and page telemetry may be unavailable."
           - alert: DDFabricationServerPodScrapeTargetsMissing
             expr: absent(up{job="dd-fabrication-server-pods"})
             for: 10m

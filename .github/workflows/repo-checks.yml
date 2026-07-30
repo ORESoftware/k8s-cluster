@@ -94,6 +94,7 @@ jobs:
             general/cluster-doctor-cron.test.ts
             general/container-pool-config.test.ts
             general/contract-service-config.test.ts
+            general/daedalus-observability.test.ts
             general/des-simulator-config.test.ts
             general/dev-server-container-pool-config.test.ts
             general/fsharp-ws-server-config.test.ts
