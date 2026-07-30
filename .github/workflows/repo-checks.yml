@@ -113,6 +113,7 @@ jobs:
             general/remote-libs-submodule-contract.test.ts
             general/remote-dev-worker-git-hardening.test.ts
             general/runtime-split-config.test.ts
+            general/security-hardening-contract.test.ts
             general/selenium-server-config.test.ts
             general/thread-fleet-exporter-go-config.test.ts
             general/thread-operator-go-config.test.ts
