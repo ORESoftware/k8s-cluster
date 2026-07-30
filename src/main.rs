@@ -36,7 +36,6 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::info;
-use tracing_subscriber::EnvFilter;
 
 fn env_or(key: &str, default: &str) -> String {
     return std::env::var(key).unwrap_or_else(|_| default.to_string());
@@ -95,12 +94,19 @@ fn read_env_or_file(env_key: &str, file_key: &str) -> Result<Option<String>> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .with_target(false)
-        .init();
+    let role = std::env::args()
+        .nth(1)
+        .or_else(|| std::env::var("TOR_ROLE").ok())
+        .unwrap_or_default();
+    let telemetry_service = match role.as_str() {
+        "client" => "tor-client",
+        "relay" => "tor-relay",
+        "keygen" => "tor-keygen",
+        _ => "tor-server",
+    };
+    // Retain the guard until every mode exits so buffered logs, traces, and
+    // metrics are flushed during both graceful shutdown and startup failure.
+    let _telemetry = fiducia_telemetry::init(telemetry_service);
 
     // Optional overlay membership secret, folded into every handshake. Prefer a
     // file (TOR_NETWORK_SECRET_FILE) so the secret is not exposed in the
@@ -116,11 +122,6 @@ async fn main() -> Result<()> {
             info!("overlay pre-shared key active");
         }
     }
-
-    let role = std::env::args()
-        .nth(1)
-        .or_else(|| std::env::var("TOR_ROLE").ok())
-        .unwrap_or_default();
 
     match role.as_str() {
         "relay" => run_relay(network_secret_active).await,

@@ -65,6 +65,13 @@ spec:
       ports:
         - { protocol: UDP, port: 53 }
         - { protocol: TCP, port: 53 }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: observability }
+          podSelector:
+            matchLabels: { app: dd-otel-collector }
+      ports:
+        - { protocol: TCP, port: 4317 }
 ---
 # Relays need relay-to-relay (Extend), kube-dns, and — for exits — the public
 # internet. The ipBlock allows the internet but EXCEPTs private/loopback/metadata
@@ -94,6 +101,13 @@ spec:
       ports:
         - { protocol: UDP, port: 53 }
         - { protocol: TCP, port: 53 }
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: observability }
+          podSelector:
+            matchLabels: { app: dd-otel-collector }
+      ports:
+        - { protocol: TCP, port: 4317 }
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
