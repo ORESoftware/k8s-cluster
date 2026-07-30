@@ -177,6 +177,12 @@ spec:
               value: '240'
             - name: SOUND_RECORDER_ALLOW_PUBLIC_DEVICE_REGISTRATION
               value: 'false'
+            # Supabase is a secondary identity provider. A temporary Supabase
+            # outage must not make the recorder backend unready.
+            - name: SOUND_RECORDER_REQUIRE_SUPABASE
+              value: 'false'
+            - name: SOUND_RECORDER_SHARED_AUTH_REQUIRED_AAL
+              value: '2'
             - name: SOUND_RECORDER_S3_BUCKET
               valueFrom:
                 secretKeyRef:
@@ -359,6 +365,13 @@ spec:
                   name: dd-agent-secrets
                   key: SOUND_RECORDER_ANDROID_PLAY_STORE_URL
                   optional: true
+          envFrom:
+            # Optional until dd/shared-auth/introspect-secret is provisioned.
+            # The ExternalSecret atomically supplies both the service root and
+            # matching introspection credential.
+            - secretRef:
+                name: dd-sound-recorder-auth
+                optional: true
           ports:
             - name: http
               containerPort: 8126
