@@ -51,14 +51,16 @@ Pulls wait for an earlier locked mailbox row instead of skipping to a later curs
 
 `POST /v1/signal/mailbox/ack` already matches the shared bounded `{items:[{envelope_id}]}` request and `{acknowledged}` response. Acknowledgement remains recipient-scoped and means decrypt, payload validation, and atomic local persistence already succeeded.
 
+### Publish or replenish prekeys
+
+`PUT /v1/signal/prekeys` now accepts the shared flattened `SignalPublishPreKeysRequest` and returns `bundle_revision`, `device_revision`, and the current `unclaimed_prekey_count`.
+
+The device supplies a positive `bundle_revision`. A lower revision is rejected, a same-revision retry must match the stored bundle and any reused prekey IDs exactly, and a higher revision rotates the bundle. A same-revision request may add previously unseen one-time prekeys without rewriting the bundle. Exact retries do not increment `device_revision`; effective bundle rotations or pool replenishments do.
+
+The response counts the current unclaimed pool after the transaction, rather than only the rows inserted by this request. Bundle comparison, one-time prekey conflict checks, revision updates, security events, and the pool count all share one transaction.
+
 ## Canonical fixture provenance
 
 `fixtures/signal-http-wire.json` is a byte-identical snapshot of the canonical fixture merged in `3FA-app/3fa-interfaces` at `f8114237994112647453321b4e1bc4287b0bf3c9` (SHA-256 `8c6a2a72b52cb6d5c9e3ff32b4348d426dec81c32746d83540af67e497559ef3`).
 
-The backend test hashes that snapshot, round-trips its queue, pull, empty-pull, and acknowledgement values through the actual HTTP DTOs, and drives the duplicate/status and monotonic-cursor mapping with those exact values. The publish request is required to remain rejected until the store semantics below are reconciled.
-
-## Remaining blocker: publish-prekey revision semantics
-
-The shared `SignalPublishPreKeysRequest/Response` uses a device-supplied strictly increasing `bundle_revision` and reports the current unclaimed prekey count. The current backend store allocates bundle revisions server-side and reports inserted prekey count instead.
-
-That difference is not papered over in an HTTP adapter. A follow-up DEN-536 store/schema PR must define idempotent same-revision retries, reject stale or conflicting revisions, preserve atomic replenishment, and return the shared response fields before publish-prekey client generation is enabled.
+The backend test hashes that snapshot and round-trips its publish, queue, pull, empty-pull, and acknowledgement values through the actual HTTP DTOs. It also drives the publish/store mapping, duplicate/status behavior, and monotonic-cursor mapping with those exact values.

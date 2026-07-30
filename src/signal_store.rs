@@ -18,7 +18,7 @@ use sea_orm::{
 use thiserror::Error;
 use uuid::Uuid;
 
-const MAX_ONE_TIME_PREKEY_BATCH: usize = 1_000;
+const MAX_ONE_TIME_PREKEY_BATCH: usize = 100;
 const MAX_MAILBOX_PULL: u64 = 200;
 
 const ACTIVE_DEVICE_SQL: &str = r#"
@@ -31,7 +31,25 @@ WHERE account_id = $1
 FOR UPDATE
 "#;
 
-const UPSERT_BUNDLE_SQL: &str = r#"
+const SELECT_BUNDLE_SQL: &str = r#"
+SELECT
+    bundle_revision,
+    protocol_version::BIGINT AS protocol_version,
+    registration_id,
+    identity_key_base64,
+    signed_prekey_id,
+    signed_prekey_base64,
+    signed_prekey_signature_base64,
+    pq_signed_prekey_id,
+    pq_signed_prekey_base64,
+    pq_signed_prekey_signature_base64,
+    (EXTRACT(EPOCH FROM expires_at) * 1000)::BIGINT AS expires_at_ms
+FROM threefa.device_prekey_bundles
+WHERE device_id = $1
+FOR UPDATE
+"#;
+
+const INSERT_BUNDLE_SQL: &str = r#"
 INSERT INTO threefa.device_prekey_bundles (
     device_id,
     bundle_revision,
@@ -47,23 +65,36 @@ INSERT INTO threefa.device_prekey_bundles (
     published_at,
     expires_at
 ) VALUES (
-    $1, 1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    now(), to_timestamp($11::double precision / 1000.0)
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+    now(), to_timestamp($12::double precision / 1000.0)
 )
-ON CONFLICT (device_id) DO UPDATE SET
-    bundle_revision = threefa.device_prekey_bundles.bundle_revision + 1,
-    protocol_version = EXCLUDED.protocol_version,
-    registration_id = EXCLUDED.registration_id,
-    identity_key_base64 = EXCLUDED.identity_key_base64,
-    signed_prekey_id = EXCLUDED.signed_prekey_id,
-    signed_prekey_base64 = EXCLUDED.signed_prekey_base64,
-    signed_prekey_signature_base64 = EXCLUDED.signed_prekey_signature_base64,
-    pq_signed_prekey_id = EXCLUDED.pq_signed_prekey_id,
-    pq_signed_prekey_base64 = EXCLUDED.pq_signed_prekey_base64,
-    pq_signed_prekey_signature_base64 = EXCLUDED.pq_signed_prekey_signature_base64,
-    published_at = now(),
-    expires_at = EXCLUDED.expires_at
 RETURNING bundle_revision
+"#;
+
+const UPDATE_BUNDLE_SQL: &str = r#"
+UPDATE threefa.device_prekey_bundles
+SET bundle_revision = $2,
+    protocol_version = $3,
+    registration_id = $4,
+    identity_key_base64 = $5,
+    signed_prekey_id = $6,
+    signed_prekey_base64 = $7,
+    signed_prekey_signature_base64 = $8,
+    pq_signed_prekey_id = $9,
+    pq_signed_prekey_base64 = $10,
+    pq_signed_prekey_signature_base64 = $11,
+    published_at = now(),
+    expires_at = to_timestamp($12::double precision / 1000.0)
+WHERE device_id = $1
+RETURNING bundle_revision
+"#;
+
+const SELECT_ONE_TIME_PREKEY_SQL: &str = r#"
+SELECT public_key_base64
+FROM threefa.device_one_time_prekeys
+WHERE device_id = $1
+  AND prekey_id = $2
+FOR UPDATE
 "#;
 
 const INSERT_ONE_TIME_PREKEY_SQL: &str = r#"
@@ -72,7 +103,6 @@ INSERT INTO threefa.device_one_time_prekeys (
     prekey_id,
     public_key_base64
 ) VALUES ($1, $2, $3)
-ON CONFLICT (device_id, prekey_id) DO NOTHING
 "#;
 
 const BUMP_DEVICE_REVISION_SQL: &str = r#"
@@ -80,6 +110,21 @@ UPDATE threefa.accounts
 SET signal_device_revision = signal_device_revision + 1
 WHERE id = $1
 RETURNING signal_device_revision
+"#;
+
+const CURRENT_DEVICE_REVISION_SQL: &str = r#"
+SELECT signal_device_revision
+FROM threefa.accounts
+WHERE id = $1
+FOR UPDATE
+"#;
+
+const COUNT_UNCLAIMED_PREKEYS_SQL: &str = r#"
+SELECT count(*)::BIGINT AS unclaimed_prekey_count
+FROM threefa.device_one_time_prekeys
+WHERE device_id = $1
+  AND claimed_at IS NULL
+  AND claimed_by_device_id IS NULL
 "#;
 
 const INSERT_PREKEY_EVENT_SQL: &str = r#"
@@ -293,10 +338,12 @@ pub enum SignalStoreError {
     InvalidUuid(&'static str),
     #[error("device is unavailable")]
     DeviceUnavailable,
-    #[error("device-list revision conflict")]
+    #[error("revision conflict")]
     RevisionConflict,
-    #[error("envelope idempotency conflict")]
+    #[error("idempotency conflict")]
     IdempotencyConflict,
+    #[error("stored count is outside its valid range")]
+    InvalidStoredCount,
     #[error("stored ciphertext is not valid base64")]
     InvalidStoredCiphertext(#[from] base64::DecodeError),
     #[error("stored message number is invalid")]
@@ -315,6 +362,7 @@ pub struct OneTimePreKey {
 pub struct PublishPreKeys {
     pub account_id: Uuid,
     pub device_id: Uuid,
+    pub bundle_revision: i64,
     pub bundle: SignalDevicePreKeyBundle,
     pub one_time_prekeys: Vec<OneTimePreKey>,
     pub expires_at_ms: i64,
@@ -326,7 +374,12 @@ impl PublishPreKeys {
         if self.bundle.device_id != self.device_id.to_string() {
             return Err(SignalStoreError::DeviceUnavailable);
         }
-        if self.expires_at_ms <= 0 || self.one_time_prekeys.len() > MAX_ONE_TIME_PREKEY_BATCH {
+        if self.bundle_revision <= 0
+            || self.expires_at_ms <= 0
+            || self.one_time_prekeys.len() > MAX_ONE_TIME_PREKEY_BATCH
+            || self.bundle.one_time_pre_key_id.is_some()
+            || self.bundle.one_time_pre_key.is_some()
+        {
             return Err(SignalStoreError::Validation(
                 SignalProtocolValidationError::InvalidTimestamps,
             ));
@@ -347,8 +400,8 @@ impl PublishPreKeys {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublishedPreKeys {
     pub bundle_revision: i64,
-    pub device_list_revision: i64,
-    pub inserted_one_time_prekeys: u64,
+    pub device_revision: i64,
+    pub unclaimed_prekey_count: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -377,6 +430,51 @@ fn required_i64(row: &sea_orm::QueryResult, column: &str) -> Result<i64, SignalS
     Ok(row.try_get("", column)?)
 }
 
+fn required_string(row: &sea_orm::QueryResult, column: &str) -> Result<String, SignalStoreError> {
+    Ok(row.try_get("", column)?)
+}
+
+fn bundle_values(request: &PublishPreKeys) -> Vec<Value> {
+    let bundle = &request.bundle;
+    vec![
+        request.device_id.into(),
+        request.bundle_revision.into(),
+        i64::from(bundle.version).into(),
+        i64::from(bundle.registration_id).into(),
+        BASE64.encode(&bundle.identity_key).into(),
+        i64::from(bundle.signed_pre_key_id).into(),
+        BASE64.encode(&bundle.signed_pre_key).into(),
+        BASE64.encode(&bundle.signed_pre_key_signature).into(),
+        i64::from(bundle.pq_signed_pre_key_id).into(),
+        BASE64.encode(&bundle.pq_signed_pre_key).into(),
+        BASE64.encode(&bundle.pq_signed_pre_key_signature).into(),
+        request.expires_at_ms.into(),
+    ]
+}
+
+fn stored_bundle_matches(
+    row: &sea_orm::QueryResult,
+    request: &PublishPreKeys,
+) -> Result<bool, SignalStoreError> {
+    let bundle = &request.bundle;
+    Ok(
+        required_i64(row, "protocol_version")? == i64::from(bundle.version)
+            && required_i64(row, "registration_id")? == i64::from(bundle.registration_id)
+            && required_string(row, "identity_key_base64")? == BASE64.encode(&bundle.identity_key)
+            && required_i64(row, "signed_prekey_id")? == i64::from(bundle.signed_pre_key_id)
+            && required_string(row, "signed_prekey_base64")?
+                == BASE64.encode(&bundle.signed_pre_key)
+            && required_string(row, "signed_prekey_signature_base64")?
+                == BASE64.encode(&bundle.signed_pre_key_signature)
+            && required_i64(row, "pq_signed_prekey_id")? == i64::from(bundle.pq_signed_pre_key_id)
+            && required_string(row, "pq_signed_prekey_base64")?
+                == BASE64.encode(&bundle.pq_signed_pre_key)
+            && required_string(row, "pq_signed_prekey_signature_base64")?
+                == BASE64.encode(&bundle.pq_signed_pre_key_signature)
+            && required_i64(row, "expires_at_ms")? == request.expires_at_ms,
+    )
+}
+
 pub async fn publish_prekeys(
     db: &DatabaseConnection,
     request: PublishPreKeys,
@@ -394,82 +492,119 @@ pub async fn publish_prekeys(
         return Err(SignalStoreError::DeviceUnavailable);
     }
 
-    let bundle = &request.bundle;
-    let row = transaction
-        .query_one_raw(postgres(
-            UPSERT_BUNDLE_SQL,
-            vec![
-                request.device_id.into(),
-                i64::from(bundle.version).into(),
-                i64::from(bundle.registration_id).into(),
-                BASE64.encode(&bundle.identity_key).into(),
-                i64::from(bundle.signed_pre_key_id).into(),
-                BASE64.encode(&bundle.signed_pre_key).into(),
-                BASE64.encode(&bundle.signed_pre_key_signature).into(),
-                i64::from(bundle.pq_signed_pre_key_id).into(),
-                BASE64.encode(&bundle.pq_signed_pre_key).into(),
-                BASE64.encode(&bundle.pq_signed_pre_key_signature).into(),
-                request.expires_at_ms.into(),
-            ],
-        ))
-        .await?
-        .ok_or(SignalStoreError::DeviceUnavailable)?;
-    let bundle_revision = required_i64(&row, "bundle_revision")?;
+    let stored_bundle = transaction
+        .query_one_raw(postgres(SELECT_BUNDLE_SQL, vec![request.device_id.into()]))
+        .await?;
+    let bundle_changed = match stored_bundle {
+        None => {
+            transaction
+                .query_one_raw(postgres(INSERT_BUNDLE_SQL, bundle_values(&request)))
+                .await?
+                .ok_or(SignalStoreError::DeviceUnavailable)?;
+            true
+        }
+        Some(row) => {
+            let current_revision = required_i64(&row, "bundle_revision")?;
+            if request.bundle_revision < current_revision {
+                return Err(SignalStoreError::RevisionConflict);
+            }
+            if request.bundle_revision == current_revision {
+                if !stored_bundle_matches(&row, &request)? {
+                    return Err(SignalStoreError::IdempotencyConflict);
+                }
+                false
+            } else {
+                transaction
+                    .query_one_raw(postgres(UPDATE_BUNDLE_SQL, bundle_values(&request)))
+                    .await?
+                    .ok_or(SignalStoreError::DeviceUnavailable)?;
+                true
+            }
+        }
+    };
 
     let mut inserted_one_time_prekeys = 0_u64;
-    let mut all_prekeys = request.one_time_prekeys;
-    if let (Some(prekey_id), Some(public_key)) =
-        (bundle.one_time_pre_key_id, bundle.one_time_pre_key.clone())
-    {
-        all_prekeys.push(OneTimePreKey {
-            prekey_id,
-            public_key,
-        });
-    }
-    for prekey in all_prekeys {
-        let result = transaction
+    for prekey in &request.one_time_prekeys {
+        let encoded_public_key = BASE64.encode(&prekey.public_key);
+        let existing = transaction
+            .query_one_raw(postgres(
+                SELECT_ONE_TIME_PREKEY_SQL,
+                vec![request.device_id.into(), i64::from(prekey.prekey_id).into()],
+            ))
+            .await?;
+        if let Some(row) = existing {
+            if required_string(&row, "public_key_base64")? != encoded_public_key {
+                return Err(SignalStoreError::IdempotencyConflict);
+            }
+            continue;
+        }
+        transaction
             .execute_raw(postgres(
                 INSERT_ONE_TIME_PREKEY_SQL,
                 vec![
                     request.device_id.into(),
                     i64::from(prekey.prekey_id).into(),
-                    BASE64.encode(prekey.public_key).into(),
+                    encoded_public_key.into(),
                 ],
             ))
             .await?;
-        inserted_one_time_prekeys += result.rows_affected();
+        inserted_one_time_prekeys += 1;
     }
 
-    let revision_row = transaction
+    let mutated = bundle_changed || inserted_one_time_prekeys > 0;
+    let device_revision = if mutated {
+        let revision_row = transaction
+            .query_one_raw(postgres(
+                BUMP_DEVICE_REVISION_SQL,
+                vec![request.account_id.into()],
+            ))
+            .await?
+            .ok_or(SignalStoreError::DeviceUnavailable)?;
+        required_i64(&revision_row, "signal_device_revision")?
+    } else {
+        let revision_row = transaction
+            .query_one_raw(postgres(
+                CURRENT_DEVICE_REVISION_SQL,
+                vec![request.account_id.into()],
+            ))
+            .await?
+            .ok_or(SignalStoreError::DeviceUnavailable)?;
+        required_i64(&revision_row, "signal_device_revision")?
+    };
+    if mutated {
+        let event_kind = if inserted_one_time_prekeys > 0 {
+            "prekeys_replenished"
+        } else {
+            "signed_prekey_rotated"
+        };
+        transaction
+            .execute_raw(postgres(
+                INSERT_PREKEY_EVENT_SQL,
+                vec![
+                    request.account_id.into(),
+                    request.device_id.into(),
+                    device_revision.into(),
+                    event_kind.into(),
+                ],
+            ))
+            .await?;
+    }
+
+    let count_row = transaction
         .query_one_raw(postgres(
-            BUMP_DEVICE_REVISION_SQL,
-            vec![request.account_id.into()],
+            COUNT_UNCLAIMED_PREKEYS_SQL,
+            vec![request.device_id.into()],
         ))
         .await?
         .ok_or(SignalStoreError::DeviceUnavailable)?;
-    let device_list_revision = required_i64(&revision_row, "signal_device_revision")?;
-    let event_kind = if inserted_one_time_prekeys > 0 {
-        "prekeys_replenished"
-    } else {
-        "signed_prekey_rotated"
-    };
-    transaction
-        .execute_raw(postgres(
-            INSERT_PREKEY_EVENT_SQL,
-            vec![
-                request.account_id.into(),
-                request.device_id.into(),
-                device_list_revision.into(),
-                event_kind.into(),
-            ],
-        ))
-        .await?;
+    let unclaimed_prekey_count = u64::try_from(required_i64(&count_row, "unclaimed_prekey_count")?)
+        .map_err(|_| SignalStoreError::InvalidStoredCount)?;
 
     transaction.commit().await?;
     Ok(PublishedPreKeys {
-        bundle_revision,
-        device_list_revision,
-        inserted_one_time_prekeys,
+        bundle_revision: request.bundle_revision,
+        device_revision,
+        unclaimed_prekey_count,
     })
 }
 
@@ -734,6 +869,20 @@ mod tests {
         assert!(CLAIM_ONE_TIME_PREKEY_SQL.contains("FOR UPDATE OF prekey SKIP LOCKED"));
         assert!(CLAIM_ONE_TIME_PREKEY_SQL.contains("claimed_by_device_id = $3"));
         assert!(CLAIM_ONE_TIME_PREKEY_SQL.contains("lifecycle_state = 'active'"));
+    }
+
+    #[test]
+    fn publish_prekeys_uses_client_revisions_and_exact_retry_locks() {
+        assert!(SELECT_BUNDLE_SQL.contains("FOR UPDATE"));
+        assert!(INSERT_BUNDLE_SQL.contains("$1, $2, $3"));
+        assert!(UPDATE_BUNDLE_SQL.contains("bundle_revision = $2"));
+        assert!(!INSERT_BUNDLE_SQL.contains("bundle_revision + 1"));
+        assert!(!UPDATE_BUNDLE_SQL.contains("bundle_revision + 1"));
+        assert!(SELECT_ONE_TIME_PREKEY_SQL.contains("FOR UPDATE"));
+        assert!(!INSERT_ONE_TIME_PREKEY_SQL.contains("ON CONFLICT"));
+        assert!(COUNT_UNCLAIMED_PREKEYS_SQL.contains("claimed_at IS NULL"));
+        assert!(COUNT_UNCLAIMED_PREKEYS_SQL.contains("claimed_by_device_id IS NULL"));
+        assert!(CURRENT_DEVICE_REVISION_SQL.contains("FOR UPDATE"));
     }
 
     #[test]

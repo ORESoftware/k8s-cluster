@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 const DEFAULT_MAILBOX_LIMIT: u64 = 50;
-const MAX_PUBLISHED_ONE_TIME_PREKEYS: usize = 1_000;
+const MAX_PUBLISHED_ONE_TIME_PREKEYS: usize = 100;
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
@@ -41,45 +41,57 @@ pub(crate) fn routes() -> Router<AppState> {
         )
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct OneTimePreKeyRequest {
     prekey_id: u32,
     public_key: Vec<u8>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct PublishPreKeysRequest {
-    bundle: SignalDevicePreKeyBundle,
-    #[serde(default)]
+    version: u16,
+    bundle_revision: u64,
+    registration_id: u32,
+    identity_key: Vec<u8>,
+    signed_pre_key_id: u32,
+    signed_pre_key: Vec<u8>,
+    signed_pre_key_signature: Vec<u8>,
+    pq_signed_pre_key_id: u32,
+    pq_signed_pre_key: Vec<u8>,
+    pq_signed_pre_key_signature: Vec<u8>,
     one_time_prekeys: Vec<OneTimePreKeyRequest>,
-    expires_at_ms: i64,
+    expires_at_ms: u64,
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct PublishPreKeysResponse {
-    bundle_revision: i64,
-    device_list_revision: i64,
-    inserted_one_time_prekeys: u64,
-}
-
-pub(crate) async fn publish_prekeys_handler(
-    State(state): State<AppState>,
-    who: AuthedDevice,
-    JsonBody(request): JsonBody<PublishPreKeysRequest>,
-) -> Result<Json<PublishPreKeysResponse>, ApiError> {
-    if request.bundle.device_id != who.device_id.to_string()
-        || request.one_time_prekeys.len() > MAX_PUBLISHED_ONE_TIME_PREKEYS
-    {
-        return Err(ApiError::BadRequest);
-    }
-
-    let published = signal_store::publish_prekeys(
-        state.database(),
-        PublishPreKeys {
+impl PublishPreKeysRequest {
+    fn into_store_request(self, who: AuthedDevice) -> Result<PublishPreKeys, ApiError> {
+        if self.one_time_prekeys.len() > MAX_PUBLISHED_ONE_TIME_PREKEYS {
+            return Err(ApiError::BadRequest);
+        }
+        let bundle_revision =
+            i64::try_from(self.bundle_revision).map_err(|_| ApiError::BadRequest)?;
+        let expires_at_ms = i64::try_from(self.expires_at_ms).map_err(|_| ApiError::BadRequest)?;
+        Ok(PublishPreKeys {
             account_id: who.account_id,
             device_id: who.device_id,
-            bundle: request.bundle,
-            one_time_prekeys: request
+            bundle_revision,
+            bundle: SignalDevicePreKeyBundle {
+                version: self.version,
+                device_id: who.device_id.to_string(),
+                registration_id: self.registration_id,
+                identity_key: self.identity_key,
+                signed_pre_key_id: self.signed_pre_key_id,
+                signed_pre_key: self.signed_pre_key,
+                signed_pre_key_signature: self.signed_pre_key_signature,
+                pq_signed_pre_key_id: self.pq_signed_pre_key_id,
+                pq_signed_pre_key: self.pq_signed_pre_key,
+                pq_signed_pre_key_signature: self.pq_signed_pre_key_signature,
+                one_time_pre_key_id: None,
+                one_time_pre_key: None,
+            },
+            one_time_prekeys: self
                 .one_time_prekeys
                 .into_iter()
                 .map(|prekey| OneTimePreKey {
@@ -87,17 +99,50 @@ pub(crate) async fn publish_prekeys_handler(
                     public_key: prekey.public_key,
                 })
                 .collect(),
-            expires_at_ms: request.expires_at_ms,
-        },
-    )
-    .await
-    .map_err(map_store_error)?;
+            expires_at_ms,
+        })
+    }
+}
 
-    Ok(Json(PublishPreKeysResponse {
-        bundle_revision: published.bundle_revision,
-        device_list_revision: published.device_list_revision,
-        inserted_one_time_prekeys: published.inserted_one_time_prekeys,
-    }))
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PublishPreKeysResponse {
+    bundle_revision: u64,
+    device_revision: u64,
+    unclaimed_prekey_count: u32,
+}
+
+impl TryFrom<signal_store::PublishedPreKeys> for PublishPreKeysResponse {
+    type Error = ApiError;
+
+    fn try_from(published: signal_store::PublishedPreKeys) -> Result<Self, Self::Error> {
+        Ok(Self {
+            bundle_revision: published
+                .bundle_revision
+                .try_into()
+                .map_err(|_| ApiError::Internal)?,
+            device_revision: published
+                .device_revision
+                .try_into()
+                .map_err(|_| ApiError::Internal)?,
+            unclaimed_prekey_count: published
+                .unclaimed_prekey_count
+                .try_into()
+                .map_err(|_| ApiError::Internal)?,
+        })
+    }
+}
+
+pub(crate) async fn publish_prekeys_handler(
+    State(state): State<AppState>,
+    who: AuthedDevice,
+    JsonBody(request): JsonBody<PublishPreKeysRequest>,
+) -> Result<Json<PublishPreKeysResponse>, ApiError> {
+    let request = request.into_store_request(who)?;
+    let published = signal_store::publish_prekeys(state.database(), request)
+        .await
+        .map_err(map_store_error)?;
+    Ok(Json(published.try_into()?))
 }
 
 #[derive(Debug, Serialize)]
@@ -343,10 +388,11 @@ fn map_store_error(error: SignalStoreError) -> ApiError {
             ApiError::Conflict
         }
         SignalStoreError::Database(error) => error.into(),
-        SignalStoreError::InvalidStoredCiphertext(_)
+        SignalStoreError::InvalidStoredCount
+        | SignalStoreError::InvalidStoredCiphertext(_)
         | SignalStoreError::InvalidStoredMessageNumber(_)
         | SignalStoreError::InvalidStoredKind => {
-            tracing::error!("invalid Signal mailbox state read from database");
+            tracing::error!("invalid Signal state read from database");
             ApiError::Internal
         }
     }
@@ -517,12 +563,34 @@ mod tests {
             map_store_error(SignalStoreError::IdempotencyConflict),
             ApiError::Conflict
         ));
-        assert!(
-            serde_json::from_value::<PublishPreKeysRequest>(
-                fixture["publish_prekeys"]["request"].clone()
-            )
-            .is_err(),
-            "publish-prekey remains an explicit store-semantics blocker"
+        assert!(matches!(
+            map_store_error(SignalStoreError::RevisionConflict),
+            ApiError::Conflict
+        ));
+
+        let publish = &fixture["publish_prekeys"];
+        let request: PublishPreKeysRequest = fixture_round_trip(&publish["request"]);
+        let store_request = request
+            .into_store_request(who)
+            .expect("canonical publish request maps to the store");
+        assert_eq!(store_request.bundle_revision, 7);
+        assert_eq!(store_request.account_id, who.account_id);
+        assert_eq!(store_request.device_id, who.device_id);
+        assert_eq!(store_request.bundle.device_id, who.device_id.to_string());
+        assert_eq!(store_request.one_time_prekeys.len(), 1);
+        assert_eq!(store_request.one_time_prekeys[0].prekey_id, 100);
+
+        let _: PublishPreKeysResponse = fixture_round_trip(&publish["response"]);
+        let response = PublishPreKeysResponse::try_from(signal_store::PublishedPreKeys {
+            bundle_revision: 7,
+            device_revision: 12,
+            unclaimed_prekey_count: 24,
+        })
+        .expect("store result maps to the canonical response");
+        assert_eq!(
+            serde_json::to_value(response).unwrap(),
+            publish["response"],
+            "publish-prekey response preserves canonical field semantics"
         );
     }
 }
