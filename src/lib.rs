@@ -124246,6 +124246,52 @@ fn build_router(state: AppState, realtime_hub: EventHub) -> Router {
         // it. Applying the limit to that router directly is what keeps
         // /internal/* from accepting an unbounded request body.
         .merge(dd_runtime_config_client::router().layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES)))
+        // Last, so it wraps *everything* composed above: `Router::layer` only
+        // applies to routes already added, so a header layer placed before the
+        // `/internal/*` merge would silently skip that surface. Being outermost
+        // also means 404s and 405s carry the headers, which matters because a
+        // sniffed or framed error body is still an attack surface.
+        .layer(middleware::from_fn(security_headers))
+}
+
+/// Response headers that reduce the blast radius of any HTML this service
+/// returns. `daedalus-web-server` sets the same set via `tower-http`; this
+/// service has no `tower-http` dependency, so it uses a plain axum middleware
+/// rather than adding one for four headers.
+///
+/// Only inserted when absent, so a handler that needs something looser stays in
+/// control — the same `if_not_present` semantics the web server relies on.
+async fn security_headers(request: axum::extract::Request, next: middleware::Next) -> Response {
+    use axum::http::header::{
+        HeaderName, HeaderValue, CACHE_CONTROL, CONTENT_SECURITY_POLICY, REFERRER_POLICY,
+        X_CONTENT_TYPE_OPTIONS, X_FRAME_OPTIONS,
+    };
+
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    for (name, value) in [
+        (CONTENT_SECURITY_POLICY, transport::CSP),
+        (X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        (REFERRER_POLICY, "strict-origin-when-cross-origin"),
+        (X_FRAME_OPTIONS, "DENY"),
+        // Plans, machine profiles, and learning outcomes are operator data. With
+        // no directive an intermediary is free to cache them and a browser will
+        // re-render them from the back/forward cache after sign-out.
+        (CACHE_CONTROL, "private, no-store"),
+    ] {
+        if !headers.contains_key(&name) {
+            headers.insert(name, HeaderValue::from_static(value));
+        }
+    }
+    // Not a `header::` constant in http 1.x, so it is named here.
+    let permissions_policy = HeaderName::from_static("permissions-policy");
+    if !headers.contains_key(&permissions_policy) {
+        headers.insert(
+            permissions_policy,
+            HeaderValue::from_static("camera=(), geolocation=(), microphone=()"),
+        );
+    }
+    response
 }
 
 /// Every route that requires a verified, allow-listed operator.

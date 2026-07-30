@@ -23,3 +23,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: cargo fmt --check
+  deps:
+    # `cargo audit` reads the committed Cargo.lock, so unlike fmt/clippy/test it
+    # does not need the k8s-cluster superproject that provides this repo's path
+    # dependencies.
+    #
+    # Informational for now, deliberately: four live rustls-webpki advisories
+    # reach this build through `async-nats`, which Cargo.toml pins `=0.38.0`.
+    # Lifting that pin is the fix; until then a blocking gate would be red on
+    # every unrelated PR and would train reviewers to ignore it. Advisories that
+    # are locked but never compiled are ignored outright, with the reachability
+    # argument recorded per-advisory, in .cargo/audit.toml.
+    #
+    # Drop `continue-on-error` in the same change that lifts the async-nats pin.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd # v2
+        with:
+          tool: cargo-audit@0.22.2
+      - name: Dependency audit
+        run: cargo audit --deny warnings

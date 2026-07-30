@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, fmt};
 
 use dd_nats_subject_defs::{
     FABRICATION_REQUESTS_QUEUE_GROUP, FABRICATION_REQUESTS_SUBJECT, FABRICATION_RESULTS_SUBJECT,
@@ -57,7 +57,7 @@ impl ServiceConfig {
 /// `locks:write`. Handing the lock scope to the pod that only needs to read
 /// `secrets/daedalus/*` — or, worse, discovering at runtime that the KV key was
 /// silently used for locks and 403s — is the failure this split prevents.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub(crate) struct FiduciaConfig {
     /// `FIDUCIA_URL` — the fiducia load balancer. Shared by both paths.
     pub(crate) url: Option<String>,
@@ -101,12 +101,48 @@ impl FiduciaConfig {
     }
 }
 
+/// How a credential is rendered by the hand-written `Debug` impls below.
+///
+/// Presence is kept — "which key is missing" is the single most common config
+/// question — while the value never reaches a log line.
+fn redacted(secret: &Option<String>) -> &'static str {
+    if secret.is_some() {
+        "Some(<redacted>)"
+    } else {
+        "None"
+    }
+}
+
+/// Hand-written so a `?config` field on any future tracing call cannot print
+/// `kv_api_key` or `locks_api_key`.
+///
+/// `#[derive(Debug)]` would, and the derive is the easy thing to reach for: this
+/// exists so the safe rendering is the only one available. `ServiceConfig` still
+/// derives `Debug`, which is fine precisely because its credential-bearing
+/// fields are these two structs.
+impl fmt::Debug for FiduciaConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FiduciaConfig")
+            .field("url", &self.url)
+            .field(
+                "kv_api_key",
+                &format_args!("{}", redacted(&self.kv_api_key)),
+            )
+            .field(
+                "locks_api_key",
+                &format_args!("{}", redacted(&self.locks_api_key)),
+            )
+            .field("lease_ttl_ms", &self.lease_ttl_ms)
+            .finish()
+    }
+}
+
 /// Shared-auth authority and application authorization policy.
 ///
 /// The shared-auth library races the central authority against Supabase, while
 /// this service keeps the final Daedalus operator policy explicit. An empty
 /// email/role policy disables the guard and therefore fails closed.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct AuthConfig {
     pub(crate) shared_auth_base: String,
     pub(crate) issuer: String,
@@ -119,6 +155,37 @@ pub(crate) struct AuthConfig {
     pub(crate) allowed_roles: Vec<String>,
     pub(crate) arm_timeout_ms: u64,
     pub(crate) deadline_ms: u64,
+}
+
+/// Hand-written for the same reason as [`FiduciaConfig`]'s: `introspect_secret`
+/// is a bearer credential for the shared-auth introspection endpoint.
+///
+/// `supabase_api_key` is redacted too. It is the *publishable* key and therefore
+/// not confidential, but it is the field a service-role key would land in by
+/// mistake, and a leak of that is unrecoverable — so the rendering does not
+/// depend on the value being the right kind of key.
+impl fmt::Debug for AuthConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AuthConfig")
+            .field("shared_auth_base", &self.shared_auth_base)
+            .field("issuer", &self.issuer)
+            .field("audience", &self.audience)
+            .field("supabase_url", &self.supabase_url)
+            .field(
+                "supabase_api_key",
+                &format_args!("{}", redacted(&self.supabase_api_key)),
+            )
+            .field(
+                "introspect_secret",
+                &format_args!("{}", redacted(&self.introspect_secret)),
+            )
+            .field("provider_tenant", &self.provider_tenant)
+            .field("allowed_emails", &self.allowed_emails)
+            .field("allowed_roles", &self.allowed_roles)
+            .field("arm_timeout_ms", &self.arm_timeout_ms)
+            .field("deadline_ms", &self.deadline_ms)
+            .finish()
+    }
 }
 
 impl AuthConfig {
@@ -240,6 +307,45 @@ mod tests {
         assert!(!env_bool("DAEDALUS_MISSING_TEST_BOOL", false));
         assert_eq!(env_u64("DAEDALUS_MISSING_TEST_U64", 8, 1, 128), 8);
         assert_eq!(optional_env("DAEDALUS_MISSING_TEST_OPT"), None);
+    }
+
+    /// `ServiceConfig` is `Debug`, so it is one `debug!(?config)` away from a log
+    /// line. Every credential it can reach must survive that formatting redacted.
+    #[test]
+    fn formatting_a_config_never_prints_a_credential() {
+        let config = ServiceConfig {
+            auth: AuthConfig {
+                supabase_api_key: Some("sb_publishable_leaked".to_string()),
+                introspect_secret: Some("introspect-leaked".to_string()),
+                ..AuthConfig::from_env()
+            },
+            fiducia: FiduciaConfig {
+                kv_api_key: Some("fiducia-kv-leaked".to_string()),
+                locks_api_key: Some("fiducia-locks-leaked".to_string()),
+                ..FiduciaConfig::default()
+            },
+            ..ServiceConfig::from_env().expect("config from env")
+        };
+
+        // Through the outer struct, which is the way it would actually be logged.
+        let rendered = format!("{config:?}");
+        for secret in [
+            "sb_publishable_leaked",
+            "introspect-leaked",
+            "fiducia-kv-leaked",
+            "fiducia-locks-leaked",
+        ] {
+            assert!(
+                !rendered.contains(secret),
+                "{secret} reached a Debug rendering"
+            );
+        }
+        // Presence must still be visible, or the redaction makes a
+        // misconfiguration undiagnosable.
+        assert!(rendered.contains("introspect_secret: Some(<redacted>)"));
+        assert!(rendered.contains("kv_api_key: Some(<redacted>)"));
+        assert!(rendered.contains("locks_api_key: Some(<redacted>)"));
+        assert!(format!("{:?}", FiduciaConfig::default()).contains("kv_api_key: None"));
     }
 
     #[test]

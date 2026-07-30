@@ -277,3 +277,53 @@ async fn the_control_plane_surface_is_covered_by_the_body_limit() {
         .status();
     assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
 }
+
+/// The security headers are applied as the outermost layer, which is the only
+/// placement that reaches all three surfaces.
+///
+/// `Router::layer` only wraps routes added *before* it, so a layer placed before
+/// the `/internal/*` merge would skip that surface entirely — the same ordering
+/// trap `the_control_plane_surface_is_covered_by_the_body_limit` pins. Error
+/// responses are included on purpose: a 401 or 404 body is still sniffable and
+/// still framable.
+#[tokio::test]
+async fn every_surface_carries_the_security_headers() {
+    let cases = [
+        ("/healthz", "public route"),
+        ("/", "authenticated route (401)"),
+        (dd_runtime_config_client::SNAPSHOT_ROUTE_PATH, "/internal/*"),
+        ("/not-a-route-at-all", "404 fallback"),
+    ];
+    for (path, description) in cases {
+        let response = gated_app()
+            .oneshot(
+                HttpRequest::builder()
+                    .uri(path)
+                    .body(Body::empty())
+                    .expect("build request"),
+            )
+            .await
+            .expect("router is infallible");
+        let headers = response.headers();
+        for header in [
+            "content-security-policy",
+            "x-content-type-options",
+            "x-frame-options",
+            "referrer-policy",
+            "cache-control",
+            "permissions-policy",
+        ] {
+            assert!(
+                headers.contains_key(header),
+                "{description} ({path}) is missing {header}"
+            );
+        }
+        assert_eq!(
+            headers["content-security-policy"],
+            transport::CSP,
+            "{description} ({path}) must carry the shared policy"
+        );
+        assert_eq!(headers["x-content-type-options"], "nosniff");
+        assert_eq!(headers["cache-control"], "private, no-store");
+    }
+}

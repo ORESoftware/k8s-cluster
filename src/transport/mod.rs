@@ -12,6 +12,9 @@ mod websocket;
 
 pub(crate) use nats::{spawn_publisher, spawn_relay};
 pub(crate) use tcp::{bind as bind_tcp, serve as serve_tcp};
+// Re-exported so `lib.rs` can attach the policy without reaching into the view
+// module's internals: the markup and the policy that permits it stay together.
+pub(crate) use views::CSP;
 
 pub(crate) fn router<S>(hub: EventHub, surface: ServiceSurface) -> Router<S>
 where

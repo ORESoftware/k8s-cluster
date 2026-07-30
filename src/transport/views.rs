@@ -11,6 +11,30 @@ const HTMX_WS_URL: &str = "https://cdn.jsdelivr.net/npm/htmx-ext-ws@2.0.4";
 const HTMX_WS_INTEGRITY: &str =
     "sha384-1RwI/nvUSrMRuNj7hX1+27J8XDdCoSLf0EjEyF69nacuWyiJYoQ/j39RT1mSnd2G";
 
+/// Content-Security-Policy for every response this service returns.
+///
+/// It lives beside the markup it authorizes rather than in `lib.rs`: this module
+/// owns the inline `<script>`/`<style>` and the CDN script tags, so it is the
+/// only place that can tell whether a directive is still correct.
+///
+/// `script-src` carries a SHA-256 hash instead of `'unsafe-inline'`, so injected
+/// inline script stays blocked even though the page embeds one script block.
+/// Both hashes are checked against the constants by
+/// `csp_hashes_match_the_inline_blocks`, which fails if either block is edited
+/// without updating the policy.
+///
+/// The `cdn.jsdelivr.net` origin has to be allowed because [`HTMX_URL`] and
+/// [`HTMX_WS_URL`] are fetched from it (with SRI);
+/// `the_csp_allows_exactly_the_script_origin_the_page_loads` keeps the two in
+/// step. `daedalus-web-server` vendors htmx into `/assets` specifically so its
+/// own policy can stay `'self'`-only; doing the same here would drop this origin.
+pub(crate) const CSP: &str = "default-src 'self'; \
+     script-src 'self' https://cdn.jsdelivr.net \
+     'sha256-yY0Jj5E0QdPsdfN/z4BmXlICl8FVtpJZJyfl06WYa/U='; \
+     style-src 'self' 'sha256-5Z+KVEh85z+WyzQ3hJZNqFOSssBfju5tPCx24ZNixhE='; \
+     connect-src 'self'; img-src 'self' data:; base-uri 'none'; \
+     form-action 'self'; frame-ancestors 'none'; object-src 'none'";
+
 pub(crate) fn page(surface: ServiceSurface, event: &EventEnvelope) -> Markup {
     html! {
         (DOCTYPE)
@@ -171,5 +195,58 @@ mod tests {
         assert!(!rendered.contains("<script>alert"));
         assert!(rendered.contains("&lt;script&gt;alert"));
         assert!(rendered.contains("hx-swap-oob=\"outerHTML\""));
+    }
+
+    /// The CSP names the inline blocks by hash instead of `'unsafe-inline'`, so a
+    /// one-character edit to either constant silently stops the browser from
+    /// running/applying it. Recompute both and fail loudly instead.
+    #[test]
+    fn csp_hashes_match_the_inline_blocks() {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        use sha2::{Digest, Sha256};
+
+        let csp_hash = |block: &str| {
+            format!(
+                "'sha256-{}'",
+                STANDARD.encode(Sha256::digest(block.as_bytes()))
+            )
+        };
+
+        let script = csp_hash(JSON_SOCKET_SCRIPT);
+        assert!(
+            CSP.contains(&script),
+            "script-src is missing the inline <script> hash {script}"
+        );
+        let style = csp_hash(STYLES);
+        assert!(
+            CSP.contains(&style),
+            "style-src is missing the inline <style> hash {style}"
+        );
+        // `'unsafe-inline'` would make both hashes decorative.
+        assert!(!CSP.contains("'unsafe-inline'"));
+        assert!(!CSP.contains("'unsafe-eval'"));
+    }
+
+    /// A CDN origin in `script-src` is only as narrow as the script tags it
+    /// covers; if a tag moves to another host the policy must move with it.
+    #[test]
+    fn the_csp_allows_exactly_the_script_origin_the_page_loads() {
+        const HTMX_ORIGIN: &str = "https://cdn.jsdelivr.net";
+
+        for url in [HTMX_URL, HTMX_WS_URL] {
+            assert!(
+                url.starts_with(HTMX_ORIGIN),
+                "{url} is not served by the CSP-allowed origin {HTMX_ORIGIN}"
+            );
+        }
+        assert!(CSP.contains(HTMX_ORIGIN));
+        // Subresource integrity is what makes trusting a third-party origin
+        // tolerable at all.
+        assert!(HTMX_INTEGRITY.starts_with("sha384-"));
+        assert!(HTMX_WS_INTEGRITY.starts_with("sha384-"));
+        // The page must not be framed, and must not be able to retarget a form.
+        assert!(CSP.contains("frame-ancestors 'none'"));
+        assert!(CSP.contains("form-action 'self'"));
+        assert!(CSP.contains("base-uri 'none'"));
     }
 }

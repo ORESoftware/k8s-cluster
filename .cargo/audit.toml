@@ -1,0 +1,40 @@
+# `cargo audit` configuration.
+#
+# `cargo audit` reads Cargo.lock, not the resolved feature graph, so it reports
+# advisories for packages that are locked but never compiled. Each ignore below
+# is a package in that category — verified unreachable, not merely inconvenient.
+#
+# Re-check an ignore with:
+#   cargo tree -i <crate> --target all
+# "nothing to print" means the crate is not in the build graph for any target.
+#
+# Anything that IS built must be fixed, not ignored. Notably NOT ignored:
+# RUSTSEC-2026-0049 / -0098 / -0099 / -0104 against rustls-webpki 0.102.8, which
+# `async-nats` does compile. `async-nats` is pinned `=0.38.0` in Cargo.toml and
+# that pin is what holds webpki on the 0.102 line; the advisories only bite when
+# NATS TLS is in use (`NATS_REQUIRE_TLS`), which no current deployment sets, so
+# the audit job is informational until that pin is lifted. See readme.md.
+
+[advisories]
+ignore = [
+  # RUSTSEC-2023-0071 — Marvin Attack (timing side-channel key recovery) in `rsa`.
+  # No fixed version exists upstream.
+  #
+  # Not reachable here: `rsa` is pulled in only by `sqlx-mysql`, and this service
+  # takes `sea-orm` with `default-features = false` and `sqlx-postgres` as its
+  # only driver feature. `cargo tree -i rsa --target all` finds no path, so the
+  # crate is never compiled into any binary or test.
+  #
+  # This must be revisited if a MySQL driver feature is ever enabled.
+  "RUSTSEC-2023-0071",
+
+  # RUSTSEC-2026-0185 — remote memory exhaustion in `quinn-proto` (QUIC).
+  #
+  # Not reachable here: `quinn` is an optional `reqwest` dependency behind its
+  # HTTP/3 feature, and this service takes `reqwest` with
+  # `default-features = false` and only `json` + `rustls-tls`. No HTTP/3, no
+  # QUIC. `cargo tree -i quinn-proto --target all` finds no path.
+  #
+  # This must be revisited if HTTP/3 is ever enabled.
+  "RUSTSEC-2026-0185",
+]

@@ -34,6 +34,11 @@ tokio-tungstenite = { version = "0.24", default-features = false, features = ["c
 # enumeration test, which is what keeps a newly added route from shipping
 # unauthenticated.
 tower = { version = "0.5", features = ["util"] }
+# Used only by `transport::views` tests, to recompute the SHA-256 CSP hashes for
+# the page's inline <script>/<style> and prove the policy still matches them. Dev
+# only: the server ships a constant policy and hashes nothing at runtime.
+base64 = "0.22"
+sha2 = "0.10"
 # `mock` carries no extra dependencies (it is `mock = []` upstream) and is the
 # only way to exercise src/stores.rs's Postgres implementations — the upsert,
 # the ordering, and the retention statement — without a live database. It is a
