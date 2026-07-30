@@ -230,29 +230,29 @@ test('ai/ml platform bundle deploys the python pipeline and open-source stack ca
     /strategy:[\s\S]*type:\s*RollingUpdate[\s\S]*maxSurge:\s*0[\s\S]*maxUnavailable:\s*1/,
   );
   assert.match(
-  deployment,
-  /single-node and pod-slot constrained[\s\S]*instead of requiring a surge pod/,
-);
+    deployment,
+    /single-node and pod-slot constrained[\s\S]*instead of requiring a surge pod/,
+  );
   assert.match(deployment, /automountServiceAccountToken:\s*false/);
   assert.match(deployment, /serviceAccountName:\s*dd-ai-ml-pipeline/);
   assert.match(
-  deployment,
-  /image:\s*docker\.io\/library\/python:3\.12-slim@sha256:[a-f0-9]{64}/,
-);
-assert.match(deployment, /imagePullPolicy:\s*IfNotPresent/);
-assert.match(
-  deployment,
-  /command:[\s\S]*- \/bin\/bash[\s\S]*- -lc[\s\S]*cd \/opt\/dd-next-1\/remote\/deployments\/ai-ml-pipeline[\s\S]*exec python3 -u src\/dd_ai_ml_pipeline\.py/,
-);
-assert.match(
-  deployment,
-  /volumeMounts:[\s\S]*name:\s*repo[\s\S]*mountPath:\s*\/opt\/dd-next-1[\s\S]*readOnly:\s*true/,
-);
-assert.match(
-  deployment,
-  /volumes:[\s\S]*name:\s*repo[\s\S]*hostPath:[\s\S]*path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1[\s\S]*type:\s*Directory/,
-);
-assert.doesNotMatch(deployment, /pip install|git clone|git fetch/);
+    deployment,
+    /image:\s*docker\.io\/library\/python:3\.12-slim@sha256:[a-f0-9]{64}/,
+  );
+  assert.match(deployment, /imagePullPolicy:\s*IfNotPresent/);
+  assert.match(
+    deployment,
+    /command:[\s\S]*- \/bin\/bash[\s\S]*- -lc[\s\S]*cd \/opt\/dd-next-1\/remote\/deployments\/ai-ml-pipeline[\s\S]*exec python3 -u src\/dd_ai_ml_pipeline\.py/,
+  );
+  assert.match(
+    deployment,
+    /volumeMounts:[\s\S]*name:\s*repo[\s\S]*mountPath:\s*\/opt\/dd-next-1[\s\S]*readOnly:\s*true/,
+  );
+  assert.match(
+    deployment,
+    /volumes:[\s\S]*name:\s*repo[\s\S]*hostPath:[\s\S]*path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1[\s\S]*type:\s*Directory/,
+  );
+  assert.doesNotMatch(deployment, /pip install|git clone|git fetch/);
   assert.match(deployment, /PORT[\s\S]*value:\s*'8099'/);
   assert.match(deployment, /SERVER_AUTH_SECRET[\s\S]*dd-agent-secrets[\s\S]*SERVER_AUTH_SECRET/);
   assert.match(deployment, /ML_ALLOW_UNAUTHENTICATED[\s\S]*value:\s*'false'/);
@@ -374,8 +374,8 @@ test('open-source ai/ml platform tools have Argo CD entries', async () => {
     await readRepoFile('remote/deployments/spark-pipeline-server/generated/api-docs.json'),
   );
   const sparkPipelineInternalApiDocs = JSON.parse(
-  await readRepoFile('remote/deployments/spark-pipeline-server/generated/api-docs.internal.json'),
-);
+    await readRepoFile('remote/deployments/spark-pipeline-server/generated/api-docs.internal.json'),
+  );
   const generatedApiDocsIndex = JSON.parse(
     await readRepoFile('remote/deployments/generated-api-docs-index.json'),
   );
@@ -419,31 +419,32 @@ test('open-source ai/ml platform tools have Argo CD entries', async () => {
   assert.match(sparkPipelineKustomization, /dd-spark-pipeline-server\.pdb\.yaml/);
   assert.match(sparkPipelineDeployment, /namespace:\s*ai-ml/);
   assert.match(
-  sparkPipelineDeployment,
-  /image:\s*docker\.io\/library\/maven:3\.9\.9-eclipse-temurin-17/,
-);
-assert.doesNotMatch(sparkPipelineDeployment, /dd-spark-pipeline-server:dev/);
-assert.match(
-  sparkPipelineDeployment,
-  /cp -R \/opt\/dd-next-1\/remote\/deployments\/spark-pipeline-server[\s\S]*cp -R \/opt\/dd-next-1\/remote\/libs\/pg-defs\/generated\/jvm\/jooq[\s\S]*mvn -B -e -DskipTests[\s\S]*exec java \$JAVA_OPTS/,
-);
-assert.match(
-  sparkPipelineDeployment,
-  /volumeMounts:[\s\S]*name:\s*repo[\s\S]*mountPath:\s*\/opt\/dd-next-1[\s\S]*readOnly:\s*true/,
-);
-assert.match(
-  sparkPipelineDeployment,
-  /volumes:[\s\S]*name:\s*repo[\s\S]*hostPath:[\s\S]*path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1[\s\S]*type:\s*Directory/,
-);
-assert.match(sparkPipelineDeployment, /MAVEN_CONFIG[\s\S]*value:\s*\/work\/\.m2/);
-assert.match(
-  sparkPipelineDeployment,
-  /strategy:[\s\S]*type:\s*RollingUpdate[\s\S]*maxSurge:\s*0[\s\S]*maxUnavailable:\s*1/,
-);
-assert.match(
-  sparkPipelineDeployment,
-  /single-node and pod-slot constrained[\s\S]*instead of requiring a surge pod/,
-);  assert.match(sparkPipelineDeployment, /automountServiceAccountToken:\s*false/);
+    sparkPipelineDeployment,
+    /image:\s*docker\.io\/library\/maven:3\.9\.9-eclipse-temurin-17/,
+  );
+  assert.doesNotMatch(sparkPipelineDeployment, /dd-spark-pipeline-server:dev/);
+  assert.match(
+    sparkPipelineDeployment,
+    /cp -R \/opt\/dd-next-1\/remote\/deployments\/spark-pipeline-server[\s\S]*cp -R \/opt\/dd-next-1\/remote\/libs\/pg-defs\/generated\/jvm\/jooq[\s\S]*mvn -B -e -DskipTests[\s\S]*exec java \$JAVA_OPTS/,
+  );
+  assert.match(
+    sparkPipelineDeployment,
+    /volumeMounts:[\s\S]*name:\s*repo[\s\S]*mountPath:\s*\/opt\/dd-next-1[\s\S]*readOnly:\s*true/,
+  );
+  assert.match(
+    sparkPipelineDeployment,
+    /volumes:[\s\S]*name:\s*repo[\s\S]*hostPath:[\s\S]*path:\s*\/home\/ec2-user\/codes\/dd\/dd-next-1[\s\S]*type:\s*Directory/,
+  );
+  assert.match(sparkPipelineDeployment, /MAVEN_CONFIG[\s\S]*value:\s*\/work\/\.m2/);
+  assert.match(
+    sparkPipelineDeployment,
+    /strategy:[\s\S]*type:\s*RollingUpdate[\s\S]*maxSurge:\s*0[\s\S]*maxUnavailable:\s*1/,
+  );
+  assert.match(
+    sparkPipelineDeployment,
+    /single-node and pod-slot constrained[\s\S]*instead of requiring a surge pod/,
+  );
+  assert.match(sparkPipelineDeployment, /automountServiceAccountToken:\s*false/);
   assert.match(sparkPipelineDeployment, /securityContext:[\s\S]*runAsNonRoot:\s*true/);
   assert.match(sparkPipelineDeployment, /securityContext:[\s\S]*runAsUser:\s*10001/);
   assert.match(
@@ -479,33 +480,33 @@ assert.match(
   assert.match(sparkPipelineDockerfile, /docker\.io\/library\/dd-spark-pipeline-server:dev/);
   assert.match(sparkPipelineDockerfile, /COPY remote\/deployments\/spark-pipeline-server\/generated \.\/generated/);
   assert.equal(sparkPipelineApiDocs.openapi, '3.1.0');
-assert.equal(sparkPipelineApiDocs['x-dd-service'], 'spark-pipeline-server');
-assert.equal(sparkPipelineApiDocs['x-dd-language'], 'java');
-assert.equal(sparkPipelineApiDocs['x-dd-contract-scope'], 'public');
-const sparkPipelinePublicPaths = sparkPipelineApiDocs.paths as Record<
-  string,
-  Record<string, Record<string, unknown>>
->;
-for (const path of ['/docs/api', '/api/docs', '/api/docs.json']) {
-  const operation = sparkPipelinePublicPaths[path]?.get;
-  assert.ok(operation, `generated public Spark OpenAPI missing GET ${path}`);
-  assert.equal(operation['x-dd-visibility'], 'public');
-  assert.deepEqual(operation.security, []);
-}
-assert.equal(sparkPipelineInternalApiDocs.openapi, '3.1.0');
-assert.equal(sparkPipelineInternalApiDocs['x-dd-service'], 'spark-pipeline-server');
-assert.equal(sparkPipelineInternalApiDocs['x-dd-contract-scope'], 'internal');
-const sparkPipelineInternalPaths = sparkPipelineInternalApiDocs.paths as Record<
-  string,
-  Record<string, Record<string, unknown>>
->;
-const jobRoute = sparkPipelineInternalPaths['/v1/jobs'];
-assert.ok(jobRoute?.get, 'internal Spark OpenAPI missing GET /v1/jobs');
-assert.ok(jobRoute?.post, 'internal Spark OpenAPI missing POST /v1/jobs');
-assert.equal(jobRoute.get['x-dd-auth'], 'service-defined');
-assert.equal(jobRoute.post['x-dd-auth'], 'service-defined');
-assert.equal(jobRoute.get['x-dd-visibility'], 'internal');
-assert.equal(jobRoute.post['x-dd-visibility'], 'internal');
+  assert.equal(sparkPipelineApiDocs['x-dd-service'], 'spark-pipeline-server');
+  assert.equal(sparkPipelineApiDocs['x-dd-language'], 'java');
+  assert.equal(sparkPipelineApiDocs['x-dd-contract-scope'], 'public');
+  const sparkPipelinePublicPaths = sparkPipelineApiDocs.paths as Record<
+    string,
+    Record<string, Record<string, unknown>>
+  >;
+  for (const path of ['/docs/api', '/api/docs', '/api/docs.json']) {
+    const operation = sparkPipelinePublicPaths[path]?.get;
+    assert.ok(operation, `generated public Spark OpenAPI missing GET ${path}`);
+    assert.equal(operation['x-dd-visibility'], 'public');
+    assert.deepEqual(operation.security, []);
+  }
+  assert.equal(sparkPipelineInternalApiDocs.openapi, '3.1.0');
+  assert.equal(sparkPipelineInternalApiDocs['x-dd-service'], 'spark-pipeline-server');
+  assert.equal(sparkPipelineInternalApiDocs['x-dd-contract-scope'], 'internal');
+  const sparkPipelineInternalPaths = sparkPipelineInternalApiDocs.paths as Record<
+    string,
+    Record<string, Record<string, unknown>>
+  >;
+  const jobRoute = sparkPipelineInternalPaths['/v1/jobs'];
+  assert.ok(jobRoute?.get, 'internal Spark OpenAPI missing GET /v1/jobs');
+  assert.ok(jobRoute?.post, 'internal Spark OpenAPI missing POST /v1/jobs');
+  assert.equal(jobRoute.get['x-dd-auth'], 'service-defined');
+  assert.equal(jobRoute.post['x-dd-auth'], 'service-defined');
+  assert.equal(jobRoute.get['x-dd-visibility'], 'internal');
+  assert.equal(jobRoute.post['x-dd-visibility'], 'internal');
   assert.ok(
     generatedApiDocsIndex.services.some((service: { service: string; language: string }) => {
       return service.service === 'spark-pipeline-server' && service.language === 'java';
