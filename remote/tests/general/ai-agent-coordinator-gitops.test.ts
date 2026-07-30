@@ -16,9 +16,11 @@ function findRepoRoot(): string {
 const repoRoot = findRepoRoot();
 const read = (path: string) => readFile(resolve(repoRoot, path), 'utf8');
 const appCommit = 'a6fb1f89e064c21dc1e435931c75e9871746d0f7';
-const tenantPath = 'remote/argocd/projects/ai-agent-coordinator.tenant.yaml';
-const projectPath = 'remote/argocd/projects/ai-agent-coordinator.appproject.yaml';
-const platformKustomizationPath = 'remote/argocd/ai-agent-coordinator-platform/kustomization.yaml';
+const platformRoot = 'remote/argocd/projects/ai-agent-coordinator';
+const tenantPath = `${platformRoot}/tenant.yaml`;
+const projectPath = `${platformRoot}/appproject.yaml`;
+const platformKustomizationPath = `${platformRoot}/kustomization.yaml`;
+const platformReadmePath = `${platformRoot}/README.md`;
 const platformApplicationPath = 'remote/argocd/apps/ai-agent-coordinator-platform.application.yaml';
 const workloadApplicationPath = 'remote/argocd/apps/ai-agent-coordinator.application.yaml';
 const clouds = ['aws', 'gcp', 'hetzner'] as const;
@@ -43,7 +45,7 @@ function assertPlatformApplication(application: string): void {
   assert.match(application, /project: default/);
   assert.match(application, /repoURL: https:\/\/github\.com\/ORESoftware\/k8s-cluster\.git/);
   assert.match(application, /targetRevision: dev/);
-  assert.match(application, /path: remote\/argocd\/ai-agent-coordinator-platform/);
+  assert.match(application, /path: remote\/argocd\/projects\/ai-agent-coordinator/);
   assert.match(application, /argocd\.argoproj\.io\/sync-wave: "-1"/);
   assert.match(application, /namespace: argocd/);
 }
@@ -77,11 +79,16 @@ test('strict AppProject allows one source, one namespace, and no cluster resourc
   assert.doesNotMatch(project, /k8s-cluster\.git/);
 });
 
-test('platform bundle composes only the tenant and AppProject', async () => {
+test('platform bundle is self-contained and composes only tenant resources plus AppProject', async () => {
   const kustomization = await read(platformKustomizationPath);
-  assert.match(kustomization, /\.\.\/projects\/ai-agent-coordinator\.tenant\.yaml/);
-  assert.match(kustomization, /\.\.\/projects\/ai-agent-coordinator\.appproject\.yaml/);
+  assert.match(kustomization, /- tenant\.yaml/);
+  assert.match(kustomization, /- appproject\.yaml/);
+  assert.doesNotMatch(kustomization, /\.\.\//);
   assert.doesNotMatch(kustomization, /deployment|service|externalsecret/i);
+
+  const readme = await read(platformReadmePath);
+  assert.match(readme, /self-contained/);
+  assert.match(readme, /default load restriction/);
 });
 
 test('canonical Applications separate platform and immutable workload ownership', async () => {
@@ -107,6 +114,7 @@ test('registration files contain no credentials, plaintext Secrets, or merge mar
     tenantPath,
     projectPath,
     platformKustomizationPath,
+    platformReadmePath,
     platformApplicationPath,
     workloadApplicationPath,
     ...clouds.flatMap((cloud) => [
