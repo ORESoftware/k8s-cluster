@@ -311,16 +311,31 @@ async fn spawn_analysis(state: AppState, event: PullRequestEvent, analysis_id: S
     let status_context = state.config.status_context.clone();
     let span_id = analysis_id.clone();
 
-    let clone_url = event
+    let clone_repository = event
         .pull_request
         .head
         .repo
         .as_ref()
-        .and_then(|r| r.clone_url.clone())
-        .or_else(|| event.repository.clone_url.clone())
-        .unwrap_or_else(|| format!("https://github.com/{}.git", event.repository.full_name));
-
-    let clone_url = state.github.authenticated_clone_url(&clone_url);
+        .unwrap_or(&event.repository);
+    let public_clone_url = clone_repository
+        .clone_url
+        .clone()
+        .unwrap_or_else(|| format!("https://github.com/{}.git", clone_repository.full_name));
+    let clone_url = match state
+        .github
+        .authenticated_clone_url(&public_clone_url, &clone_repository.full_name)
+    {
+        Ok(url) => url,
+        Err(error) => {
+            warn!(
+                analysis_id,
+                error = %error,
+                repo = %clone_repository.full_name,
+                "rejecting unsafe clone URL"
+            );
+            return;
+        }
+    };
     let head_sha = event.pull_request.head.sha.clone();
     let head_ref = event.pull_request.head.ref_name.clone();
     let repo_full_name = event.repository.full_name.clone();

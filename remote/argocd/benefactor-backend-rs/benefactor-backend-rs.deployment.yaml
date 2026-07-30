@@ -48,6 +48,8 @@ spec:
               value: 0.0.0.0
             - name: BENEFACTOR_BACKEND_PORT
               value: '8135'
+            - name: BENEFACTOR_SYNC_ENABLED
+              value: 'false'
             - name: BENEFACTOR_REPLY_DRY_RUN
               value: 'false'
             - name: LIVE_SEND_CONFIRM
