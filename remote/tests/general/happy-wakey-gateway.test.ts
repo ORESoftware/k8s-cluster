@@ -45,6 +45,7 @@ test("Happy Wakey gateway is a persistent single-owner runtime", async () => {
   assert.match(deployment, /SHARED_AUTH_INTROSPECT_SECRET[\s\S]*secretKeyRef:/);
   assert.match(deployment, /NATS_URL[\s\S]*dd-nats\.messaging\.svc\.cluster\.local:4222/);
   assert.doesNotMatch(deployment, /SENDGRID_API_KEY|TWILIO_AUTH_TOKEN|AUTH_INTROSPECT_SECRET,\s*value:/);
+  assert.match(pvc, /storageClassName:\s*dd-block/);
   assert.match(pvc, /accessModes:\s*\n\s*-\s*ReadWriteOnce/);
   assert.match(service, /port:\s*8128/);
 });
