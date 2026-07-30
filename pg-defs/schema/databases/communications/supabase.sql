@@ -18,6 +18,10 @@ as $$
   )
 $$;
 
+-- Fail closed unless the row's stable shared-auth identity matches. When a
+-- Supabase UUID is linked, it must match the same verified token as well. Using
+-- an OR here would let a caller bind its own Supabase UUID to another user's
+-- shared identity and create rows visible to both identities.
 create or replace function communications.owns_identity(
   row_shared_user_id text,
   row_supabase_user_id uuid
@@ -27,11 +31,16 @@ language sql
 stable
 as $$
   select
-    (row_shared_user_id is not null
-      and row_shared_user_id = communications.jwt_claim('shared_user_id'))
-    or
-    (row_supabase_user_id is not null
-      and row_supabase_user_id::text = communications.jwt_claim('sub'))
+    row_shared_user_id is not null
+    and communications.jwt_claim('shared_user_id') is not null
+    and row_shared_user_id = communications.jwt_claim('shared_user_id')
+    and (
+      row_supabase_user_id is null
+      or (
+        communications.jwt_claim('sub') is not null
+        and row_supabase_user_id::text = communications.jwt_claim('sub')
+      )
+    )
 $$;
 
 alter table communications.endpoints enable row level security;
@@ -119,7 +128,10 @@ create policy suppressions_owner_select
   on communications.suppressions
   for select
   using (
-    shared_user_id = communications.jwt_claim('shared_user_id')
+    (
+      shared_user_id is not null
+      and shared_user_id = communications.jwt_claim('shared_user_id')
+    )
     or exists (
       select 1
       from communications.endpoints e
@@ -145,7 +157,6 @@ select
   provider,
   provider_environment,
   target_fingerprint,
-  target_metadata,
   consent_state,
   verified_at,
   last_seen_at,
