@@ -2,3 +2,11 @@
 	path = async-java
 	url = git@github.com:async-java/async.java.git
 	branch = master
+[submodule "shared-auth-interfaces"]
+	path = shared-auth-interfaces
+	url = git@github.com:shared-auth/shared-auth-interfaces.git
+	branch = main
+[submodule "shared-auth-lib"]
+	path = shared-auth-lib
+	url = git@github.com:shared-auth/shared-auth-lib.git
+	branch = main
