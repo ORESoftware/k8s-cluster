@@ -127,7 +127,10 @@ test('the cross-org backend job requires a GitHub App and produces a sanitized r
   assert.match(backendJob, /SUBMODULE_REPORT_PATH:\s*\$\{\{ runner\.temp \}\}\/backend-submodule-access\.tsv/);
   assert.match(backendJob, /init-submodules-with-github-app\.sh remote\/deployments/);
   assert.match(backendJob, /continue-on-error:\s*true/);
-  assert.match(backendJob, /actions\/upload-artifact@v6/);
+  assert.match(
+    backendJob,
+    /actions\/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7\.0\.1/,
+  );
   assert.match(backendJob, /name:\s*backend-submodule-access-report/);
   assert.match(backendJob, /steps\.backend-submodules\.outcome == 'failure'/);
   assert.doesNotMatch(backendJob, /K8S_SUBMODULE_TOKEN:\s*\$\{\{ secrets\./);
@@ -169,7 +172,8 @@ test('the App repository allowlist exactly matches every deployment gitlink', ()
 test('installation tokens are owner-scoped, repository-restricted, and revoked', () => {
   assert.match(appInitializer, /cut -f1 "\$records_file" \| LC_ALL=C sort -u/);
   assert.match(appInitializer, /for owner in "\$\{owners\[@\]\}"/);
-  assert.match(appInitializer, /"\$mint_script" "\$owner" "\$token_file" "\$\{repositories\[@\]\}"/);
+  assert.match(appInitializer, /bash "\$mint_script" "\$owner" "\$token_file" "\$\{repositories\[@\]\}"/);
+  assert.match(appInitializer, /bash "\$init_script" "\$\{repository_paths\[@\]\}"/);
   assert.match(appInitializer, /SUBMODULE_REPORT_MODE=append/);
   assert.match(appInitializer, /"\$\{api_url%\/\}\/installation\/token"/);
   assert.match(appInitializer, /unset installation_token/);

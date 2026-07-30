@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { generateKeyPairSync, verify } from 'node:crypto';
-import { chmodSync, mkdtempSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -106,7 +106,6 @@ test('mints a repository-restricted contents-read installation token without exp
   const address = server.address();
   assert.ok(address && typeof address === 'object');
 
-  chmodSync(script, 0o755);
   const result = await run('bash', [script, 'example-org', tokenFile, 'repo-a', 'repo-b'], {
     cwd: repoRoot,
     env: {

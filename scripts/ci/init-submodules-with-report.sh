@@ -48,8 +48,8 @@ record_result() {
 }
 
 cleanup() {
-  if [[ -n "$askpass_file" ]]; then
-    rm -f "$askpass_file"
+  if [[ -n "$askpass_file" && -f "$askpass_file" ]]; then
+    find "$askpass_file" -maxdepth 0 -type f -delete
   fi
 }
 trap cleanup EXIT
@@ -160,7 +160,9 @@ for path in "${selected_paths[@]}"; do
     echo "::error title=Submodule unavailable::${repository} (${path}) category=${category}"
   fi
 
-  rm -f "$log_file"
+  if [[ -f "$log_file" ]]; then
+    find "$log_file" -maxdepth 0 -type f -delete
+  fi
   echo "::endgroup::"
 done
 

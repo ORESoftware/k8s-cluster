@@ -50,7 +50,9 @@ token_request="${work_dir}/token-request.json"
 token_response="${work_dir}/token-response.json"
 
 cleanup() {
-  rm -rf "$work_dir"
+  if [[ -d "$work_dir" ]]; then
+    find "$work_dir" -depth -delete
+  fi
 }
 trap cleanup EXIT
 

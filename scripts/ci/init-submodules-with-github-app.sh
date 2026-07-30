@@ -32,7 +32,9 @@ work_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/github-app-submodules.XXXXXX")"
 records_file="${work_dir}/submodules.tsv"
 
 cleanup() {
-  rm -rf "$work_dir"
+  if [[ -d "$work_dir" ]]; then
+    find "$work_dir" -depth -delete
+  fi
 }
 trap cleanup EXIT
 
@@ -151,7 +153,7 @@ for owner in "${owners[@]}"; do
   token_file="${work_dir}/${owner}.token"
 
   echo "::group::GitHub App installation for ${owner}"
-  if ! "$mint_script" "$owner" "$token_file" "${repositories[@]}"; then
+  if ! bash "$mint_script" "$owner" "$token_file" "${repositories[@]}"; then
     overall_status=1
     while IFS=$'\t' read -r _ _ repository path; do
       printf 'failure\t%s\t%s\tinstallation-token-unavailable\t\n' "$repository" "$path" >>"$report_path"
@@ -162,14 +164,16 @@ for owner in "${owners[@]}"; do
   echo "::endgroup::"
 
   installation_token="$(<"$token_file")"
-  rm -f "$token_file"
+  if [[ -f "$token_file" ]]; then
+    find "$token_file" -maxdepth 0 -type f -delete
+  fi
 
   set +e
   SUBMODULE_AUTH_MODE=https-token \
     SUBMODULE_REPORT_PATH="$report_path" \
     SUBMODULE_REPORT_MODE=append \
     K8S_SUBMODULE_TOKEN="$installation_token" \
-    "$init_script" "${repository_paths[@]}"
+    bash "$init_script" "${repository_paths[@]}"
   owner_status=$?
   set -e
 
