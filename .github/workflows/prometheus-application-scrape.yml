@@ -17,6 +17,9 @@ on:
       - remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.deployment.yaml
       - remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.service.yaml
       - remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.networkpolicy.yaml
+      - remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.deployment.yaml
+      - remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.service.yaml
+      - remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.networkpolicy.yaml
       - remote/argocd/dd-next-runtime/dd-sonus-auris-site.configmap.yaml
       - remote/argocd/dd-next-runtime/dd-sonus-auris-site.deployment.yaml
       - remote/argocd/dd-next-runtime/dd-sonus-auris-site.service.yaml
@@ -40,6 +43,9 @@ on:
       - remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.deployment.yaml
       - remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.service.yaml
       - remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.networkpolicy.yaml
+      - remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.deployment.yaml
+      - remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.service.yaml
+      - remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.networkpolicy.yaml
       - remote/argocd/dd-next-runtime/dd-sonus-auris-site.configmap.yaml
       - remote/argocd/dd-next-runtime/dd-sonus-auris-site.deployment.yaml
       - remote/argocd/dd-next-runtime/dd-sonus-auris-site.service.yaml
@@ -99,3 +105,4 @@ jobs:
           grep -q 'name: fiducia-backend' /tmp/fiducia.yaml
           grep -q 'name: canonical-cloud-web' /tmp/canonical-cloud.yaml
           grep -q 'name: dd-sonus-auris-site' /tmp/dd-next-runtime.yaml
+          grep -q 'name: usacc-rest-api-backend-rs' /tmp/dd-next-runtime.yaml

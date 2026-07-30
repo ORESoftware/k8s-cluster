@@ -34,7 +34,7 @@ class BenefactorObservabilityContractTest(unittest.TestCase):
 
         deployment = PROMETHEUS_DEPLOYMENT.read_text(encoding="utf-8")
         self.assertIn(
-            'dd.dev/config-revision: "2026-07-30-benefactor-backend"',
+            'dd.dev/config-revision: "2026-07-30-benefactor-usacc-applications"',
             deployment,
         )
 
