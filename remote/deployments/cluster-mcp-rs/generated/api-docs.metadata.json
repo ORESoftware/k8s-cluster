@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "cluster-mcp-rs",
   "language": "rust",
-  "routeCount": 13,
+  "routeCount": 15,
   "routeTypeCounts": {
-    "service": 7,
-    "user-generated": 3,
+    "service": 8,
+    "user-generated": 4,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -18,7 +18,24 @@
     {
       "path": "/",
       "methods": [
-        "GET",
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "service",
+      "auth": "public",
+      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
+      "handlers": [
+        "root",
+        "rpc"
+      ],
+      "sourceFiles": [
+        "remote/deployments/cluster-mcp-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/",
+      "methods": [
         "POST"
       ],
       "routeType": "service",
@@ -173,7 +190,24 @@
     {
       "path": "/mcp",
       "methods": [
-        "GET",
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "mcp_get",
+        "rpc"
+      ],
+      "sourceFiles": [
+        "remote/deployments/cluster-mcp-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/mcp",
+      "methods": [
         "POST"
       ],
       "routeType": "user-generated",

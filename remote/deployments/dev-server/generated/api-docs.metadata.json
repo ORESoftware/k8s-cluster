@@ -3,9 +3,9 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dev-server",
   "language": "node",
-  "routeCount": 19,
+  "routeCount": 20,
   "routeTypeCounts": {
-    "user-generated": 10,
+    "user-generated": 11,
     "service": 6,
     "runtime-config": 3
   },
@@ -219,7 +219,21 @@
     {
       "path": "/tasks",
       "methods": [
-        "GET",
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [],
+      "sourceFiles": [
+        "remote/deployments/dev-server/src/server.ts"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/tasks",
+      "methods": [
         "POST"
       ],
       "routeType": "user-generated",

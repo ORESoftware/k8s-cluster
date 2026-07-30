@@ -16,7 +16,7 @@
       "get": {
         "operationId": "dd_embeddings_rs_get_api_docs_6d9a44ce91c7",
         "summary": "Human-readable generated API documentation.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -35,7 +35,7 @@
       "get": {
         "operationId": "dd_embeddings_rs_get_api_docs_json_5b156aa49080",
         "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -54,7 +54,7 @@
       "get": {
         "operationId": "dd_embeddings_rs_get_docs_api_dbf8547bbd66",
         "summary": "Human-readable generated API documentation.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -73,7 +73,7 @@
       "get": {
         "operationId": "dd_embeddings_rs_get_healthz_c98b323dcfc7",
         "summary": "Health check.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -92,7 +92,7 @@
       "get": {
         "operationId": "dd_embeddings_rs_get_metrics_b8de5715f91f",
         "summary": "Prometheus metrics.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -111,7 +111,7 @@
       "get": {
         "operationId": "dd_embeddings_rs_get_openapi_json_e309ad71cb55",
         "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -130,7 +130,7 @@
       "get": {
         "operationId": "dd_embeddings_rs_get_readyz_1034976ffc04",
         "summary": "Readiness check.",
-        "description": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],

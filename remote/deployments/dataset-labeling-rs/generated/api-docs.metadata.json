@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dataset-labeling-rs",
   "language": "rust",
-  "routeCount": 17,
+  "routeCount": 18,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 10
+    "user-generated": 11
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -85,7 +85,24 @@
     {
       "path": "/datasets",
       "methods": [
-        "GET",
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_dataset_http",
+        "list_datasets_http"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dataset-labeling-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/datasets",
+      "methods": [
         "POST"
       ],
       "routeType": "user-generated",

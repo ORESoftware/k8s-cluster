@@ -30,7 +30,7 @@
       "sourceFiles": [
         "remote/deployments/browser-test-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/docs",
@@ -48,7 +48,7 @@
       "sourceFiles": [
         "remote/deployments/browser-test-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/docs.json",
@@ -66,7 +66,7 @@
       "sourceFiles": [
         "remote/deployments/browser-test-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/browser-test",
@@ -84,7 +84,7 @@
       "sourceFiles": [
         "remote/deployments/browser-test-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/browser-test/healthz",
@@ -102,7 +102,7 @@
       "sourceFiles": [
         "remote/deployments/browser-test-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/browser-test/metrics",
@@ -120,7 +120,7 @@
       "sourceFiles": [
         "remote/deployments/browser-test-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/browser-test/status",
@@ -138,7 +138,7 @@
       "sourceFiles": [
         "remote/deployments/browser-test-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/browser-test/tools",
@@ -156,7 +156,7 @@
       "sourceFiles": [
         "remote/deployments/browser-test-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/docs/api",
@@ -174,7 +174,7 @@
       "sourceFiles": [
         "remote/deployments/browser-test-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/healthz",
@@ -192,7 +192,7 @@
       "sourceFiles": [
         "remote/deployments/browser-test-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/internal/docs/api",
@@ -210,7 +210,7 @@
       "sourceFiles": [
         "remote/deployments/browser-test-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/internal/openapi.json",
@@ -228,7 +228,7 @@
       "sourceFiles": [
         "remote/deployments/browser-test-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/metrics",
@@ -246,7 +246,7 @@
       "sourceFiles": [
         "remote/deployments/browser-test-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/openapi.json",
@@ -264,7 +264,7 @@
       "sourceFiles": [
         "remote/deployments/browser-test-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/run",
@@ -282,7 +282,7 @@
       "sourceFiles": [
         "remote/deployments/browser-test-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/status",
@@ -300,7 +300,7 @@
       "sourceFiles": [
         "remote/deployments/browser-test-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/tools",
@@ -318,7 +318,7 @@
       "sourceFiles": [
         "remote/deployments/browser-test-server/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Fastify router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     }
   ]
 }
