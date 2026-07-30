@@ -1,0 +1,49 @@
+name: no PAT propagation
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/ci/**'
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/ci/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: no-pat-propagation-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Reject broad PAT fallbacks and persistence paths
+        run: |
+          set -euo pipefail
+          files=(
+            .github/workflows/remote-k8s-maintenance.yml
+            .github/workflows/formal-methods.yml
+          )
+          forbidden='REMOTE_DEV_GH_PAT|sync-agent-gh-pat|x-access-token:|data\["GH_PAT"\]|env REMOTE_DEV_GH_PAT='
+          if grep -nE "$forbidden" "${files[@]}"; then
+            echo 'A broad PAT fallback or PAT-to-runtime persistence path is forbidden.' >&2
+            exit 1
+          fi
+      - name: Require non-persistent Git authentication posture
+        run: |
+          set -euo pipefail
+          grep -F 'persist-credentials: false' .github/workflows/formal-methods.yml
+          grep -F 'K8S_LIBS_DEPLOY_KEY' .github/workflows/formal-methods.yml
+          ! grep -F 'continue-on-error: true' .github/workflows/formal-methods.yml
