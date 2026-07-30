@@ -292,7 +292,10 @@ test("prometheus and loki ingest through the collector and promtail fan-in", asy
   assert.match(loki, /limits_config:[\s\S]*reject_old_samples:\s*true/);
   assert.match(loki, /ingestion_rate_mb:\s*16/);
   assert.match(loki, /max_global_streams_per_user:\s*5000/);
-  assert.match(lokiDeployment, /configmap\.reloader\.stakater\.com\/reload:\s*"dd-loki-config"/);
+  assert.match(
+    lokiDeployment,
+    /configmap\.reloader\.stakater\.com\/reload:\s*"dd-loki-config,dd-loki-rules"/,
+  );
 });
 
 test("resource exporter and Grafana fleet dashboard cover every checked-in workload", async () => {
@@ -384,6 +387,77 @@ test("promtail parses the shared structured stdio envelope without high-cardinal
   assert.doesNotMatch(promtail, /thread[_-]?id:\s*dd_log/i);
   assert.doesNotMatch(promtail, /trace[_-]?id:\s*dd_log/i);
   assert.doesNotMatch(promtail, /span[_-]?id:\s*dd_log/i);
+});
+
+test("telemetry alerts route through authenticated, deduplicated ticket delivery", async () => {
+  const alertmanager = await readRepoFile(
+    "remote/argocd/observability/alertmanager.configmap.yaml",
+  );
+  const alertmanagerDeployment = await readRepoFile(
+    "remote/argocd/observability/alertmanager.deployment.yaml",
+  );
+  const telemetrySecret = await readRepoFile(
+    "remote/argocd/observability/alertmanager.telemetry.externalsecret.yaml",
+  );
+  const loki = await readRepoFile("remote/argocd/observability/loki.configmap.yaml");
+  const lokiDeployment = await readRepoFile(
+    "remote/argocd/observability/loki.deployment.yaml",
+  );
+  const lokiRules = await readRepoFile(
+    "remote/argocd/observability/loki.rules.configmap.yaml",
+  );
+  const collector = await readRepoFile(
+    "remote/argocd/observability/otel-collector.configmap.yaml",
+  );
+  const prometheus = await readRepoFile(
+    "remote/argocd/observability/prometheus.configmap.yaml",
+  );
+
+  assert.match(alertmanager, /receiver:\s*'telemetry\.coordinator'/);
+  assert.match(alertmanager, /\/webhooks\/alertmanager/);
+  assert.match(
+    alertmanager,
+    /credentials_file:\s*\/etc\/alertmanager\/telemetry\/TELEMETRY_WEBHOOK_TOKEN/,
+  );
+  assert.match(telemetrySecret, /key:\s*dd\/remote-dev\/telemetry-ticket-automation/);
+  assert.match(telemetrySecret, /property:\s*TELEMETRY_WEBHOOK_TOKEN/);
+  assert.match(alertmanagerDeployment, /secretName:\s*dd-alertmanager-telemetry/);
+
+  assert.match(loki, /ruler:[\s\S]*alertmanager_url:/);
+  assert.match(lokiDeployment, /name:\s*dd-loki-rules/);
+  assert.match(lokiRules, /alert:\s*DDBackendErrorLogBurst/);
+  assert.match(lokiRules, /alert:\s*DDBackendWarningLogBurst/);
+  assert.match(lokiRules, /log_schema="dd\.log\.v1"/);
+  assert.doesNotMatch(lokiRules, /trace[_-]?id|request[_-]?id|task[_-]?id/i);
+
+  assert.match(collector, /connectors:[\s\S]*spanmetrics:/);
+  assert.match(collector, /receivers:[\s\S]*-\s*spanmetrics/);
+  assert.match(prometheus, /alert:\s*DDBackendTraceErrorRate/);
+  assert.match(prometheus, /traces_span_metrics_calls_total/);
+});
+
+test("telemetry consensus workers use the requested pinned model identities", async () => {
+  const runner = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml",
+  );
+  const providerConfig = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-ai-agent-runner.configmap.yaml",
+  );
+  const broker = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml",
+  );
+
+  assert.match(runner, /replicas:\s*1/);
+  assert.match(runner, /configMapRef:[\s\S]*name:\s*dd-ai-agent-runner-config/);
+  assert.match(providerConfig, /"model":"gemini-3\.1-pro-preview"/);
+  assert.match(providerConfig, /"model":"claude-opus-5"/);
+  assert.equal((providerConfig.match(/"model":"gpt-5\.6-sol"/g) ?? []).length, 2);
+  assert.match(providerConfig, /"name":"openai-chatgpt-5\.6-sol-reviewer"/);
+  assert.doesNotMatch(providerConfig, /(?:api[_-]?key|token|secret)"\s*:/i);
+
+  assert.match(broker, /name:\s*GEMINI_MODEL[\s\S]*value:\s*gemini-3\.1-pro-preview/);
+  assert.match(broker, /name:\s*ANTHROPIC_MODEL[\s\S]*value:\s*claude-opus-5/);
+  assert.match(broker, /name:\s*CODEX_MODEL[\s\S]*value:\s*gpt-5\.6-sol/);
 });
 
 test("websocket comparison services expose prometheus metrics", async () => {
@@ -536,7 +610,10 @@ test("rust public web telemetry keeps aligned service metadata", async () => {
   const deployment = await readRepoFile(
     "remote/argocd/dd-next-runtime/dd-remote-web-home.deployment.yaml",
   );
-  const webHome = await readRepoFile("remote/deployments/web-home-rs/src/main.rs");
+  const webHome = [
+    await readRepoFile("remote/deployments/web-home-rs/src/main.rs"),
+    await readRepoFile("remote/deployments/web-home-rs/src/handlers.rs"),
+  ].join("\n");
 
   assert.match(deployment, /dd\.dev\/telemetry-revision/);
   assert.match(webHome, /service:\s*"dd-remote-web-home"\.to_string\(\)/);
@@ -563,7 +640,10 @@ test("grafana exposes a dedicated fabrication planner dashboard", async () => {
     "remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml",
   );
   const runtimeReadme = await readRepoFile("remote/argocd/dd-next-runtime/readme.md");
-  const webHome = await readRepoFile("remote/deployments/web-home-rs/src/main.rs");
+  const webHome = [
+    await readRepoFile("remote/deployments/web-home-rs/src/main.rs"),
+    await readRepoFile("remote/deployments/web-home-rs/src/grafana.rs"),
+  ].join("\n");
 
   const dashboard = extractDashboardJson(dashboards, "fabrication-planner.json");
   const dashboardText = JSON.stringify(dashboard);

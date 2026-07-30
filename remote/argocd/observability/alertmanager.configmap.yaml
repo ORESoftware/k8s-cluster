@@ -8,16 +8,11 @@ data:
     global:
       resolve_timeout: 5m
 
-    # Routing tree. The stack ships with delivery DISABLED — every alert lands on
-    # the empty 'null' receiver, so Alertmanager aggregates, deduplicates, groups,
-    # and shows alerts in its UI (and Prometheus /alerts) without pushing anywhere
-    # and without erroring on a missing destination. To go live:
-    #   1. kubectl -n observability create secret generic dd-alertmanager-secrets \
-    #        --from-literal=webhook-url=https://hooks.slack.com/...   (or PagerDuty/etc)
-    #   2. change the `receiver:` below (or the child route) to 'web.hook'.
-    # The stakater reloader picks up both edits without a manual rollout.
+    # Alertmanager remains the dedupe/grouping boundary. Warning and critical
+    # alerts are delivered to the in-cluster coordinator; unclassified alerts
+    # continue to the null sink. The bearer is mounted from External Secrets.
     route:
-      group_by: ['alertname', 'namespace']
+      group_by: ['alertname', 'cluster', 'namespace', 'deployment', 'service']
       group_wait: 30s
       group_interval: 5m
       repeat_interval: 4h
@@ -27,7 +22,7 @@ data:
         # `web.hook` switch here delivers only actionable alerts.
         - matchers:
             - severity =~ "critical|warning"
-          receiver: 'null'
+          receiver: 'telemetry.coordinator'
 
     inhibit_rules:
       # A firing critical silences a matching warning for the same alert/namespace,
@@ -39,6 +34,14 @@ data:
     receivers:
       # The safe default sink: no notifiers, so it can never error on send.
       - name: 'null'
+      - name: 'telemetry.coordinator'
+        webhook_configs:
+          - url: http://ai-agent-coordinator.ai-agent-coordinator.svc.cluster.local:8080/webhooks/alertmanager
+            send_resolved: true
+            http_config:
+              authorization:
+                type: Bearer
+                credentials_file: /etc/alertmanager/telemetry/TELEMETRY_WEBHOOK_TOKEN
       # Ready-to-use webhook. Reads its URL from the optional
       # dd-alertmanager-secrets/webhook-url file, so no destination lives in git.
       - name: 'web.hook'

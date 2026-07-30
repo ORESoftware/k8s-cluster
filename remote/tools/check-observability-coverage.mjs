@@ -43,6 +43,14 @@ const webHomeMainPath = path.join(
   'src',
   'main.rs',
 );
+const webHomeGrafanaPath = path.join(
+  repoRoot,
+  'remote',
+  'deployments',
+  'web-home-rs',
+  'src',
+  'grafana.rs',
+);
 const deploymentsDir = path.join(repoRoot, 'remote', 'deployments');
 
 const dependencyManifestNames = new Set([
@@ -307,7 +315,10 @@ const dependencyManifests = walk(deploymentsDir).filter((file) =>
 );
 
 const grafanaDashboards = fs.readFileSync(grafanaDashboardsPath, 'utf8');
-const webHomeMain = fs.readFileSync(webHomeMainPath, 'utf8');
+const webHomeMain = [
+  fs.readFileSync(webHomeMainPath, 'utf8'),
+  fs.readFileSync(webHomeGrafanaPath, 'utf8'),
+].join('\n');
 
 const failures = [];
 

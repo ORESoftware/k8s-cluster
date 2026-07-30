@@ -238,6 +238,7 @@ resources:
   - dd-ai-agent-bridge.service.yaml
   # Provider worker is opt-in (replicas: 0) until its ExternalSecret exists.
   # It polls bridge workflows and calls Codex/OpenAI, Claude, Gemini, Kimi, or Qwen.
+  - dd-ai-agent-runner.configmap.yaml
   - dd-ai-agent-runner.externalsecret.yaml
   - dd-ai-agent-runner.deployment.yaml
   # t2v-v2t: voice-to-text / text-to-voice / translation. Two separately

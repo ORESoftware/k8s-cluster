@@ -9,7 +9,7 @@ metadata:
     # Reload on routing-config edits AND on the delivery-secret being created or
     # rotated, so wiring a destination never needs a manual rollout.
     configmap.reloader.stakater.com/reload: "dd-alertmanager-config"
-    secret.reloader.stakater.com/reload: "dd-alertmanager-secrets"
+    secret.reloader.stakater.com/reload: "dd-alertmanager-secrets,dd-alertmanager-telemetry"
 spec:
   replicas: 1
   strategy:
@@ -60,6 +60,9 @@ spec:
             - name: secrets
               mountPath: /etc/alertmanager/secrets
               readOnly: true
+            - name: telemetry
+              mountPath: /etc/alertmanager/telemetry
+              readOnly: true
             - name: data
               mountPath: /alertmanager
       volumes:
@@ -73,6 +76,9 @@ spec:
           secret:
             secretName: dd-alertmanager-secrets
             optional: true
+        - name: telemetry
+          secret:
+            secretName: dd-alertmanager-telemetry
         - name: data
           emptyDir:
             sizeLimit: 1Gi

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-ai-agent-runner-config
+  namespace: default
+  labels:
+    app: dd-ai-agent-runner
+data:
+  AI_PROVIDER_CONFIG_JSON: >-
+    [
+      {"name":"google-gemini-3.1-pro","protocol":"gemini_generate_content","base_url":"https://generativelanguage.googleapis.com/v1beta/","model":"gemini-3.1-pro-preview","api_key_env":"GEMINI_API_KEY","allowed_hosts":["generativelanguage.googleapis.com"]},
+      {"name":"anthropic-claude-5","protocol":"anthropic_messages","base_url":"https://api.anthropic.com/v1/","model":"claude-opus-5","api_key_env":"ANTHROPIC_API_KEY","allowed_hosts":["api.anthropic.com"]},
+      {"name":"openai-chatgpt-5.6-sol","protocol":"open_ai_responses","base_url":"https://api.openai.com/v1/","model":"gpt-5.6-sol","api_key_env":"OPENAI_API_KEY","allowed_hosts":["api.openai.com"]},
+      {"name":"openai-chatgpt-5.6-sol-reviewer","protocol":"open_ai_responses","base_url":"https://api.openai.com/v1/","model":"gpt-5.6-sol","api_key_env":"OPENAI_API_KEY","allowed_hosts":["api.openai.com"]}
+    ]

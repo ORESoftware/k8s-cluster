@@ -67,6 +67,23 @@ jobs:
         run: pnpm run check:observability-coverage
         working-directory: remote/tests
 
+      - name: Validate telemetry rule and collector configs
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -ryaml -e 'puts YAML.safe_load(File.read("remote/argocd/observability/alertmanager.configmap.yaml"))["data"]["alertmanager.yml"]' \
+            | docker run --rm -i --entrypoint /bin/amtool \
+                prom/alertmanager@sha256:e13b6ed5cb929eeaee733479dce55e10eb3bc2e9c4586c705a4e8da41e5eacf5 \
+                check-config /dev/stdin
+          ruby -ryaml -e 'puts YAML.safe_load(File.read("remote/argocd/observability/prometheus.configmap.yaml"))["data"]["observability.rules.yml"]' \
+            | docker run --rm -i --entrypoint /bin/promtool \
+                prom/prometheus@sha256:2659f4c2ebb718e7695cb9b25ffa7d6be64db013daba13e05c875451cf51b0d3 \
+                check rules /dev/stdin
+          ruby -ryaml -e 'puts YAML.safe_load(File.read("remote/argocd/observability/otel-collector.configmap.yaml"))["data"]["collector.yaml"]' \
+            | docker run --rm -i \
+                otel/opentelemetry-collector-contrib@sha256:a2a52e43c1a80aa94120ad78c2db68780eb90e6d11c8db5b3ce2f6a0cc6b5029 \
+                validate --config=/dev/stdin
+
       - name: Run static repo contract tests
         run: |
           set -euo pipefail

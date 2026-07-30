@@ -8,11 +8,11 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-options: Prune=false
 spec:
-  # Activation is deliberately explicit. Create the AWS Secrets Manager bundle
-  # documented by dd-ai-agent-runner.externalsecret.yaml, then scale to exactly 1.
+  # One worker handles the four bounded telemetry consensus identities. Missing
+  # provider credentials fail closed through the required ExternalSecret.
   # Multiple replicas may duplicate non-file provider calls until distributed
   # assignment claims are implemented; file-scoped work is still Fiducia-fenced.
-  replicas: 0
+  replicas: 1
   strategy:
     type: Recreate
   selector:
@@ -80,6 +80,8 @@ spec:
               cargo build --release --locked --bin fiducia-ai-agent-runner
               exec "${CARGO_TARGET_DIR:-target}/release/fiducia-ai-agent-runner"
           envFrom:
+            - configMapRef:
+                name: dd-ai-agent-runner-config
             - secretRef:
                 name: dd-ai-agent-runner-secrets
           env:

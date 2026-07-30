@@ -805,3 +805,13 @@ data:
             annotations:
               summary: OpenTelemetry collector exporter failures
               description: "The collector could not export spans, metric points, or log records in the last five minutes."
+          - alert: DDBackendTraceErrorRate
+            expr: sum by (service_name) (rate(traces_span_metrics_calls_total{status_code="STATUS_CODE_ERROR"}[5m])) > 0.05
+            for: 5m
+            labels:
+              severity: warning
+              service: "{{ $labels.service_name }}"
+              telemetry_source: tempo
+            annotations:
+              summary: Backend trace error rate is sustained
+              description: "OpenTelemetry span metrics show more than 0.05 error spans per second for five minutes. Use the service name and time window to inspect correlated Tempo traces."

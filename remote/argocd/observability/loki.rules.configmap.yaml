@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-loki-rules
+  namespace: observability
+  labels:
+    app: dd-loki
+    app.kubernetes.io/component: telemetry-ticket-source
+data:
+  telemetry.rules.yaml: |
+    groups:
+      - name: dd-log-ticket-candidates
+        interval: 1m
+        rules:
+          - alert: DDBackendErrorLogBurst
+            expr: |
+              sum by (cluster, namespace, deployment, log_service) (
+                count_over_time(
+                  {log_schema="dd.log.v1", severity=~"ERROR|FATAL", deployment!=""}[5m]
+                )
+              ) >= 3
+            for: 2m
+            labels:
+              severity: critical
+              telemetry_source: loki
+            annotations:
+              summary: Sustained backend error log burst
+              description: "A backend emitted at least three dd.log.v1 ERROR/FATAL records in five minutes. The ticket automation receives only bounded labels and this summary; investigators query Loki and correlated traces separately."
+          - alert: DDBackendWarningLogBurst
+            expr: |
+              sum by (cluster, namespace, deployment, log_service) (
+                count_over_time(
+                  {log_schema="dd.log.v1", severity="WARN", deployment!=""}[10m]
+                )
+              ) >= 20
+            for: 5m
+            labels:
+              severity: warning
+              telemetry_source: loki
+            annotations:
+              summary: Sustained backend warning log burst
+              description: "A backend emitted at least twenty dd.log.v1 WARN records in ten minutes. The threshold suppresses isolated warnings while preserving a durable incident signal."

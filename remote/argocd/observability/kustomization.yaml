@@ -16,6 +16,7 @@ resources:
   - prometheus.deployment.yaml
   - prometheus.service.yaml
   - alertmanager.configmap.yaml
+  - alertmanager.telemetry.externalsecret.yaml
   - alertmanager.deployment.yaml
   - alertmanager.service.yaml
   - grafana.provisioning.configmap.yaml
@@ -23,6 +24,7 @@ resources:
   - grafana.deployment.yaml
   - grafana.service.yaml
   - loki.configmap.yaml
+  - loki.rules.configmap.yaml
   - loki.deployment.yaml
   - loki.service.yaml
   - promtail.rbac.yaml

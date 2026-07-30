@@ -198,6 +198,27 @@ spec:
     syncOptions:
       - CreateNamespace=true
 ---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-agent-coordinator
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ORESoftware/ai-agent-coordinator.rs.git
+    targetRevision: main
+    path: deploy/k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ai-agent-coordinator
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
 # The same prebuilt, hostPath-free browser MCP runs on both clouds. Keeping it a
 # separate Application avoids coupling its rollout to dd-next-runtime.
 apiVersion: argoproj.io/v1alpha1
