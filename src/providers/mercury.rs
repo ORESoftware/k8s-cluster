@@ -217,12 +217,23 @@ impl MercuryApi {
 /// Mercury signs webhooks with HMAC-SHA256 over `{timestamp}.{raw_body}`,
 /// where `timestamp` is `X-Mercury-Timestamp` and the result is in
 /// `X-Mercury-Signature` as raw hex.
+///
+/// `tolerance_seconds` bounds how old the signed timestamp may be. The HMAC
+/// covers the timestamp, so it cannot be forged — but without a freshness
+/// bound a captured delivery replays forever. Checked before the HMAC so a
+/// stale delivery costs no signing work.
 pub fn verify_webhook_signature(
     raw_body: &[u8],
     timestamp_header: &str,
     signature_header: &str,
     webhook_secret: &str,
+    tolerance_seconds: i64,
 ) -> AppResult<()> {
+    crate::providers::amount::verify_timestamp_freshness(
+        timestamp_header,
+        tolerance_seconds,
+        "mercury",
+    )?;
     let provided = signature_header.trim();
     let signed_prefix = format!("{timestamp_header}.");
     let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(webhook_secret.as_bytes())
@@ -254,6 +265,8 @@ fn constant_time_eq_str(a: &str, b: &str) -> bool {
 mod tests {
     use super::*;
 
+    const TOLERANCE: i64 = 300;
+
     fn sign(body: &[u8], ts: &str, secret: &str) -> String {
         let prefix = format!("{ts}.");
         let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret.as_bytes()).unwrap();
@@ -262,20 +275,36 @@ mod tests {
         hex::encode(Mac::finalize(mac).into_bytes())
     }
 
+    /// Deliveries must be inside the tolerance window, so tests sign against
+    /// "now" rather than a frozen constant.
+    fn fresh_ts() -> String {
+        chrono::Utc::now().timestamp().to_string()
+    }
+
     #[test]
     fn verifies_mercury_hmac() {
         let body = br#"{"event":"payment.completed","id":"p1"}"#;
-        let ts = "1716423000";
-        let sig = sign(body, ts, "shh");
-        verify_webhook_signature(body, ts, &sig, "shh").unwrap();
+        let ts = fresh_ts();
+        let sig = sign(body, &ts, "shh");
+        verify_webhook_signature(body, &ts, &sig, "shh", TOLERANCE).unwrap();
+    }
+
+    #[test]
+    fn accepts_millisecond_timestamp_header() {
+        // Unit is sniffed, not assumed — a ms header must not read as stale.
+        let body = br#"{"id":"x"}"#;
+        let ts = chrono::Utc::now().timestamp_millis().to_string();
+        let sig = sign(body, &ts, "k");
+        verify_webhook_signature(body, &ts, &sig, "k", TOLERANCE).unwrap();
     }
 
     #[test]
     fn rejects_mercury_wrong_secret() {
         let body = br#"{"id":"x"}"#;
-        let sig = sign(body, "1", "right");
+        let ts = fresh_ts();
+        let sig = sign(body, &ts, "right");
         assert!(matches!(
-            verify_webhook_signature(body, "1", &sig, "wrong").unwrap_err(),
+            verify_webhook_signature(body, &ts, &sig, "wrong", TOLERANCE).unwrap_err(),
             AppError::Unauthorized
         ));
     }
@@ -283,9 +312,10 @@ mod tests {
     #[test]
     fn rejects_mercury_tampered_body() {
         let body = br#"{"amount":1}"#;
-        let sig = sign(body, "1", "k");
+        let ts = fresh_ts();
+        let sig = sign(body, &ts, "k");
         assert!(matches!(
-            verify_webhook_signature(b"{\"amount\":9}", "1", &sig, "k").unwrap_err(),
+            verify_webhook_signature(b"{\"amount\":9}", &ts, &sig, "k", TOLERANCE).unwrap_err(),
             AppError::Unauthorized
         ));
     }
@@ -293,12 +323,47 @@ mod tests {
     #[test]
     fn rejects_mercury_swapped_timestamp() {
         let body = br#"{"id":"x"}"#;
-        let sig = sign(body, "1000", "k");
-        // Attacker replays an old signed payload with a fresh-looking ts.
+        let now = chrono::Utc::now().timestamp();
+        let sig = sign(body, &now.to_string(), "k");
+        // Both timestamps are fresh, so this isolates the HMAC binding rather
+        // than tripping the freshness check.
         assert!(matches!(
-            verify_webhook_signature(body, "9999", &sig, "k").unwrap_err(),
+            verify_webhook_signature(body, &(now + 1).to_string(), &sig, "k", TOLERANCE)
+                .unwrap_err(),
             AppError::Unauthorized
         ));
+    }
+
+    #[test]
+    fn rejects_replayed_stale_delivery() {
+        // The exact (timestamp, body, signature) triple Mercury sent, captured
+        // and replayed later. The HMAC still verifies — only the freshness
+        // bound rejects it.
+        let body = br#"{"event":"payment.completed","id":"p1"}"#;
+        let stale = (chrono::Utc::now().timestamp() - TOLERANCE - 60).to_string();
+        let sig = sign(body, &stale, "shh");
+        assert!(matches!(
+            verify_webhook_signature(body, &stale, &sig, "shh", TOLERANCE).unwrap_err(),
+            AppError::Unauthorized
+        ));
+    }
+
+    #[test]
+    fn rejects_future_dated_delivery() {
+        let body = br#"{"id":"x"}"#;
+        let future = (chrono::Utc::now().timestamp() + TOLERANCE + 60).to_string();
+        let sig = sign(body, &future, "k");
+        assert!(matches!(
+            verify_webhook_signature(body, &future, &sig, "k", TOLERANCE).unwrap_err(),
+            AppError::Unauthorized
+        ));
+    }
+
+    #[test]
+    fn rejects_unparseable_timestamp() {
+        let body = br#"{"id":"x"}"#;
+        let sig = sign(body, "not-a-number", "k");
+        assert!(verify_webhook_signature(body, "not-a-number", &sig, "k", TOLERANCE).is_err());
     }
 }
 
