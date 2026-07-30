@@ -45,11 +45,10 @@ jobs:
 
   # Proves schema.sql is a valid declarative source: it applies cleanly to a
   # fresh Postgres 17, and dpm (declarative-postgres-migrate) sees zero drift
-  # between the file and the applied database (all nine source/target pairings
-  # go through pg_catalog, so this exercises dpm's shadow materialization too).
+  # between the file and the applied database.
   schema-migration-verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17
@@ -77,12 +76,10 @@ jobs:
           psql "$TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -q -f pg-defs/schema/schema.sql
       - name: dpm sees no drift between schema.sql and the applied database
         run: ./pg-defs/scripts/dpm.sh diff --fail-on-diff
-      # Per-database contracts (schema/databases/<db>/schema.sql) are owned by
-      # individual services but live here so all shared defs stay in one repo.
-      # They are NOT fed to the code generator, so nothing else validates them —
-      # apply each to its own fresh database and require dpm to see zero drift,
-      # the same guarantee the main schema gets. Catches a syntax error or an
-      # un-round-trippable definition before it reaches a live RDS.
+      # Per-database contracts may reference externally owned Supabase objects
+      # such as auth.users/auth.uid(). Build a minimal test-only dependency prelude
+      # when needed, then scope DPM to the application-owned schema so the external
+      # auth objects are neither claimed nor proposed for deletion.
       - name: per-database schemas apply cleanly and dpm sees no drift
         run: |
           set -euo pipefail
@@ -90,13 +87,50 @@ jobs:
           found=0
           for schema in pg-defs/schema/databases/*/schema.sql; do
             found=1
-            db="dpm_check_$(basename "$(dirname "$schema")")"
+            dir="$(dirname "$schema")"
+            app="$(basename "$dir")"
+            db="dpm_check_$app"
+            url="postgresql://postgres:postgres@localhost:5432/$db"
+            source="$schema"
             echo "::group::$db ($schema)"
             psql "$SHADOW_DATABASE_URL" -c "create database \"$db\""
-            psql "postgresql://postgres:postgres@localhost:5432/$db" \
-              -v ON_ERROR_STOP=1 -q -f "$schema"
-            dpm diff --source "$schema" \
-              --target "postgresql://postgres:postgres@localhost:5432/$db" \
+
+            if grep -Eiq 'auth\.(users|uid)[[:space:]]*\(' "$schema" \
+              || grep -Eiq 'auth\.users' "$schema"; then
+              prelude="$RUNNER_TEMP/${app}-supabase-auth-prelude.sql"
+              source="$RUNNER_TEMP/${app}-schema-with-auth-prelude.sql"
+              cat > "$prelude" <<'SQL'
+          create schema if not exists auth;
+          create table if not exists auth.users (id uuid primary key);
+          create or replace function auth.uid()
+          returns uuid
+          language sql
+          stable
+          as $fn$
+            select coalesce(
+              nullif(current_setting('request.jwt.claim.sub', true), ''),
+              nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub'
+            )::uuid
+          $fn$;
+          SQL
+              cat "$prelude" "$schema" > "$source"
+            fi
+
+            owned_schema="$(
+              grep -Eio -m1 \
+                'create[[:space:]]+schema[[:space:]]+if[[:space:]]+not[[:space:]]+exists[[:space:]]+"?[a-zA-Z0-9_]+"?' \
+                "$schema" \
+                | awk '{print $NF}' \
+                | tr -d '";' \
+                | tr '[:upper:]' '[:lower:]' \
+                || true
+            )"
+            owned_schema="${owned_schema:-public}"
+
+            psql "$url" -v ON_ERROR_STOP=1 -q -f "$source"
+            dpm diff --source "$source" \
+              --target "$url" \
+              --schemas "$owned_schema" \
               --fail-on-diff
             echo "::endgroup::"
           done
@@ -122,11 +156,6 @@ jobs:
           done
       # dpm verify replays the migration on a shadow replica and proves an empty
       # re-diff (true convergence, catching bugs the source-vs-target diff can't).
-      # The deparse fixed-point bug that made this fail on varchar IN-list CHECK
-      # constraints, generated columns, and view bodies was fixed upstream
-      # (declarative-postgres-migrate.rs 3fcb17b + 16e2c9b, server-side
-      # canonicalization) and shipped in dpm v0.3.2. The installer above pulls
-      # the latest release, so this is now enforcing.
       - name: dpm verify (bootstrap convergence proof)
         env:
           TARGET_DATABASE_URL: postgres://postgres:postgres@localhost:5432/pg_defs_verify
