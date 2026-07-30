@@ -45,7 +45,10 @@ async fn record_payment_event_claims_once_then_dedupes() {
         db::record_payment_event(&conn, PaymentProvider::Paypal, &event_id, &payload)
             .await
             .expect("insert ok");
-    assert!(other_provider, "same id, different provider is its own event");
+    assert!(
+        other_provider,
+        "same id, different provider is its own event"
+    );
 
     // Exactly one Stripe row exists for the id.
     let n: i64 = conn

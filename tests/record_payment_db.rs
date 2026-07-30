@@ -28,7 +28,14 @@ async fn record_payment_is_idempotent_on_provider_ref() {
 
     // First settlement of this provider_ref: newly recorded.
     let first = db::record_payment(
-        &conn, None, user, PaymentProvider::Stripe, PaymentKind::Charge, &reference, 1000, PaymentStatus::Paid,
+        &conn,
+        None,
+        user,
+        PaymentProvider::Stripe,
+        PaymentKind::Charge,
+        &reference,
+        1000,
+        PaymentStatus::Paid,
     )
     .await
     .expect("insert ok");
@@ -37,7 +44,14 @@ async fn record_payment_is_idempotent_on_provider_ref() {
     // Same (provider, provider_ref) again -- a webhook + return-URL double
     // settlement -- is NOT newly recorded (so the ledger post is not repeated).
     let second = db::record_payment(
-        &conn, None, user, PaymentProvider::Stripe, PaymentKind::Charge, &reference, 1000, PaymentStatus::Paid,
+        &conn,
+        None,
+        user,
+        PaymentProvider::Stripe,
+        PaymentKind::Charge,
+        &reference,
+        1000,
+        PaymentStatus::Paid,
     )
     .await
     .expect("insert ok");
@@ -55,17 +69,42 @@ async fn record_payment_is_idempotent_on_provider_ref() {
     // A DIFFERENT provider_ref is its own payment.
     let other_ref = format!("pi_test_{}", Uuid::new_v4().simple());
     assert!(
-        db::record_payment(&conn, None, user, PaymentProvider::Stripe, PaymentKind::Charge, &other_ref, 500, PaymentStatus::Paid)
-            .await.unwrap(),
+        db::record_payment(
+            &conn,
+            None,
+            user,
+            PaymentProvider::Stripe,
+            PaymentKind::Charge,
+            &other_ref,
+            500,
+            PaymentStatus::Paid
+        )
+        .await
+        .unwrap(),
         "a distinct provider_ref is newly recorded"
     );
 
     // The SAME ref under a DIFFERENT provider is distinct (dedup key is the pair).
     assert!(
-        db::record_payment(&conn, None, user, PaymentProvider::Paypal, PaymentKind::Charge, &reference, 1000, PaymentStatus::Paid)
-            .await.unwrap(),
+        db::record_payment(
+            &conn,
+            None,
+            user,
+            PaymentProvider::Paypal,
+            PaymentKind::Charge,
+            &reference,
+            1000,
+            PaymentStatus::Paid
+        )
+        .await
+        .unwrap(),
         "same ref, different provider is its own payment"
     );
 
-    conn.execute(stmt("DELETE FROM payments WHERE user_id = $1", vec![user.into()])).await.ok();
+    conn.execute(stmt(
+        "DELETE FROM payments WHERE user_id = $1",
+        vec![user.into()],
+    ))
+    .await
+    .ok();
 }

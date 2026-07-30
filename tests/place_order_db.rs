@@ -14,7 +14,9 @@
 //! runs and the seeded catalog never interfere, and cleans up after itself.
 //!
 //!   DATABASE_URL=... cargo test --test place_order_db -- --ignored --nocapture
-use athleto_app_rs::db::{self, CartOwner, HoldOutcome, NewOrderLine, OrderChannel, OrderError, OrderKind, ShipMethod};
+use athleto_app_rs::db::{
+    self, CartOwner, HoldOutcome, NewOrderLine, OrderChannel, OrderError, OrderKind, ShipMethod,
+};
 use sea_orm::{ConnectionTrait, DbBackend, Statement};
 use uuid::Uuid;
 
@@ -77,16 +79,25 @@ async fn cleanup(conn: &sea_orm::DatabaseConnection, users: &[Uuid], pid: i64) {
         ))
         .await
         .ok();
-        conn.execute(stmt("DELETE FROM carts WHERE user_id = $1", vec![(*u).into()]))
-            .await
-            .ok(); // cascades cart_items + stock_holds
+        conn.execute(stmt(
+            "DELETE FROM carts WHERE user_id = $1",
+            vec![(*u).into()],
+        ))
+        .await
+        .ok(); // cascades cart_items + stock_holds
     }
-    conn.execute(stmt("DELETE FROM stock_holds WHERE product_id = $1", vec![pid.into()]))
-        .await
-        .ok();
-    conn.execute(stmt("DELETE FROM inventory WHERE product_id = $1", vec![pid.into()]))
-        .await
-        .ok();
+    conn.execute(stmt(
+        "DELETE FROM stock_holds WHERE product_id = $1",
+        vec![pid.into()],
+    ))
+    .await
+    .ok();
+    conn.execute(stmt(
+        "DELETE FROM inventory WHERE product_id = $1",
+        vec![pid.into()],
+    ))
+    .await
+    .ok();
     conn.execute(stmt("DELETE FROM products WHERE id = $1", vec![pid.into()]))
         .await
         .ok();
@@ -101,14 +112,20 @@ async fn place_order_decrements_stock_and_clears_the_cart() {
     let pid = seed_product(&conn, 10).await;
 
     // Build a cart with a hold + item, like the storefront does.
-    let cart = db::find_or_create_cart(&conn, &CartOwner::User(user)).await.unwrap();
+    let cart = db::find_or_create_cart(&conn, &CartOwner::User(user))
+        .await
+        .unwrap();
     assert!(matches!(
         db::ensure_hold(&conn, cart, pid, 3).await.unwrap(),
         HoldOutcome::Held
     ));
     db::add_cart_item(&conn, cart, pid, 3).await.unwrap();
 
-    let lines = [NewOrderLine { product_id: pid, qty: 3, unit_price_cents: 500 }];
+    let lines = [NewOrderLine {
+        product_id: pid,
+        qty: 3,
+        unit_price_cents: 500,
+    }];
     let order = db::place_order(
         &conn,
         user,
@@ -127,11 +144,25 @@ async fn place_order_decrements_stock_and_clears_the_cart() {
 
     // Cart emptied: its items and holds are gone.
     let items = conn
-        .query_one(stmt("SELECT count(*)::bigint AS n FROM cart_items WHERE cart_id = $1", vec![cart.into()]))
-        .await.unwrap().unwrap().try_get::<i64>("", "n").unwrap();
+        .query_one(stmt(
+            "SELECT count(*)::bigint AS n FROM cart_items WHERE cart_id = $1",
+            vec![cart.into()],
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<i64>("", "n")
+        .unwrap();
     let holds = conn
-        .query_one(stmt("SELECT count(*)::bigint AS n FROM stock_holds WHERE cart_id = $1", vec![cart.into()]))
-        .await.unwrap().unwrap().try_get::<i64>("", "n").unwrap();
+        .query_one(stmt(
+            "SELECT count(*)::bigint AS n FROM stock_holds WHERE cart_id = $1",
+            vec![cart.into()],
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<i64>("", "n")
+        .unwrap();
     assert_eq!(items, 0, "cart_items cleared on success");
     assert_eq!(holds, 0, "cart holds consumed on success");
 
@@ -152,29 +183,52 @@ async fn a_hold_in_another_cart_blocks_oversell() {
     let pid = seed_product(&conn, 5).await;
 
     // Alice holds 4 of the 5 units in her cart (live, 60 min).
-    let alice_cart = db::find_or_create_cart(&conn, &CartOwner::User(alice)).await.unwrap();
+    let alice_cart = db::find_or_create_cart(&conn, &CartOwner::User(alice))
+        .await
+        .unwrap();
     seed_hold(&conn, alice_cart, pid, 4, 60).await;
 
     // Bob tries to buy 3: on_hand is 5 but only 1 is free -> Insufficient, and
     // NO decrement happens (the whole tx rolls back). Bob's cart must carry the
     // line so place_order gets past its empty-cart idempotency guard and reaches
     // the availability re-check (an empty cart short-circuits to AlreadyPlaced).
-    let bob_cart = db::find_or_create_cart(&conn, &CartOwner::User(bob)).await.unwrap();
+    let bob_cart = db::find_or_create_cart(&conn, &CartOwner::User(bob))
+        .await
+        .unwrap();
     db::add_cart_item(&conn, bob_cart, pid, 3).await.unwrap();
-    let lines = [NewOrderLine { product_id: pid, qty: 3, unit_price_cents: 500 }];
+    let lines = [NewOrderLine {
+        product_id: pid,
+        qty: 3,
+        unit_price_cents: 500,
+    }];
     let err = db::place_order(
-        &conn, bob, OrderKind::OneTime, None, OrderChannel::D2cWeb, ShipMethod::Standard, None, &lines, Some(bob_cart),
+        &conn,
+        bob,
+        OrderKind::OneTime,
+        None,
+        OrderChannel::D2cWeb,
+        ShipMethod::Standard,
+        None,
+        &lines,
+        Some(bob_cart),
     )
     .await
     .expect_err("must be refused");
     match err {
         OrderError::Insufficient(lines) => {
             assert_eq!(lines.len(), 1);
-            assert_eq!(lines[0].available, 1, "5 on hand - 4 held elsewhere = 1 free");
+            assert_eq!(
+                lines[0].available, 1,
+                "5 on hand - 4 held elsewhere = 1 free"
+            );
         }
         other => panic!("expected Insufficient, got {other:?}"),
     }
-    assert_eq!(on_hand(&conn, pid).await, 5, "no decrement on a refused order");
+    assert_eq!(
+        on_hand(&conn, pid).await,
+        5,
+        "no decrement on a refused order"
+    );
 
     cleanup(&conn, &[alice, bob], pid).await;
 }
@@ -189,9 +243,13 @@ async fn ensure_hold_respects_live_holds_expiry_and_upserts() {
     let pid = seed_product(&conn, 5).await;
 
     // A live hold of 5 by Alice leaves nothing for Bob.
-    let alice_cart = db::find_or_create_cart(&conn, &CartOwner::User(alice)).await.unwrap();
+    let alice_cart = db::find_or_create_cart(&conn, &CartOwner::User(alice))
+        .await
+        .unwrap();
     seed_hold(&conn, alice_cart, pid, 5, 60).await;
-    let bob_cart = db::find_or_create_cart(&conn, &CartOwner::User(bob)).await.unwrap();
+    let bob_cart = db::find_or_create_cart(&conn, &CartOwner::User(bob))
+        .await
+        .unwrap();
     match db::ensure_hold(&conn, bob_cart, pid, 1).await.unwrap() {
         HoldOutcome::Insufficient { available } => assert_eq!(available, 0),
         other => panic!("expected Insufficient, got {other:?}"),

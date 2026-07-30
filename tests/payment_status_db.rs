@@ -52,9 +52,12 @@ async fn payment_state(
 }
 
 async fn cleanup(conn: &sea_orm::DatabaseConnection, user: Uuid) {
-    conn.execute(stmt("DELETE FROM orders WHERE user_id = $1", vec![user.into()]))
-        .await
-        .ok();
+    conn.execute(stmt(
+        "DELETE FROM orders WHERE user_id = $1",
+        vec![user.into()],
+    ))
+    .await
+    .ok();
 }
 
 #[tokio::test]
@@ -109,7 +112,11 @@ async fn a_paid_order_never_regresses_but_a_refund_supersedes_it() {
             .unwrap();
         let (status, paid_at_now) = payment_state(&conn, order).await;
         assert_eq!(status, "paid", "Paid must not regress to {regress:?}");
-        assert_eq!(paid_at_now, Some(stamped), "paid_at unchanged on a rejected regression");
+        assert_eq!(
+            paid_at_now,
+            Some(stamped),
+            "paid_at unchanged on a rejected regression"
+        );
     }
 
     // Only a refund may supersede a paid order.
@@ -138,7 +145,9 @@ async fn non_paid_statuses_advance_normally() {
         (PaymentStatus::Failed, "failed"),
         (PaymentStatus::Processing, "processing"),
     ] {
-        db::set_order_payment_status(&conn, order, next).await.unwrap();
+        db::set_order_payment_status(&conn, order, next)
+            .await
+            .unwrap();
         let (status, paid_at) = payment_state(&conn, order).await;
         assert_eq!(status, expected);
         assert!(paid_at.is_none(), "never paid, so paid_at stays NULL");

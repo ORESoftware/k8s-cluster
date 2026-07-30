@@ -16,20 +16,38 @@ fn config(biz: &str, allowed: Option<&[&str]>) -> Config {
 #[test]
 fn host_allowed_is_permissive_when_unset_and_strict_when_set() {
     let open = config("https://biz.athleto.store", None);
-    assert!(open.host_allowed("anything.example.com"), "unset allowlist is permissive");
+    assert!(
+        open.host_allowed("anything.example.com"),
+        "unset allowlist is permissive"
+    );
 
-    let strict = config("https://biz.athleto.store", Some(&["app.athleto.store", "biz.athleto.store"]));
+    let strict = config(
+        "https://biz.athleto.store",
+        Some(&["app.athleto.store", "biz.athleto.store"]),
+    );
     assert!(strict.host_allowed("app.athleto.store"));
-    assert!(strict.host_allowed("biz.athleto.store:8145"), "port is ignored");
-    assert!(!strict.host_allowed("evil.example.com"), "unlisted host rejected");
+    assert!(
+        strict.host_allowed("biz.athleto.store:8145"),
+        "port is ignored"
+    );
+    assert!(
+        !strict.host_allowed("evil.example.com"),
+        "unlisted host rejected"
+    );
 }
 
 #[test]
 fn is_biz_host_matches_only_the_configured_origin() {
     let c = config("https://biz.athleto.store", None);
-    assert!(c.is_biz_host("biz.athleto.store"), "the configured biz origin");
+    assert!(
+        c.is_biz_host("biz.athleto.store"),
+        "the configured biz origin"
+    );
     assert!(c.is_biz_host("biz.athleto.store:8145"), "port is ignored");
-    assert!(!c.is_biz_host("app.athleto.store"), "the consumer host is not biz");
+    assert!(
+        !c.is_biz_host("app.athleto.store"),
+        "the consumer host is not biz"
+    );
 }
 
 #[test]
@@ -44,7 +62,10 @@ fn is_biz_host_rejects_spoofed_biz_lookalikes() {
         "notbiz.athleto.store",
         "xbiz.athleto.store",
     ] {
-        assert!(!c.is_biz_host(spoof), "{spoof} must not count as the biz host");
+        assert!(
+            !c.is_biz_host(spoof),
+            "{spoof} must not count as the biz host"
+        );
     }
 }
 
@@ -53,8 +74,14 @@ fn is_biz_host_requires_the_host_to_be_allowed_too() {
     // Even the genuine biz origin is rejected when it is not in a configured
     // ALLOWED_HOSTS list: is_biz_host is (host_allowed AND exact-origin-match).
     let c = config("https://biz.athleto.store", Some(&["app.athleto.store"]));
-    assert!(!c.is_biz_host("biz.athleto.store"), "biz host absent from the allowlist is refused");
+    assert!(
+        !c.is_biz_host("biz.athleto.store"),
+        "biz host absent from the allowlist is refused"
+    );
 
     let ok = config("https://biz.athleto.store", Some(&["biz.athleto.store"]));
-    assert!(ok.is_biz_host("biz.athleto.store"), "allowed + configured => biz");
+    assert!(
+        ok.is_biz_host("biz.athleto.store"),
+        "allowed + configured => biz"
+    );
 }

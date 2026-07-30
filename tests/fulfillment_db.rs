@@ -24,16 +24,32 @@ async fn seed_order(conn: &sea_orm::DatabaseConnection, user: Uuid, status: &str
          VALUES ($1, $2::order_status, 'b2b_portal', 'standard', 1000, 0, 0, 1000) RETURNING id",
         vec![user.into(), status.into()],
     ))
-    .await.unwrap().unwrap().try_get("", "id").unwrap()
+    .await
+    .unwrap()
+    .unwrap()
+    .try_get("", "id")
+    .unwrap()
 }
 
 async fn order_status(conn: &sea_orm::DatabaseConnection, id: Uuid) -> String {
-    conn.query_one(stmt("SELECT status::text AS s FROM orders WHERE id = $1", vec![id.into()]))
-        .await.unwrap().unwrap().try_get::<String>("", "s").unwrap()
+    conn.query_one(stmt(
+        "SELECT status::text AS s FROM orders WHERE id = $1",
+        vec![id.into()],
+    ))
+    .await
+    .unwrap()
+    .unwrap()
+    .try_get::<String>("", "s")
+    .unwrap()
 }
 
 async fn cleanup(conn: &sea_orm::DatabaseConnection, user: Uuid) {
-    conn.execute(stmt("DELETE FROM orders WHERE user_id = $1", vec![user.into()])).await.ok();
+    conn.execute(stmt(
+        "DELETE FROM orders WHERE user_id = $1",
+        vec![user.into()],
+    ))
+    .await
+    .ok();
 }
 
 #[tokio::test]
@@ -50,7 +66,11 @@ async fn record_fulfillment_ships_a_placed_order_and_marks_it_fulfilled() {
         .expect("query ok");
     let shipment_id = shipment.expect("a placed order ships");
 
-    assert_eq!(order_status(&conn, order).await, "fulfilled", "order flips to fulfilled");
+    assert_eq!(
+        order_status(&conn, order).await,
+        "fulfilled",
+        "order flips to fulfilled"
+    );
 
     let row = conn
         .query_one(stmt(
@@ -58,13 +78,21 @@ async fn record_fulfillment_ships_a_placed_order_and_marks_it_fulfilled() {
              FROM shipments WHERE id = $1",
             vec![shipment_id.into()],
         ))
-        .await.unwrap().unwrap();
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(row.try_get::<String>("", "s").unwrap(), "shipped");
     assert_eq!(row.try_get::<String>("", "carrier").unwrap(), "ups");
-    assert_eq!(row.try_get::<String>("", "tracking_number").unwrap(), "1Z-TEST-001");
+    assert_eq!(
+        row.try_get::<String>("", "tracking_number").unwrap(),
+        "1Z-TEST-001"
+    );
     let earliest = row.try_get::<NaiveDate>("", "eta_earliest").unwrap();
     let latest = row.try_get::<NaiveDate>("", "eta_latest").unwrap();
-    assert!(earliest >= ship_date, "ETA earliest is on/after the ship date");
+    assert!(
+        earliest >= ship_date,
+        "ETA earliest is on/after the ship date"
+    );
     assert!(latest >= earliest, "ETA window is well-ordered");
 
     cleanup(&conn, user).await;
@@ -97,10 +125,21 @@ async fn record_fulfillment_refuses_to_ship_a_cancelled_order() {
     assert!(got.is_none(), "a cancelled order cannot be shipped");
     // And no shipment leaked (the tx rolled back).
     let n: i64 = conn
-        .query_one(stmt("SELECT count(*)::bigint AS n FROM shipments WHERE order_id = $1", vec![order.into()]))
-        .await.unwrap().unwrap().try_get::<i64>("", "n").unwrap();
+        .query_one(stmt(
+            "SELECT count(*)::bigint AS n FROM shipments WHERE order_id = $1",
+            vec![order.into()],
+        ))
+        .await
+        .unwrap()
+        .unwrap()
+        .try_get::<i64>("", "n")
+        .unwrap();
     assert_eq!(n, 0, "no shipment persisted against a cancelled order");
-    assert_eq!(order_status(&conn, order).await, "cancelled", "status unchanged");
+    assert_eq!(
+        order_status(&conn, order).await,
+        "cancelled",
+        "status unchanged"
+    );
 
     cleanup(&conn, user).await;
 }

@@ -42,7 +42,10 @@ jobs:
         with:
           toolchain: stable
           components: rustfmt
-      - run: cargo fmt --check
+      # --all, to match clippy's --all-targets. Bare `cargo fmt --check` skips
+      # the tests/*.rs integration targets, so formatting drifted there
+      # unnoticed behind a gate the docs describe as blocking.
+      - run: cargo fmt --all --check
   clippy:
     runs-on: ubuntu-latest
     timeout-minutes: 20
