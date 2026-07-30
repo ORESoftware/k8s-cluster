@@ -74,15 +74,32 @@ replace_once(
 gateway = "remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml"
 replace_once(
     gateway,
-    """      resolver kube-dns.kube-system.svc.cluster.local valid=10s ipv6=off;
+    """    server {
+      listen 443 ssl;
+      server_name app.fiducia.cloud;
+
+      ssl_certificate /etc/nginx/tls/tls.crt;
+      ssl_certificate_key /etc/nginx/tls/tls.key;
+      ssl_protocols TLSv1.2 TLSv1.3;
+      add_header Strict-Transport-Security \"max-age=15552000\" always;
+      # proxy_pass uses a variable so nginx can re-resolve the Service after
+      # endpoint churn; variable upstreams require an explicit DNS resolver.
+      resolver kube-dns.kube-system.svc.cluster.local valid=10s ipv6=off;
       resolver_timeout 2s;
 
       location / {
-        proxy_http_version 1.1;
-        proxy_buffering off;
-        proxy_read_timeout 120;
 """,
-    """      resolver kube-dns.kube-system.svc.cluster.local valid=10s ipv6=off;
+    """    server {
+      listen 443 ssl;
+      server_name app.fiducia.cloud;
+
+      ssl_certificate /etc/nginx/tls/tls.crt;
+      ssl_certificate_key /etc/nginx/tls/tls.key;
+      ssl_protocols TLSv1.2 TLSv1.3;
+      add_header Strict-Transport-Security \"max-age=15552000\" always;
+      # proxy_pass uses a variable so nginx can re-resolve the Service after
+      # endpoint churn; variable upstreams require an explicit DNS resolver.
+      resolver kube-dns.kube-system.svc.cluster.local valid=10s ipv6=off;
       resolver_timeout 2s;
 
       # Prometheus scrapes the ClusterIP Service directly. Do not publish
@@ -92,9 +109,6 @@ replace_once(
       }
 
       location / {
-        proxy_http_version 1.1;
-        proxy_buffering off;
-        proxy_read_timeout 120;
 """,
 )
 replace_once(
