@@ -1,0 +1,25 @@
+[
+  {
+    "repository": "ORESoftware/k8s-cluster",
+    "owner": "ORESoftware",
+    "default_branch": "main",
+    "visibility": "public",
+    "primary_language": "Nix",
+    "archived": false,
+    "fork": false,
+    "tree_truncated": false,
+    "classification": "full flake",
+    "reason": "flake.nix and flake.lock are present",
+    "nix": {
+      "flake": true,
+      "flake_lock": true,
+      "shell_nix": false,
+      "default_nix": false
+    },
+    "container": {
+      "containerfile": true,
+      "dockerfile": true,
+      "compose": false
+    }
+  }
+]

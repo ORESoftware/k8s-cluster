@@ -1,0 +1,96 @@
+{
+  "schema_version": 2,
+  "snapshot": {
+    "id": "den-627-contract-fixture",
+    "captured_at": "2026-07-28T00:00:00Z",
+    "record_scope": "fixture",
+    "source": "reviewed schema fixture enriched with the DEN-369 fixture artifact",
+    "governing_issue": "DEN-627"
+  },
+  "inventory": {
+    "repository_count": 547,
+    "public_count": 386,
+    "private_count": 161,
+    "fork_count": 51,
+    "archived_count": 1,
+    "empty_count": 5,
+    "canonical_active_count": 490,
+    "owner_count": 24
+  },
+  "imports": {
+    "den369": {
+      "issue": "DEN-369",
+      "contract": "nix-fleet-audit/report.json@v1",
+      "source_path": "catalog/fixtures/den369-report.json",
+      "artifact_sha256": "ad19fdfec5a7215ed9d880a334f9ce91f5c9e9cb0e4ae14004823bacca98adcc"
+    }
+  },
+  "repositories": [
+    {
+      "name": "ORESoftware/k8s-cluster",
+      "repository_id": 421041477,
+      "visibility": "public",
+      "fork": false,
+      "archived": false,
+      "empty": false,
+      "default_branch": "main",
+      "canonical_location": "ORESoftware/k8s-cluster",
+      "classification": {
+        "lifecycle": "production",
+        "profile": "infrastructure/GitOps repository",
+        "evidence_state": "verified",
+        "source": "repository root, deployment manifests, and reviewed DEN-627 fixture"
+      },
+      "ownership": {
+        "linear_project": "Shared Platform & Portfolio Architecture",
+        "linear_issue": "DEN-599",
+        "linear_issue_url": "https://linear.app/denman/issue/DEN-599"
+      },
+      "release": {
+        "state": "continuous-delivery",
+        "deployment_state": "active"
+      },
+      "consumers": [],
+      "dependencies": [],
+      "security": {
+        "security_class": "public",
+        "data_class": "configuration-no-production-secrets"
+      },
+      "exemptions": [],
+      "review": {
+        "status": "reviewed",
+        "issue": "DEN-627",
+        "review_date": "2026-07-28",
+        "reason": "canonical v2 schema fixture reviewed during DEN-627 implementation"
+      },
+      "conformance": {
+        "state": "conformant",
+        "issue": "DEN-599",
+        "evidence_state": "verified"
+      },
+      "nix_oci": {
+        "issue": "DEN-369",
+        "classification": "full flake",
+        "evidence_state": "present-unverified",
+        "reason": "flake.nix and flake.lock are present",
+        "nix": {
+          "flake": true,
+          "flake_lock": true,
+          "shell_nix": false,
+          "default_nix": false
+        },
+        "container": {
+          "containerfile": true,
+          "dockerfile": true,
+          "compose": false
+        },
+        "source_artifact_sha256": "ad19fdfec5a7215ed9d880a334f9ce91f5c9e9cb0e4ae14004823bacca98adcc"
+      },
+      "zed": {
+        "applicable": false,
+        "state": "not-applicable",
+        "issue": ""
+      }
+    }
+  ]
+}
