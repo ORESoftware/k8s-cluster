@@ -4,9 +4,8 @@ on:
   pull_request:
     paths:
       - '.github/workflows/ai-agent-coordinator-gitops.yml'
-      - 'remote/argocd/ai-agent-coordinator-platform/**'
       - 'remote/argocd/apps/ai-agent-coordinator*.application.yaml'
-      - 'remote/argocd/projects/ai-agent-coordinator.*.yaml'
+      - 'remote/argocd/projects/ai-agent-coordinator/**'
       - 'remote/argocd/clusters/*/ai-agent-coordinator.applications.yaml'
       - 'remote/argocd/clusters/*/kustomization.yaml'
       - 'remote/tests/general/ai-agent-coordinator-gitops.test.ts'
@@ -68,7 +67,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C upstream/ai-agent-coordinator rev-parse HEAD)" = "$COORDINATOR_REVISION"
-          kubectl kustomize remote/argocd/ai-agent-coordinator-platform > /tmp/coordinator-platform.yaml
+          kubectl kustomize remote/argocd/projects/ai-agent-coordinator > /tmp/coordinator-platform.yaml
           for cloud in aws gcp hetzner; do
             kubectl kustomize "remote/argocd/clusters/${cloud}" > "/tmp/coordinator-${cloud}.yaml"
           done
@@ -136,6 +135,8 @@ jobs:
             workload_apps = applications.select { |app| app.dig('metadata', 'name') == 'ai-agent-coordinator' }
             fail_contract("#{cloud} must contain one platform Application") unless platform_apps.length == 1
             fail_contract("#{cloud} must contain one workload Application") unless workload_apps.length == 1
+            platform_app = platform_apps.first
+            fail_contract("#{cloud} platform path drifted") unless platform_app.dig('spec', 'source', 'path') == 'remote/argocd/projects/ai-agent-coordinator'
             workload = workload_apps.first
             fail_contract("#{cloud} workload project is not strict") unless workload.dig('spec', 'project') == 'ai-agent-coordinator'
             fail_contract("#{cloud} workload revision drifted") unless workload.dig('spec', 'source', 'targetRevision') == ENV.fetch('COORDINATOR_REVISION')
