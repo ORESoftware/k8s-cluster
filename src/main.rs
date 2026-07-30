@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 mod app;
 mod data;
 mod database;
+mod metrics;
 mod routes;
 mod shutdown;
 mod telemetry;
