@@ -153,7 +153,11 @@ pub async fn orders_list(State(state): State<SharedState>, headers: HeaderMap) -
         Ok(pair) => pair,
         Err(response) => return response,
     };
-    let pool = state.pool.as_ref().expect("authenticate checked pool");
+    // `authenticate` already proved the pool exists, but re-deriving it here
+    // keeps a broken invariant a clean 503 instead of a request-path panic.
+    let Some(pool) = state.pool.as_ref() else {
+        return error_response(StatusCode::SERVICE_UNAVAILABLE, "database not configured");
+    };
 
     let (orders, items) = match (
         db::list_orders(pool, user_id).await,
@@ -374,7 +378,10 @@ pub async fn orders_create(
         Ok(pair) => pair,
         Err(response) => return response,
     };
-    let pool = state.pool.as_ref().expect("authenticate checked pool");
+    // See orders_list: a clean 503 rather than a panic if the invariant breaks.
+    let Some(pool) = state.pool.as_ref() else {
+        return error_response(StatusCode::SERVICE_UNAVAILABLE, "database not configured");
+    };
 
     if request.items.is_empty() {
         return error_response(StatusCode::UNPROCESSABLE_ENTITY, "items must not be empty");

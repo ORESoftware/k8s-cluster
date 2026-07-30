@@ -3,6 +3,7 @@
 //! quick-order grid.
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Redirect, Response};
@@ -15,6 +16,12 @@ use uuid::Uuid;
 use crate::auth::{self, Biz, MaybeUser};
 use crate::db::{self, CartOwner, CustomerProfile, OrderFrequency, OrderKind};
 use crate::{pages, payments, AppError, SharedState};
+
+/// Budget shared by `/checkout` and `/orders/{id}/pay`: both place orders or
+/// open provider payment sessions. Generous enough that a customer fixing a
+/// declined card is never blocked, tight enough to stop a card-testing loop.
+const CHECKOUT_MAX_PER_WINDOW: usize = 10;
+const CHECKOUT_WINDOW: Duration = Duration::from_secs(5 * 60);
 
 fn parse_kind(kind: &str) -> OrderKind {
     match kind {
@@ -121,6 +128,26 @@ pub async fn checkout(
     };
     if let Err(redirect) = auth::require_b2b_ready(&auth_user, profile.as_ref()) {
         return Ok(redirect);
+    }
+    // Placing an order decrements stock and initiates money movement, so it
+    // must not be free to hammer: this is the endpoint behind card-testing
+    // bursts and flash-sale stampedes. Per-user (the route is authenticated),
+    // which is the tighter bucket than per-IP here.
+    if !state
+        .rate_limits
+        .check(
+            "checkout-user",
+            &auth_user.id.to_string(),
+            CHECKOUT_MAX_PER_WINDOW,
+            CHECKOUT_WINDOW,
+        )
+        .await
+    {
+        return Ok((
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            Redirect::to("/cart?throttled=1"),
+        )
+            .into_response());
     }
     let Some(pool) = &state.pool else {
         return Ok(Redirect::to("/cart").into_response());
@@ -650,6 +677,24 @@ pub async fn pay_now(
     };
     if let Err(redirect) = auth::require_b2b_ready(&auth_user, profile.as_ref()) {
         return Ok(redirect);
+    }
+    // Each retry opens a hosted-payment session with a provider. Same budget as
+    // /checkout so a stuck order can't be turned into a card-testing loop.
+    if !state
+        .rate_limits
+        .check(
+            "checkout-user",
+            &auth_user.id.to_string(),
+            CHECKOUT_MAX_PER_WINDOW,
+            CHECKOUT_WINDOW,
+        )
+        .await
+    {
+        return Ok((
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            Redirect::to("/orders?throttled=1"),
+        )
+            .into_response());
     }
     let Some(pool) = &state.pool else {
         return Ok(Redirect::to("/orders").into_response());

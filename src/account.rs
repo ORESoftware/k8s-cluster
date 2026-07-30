@@ -19,6 +19,29 @@ fn hash_api_key(key: &str) -> String {
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+/// Charge one attempt against the per-user second-factor code budget shared
+/// with `/login/2fa`. `Err` carries the fully-formed 429 to return; `render`
+/// is only invoked on rejection so the caller pays nothing on the happy path.
+async fn throttle_code_attempt(
+    state: &SharedState,
+    user: &AuthUser,
+    render: impl FnOnce() -> Markup,
+) -> Result<(), Response> {
+    if state
+        .rate_limits
+        .check(
+            "mfa-verify",
+            &user.id.to_string(),
+            auth::MFA_VERIFY_MAX_ATTEMPTS,
+            auth::MFA_VERIFY_WINDOW,
+        )
+        .await
+    {
+        return Ok(());
+    }
+    Err((axum::http::StatusCode::TOO_MANY_REQUESTS, render()).into_response())
+}
+
 fn new_api_key() -> String {
     format!(
         "athk_{}{}",
@@ -525,6 +548,24 @@ pub async fn totp_verify(
     if auth_user.needs_aal2() {
         return Redirect::to("/login/2fa").into_response();
     }
+    // Enrollment verification mints an AAL2 session too, so it gets the same
+    // attempt budget as /login/2fa rather than an unbounded one.
+    if let Err(response) = throttle_code_attempt(&state, auth_user, || {
+        totp_verify_page(
+            auth_user,
+            biz,
+            &request.factor_id,
+            &request.qr,
+            &request.secret,
+            Some(html! { div .notice .error {
+                "Too many verification attempts. Wait a few minutes and try again."
+            } }),
+        )
+    })
+    .await
+    {
+        return response;
+    }
     let challenge =
         match auth::create_challenge(&state, &auth_user.access_token, &request.factor_id).await {
             Ok(challenge) => challenge,
@@ -674,6 +715,21 @@ pub async fn phone_verify(
     // enrolled factor to reach AAL2 around an existing one.
     if auth_user.needs_aal2() {
         return Redirect::to("/login/2fa").into_response();
+    }
+    // Same attempt budget as /login/2fa; see totp_verify.
+    if let Err(response) = throttle_code_attempt(&state, auth_user, || {
+        phone_verify_page(
+            auth_user,
+            &request.factor_id,
+            &request.challenge_id,
+            Some(html! { div .notice .error {
+                "Too many verification attempts. Wait a few minutes and try again."
+            } }),
+        )
+    })
+    .await
+    {
+        return response;
     }
     match auth::verify_challenge(
         &state,

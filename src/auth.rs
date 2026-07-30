@@ -46,6 +46,14 @@ const LOGIN_FLOW_COOKIE: &str = "athleto_login_flow";
 /// Signed, short-lived binding for a pending SMS MFA challenge.
 const MFA_CHALLENGE_COOKIE: &str = "sb_mfa_challenge";
 
+/// Attempt budget for submitting a second-factor code, per user per window.
+/// Deliberately small: a legitimate user needs one or two tries, while an
+/// attacker holding an AAL1 session needs ~10^6 to guess a 6-digit code.
+/// Enrollment verification (`/account/2fa/*/verify`) shares the same budget
+/// shape via [`MFA_VERIFY_WINDOW`].
+pub const MFA_VERIFY_MAX_ATTEMPTS: usize = 8;
+pub const MFA_VERIFY_WINDOW: Duration = Duration::from_secs(5 * 60);
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Factor {
     pub id: String,
@@ -1128,6 +1136,36 @@ pub async fn login_2fa_submit(
     let Some(user) = user.as_ref() else {
         return Redirect::to("/login").into_response();
     };
+    // Throttle the VERIFY side, not just the send side. Reaching this handler
+    // needs only a live AAL1 session, and the second factor is a 6-8 digit
+    // code -- so an unbounded attempt budget here reduces 2FA to a ~10^6
+    // guessing exercise for whoever already holds a magic-link session. GoTrue
+    // applies its own limits, but this is the gate we control, and it must not
+    // be looser than the `mfa-send` throttle that guards the cheaper half of
+    // the same flow.
+    if !state
+        .rate_limits
+        .check(
+            "mfa-verify",
+            &user.id.to_string(),
+            MFA_VERIFY_MAX_ATTEMPTS,
+            MFA_VERIFY_WINDOW,
+        )
+        .await
+    {
+        return (
+            axum::http::StatusCode::TOO_MANY_REQUESTS,
+            two_fa_form(
+                user,
+                biz,
+                false,
+                Some(html! { div .notice .error {
+                    "Too many verification attempts. Wait a few minutes and try again."
+                } }),
+            ),
+        )
+            .into_response();
+    }
     let Some(factor) = verified_factor(user, &request.factor_id) else {
         return two_fa_form(
             user,
@@ -1552,6 +1590,35 @@ mod tests {
                 "session cookie survived: {name}"
             );
         }
+    }
+
+    // The second factor is a 6-8 digit code and POST /login/2fa is reachable
+    // with nothing but a live AAL1 session, so an unbounded attempt budget here
+    // reduces 2FA to a guessing exercise. The budget must stay small enough
+    // that exhausting the 10^6 keyspace is infeasible, and no looser than the
+    // `mfa-send` throttle guarding the cheaper half of the same flow.
+    #[test]
+    fn mfa_verify_budget_makes_code_guessing_infeasible() {
+        // Enforced at compile time: a regression that loosens the budget fails
+        // the build, not just this test.
+        const _: () = {
+            assert!(
+                MFA_VERIFY_MAX_ATTEMPTS <= 10,
+                "attempt budget is too generous for a 6-digit code"
+            );
+            assert!(
+                MFA_VERIFY_WINDOW.as_secs() >= 60,
+                "window must be long enough that the budget actually bites"
+            );
+            // Sustained attempts per year against the smallest (6-digit)
+            // keyspace: must not come close to exhausting it.
+            let per_year =
+                (365 * 24 * 3600 / MFA_VERIFY_WINDOW.as_secs()) * MFA_VERIFY_MAX_ATTEMPTS as u64;
+            assert!(
+                per_year < 1_000_000,
+                "budget allows exhausting a 6-digit code in under a year"
+            );
+        };
     }
 
     #[test]

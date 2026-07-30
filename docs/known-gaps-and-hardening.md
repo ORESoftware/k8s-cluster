@@ -55,6 +55,33 @@ re-grep the named function/symbol.
   HttpOnly and its synchronizer token is supplied through the rendered DOM.
 - **AAL was read from an unverified JWT payload.** GoTrue's authenticated
   `/auth/v1/factors` response supplies the assurance level (`current_level`).
+- **Second-factor *verification* was unthrottled.** `mfa-send` was rate limited
+  from the start, but `POST /login/2fa` — and the enrollment verifiers
+  `/account/2fa/totp/verify` + `/account/2fa/phone/verify`, which also mint an
+  AAL2 session — accepted unlimited code submissions. Reaching them needs only a
+  live AAL1 session, and the factor is a 6–8 digit code, so the attempt budget
+  was the only thing standing between a held magic-link session and a ~10⁶
+  guessing exercise (GoTrue's own limits were load-bearing but undocumented and
+  outside our control). All three now share the `mfa-verify` bucket
+  (`auth::MFA_VERIFY_MAX_ATTEMPTS` per `MFA_VERIFY_WINDOW`, per user), with a
+  compile-time assertion that the budget cannot be loosened to the point where
+  a 6-digit keyspace is exhaustible.
+- **Order/payment endpoints are now rate limited.** `/checkout` and
+  `/orders/{id}/pay` share a per-user `checkout-user` budget (they decrement
+  stock and open provider payment sessions), and `/pay/success` has a per-IP
+  `pay-return-ip` budget. The last one matters because it is unauthenticated by
+  necessity and every branch issues an outbound provider API call with a
+  caller-supplied session/order id *before* confirming the order exists — an
+  unthrottled amplifier into our own provider rate limits and bills.
+- **A webhook with no event id collapsed the replay-dedup bucket.** All three
+  handlers read the provider event id with `unwrap_or_default()`, and
+  `(provider, "")` is a perfectly usable `payment_events` key — so the first
+  id-less event claimed it and every later id-less event was discarded as an
+  already-processed replay (200, never settled). The id now goes through
+  `event_id_of`, which rejects absent/blank/non-string ids with a 400.
+- **Latent request-path panics on the API auth guard are gone** (was gap #7).
+  `api::orders_list` / `api::orders_create` re-derive the pool with a
+  `let ... else` returning 503 instead of `.expect("authenticate checked pool")`.
 - **2FA enforcement no longer depends on one endpoint's response shape.** The
   enrolled-factor list is now taken from BOTH the authoritative
   `/auth/v1/user` object and `/auth/v1/factors`, unioned by id. Previously a
@@ -165,10 +192,9 @@ Ranked; all still open. The storefront cart path is guarded by the cart-row
   is silently dropped by the cart clear, and a price change in that window is
   never re-validated. **Fix:** re-read the lines inside the transaction, after
   the cart `FOR UPDATE`, and price from `products` there.
-- **`/checkout` and `/orders/{id}/pay` are not rate limited.** `cart::add_item`
-  is (`cart-hold-ip`); the endpoints that place orders and initiate payments are
-  not. Cheap win against card-testing and flash-sale stampedes now that the
-  Fiducia-backed limiter exists.
+- ~~**`/checkout` and `/orders/{id}/pay` are not rate limited.**~~ Resolved:
+  both share the per-user `checkout-user` budget, and `/pay/success` gained a
+  per-IP `pay-return-ip` budget. See Resolved above.
 - **PayPal capture is issued with no already-paid check and no
   `PayPal-Request-Id`.** PayPal rejects the second capture, so a real double
   charge is unlikely, but the rejection path is what regressed order status
@@ -179,13 +205,6 @@ Ranked; all still open. The storefront cart path is guarded by the cart-row
   gaps #2 and #3 (cancellation and refunds).
 
 ## Robustness & infra gaps (non-functional)
-
-### 7. Latent request-path panics on the API auth guard
-- `src/api.rs` (`orders_list`, `create_order`) —
-  `state.pool.as_ref().expect("authenticate checked pool")`. Guarded today by the
-  preceding `authenticate` (which requires a pool), but if that invariant ever breaks
-  it's a 500-panic, not a clean error.
-- **Fix:** `let Some(pool) = state.pool.as_ref() else { return Err(AppError::unavailable("db")) };`
 
 ### 8. The `@athleto/sync` local-first SDK is not wired in
 - No references to `@athleto/sync`, the `athleto-optimistic` htmx extension, or an

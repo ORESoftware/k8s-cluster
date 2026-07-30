@@ -20,6 +20,8 @@
 //! billing-server ledger (see `crate::billing`) — that service observes and
 //! reconciles but never moves money.
 
+use std::time::Duration;
+
 use axum::body::Bytes;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -597,6 +599,21 @@ fn ct_eq(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
+/// The provider's event id under `field`, or `None` when it is absent, not a
+/// string, or blank.
+///
+/// Replay dedup keys on `(provider, event_id)`, and `""` is a perfectly valid
+/// key — so treating a missing id as the empty string would let the first
+/// id-less event claim `(provider, "")` and make every later id-less event
+/// look like an already-processed replay: swallowed with a 200, never settled.
+/// Callers reject instead.
+fn event_id_of<'a>(event: &'a Value, field: &str) -> Option<&'a str> {
+    event[field]
+        .as_str()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+}
+
 /// Verify a `Stripe-Signature` header: HMAC-SHA256 over `"{t}.{body}"`, and
 /// reject timestamps outside the tolerance window (replay protection).
 fn stripe_signature_valid(secret: &str, header: &str, body: &[u8], now: i64) -> bool {
@@ -661,9 +678,12 @@ pub async fn stripe_webhook(
     let Ok(event) = serde_json::from_slice::<Value>(&body) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
-    let event_id = event["id"].as_str().unwrap_or_default().to_string();
+    let Some(event_id) = event_id_of(&event, "id") else {
+        tracing::warn!("stripe webhook passed signature check but carried no event id; rejecting");
+        return StatusCode::BAD_REQUEST.into_response();
+    };
     let event_type = event["type"].as_str().unwrap_or_default().to_string();
-    match db::record_payment_event(&orm, PaymentProvider::Stripe, &event_id, &event).await {
+    match db::record_payment_event(&orm, PaymentProvider::Stripe, event_id, &event).await {
         Ok(true) => {}
         Ok(false) => return StatusCode::OK.into_response(), // replay
         Err(err) => {
@@ -1045,9 +1065,12 @@ pub async fn paypal_webhook(
         }
     }
 
-    let event_id = event["id"].as_str().unwrap_or_default().to_string();
+    let Some(event_id) = event_id_of(&event, "id") else {
+        tracing::warn!("paypal webhook verified but carried no event id; rejecting");
+        return StatusCode::BAD_REQUEST.into_response();
+    };
     let event_type = event["event_type"].as_str().unwrap_or_default().to_string();
-    match db::record_payment_event(&orm, PaymentProvider::Paypal, &event_id, &event).await {
+    match db::record_payment_event(&orm, PaymentProvider::Paypal, event_id, &event).await {
         Ok(true) => {}
         Ok(false) => return StatusCode::OK.into_response(),
         Err(err) => {
@@ -1362,9 +1385,12 @@ pub async fn square_webhook(
     let Ok(event) = serde_json::from_slice::<Value>(&body) else {
         return StatusCode::BAD_REQUEST.into_response();
     };
-    let event_id = event["event_id"].as_str().unwrap_or_default().to_string();
+    let Some(event_id) = event_id_of(&event, "event_id") else {
+        tracing::warn!("square webhook passed signature check but carried no event id; rejecting");
+        return StatusCode::BAD_REQUEST.into_response();
+    };
     let event_type = event["type"].as_str().unwrap_or_default().to_string();
-    match db::record_payment_event(&orm, PaymentProvider::Square, &event_id, &event).await {
+    match db::record_payment_event(&orm, PaymentProvider::Square, event_id, &event).await {
         Ok(true) => {}
         Ok(false) => return StatusCode::OK.into_response(),
         Err(err) => {
@@ -1647,11 +1673,32 @@ pub struct ReturnParams {
 /// with the provider before believing anything in the query string.
 pub async fn pay_success(
     State(state): State<SharedState>,
+    headers: axum::http::HeaderMap,
+    peer: crate::request_trust::PeerAddress,
     Query(params): Query<ReturnParams>,
 ) -> Response {
     let Some(orm) = state.pool.clone() else {
         return Redirect::to("/orders").into_response();
     };
+    // This route is unauthenticated by necessity (the provider redirects the
+    // browser here) and every branch issues an outbound provider API call --
+    // with a caller-supplied session/order id -- *before* it knows the order
+    // exists. Unthrottled, that is a free amplifier into our own Stripe/PayPal/
+    // Square rate limits and bills. Per-IP, generous enough for a customer
+    // reloading the return page.
+    let ip =
+        crate::request_trust::client_ip(&headers, peer.0, &state.config.trusted_proxy_networks);
+    if !state
+        .rate_limits
+        .check("pay-return-ip", &ip, 30, Duration::from_secs(5 * 60))
+        .await
+    {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Redirect::to("/orders?throttled=1"),
+        )
+            .into_response();
+    }
     let order_id = params.order;
 
     let outcome: Result<PaymentStatus, PaymentError> = async {
@@ -1880,6 +1927,44 @@ pub async fn pay_cancel(Query(_params): Query<CancelParams>) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // A missing/blank provider event id must NOT degrade to "", because
+    // ("provider", "") is a usable dedup key: the first id-less event would
+    // claim it and every later one would be discarded as a replay (200, never
+    // settled). Each handler rejects instead.
+    #[test]
+    fn event_id_of_rejects_absent_blank_and_non_string_ids() {
+        assert_eq!(
+            event_id_of(&json!({ "id": "evt_123" }), "id"),
+            Some("evt_123")
+        );
+        // Square carries it under a different key.
+        assert_eq!(
+            event_id_of(&json!({ "event_id": "sq-1" }), "event_id"),
+            Some("sq-1")
+        );
+        // Surrounding whitespace is not identity.
+        assert_eq!(
+            event_id_of(&json!({ "id": " evt_9 " }), "id"),
+            Some("evt_9")
+        );
+
+        for bad in [
+            json!({}),                   // key absent
+            json!({ "id": "" }),         // empty
+            json!({ "id": "   " }),      // whitespace only
+            json!({ "id": null }),       // explicit null
+            json!({ "id": 42 }),         // not a string
+            json!({ "id": ["evt_1"] }),  // not a string
+            json!({ "event_id": "ev" }), // wrong key for this lookup
+        ] {
+            assert_eq!(
+                event_id_of(&bad, "id"),
+                None,
+                "must not accept {bad} as an event id"
+            );
+        }
+    }
 
     // The client-supplied session_id is interpolated into the Stripe API path;
     // only well-formed `cs_...` ids may reach it (no path traversal/whitespace).
