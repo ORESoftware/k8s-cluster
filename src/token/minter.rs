@@ -40,6 +40,8 @@ pub struct MintContext {
     pub email: Option<String>,
     pub email_verified: bool,
     pub roles: Vec<String>,
+    pub amr: Vec<String>,
+    pub acr: Option<String>,
 }
 
 impl TokenMinter {
@@ -90,10 +92,19 @@ impl TokenMinter {
     }
 
     /// Mint a token for a resolved OreSoftware identity.
-    pub fn mint(&self, context: MintContext) -> Result<MintedToken, AuthError> {
+    pub fn mint(&self, mut context: MintContext) -> Result<MintedToken, AuthError> {
         let now = now_secs();
         let expires_at = now.saturating_add(self.ttl_secs);
         let is_supabase = context.provider == "supabase";
+
+        context.amr.retain(|method| valid_reference(method));
+        context.amr.sort_unstable();
+        context.amr.dedup();
+        context.amr.truncate(16);
+        let acr = context
+            .acr
+            .filter(|value| !value.is_empty() && value.len() <= 255);
+
         let claims = OreClaims {
             sub: context.shared_user_id,
             iss: self.issuer.clone(),
@@ -111,6 +122,8 @@ impl TokenMinter {
             email: context.email,
             email_verified: context.email_verified,
             roles: context.roles,
+            amr: context.amr,
+            acr,
         };
         let token = encode(&self.header, &claims, &self.encoding_key).map_err(|err| {
             tracing::error!(error = %err, "token signing failed");
@@ -118,6 +131,18 @@ impl TokenMinter {
         })?;
         Ok(MintedToken { token, expires_at })
     }
+}
+
+fn valid_reference(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value.bytes().enumerate().all(|(index, byte)| {
+            (index == 0 && byte.is_ascii_lowercase())
+                || (index > 0
+                    && (byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || matches!(byte, b':' | b'_' | b'-')))
+        })
 }
 
 fn now_secs() -> u64 {
@@ -131,6 +156,7 @@ fn now_secs() -> u64 {
 mod tests {
     use super::*;
     use crate::config::SigningConfig;
+    use crate::token::{ACR_BASE, ACR_STEP_UP};
 
     use p256::pkcs8::{EncodePrivateKey, LineEnding};
 
@@ -169,6 +195,8 @@ mod tests {
                 email: Some("a@b.co".into()),
                 email_verified: true,
                 roles: vec!["user".into()],
+                amr: vec!["federated".into()],
+                acr: Some(ACR_BASE.into()),
             })
             .unwrap();
         let claims = m.verify(&minted.token).unwrap();
@@ -179,7 +207,31 @@ mod tests {
         assert_eq!(claims.roles, vec!["user"]);
         assert_eq!(claims.email.as_deref(), Some("a@b.co"));
         assert!(claims.email_verified);
+        assert_eq!(claims.amr, vec!["federated"]);
+        assert!(claims.has_acr(ACR_BASE));
         assert!(claims.exp > claims.iat);
+    }
+
+    #[test]
+    fn methods_are_bounded_deduplicated_and_sorted() {
+        let m = minter();
+        let minted = m
+            .mint(MintContext {
+                shared_user_id: "s".into(),
+                session_id: Some(uuid::Uuid::from_u128(7)),
+                provider: "local".into(),
+                provider_tenant: "default".into(),
+                provider_subject: "s".into(),
+                email: None,
+                email_verified: false,
+                roles: vec![],
+                amr: vec!["totp".into(), "pwd".into(), "totp".into(), "BAD".into()],
+                acr: Some(ACR_STEP_UP.into()),
+            })
+            .unwrap();
+        let claims = m.verify(&minted.token).unwrap();
+        assert_eq!(claims.amr, vec!["pwd", "totp"]);
+        assert!(claims.has_acr(ACR_STEP_UP));
     }
 
     #[test]
@@ -195,6 +247,8 @@ mod tests {
                 email: None,
                 email_verified: false,
                 roles: vec![],
+                amr: vec!["pwd".into()],
+                acr: Some(ACR_BASE.into()),
             })
             .unwrap();
         let mut bad = minted.token.clone();
