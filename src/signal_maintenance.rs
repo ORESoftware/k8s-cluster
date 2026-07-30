@@ -15,6 +15,10 @@ use uuid::Uuid;
 pub const MAX_SIGNAL_ACK_BATCH: usize = 250;
 pub const ACKNOWLEDGED_MAIL_RETENTION_DAYS: i64 = 7;
 pub const CLAIMED_PREKEY_RETENTION_DAYS: i64 = 30;
+const _: () = assert!(
+    ACKNOWLEDGED_MAIL_RETENTION_DAYS > 0
+        && CLAIMED_PREKEY_RETENTION_DAYS >= ACKNOWLEDGED_MAIL_RETENTION_DAYS
+);
 
 const ACTIVE_RECIPIENT_SQL: &str = r#"
 SELECT 1
@@ -194,8 +198,6 @@ mod tests {
 
     #[test]
     fn cleanup_has_explicit_retention_windows() {
-        assert!(ACKNOWLEDGED_MAIL_RETENTION_DAYS > 0);
-        assert!(CLAIMED_PREKEY_RETENTION_DAYS >= ACKNOWLEDGED_MAIL_RETENTION_DAYS);
         assert!(CLEANUP_SQL.contains("expires_at_ms <= $1"));
         assert!(CLEANUP_SQL.contains("acknowledged_at IS NOT NULL"));
         assert!(CLEANUP_SQL.contains("claimed_at IS NOT NULL"));

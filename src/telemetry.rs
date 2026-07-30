@@ -8,8 +8,13 @@ use opentelemetry::trace::{TraceContextExt, TracerProvider as _};
 use opentelemetry::KeyValue;
 use opentelemetry_http::HeaderExtractor;
 use opentelemetry_otlp::{Protocol, WithExportConfig};
-use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::Config, Resource};
-use opentelemetry_semantic_conventions::resource as semconv;
+use opentelemetry_sdk::{
+    propagation::TraceContextPropagator,
+    resource::{SdkProvidedResourceDetector, TelemetryResourceDetector},
+    trace::SdkTracerProvider,
+    Resource,
+};
+use opentelemetry_semantic_conventions::{attribute, resource as semconv};
 use std::time::{Duration, Instant};
 use tower_http::classify::{ServerErrorsAsFailures, SharedClassifier};
 use tower_http::trace::{DefaultOnRequest, MakeSpan, OnResponse, TraceLayer};
@@ -20,19 +25,18 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 const DEFAULT_OTLP_ENDPOINT: &str = "http://dd-otel-collector.observability.svc.cluster.local:4318";
 
 pub struct Guard {
-    provider: Option<opentelemetry_sdk::trace::TracerProvider>,
+    provider: Option<SdkTracerProvider>,
 }
 
 impl Drop for Guard {
     fn drop(&mut self) {
         if let Some(provider) = self.provider.take() {
-            for result in provider.force_flush() {
-                if let Err(error) = result {
-                    eprintln!("threefa-telemetry: span flush failed: {error:?}");
-                }
+            if let Err(error) = provider.force_flush() {
+                eprintln!("threefa-telemetry: span flush failed: {error:?}");
             }
-            let _ = provider.shutdown();
-            global::shutdown_tracer_provider();
+            if let Err(error) = provider.shutdown() {
+                eprintln!("threefa-telemetry: provider shutdown failed: {error:?}");
+            }
         }
     }
 }
@@ -182,7 +186,9 @@ impl<B> MakeSpan<B> for OtelMakeSpan {
         let parent = global::get_text_map_propagator(|propagator| {
             propagator.extract(&HeaderExtractor(request.headers()))
         });
-        span.set_parent(parent);
+        // A missing OpenTelemetry layer is the intentional logs-only fallback;
+        // in that mode there is nowhere to attach a remote trace parent.
+        let _ = span.set_parent(parent);
         let context = span.context();
         let context_span = context.span();
         let span_context = context_span.span_context();
@@ -220,17 +226,17 @@ impl<B> OnResponse<B> for OtelOnResponse {
 
 fn build_provider(
     service_name: &str,
-) -> Result<opentelemetry_sdk::trace::TracerProvider, opentelemetry::trace::TraceError> {
-    let exporter = opentelemetry_otlp::new_exporter()
-        .http()
+) -> Result<SdkTracerProvider, opentelemetry_otlp::ExporterBuildError> {
+    let exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_http()
         .with_endpoint(traces_endpoint())
         .with_protocol(Protocol::HttpBinary)
-        .with_timeout(Duration::from_secs(5));
-    opentelemetry_otlp::new_pipeline()
-        .tracing()
-        .with_exporter(exporter)
-        .with_trace_config(Config::default().with_resource(resource(service_name)))
-        .install_batch(opentelemetry_sdk::runtime::Tokio)
+        .with_timeout(Duration::from_secs(5))
+        .build()?;
+    Ok(SdkTracerProvider::builder()
+        .with_batch_exporter(exporter)
+        .with_resource(resource(service_name))
+        .build())
 }
 
 fn traces_endpoint() -> String {
@@ -264,7 +270,7 @@ fn resource(service_name: &str) -> Resource {
     push_env_attribute(
         &mut attributes,
         "DEPLOYMENT_ENVIRONMENT",
-        semconv::DEPLOYMENT_ENVIRONMENT,
+        semconv::DEPLOYMENT_ENVIRONMENT_NAME,
     );
     push_env_attribute(
         &mut attributes,
@@ -273,12 +279,16 @@ fn resource(service_name: &str) -> Resource {
     );
     push_env_attribute(&mut attributes, "POD_NAME", semconv::K8S_POD_NAME);
     push_env_attribute(&mut attributes, "NODE_NAME", semconv::K8S_NODE_NAME);
-    push_env_attribute(&mut attributes, "HOSTNAME", semconv::HOST_NAME);
+    push_env_attribute(&mut attributes, "HOSTNAME", attribute::HOST_NAME);
     if let Ok(raw) = std::env::var("OTEL_RESOURCE_ATTRIBUTES") {
         attributes
             .extend(resource_attribute_pairs(&raw).map(|(key, value)| KeyValue::new(key, value)));
     }
-    Resource::default().merge(&mut Resource::new(attributes))
+    Resource::builder_empty()
+        .with_detector(Box::new(SdkProvidedResourceDetector))
+        .with_detector(Box::new(TelemetryResourceDetector))
+        .with_attributes(attributes)
+        .build()
 }
 
 fn push_env_attribute(attributes: &mut Vec<KeyValue>, env_name: &str, key: &'static str) {
