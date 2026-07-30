@@ -34,7 +34,6 @@ pub struct AuthedDevice {
 /// strictly precede JSON deserialization, so an unauthenticated caller gets a
 /// bare 401 instead of a body-shape error that enumerates the wire type — and
 /// cannot force a multi-megabyte JSON parse per anonymous request.
-#[axum::async_trait]
 impl FromRequestParts<AppState> for AuthedDevice {
     type Rejection = ApiError;
 
