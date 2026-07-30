@@ -30,6 +30,12 @@ The runtimes are instrumented explicitly:
 - Node worker/API emits direct OTLP/HTTP spans and Prometheus metrics.
 - Rust web-home emits Prometheus metrics.
 - Rust REST API emits Prometheus metrics for the RDS/Postgres data boundary.
+- The three `daedalus` tenant services have explicit central Prometheus and
+  collector jobs at ports 8113-8115. Fabrication is also scraped per pod
+  because its in-memory job/artifact and learning counters are replica-local;
+  the single-replica API and web services remain Service-scraped. Their Argo
+  Applications stay inert until private-repository credentials, immutable
+  image references, and `dd/remote-dev/daedalus-secrets` are provisioned.
 - Rust economics server emits Prometheus metrics for dashboard, forecast,
   recommendation, pipeline, source-pull, auth, NATS, and error activity,
   plus compact `dd.log.v1` stdout/stderr records for Loki. Its

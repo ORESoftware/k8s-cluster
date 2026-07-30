@@ -539,6 +539,24 @@ data:
             annotations:
               summary: Fabrication server scrape target is down
               description: "Prometheus cannot scrape dd-fabrication-server /metrics; planning, instruction validation, and learning telemetry may be unavailable."
+          - alert: DDDaedalusApiServerTargetDown
+            expr: up{job="dd-daedalus-api-server"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-daedalus-api-server
+            annotations:
+              summary: Daedalus API server scrape target is down
+              description: "Prometheus cannot scrape dd-daedalus-api-server /metrics; API authorization and rejection telemetry may be unavailable."
+          - alert: DDDaedalusWebServerTargetDown
+            expr: up{job="dd-daedalus-web-server"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-daedalus-web-server
+            annotations:
+              summary: Daedalus web server scrape target is down
+              description: "Prometheus cannot scrape dd-daedalus-web-server /metrics; web request, authorization, rejection, and page telemetry may be unavailable."
           - alert: DDFabricationServerPodScrapeTargetsMissing
             expr: absent(up{job="dd-fabrication-server-pods"})
             for: 10m
