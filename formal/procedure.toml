@@ -1,0 +1,83 @@
+schema_version = 1
+procedure_version = 1
+repository = "quaestor-ledger/quaestor-ledger-server.rs"
+
+[policy]
+claim_classes = ["typechecked-specification", "randomized-exploration", "bounded-exhaustive-verification", "implementation-replay", "differential-replay", "unbounded-proof"]
+required_evidence = ["method", "bounds", "assumptions", "model-hash", "implementation-and-schema-revisions", "tool-versions"]
+counterexample = "Retain and minimize traces with SQL, lock, scheduler, and transport schedules; classify and add deterministic Rust/database regressions."
+change_trigger = "Review this inventory with posting, fingerprint, fencing, shard, scheduler, sync, or notary semantic changes."
+
+[[machine]]
+id = "balanced-idempotent-ledger-posting"
+risk = "critical"
+status = "planned"
+backend = "quint+tlc+postgres-itf-replay"
+owner = "quaestor-ledger"
+source_paths = ["src/ledger/service.rs", "src/ledger/fingerprint.rs", "src/ledger/types.rs"]
+safety = [
+  "every committed transaction has at least two postings and nets to zero per currency",
+  "one tenant idempotency key identifies one canonical business intent",
+  "matching replay returns the existing complete transaction and does not republish a new event",
+  "conflicting or unverifiable replay fails closed",
+  "no reader observes a committed transaction with a partial posting set",
+]
+liveness = ["with an available database and eventually acquired advisory/customer locks, a valid balanced draft eventually commits or returns the prior matching transaction"]
+faults = ["two same-key callers", "commit response lost", "insert conflict", "posting insert failure", "event bus backpressure", "transaction rollback"]
+bounds = ["two tenants", "two currencies", "three accounts", "three postings", "two same-key callers"]
+review_triggers = ["debit/credit arithmetic", "currency grouping", "posting transaction", "idempotency key", "intent fingerprint", "event eligibility"]
+
+[[machine]]
+id = "customer-lock-and-fencing"
+risk = "critical"
+status = "planned"
+backend = "quint+apalache+postgres-itf-replay"
+owner = "quaestor-coordination"
+source_paths = ["src/customer_locks.rs", "src/ledger/service.rs"]
+safety = [
+  "a stale or mismatched fencing token cannot authorize a ledger write",
+  "multi-customer lock targets are canonical and acquired as one logical authority set",
+  "lock loss before commit prevents the transaction from becoming authoritative",
+  "release failure does not cause a second holder to accept a stale token",
+]
+liveness = ["with healthy coordination, advancing lease time, and recurring retry, a nonconflicting write eventually acquires authority or returns an explicit failure"]
+faults = ["lease expiry", "renewal failure", "stale holder", "ambiguous acquire response", "release failure", "overlapping customer sets"]
+bounds = ["two holders", "three customers", "two fencing generations", "bounded logical time"]
+review_triggers = ["lock target", "claim or renew", "fencing query", "critical section", "release", "token domain"]
+
+[[machine]]
+id = "durable-scheduler-execution"
+risk = "high"
+status = "planned"
+backend = "quint+postgres-itf-replay"
+owner = "quaestor-scheduler"
+source_paths = ["src/scheduler/mod.rs", "src/scheduler/runner.rs", "src/scheduler/service.rs", "src/scheduler/types.rs"]
+safety = [
+  "one due tick is claimed by at most one live runner",
+  "every attempt has durable history before terminal classification",
+  "retry count and next-attempt time do not regress",
+  "work exceeding max attempts reaches one dead-letter outcome",
+  "a stale runner cannot finalize a reclaimed execution",
+]
+liveness = ["with recurring runner loops and an available database, due work eventually succeeds, retries, or reaches dead letter"]
+faults = ["runner crash", "handler timeout", "database response lost", "two pods claim", "backoff", "dead-letter write failure"]
+bounds = ["two runners", "two jobs", "three attempts", "bounded schedule and lease time"]
+review_triggers = ["claim query", "SKIP LOCKED", "attempt history", "backoff", "max attempts", "dead letter", "handler result"]
+
+[[machine]]
+id = "provider-sync-ingestion"
+risk = "high"
+status = "planned"
+backend = "quint+itf-rust-replay"
+owner = "quaestor-sync"
+source_paths = ["src/sync/mod.rs", "src/sync/handler.rs", "src/events.rs"]
+safety = [
+  "webhook, on-demand, backstop, and NATS delivery of one sync intent create one logical connection job",
+  "one live connection lease prevents concurrent duplicate provider effects",
+  "credentials and imported records remain tenant-scoped",
+  "failure records an explicit error and cannot advance last_sync_at as success",
+]
+liveness = ["under eventual provider availability and recurring webhook/on-demand/backstop delivery, a missed eligible event is eventually imported or terminally classified"]
+faults = ["duplicate webhook", "NATS redelivery", "on-demand/backstop race", "provider pagination retry", "credential failure", "lease loss"]
+bounds = ["two providers", "two connections", "two delivery paths", "two retry attempts"]
+review_triggers = ["sync deduplication", "connection lease", "provider cursor", "last_sync_at", "error state", "NATS command"]
