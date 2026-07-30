@@ -21,19 +21,11 @@ use state::AppState;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tower_http::timeout::TimeoutLayer;
+use tower_http::trace::TraceLayer;
 
 /// Backstop request timeout. The action proxy to t2v-api has its own 190s
 /// client timeout; this bounds everything else (including slow request bodies).
 const REQUEST_TIMEOUT_SECS: u64 = 200;
-
-fn init_tracing() {
-    use tracing_subscriber::{fmt, prelude::*, EnvFilter};
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(fmt::layer())
-        .init();
-}
 
 pub fn app(state: AppState) -> Router {
     Router::new()
@@ -56,6 +48,7 @@ pub fn app(state: AppState) -> Router {
             axum::http::StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(REQUEST_TIMEOUT_SECS),
         ))
+        .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
 
@@ -92,7 +85,9 @@ async fn shutdown_signal() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init_tracing();
+    // Keep the provider alive through graceful shutdown so queued traces,
+    // metrics, and structured warnings are flushed before the pod exits.
+    let _telemetry = fiducia_telemetry::init("dd-t2v-web");
 
     let db = db::connect_and_prepare().await?;
     let state = AppState::new(db);

@@ -34,7 +34,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 maud = { version = "0.26", features = ["axum"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
-tower-http = { version = "0.6", features = ["timeout", "set-header"] }
+tower-http = { version = "0.6", features = ["timeout", "set-header", "trace"] }
 # Typed ORM per fleet convention. sea-orm drives sqlx internally, but no crate
 # in this workspace issues raw sqlx queries — all persistence goes through
 # SeaORM entities/queries.
@@ -53,7 +53,7 @@ sea-orm-migration = { version = "1.1", default-features = false, features = [
     "runtime-tokio-rustls",
 ] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+fiducia-telemetry = { git = "https://github.com/fiducia-cloud/fiducia-telemetry.rs", tag = "v0.2.1" }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 base64 = "0.22"
