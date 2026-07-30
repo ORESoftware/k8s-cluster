@@ -42,10 +42,10 @@
     <h1>gleamlang-server-nats-bridge API docs</h1>
     <p>Generated from route declarations in source. Standard routes: <code>/docs/api</code>, <code>/api/docs</code>, <code>/api/docs.json</code>.</p>
     <div class="summary">
-      <span>5 routes</span>
+      <span>4 routes</span>
       <span>node</span>
       <span>4 service</span>
-      <span>1 user-generated</span>
+      <span>0 user-generated</span>
     </div>
   </header>
   <main>
@@ -53,7 +53,7 @@
       <thead><tr><th>Type</th><th>Methods</th><th>Path</th><th>Purpose</th><th>Handlers</th><th>Auth</th></tr></thead>
       <tbody>
 <tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/api/docs</code></td>
   <td data-label="Purpose">Human-readable generated API documentation.</td>
@@ -61,15 +61,15 @@
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/api/docs.json</code></td>
-  <td data-label="Purpose">Machine-readable generated API route metadata.</td>
+  <td data-label="Purpose">Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/docs/api</code></td>
   <td data-label="Purpose">Human-readable generated API documentation.</td>
@@ -77,20 +77,12 @@
   <td data-label="Auth">public</td>
 </tr>
 <tr>
-  <td data-label="Type"><span class="badge service">service</span><div class="muted">service</div></td>
+  <td data-label="Type"><span class="badge service">service</span><div class="muted"></div></td>
   <td data-label="Methods"><div class="methods"><span class="method">GET</span></div></td>
   <td data-label="Path"><code>/healthz</code></td>
   <td data-label="Purpose">Health check.</td>
   <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
   <td data-label="Auth">public</td>
-</tr>
-<tr>
-  <td data-label="Type"><span class="badge user-generated">user-generated</span><div class="muted">code-first</div></td>
-  <td data-label="Methods"><div class="methods"><span class="method">POST</span></div></td>
-  <td data-label="Path"><code>/publish</code></td>
-  <td data-label="Purpose">Custom code-first route derived from the service router.</td>
-  <td data-label="Handlers"><span class="muted">derived from route pattern</span></td>
-  <td data-label="Auth">service-defined</td>
 </tr>
       </tbody>
     </table>

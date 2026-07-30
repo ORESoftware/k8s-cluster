@@ -1,0 +1,2761 @@
+{
+  "components": {
+    "securitySchemes": {
+      "bearer_auth": {
+        "bearerFormat": "opaque service token",
+        "scheme": "bearer",
+        "type": "http"
+      },
+      "legacyAuth": {
+        "in": "header",
+        "name": "X-Auth",
+        "type": "apiKey"
+      },
+      "serverAuth": {
+        "in": "header",
+        "name": "X-Server-Auth",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "Executable Fastify contract generated from the same Zod schemas and route descriptors used for runtime validation, response serialization, and handler dispatch.",
+    "title": "browser-test-server API",
+    "version": "0.1.0"
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "openapi": "3.1.0",
+  "paths": {
+    "/": {
+      "get": {
+        "description": "Describe the browser-test service and supported HTTP endpoints.",
+        "operationId": "getBrowserTestService",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "allowEvaluate": {
+                      "type": "boolean"
+                    },
+                    "browserHeadless": {
+                      "type": "boolean"
+                    },
+                    "defaultTool": {
+                      "enum": [
+                        "playwright",
+                        "puppeteer",
+                        "selenium"
+                      ],
+                      "type": "string"
+                    },
+                    "endpoints": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "docs": {
+                          "type": "string"
+                        },
+                        "healthz": {
+                          "type": "string"
+                        },
+                        "metrics": {
+                          "type": "string"
+                        },
+                        "openapi": {
+                          "type": "string"
+                        },
+                        "run": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "tools": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "run",
+                        "tools",
+                        "status",
+                        "healthz",
+                        "metrics",
+                        "openapi",
+                        "docs"
+                      ],
+                      "type": "object"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": true
+                    },
+                    "service": {
+                      "enum": [
+                        "dd-browser-test-server"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "dd-browser-test-server"
+                    },
+                    "tools": {
+                      "items": {
+                        "enum": [
+                          "playwright",
+                          "puppeteer",
+                          "selenium"
+                        ],
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "service",
+                    "ok",
+                    "endpoints",
+                    "tools",
+                    "defaultTool",
+                    "browserHeadless",
+                    "allowEvaluate"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Browser-test service descriptor."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": false
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Service authentication is missing or invalid."
+          }
+        },
+        "security": [
+          {
+            "serverAuth": []
+          },
+          {
+            "bearer_auth": []
+          },
+          {
+            "legacyAuth": []
+          }
+        ],
+        "summary": "Describe the browser-test service and supported HTTP endpoints.",
+        "tags": [
+          "service"
+        ],
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "getBrowserTestService"
+        ],
+        "x-dd-implementation": "fastify-zod-executable-contract",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/src/server.ts"
+        ],
+        "x-dd-source-path": "/",
+        "x-dd-source-paths": [
+          "/"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "description": "Return the Scalar reference for the fail-closed public contract.",
+        "operationId": "getBrowserTestPublicApiReference",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Human-readable public API reference."
+          }
+        },
+        "security": [],
+        "summary": "Return the Scalar reference for the fail-closed public contract.",
+        "tags": [
+          "documentation"
+        ],
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getBrowserTestPublicApiReference"
+        ],
+        "x-dd-implementation": "fastify-zod-executable-contract",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/src/server.ts"
+        ],
+        "x-dd-source-path": "/api/docs",
+        "x-dd-source-paths": [
+          "/api/docs"
+        ],
+        "x-dd-visibility": "public"
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "description": "Return the fail-closed public OpenAPI 3.1 contract.",
+        "operationId": "getBrowserTestPublicOpenApiCompatibilityAlias",
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Canonical public OpenAPI document."
+          }
+        },
+        "security": [],
+        "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
+        "tags": [
+          "documentation"
+        ],
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getBrowserTestPublicOpenApiCompatibilityAlias"
+        ],
+        "x-dd-implementation": "fastify-zod-executable-contract",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/src/server.ts"
+        ],
+        "x-dd-source-path": "/api/docs.json",
+        "x-dd-source-paths": [
+          "/api/docs.json"
+        ],
+        "x-dd-visibility": "public"
+      }
+    },
+    "/browser-test": {
+      "get": {
+        "description": "Describe the browser-test service and supported HTTP endpoints.",
+        "operationId": "getBrowserTestServiceCompatibilityAlias",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "allowEvaluate": {
+                      "type": "boolean"
+                    },
+                    "browserHeadless": {
+                      "type": "boolean"
+                    },
+                    "defaultTool": {
+                      "enum": [
+                        "playwright",
+                        "puppeteer",
+                        "selenium"
+                      ],
+                      "type": "string"
+                    },
+                    "endpoints": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "docs": {
+                          "type": "string"
+                        },
+                        "healthz": {
+                          "type": "string"
+                        },
+                        "metrics": {
+                          "type": "string"
+                        },
+                        "openapi": {
+                          "type": "string"
+                        },
+                        "run": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "tools": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "run",
+                        "tools",
+                        "status",
+                        "healthz",
+                        "metrics",
+                        "openapi",
+                        "docs"
+                      ],
+                      "type": "object"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": true
+                    },
+                    "service": {
+                      "enum": [
+                        "dd-browser-test-server"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "dd-browser-test-server"
+                    },
+                    "tools": {
+                      "items": {
+                        "enum": [
+                          "playwright",
+                          "puppeteer",
+                          "selenium"
+                        ],
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "service",
+                    "ok",
+                    "endpoints",
+                    "tools",
+                    "defaultTool",
+                    "browserHeadless",
+                    "allowEvaluate"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Browser-test service descriptor."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": false
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Service authentication is missing or invalid."
+          }
+        },
+        "security": [
+          {
+            "serverAuth": []
+          },
+          {
+            "bearer_auth": []
+          },
+          {
+            "legacyAuth": []
+          }
+        ],
+        "summary": "Describe the browser-test service and supported HTTP endpoints.",
+        "tags": [
+          "service"
+        ],
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "getBrowserTestServiceCompatibilityAlias"
+        ],
+        "x-dd-implementation": "fastify-zod-executable-contract",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/src/server.ts"
+        ],
+        "x-dd-source-path": "/browser-test",
+        "x-dd-source-paths": [
+          "/browser-test"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/browser-test/healthz": {
+      "get": {
+        "description": "Authenticated compatibility alias for browser-test liveness.",
+        "operationId": "getBrowserTestHealthCompatibilityAlias",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "inFlight": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": true
+                    },
+                    "serverInstanceId": {
+                      "type": "string"
+                    },
+                    "serverStartedAt": {
+                      "type": "string"
+                    },
+                    "service": {
+                      "enum": [
+                        "dd-browser-test-server"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "dd-browser-test-server"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "service",
+                    "serverStartedAt",
+                    "serverInstanceId",
+                    "inFlight"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Browser-test process is alive."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": false
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Service authentication is missing or invalid."
+          }
+        },
+        "security": [
+          {
+            "serverAuth": []
+          },
+          {
+            "bearer_auth": []
+          },
+          {
+            "legacyAuth": []
+          }
+        ],
+        "summary": "Authenticated compatibility alias for browser-test liveness.",
+        "tags": [
+          "operations"
+        ],
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "getBrowserTestHealthCompatibilityAlias"
+        ],
+        "x-dd-implementation": "fastify-zod-executable-contract",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/src/server.ts"
+        ],
+        "x-dd-source-path": "/browser-test/healthz",
+        "x-dd-source-paths": [
+          "/browser-test/healthz"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/browser-test/metrics": {
+      "get": {
+        "description": "Authenticated compatibility alias for Prometheus metrics.",
+        "operationId": "getBrowserTestPrometheusMetricsCompatibilityAlias",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Prometheus metrics for browser-test execution."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": false
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Service authentication is missing or invalid."
+          }
+        },
+        "security": [
+          {
+            "serverAuth": []
+          },
+          {
+            "bearer_auth": []
+          },
+          {
+            "legacyAuth": []
+          }
+        ],
+        "summary": "Authenticated compatibility alias for Prometheus metrics.",
+        "tags": [
+          "operations"
+        ],
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "getBrowserTestPrometheusMetricsCompatibilityAlias"
+        ],
+        "x-dd-implementation": "fastify-zod-executable-contract",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/src/server.ts"
+        ],
+        "x-dd-source-path": "/browser-test/metrics",
+        "x-dd-source-paths": [
+          "/browser-test/metrics"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/browser-test/status": {
+      "get": {
+        "description": "Return bounded browser-test runtime status.",
+        "operationId": "getBrowserTestStatusCompatibilityAlias",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "allowEvaluate": {
+                      "type": "boolean"
+                    },
+                    "browserHeadless": {
+                      "type": "boolean"
+                    },
+                    "defaultTimeoutMs": {
+                      "maximum": 9007199254740991,
+                      "minimum": 500,
+                      "type": "integer"
+                    },
+                    "defaultTool": {
+                      "enum": [
+                        "playwright",
+                        "puppeteer",
+                        "selenium"
+                      ],
+                      "type": "string"
+                    },
+                    "inFlight": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "maxConcurrent": {
+                      "maximum": 9007199254740991,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "maxSteps": {
+                      "maximum": 9007199254740991,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "maxTimeoutMs": {
+                      "maximum": 9007199254740991,
+                      "minimum": 500,
+                      "type": "integer"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": true
+                    },
+                    "serverInstanceId": {
+                      "type": "string"
+                    },
+                    "serverStartedAt": {
+                      "type": "string"
+                    },
+                    "service": {
+                      "enum": [
+                        "dd-browser-test-server"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "dd-browser-test-server"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "service",
+                    "serverStartedAt",
+                    "serverInstanceId",
+                    "inFlight",
+                    "maxConcurrent",
+                    "defaultTool",
+                    "defaultTimeoutMs",
+                    "maxTimeoutMs",
+                    "maxSteps",
+                    "browserHeadless",
+                    "allowEvaluate"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Browser-test runtime status."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": false
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Service authentication is missing or invalid."
+          }
+        },
+        "security": [
+          {
+            "serverAuth": []
+          },
+          {
+            "bearer_auth": []
+          },
+          {
+            "legacyAuth": []
+          }
+        ],
+        "summary": "Return bounded browser-test runtime status.",
+        "tags": [
+          "operations"
+        ],
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "getBrowserTestStatusCompatibilityAlias"
+        ],
+        "x-dd-implementation": "fastify-zod-executable-contract",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/src/server.ts"
+        ],
+        "x-dd-source-path": "/browser-test/status",
+        "x-dd-source-paths": [
+          "/browser-test/status"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/browser-test/tools": {
+      "get": {
+        "description": "List supported browser drivers and their runtime versions.",
+        "operationId": "listBrowserAutomationToolsCompatibilityAlias",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "default": {
+                      "pattern": "^(playwright|puppeteer|selenium)$",
+                      "type": "string"
+                    },
+                    "tools": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "name": {
+                            "enum": [
+                              "playwright",
+                              "puppeteer",
+                              "selenium"
+                            ],
+                            "type": "string"
+                          },
+                          "supportsEvaluate": {
+                            "type": "boolean"
+                          },
+                          "supportsHeadless": {
+                            "type": "boolean"
+                          },
+                          "version": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "version",
+                          "supportsHeadless",
+                          "supportsEvaluate"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "default",
+                    "tools"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Supported browser drivers."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": false
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Service authentication is missing or invalid."
+          }
+        },
+        "security": [
+          {
+            "serverAuth": []
+          },
+          {
+            "bearer_auth": []
+          },
+          {
+            "legacyAuth": []
+          }
+        ],
+        "summary": "List supported browser drivers and their runtime versions.",
+        "tags": [
+          "browser-automation"
+        ],
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "listBrowserAutomationToolsCompatibilityAlias"
+        ],
+        "x-dd-implementation": "fastify-zod-executable-contract",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/src/server.ts"
+        ],
+        "x-dd-source-path": "/browser-test/tools",
+        "x-dd-source-paths": [
+          "/browser-test/tools"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "description": "Return the Scalar reference for the fail-closed public contract.",
+        "operationId": "getBrowserTestPublicApiReferenceCompatibilityAlias",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Human-readable public API reference."
+          }
+        },
+        "security": [],
+        "summary": "Return the Scalar reference for the fail-closed public contract.",
+        "tags": [
+          "documentation"
+        ],
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getBrowserTestPublicApiReferenceCompatibilityAlias"
+        ],
+        "x-dd-implementation": "fastify-zod-executable-contract",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/src/server.ts"
+        ],
+        "x-dd-source-path": "/docs/api",
+        "x-dd-source-paths": [
+          "/docs/api"
+        ],
+        "x-dd-visibility": "public"
+      }
+    },
+    "/healthz": {
+      "get": {
+        "description": "Return a public liveness response for Kubernetes probes.",
+        "operationId": "getBrowserTestHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "inFlight": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": true
+                    },
+                    "serverInstanceId": {
+                      "type": "string"
+                    },
+                    "serverStartedAt": {
+                      "type": "string"
+                    },
+                    "service": {
+                      "enum": [
+                        "dd-browser-test-server"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "dd-browser-test-server"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "service",
+                    "serverStartedAt",
+                    "serverInstanceId",
+                    "inFlight"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Browser-test process is alive."
+          }
+        },
+        "security": [],
+        "summary": "Return a public liveness response for Kubernetes probes.",
+        "tags": [
+          "operations"
+        ],
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getBrowserTestHealth"
+        ],
+        "x-dd-implementation": "fastify-zod-executable-contract",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/src/server.ts"
+        ],
+        "x-dd-source-path": "/healthz",
+        "x-dd-source-paths": [
+          "/healthz"
+        ],
+        "x-dd-visibility": "public"
+      }
+    },
+    "/internal/docs/api": {
+      "get": {
+        "description": "Return the Scalar reference for the complete internal contract.",
+        "operationId": "getBrowserTestInternalApiReference",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Human-readable internal API reference."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": false
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Service authentication is missing or invalid."
+          }
+        },
+        "security": [
+          {
+            "serverAuth": []
+          },
+          {
+            "bearer_auth": []
+          },
+          {
+            "legacyAuth": []
+          }
+        ],
+        "summary": "Return the Scalar reference for the complete internal contract.",
+        "tags": [
+          "documentation"
+        ],
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "getBrowserTestInternalApiReference"
+        ],
+        "x-dd-implementation": "fastify-zod-executable-contract",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/src/server.ts"
+        ],
+        "x-dd-source-path": "/internal/docs/api",
+        "x-dd-source-paths": [
+          "/internal/docs/api"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/internal/openapi.json": {
+      "get": {
+        "description": "Return the complete typed OpenAPI contract to trusted callers.",
+        "operationId": "getBrowserTestInternalOpenApi",
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Complete internal OpenAPI document."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": false
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Service authentication is missing or invalid."
+          }
+        },
+        "security": [
+          {
+            "serverAuth": []
+          },
+          {
+            "bearer_auth": []
+          },
+          {
+            "legacyAuth": []
+          }
+        ],
+        "summary": "Return the complete typed OpenAPI contract to trusted callers.",
+        "tags": [
+          "documentation"
+        ],
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "getBrowserTestInternalOpenApi"
+        ],
+        "x-dd-implementation": "fastify-zod-executable-contract",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/src/server.ts"
+        ],
+        "x-dd-source-path": "/internal/openapi.json",
+        "x-dd-source-paths": [
+          "/internal/openapi.json"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/metrics": {
+      "get": {
+        "description": "Return bounded Prometheus text exposition.",
+        "operationId": "getBrowserTestPrometheusMetrics",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Prometheus metrics for browser-test execution."
+          }
+        },
+        "security": [],
+        "summary": "Return bounded Prometheus text exposition.",
+        "tags": [
+          "operations"
+        ],
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getBrowserTestPrometheusMetrics"
+        ],
+        "x-dd-implementation": "fastify-zod-executable-contract",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/src/server.ts"
+        ],
+        "x-dd-source-path": "/metrics",
+        "x-dd-source-paths": [
+          "/metrics"
+        ],
+        "x-dd-visibility": "public"
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "description": "Return the fail-closed public OpenAPI 3.1 contract.",
+        "operationId": "getBrowserTestPublicOpenApi",
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Canonical public OpenAPI document."
+          }
+        },
+        "security": [],
+        "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
+        "tags": [
+          "documentation"
+        ],
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getBrowserTestPublicOpenApi"
+        ],
+        "x-dd-implementation": "fastify-zod-executable-contract",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/src/server.ts"
+        ],
+        "x-dd-source-path": "/openapi.json",
+        "x-dd-source-paths": [
+          "/openapi.json"
+        ],
+        "x-dd-visibility": "public"
+      }
+    },
+    "/run": {
+      "post": {
+        "description": "Runs the declarative scenario DSL. Arbitrary page evaluation remains disabled unless the deployment explicitly opts in.",
+        "operationId": "runBrowserScenario",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": false,
+                "properties": {
+                  "captureFinalScreenshot": {
+                    "type": "boolean"
+                  },
+                  "extraHeaders": {
+                    "additionalProperties": {
+                      "maxLength": 2000,
+                      "type": "string"
+                    },
+                    "propertyNames": {
+                      "maxLength": 120,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  "failOnConsoleError": {
+                    "type": "boolean"
+                  },
+                  "requestId": {
+                    "maxLength": 120,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "steps": {
+                    "items": {
+                      "oneOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "action": {
+                              "enum": [
+                                "goto"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "goto"
+                            },
+                            "description": {
+                              "maxLength": 200,
+                              "type": "string"
+                            },
+                            "timeoutMs": {
+                              "maximum": 300000,
+                              "minimum": 100,
+                              "type": "integer"
+                            },
+                            "url": {
+                              "format": "uri",
+                              "type": "string"
+                            },
+                            "waitUntil": {
+                              "enum": [
+                                "load",
+                                "domcontentloaded",
+                                "networkidle"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "action",
+                            "url"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "action": {
+                              "enum": [
+                                "click"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "click"
+                            },
+                            "description": {
+                              "maxLength": 200,
+                              "type": "string"
+                            },
+                            "nth": {
+                              "maximum": 50,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "selector": {
+                              "maxLength": 800,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "timeoutMs": {
+                              "maximum": 300000,
+                              "minimum": 100,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "action",
+                            "selector"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "action": {
+                              "enum": [
+                                "fill"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "fill"
+                            },
+                            "description": {
+                              "maxLength": 200,
+                              "type": "string"
+                            },
+                            "selector": {
+                              "maxLength": 800,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "timeoutMs": {
+                              "maximum": 300000,
+                              "minimum": 100,
+                              "type": "integer"
+                            },
+                            "value": {
+                              "maxLength": 20000,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "action",
+                            "selector",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "action": {
+                              "enum": [
+                                "select"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "select"
+                            },
+                            "description": {
+                              "maxLength": 200,
+                              "type": "string"
+                            },
+                            "selector": {
+                              "maxLength": 800,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "timeoutMs": {
+                              "maximum": 300000,
+                              "minimum": 100,
+                              "type": "integer"
+                            },
+                            "value": {
+                              "maxLength": 800,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "action",
+                            "selector",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "action": {
+                              "enum": [
+                                "press"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "press"
+                            },
+                            "description": {
+                              "maxLength": 200,
+                              "type": "string"
+                            },
+                            "key": {
+                              "maxLength": 40,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "selector": {
+                              "maxLength": 800,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "timeoutMs": {
+                              "maximum": 300000,
+                              "minimum": 100,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "action",
+                            "key"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "action": {
+                              "enum": [
+                                "waitForSelector"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "waitForSelector"
+                            },
+                            "description": {
+                              "maxLength": 200,
+                              "type": "string"
+                            },
+                            "selector": {
+                              "maxLength": 800,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "state": {
+                              "enum": [
+                                "attached",
+                                "detached",
+                                "visible",
+                                "hidden"
+                              ],
+                              "type": "string"
+                            },
+                            "timeoutMs": {
+                              "maximum": 300000,
+                              "minimum": 100,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "action",
+                            "selector"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "action": {
+                              "enum": [
+                                "waitForUrl"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "waitForUrl"
+                            },
+                            "description": {
+                              "maxLength": 200,
+                              "type": "string"
+                            },
+                            "timeoutMs": {
+                              "maximum": 300000,
+                              "minimum": 100,
+                              "type": "integer"
+                            },
+                            "url": {
+                              "maxLength": 2000,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "action",
+                            "url"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "action": {
+                              "enum": [
+                                "waitForTimeout"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "waitForTimeout"
+                            },
+                            "description": {
+                              "maxLength": 200,
+                              "type": "string"
+                            },
+                            "ms": {
+                              "maximum": 60000,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "timeoutMs": {
+                              "maximum": 300000,
+                              "minimum": 100,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "action",
+                            "ms"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "action": {
+                              "enum": [
+                                "extractText"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "extractText"
+                            },
+                            "description": {
+                              "maxLength": 200,
+                              "type": "string"
+                            },
+                            "name": {
+                              "maxLength": 120,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "selector": {
+                              "maxLength": 800,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "timeoutMs": {
+                              "maximum": 300000,
+                              "minimum": 100,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "action",
+                            "selector"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "action": {
+                              "enum": [
+                                "extractAttribute"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "extractAttribute"
+                            },
+                            "attribute": {
+                              "maxLength": 120,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "description": {
+                              "maxLength": 200,
+                              "type": "string"
+                            },
+                            "name": {
+                              "maxLength": 120,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "selector": {
+                              "maxLength": 800,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "timeoutMs": {
+                              "maximum": 300000,
+                              "minimum": 100,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "action",
+                            "selector",
+                            "attribute"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "action": {
+                              "enum": [
+                                "screenshot"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "screenshot"
+                            },
+                            "description": {
+                              "maxLength": 200,
+                              "type": "string"
+                            },
+                            "fullPage": {
+                              "type": "boolean"
+                            },
+                            "name": {
+                              "maxLength": 120,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "timeoutMs": {
+                              "maximum": 300000,
+                              "minimum": 100,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "action"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "action": {
+                              "enum": [
+                                "evaluate"
+                              ],
+                              "type": "string",
+                              "x-dd-constant-value": "evaluate"
+                            },
+                            "description": {
+                              "maxLength": 200,
+                              "type": "string"
+                            },
+                            "name": {
+                              "maxLength": 120,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "script": {
+                              "maxLength": 20000,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "timeoutMs": {
+                              "maximum": 300000,
+                              "minimum": 100,
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "action",
+                            "script"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "maxItems": 64,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "timeoutMs": {
+                    "maximum": 180000,
+                    "minimum": 500,
+                    "type": "integer"
+                  },
+                  "tool": {
+                    "enum": [
+                      "playwright",
+                      "puppeteer",
+                      "selenium"
+                    ],
+                    "type": "string"
+                  },
+                  "url": {
+                    "format": "uri",
+                    "type": "string"
+                  },
+                  "userAgent": {
+                    "maxLength": 500,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "viewport": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "height": {
+                        "maximum": 4000,
+                        "minimum": 200,
+                        "type": "integer"
+                      },
+                      "width": {
+                        "maximum": 4000,
+                        "minimum": 200,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "width",
+                      "height"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "steps"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "description": "Browser driver, limits, viewport, and declarative scenario steps.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "consoleEntries": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "level": {
+                            "maxLength": 40,
+                            "type": "string"
+                          },
+                          "text": {
+                            "maxLength": 20000,
+                            "type": "string"
+                          },
+                          "timestamp": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "level",
+                          "text",
+                          "timestamp"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "durationMs": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "error": {
+                      "maxLength": 20000,
+                      "type": "string"
+                    },
+                    "extracted": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "finalTitle": {
+                      "type": "string"
+                    },
+                    "finalUrl": {
+                      "type": "string"
+                    },
+                    "finishedAt": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "pageErrors": {
+                      "items": {
+                        "maxLength": 20000,
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "requestId": {
+                      "maxLength": 120,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "screenshots": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "base64": {
+                            "type": "string"
+                          },
+                          "bytes": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "contentType": {
+                            "enum": [
+                              "image/png",
+                              "image/jpeg"
+                            ],
+                            "type": "string"
+                          },
+                          "name": {
+                            "maxLength": 120,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "truncated": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "contentType",
+                          "base64",
+                          "bytes"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "startedAt": {
+                      "type": "string"
+                    },
+                    "steps": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "action": {
+                            "enum": [
+                              "goto",
+                              "click",
+                              "fill",
+                              "select",
+                              "press",
+                              "waitForSelector",
+                              "waitForUrl",
+                              "waitForTimeout",
+                              "extractText",
+                              "extractAttribute",
+                              "screenshot",
+                              "evaluate"
+                            ],
+                            "type": "string"
+                          },
+                          "description": {
+                            "maxLength": 200,
+                            "type": "string"
+                          },
+                          "durationMs": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "error": {
+                            "maxLength": 4000,
+                            "type": "string"
+                          },
+                          "index": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "status": {
+                            "enum": [
+                              "ok",
+                              "error"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "index",
+                          "action",
+                          "status",
+                          "durationMs"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "tool": {
+                      "enum": [
+                        "playwright",
+                        "puppeteer",
+                        "selenium"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "requestId",
+                    "tool",
+                    "durationMs",
+                    "startedAt",
+                    "finishedAt",
+                    "steps",
+                    "extracted",
+                    "screenshots",
+                    "consoleEntries",
+                    "pageErrors"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Scenario completed successfully."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "invalid_request"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "invalid_request"
+                    },
+                    "issues": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "message": {
+                            "maxLength": 500,
+                            "type": "string"
+                          },
+                          "path": {
+                            "maxLength": 300,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "message"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 20,
+                      "type": "array"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": false
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error",
+                    "issues"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The request does not satisfy the executable Zod contract."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": false
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Service authentication is missing or invalid."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "consoleEntries": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "level": {
+                            "maxLength": 40,
+                            "type": "string"
+                          },
+                          "text": {
+                            "maxLength": 20000,
+                            "type": "string"
+                          },
+                          "timestamp": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "level",
+                          "text",
+                          "timestamp"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "durationMs": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "error": {
+                      "maxLength": 20000,
+                      "type": "string"
+                    },
+                    "extracted": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "finalTitle": {
+                      "type": "string"
+                    },
+                    "finalUrl": {
+                      "type": "string"
+                    },
+                    "finishedAt": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "pageErrors": {
+                      "items": {
+                        "maxLength": 20000,
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "requestId": {
+                      "maxLength": 120,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "screenshots": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "base64": {
+                            "type": "string"
+                          },
+                          "bytes": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "contentType": {
+                            "enum": [
+                              "image/png",
+                              "image/jpeg"
+                            ],
+                            "type": "string"
+                          },
+                          "name": {
+                            "maxLength": 120,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "truncated": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "contentType",
+                          "base64",
+                          "bytes"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "startedAt": {
+                      "type": "string"
+                    },
+                    "steps": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "action": {
+                            "enum": [
+                              "goto",
+                              "click",
+                              "fill",
+                              "select",
+                              "press",
+                              "waitForSelector",
+                              "waitForUrl",
+                              "waitForTimeout",
+                              "extractText",
+                              "extractAttribute",
+                              "screenshot",
+                              "evaluate"
+                            ],
+                            "type": "string"
+                          },
+                          "description": {
+                            "maxLength": 200,
+                            "type": "string"
+                          },
+                          "durationMs": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "error": {
+                            "maxLength": 4000,
+                            "type": "string"
+                          },
+                          "index": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "status": {
+                            "enum": [
+                              "ok",
+                              "error"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "index",
+                          "action",
+                          "status",
+                          "durationMs"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "tool": {
+                      "enum": [
+                        "playwright",
+                        "puppeteer",
+                        "selenium"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "requestId",
+                    "tool",
+                    "durationMs",
+                    "startedAt",
+                    "finishedAt",
+                    "steps",
+                    "extracted",
+                    "screenshots",
+                    "consoleEntries",
+                    "pageErrors"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Scenario ran but a step or page assertion failed."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "browser-test concurrency limit reached"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "browser-test concurrency limit reached"
+                    },
+                    "maxConcurrent": {
+                      "maximum": 9007199254740991,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": false
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error",
+                    "maxConcurrent"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The configured concurrent scenario limit is full."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "consoleEntries": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "level": {
+                            "maxLength": 40,
+                            "type": "string"
+                          },
+                          "text": {
+                            "maxLength": 20000,
+                            "type": "string"
+                          },
+                          "timestamp": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "level",
+                          "text",
+                          "timestamp"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "durationMs": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "error": {
+                      "maxLength": 20000,
+                      "type": "string"
+                    },
+                    "extracted": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "finalTitle": {
+                      "type": "string"
+                    },
+                    "finalUrl": {
+                      "type": "string"
+                    },
+                    "finishedAt": {
+                      "type": "string"
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "pageErrors": {
+                      "items": {
+                        "maxLength": 20000,
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "requestId": {
+                      "maxLength": 120,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "screenshots": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "base64": {
+                            "type": "string"
+                          },
+                          "bytes": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "contentType": {
+                            "enum": [
+                              "image/png",
+                              "image/jpeg"
+                            ],
+                            "type": "string"
+                          },
+                          "name": {
+                            "maxLength": 120,
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "truncated": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "contentType",
+                          "base64",
+                          "bytes"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "startedAt": {
+                      "type": "string"
+                    },
+                    "steps": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "action": {
+                            "enum": [
+                              "goto",
+                              "click",
+                              "fill",
+                              "select",
+                              "press",
+                              "waitForSelector",
+                              "waitForUrl",
+                              "waitForTimeout",
+                              "extractText",
+                              "extractAttribute",
+                              "screenshot",
+                              "evaluate"
+                            ],
+                            "type": "string"
+                          },
+                          "description": {
+                            "maxLength": 200,
+                            "type": "string"
+                          },
+                          "durationMs": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "error": {
+                            "maxLength": 4000,
+                            "type": "string"
+                          },
+                          "index": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "status": {
+                            "enum": [
+                              "ok",
+                              "error"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "index",
+                          "action",
+                          "status",
+                          "durationMs"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "tool": {
+                      "enum": [
+                        "playwright",
+                        "puppeteer",
+                        "selenium"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "requestId",
+                    "tool",
+                    "durationMs",
+                    "startedAt",
+                    "finishedAt",
+                    "steps",
+                    "extracted",
+                    "screenshots",
+                    "consoleEntries",
+                    "pageErrors"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "The scenario crashed unexpectedly."
+          }
+        },
+        "security": [
+          {
+            "serverAuth": []
+          },
+          {
+            "bearer_auth": []
+          },
+          {
+            "legacyAuth": []
+          }
+        ],
+        "summary": "Run a bounded browser scenario with Playwright, Puppeteer, or Selenium.",
+        "tags": [
+          "browser-automation"
+        ],
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "runBrowserScenario"
+        ],
+        "x-dd-implementation": "fastify-zod-executable-contract",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/src/server.ts"
+        ],
+        "x-dd-source-path": "/run",
+        "x-dd-source-paths": [
+          "/run"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/status": {
+      "get": {
+        "description": "Return bounded browser-test runtime status.",
+        "operationId": "getBrowserTestStatus",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "allowEvaluate": {
+                      "type": "boolean"
+                    },
+                    "browserHeadless": {
+                      "type": "boolean"
+                    },
+                    "defaultTimeoutMs": {
+                      "maximum": 9007199254740991,
+                      "minimum": 500,
+                      "type": "integer"
+                    },
+                    "defaultTool": {
+                      "enum": [
+                        "playwright",
+                        "puppeteer",
+                        "selenium"
+                      ],
+                      "type": "string"
+                    },
+                    "inFlight": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "maxConcurrent": {
+                      "maximum": 9007199254740991,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "maxSteps": {
+                      "maximum": 9007199254740991,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "maxTimeoutMs": {
+                      "maximum": 9007199254740991,
+                      "minimum": 500,
+                      "type": "integer"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": true
+                    },
+                    "serverInstanceId": {
+                      "type": "string"
+                    },
+                    "serverStartedAt": {
+                      "type": "string"
+                    },
+                    "service": {
+                      "enum": [
+                        "dd-browser-test-server"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "dd-browser-test-server"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "service",
+                    "serverStartedAt",
+                    "serverInstanceId",
+                    "inFlight",
+                    "maxConcurrent",
+                    "defaultTool",
+                    "defaultTimeoutMs",
+                    "maxTimeoutMs",
+                    "maxSteps",
+                    "browserHeadless",
+                    "allowEvaluate"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Browser-test runtime status."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": false
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Service authentication is missing or invalid."
+          }
+        },
+        "security": [
+          {
+            "serverAuth": []
+          },
+          {
+            "bearer_auth": []
+          },
+          {
+            "legacyAuth": []
+          }
+        ],
+        "summary": "Return bounded browser-test runtime status.",
+        "tags": [
+          "operations"
+        ],
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "getBrowserTestStatus"
+        ],
+        "x-dd-implementation": "fastify-zod-executable-contract",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/src/server.ts"
+        ],
+        "x-dd-source-path": "/status",
+        "x-dd-source-paths": [
+          "/status"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/tools": {
+      "get": {
+        "description": "List supported browser drivers and their runtime versions.",
+        "operationId": "listBrowserAutomationTools",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "default": {
+                      "pattern": "^(playwright|puppeteer|selenium)$",
+                      "type": "string"
+                    },
+                    "tools": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "name": {
+                            "enum": [
+                              "playwright",
+                              "puppeteer",
+                              "selenium"
+                            ],
+                            "type": "string"
+                          },
+                          "supportsEvaluate": {
+                            "type": "boolean"
+                          },
+                          "supportsHeadless": {
+                            "type": "boolean"
+                          },
+                          "version": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "version",
+                          "supportsHeadless",
+                          "supportsEvaluate"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "default",
+                    "tools"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Supported browser drivers."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "enum": [
+                        "unauthorized"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "unauthorized"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": false
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "error"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Service authentication is missing or invalid."
+          }
+        },
+        "security": [
+          {
+            "serverAuth": []
+          },
+          {
+            "bearer_auth": []
+          },
+          {
+            "legacyAuth": []
+          }
+        ],
+        "summary": "List supported browser drivers and their runtime versions.",
+        "tags": [
+          "browser-automation"
+        ],
+        "x-dd-auth": "X-Server-Auth, Authorization Bearer, or legacy X-Auth service secret",
+        "x-dd-handlers": [
+          "listBrowserAutomationTools"
+        ],
+        "x-dd-implementation": "fastify-zod-executable-contract",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/browser-test-server/src/server.ts"
+        ],
+        "x-dd-source-path": "/tools",
+        "x-dd-source-paths": [
+          "/tools"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "browser-automation"
+    },
+    {
+      "name": "documentation"
+    },
+    {
+      "name": "operations"
+    },
+    {
+      "name": "service"
+    }
+  ],
+  "x-dd-contract-scope": "internal",
+  "x-dd-generated-by": "browser-test-server executable Fastify/Zod route registry",
+  "x-dd-language": "node",
+  "x-dd-operation-count": 17,
+  "x-dd-route-count": 17,
+  "x-dd-service": "browser-test-server",
+  "x-dd-standard-docs-routes": [
+    "/openapi.json",
+    "/api/docs.json",
+    "/api/docs",
+    "/docs/api"
+  ]
+}

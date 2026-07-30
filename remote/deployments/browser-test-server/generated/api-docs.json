@@ -1,228 +1,214 @@
 {
-  "ok": true,
-  "generatedBy": "remote/tools/generate-api-docs.mjs",
-  "service": "browser-test-server",
-  "language": "node",
-  "routeCount": 14,
-  "routeTypeCounts": {
-    "service": 8,
-    "user-generated": 6
+  "components": {},
+  "info": {
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included.",
+    "title": "browser-test-server API (public)",
+    "version": "0.1.0"
   },
-  "standardDocsRoutes": [
-    "/docs/api",
-    "/api/docs",
-    "/api/docs.json"
-  ],
-  "routes": [
-    {
-      "path": "/",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Service descriptor, home redirect, or root RPC endpoint.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/docs": {
+      "get": {
+        "description": "Return the Scalar reference for the fail-closed public contract.",
+        "operationId": "getBrowserTestPublicApiReference",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Human-readable public API reference."
+          }
+        },
+        "security": [],
+        "summary": "Return the Scalar reference for the fail-closed public contract.",
+        "tags": [
+          "documentation"
+        ],
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public"
+      }
     },
-    {
-      "path": "/api/docs",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Human-readable generated API documentation.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
+    "/api/docs.json": {
+      "get": {
+        "description": "Return the fail-closed public OpenAPI 3.1 contract.",
+        "operationId": "getBrowserTestPublicOpenApiCompatibilityAlias",
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Canonical public OpenAPI document."
+          }
+        },
+        "security": [],
+        "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
+        "tags": [
+          "documentation"
+        ],
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public"
+      }
     },
-    {
-      "path": "/api/docs.json",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Machine-readable generated API route metadata.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
+    "/docs/api": {
+      "get": {
+        "description": "Return the Scalar reference for the fail-closed public contract.",
+        "operationId": "getBrowserTestPublicApiReferenceCompatibilityAlias",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Human-readable public API reference."
+          }
+        },
+        "security": [],
+        "summary": "Return the Scalar reference for the fail-closed public contract.",
+        "tags": [
+          "documentation"
+        ],
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public"
+      }
     },
-    {
-      "path": "/browser-test",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
+    "/healthz": {
+      "get": {
+        "description": "Return a public liveness response for Kubernetes probes.",
+        "operationId": "getBrowserTestHealth",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "inFlight": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "ok": {
+                      "type": "boolean",
+                      "x-dd-constant-value": true
+                    },
+                    "serverInstanceId": {
+                      "type": "string"
+                    },
+                    "serverStartedAt": {
+                      "type": "string"
+                    },
+                    "service": {
+                      "enum": [
+                        "dd-browser-test-server"
+                      ],
+                      "type": "string",
+                      "x-dd-constant-value": "dd-browser-test-server"
+                    }
+                  },
+                  "required": [
+                    "ok",
+                    "service",
+                    "serverStartedAt",
+                    "serverInstanceId",
+                    "inFlight"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Browser-test process is alive."
+          }
+        },
+        "security": [],
+        "summary": "Return a public liveness response for Kubernetes probes.",
+        "tags": [
+          "operations"
+        ],
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public"
+      }
     },
-    {
-      "path": "/browser-test/healthz",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "service-defined",
-      "purpose": "Health check.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
+    "/metrics": {
+      "get": {
+        "description": "Return bounded Prometheus text exposition.",
+        "operationId": "getBrowserTestPrometheusMetrics",
+        "responses": {
+          "200": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Prometheus metrics for browser-test execution."
+          }
+        },
+        "security": [],
+        "summary": "Return bounded Prometheus text exposition.",
+        "tags": [
+          "operations"
+        ],
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public"
+      }
     },
-    {
-      "path": "/browser-test/metrics",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "service-defined",
-      "purpose": "Prometheus metrics.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/browser-test/status",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/browser-test/tools",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/docs/api",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Human-readable generated API documentation.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/healthz",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Health check.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/metrics",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
-      "purpose": "Prometheus metrics.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/run",
-      "methods": [
-        "POST"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/status",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
-    },
-    {
-      "path": "/tools",
-      "methods": [
-        "GET"
-      ],
-      "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Custom code-first route derived from the service router.",
-      "handlers": [],
-      "sourceFiles": [
-        "remote/deployments/browser-test-server/src/server.ts"
-      ],
-      "notes": ""
+    "/openapi.json": {
+      "get": {
+        "description": "Return the fail-closed public OpenAPI 3.1 contract.",
+        "operationId": "getBrowserTestPublicOpenApi",
+        "responses": {
+          "200": {
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Canonical public OpenAPI document."
+          }
+        },
+        "security": [],
+        "summary": "Return the fail-closed public OpenAPI 3.1 contract.",
+        "tags": [
+          "documentation"
+        ],
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public"
+      }
     }
+  },
+  "tags": [
+    {
+      "name": "documentation"
+    },
+    {
+      "name": "operations"
+    }
+  ],
+  "x-dd-contract-scope": "public",
+  "x-dd-generated-by": "browser-test-server executable Fastify/Zod route registry",
+  "x-dd-language": "node",
+  "x-dd-operation-count": 6,
+  "x-dd-route-count": 6,
+  "x-dd-service": "browser-test-server",
+  "x-dd-standard-docs-routes": [
+    "/openapi.json",
+    "/api/docs.json",
+    "/api/docs",
+    "/docs/api"
   ]
 }

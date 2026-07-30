@@ -7,8 +7,17 @@ edge_origin="${endpoint%/browser-mcp}"
 resource_metadata_url="${edge_origin}/.well-known/oauth-protected-resource/browser-mcp"
 server_metadata_url="${edge_origin}/.well-known/oauth-authorization-server/browser-mcp"
 operator_secret="${BROWSER_MCP_OAUTH_OPERATOR_SECRET:-}"
+auth_mode="${BROWSER_MCP_AUTH_MODE:-oauth}"
 content_type='Content-Type: application/json'
 accept='Accept: application/json, text/event-stream'
+
+case "$auth_mode" in
+  oauth | none) ;;
+  *)
+    echo "BROWSER_MCP_AUTH_MODE must be oauth or none" >&2
+    exit 2
+    ;;
+esac
 
 for dependency in curl jq openssl python3; do
   command -v "$dependency" >/dev/null || {
@@ -21,16 +30,19 @@ session_id=''
 access_token=''
 refresh_token=''
 
-rpc() {
-  auth_args=()
+curl_with_auth() {
   if [[ -n "$access_token" ]]; then
-    auth_args=(-H "Authorization: Bearer $access_token")
+    curl "$@" -H "Authorization: Bearer $access_token"
+  else
+    curl "$@"
   fi
-  curl --fail-with-body --silent --show-error \
+}
+
+rpc() {
+  curl_with_auth --fail-with-body --silent --show-error \
     --connect-timeout 10 \
     --max-time 90 \
     -X POST \
-    "${auth_args[@]}" \
     -H "$content_type" \
     -H "$accept" \
     --data-binary "$1" \
@@ -197,6 +209,17 @@ oauth_login() {
   test "$replay_status" = '400'
 }
 
+verify_no_auth() {
+  echo "checking anonymous initialize"
+  anonymous_initialize="$(
+    rpc '{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"browser-mcp-no-auth-verifier","version":"1.0"}}}'
+  )"
+  jq -e '
+    .result.protocolVersion == "2025-11-25" and
+    (.result.capabilities.tools | type == "object")
+  ' <<<"$anonymous_initialize" >/dev/null
+}
+
 cleanup() {
   if [[ -z "$session_id" ]]; then
     return
@@ -234,35 +257,37 @@ curl --fail-with-body --silent --show-error \
   "$health_url" |
   jq -e '.ok == true' >/dev/null
 
-oauth_login
+if [[ "$auth_mode" == 'oauth' ]]; then
+  oauth_login
+else
+  verify_no_auth
+fi
 
-echo "checking authenticated Streamable HTTP negotiation"
+echo "checking Streamable HTTP negotiation"
 sse_status="$(
-  curl --silent --show-error \
+  curl_with_auth --silent --show-error \
     --connect-timeout 10 \
     --max-time 20 \
     -o /dev/null \
     -w '%{http_code}' \
-    -H "Authorization: Bearer $access_token" \
     -H 'Accept: text/event-stream' \
     "$endpoint"
 )"
 if [[ "$sse_status" != '405' ]]; then
-  echo "authenticated SSE GET returned HTTP $sse_status, expected 405" >&2
+  echo "SSE GET returned HTTP $sse_status, expected 405" >&2
   exit 1
 fi
 plain_get_status="$(
-  curl --silent --show-error \
+  curl_with_auth --silent --show-error \
     --connect-timeout 10 \
     --max-time 20 \
     -o /dev/null \
     -w '%{http_code}' \
-    -H "Authorization: Bearer $access_token" \
     -H 'Accept: application/json' \
     "$endpoint"
 )"
 if [[ "$plain_get_status" != '406' ]]; then
-  echo "authenticated JSON-only GET returned HTTP $plain_get_status, expected 406" >&2
+  echo "JSON-only GET returned HTTP $plain_get_status, expected 406" >&2
   exit 1
 fi
 
@@ -276,13 +301,12 @@ jq -e '
 ' <<<"$initialize" >/dev/null
 
 initialized_status="$(
-  curl --silent --show-error \
+  curl_with_auth --silent --show-error \
     --connect-timeout 10 \
     --max-time 20 \
     -o /dev/null \
     -w '%{http_code}' \
     -X POST \
-    -H "Authorization: Bearer $access_token" \
     -H "$content_type" \
     -H "$accept" \
     --data-binary '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
@@ -292,18 +316,22 @@ test "$initialized_status" = '202'
 
 echo "checking tools/list"
 tools="$(rpc '{"jsonrpc":"2.0","id":2,"method":"tools/list"}')"
-jq -e '
+jq -e --arg auth_mode "$auth_mode" '
   ([.result.tools[].name] | sort) ==
   ["browser_act", "browser_state"] and
   all(.result.tools[];
-    .securitySchemes[0].type == "oauth2" and
-    (.securitySchemes[0].scopes | index("mcp:tools"))
+    if $auth_mode == "oauth" then
+      .securitySchemes[0].type == "oauth2" and
+      (.securitySchemes[0].scopes | index("mcp:tools"))
+    else
+      .securitySchemes == [{"type":"noauth"}]
+    end
   )
 ' <<<"$tools" >/dev/null
 
-echo "checking browser_act against the isolated harmless form profile"
+echo "checking browser_act against the approved Tailscale application profile"
 start="$(
-  rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"browser_act","arguments":{"workflow_id":"smoke-test","intent":"open a harmless test form","actions":[{"type":"start","initial_url":"https://httpbingo.org/forms/post"}]}}}'
+  rpc '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"browser_act","arguments":{"workflow_id":"fiducia-applications","intent":"open the approved startup form without submitting it","actions":[{"type":"start","initial_url":"https://tailscale.com/startup-program"}]}}}'
 )"
 jq -e '.result.isError == false' <<<"$start" >/dev/null
 session_id="$(jq -er '.result.structuredContent.session_id' <<<"$start")"
@@ -327,7 +355,7 @@ state_payload="$(
 state_result="$(rpc "$state_payload")"
 if ! jq -e '
   .result.isError == false and
-  (.result.structuredContent.page.url | startswith("https://httpbingo.org/forms/post")) and
+  (.result.structuredContent.page.url | startswith("https://tailscale.com/startup-program")) and
   (.result.structuredContent.page.title | type == "string") and
   (.result.structuredContent.accessibility_snapshot.role == "document") and
   (.result.structuredContent.forms | length > 0) and
@@ -485,4 +513,4 @@ close_payload="$(
 rpc "$close_payload" | jq -e '.result.isError == false' >/dev/null
 session_id=''
 
-echo "browser MCP end-to-end verification passed: $endpoint"
+echo "browser MCP end-to-end verification passed ($auth_mode): $endpoint"
