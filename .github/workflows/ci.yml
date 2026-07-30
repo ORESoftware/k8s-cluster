@@ -15,7 +15,7 @@ jobs:
   hygiene:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: No build artifacts or env files tracked
         run: |
           bad=$(git ls-files | grep -E '(^|/)(target/|\.direnv/|\.env$|result$)' || true)
@@ -23,9 +23,29 @@ jobs:
       - name: Cargo manifest parses
         run: cargo metadata --no-deps --format-version 1 > /dev/null
   fmt:
-    # Informational: full builds require the k8s-cluster superproject (path deps).
+    # `cargo fmt --check` parses sources and needs no dependency resolution, so
+    # unlike `cargo test` it works in a standalone checkout. It is therefore a
+    # real gate, not informational — verified by running it in a clone with no
+    # sibling `libs/` present.
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - run: cargo fmt --check
+
+# ── NOT COVERED HERE: the main crate's test suite ────────────────────────────
+# `cargo test` at the repo root cannot run in this workflow. The crate has three
+# path dependencies that resolve outside the repo:
+#
+#   dd-telemetry           ../../libs/telemetry-rs
+#   dd-wal-consumer        ../../libs/wal-consumer-rs
+#   dd-nats-subject-defs   ../../libs/nats/subject-defs/generated/rust
+#
+# They live in ORESoftware/k8s-libs-and-shared-defs — a different org, so the
+# per-repo GITHUB_TOKEN cannot read them. Wiring this up needs a cross-org
+# credential (PAT or deploy key) as a secret, plus a checkout of that repo at
+# `$GITHUB_WORKSPACE/../../libs` and its submodules.
+#
+# The gap is worth naming plainly: the webhook signature verification and
+# replay-protection tests are part of that suite, so a regression in either
+# currently merges green. Until the credential exists, run `cargo test` locally
+# from a checkout that has the sibling `libs/` tree before trusting a green PR.
