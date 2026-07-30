@@ -1,0 +1,65 @@
+name: Contact compiler fixes
+
+on:
+  pull_request:
+    paths:
+      - "src/contact/**"
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Apply compiler-guided fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          http = Path("src/contact/http.rs")
+          text = http.read_text()
+          old = "use super::contracts::{ContactJob, ContactOutcome, ContactOutcomeClass, ContactProviderKind};"
+          new = "use super::contracts::{ContactJob, ContactOutcome, ContactOutcomeClass};\n#[cfg(test)]\nuse super::contracts::ContactProviderKind;"
+          if old not in text:
+              raise SystemExit("HTTP import anchor not found")
+          http.write_text(text.replace(old, new, 1))
+
+          sendgrid = Path("src/contact/sendgrid.rs")
+          text = sendgrid.read_text()
+          old = "        status if decision.retryable => ContactOutcomeClass::TransientProviderFailure,"
+          new = "        _ if decision.retryable => ContactOutcomeClass::TransientProviderFailure,"
+          if old not in text:
+              raise SystemExit("SendGrid match anchor not found")
+          sendgrid.write_text(text.replace(old, new, 1))
+
+          twilio = Path("src/contact/twilio.rs")
+          text = twilio.read_text()
+          old = '''        assert_eq!(
+              outcome.provider_code.as_deref(),
+              Some(fixture_sid("SM").as_str())
+          );'''
+          new = '''        let expected_message_sid = fixture_sid("SM");
+          assert_eq!(
+              outcome.provider_code.as_deref(),
+              Some(expected_message_sid.as_str())
+          );'''
+          if old not in text:
+              raise SystemExit("Twilio SID assertion anchor not found")
+          twilio.write_text(text.replace(old, new, 1))
+          PY
+          cargo fmt
+      - name: Commit compiler fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/contact
+          git commit -m "Fix contact delivery compiler findings"
+          git push origin "HEAD:${{ github.head_ref }}"
