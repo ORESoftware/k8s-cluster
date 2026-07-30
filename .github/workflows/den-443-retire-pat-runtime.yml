@@ -29,7 +29,7 @@ jobs:
         with:
           ref: agent/den-443-remove-pat-runtime-propagation
           fetch-depth: 0
-          persist-credentials: true
+          persist-credentials: false
       - name: Remove the compromised PAT operation and environment injection
         run: |
           set -euo pipefail
@@ -49,6 +49,7 @@ jobs:
               for needle in (option, env_line, case_start)
           )
           if already_removed:
+              Path('/tmp/den-443-already-removed').write_text('true\n')
               raise SystemExit(0)
           for needle, label in [
               (option, 'workflow-dispatch option'),
@@ -76,15 +77,68 @@ jobs:
 
           path.write_text(source)
           PY
-      - name: Commit only the maintenance workflow patch
+      - name: Create an unattached Git commit object for the reviewed patch
+        if: hashFiles('/tmp/den-443-already-removed') == ''
+        env:
+          GH_API_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          git add .github/workflows/remote-k8s-maintenance.yml
-          if git diff --cached --quiet; then
-            echo 'PAT runtime propagation is already removed.'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'DEN-443 remove PAT runtime propagation'
-          git push origin HEAD:agent/den-443-remove-pat-runtime-propagation
+          api="https://api.github.com/repos/${REPOSITORY}"
+          base_commit="$(git rev-parse HEAD)"
+          base_tree="$(git show -s --format=%T "$base_commit")"
+          encoded="$(base64 -w0 .github/workflows/remote-k8s-maintenance.yml)"
+
+          blob_sha="$(
+            jq -n --arg content "$encoded" '{content:$content,encoding:"base64"}' \
+              | curl --fail-with-body --silent --show-error \
+                  -X POST \
+                  -H 'Accept: application/vnd.github+json' \
+                  -H "Authorization: Bearer ${GH_API_TOKEN}" \
+                  -H 'X-GitHub-Api-Version: 2022-11-28' \
+                  "${api}/git/blobs" \
+                  --data-binary @- \
+              | jq -er '.sha'
+          )"
+          tree_sha="$(
+            jq -n \
+              --arg base_tree "$base_tree" \
+              --arg blob_sha "$blob_sha" \
+              '{base_tree:$base_tree,tree:[{path:".github/workflows/remote-k8s-maintenance.yml",mode:"100644",type:"blob",sha:$blob_sha}]}' \
+              | curl --fail-with-body --silent --show-error \
+                  -X POST \
+                  -H 'Accept: application/vnd.github+json' \
+                  -H "Authorization: Bearer ${GH_API_TOKEN}" \
+                  -H 'X-GitHub-Api-Version: 2022-11-28' \
+                  "${api}/git/trees" \
+                  --data-binary @- \
+              | jq -er '.sha'
+          )"
+          commit_sha="$(
+            jq -n \
+              --arg message 'DEN-443 remove PAT runtime propagation' \
+              --arg tree "$tree_sha" \
+              --arg parent "$base_commit" \
+              '{message:$message,tree:$tree,parents:[$parent]}' \
+              | curl --fail-with-body --silent --show-error \
+                  -X POST \
+                  -H 'Accept: application/vnd.github+json' \
+                  -H "Authorization: Bearer ${GH_API_TOKEN}" \
+                  -H 'X-GitHub-Api-Version: 2022-11-28' \
+                  "${api}/git/commits" \
+                  --data-binary @- \
+              | jq -er '.sha'
+          )"
+
+          echo "detached_commit_sha=${commit_sha}"
+          printf '%s\n' "$commit_sha" > /tmp/den-443-detached-commit-sha
+      - name: Upload detached commit evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: den-443-detached-maintenance-commit
+          path: |
+            /tmp/den-443-detached-commit-sha
+            .github/workflows/remote-k8s-maintenance.yml
+          if-no-files-found: warn
+          retention-days: 2
