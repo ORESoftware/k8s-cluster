@@ -125,15 +125,18 @@ bundles above.
 
 ## Delivery sequence
 
-1. Merge and release `ORESoftware/ai-agent-coordinator.rs`.
-2. Let its OCI workflow open the draft immutable-image promotion PR; validate
+1. Provision the two runtime secret bundles and promotion credentials above,
+   and rotate the private-submodule CI token if its checks are not green.
+2. Merge and release `ORESoftware/ai-agent-coordinator.rs`.
+3. Let its OCI workflow open the draft immutable-image promotion PR; validate
    and merge that PR.
-3. Merge the service instrumentation PRs and review their automatically opened
-   draft submodule-promotion PRs.
-4. Provision the two runtime secret bundles and promotion credentials above.
-5. Merge this repository's GitOps PR into `dev`.
-6. Verify Alertmanager, Loki ruler, OTEL span metrics, the coordinator, and the
-   runner are healthy before enabling repository-specific alert thresholds.
+4. Merge this repository's GitOps PR into `dev`, which installs the
+   repository-dispatch receiver before any upstream tries to call it.
+5. Merge the service instrumentation PRs, then review and merge the
+   automatically opened draft submodule-promotion PRs.
+6. Verify Alertmanager, Loki ruler, OTEL span metrics, the coordinator, the
+   runner, and each promoted workload are healthy before enabling
+   repository-specific alert thresholds.
 
 No workflow in this design merges a PR automatically. Argo CD observes only
 reviewed manifests after their PRs have merged.
