@@ -19,6 +19,7 @@ let
       kubectl
       kustomize
       kubernetes-helm
+      nix
       nixfmt
       nodejs_22
       opentofu
