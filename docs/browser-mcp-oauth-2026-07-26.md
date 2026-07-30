@@ -4,18 +4,11 @@ Date: 2026-07-26
 
 ## Outcome
 
-`dd-browser-mcp-rs` implements a complete OAuth path without depending on a
-user-entered static resource-server bearer. Production is temporarily running
-the same service in explicit no-auth mode for ChatGPT custom MCP compatibility.
+`dd-browser-mcp-rs` now implements the OAuth path used by ChatGPT custom MCP
+apps instead of depending on a user-entered static resource-server bearer or an
+anonymous MCP endpoint.
 
-Temporary production posture, approved on 2026-07-26: both public edges set
-`BROWSER_MCP_REQUIRE_AUTH=false`, so anonymous `initialize`, `tools/list`, and
-tool calls are accepted. OAuth routes are dormant while disabled; the
-implementation and secret wiring remain ready for a one-line re-enable. The
-reviewed Fiducia hostname ceiling, SSRF controls, rate limits, and
-consequential-action blockers remain mandatory.
-
-When authentication is enabled, the implementation provides:
+The implementation provides:
 
 - HTTP 401 for an unauthenticated MCP request, with an RFC 6750 Bearer
   challenge containing RFC 9728 `resource_metadata` and the required scopes.
@@ -163,7 +156,7 @@ The deployment remains a prebuilt distroless image, pinned to the OCI index
 published from this branch:
 
 ```text
-ghcr.io/oresoftware/dd-browser-mcp-rs@sha256:e07da89e3489442464df4730d78006ec83ae8ddcd38d966826f27031b6de4b14
+ghcr.io/oresoftware/dd-browser-mcp-rs@sha256:f54dd077bae876ac36b2ddd8676ce0bc8cb6f6d31df063c5c526e873048b74d7
 ```
 
 It does not mount the shared EC2 checkout and does not run Cargo in the pod.
@@ -219,8 +212,8 @@ refresh rotation                200
 old refresh-token replay        400 invalid_grant
 ```
 
-A historical pre-anonymous integration run used the OAuth access token against
-the real `dd-web-scraper` service through a local Kubernetes port-forward:
+A second integration run used the OAuth access token against the real
+`dd-web-scraper` service through a local Kubernetes port-forward:
 
 ```text
 browser_act -> https://benefactor.cc/   success
@@ -236,24 +229,32 @@ The deployment is pinned to an immutable image digest. Publishing source to
 `dev` builds the image but does not move the deployment automatically: wait for
 the browser-runtime image workflow, resolve the digest for the newly published
 browser MCP image, commit that digest to the Deployment, and then let ArgoCD
-reconcile both clusters. After both applications are Synced/Healthy, run the
-repository verifier in the mode declared by the Deployment. The current
-no-auth commands do not need or read the operator secret:
+reconcile both clusters. After both applications are Synced/Healthy, retrieve
+the operator value without printing it and run the repository verifier against
+each edge:
 
 ```bash
-BROWSER_MCP_AUTH_MODE=none \
-  scripts/verify-browser-mcp.sh https://98.90.186.114/browser-mcp
-BROWSER_MCP_AUTH_MODE=none \
-  scripts/verify-browser-mcp.sh \
+export BROWSER_MCP_OAUTH_OPERATOR_SECRET="$(
+  aws secretsmanager get-secret-value \
+    --profile dd-codex \
+    --region us-east-1 \
+    --secret-id dd/remote-dev/browser-mcp-secrets \
+    --query SecretString \
+    --output text |
+  jq -r .BROWSER_MCP_OAUTH_OPERATOR_SECRET
+)"
+
+scripts/verify-browser-mcp.sh https://98.90.186.114/browser-mcp
+scripts/verify-browser-mcp.sh \
   https://hello.95-217-171-250.sslip.io/browser-mcp
+
+unset BROWSER_MCP_OAUTH_OPERATOR_SECRET
 ```
 
-In no-auth mode the verifier checks anonymous MCP, real `browser_act`,
-`browser_state`, the confirmation boundary, off-allowlist rejection, and
-session cleanup. After setting `BROWSER_MCP_REQUIRE_AUTH=true`, use
-`BROWSER_MCP_AUTH_MODE=oauth` with the operator secret supplied out of band to
-exercise discovery, dynamic registration, PKCE, consent, token rotation, and
-authenticated MCP. The verifier never prints credentials.
+The verifier performs the complete discovery, dynamic registration, PKCE,
+operator consent, token, authenticated MCP, real `browser_act`,
+`browser_state`, off-allowlist rejection, and session-cleanup sequence. It
+never prints access, refresh, signing, worker, or operator secrets.
 
 ## Live validation
 
@@ -262,35 +263,35 @@ plane and Playwright worker from `agent/browser-mcp-oauth`. The GitOps
 manifests pin both runtime images by OCI index digest:
 
 ```text
-dd-browser-mcp-rs: sha256:e07da89e3489442464df4730d78006ec83ae8ddcd38d966826f27031b6de4b14
+dd-browser-mcp-rs: sha256:f54dd077bae876ac36b2ddd8676ce0bc8cb6f6d31df063c5c526e873048b74d7
 dd-web-scraper:    sha256:fec450d14e203d7e747b9eb8046c18e48c8e617798228ac914296a994decde1f
 ```
 
 The `dd-browser-mcp-rs` ArgoCD Applications reported `Synced/Healthy` on AWS and
-the five-node Hetzner cluster, with two ready no-auth replicas and zero restarts
-in each cluster. The Playwright worker was Ready after verification. The full
-no-auth verifier passed independently through both public load-balanced URLs.
-The passing sequence covered:
+the five-node Hetzner cluster, with two ready OAuth replicas and zero restarts
+in each cluster. The Playwright worker was Ready with zero active sessions out
+of a 12-session limit after verification. The full verifier passed
+independently through both public load-balanced URLs. The passing sequence
+covered:
 
 - trusted public TLS and `/healthz`;
-- anonymous `initialize` and `tools/list` returning `200`;
-- `tools/list` advertising `{"type":"noauth"}` for both tools;
-- anonymous `GET` with `Accept: text/event-stream` returning `405`;
-- anonymous JSON-only `GET` returning `406`;
+- unauthenticated MCP `401` with the RFC 9728 discovery challenge;
+- protected-resource and authorization-server metadata;
+- DCR, PKCE S256, operator consent, audience-bound access token, and refresh
+  token issuance, rotation, and consumed-token replay rejection;
+- authenticated `GET` with `Accept: text/event-stream` returning `405`;
+- authenticated JSON-only `GET` returning `406`;
 - `initialize`, `notifications/initialized` returning `202`, and `tools/list`
   returning exactly `browser_act` and `browser_state`;
-- a harmless `browser_act` start on the approved Tailscale startup form,
+- a harmless `browser_act` start on `https://httpbingo.org/forms/post`,
   `browser_state` returning the page, accessibility snapshot, visible text,
   forms, fields, buttons, links, validation errors, and downloads;
 - typing one harmless test value, then proving an explicit `submit` stops at
   `needs_confirmation` without final submission;
-- rejection of navigation to a hostname outside the deployment allowlist;
+- a real Chromium regression test uploading a five-byte text fixture entirely in
+  memory and observing the selected filename and byte count;
+- rejection of navigation to a hostname outside the deployment allowlist.
 - session cleanup with zero browser sessions left behind.
-
-Before no-auth was enabled, the same image line also passed OAuth discovery,
-dynamic registration, PKCE S256, operator consent, audience-bound access-token
-issuance, refresh rotation, replay rejection, and authenticated MCP on both
-edges.
 
 The existing internal browser grid was also exercised on both clouds.
 Playwright 1.56.0, Puppeteer 24.43.1, and Selenium 4.44.0 each navigated
@@ -313,8 +314,8 @@ Preferred secure rollback:
 2. Before merge, point both ArgoCD Applications back to `dev`; after merge,
    revert the browser-MCP change on `dev`.
 3. Let both ArgoCD Applications reconcile the rollback.
-4. If restoring OAuth, rotate the operator secret first, set
-   `BROWSER_MCP_REQUIRE_AUTH=true`, and run the verifier in `oauth` mode.
+4. Re-run the historical no-auth verifier only if the operator explicitly
+   accepts restoring anonymous browser access.
 
 Do not restore the stale `cargo run` plus hostPath deployment. Do not update the
 shared node checkout; it remains used by many unrelated deployments.
