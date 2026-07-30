@@ -6,6 +6,22 @@ metadata-derived classifications are `present-unverified`, unknowns stay in the
 review queue, and dependency edges are only `verified` when their source
 evidence and immutable pin are recorded.
 
+DEN-630 adds `catalog/applications.json`, the canonical inventory of tracked
+Argo CD `Application` declarations under `remote/argocd`. The generated catalog
+groups every declaration by `metadata.name`, records duplicate names without
+silently choosing a winner, and captures source, destination, project, and sync
+policy facts. Its versioned JSON Schema is
+`catalog/applications.schema.json`.
+
+The application check is deliberately strict:
+
+- any tracked Application manifest change must regenerate the catalog;
+- duplicate names become reviewable catalog drift;
+- declarations that tell Argo CD to render a path inside a git submodule fail
+  CI; and
+- direct upstream application repositories remain valid, keeping submodules
+  as inventory pins rather than render roots.
+
 ## Data boundary
 
 This repository is public. It may contain:
@@ -43,6 +59,15 @@ Run the complete local gate:
 
 ```console
 nix develop -c agent-check all
+```
+
+Regenerate and verify the Argo CD Application catalog:
+
+```console
+nix develop -c python tools/application_catalog.py generate \
+  catalog/applications.json
+nix develop -c python tools/application_catalog.py check \
+  catalog/applications.json
 ```
 
 Collect the current public-safe inventory:

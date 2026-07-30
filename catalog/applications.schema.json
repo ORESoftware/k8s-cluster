@@ -1,0 +1,279 @@
+{
+  "$id": "https://github.com/ORESoftware/k8s-cluster/catalog/applications.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "const": "./applications.schema.json"
+    },
+    "applications": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "declaration_count": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "declarations": {
+            "items": {
+              "$ref": "#/$defs/declaration"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "duplicate_name": {
+            "type": "boolean"
+          },
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "declaration_count",
+          "declarations",
+          "duplicate_name",
+          "name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "policy_violations": {
+      "additionalProperties": false,
+      "properties": {
+        "gitlink_render_paths": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "application": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "document_index": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "gitlink": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "manifest_path": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "source_index": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "source_path": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "application",
+              "document_index",
+              "gitlink",
+              "manifest_path",
+              "source_index",
+              "source_path"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "gitlink_render_paths"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "scope": {
+      "additionalProperties": false,
+      "properties": {
+        "governing_issue": {
+          "const": "DEN-630"
+        },
+        "manifest_root": {
+          "const": "remote/argocd"
+        },
+        "source": {
+          "const": "tracked Argo CD Application manifests"
+        }
+      },
+      "required": [
+        "governing_issue",
+        "manifest_root",
+        "source"
+      ],
+      "type": "object"
+    },
+    "summary": {
+      "additionalProperties": false,
+      "properties": {
+        "application_documents": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "applications": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "default_destination_namespace_declarations": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "default_project_declarations": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "duplicate_names": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "gitlink_render_path_violations": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "in_repo_source_declarations": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "application_documents",
+        "applications",
+        "default_destination_namespace_declarations",
+        "default_project_declarations",
+        "duplicate_names",
+        "gitlink_render_path_violations",
+        "in_repo_source_declarations"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "$schema",
+    "applications",
+    "policy_violations",
+    "schema_version",
+    "scope",
+    "summary"
+  ],
+  "title": "DEN-630 Argo CD Application catalog",
+  "type": "object",
+  "$defs": {
+    "declaration": {
+      "additionalProperties": false,
+      "properties": {
+        "application_namespace": {
+          "type": "string"
+        },
+        "destination": {
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "namespace": {
+              "type": "string"
+            },
+            "server": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "namespace",
+            "server"
+          ],
+          "type": "object"
+        },
+        "document_index": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "manifest_path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "chart": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "repo_url": {
+                "type": "string"
+              },
+              "target_revision": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "chart",
+              "path",
+              "repo_url",
+              "target_revision"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "sync_policy": {
+          "additionalProperties": false,
+          "properties": {
+            "automated": {
+              "type": "boolean"
+            },
+            "create_namespace": {
+              "type": "boolean"
+            },
+            "prune": {
+              "type": "boolean"
+            },
+            "self_heal": {
+              "type": "boolean"
+            },
+            "sync_options": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "automated",
+            "create_namespace",
+            "prune",
+            "self_heal",
+            "sync_options"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "application_namespace",
+        "destination",
+        "document_index",
+        "manifest_path",
+        "project",
+        "sources",
+        "sync_policy"
+      ],
+      "type": "object"
+    }
+  }
+}

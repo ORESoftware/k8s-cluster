@@ -39,8 +39,16 @@ root_checks() {
 }
 
 catalog_static_checks() {
-	ruff check tools/repository_catalog.py tools/test_repository_catalog.py
-	ruff format --check tools/repository_catalog.py tools/test_repository_catalog.py
+	ruff check \
+		tools/application_catalog.py \
+		tools/repository_catalog.py \
+		tools/test_application_catalog.py \
+		tools/test_repository_catalog.py
+	ruff format --check \
+		tools/application_catalog.py \
+		tools/repository_catalog.py \
+		tools/test_application_catalog.py \
+		tools/test_repository_catalog.py
 	nixfmt --check flake.nix .nix/dev-shell.nix
 	actionlint .github/workflows/repository-catalog.yml
 }
@@ -48,11 +56,20 @@ catalog_static_checks() {
 unit_tests() {
 	(
 		cd tools
-		python -m unittest -v test_repository_catalog.py
+		python -m unittest -v \
+			test_application_catalog.py \
+			test_repository_catalog.py
 	)
 }
 
 validate_fixture() {
+	check-jsonschema \
+		--schemafile catalog/applications.schema.json \
+		catalog/applications.json
+	python tools/application_catalog.py validate \
+		catalog/applications.json
+	python tools/application_catalog.py check \
+		catalog/applications.json
 	python tools/repository_catalog.py validate \
 		catalog/repositories.json \
 		--public-safe \
@@ -65,6 +82,9 @@ validate_fixture() {
 
 build_artifacts() {
 	mkdir -p artifacts
+	python tools/application_catalog.py report \
+		catalog/applications.json \
+		--output artifacts/application-catalog.md
 	python tools/repository_catalog.py diff \
 		catalog/repositories.json \
 		catalog/repositories.json \
