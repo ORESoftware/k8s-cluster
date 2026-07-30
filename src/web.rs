@@ -38,6 +38,7 @@ use maud::{html, Markup, PreEscaped, DOCTYPE};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::time::{sleep, timeout, Duration};
+use tower_http::trace::TraceLayer;
 use tracing::info;
 
 use crate::config::Directory;
@@ -79,6 +80,7 @@ pub async fn run(cfg: Arc<WebConfig>) -> Result<()> {
         .route("/proxy.pac", get(proxy_pac))
         .route("/healthz", get(|| async { "ok" }))
         .layer(middleware::from_fn_with_state(cfg.clone(), require_token))
+        .layer(TraceLayer::new_for_http())
         .with_state(cfg.clone());
 
     let listener = TcpListener::bind(&cfg.ui_listen).await?;
@@ -357,8 +359,7 @@ fn ct_str_eq(a: &str, b: &str) -> bool {
 async fn require_token(State(cfg): State<AppState>, req: Request, next: Next) -> Response {
     if let Some(expected) = cfg.ui_token.as_deref() {
         let path = req.uri().path();
-        let sensitive =
-            matches!(path, "/" | "/api/status" | "/ws/stats" | "/api/fetch");
+        let sensitive = matches!(path, "/" | "/api/status" | "/ws/stats" | "/api/fetch");
         if sensitive && !request_token_ok(&req, expected) {
             return (
                 StatusCode::UNAUTHORIZED,

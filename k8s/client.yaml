@@ -41,6 +41,9 @@ spec:
             - { name: TOR_HOPS, value: "3" }
             - { name: TOR_DOCS_DIR, value: "/docs" }
             - { name: RUST_LOG, value: "info" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://dd-otel-collector.observability.svc.cluster.local:4317" }
+            - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: "grpc" }
+            - { name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=oresoftware,deployment.environment.name=remote-dev,github.repository=ORESoftware/tor-server.rs" }
           ports:
             - { name: socks, containerPort: 9050 }
             - { name: ui, containerPort: 9060 }

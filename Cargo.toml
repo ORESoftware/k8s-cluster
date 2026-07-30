@@ -32,8 +32,9 @@ base64 = "0.22"
 toml = "0.8"
 anyhow = "1"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+fiducia-telemetry = { git = "https://github.com/fiducia-cloud/fiducia-telemetry.rs", tag = "v0.2.1" }
 axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.7", features = ["trace"] }
 maud = "0.27"
 pulldown-cmark = { version = "0.12", default-features = false, features = ["html"] }
 

@@ -47,6 +47,9 @@ spec:
             - { name: TOR_RELAY_PEERS, value: "tor-relay-a.anon-proxy.svc.cluster.local:9001,tor-relay-b.anon-proxy.svc.cluster.local:9001,tor-relay-c.anon-proxy.svc.cluster.local:9001" }
             - { name: TOR_EXIT_DENY_PORTS, value: "25" }
             - { name: RUST_LOG, value: "info" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://dd-otel-collector.observability.svc.cluster.local:4317" }
+            - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: "grpc" }
+            - { name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=oresoftware,deployment.environment.name=remote-dev,github.repository=ORESoftware/tor-server.rs" }
           ports:
             - { name: onion, containerPort: 9001 }
           readinessProbe:
@@ -128,6 +131,9 @@ spec:
             - { name: TOR_RELAY_PEERS, value: "tor-relay-a.anon-proxy.svc.cluster.local:9001,tor-relay-b.anon-proxy.svc.cluster.local:9001,tor-relay-c.anon-proxy.svc.cluster.local:9001" }
             - { name: TOR_EXIT_DENY_PORTS, value: "25" }
             - { name: RUST_LOG, value: "info" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://dd-otel-collector.observability.svc.cluster.local:4317" }
+            - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: "grpc" }
+            - { name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=oresoftware,deployment.environment.name=remote-dev,github.repository=ORESoftware/tor-server.rs" }
           ports:
             - { name: onion, containerPort: 9001 }
           readinessProbe:
@@ -209,6 +215,9 @@ spec:
             - { name: TOR_RELAY_PEERS, value: "tor-relay-a.anon-proxy.svc.cluster.local:9001,tor-relay-b.anon-proxy.svc.cluster.local:9001,tor-relay-c.anon-proxy.svc.cluster.local:9001" }
             - { name: TOR_EXIT_DENY_PORTS, value: "25" }
             - { name: RUST_LOG, value: "info" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://dd-otel-collector.observability.svc.cluster.local:4317" }
+            - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: "grpc" }
+            - { name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=oresoftware,deployment.environment.name=remote-dev,github.repository=ORESoftware/tor-server.rs" }
           ports:
             - { name: onion, containerPort: 9001 }
           readinessProbe:
