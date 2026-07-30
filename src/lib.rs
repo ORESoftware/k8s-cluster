@@ -61,6 +61,8 @@ pub use server::run;
 
 #[cfg(test)]
 mod signal_postgres_tests;
+#[cfg(test)]
+mod signal_prekey_publish_postgres_tests;
 
 #[cfg(test)]
 mod architecture_tests {
