@@ -47,10 +47,24 @@ impl SupabaseIdentity {
 #[derive(Debug, Deserialize)]
 struct SupabaseClaims {
     sub: String,
+    /// Only ordinary signed-in users may cross this boundary. Requiring the
+    /// role explicitly also rejects handcrafted legacy/service tokens whose
+    /// audience happens to be `authenticated`.
+    #[serde(default)]
+    role: String,
+    /// Every current user access token is tied to a revocable Auth session.
+    #[serde(default)]
+    session_id: String,
+    #[serde(default)]
+    is_anonymous: bool,
     /// Supabase raises this claim to `aal2` only after a verified MFA
     /// challenge. Passwordless email OTP alone establishes `aal1`.
     #[serde(default)]
     aal: Option<String>,
+    /// Product policy is stricter than AAL2 alone: the first factor must be an
+    /// email OTP or magic link, never a password.
+    #[serde(default)]
+    amr: Vec<AuthenticationMethod>,
     #[serde(default)]
     email: Option<String>,
     /// Supabase places email confirmation state here. It is a top-level claim on
@@ -68,10 +82,25 @@ struct UserMetadata {
     email_verified: Option<bool>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct AuthenticationMethod {
+    #[serde(default)]
+    method: String,
+}
+
 impl SupabaseClaims {
     /// Whether the current access token proves the mandatory second factor.
     fn has_aal2(&self) -> bool {
         self.aal.as_deref() == Some("aal2")
+    }
+
+    fn has_passwordless_first_factor(&self) -> bool {
+        let has_password = self.amr.iter().any(|entry| entry.method == "password");
+        let has_passwordless_email = self
+            .amr
+            .iter()
+            .any(|entry| matches!(entry.method.as_str(), "otp" | "magiclink" | "email/signup"));
+        !has_password && has_passwordless_email
     }
 
     /// Whether Supabase has confirmed the caller actually controls this address.
@@ -135,6 +164,7 @@ impl SupabaseVerifier {
             validation.set_issuer(&[issuer.as_str()]);
         }
         validation.validate_exp = true;
+        validation.validate_nbf = true;
         // `aud` is "authenticated" on every Supabase project, so it identifies
         // nothing on its own; `iss` is what pins the token to *our* project.
         // SupabaseConfig::is_enabled refuses to build a verifier without one, so
@@ -173,7 +203,12 @@ impl SupabaseVerifier {
                 .map_err(|_| ServiceError::Unauthorized)?
                 .claims
         };
-        if !claims.has_aal2() {
+        if !claims.has_aal2()
+            || claims.role != "authenticated"
+            || claims.session_id.trim().is_empty()
+            || claims.is_anonymous
+            || !claims.has_passwordless_first_factor()
+        {
             return Err(ServiceError::Unauthorized);
         }
         let subject = claims.sub.trim().to_string();
@@ -367,7 +402,14 @@ mod tests {
         let mut body = serde_json::json!({
             "sub": "00000000-0000-4000-8000-000000000001",
             "email": "listener@example.test",
+            "role": "authenticated",
+            "session_id": "10000000-0000-4000-8000-000000000001",
+            "is_anonymous": false,
             "aal": "aal2",
+            "amr": [
+                {"method": "otp", "timestamp": 1},
+                {"method": "totp", "timestamp": 2}
+            ],
             "aud": "authenticated",
             "iss": TEST_ISSUER,
             "exp": exp,
@@ -432,7 +474,13 @@ mod tests {
     fn claims(email: &str, verified: Option<bool>, meta_verified: Option<bool>) -> SupabaseClaims {
         SupabaseClaims {
             sub: "user-1".to_string(),
+            role: "authenticated".to_string(),
+            session_id: "session-1".to_string(),
+            is_anonymous: false,
             aal: Some("aal2".to_string()),
+            amr: vec![super::AuthenticationMethod {
+                method: "otp".to_string(),
+            }],
             email: Some(email.to_string()),
             email_verified: verified,
             user_metadata: meta_verified.map(|v| UserMetadata {
@@ -473,6 +521,39 @@ mod tests {
                 "tokens below AAL2 must fail closed"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn password_first_factor_and_missing_amr_are_rejected() {
+        let verifier = SupabaseVerifier::from_config(&pinned_config()).expect("verifier");
+        let http = reqwest::Client::new();
+
+        for amr in [
+            serde_json::json!([{"method": "password", "timestamp": 1}, {"method": "totp", "timestamp": 2}]),
+            serde_json::json!([]),
+        ] {
+            let mut body = token_body(Some(true));
+            body["amr"] = amr;
+            assert!(
+                verifier.verify(&http, &hs256_token(body)).await.is_err(),
+                "AAL2 must not authorize a password-first or methodless session"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn passwordless_magic_link_plus_mfa_is_accepted() {
+        let verifier = SupabaseVerifier::from_config(&pinned_config()).expect("verifier");
+        let http = reqwest::Client::new();
+        let mut body = token_body(Some(true));
+        body["amr"] = serde_json::json!([
+            {"method": "magiclink", "timestamp": 1},
+            {"method": "totp", "timestamp": 2}
+        ]);
+        verifier
+            .verify(&http, &hs256_token(body))
+            .await
+            .expect("passwordless AAL2 token verifies");
     }
 
     #[test]

@@ -106,7 +106,7 @@ violations(severity, code, object_name, detail) as (
         'critical',
         'missing_owner_policy',
         format('%I.%I:%s', e.table_schema, e.table_name, lower(e.command)),
-        'no policy for this command (or ALL) binds the row to auth.uid() and requires aal2'
+        'no policy for this command (or ALL) binds the row to auth.uid() and requires passwordless AAL2'
     from expected_commands e
     where not exists (
         select 1
@@ -117,17 +117,57 @@ violations(severity, code, object_name, detail) as (
           and case e.command
                 when 'INSERT' then
                     p.check_expression ~* 'auth[.]uid\s*[(]\s*[)]'
-                    and p.check_expression ~* 'auth[.]jwt\s*[(]\s*[)].*aal.*aal2'
+                    and p.check_expression ~* 'sonus_passwordless_aal2\s*[(]\s*[)]'
                 when 'UPDATE' then
                     p.using_expression ~* 'auth[.]uid\s*[(]\s*[)]'
                     and p.check_expression ~* 'auth[.]uid\s*[(]\s*[)]'
-                    and p.using_expression ~* 'auth[.]jwt\s*[(]\s*[)].*aal.*aal2'
-                    and p.check_expression ~* 'auth[.]jwt\s*[(]\s*[)].*aal.*aal2'
+                    and p.using_expression ~* 'sonus_passwordless_aal2\s*[(]\s*[)]'
+                    and p.check_expression ~* 'sonus_passwordless_aal2\s*[(]\s*[)]'
                 else
                     p.using_expression ~* 'auth[.]uid\s*[(]\s*[)]'
-                    and p.using_expression ~* 'auth[.]jwt\s*[(]\s*[)].*aal.*aal2'
+                    and p.using_expression ~* 'sonus_passwordless_aal2\s*[(]\s*[)]'
               end
     )
+
+    union all
+
+    select
+        'critical',
+        'missing_passwordless_aal2_guard',
+        'public.sonus_passwordless_aal2()',
+        'the shared RLS authentication guard is missing'
+    where not exists (
+        select 1
+        from pg_catalog.pg_proc p
+        join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.proname = 'sonus_passwordless_aal2'
+          and pg_get_function_identity_arguments(p.oid) = ''
+    )
+
+    union all
+
+    select
+        'critical',
+        'unsafe_passwordless_aal2_guard',
+        'public.sonus_passwordless_aal2()',
+        'guard must be SECURITY INVOKER with a fixed empty search_path and enforce AAL2, password rejection, and OTP/magic-link AMR'
+    from pg_catalog.pg_proc p
+    join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = 'sonus_passwordless_aal2'
+      and pg_get_function_identity_arguments(p.oid) = ''
+      and (
+          p.prosecdef
+          or not exists (
+              select 1
+              from unnest(coalesce(p.proconfig, array[]::text[])) setting
+              where setting = 'search_path='
+          )
+          or pg_get_functiondef(p.oid) !~* 'aal.*aal2'
+          or pg_get_functiondef(p.oid) !~* 'method.*password'
+          or pg_get_functiondef(p.oid) !~* 'method.*otp.*magiclink'
+      )
 
     union all
 
