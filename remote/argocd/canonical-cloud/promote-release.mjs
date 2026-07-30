@@ -23,7 +23,10 @@ function replaceExactly(source, pattern, replacement, expectedCount, label) {
   return source.replace(pattern, replacement);
 }
 
-export function renderPromotion(source, { repository, digest, releaseSha, label }) {
+export function renderPromotion(
+  source,
+  { repository, sourceRepositories = [repository], digest, releaseSha, label },
+) {
   if (!releaseShaPattern.test(releaseSha)) {
     throw new Error(`${label}: release SHA must be exactly 40 lowercase hexadecimal characters`);
   }
@@ -31,36 +34,81 @@ export function renderPromotion(source, { repository, digest, releaseSha, label 
     throw new Error(`${label}: digest must match sha256:<64 lowercase hexadecimal characters>`);
   }
 
-  const escapedRepository = repository.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const repositories = [...new Set([repository, ...sourceRepositories])];
+  if (
+    repositories.some(
+      (candidate) =>
+        typeof candidate !== 'string' ||
+        !/^ghcr\.io\/[a-z0-9][a-z0-9._/-]*$/.test(candidate),
+    )
+  ) {
+    throw new Error(`${label}: repositories must be non-empty GHCR paths`);
+  }
+  const escapedRepositories = repositories
+    .map((candidate) => candidate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
   let rendered = replaceExactly(
     source,
-    new RegExp(`image: ${escapedRepository}(?:[^\\s]+)`, 'g'),
-    `image: ${repository}@${digest}`,
+    new RegExp(
+      `^([ \\t]*(?:-[ \\t]+)?image:[ \\t]*)(?:${escapedRepositories})(?=[:@])\\S+[ \\t]*$`,
+      'gm',
+    ),
+    `$1${repository}@${digest}`,
     1,
     `${label} image`,
   );
   rendered = replaceExactly(
     rendered,
-    /canonical\.cloud\/release-sha: "[0-9a-f]{40}"/g,
-    `canonical.cloud/release-sha: "${releaseSha}"`,
+    /^([ \t]*canonical\.cloud\/release-sha:[ \t]*)"[0-9a-f]{40}"[ \t]*$/gm,
+    `$1"${releaseSha}"`,
     2,
     `${label} release annotations`,
   );
   return rendered;
 }
 
-async function promoteFile(path, promotion, checkOnly) {
-  const source = await readFile(path, 'utf8');
-  const rendered = renderPromotion(source, promotion);
+export function renderPromotionBatch(entries) {
+  return entries.map(({ path, source, promotion }) => ({
+    path,
+    source,
+    promotion,
+    rendered: renderPromotion(source, promotion),
+  }));
+}
+
+export async function promoteFiles(
+  requests,
+  {
+    checkOnly = false,
+    read = readFile,
+    write = writeFile,
+  } = {},
+) {
+  const loaded = await Promise.all(
+    requests.map(async (request) => ({
+      ...request,
+      source: await read(request.path, 'utf8'),
+    })),
+  );
+  const prepared = renderPromotionBatch(loaded);
+
   if (checkOnly) {
-    if (rendered !== source) {
-      throw new Error(`${promotion.label}: manifest does not match the requested release`);
+    for (const entry of prepared) {
+      if (entry.rendered !== entry.source) {
+        throw new Error(
+          `${entry.promotion.label}: manifest does not match the requested release`,
+        );
+      }
     }
-    return;
+    return prepared;
   }
-  if (rendered !== source) {
-    await writeFile(path, rendered, 'utf8');
-  }
+
+  await Promise.all(
+    prepared
+      .filter((entry) => entry.rendered !== entry.source)
+      .map((entry) => write(entry.path, entry.rendered, 'utf8')),
+  );
+  return prepared;
 }
 
 async function main() {
@@ -71,26 +119,33 @@ async function main() {
   const revokerDigest = optionValue(arguments_, '--revoker-digest');
   const base = dirname(fileURLToPath(import.meta.url));
 
-  await promoteFile(
-    resolve(base, 'web.deployment.yaml'),
+  const requests = [
     {
-      repository: 'ghcr.io/canonical-cloud/canonical-web-server',
-      digest: webDigest,
-      releaseSha,
-      label: 'web',
+      path: resolve(base, 'web.deployment.yaml'),
+      promotion: {
+        repository: 'ghcr.io/canonical-cloud/canonical-web-server',
+        sourceRepositories: [
+          'ghcr.io/canonical-cloud/canonical-web-server-rs',
+        ],
+        digest: webDigest,
+        releaseSha,
+        label: 'web',
+      },
     },
-    checkOnly,
-  );
-  await promoteFile(
-    resolve(base, 'revoker.deployment.yaml'),
     {
-      repository: 'ghcr.io/canonical-cloud/canonical-session-revoker',
-      digest: revokerDigest,
-      releaseSha,
-      label: 'revoker',
+      path: resolve(base, 'revoker.deployment.yaml'),
+      promotion: {
+        repository: 'ghcr.io/canonical-cloud/canonical-session-revoker',
+        sourceRepositories: [
+          'ghcr.io/canonical-cloud/canonical-web-server-rs',
+        ],
+        digest: revokerDigest,
+        releaseSha,
+        label: 'revoker',
+      },
     },
-    checkOnly,
-  );
+  ];
+  await promoteFiles(requests, { checkOnly });
 
   process.stdout.write(
     checkOnly
