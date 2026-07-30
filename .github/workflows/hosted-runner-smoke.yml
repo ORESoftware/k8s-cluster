@@ -1,0 +1,26 @@
+name: hosted runner smoke
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/hosted-runner-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-runner-smoke-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ubuntu:
+    name: allocate ubuntu hosted runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record runner allocation
+        run: |
+          set -euo pipefail
+          printf 'runner_os=%s\nrunner_arch=%s\nrun_id=%s\n' \
+            "$RUNNER_OS" "$RUNNER_ARCH" "$GITHUB_RUN_ID"
