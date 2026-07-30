@@ -4,7 +4,11 @@ on:
   pull_request:
     paths:
       - "catalog/**"
+      - "remote/argocd/**/*.yaml"
+      - "remote/argocd/**/*.yml"
+      - "tools/application_catalog.py"
       - "tools/repository_catalog.py"
+      - "tools/test_application_catalog.py"
       - "tools/test_repository_catalog.py"
       - ".nix/agent-check.sh"
       - ".nix/dev-shell.nix"
@@ -15,7 +19,11 @@ on:
     branches: [main]
     paths:
       - "catalog/**"
+      - "remote/argocd/**/*.yaml"
+      - "remote/argocd/**/*.yml"
+      - "tools/application_catalog.py"
       - "tools/repository_catalog.py"
+      - "tools/test_application_catalog.py"
       - "tools/test_repository_catalog.py"
       - ".nix/agent-check.sh"
       - ".nix/dev-shell.nix"
