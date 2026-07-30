@@ -12,14 +12,17 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let database = db::connect(&config.database_url).await?;
     let shared_auth = config.shared_auth.clone().map(SharedAuthClient::new);
     let shared_auth_enabled = shared_auth.is_some();
+    let signal_sync_enabled =
+        signal_sync_api_enabled(std::env::var("ENABLE_SIGNAL_SYNC_API").ok().as_deref());
     let state = AppState::new(database)?.with_shared_auth(shared_auth);
-    let router = app::router(state.clone());
+    let router = app::router_with_signal(state.clone(), signal_sync_enabled);
     let metrics_router = app::metrics_router(state);
 
     tracing::info!(
         server.address = %config.bind_addr,
         server.metrics_address = %config.metrics_bind_addr,
         auth.shared.enabled = shared_auth_enabled,
+        sync.signal_api.enabled = signal_sync_enabled,
         protocol.version = crate::protocol::PROTOCOL_VERSION,
         "3FA sync server listening"
     );
@@ -53,6 +56,15 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tokio::try_join!(public, metrics)?;
     tracing::info!("3FA sync server stopped");
     Ok(())
+}
+
+fn signal_sync_api_enabled(value: Option<&str>) -> bool {
+    value.is_some_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
 }
 
 async fn shutdown_requested(mut shutdown: tokio::sync::watch::Receiver<bool>) {
@@ -90,4 +102,19 @@ async fn shutdown_signal() {
 async fn shutdown_signal() {
     let _ = tokio::signal::ctrl_c().await;
     tracing::info!("shutdown signal received");
+}
+
+#[cfg(test)]
+mod signal_flag_tests {
+    use super::signal_sync_api_enabled;
+
+    #[test]
+    fn signal_routes_are_fail_closed_by_default() {
+        for value in [None, Some(""), Some("false"), Some("0"), Some("unexpected")] {
+            assert!(!signal_sync_api_enabled(value));
+        }
+        for value in [Some("1"), Some("true"), Some("YES"), Some(" on ")] {
+            assert!(signal_sync_api_enabled(value));
+        }
+    }
 }
