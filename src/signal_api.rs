@@ -11,6 +11,7 @@ use crate::device_sync_protocol::{SignalCiphertextEnvelope, SignalDevicePreKeyBu
 use crate::error::ApiError;
 use crate::json::JsonBody;
 use crate::signal_bundle_store;
+use crate::signal_maintenance::{self, SignalMaintenanceError};
 use crate::signal_store::{self, MailboxEnvelope, OneTimePreKey, PublishPreKeys, SignalStoreError};
 use crate::state::AppState;
 use axum::extract::{Path, Query, State};
@@ -33,6 +34,7 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/v1/signal/device-revision", get(device_revision_handler))
         .route("/v1/signal/envelopes", post(enqueue_envelope_handler))
         .route("/v1/signal/mailbox", get(pull_mailbox_handler))
+        .route("/v1/signal/mailbox/ack", post(acknowledge_batch_handler))
         .route(
             "/v1/signal/mailbox/{envelope_id}/ack",
             post(acknowledge_envelope_handler),
@@ -208,6 +210,42 @@ pub(crate) async fn pull_mailbox_handler(
     Ok(Json(rows.into_iter().map(mailbox_response).collect()))
 }
 
+#[derive(Deserialize)]
+pub(crate) struct AcknowledgeBatchItem {
+    envelope_id: Uuid,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct AcknowledgeBatchRequest {
+    items: Vec<AcknowledgeBatchItem>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct AcknowledgeBatchResponse {
+    acknowledged: u32,
+}
+
+pub(crate) async fn acknowledge_batch_handler(
+    State(state): State<AppState>,
+    who: AuthedDevice,
+    JsonBody(request): JsonBody<AcknowledgeBatchRequest>,
+) -> Result<Json<AcknowledgeBatchResponse>, ApiError> {
+    let envelope_ids: Vec<Uuid> = request
+        .items
+        .into_iter()
+        .map(|item| item.envelope_id)
+        .collect();
+    let acknowledged = signal_maintenance::acknowledge_batch(
+        state.database(),
+        who.account_id,
+        who.device_id,
+        &envelope_ids,
+    )
+    .await
+    .map_err(map_maintenance_error)?;
+    Ok(Json(AcknowledgeBatchResponse { acknowledged }))
+}
+
 #[derive(Debug, Serialize)]
 pub(crate) struct AcknowledgeEnvelopeResponse {
     mailbox_seq: i64,
@@ -252,6 +290,15 @@ fn mailbox_response(row: MailboxEnvelope) -> MailboxEnvelopeResponse {
     MailboxEnvelopeResponse {
         mailbox_seq: row.mailbox_seq,
         envelope: row.envelope,
+    }
+}
+
+fn map_maintenance_error(error: SignalMaintenanceError) -> ApiError {
+    match error {
+        SignalMaintenanceError::InvalidBatch | SignalMaintenanceError::DeviceUnavailable => {
+            ApiError::BadRequest
+        }
+        SignalMaintenanceError::Database(error) => error.into(),
     }
 }
 
@@ -346,5 +393,14 @@ mod tests {
             Err(ApiError::BadRequest)
         ));
         assert!(require_sibling_target(Uuid::new_v4(), who).is_ok());
+    }
+
+    #[test]
+    fn batch_ack_wire_shape_matches_shared_interfaces() {
+        let id = Uuid::new_v4();
+        let json = serde_json::json!({"items": [{"envelope_id": id}]});
+        let request: AcknowledgeBatchRequest = serde_json::from_value(json).unwrap();
+        assert_eq!(request.items.len(), 1);
+        assert_eq!(request.items[0].envelope_id, id);
     }
 }
