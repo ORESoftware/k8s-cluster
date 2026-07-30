@@ -6,6 +6,8 @@ import test from "node:test";
 
 const FIDUCIA_RELEASE = "957618c8ff7ca746519889573443b5e9e68dde19";
 const AKRION_RELEASE = "1bd5dc5a050ce05f9a495e08038cc02e9647e092";
+const CANONICAL_RELEASE = "e09bb95160aaf95a836e810eb20b65e74f6317a6";
+const CANONICAL_PACKAGE = "ghcr.io/canonical-cloud/canonical-web-server-rs";
 const SONUS_EXPORTER =
   "docker.io/nginx/nginx-prometheus-exporter:1.5.1@sha256:9f6d963bb2b19d706d401cc3e2c3ea8de2f1c471b96a2156ca45e76f650b1625";
 
@@ -105,22 +107,19 @@ test("Fiducia and Akrion build the reviewed merged revisions", async () => {
   assert.doesNotMatch(akrion, /AKRION_WEB_GIT_REF\n\s*value:\s*dev/);
 });
 
-test("Canonical pins matching immutable web and revoker SHA tags", async () => {
+test("Canonical pins matching immutable component tags in one repository-owned package", async () => {
   const web = await read("remote/argocd/canonical-cloud/web.deployment.yaml");
   const revoker = await read("remote/argocd/canonical-cloud/revoker.deployment.yaml");
   const service = await read("remote/argocd/canonical-cloud/web.service.yaml");
 
-  const webTag = web.match(
-    /ghcr\.io\/canonical-cloud\/canonical-web-server:([0-9a-f]{40})/,
-  )?.[1];
-  const revokerTag = revoker.match(
-    /ghcr\.io\/canonical-cloud\/canonical-session-revoker:([0-9a-f]{40})/,
-  )?.[1];
-  assert.ok(webTag, "Canonical web image must use a full SHA tag");
-  assert.equal(revokerTag, webTag, "web and revoker must come from one source revision");
-  assert.notEqual(webTag, "e245ed408810455b7a0c43b9f4e81fd60b172100");
-  assert.ok(web.includes(`canonical.cloud/release-sha: "${webTag}"`));
-  assert.ok(revoker.includes(`canonical.cloud/release-sha: "${webTag}"`));
+  const webImage = `${CANONICAL_PACKAGE}:web-${CANONICAL_RELEASE}`;
+  const revokerImage = `${CANONICAL_PACKAGE}:revoker-${CANONICAL_RELEASE}`;
+  assert.ok(web.includes(`image: ${webImage}`));
+  assert.ok(revoker.includes(`image: ${revokerImage}`));
+  assert.ok(web.includes(`canonical.cloud/release-sha: "${CANONICAL_RELEASE}"`));
+  assert.ok(revoker.includes(`canonical.cloud/release-sha: "${CANONICAL_RELEASE}"`));
+  assert.doesNotMatch(web, /ghcr\.io\/canonical-cloud\/canonical-web-server:/);
+  assert.doesNotMatch(revoker, /ghcr\.io\/canonical-cloud\/canonical-session-revoker:/);
   assertScrapeAnnotations(web, 8081);
   assertScrapeAnnotations(service, 8081);
 });
