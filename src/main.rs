@@ -6,6 +6,7 @@ mod auth;
 mod billing;
 mod cron;
 mod entity;
+mod metrics;
 mod request_security;
 mod store;
 mod supabase_auth;
@@ -299,6 +300,7 @@ fn build_router(config: AppConfig) -> Router {
         // Liveness/readiness probe (matches the sibling canonical.cloud
         // convention); also available as /api/health.
         .route("/healthz", get(health))
+        .route("/metrics", get(metrics::endpoint))
         .route("/api/health", get(health))
         .route("/api/info", get(info))
         .route("/assets/htmx.min.js", get(htmx_js))
@@ -466,7 +468,8 @@ fn build_router(config: AppConfig) -> Router {
         .layer(TraceLayer::new_for_http())
         .layer(CatchPanicLayer::new())
         .layer(TimeoutLayer::new(Duration::from_secs(REQUEST_TIMEOUT_SECS)))
-        .layer(RequestBodyLimitLayer::new(MAX_BODY_BYTES));
+        .layer(RequestBodyLimitLayer::new(MAX_BODY_BYTES))
+        .layer(middleware::from_fn(metrics::record_http));
 
     match customer_app_origin {
         Some(origin) => router.layer(customer_cors(origin)),
