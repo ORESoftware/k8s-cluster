@@ -1,0 +1,711 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "remote/tools/generate-api-sdks.mjs",
+  "generatorSha256": "a6a810aca72aa204db09ab15ff184c83feab086d4bb1c178f096affbadbb42ee",
+  "indexPath": "remote/deployments/generated-api-docs-index.json",
+  "indexSha256": "e55ee70d563c2a82d3d657534a7a2c3be34a41a5f0a502be6895dbfb118aac47",
+  "scopes": {
+    "public": {
+      "catalogPath": "remote/api-sdks/contracts/public.json",
+      "catalogSha256": "dd6cd2dfce13705381cfcc79c99d9f2b7e7307fc846e28609defe908e9859689",
+      "catalogFileSha256": "466aac12982428e724553c9d33f656efaa79df4443536626ccbb06cbc24558f7",
+      "serviceCount": 44,
+      "operationCount": 279,
+      "skippedServices": [
+        {
+          "service": "billing-server-rs",
+          "language": "rust",
+          "deploymentPath": "remote/deployments/billing-server-rs",
+          "sourceRepository": "git@github.com:quaestor-ledger/billing-server.rs.git",
+          "reason": "uninitialized-deployment-gitlink"
+        },
+        {
+          "service": "dart-server",
+          "language": "dart",
+          "deploymentPath": "remote/deployments/dart-server",
+          "sourceRepository": "git@github.com:sagitta-stack/dart-server.git",
+          "reason": "uninitialized-deployment-gitlink"
+        },
+        {
+          "service": "fiducia-customer.rs",
+          "language": "rust",
+          "deploymentPath": "remote/deployments/fiducia-customer.rs",
+          "sourceRepository": "https://github.com/fiducia-cloud/fiducia-customer.rs.git",
+          "reason": "uninitialized-deployment-gitlink"
+        },
+        {
+          "service": "gleam-lambda-runner",
+          "language": "gleam",
+          "deploymentPath": "remote/deployments/gleam-lambda-runner",
+          "sourceRepository": "git@github.com:scintilla-run/gleam-lambda-runner.git",
+          "reason": "uninitialized-deployment-gitlink"
+        },
+        {
+          "service": "usacc-rest-api-backend-rs",
+          "language": "rust",
+          "deploymentPath": "remote/deployments/usacc-rest-api-backend-rs",
+          "sourceRepository": "git@github.com:usa-acc/rest-api-backend.rs.git",
+          "reason": "uninitialized-deployment-gitlink"
+        }
+      ],
+      "specs": [
+        {
+          "service": "agent-worker-broker-rs",
+          "specPath": "remote/deployments/agent-worker-broker-rs/generated/api-docs.json",
+          "specSha256": "ce0f6c51a54a0fc52d23842e4f81255200cf54477a079cd2dac24255451ddad6",
+          "operationCount": 6
+        },
+        {
+          "service": "ai-ml-pipeline",
+          "specPath": "remote/deployments/ai-ml-pipeline/generated/api-docs.json",
+          "specSha256": "f322e248358d67cd69e55587e5606370f7fb1e9043d010bd9d19edcb4c7d49f4",
+          "operationCount": 7
+        },
+        {
+          "service": "apostille-services-server-rs",
+          "specPath": "remote/deployments/apostille-services-server-rs/generated/api-docs.json",
+          "specSha256": "3c8cb53fae70699ba9d085c489425b2dd0de3fa8b45182f6b3d05e5c93633964",
+          "operationCount": 7
+        },
+        {
+          "service": "auth-server-rs",
+          "specPath": "remote/deployments/auth-server-rs/generated/api-docs.json",
+          "specSha256": "0a6f18c47bf336c6bae575bc3f5c34f4353107ce28b7cb9dc17844a88decbf14",
+          "operationCount": 5
+        },
+        {
+          "service": "bastion-rs",
+          "specPath": "remote/deployments/bastion-rs/generated/api-docs.json",
+          "specSha256": "900bd8dc713603b376179bb7dc14698f002e19622a517071ba12d6994d0a6a0a",
+          "operationCount": 4
+        },
+        {
+          "service": "browser-test-server",
+          "specPath": "remote/deployments/browser-test-server/generated/api-docs.json",
+          "specSha256": "5e72a9293636fa036d89618f875344e3aca1a9dfba64cafdacbfd870cb1767b1",
+          "operationCount": 6
+        },
+        {
+          "service": "build-server-rs",
+          "specPath": "remote/deployments/build-server-rs/generated/api-docs.json",
+          "specSha256": "cd0cb6f1121df568f47972f9583d548a12fe8c338c55261cafc4fc2a73869403",
+          "operationCount": 7
+        },
+        {
+          "service": "cluster-mcp-rs",
+          "specPath": "remote/deployments/cluster-mcp-rs/generated/api-docs.json",
+          "specSha256": "f60043d291d93a63b7f9c76f6d747c927890701d3bc93b84708673b709e95dba",
+          "operationCount": 8
+        },
+        {
+          "service": "container-pool-rs",
+          "specPath": "remote/deployments/container-pool-rs/generated/api-docs.json",
+          "specSha256": "b857a276489896ea67c624b763fc176cd79908b1beddc671b26211d4456633dc",
+          "operationCount": 6
+        },
+        {
+          "service": "contract-service-rs",
+          "specPath": "remote/deployments/contract-service-rs/generated/api-docs.json",
+          "specSha256": "25129e8a8bf222bcfcf0c39eeac76540f94adc8733204fc8159b16a6e0247f06",
+          "operationCount": 7
+        },
+        {
+          "service": "dataset-labeling-rs",
+          "specPath": "remote/deployments/dataset-labeling-rs/generated/api-docs.json",
+          "specSha256": "c590078876aa8ae4d6d6df2b8eb3832ff65843a15b37fd25ad7c617d254b1c8a",
+          "operationCount": 7
+        },
+        {
+          "service": "dd-benefactor-marketing-rs",
+          "specPath": "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.json",
+          "specSha256": "3c03e1740a3ed3b9b6b7ddb7d91c21e4f751930aa893f5a95fd0383b39005237",
+          "operationCount": 7
+        },
+        {
+          "service": "dd-compliance-rs",
+          "specPath": "remote/deployments/dd-compliance-rs/generated/api-docs.json",
+          "specSha256": "c2d5b629c74f9fbd8a0efe6a56e392c3623560889c54d7c61df99cb94110cf12",
+          "operationCount": 7
+        },
+        {
+          "service": "dd-document-rs",
+          "specPath": "remote/deployments/dd-document-rs/generated/api-docs.json",
+          "specSha256": "120b1130d970fd8f94c73e6dc8d6d482d69986ac4be5a1702096754c11a593b8",
+          "operationCount": 6
+        },
+        {
+          "service": "dd-embeddings-rs",
+          "specPath": "remote/deployments/dd-embeddings-rs/generated/api-docs.json",
+          "specSha256": "6a02dc3a2caf43ff55d0b6358e6bc572b6c85379317b4ad8ebc1037817fda704",
+          "operationCount": 7
+        },
+        {
+          "service": "dd-escrow-rs",
+          "specPath": "remote/deployments/dd-escrow-rs/generated/api-docs.json",
+          "specSha256": "ce7371e5199b7be9229354e012e1e37fb8c06404d3a8c0f6f5133e8931532a14",
+          "operationCount": 6
+        },
+        {
+          "service": "dd-git-rs",
+          "specPath": "remote/deployments/dd-git-rs/generated/api-docs.json",
+          "specSha256": "95f16a82e13f6afe6c6283289f98752aed7ec0dc83e8d1f612c4b3c7d99a6783",
+          "operationCount": 7
+        },
+        {
+          "service": "dd-music-rs",
+          "specPath": "remote/deployments/dd-music-rs/generated/api-docs.json",
+          "specSha256": "63bac5bb4708eabeaadf709e8f3a3a8248ace9ddf85fafad732b48d5db33b501",
+          "operationCount": 7
+        },
+        {
+          "service": "dd-ocr-rs",
+          "specPath": "remote/deployments/dd-ocr-rs/generated/api-docs.json",
+          "specSha256": "0ad436de01197c17867cb7c0cf873533d18aa3aee70b8f977b18a93f64777dd2",
+          "operationCount": 6
+        },
+        {
+          "service": "des-simulator-rs",
+          "specPath": "remote/deployments/des-simulator-rs/generated/api-docs.json",
+          "specSha256": "708092fabaa281b60c7d5742340cb39465c74dc1cc211dde0b3acd707d67367b",
+          "operationCount": 6
+        },
+        {
+          "service": "dev-server",
+          "specPath": "remote/deployments/dev-server/generated/api-docs.json",
+          "specSha256": "69fd8cc1b860ca4ef292591e900efc8a92b8f494ad2d985e35f3f1c0290c01f5",
+          "operationCount": 5
+        },
+        {
+          "service": "economics-server-rs",
+          "specPath": "remote/deployments/economics-server-rs/generated/api-docs.json",
+          "specSha256": "2e8b966595031783d076877f7c6bc9efeeb680ea650206bd3705b9a4448533a4",
+          "operationCount": 7
+        },
+        {
+          "service": "formal-methods-server-rs",
+          "specPath": "remote/deployments/formal-methods-server-rs/generated/api-docs.json",
+          "specSha256": "85b8374175c0b39c7dd064f4d06de6b4a18422248d615524cf929998071accb4",
+          "operationCount": 6
+        },
+        {
+          "service": "formal-methods-service-rs",
+          "specPath": "remote/deployments/formal-methods-service-rs/generated/api-docs.json",
+          "specSha256": "67f5dda4c80ce887d79e03b765c31e410f44ded5f0c436051d0f9d2bd28a65a2",
+          "operationCount": 4
+        },
+        {
+          "service": "fsharp-ws-server",
+          "specPath": "remote/deployments/fsharp-ws-server/generated/api-docs.json",
+          "specSha256": "7de27016d07c6048e880549643efcc36bd309a28204912bd668b2e9c626d1ba5",
+          "operationCount": 8
+        },
+        {
+          "service": "gleam-mcp-server",
+          "specPath": "remote/deployments/gleam-mcp-server/generated/api-docs.json",
+          "specSha256": "99fcaf4873bc06da1795c211acde5d325dbf518b97ceb2fc14dbc714699cc6dd",
+          "operationCount": 7
+        },
+        {
+          "service": "gleamlang-presence-server",
+          "specPath": "remote/deployments/gleamlang-presence-server/generated/api-docs.json",
+          "specSha256": "fd3973031ccdc5d526ec6560848661ead7b132c37c5260104697a525fb8614f7",
+          "operationCount": 5
+        },
+        {
+          "service": "gleamlang-server",
+          "specPath": "remote/deployments/gleamlang-server/generated/api-docs.json",
+          "specSha256": "08d03c6bf08a73cda4f53eac077347c6eaaecb02a5fe450c312cddd4dcacffa0",
+          "operationCount": 6
+        },
+        {
+          "service": "gleamlang-server-nats-bridge",
+          "specPath": "remote/deployments/gleamlang-server/generated/api-docs.nats-bridge.json",
+          "specSha256": "20967e8fa3d1f6743fdc04a33a21760526bee70ed5cf7fee7a949f2258a2f8a5",
+          "operationCount": 4
+        },
+        {
+          "service": "gleamlang-ws-server",
+          "specPath": "remote/deployments/gleamlang-ws-server/generated/api-docs.json",
+          "specSha256": "4077d59b28c4c2da9cc546d31fec36fc3b3d2984b5e9ee8c1abbad17c845d9e9",
+          "operationCount": 6
+        },
+        {
+          "service": "knowledge-graph-builder-rs",
+          "specPath": "remote/deployments/knowledge-graph-builder-rs/generated/api-docs.json",
+          "specSha256": "139e78950522a59aacacabccac90e869985396f2eb7ac533051b385e4db8850d",
+          "operationCount": 7
+        },
+        {
+          "service": "mdp-optimizer-rs",
+          "specPath": "remote/deployments/mdp-optimizer-rs/generated/api-docs.json",
+          "specSha256": "49a43f4a5abfb724bb889a644cde3b5cc0482cf416b7207b832ebe0a19f6796a",
+          "operationCount": 6
+        },
+        {
+          "service": "patent-filing-rs",
+          "specPath": "remote/deployments/patent-filing-rs/generated/api-docs.json",
+          "specSha256": "50d399bb3f19433998b3d141879d7221d6d5edf6ca9b5e7659fbd177af79e4e3",
+          "operationCount": 7
+        },
+        {
+          "service": "public-data-server-rs",
+          "specPath": "remote/deployments/public-data-server-rs/generated/api-docs.json",
+          "specSha256": "68e4c4d6caebc5acea33d6b61897f14917fdbebc7951e0df0853ed61d39f0eb6",
+          "operationCount": 7
+        },
+        {
+          "service": "rest-api-rs",
+          "specPath": "remote/deployments/rest-api-rs/generated/api-docs.json",
+          "specSha256": "a57afa800cf974f678ae6eee8c99b3c1523b43e9b3a1970dbad76091c30a0826",
+          "operationCount": 6
+        },
+        {
+          "service": "runtime-config-rs",
+          "specPath": "remote/deployments/runtime-config-rs/generated/api-docs.json",
+          "specSha256": "6a24f0f68ec884f4972af1008b7de78561578acc416660b9797d7c22bf39dc0c",
+          "operationCount": 7
+        },
+        {
+          "service": "rust-vapi-phone-rs",
+          "specPath": "remote/deployments/rust-vapi-phone-rs/generated/api-docs.json",
+          "specSha256": "e3e1b78c9bfa1cec6178e2fdfce98fdfcc151956294420707a1a256d11396241",
+          "operationCount": 6
+        },
+        {
+          "service": "spark-pipeline-server",
+          "specPath": "remote/deployments/spark-pipeline-server/generated/api-docs.json",
+          "specSha256": "73261d95e2133e49d41074a7602c04b20ec74b750a3fcc91998423e892cf3df8",
+          "operationCount": 6
+        },
+        {
+          "service": "trading-server-rs",
+          "specPath": "remote/deployments/trading-server-rs/generated/api-docs.json",
+          "specSha256": "0f236fd6e4dfe6d01ef8175af0c996673f1cf6eb7cc7374e68e3d5ff6ed6570f",
+          "operationCount": 7
+        },
+        {
+          "service": "wal-gateway-rs",
+          "specPath": "remote/deployments/wal-gateway-rs/generated/api-docs.json",
+          "specSha256": "bd3950b6ccd95e8e2846b8b2b1afa39bf85e76c5f40ea98dc89a6dee87cf5a57",
+          "operationCount": 5
+        },
+        {
+          "service": "web-home-rs",
+          "specPath": "remote/deployments/web-home-rs/generated/api-docs.json",
+          "specSha256": "dea57683173a605ab0ad1eb9e5d5beb7cfbb5428624fab1a3ef19ded5cff8ea8",
+          "operationCount": 9
+        },
+        {
+          "service": "web-scraper-service",
+          "specPath": "remote/deployments/web-scraper-service/generated/api-docs.json",
+          "specSha256": "c7109d63c1377750fe4e16af7584313f586732e53185b05fc3f563a7e56dbfad",
+          "operationCount": 6
+        },
+        {
+          "service": "webrtc-media-rs",
+          "specPath": "remote/deployments/webrtc-media-rs/generated/api-docs.json",
+          "specSha256": "0474bb9a8ad6068e7a35454a6974866d717a645fcb0afb220b9e00efc0076eef",
+          "operationCount": 7
+        },
+        {
+          "service": "webrtc-signaling-rs",
+          "specPath": "remote/deployments/webrtc-signaling-rs/generated/api-docs.json",
+          "specSha256": "d5763df5e25d1db40de88af98530e77c9d78ff5f3f3d5a1ce2ac135428b16bc0",
+          "operationCount": 6
+        }
+      ]
+    },
+    "internal": {
+      "catalogPath": "remote/api-sdks/contracts/internal.json",
+      "catalogSha256": "ae1ce6bfb16657296304863f0dde0395858173c3acd113fcfa93b11dc43e1288",
+      "catalogFileSha256": "64df987084745bbb80725bf6f7e59827f0f5e6fe0f83047d3fe7a64581e4a528",
+      "serviceCount": 44,
+      "operationCount": 943,
+      "skippedServices": [
+        {
+          "service": "billing-server-rs",
+          "language": "rust",
+          "deploymentPath": "remote/deployments/billing-server-rs",
+          "sourceRepository": "git@github.com:quaestor-ledger/billing-server.rs.git",
+          "reason": "uninitialized-deployment-gitlink"
+        },
+        {
+          "service": "dart-server",
+          "language": "dart",
+          "deploymentPath": "remote/deployments/dart-server",
+          "sourceRepository": "git@github.com:sagitta-stack/dart-server.git",
+          "reason": "uninitialized-deployment-gitlink"
+        },
+        {
+          "service": "fiducia-customer.rs",
+          "language": "rust",
+          "deploymentPath": "remote/deployments/fiducia-customer.rs",
+          "sourceRepository": "https://github.com/fiducia-cloud/fiducia-customer.rs.git",
+          "reason": "uninitialized-deployment-gitlink"
+        },
+        {
+          "service": "gleam-lambda-runner",
+          "language": "gleam",
+          "deploymentPath": "remote/deployments/gleam-lambda-runner",
+          "sourceRepository": "git@github.com:scintilla-run/gleam-lambda-runner.git",
+          "reason": "uninitialized-deployment-gitlink"
+        },
+        {
+          "service": "usacc-rest-api-backend-rs",
+          "language": "rust",
+          "deploymentPath": "remote/deployments/usacc-rest-api-backend-rs",
+          "sourceRepository": "git@github.com:usa-acc/rest-api-backend.rs.git",
+          "reason": "uninitialized-deployment-gitlink"
+        }
+      ],
+      "specs": [
+        {
+          "service": "agent-worker-broker-rs",
+          "specPath": "remote/deployments/agent-worker-broker-rs/generated/api-docs.internal.json",
+          "specSha256": "dcd960564657099e788cd3a72cceedacdd3179cdd082fbb2559640411f90d753",
+          "operationCount": 10
+        },
+        {
+          "service": "ai-ml-pipeline",
+          "specPath": "remote/deployments/ai-ml-pipeline/generated/api-docs.internal.json",
+          "specSha256": "a7237473d1de3b48757f4d36d86d64906812f21ce647090803d1a290b8be8fe6",
+          "operationCount": 14
+        },
+        {
+          "service": "apostille-services-server-rs",
+          "specPath": "remote/deployments/apostille-services-server-rs/generated/api-docs.internal.json",
+          "specSha256": "e67ed55a239c1e95157ec26533759043fda9a640b038daa546a0d87214fe1607",
+          "operationCount": 24
+        },
+        {
+          "service": "auth-server-rs",
+          "specPath": "remote/deployments/auth-server-rs/generated/api-docs.internal.json",
+          "specSha256": "c5cffdd23e9ef15634c38f3a198d2ca3f5eddf39607953963497d5fad462b76f",
+          "operationCount": 13
+        },
+        {
+          "service": "bastion-rs",
+          "specPath": "remote/deployments/bastion-rs/generated/api-docs.internal.json",
+          "specSha256": "bbff6022bf77b6c63be1030be8477b699ab6449442e61659667e3f2240b6ee7a",
+          "operationCount": 15
+        },
+        {
+          "service": "browser-test-server",
+          "specPath": "remote/deployments/browser-test-server/generated/api-docs.internal.json",
+          "specSha256": "72c4c19ada9b3bb3ff7a594d7e2bb960cf44acbad8944903c765f69745fae469",
+          "operationCount": 17
+        },
+        {
+          "service": "build-server-rs",
+          "specPath": "remote/deployments/build-server-rs/generated/api-docs.internal.json",
+          "specSha256": "9b0f9331f11a9db4761b35a8f8c6d4042f1ce2727c726d770964022ab0dda061",
+          "operationCount": 19
+        },
+        {
+          "service": "cluster-mcp-rs",
+          "specPath": "remote/deployments/cluster-mcp-rs/generated/api-docs.internal.json",
+          "specSha256": "70080c07d711e93d43fc001cc01849e646c56200aefe2d7a29749c1e4baa0787",
+          "operationCount": 15
+        },
+        {
+          "service": "container-pool-rs",
+          "specPath": "remote/deployments/container-pool-rs/generated/api-docs.internal.json",
+          "specSha256": "2620d1dee87568cb38d9ff8084fdba4baa052fb33c100a9d996eb60f68eaa10e",
+          "operationCount": 13
+        },
+        {
+          "service": "contract-service-rs",
+          "specPath": "remote/deployments/contract-service-rs/generated/api-docs.internal.json",
+          "specSha256": "f7e0b05a1775960d5e0168ca87ce202bef6bb6fa9df66c861a114deb2de39076",
+          "operationCount": 59
+        },
+        {
+          "service": "dataset-labeling-rs",
+          "specPath": "remote/deployments/dataset-labeling-rs/generated/api-docs.internal.json",
+          "specSha256": "2610ae7ad9497147f0ee25a9edff4c277bff3ce2ea72767fb1a36af78df5a1a0",
+          "operationCount": 18
+        },
+        {
+          "service": "dd-benefactor-marketing-rs",
+          "specPath": "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.internal.json",
+          "specSha256": "a5d535272ecf8e3ff13ffb856f2b59c8c11824dac5f2fdcdbe928f89aeb445fd",
+          "operationCount": 76
+        },
+        {
+          "service": "dd-compliance-rs",
+          "specPath": "remote/deployments/dd-compliance-rs/generated/api-docs.internal.json",
+          "specSha256": "9a400921d2e0c8d3fc935070014fda3dfbc6dd4388a10c85c652fecc31bfed79",
+          "operationCount": 37
+        },
+        {
+          "service": "dd-document-rs",
+          "specPath": "remote/deployments/dd-document-rs/generated/api-docs.internal.json",
+          "specSha256": "f0bd29b573b0c7f88e655a1eaa8fff0e9bb783fc00ec49958b69cf7fdd2ef73c",
+          "operationCount": 26
+        },
+        {
+          "service": "dd-embeddings-rs",
+          "specPath": "remote/deployments/dd-embeddings-rs/generated/api-docs.internal.json",
+          "specSha256": "64d7f1b5084dacb29c61ae509ca3750cc77adcec5683bcfb277e15d170f32023",
+          "operationCount": 23
+        },
+        {
+          "service": "dd-escrow-rs",
+          "specPath": "remote/deployments/dd-escrow-rs/generated/api-docs.internal.json",
+          "specSha256": "45d96bf854df2732ce1b7d63903b8bbc42a41e8bf1bd952cd091427a1a555142",
+          "operationCount": 19
+        },
+        {
+          "service": "dd-git-rs",
+          "specPath": "remote/deployments/dd-git-rs/generated/api-docs.internal.json",
+          "specSha256": "5a3b97e96429063f5e7c15dd0594e3129db06a96b0e8411889e66c7dc8372d01",
+          "operationCount": 17
+        },
+        {
+          "service": "dd-music-rs",
+          "specPath": "remote/deployments/dd-music-rs/generated/api-docs.internal.json",
+          "specSha256": "1c3c240989f2243e7b3ac1d7e647845fa73325b931f3a979d2ca9d9ae4253e93",
+          "operationCount": 14
+        },
+        {
+          "service": "dd-ocr-rs",
+          "specPath": "remote/deployments/dd-ocr-rs/generated/api-docs.internal.json",
+          "specSha256": "267c3b55247454518883b04d6d3721ac0bbfc91bf67c93858eed1dcc10ddc55f",
+          "operationCount": 15
+        },
+        {
+          "service": "des-simulator-rs",
+          "specPath": "remote/deployments/des-simulator-rs/generated/api-docs.internal.json",
+          "specSha256": "7506b5df77cd181dcea1af92a61fa9a80481c68ee92cf3ba3fa784e405af62e0",
+          "operationCount": 19
+        },
+        {
+          "service": "dev-server",
+          "specPath": "remote/deployments/dev-server/generated/api-docs.internal.json",
+          "specSha256": "3066a5c99ad6920cd3d7d669c9819a268997472c0481ae2b89efbb6a40314df0",
+          "operationCount": 20
+        },
+        {
+          "service": "economics-server-rs",
+          "specPath": "remote/deployments/economics-server-rs/generated/api-docs.internal.json",
+          "specSha256": "efedf8e6cb46a67cd74e12631dcde50d04a2c0d8fa983fc395bb32f6d02bbddb",
+          "operationCount": 32
+        },
+        {
+          "service": "formal-methods-server-rs",
+          "specPath": "remote/deployments/formal-methods-server-rs/generated/api-docs.internal.json",
+          "specSha256": "5176451ba3c12b1ec4c92831371c29495422a8539d36f57ae6ceb696519bec61",
+          "operationCount": 16
+        },
+        {
+          "service": "formal-methods-service-rs",
+          "specPath": "remote/deployments/formal-methods-service-rs/generated/api-docs.internal.json",
+          "specSha256": "8113b4aaa85a45c2ac5ea36b604d30ca189cd80443bba64dff4030a8d87086e0",
+          "operationCount": 11
+        },
+        {
+          "service": "fsharp-ws-server",
+          "specPath": "remote/deployments/fsharp-ws-server/generated/api-docs.internal.json",
+          "specSha256": "7ea9fe57b15734370b6600094cffde59f6005e58ab48b656ddc105842c65c3af",
+          "operationCount": 23
+        },
+        {
+          "service": "gleam-mcp-server",
+          "specPath": "remote/deployments/gleam-mcp-server/generated/api-docs.internal.json",
+          "specSha256": "6fd3836cede5ffdfd5071daca822e5c443e4fcd33eae7187863510b2fd96c3b8",
+          "operationCount": 14
+        },
+        {
+          "service": "gleamlang-presence-server",
+          "specPath": "remote/deployments/gleamlang-presence-server/generated/api-docs.internal.json",
+          "specSha256": "b4d3165d67b7b8da6f5fe6d54cb9769bc9615318e0e3cf01685fd136d2ad428a",
+          "operationCount": 17
+        },
+        {
+          "service": "gleamlang-server",
+          "specPath": "remote/deployments/gleamlang-server/generated/api-docs.internal.json",
+          "specSha256": "316c985f617b09413b6a882022ca6c805f23b191b4d0bab9eea19b14d1937d6c",
+          "operationCount": 13
+        },
+        {
+          "service": "gleamlang-server-nats-bridge",
+          "specPath": "remote/deployments/gleamlang-server/generated/api-docs.nats-bridge.internal.json",
+          "specSha256": "4f6e677b0621e4255fe74e68de6c0b26bc66ed842f41e70e0b64e26a52d9152f",
+          "operationCount": 5
+        },
+        {
+          "service": "gleamlang-ws-server",
+          "specPath": "remote/deployments/gleamlang-ws-server/generated/api-docs.internal.json",
+          "specSha256": "2ae5d1a1efedcc0123a68079ec01232777786f19c4f7b0f994f59319d33a14f7",
+          "operationCount": 20
+        },
+        {
+          "service": "knowledge-graph-builder-rs",
+          "specPath": "remote/deployments/knowledge-graph-builder-rs/generated/api-docs.internal.json",
+          "specSha256": "1144cd1b5e4c864d1239c64f8dc328c2467b7d31f57e268c3ffdfa7f56bcbdbe",
+          "operationCount": 18
+        },
+        {
+          "service": "mdp-optimizer-rs",
+          "specPath": "remote/deployments/mdp-optimizer-rs/generated/api-docs.internal.json",
+          "specSha256": "c3ab062196fec9d7e2293c24ac43698db3d796675fc26d859db851c548c91b3a",
+          "operationCount": 11
+        },
+        {
+          "service": "patent-filing-rs",
+          "specPath": "remote/deployments/patent-filing-rs/generated/api-docs.internal.json",
+          "specSha256": "41bcd2a9faf331b175e2db0c3c3cf2762e639ef5e5fece10769423cd2ca055fd",
+          "operationCount": 24
+        },
+        {
+          "service": "public-data-server-rs",
+          "specPath": "remote/deployments/public-data-server-rs/generated/api-docs.internal.json",
+          "specSha256": "dc88d865f377636326c5773f9492580b2e9148cb2f8ad70979e2550b1c31ee01",
+          "operationCount": 26
+        },
+        {
+          "service": "rest-api-rs",
+          "specPath": "remote/deployments/rest-api-rs/generated/api-docs.internal.json",
+          "specSha256": "d115eb163ee5bae5cce70feae98caf72ba172251e2ecddc2661db3987bf4935e",
+          "operationCount": 58
+        },
+        {
+          "service": "runtime-config-rs",
+          "specPath": "remote/deployments/runtime-config-rs/generated/api-docs.internal.json",
+          "specSha256": "8c3038ad97ac25ba4888947e9f13235f8a454da522844e91aaf97293fe203f81",
+          "operationCount": 21
+        },
+        {
+          "service": "rust-vapi-phone-rs",
+          "specPath": "remote/deployments/rust-vapi-phone-rs/generated/api-docs.internal.json",
+          "specSha256": "2899b3320637b5dc767bf87307d8a5de156284b04de26be8cfc65d6606dd3c5c",
+          "operationCount": 15
+        },
+        {
+          "service": "spark-pipeline-server",
+          "specPath": "remote/deployments/spark-pipeline-server/generated/api-docs.internal.json",
+          "specSha256": "3baf78430dfed2056cbcad369dee6f250335752bfc6a6ca8eb885b7ec1ba28d7",
+          "operationCount": 10
+        },
+        {
+          "service": "trading-server-rs",
+          "specPath": "remote/deployments/trading-server-rs/generated/api-docs.internal.json",
+          "specSha256": "9aed0167a556338e01d8d6fb6c6142b5ca38e28a60ab4b82f8a7591dee7e5cf8",
+          "operationCount": 13
+        },
+        {
+          "service": "wal-gateway-rs",
+          "specPath": "remote/deployments/wal-gateway-rs/generated/api-docs.internal.json",
+          "specSha256": "b22a995c2fc190f833ae6e41f6d042828fbced9ccb57797244d5d492cff97eb4",
+          "operationCount": 11
+        },
+        {
+          "service": "web-home-rs",
+          "specPath": "remote/deployments/web-home-rs/generated/api-docs.internal.json",
+          "specSha256": "5b7bec457b1bd1e12e7bd48c0ddeec9d2e385fc523b3276b37474885bf2aa5a3",
+          "operationCount": 48
+        },
+        {
+          "service": "web-scraper-service",
+          "specPath": "remote/deployments/web-scraper-service/generated/api-docs.internal.json",
+          "specSha256": "c0747e66d884ed96815c057d36ab5b3c719dc48cb0a7eaf605e9cc46ed27dcbb",
+          "operationCount": 14
+        },
+        {
+          "service": "webrtc-media-rs",
+          "specPath": "remote/deployments/webrtc-media-rs/generated/api-docs.internal.json",
+          "specSha256": "670f563bded12ae8e09cd8421158d573f4016b2f62f1cd85d13a6ad2edc50b61",
+          "operationCount": 21
+        },
+        {
+          "service": "webrtc-signaling-rs",
+          "specPath": "remote/deployments/webrtc-signaling-rs/generated/api-docs.internal.json",
+          "specSha256": "9ecfd2ada14e87244191001df01698a7504ff0b0f41c8bb1ba982413eefa8807",
+          "operationCount": 19
+        }
+      ]
+    }
+  },
+  "packages": [
+    {
+      "language": "dart",
+      "scope": "internal",
+      "packageName": "oresoftware_k8s_api_sdk_internal",
+      "path": "remote/api-sdks/dart/internal",
+      "manifestPath": "remote/api-sdks/dart/internal/sdk-manifest.json",
+      "manifestSha256": "c434740d545597124f8b4729926122a58408315bdd6a7d2ae8b6a207a0ccb758",
+      "catalogSha256": "ae1ce6bfb16657296304863f0dde0395858173c3acd113fcfa93b11dc43e1288",
+      "operationCount": 943
+    },
+    {
+      "language": "dart",
+      "scope": "public",
+      "packageName": "oresoftware_k8s_api_sdk_public",
+      "path": "remote/api-sdks/dart/public",
+      "manifestPath": "remote/api-sdks/dart/public/sdk-manifest.json",
+      "manifestSha256": "f212ac9a7a92739af078e3ba8d44a1cc5d61fab08ee56204f05c28b4ad0dd24f",
+      "catalogSha256": "dd6cd2dfce13705381cfcc79c99d9f2b7e7307fc846e28609defe908e9859689",
+      "operationCount": 279
+    },
+    {
+      "language": "gleam",
+      "scope": "internal",
+      "packageName": "oresoftware_k8s_api_sdk_internal",
+      "path": "remote/api-sdks/gleam/internal",
+      "manifestPath": "remote/api-sdks/gleam/internal/sdk-manifest.json",
+      "manifestSha256": "bd4b4957521b1e0ef915ba3dbd59d7ac793754a5ee0b1b20a601c599aeb90a40",
+      "catalogSha256": "ae1ce6bfb16657296304863f0dde0395858173c3acd113fcfa93b11dc43e1288",
+      "operationCount": 943
+    },
+    {
+      "language": "gleam",
+      "scope": "public",
+      "packageName": "oresoftware_k8s_api_sdk_public",
+      "path": "remote/api-sdks/gleam/public",
+      "manifestPath": "remote/api-sdks/gleam/public/sdk-manifest.json",
+      "manifestSha256": "90a1427d9637aaf14a95aac5505dcf7fc95e5abc059128406b316676a24bdb2f",
+      "catalogSha256": "dd6cd2dfce13705381cfcc79c99d9f2b7e7307fc846e28609defe908e9859689",
+      "operationCount": 279
+    },
+    {
+      "language": "rust",
+      "scope": "internal",
+      "packageName": "oresoftware-k8s-api-sdk-internal",
+      "path": "remote/api-sdks/rust/internal",
+      "manifestPath": "remote/api-sdks/rust/internal/sdk-manifest.json",
+      "manifestSha256": "acaf28fc6b1c7cb9ab98aaf566e4d062599633d03a8a1668dad961aa80f9151d",
+      "catalogSha256": "ae1ce6bfb16657296304863f0dde0395858173c3acd113fcfa93b11dc43e1288",
+      "operationCount": 943
+    },
+    {
+      "language": "rust",
+      "scope": "public",
+      "packageName": "oresoftware-k8s-api-sdk-public",
+      "path": "remote/api-sdks/rust/public",
+      "manifestPath": "remote/api-sdks/rust/public/sdk-manifest.json",
+      "manifestSha256": "ed34c524f2bdb8b25dadc8497ebf59a1042457f2f17f1e64a03988d97327d505",
+      "catalogSha256": "dd6cd2dfce13705381cfcc79c99d9f2b7e7307fc846e28609defe908e9859689",
+      "operationCount": 279
+    },
+    {
+      "language": "typescript",
+      "scope": "internal",
+      "packageName": "@oresoftware/k8s-api-sdk-internal",
+      "path": "remote/api-sdks/typescript/internal",
+      "manifestPath": "remote/api-sdks/typescript/internal/sdk-manifest.json",
+      "manifestSha256": "3d5728605725bfc5d84c30106de7d90d29cae164c8b941f393d189d9cfa7ec57",
+      "catalogSha256": "ae1ce6bfb16657296304863f0dde0395858173c3acd113fcfa93b11dc43e1288",
+      "operationCount": 943
+    },
+    {
+      "language": "typescript",
+      "scope": "public",
+      "packageName": "@oresoftware/k8s-api-sdk-public",
+      "path": "remote/api-sdks/typescript/public",
+      "manifestPath": "remote/api-sdks/typescript/public/sdk-manifest.json",
+      "manifestSha256": "61a8e43da835c8bd5f3986690c88cd37ae75225e5279ed791514750daea0210e",
+      "catalogSha256": "dd6cd2dfce13705381cfcc79c99d9f2b7e7307fc846e28609defe908e9859689",
+      "operationCount": 279
+    }
+  ]
+}

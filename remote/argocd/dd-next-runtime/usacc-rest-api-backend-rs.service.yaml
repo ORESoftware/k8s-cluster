@@ -3,6 +3,10 @@ kind: Service
 metadata:
   name: usacc-rest-api-backend-rs
   namespace: default
+  annotations:
+    prometheus.io/scrape: 'true'
+    prometheus.io/path: '/metrics'
+    prometheus.io/port: '8121'
   labels:
     app: usacc-rest-api-backend-rs
 spec:

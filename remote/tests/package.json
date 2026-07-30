@@ -5,6 +5,7 @@
   "scripts": {
     "generate:api-docs": "node ../tools/generate-api-docs.mjs",
     "check:api-docs": "node ../tools/generate-api-docs.mjs --check",
+    "check:openapi-contracts": "node ../tools/validate-openapi-contracts.mjs",
     "check:observability-coverage": "node ../tools/check-observability-coverage.mjs",
     "audit:ai-ml-platform-helm": "node ../tools/audit-ai-ml-platform-helm.mjs",
     "audit:gateway-pages": "node ui-gateway-sweep.mjs",
@@ -27,6 +28,7 @@
     "test:cli:cloud-gitops-profiles": "pnpm exec tsx --test general/cloud-gitops-profiles.test.ts",
     "test:cli:container-pool-config": "pnpm exec tsx --test general/container-pool-config.test.ts",
     "test:cli:contract-service-config": "pnpm exec tsx --test general/contract-service-config.test.ts",
+    "test:cli:daedalus-observability": "pnpm exec tsx --test general/daedalus-observability.test.ts",
     "test:cli:des-simulator-config": "pnpm exec tsx --test general/des-simulator-config.test.ts",
     "test:cli:dev-server-container-pool-config": "pnpm exec tsx --test general/dev-server-container-pool-config.test.ts",
     "test:cli:fsharp-ws-server-config": "pnpm exec tsx --test general/fsharp-ws-server-config.test.ts",
@@ -49,6 +51,7 @@
     "test:cli:nats-subject-contract": "pnpm exec tsx --test general/nats-subject-contract.test.ts",
     "test:cli:nats-shadow-handoff": "pnpm exec tsx --test general/nats-shadow-handoff.test.ts",
     "test:cli:observability-config": "pnpm exec tsx --test general/observability-config.test.ts",
+    "test:cli:prometheus-applications": "pnpm exec tsx --test general/prometheus-application-scrape.test.ts",
     "test:cli:pg-defs-bindings": "pnpm exec tsx --test general/pg-defs-bindings.test.ts",
     "test:cli:pg-declarative-diff": "pnpm exec tsx --test general/pg-declarative-diff.test.ts",
     "test:cli:pg-sql-centralized": "pnpm exec tsx --test general/pg-sql-centralized.test.ts",
@@ -77,7 +80,9 @@
     "test:ui:athleto:marketing": "node --test ui/athleto-marketing.playwright.test.mjs ui/athleto-marketing.puppeteer.test.mjs",
     "test:ui:athleto:app": "node --test ui/athleto-app.playwright.test.mjs",
     "test:athleto": "pnpm run test:cli:athleto-backend-config && pnpm run test:cli:athleto-app-config && pnpm run test:cli:athleto-app-routing && pnpm run test:ui:athleto",
-    "test:all": "pnpm run test:cli && pnpm run test:ui:playwright && pnpm run test:ui:puppeteer && pnpm run test:ui:fiducia-customer && pnpm run test:ui:benefactor && pnpm run test:athleto"
+    "test:all": "pnpm run test:cli && pnpm run test:ui:playwright && pnpm run test:ui:puppeteer && pnpm run test:ui:fiducia-customer && pnpm run test:ui:benefactor && pnpm run test:athleto",
+    "check:openapi-native": "node ../tools/check-openapi-contracts.mjs",
+    "generate:openapi-sdks": "node ../tools/generate-openapi-sdks.mjs"
   },
   "devDependencies": {
     "playwright": "^1.60.0",

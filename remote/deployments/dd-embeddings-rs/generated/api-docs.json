@@ -1,30 +1,161 @@
 {
-  "service": "dd-embeddings-rs",
-  "version": "0.1.0",
-  "description": "Multi-provider embedding gateway and RAG indexing service.",
-  "notes": [
-    "Provider `anthropic` is an alias for `voyage`: Anthropic has no first-party embeddings API and recommends Voyage AI.",
-    "Providers are opt-in: only those with credentials in the secret are registered."
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "dd-embeddings-rs API (public)",
+    "version": "0.1.0",
+    "description": "Fail-closed public subset. Only operations explicitly marked public are included."
+  },
+  "tags": [
+    {
+      "name": "service"
+    }
   ],
-  "routes": [
-    { "method": "GET", "path": "/healthz", "auth": false, "summary": "Liveness probe (no dependencies)." },
-    { "method": "GET", "path": "/readyz", "auth": false, "summary": "Readiness probe; checks Qdrant reachability." },
-    { "method": "GET", "path": "/metrics", "auth": false, "summary": "Prometheus metrics (text exposition)." },
-    { "method": "GET", "path": "/api/docs.json", "auth": false, "summary": "This document, as JSON." },
-    { "method": "GET", "path": "/api/docs", "auth": false, "summary": "Human-readable API docs." },
-    { "method": "GET", "path": "/api/providers", "auth": true, "summary": "List configured embedding + rerank providers, default models, and aliases." },
-    { "method": "POST", "path": "/api/embeddings", "auth": true, "summary": "Generate embeddings. Body: { provider, input[], model?, dimensions?, input_type? }." },
-    { "method": "POST", "path": "/api/rerank", "auth": true, "summary": "Rerank documents against a query. Body: { provider, query, documents[], model?, top_n? }." },
-    { "method": "POST", "path": "/api/rag/index", "auth": true, "summary": "Embed documents and upsert into a Qdrant collection. Body: { collection, provider, documents[], model?, dimensions?, distance? }." },
-    { "method": "POST", "path": "/api/rag/search", "auth": true, "summary": "Embed a query and retrieve nearest neighbors. Body: { collection, provider, query, top_k?, model?, dimensions? }." },
-    { "method": "POST", "path": "/api/rag/delete", "auth": true, "summary": "Delete points by id from a collection. Body: { collection, ids[] }." },
-    { "method": "GET", "path": "/api/rag/collections", "auth": true, "summary": "List vector-store collections." },
-    { "method": "DELETE", "path": "/api/rag/collections/{collection}", "auth": true, "summary": "Delete an entire collection." },
-    { "method": "POST", "path": "/api/search/index", "auth": true, "summary": "Index documents into the Postgres search engine (content + attributes + edges). Body: { collection, provider, model?, documents[] }." },
-    { "method": "POST", "path": "/api/search", "auth": true, "summary": "Multi-signal search: lexical+trigram+semantic fused (RRF) with structured filters and graph expansion, optional rerank. Body: { collection, query, provider, signals?, filters?, graph?, top_k?, rerank? }." },
-    { "method": "POST", "path": "/api/search/edges", "auth": true, "summary": "Add graph edges by external_id. Body: { collection, edges:[{from,to,relation?,weight?}] }." },
-    { "method": "POST", "path": "/api/search/delete", "auth": true, "summary": "Delete documents by external_id. Body: { collection, external_ids[] }." },
-    { "method": "GET", "path": "/api/search/collections", "auth": true, "summary": "List search collections." },
-    { "method": "DELETE", "path": "/api/search/collections/{collection}", "auth": true, "summary": "Delete an entire search collection." }
+  "paths": {
+    "/api/docs": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_api_docs_6d9a44ce91c7",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_api_docs_json_5b156aa49080",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_docs_api_dbf8547bbd66",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_healthz_c98b323dcfc7",
+        "summary": "Health check.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_metrics_b8de5715f91f",
+        "summary": "Prometheus metrics.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_openapi_json_e309ad71cb55",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_readyz_1034976ffc04",
+        "summary": "Readiness check.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-route-type": "service",
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    }
+  },
+  "components": {},
+  "x-dd-contract-scope": "public",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "rust",
+  "x-dd-operation-count": 7,
+  "x-dd-route-count": 7,
+  "x-dd-service": "dd-embeddings-rs",
+  "x-dd-standard-docs-routes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
   ]
 }

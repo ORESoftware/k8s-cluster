@@ -1748,6 +1748,12 @@ data:
         proxy_pass http://dd-akrion-web-server-rs.default.svc.cluster.local:8127;
       }
 
+      # Keep Akrion process metrics on the in-cluster Service even for
+      # authenticated gateway users.
+      location ^~ /akrion-sim/metrics {
+        return 404;
+      }
+
       location /akrion-sim/ {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
@@ -2280,6 +2286,16 @@ data:
         return 302 /canonical/;
       }
 
+      # Prometheus exposition is an in-cluster operational surface. Keep both
+      # the exact endpoint and path variants out of the public marketing proxy.
+      location = /canonical/metrics {
+        return 404;
+      }
+
+      location ^~ /canonical/metrics/ {
+        return 404;
+      }
+
       location /canonical/ {
         if ($request_method !~ ^(GET|HEAD)$) {
           return 405;
@@ -2778,6 +2794,34 @@ data:
         proxy_pass http://$dd_up_shared_auth;
       }
 
+      # Happy Wakey's product gateway is public but self-authenticating: every
+      # product route verifies a short-lived shared-auth bearer. Cluster
+      # credentials and the NATS contact lane remain behind this boundary.
+      location = /happy-wakey/metrics {
+        return 404;
+      }
+
+      location /happy-wakey/ {
+        if ($request_method !~ ^(GET|POST|PUT|DELETE|OPTIONS)$) {
+          return 405;
+        }
+        client_max_body_size 256k;
+        rewrite ^/happy-wakey/?(.*)$ /$1 break;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+        proxy_next_upstream off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /happy-wakey;
+        proxy_set_header Cookie "";
+        proxy_connect_timeout 5;
+        proxy_read_timeout 40;
+        proxy_send_timeout 40;
+        set $dd_up_happy_wakey dd-happy-wakey-gateway.default.svc.cluster.local:8128;
+        proxy_pass http://$dd_up_happy_wakey;
+      }
+
       location / {
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -2815,6 +2859,12 @@ data:
       # endpoint churn; variable upstreams require an explicit DNS resolver.
       resolver kube-dns.kube-system.svc.cluster.local valid=10s ipv6=off;
       resolver_timeout 2s;
+
+      # Prometheus scrapes the ClusterIP Service directly. Do not publish
+      # process/request telemetry on the customer-facing Fiducia origin.
+      location ^~ /metrics {
+        return 404;
+      }
 
       location / {
         proxy_http_version 1.1;

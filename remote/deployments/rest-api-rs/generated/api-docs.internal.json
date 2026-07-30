@@ -1,0 +1,2306 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "rest-api-rs API",
+    "version": "0.1.0",
+    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+  },
+  "tags": [
+    {
+      "name": "internal-db"
+    },
+    {
+      "name": "runtime-config"
+    },
+    {
+      "name": "service"
+    },
+    {
+      "name": "user-generated"
+    }
+  ],
+  "paths": {
+    "/api/agents/events": {
+      "post": {
+        "operationId": "rest_api_rs_post_api_agents_events_6971154f54eb",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "ingest_agent_event"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/events",
+        "x-dd-source-paths": [
+          "/api/agents/events"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/git-repos": {
+      "get": {
+        "operationId": "rest_api_rs_get_api_agents_git_repos_b75ada275245",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "known_git_repos",
+          "save_known_git_repo"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/git-repos",
+        "x-dd-source-paths": [
+          "/api/agents/git-repos"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "rest_api_rs_post_api_agents_git_repos_78303580c252",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "known_git_repos",
+          "save_known_git_repo"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/git-repos",
+        "x-dd-source-paths": [
+          "/api/agents/git-repos"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/tasks": {
+      "get": {
+        "operationId": "rest_api_rs_get_api_agents_tasks_c0dc2dd39609",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "agents_tasks"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/tasks",
+        "x-dd-source-paths": [
+          "/api/agents/tasks"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/tasks/{task_id}/events": {
+      "get": {
+        "operationId": "rest_api_rs_get_api_agents_tasks_task_id_events_8828eb12cea9",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "agent_task_events"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/tasks/:task_id/events",
+        "x-dd-source-paths": [
+          "/api/agents/tasks/:task_id/events"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/tasks/{task_id}/feedback": {
+      "post": {
+        "operationId": "rest_api_rs_post_api_agents_tasks_task_id_feedback_75fa27c5bfd3",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "agent_task_feedback"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/tasks/:task_id/feedback",
+        "x-dd-source-paths": [
+          "/api/agents/tasks/:task_id/feedback"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/threads/{thread_id}/archive": {
+      "post": {
+        "operationId": "rest_api_rs_post_api_agents_threads_thread_id_archive_c67da362e8be",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "archive_thread"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/threads/:thread_id/archive",
+        "x-dd-source-paths": [
+          "/api/agents/threads/:thread_id/archive"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/threads/{thread_id}/breadcrumbs": {
+      "post": {
+        "operationId": "rest_api_rs_post_api_agents_threads_thread_id_breadcrumbs_303d17d8d730",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "ingest_agent_breadcrumb"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/threads/:thread_id/breadcrumbs",
+        "x-dd-source-paths": [
+          "/api/agents/threads/:thread_id/breadcrumbs"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/threads/{thread_id}/breadcrumbs/tail": {
+      "get": {
+        "operationId": "rest_api_rs_get_api_agents_threads_thread_id_breadcrumbs_tail_bfd6a54f59cb",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "agent_thread_breadcrumb_tail"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/threads/:thread_id/breadcrumbs/tail",
+        "x-dd-source-paths": [
+          "/api/agents/threads/:thread_id/breadcrumbs/tail"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/threads/{thread_id}/context": {
+      "get": {
+        "operationId": "rest_api_rs_get_api_agents_threads_thread_id_context_f4240cdd6e97",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "thread_context"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/threads/:thread_id/context",
+        "x-dd-source-paths": [
+          "/api/agents/threads/:thread_id/context"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/threads/{thread_id}/context-candidates": {
+      "post": {
+        "operationId": "rest_api_rs_post_api_agents_threads_thread_id_context_candidates_a44041fa897d",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "thread_context_candidates"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/threads/:thread_id/context-candidates",
+        "x-dd-source-paths": [
+          "/api/agents/threads/:thread_id/context-candidates"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/threads/{thread_id}/hard-delete": {
+      "post": {
+        "operationId": "rest_api_rs_post_api_agents_threads_thread_id_hard_delete_5182bdd8225a",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "hard_delete_thread"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/threads/:thread_id/hard-delete",
+        "x-dd-source-paths": [
+          "/api/agents/threads/:thread_id/hard-delete"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/threads/{thread_id}/make-commit": {
+      "post": {
+        "operationId": "rest_api_rs_post_api_agents_threads_thread_id_make_commit_8c9d7771674d",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "make_commit_thread"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/threads/:thread_id/make-commit",
+        "x-dd-source-paths": [
+          "/api/agents/threads/:thread_id/make-commit"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/threads/{thread_id}/merge-upstream": {
+      "post": {
+        "operationId": "rest_api_rs_post_api_agents_threads_thread_id_merge_upstream_7e77fdf3d5f1",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "merge_upstream_thread"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/threads/:thread_id/merge-upstream",
+        "x-dd-source-paths": [
+          "/api/agents/threads/:thread_id/merge-upstream"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/threads/{thread_id}/open-pr": {
+      "post": {
+        "operationId": "rest_api_rs_post_api_agents_threads_thread_id_open_pr_7f46bce88a10",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "open_pr_thread"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/threads/:thread_id/open-pr",
+        "x-dd-source-paths": [
+          "/api/agents/threads/:thread_id/open-pr"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/threads/{thread_id}/prepare": {
+      "post": {
+        "operationId": "rest_api_rs_post_api_agents_threads_thread_id_prepare_43c42f35be1b",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "prepare_thread"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/threads/:thread_id/prepare",
+        "x-dd-source-paths": [
+          "/api/agents/threads/:thread_id/prepare"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/threads/{thread_id}/runtime": {
+      "get": {
+        "operationId": "rest_api_rs_get_api_agents_threads_thread_id_runtime_b53f4b255289",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "thread_runtime"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/threads/:thread_id/runtime",
+        "x-dd-source-paths": [
+          "/api/agents/threads/:thread_id/runtime"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/threads/{thread_id}/sleep": {
+      "post": {
+        "operationId": "rest_api_rs_post_api_agents_threads_thread_id_sleep_c7866cd5581c",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "sleep_thread"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/threads/:thread_id/sleep",
+        "x-dd-source-paths": [
+          "/api/agents/threads/:thread_id/sleep"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/threads/{thread_id}/stream/{task_id}": {
+      "get": {
+        "operationId": "rest_api_rs_get_api_agents_threads_thread_id_stream_task_id_273c75190733",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "stream_thread_task"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/threads/:thread_id/stream/:task_id",
+        "x-dd-source-paths": [
+          "/api/agents/threads/:thread_id/stream/:task_id"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/threads/{thread_id}/tasks": {
+      "post": {
+        "operationId": "rest_api_rs_post_api_agents_threads_thread_id_tasks_29cbe6bea959",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "dispatch_thread_task"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/threads/:thread_id/tasks",
+        "x-dd-source-paths": [
+          "/api/agents/threads/:thread_id/tasks"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/agents/threads/{thread_id}/terminal": {
+      "post": {
+        "operationId": "rest_api_rs_post_api_agents_threads_thread_id_terminal_66d0da7f0b90",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "terminal_thread"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/agents/threads/:thread_id/terminal",
+        "x-dd-source-paths": [
+          "/api/agents/threads/:thread_id/terminal"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "rest_api_rs_get_api_docs_93531455e6bd",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/docs",
+        "x-dd-source-paths": [
+          "/api/docs"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "rest_api_rs_get_api_docs_json_707c91ad7fa1",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/docs.json",
+        "x-dd-source-paths": [
+          "/api/docs.json"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/graphql": {
+      "get": {
+        "operationId": "rest_api_rs_get_api_graphql_e5738ca3f6c8",
+        "summary": "GraphQL endpoint for typed remote REST API queries, guarded subservice calls, and the optional GraphiQL IDE on GET.",
+        "description": "GraphQL endpoint for typed remote REST API queries, guarded subservice calls, and the optional GraphiQL IDE on GET.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "api_graphiql",
+          "graphql_handler"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/graphql_routes.rs"
+        ],
+        "x-dd-source-path": "/api/graphql",
+        "x-dd-source-paths": [
+          "/api/graphql"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "rest_api_rs_post_api_graphql_3e69a680e7f9",
+        "summary": "GraphQL endpoint for typed remote REST API queries, guarded subservice calls, and the optional GraphiQL IDE on GET.",
+        "description": "GraphQL endpoint for typed remote REST API queries, guarded subservice calls, and the optional GraphiQL IDE on GET.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "api_graphiql",
+          "graphql_handler"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/graphql_routes.rs"
+        ],
+        "x-dd-source-path": "/api/graphql",
+        "x-dd-source-paths": [
+          "/api/graphql"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/graphql/schema": {
+      "get": {
+        "operationId": "rest_api_rs_get_api_graphql_schema_3729616ae61a",
+        "summary": "Machine-readable GraphQL SDL schema for the remote REST API service; protected by internal auth by default.",
+        "description": "Machine-readable GraphQL SDL schema for the remote REST API service; protected by internal auth by default.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret by default",
+        "x-dd-handlers": [
+          "graphql_schema_sdl"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/graphql_routes.rs"
+        ],
+        "x-dd-source-path": "/api/graphql/schema",
+        "x-dd-source-paths": [
+          "/api/graphql/schema"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      }
+    },
+    "/api/lambdas/functions": {
+      "get": {
+        "operationId": "rest_api_rs_get_api_lambdas_functions_d31b4a906094",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_lambda_function",
+          "lambda_functions"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/lambdas/functions",
+        "x-dd-source-paths": [
+          "/api/lambdas/functions"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "rest_api_rs_post_api_lambdas_functions_4579254e009b",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "create_lambda_function",
+          "lambda_functions"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/lambdas/functions",
+        "x-dd-source-paths": [
+          "/api/lambdas/functions"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/lambdas/functions/{id}": {
+      "get": {
+        "operationId": "rest_api_rs_get_api_lambdas_functions_id_19b87e8299c3",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "lambda_function",
+          "update_lambda_function"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/lambdas/functions/:id",
+        "x-dd-source-paths": [
+          "/api/lambdas/functions/:id"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "patch": {
+        "operationId": "rest_api_rs_patch_api_lambdas_functions_id_14ad391e5e02",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "lambda_function",
+          "update_lambda_function"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/lambdas/functions/:id",
+        "x-dd-source-paths": [
+          "/api/lambdas/functions/:id"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/runtime-config/snapshot/{env}": {
+      "get": {
+        "operationId": "rest_api_rs_get_api_runtime_config_snapshot_env_bdea95173095",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "env",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "runtime_config_snapshot"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/api/runtime-config/snapshot/:env",
+        "x-dd-source-paths": [
+          "/api/runtime-config/snapshot/:env"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "rest_api_rs_get_docs_api_1e3b8ddd447f",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Human-readable generated API documentation.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "api_docs"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/docs/api",
+        "x-dd-source-paths": [
+          "/docs/api"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/graphql": {
+      "get": {
+        "operationId": "rest_api_rs_get_graphql_b24cac368676",
+        "summary": "GraphQL endpoint for typed remote REST API queries, guarded subservice calls, and the optional GraphiQL IDE on GET.",
+        "description": "GraphQL endpoint for typed remote REST API queries, guarded subservice calls, and the optional GraphiQL IDE on GET.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "graphiql",
+          "graphql_handler"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/graphql_routes.rs"
+        ],
+        "x-dd-source-path": "/graphql",
+        "x-dd-source-paths": [
+          "/graphql"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "rest_api_rs_post_graphql_2379a9942974",
+        "summary": "GraphQL endpoint for typed remote REST API queries, guarded subservice calls, and the optional GraphiQL IDE on GET.",
+        "description": "GraphQL endpoint for typed remote REST API queries, guarded subservice calls, and the optional GraphiQL IDE on GET.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "graphiql",
+          "graphql_handler"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/graphql_routes.rs"
+        ],
+        "x-dd-source-path": "/graphql",
+        "x-dd-source-paths": [
+          "/graphql"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/graphql/schema": {
+      "get": {
+        "operationId": "rest_api_rs_get_graphql_schema_49dccd8100a3",
+        "summary": "Machine-readable GraphQL SDL schema for the remote REST API service; protected by internal auth by default.",
+        "description": "Machine-readable GraphQL SDL schema for the remote REST API service; protected by internal auth by default.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret by default",
+        "x-dd-handlers": [
+          "graphql_schema_sdl"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/graphql_routes.rs"
+        ],
+        "x-dd-source-path": "/graphql/schema",
+        "x-dd-source-paths": [
+          "/graphql/schema"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "rest_api_rs_get_healthz_9b32acdda188",
+        "summary": "Health check.",
+        "description": "Health check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "healthz"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/healthz",
+        "x-dd-source-paths": [
+          "/healthz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/internal/db/contract/tables": {
+      "get": {
+        "operationId": "rest_api_rs_get_internal_db_contract_tables_841fff7b8154",
+        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
+        "description": "Internal operator database inspection route. Not part of the public REST contract.",
+        "tags": [
+          "internal-db"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret",
+        "x-dd-handlers": [
+          "contract_tables"
+        ],
+        "x-dd-implementation": "internal-operator",
+        "x-dd-route-type": "internal-db",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/db_routes.rs"
+        ],
+        "x-dd-source-path": "/internal/db/contract/tables",
+        "x-dd-source-paths": [
+          "/internal/db/contract/tables"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      }
+    },
+    "/internal/db/join": {
+      "get": {
+        "operationId": "rest_api_rs_get_internal_db_join_21cb72799a9f",
+        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
+        "description": "Internal operator database inspection route. Not part of the public REST contract.",
+        "tags": [
+          "internal-db"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret",
+        "x-dd-handlers": [
+          "join_rows"
+        ],
+        "x-dd-implementation": "internal-operator",
+        "x-dd-route-type": "internal-db",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/db_routes.rs"
+        ],
+        "x-dd-source-path": "/internal/db/join",
+        "x-dd-source-paths": [
+          "/internal/db/join"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      }
+    },
+    "/internal/db/pg-defs/tables": {
+      "get": {
+        "operationId": "rest_api_rs_get_internal_db_pg_defs_tables_15acc89ab4e4",
+        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
+        "description": "Internal operator database inspection route. Not part of the public REST contract.",
+        "tags": [
+          "internal-db"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret",
+        "x-dd-handlers": [
+          "contract_tables"
+        ],
+        "x-dd-implementation": "internal-operator",
+        "x-dd-route-type": "internal-db",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/db_routes.rs"
+        ],
+        "x-dd-source-path": "/internal/db/pg-defs/tables",
+        "x-dd-source-paths": [
+          "/internal/db/pg-defs/tables"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      }
+    },
+    "/internal/db/schemas/{schema}/tables/{table}": {
+      "get": {
+        "operationId": "rest_api_rs_get_internal_db_schemas_schema_tables_table_0aaa51dd193f",
+        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
+        "description": "Internal operator database inspection route. Not part of the public REST contract.",
+        "tags": [
+          "internal-db"
+        ],
+        "parameters": [
+          {
+            "name": "schema",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "table",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret",
+        "x-dd-handlers": [
+          "table_metadata_explicit_schema"
+        ],
+        "x-dd-implementation": "internal-operator",
+        "x-dd-route-type": "internal-db",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/db_routes.rs"
+        ],
+        "x-dd-source-path": "/internal/db/schemas/:schema/tables/:table",
+        "x-dd-source-paths": [
+          "/internal/db/schemas/:schema/tables/:table"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      }
+    },
+    "/internal/db/schemas/{schema}/tables/{table}/rows": {
+      "get": {
+        "operationId": "rest_api_rs_get_internal_db_schemas_schema_tables_table_rows_552d97ca69d2",
+        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
+        "description": "Internal operator database inspection route. Not part of the public REST contract.",
+        "tags": [
+          "internal-db"
+        ],
+        "parameters": [
+          {
+            "name": "schema",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "table",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret",
+        "x-dd-handlers": [
+          "insert_row_explicit_schema",
+          "list_rows_explicit_schema"
+        ],
+        "x-dd-implementation": "internal-operator",
+        "x-dd-route-type": "internal-db",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/db_routes.rs"
+        ],
+        "x-dd-source-path": "/internal/db/schemas/:schema/tables/:table/rows",
+        "x-dd-source-paths": [
+          "/internal/db/schemas/:schema/tables/:table/rows"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "rest_api_rs_post_internal_db_schemas_schema_tables_table_rows_2fd52f471167",
+        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
+        "description": "Internal operator database inspection route. Not part of the public REST contract.",
+        "tags": [
+          "internal-db"
+        ],
+        "parameters": [
+          {
+            "name": "schema",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "table",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret",
+        "x-dd-handlers": [
+          "insert_row_explicit_schema",
+          "list_rows_explicit_schema"
+        ],
+        "x-dd-implementation": "internal-operator",
+        "x-dd-route-type": "internal-db",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/db_routes.rs"
+        ],
+        "x-dd-source-path": "/internal/db/schemas/:schema/tables/:table/rows",
+        "x-dd-source-paths": [
+          "/internal/db/schemas/:schema/tables/:table/rows"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      }
+    },
+    "/internal/db/schemas/{schema}/tables/{table}/rows/{id}": {
+      "delete": {
+        "operationId": "rest_api_rs_delete_internal_db_schemas_schema_tables_table_rows_id_0c23f8aa0195",
+        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
+        "description": "Internal operator database inspection route. Not part of the public REST contract.",
+        "tags": [
+          "internal-db"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "schema",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "table",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret",
+        "x-dd-handlers": [
+          "delete_row_explicit_schema",
+          "get_row_explicit_schema",
+          "update_row_explicit_schema"
+        ],
+        "x-dd-implementation": "internal-operator",
+        "x-dd-route-type": "internal-db",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/db_routes.rs"
+        ],
+        "x-dd-source-path": "/internal/db/schemas/:schema/tables/:table/rows/:id",
+        "x-dd-source-paths": [
+          "/internal/db/schemas/:schema/tables/:table/rows/:id"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      },
+      "get": {
+        "operationId": "rest_api_rs_get_internal_db_schemas_schema_tables_table_rows_id_46dbb5d1cb44",
+        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
+        "description": "Internal operator database inspection route. Not part of the public REST contract.",
+        "tags": [
+          "internal-db"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "schema",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "table",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret",
+        "x-dd-handlers": [
+          "delete_row_explicit_schema",
+          "get_row_explicit_schema",
+          "update_row_explicit_schema"
+        ],
+        "x-dd-implementation": "internal-operator",
+        "x-dd-route-type": "internal-db",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/db_routes.rs"
+        ],
+        "x-dd-source-path": "/internal/db/schemas/:schema/tables/:table/rows/:id",
+        "x-dd-source-paths": [
+          "/internal/db/schemas/:schema/tables/:table/rows/:id"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "rest_api_rs_patch_internal_db_schemas_schema_tables_table_rows_id_ea516bfdee45",
+        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
+        "description": "Internal operator database inspection route. Not part of the public REST contract.",
+        "tags": [
+          "internal-db"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "schema",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "table",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret",
+        "x-dd-handlers": [
+          "delete_row_explicit_schema",
+          "get_row_explicit_schema",
+          "update_row_explicit_schema"
+        ],
+        "x-dd-implementation": "internal-operator",
+        "x-dd-route-type": "internal-db",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/db_routes.rs"
+        ],
+        "x-dd-source-path": "/internal/db/schemas/:schema/tables/:table/rows/:id",
+        "x-dd-source-paths": [
+          "/internal/db/schemas/:schema/tables/:table/rows/:id"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      }
+    },
+    "/internal/db/tables": {
+      "get": {
+        "operationId": "rest_api_rs_get_internal_db_tables_d4622278f989",
+        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
+        "description": "Internal operator database inspection route. Not part of the public REST contract.",
+        "tags": [
+          "internal-db"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret",
+        "x-dd-handlers": [
+          "list_tables"
+        ],
+        "x-dd-implementation": "internal-operator",
+        "x-dd-route-type": "internal-db",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/db_routes.rs"
+        ],
+        "x-dd-source-path": "/internal/db/tables",
+        "x-dd-source-paths": [
+          "/internal/db/tables"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      }
+    },
+    "/internal/db/tables/{table}": {
+      "get": {
+        "operationId": "rest_api_rs_get_internal_db_tables_table_362285cfeb84",
+        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
+        "description": "Internal operator database inspection route. Not part of the public REST contract.",
+        "tags": [
+          "internal-db"
+        ],
+        "parameters": [
+          {
+            "name": "table",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret",
+        "x-dd-handlers": [
+          "table_metadata_default_schema"
+        ],
+        "x-dd-implementation": "internal-operator",
+        "x-dd-route-type": "internal-db",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/db_routes.rs"
+        ],
+        "x-dd-source-path": "/internal/db/tables/:table",
+        "x-dd-source-paths": [
+          "/internal/db/tables/:table"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      }
+    },
+    "/internal/db/tables/{table}/rows": {
+      "get": {
+        "operationId": "rest_api_rs_get_internal_db_tables_table_rows_30e9870ff585",
+        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
+        "description": "Internal operator database inspection route. Not part of the public REST contract.",
+        "tags": [
+          "internal-db"
+        ],
+        "parameters": [
+          {
+            "name": "table",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret",
+        "x-dd-handlers": [
+          "insert_row_default_schema",
+          "list_rows_default_schema"
+        ],
+        "x-dd-implementation": "internal-operator",
+        "x-dd-route-type": "internal-db",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/db_routes.rs"
+        ],
+        "x-dd-source-path": "/internal/db/tables/:table/rows",
+        "x-dd-source-paths": [
+          "/internal/db/tables/:table/rows"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "rest_api_rs_post_internal_db_tables_table_rows_fba283af2027",
+        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
+        "description": "Internal operator database inspection route. Not part of the public REST contract.",
+        "tags": [
+          "internal-db"
+        ],
+        "parameters": [
+          {
+            "name": "table",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret",
+        "x-dd-handlers": [
+          "insert_row_default_schema",
+          "list_rows_default_schema"
+        ],
+        "x-dd-implementation": "internal-operator",
+        "x-dd-route-type": "internal-db",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/db_routes.rs"
+        ],
+        "x-dd-source-path": "/internal/db/tables/:table/rows",
+        "x-dd-source-paths": [
+          "/internal/db/tables/:table/rows"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      }
+    },
+    "/internal/db/tables/{table}/rows/{id}": {
+      "delete": {
+        "operationId": "rest_api_rs_delete_internal_db_tables_table_rows_id_d33cb0c41cc9",
+        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
+        "description": "Internal operator database inspection route. Not part of the public REST contract.",
+        "tags": [
+          "internal-db"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "table",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret",
+        "x-dd-handlers": [
+          "delete_row_default_schema",
+          "get_row_default_schema",
+          "update_row_default_schema"
+        ],
+        "x-dd-implementation": "internal-operator",
+        "x-dd-route-type": "internal-db",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/db_routes.rs"
+        ],
+        "x-dd-source-path": "/internal/db/tables/:table/rows/:id",
+        "x-dd-source-paths": [
+          "/internal/db/tables/:table/rows/:id"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      },
+      "get": {
+        "operationId": "rest_api_rs_get_internal_db_tables_table_rows_id_79a7548157f6",
+        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
+        "description": "Internal operator database inspection route. Not part of the public REST contract.",
+        "tags": [
+          "internal-db"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "table",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret",
+        "x-dd-handlers": [
+          "delete_row_default_schema",
+          "get_row_default_schema",
+          "update_row_default_schema"
+        ],
+        "x-dd-implementation": "internal-operator",
+        "x-dd-route-type": "internal-db",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/db_routes.rs"
+        ],
+        "x-dd-source-path": "/internal/db/tables/:table/rows/:id",
+        "x-dd-source-paths": [
+          "/internal/db/tables/:table/rows/:id"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "rest_api_rs_patch_internal_db_tables_table_rows_id_3edeb2f4d1c1",
+        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
+        "description": "Internal operator database inspection route. Not part of the public REST contract.",
+        "tags": [
+          "internal-db"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "table",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret",
+        "x-dd-handlers": [
+          "delete_row_default_schema",
+          "get_row_default_schema",
+          "update_row_default_schema"
+        ],
+        "x-dd-implementation": "internal-operator",
+        "x-dd-route-type": "internal-db",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/db_routes.rs"
+        ],
+        "x-dd-source-path": "/internal/db/tables/:table/rows/:id",
+        "x-dd-source-paths": [
+          "/internal/db/tables/:table/rows/:id"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      }
+    },
+    "/internal/lambda-images/{function_id}/package": {
+      "post": {
+        "operationId": "rest_api_rs_post_internal_lambda_images_function_id_package_cb8817c654ed",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Custom code-first route derived from the service router.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "function_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "package_lambda_image_internal"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/internal/lambda-images/:function_id/package",
+        "x-dd-source-paths": [
+          "/internal/lambda-images/:function_id/package"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/internal/runtime-config": {
+      "get": {
+        "operationId": "rest_api_rs_get_internal_runtime_config_94ac1d6a23bf",
+        "summary": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+        "description": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "dd_runtime_config_client::handle_get"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/libs/runtime-config-client-rs/src/lib.rs"
+        ],
+        "x-dd-source-path": "/internal/runtime-config",
+        "x-dd-source-paths": [
+          "/internal/runtime-config"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/internal/runtime-config/reset": {
+      "post": {
+        "operationId": "rest_api_rs_post_internal_runtime_config_reset_6ebef74e0c56",
+        "summary": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+        "description": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+        "x-dd-handlers": [
+          "dd_runtime_config_client::handle_reset"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/libs/runtime-config-client-rs/src/lib.rs"
+        ],
+        "x-dd-source-path": "/internal/runtime-config/reset",
+        "x-dd-source-paths": [
+          "/internal/runtime-config/reset"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
+      }
+    },
+    "/internal/update-runtime-config": {
+      "post": {
+        "operationId": "rest_api_rs_post_internal_update_runtime_config_66c140ce5e2f",
+        "summary": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+        "description": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+        "x-dd-handlers": [
+          "dd_runtime_config_client::handle_apply"
+        ],
+        "x-dd-implementation": "code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/libs/runtime-config-client-rs/src/lib.rs"
+        ],
+        "x-dd-source-path": "/internal/update-runtime-config",
+        "x-dd-source-paths": [
+          "/internal/update-runtime-config"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "rest_api_rs_get_metrics_5bb9cfacf82f",
+        "summary": "Prometheus metrics.",
+        "description": "Prometheus metrics.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "metrics"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/metrics",
+        "x-dd-source-paths": [
+          "/metrics"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "rest_api_rs_get_readyz_59b8713102fa",
+        "summary": "Readiness check.",
+        "description": "Readiness check.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "image_builder_readyz"
+        ],
+        "x-dd-implementation": "service",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/main.rs"
+        ],
+        "x-dd-source-path": "/readyz",
+        "x-dd-source-paths": [
+          "/readyz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serverAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Server-Auth"
+      },
+      "operatorSecret": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Operator-Secret"
+      },
+      "webhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Webhook-Signature"
+      }
+    }
+  },
+  "x-dd-contract-scope": "internal",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "rust",
+  "x-dd-operation-count": 58,
+  "x-dd-route-count": 58,
+  "x-dd-service": "rest-api-rs",
+  "x-dd-standard-docs-routes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ]
+}

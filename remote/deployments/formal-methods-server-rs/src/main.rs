@@ -39,6 +39,7 @@
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
+    extract::DefaultBodyLimit,
     routing::{get, post},
     Router,
 };
@@ -68,6 +69,7 @@ use crate::state::{config_from_env, env_u64, env_usize, env_value, AppState, Cou
 const SERVICE_NAME: &str = "dd-formal-methods-server";
 const DEFAULT_PORT: u16 = 8110;
 const SCHEMA_VERSION: &str = "formal-methods.v1";
+const MAX_REQUEST_BODY_BYTES: usize = 8 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // main
@@ -126,6 +128,7 @@ async fn main() {
         .route("/validate", post(validate_inline))
         .route("/webhooks/github", post(github_webhook))
         .route("/pulls/:owner/:repo/:number", get(get_pull_request_status))
+        .layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES))
         .with_state(state)
         .merge(dd_runtime_config_client::router());
 

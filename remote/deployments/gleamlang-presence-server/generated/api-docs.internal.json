@@ -1,0 +1,658 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "gleamlang-presence-server API",
+    "version": "0.1.0",
+    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+  },
+  "tags": [
+    {
+      "name": "runtime-config"
+    },
+    {
+      "name": "service"
+    },
+    {
+      "name": "user-generated"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "operationId": "gleamlang_presence_server_get_23af72802f06",
+        "summary": "Presence service help",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getPresenceHelp"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/",
+        "x-dd-source-paths": [
+          "/"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "gleamlang_presence_server_get_api_docs_7955b2b65374",
+        "summary": "Interactive API reference",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getPresenceApiReference"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/docs",
+        "x-dd-source-paths": [
+          "/api/docs"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "gleamlang_presence_server_get_api_docs_json_33894b4d682c",
+        "summary": "Public OpenAPI contract alias",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getPresenceOpenApiAlias"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/docs.json",
+        "x-dd-source-paths": [
+          "/api/docs.json"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/conv/{conv_id}/broadcast": {
+      "post": {
+        "operationId": "gleamlang_presence_server_post_conv_conv_id_broadcast_bdefd4562386",
+        "summary": "Broadcast to a conversation",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "conv_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "cluster-network-policy",
+        "x-dd-handlers": [
+          "broadcastPresenceConversation"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/conv/{conv_id}/broadcast",
+        "x-dd-source-paths": [
+          "/conv/{conv_id}/broadcast"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/conv/{conv_id}/members": {
+      "get": {
+        "operationId": "gleamlang_presence_server_get_conv_conv_id_members_3d199fbe158f",
+        "summary": "List conversation members",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "conv_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "cluster-network-policy",
+        "x-dd-handlers": [
+          "listPresenceConversationMembers"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/conv/{conv_id}/members",
+        "x-dd-source-paths": [
+          "/conv/{conv_id}/members"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/conv/{conv_id}/members/{user_id}": {
+      "delete": {
+        "operationId": "gleamlang_presence_server_delete_conv_conv_id_members_user_id_e80911a1a01b",
+        "summary": "Remove a conversation member",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "conv_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "cluster-network-policy",
+        "x-dd-handlers": [
+          "removePresenceConversationMember"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/conv/{conv_id}/members/{user_id}",
+        "x-dd-source-paths": [
+          "/conv/{conv_id}/members/{user_id}"
+        ],
+        "x-dd-visibility": "internal"
+      },
+      "post": {
+        "operationId": "gleamlang_presence_server_post_conv_conv_id_members_user_id_d9864dcea2d6",
+        "summary": "Add a conversation member",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "conv_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "cluster-network-policy",
+        "x-dd-handlers": [
+          "addPresenceConversationMember"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/conv/{conv_id}/members/{user_id}",
+        "x-dd-source-paths": [
+          "/conv/{conv_id}/members/{user_id}"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "gleamlang_presence_server_get_docs_api_dfad3d725db1",
+        "summary": "Interactive API reference alias",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getPresenceApiReferenceAlias"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/docs/api",
+        "x-dd-source-paths": [
+          "/docs/api"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "gleamlang_presence_server_get_healthz_65610a4485ce",
+        "summary": "Presence process health",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "cluster-network-policy",
+        "x-dd-handlers": [
+          "getPresenceHealth"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/healthz",
+        "x-dd-source-paths": [
+          "/healthz"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/internal/runtime-config": {
+      "get": {
+        "operationId": "gleamlang_presence_server_get_internal_runtime_config_4dacd8e07f00",
+        "summary": "Get applied runtime configuration",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+        "x-dd-handlers": [
+          "getPresenceRuntimeConfig"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/internal/runtime-config",
+        "x-dd-source-paths": [
+          "/internal/runtime-config"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
+      }
+    },
+    "/internal/runtime-config/reset": {
+      "post": {
+        "operationId": "gleamlang_presence_server_post_internal_runtime_config_reset_53253a07d9c1",
+        "summary": "Reset runtime configuration",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+        "x-dd-handlers": [
+          "resetPresenceRuntimeConfig"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/internal/runtime-config/reset",
+        "x-dd-source-paths": [
+          "/internal/runtime-config/reset"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
+      }
+    },
+    "/internal/update-runtime-config": {
+      "post": {
+        "operationId": "gleamlang_presence_server_post_internal_update_runtime_config_ece284ea25ab",
+        "summary": "Apply runtime configuration",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+        "x-dd-handlers": [
+          "applyPresenceRuntimeConfig"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/internal/update-runtime-config",
+        "x-dd-source-paths": [
+          "/internal/update-runtime-config"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
+      }
+    },
+    "/nodes": {
+      "get": {
+        "operationId": "gleamlang_presence_server_get_nodes_20dcc24257a3",
+        "summary": "List connected BEAM nodes",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "cluster-network-policy",
+        "x-dd-handlers": [
+          "listPresenceNodes"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/nodes",
+        "x-dd-source-paths": [
+          "/nodes"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "gleamlang_presence_server_get_openapi_json_3b3a44f2453e",
+        "summary": "Public OpenAPI contract",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getPresenceOpenApi"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/openapi.json",
+        "x-dd-source-paths": [
+          "/openapi.json"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/user/{user_id}/broadcast": {
+      "post": {
+        "operationId": "gleamlang_presence_server_post_user_user_id_broadcast_b2d312d610ce",
+        "summary": "Broadcast to a user",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "cluster-network-policy",
+        "x-dd-handlers": [
+          "broadcastPresenceUser"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/user/{user_id}/broadcast",
+        "x-dd-source-paths": [
+          "/user/{user_id}/broadcast"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/user/{user_id}/devices/{device_id}/logout": {
+      "post": {
+        "operationId": "gleamlang_presence_server_post_user_user_id_devices_device_id_logout_031ce93d07d6",
+        "summary": "Log out one user device",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "cluster-network-policy",
+        "x-dd-handlers": [
+          "logoutPresenceDevice"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/user/{user_id}/devices/{device_id}/logout",
+        "x-dd-source-paths": [
+          "/user/{user_id}/devices/{device_id}/logout"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/ws": {
+      "get": {
+        "operationId": "gleamlang_presence_server_get_ws_001e441dcc2a",
+        "summary": "Open a presence WebSocket",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "cluster-network-policy",
+        "x-dd-handlers": [
+          "connectPresenceWebSocket"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/gleamlang-presence-server/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/ws",
+        "x-dd-source-paths": [
+          "/ws"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serverAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Server-Auth"
+      },
+      "operatorSecret": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Operator-Secret"
+      },
+      "webhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Webhook-Signature"
+      }
+    }
+  },
+  "x-dd-contract-scope": "internal",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "gleam",
+  "x-dd-operation-count": 17,
+  "x-dd-route-count": 17,
+  "x-dd-service": "gleamlang-presence-server",
+  "x-dd-standard-docs-routes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ]
+}

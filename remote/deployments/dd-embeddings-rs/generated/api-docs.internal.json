@@ -1,0 +1,764 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "dd-embeddings-rs API",
+    "version": "0.1.0",
+    "description": "Generated from the service route registrations. Request and response schemas become authoritative as this service migrates to its native typed OpenAPI adapter."
+  },
+  "tags": [
+    {
+      "name": "service"
+    },
+    {
+      "name": "user-generated"
+    }
+  ],
+  "paths": {
+    "/api/docs": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_api_docs_6d9a44ce91c7",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getPublicApiReference"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/docs",
+        "x-dd-source-paths": [
+          "/api/docs"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_api_docs_json_5b156aa49080",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getPublicOpenApiDocumentCompatibilityAlias"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/docs.json",
+        "x-dd-source-paths": [
+          "/api/docs.json"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/api/embeddings": {
+      "post": {
+        "operationId": "dd_embeddings_rs_post_api_embeddings_6de87cc7d9b7",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "createEmbeddings"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/embeddings",
+        "x-dd-source-paths": [
+          "/api/embeddings"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/providers": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_api_providers_36cf90869dd9",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "listProviders"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/providers",
+        "x-dd-source-paths": [
+          "/api/providers"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/rag/collections": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_api_rag_collections_e0b7929b0df0",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "listRagCollections"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/rag/collections",
+        "x-dd-source-paths": [
+          "/api/rag/collections"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/rag/collections/{collection}": {
+      "delete": {
+        "operationId": "dd_embeddings_rs_delete_api_rag_collections_collection_fa32853eb919",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "collection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "deleteRagCollection"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/rag/collections/{collection}",
+        "x-dd-source-paths": [
+          "/api/rag/collections/{collection}"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/rag/delete": {
+      "post": {
+        "operationId": "dd_embeddings_rs_post_api_rag_delete_48e747c661f4",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "deleteRagPoints"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/rag/delete",
+        "x-dd-source-paths": [
+          "/api/rag/delete"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/rag/index": {
+      "post": {
+        "operationId": "dd_embeddings_rs_post_api_rag_index_f2ca7c2fdaa6",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "indexRagDocuments"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/rag/index",
+        "x-dd-source-paths": [
+          "/api/rag/index"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/rag/search": {
+      "post": {
+        "operationId": "dd_embeddings_rs_post_api_rag_search_3fe44ec70b90",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "searchRagCollection"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/rag/search",
+        "x-dd-source-paths": [
+          "/api/rag/search"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/rerank": {
+      "post": {
+        "operationId": "dd_embeddings_rs_post_api_rerank_cd6798bbe163",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "rerankDocuments"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/rerank",
+        "x-dd-source-paths": [
+          "/api/rerank"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/search": {
+      "post": {
+        "operationId": "dd_embeddings_rs_post_api_search_de4648e12ab4",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "searchDocuments"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/search",
+        "x-dd-source-paths": [
+          "/api/search"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/search/collections": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_api_search_collections_59d686771167",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "listSearchCollections"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/search/collections",
+        "x-dd-source-paths": [
+          "/api/search/collections"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/search/collections/{collection}": {
+      "delete": {
+        "operationId": "dd_embeddings_rs_delete_api_search_collections_collection_ca093876a7f5",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [
+          {
+            "name": "collection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "deleteSearchCollection"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/search/collections/{collection}",
+        "x-dd-source-paths": [
+          "/api/search/collections/{collection}"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/search/delete": {
+      "post": {
+        "operationId": "dd_embeddings_rs_post_api_search_delete_8b548d112c2f",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "deleteSearchDocuments"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/search/delete",
+        "x-dd-source-paths": [
+          "/api/search/delete"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/search/edges": {
+      "post": {
+        "operationId": "dd_embeddings_rs_post_api_search_edges_282fcc3e6c76",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "addSearchEdges"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/search/edges",
+        "x-dd-source-paths": [
+          "/api/search/edges"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/api/search/index": {
+      "post": {
+        "operationId": "dd_embeddings_rs_post_api_search_index_c03d7512df3f",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "indexSearchDocuments"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/api/search/index",
+        "x-dd-source-paths": [
+          "/api/search/index"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_docs_api_dbf8547bbd66",
+        "summary": "Human-readable generated API documentation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getPublicApiReferenceCompatibilityAlias"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/docs/api",
+        "x-dd-source-paths": [
+          "/docs/api"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_healthz_c98b323dcfc7",
+        "summary": "Health check.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getHealth"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/healthz",
+        "x-dd-source-paths": [
+          "/healthz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/internal/docs/api": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_internal_docs_api_d373fd1bbe62",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "getInternalApiReference"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/internal/docs/api",
+        "x-dd-source-paths": [
+          "/internal/docs/api"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/internal/openapi.json": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_internal_openapi_json_e9dd76675a9c",
+        "summary": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "user-generated"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "service-defined",
+        "x-dd-handlers": [
+          "getInternalOpenApiDocument"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "user-generated",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/internal/openapi.json",
+        "x-dd-source-paths": [
+          "/internal/openapi.json"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_metrics_b8de5715f91f",
+        "summary": "Prometheus metrics.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getPrometheusMetrics"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/metrics",
+        "x-dd-source-paths": [
+          "/metrics"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_openapi_json_e309ad71cb55",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getPublicOpenApiDocument"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/openapi.json",
+        "x-dd-source-paths": [
+          "/openapi.json"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "dd_embeddings_rs_get_readyz_1034976ffc04",
+        "summary": "Readiness check.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "public",
+        "x-dd-handlers": [
+          "getReadiness"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/dd-embeddings-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/readyz",
+        "x-dd-source-paths": [
+          "/readyz"
+        ],
+        "x-dd-visibility": "public",
+        "security": []
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "serverAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Server-Auth"
+      },
+      "operatorSecret": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Operator-Secret"
+      },
+      "webhookSignature": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Webhook-Signature"
+      }
+    }
+  },
+  "x-dd-contract-scope": "internal",
+  "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
+  "x-dd-language": "rust",
+  "x-dd-operation-count": 23,
+  "x-dd-route-count": 23,
+  "x-dd-service": "dd-embeddings-rs",
+  "x-dd-standard-docs-routes": [
+    "/docs/api",
+    "/api/docs",
+    "/api/docs.json"
+  ]
+}

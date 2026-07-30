@@ -1,0 +1,47 @@
+name: browser mcp external smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-mcp-external-smoke
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: verify ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: aws
+            endpoint: https://98.90.186.114/browser-mcp
+          - name: hetzner
+            endpoint: https://hello.95-217-171-250.sslip.io/browser-mcp
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Verify required secret is configured
+        env:
+          BROWSER_MCP_OAUTH_OPERATOR_SECRET: ${{ secrets.BROWSER_MCP_OAUTH_OPERATOR_SECRET }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${BROWSER_MCP_OAUTH_OPERATOR_SECRET}" ]]; then
+            echo 'BROWSER_MCP_OAUTH_OPERATOR_SECRET is not configured' >&2
+            exit 1
+          fi
+
+      - name: Run external OAuth, MCP, and browser verifier
+        env:
+          BROWSER_MCP_OAUTH_OPERATOR_SECRET: ${{ secrets.BROWSER_MCP_OAUTH_OPERATOR_SECRET }}
+        run: |
+          set -euo pipefail
+          scripts/verify-browser-mcp.sh '${{ matrix.endpoint }}'

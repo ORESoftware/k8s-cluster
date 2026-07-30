@@ -130,8 +130,16 @@ java -jar target/dd-spark-pipeline-server.jar
 
 The EC2 Kubernetes overlay runs `docker.io/library/maven:3.9.9-eclipse-temurin-17`, mounts the host
 checkout at `/opt/dd-next-1`, copies this module plus generated JVM pg-defs into an emptyDir
-workspace, and self-builds the jar on pod start. This keeps the cluster from depending on a locally
-prebuilt `docker.io/library/dd-spark-pipeline-server:dev` image that may not exist in containerd.
+workspace, and uses a copied `target/dd-spark-pipeline-server.jar` when the pinned checkout already
+contains one. If that jar is absent, the entrypoint attempts a Maven build in the workspace.
+
+That fallback is not a guaranteed cold-start path: the active NetworkPolicy deliberately allows
+only DNS and private-CIDR Postgres egress, while the workspace starts with an empty Maven repository.
+Until a follow-up publishes an immutable first-party image or supplies and verifies a complete
+offline Maven repository, operators must prebuild the jar in the pinned node checkout before
+restarting this workload. The manifest does not require the unversioned
+`docker.io/library/dd-spark-pipeline-server:dev` image, but it still has this explicit node-artifact
+prerequisite.
 
 The Dockerfile remains useful for local image testing. Build it from the k8s-cluster repo root so it
 can include the generated JVM pg-defs sources and generated API docs:
@@ -165,10 +173,14 @@ nerdctl -n k8s.io build -f remote/deployments/spark-pipeline-server/Dockerfile \
 * `k8s/ec2/kustomization.yaml` — EC2 overlay consumed by Argo CD via
   `remote/argocd/apps/dd-spark-pipeline-server.application.yaml`.
 
-The EC2 deployment runs in the `ai-ml` namespace from the prebuilt shaded-jar image instead of
-mounting the repo with `hostPath` or fetching Maven dependencies at runtime. Rollouts use
-`maxUnavailable: 0` plus the PDB so an ordinary deploy does not intentionally drop the API to zero
-ready pods. The NetworkPolicy allows DNS for service/RDS resolution and keeps optional TCP 5432
-Postgres traffic on private CIDRs only. The optional `RDS_DATABASE_URL` key is read from
+The EC2 deployment runs in the `ai-ml` namespace from the reviewed Maven toolchain image,
+mounts the node's pinned checkout read-only, copies this module plus generated JVM pg-defs into a
+bounded `emptyDir`, and starts the copied jar or attempts a Maven fallback there. Maven writes and
+runtime temp files stay off the read-only root filesystem, but the cold-start prerequisite described
+above still applies. The single-node, pod-slot-constrained cluster rolls this singleton in place with
+`maxSurge: 0` and `maxUnavailable: 1`; the PDB continues to guard voluntary disruptions, but an
+intentional deployment rollout may briefly replace the sole ready pod.
+The NetworkPolicy allows DNS for service/RDS resolution and keeps optional TCP 5432 Postgres traffic
+on private CIDRs only. The optional `RDS_DATABASE_URL` key is read from
 `dd-remote-rest-api-secrets`, mirrored into `ai-ml` by the AI/ML seed layer, so the manifest reuses
 the existing External Secrets bridge instead of depending on an uncreated service-specific secret.

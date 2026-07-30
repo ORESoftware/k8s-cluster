@@ -398,7 +398,7 @@ pub(crate) const LAMBDA_FUNCTIONS_BODY: &str = r###"<div class="app">
       </div>
       <div class="actions" style="margin-top: 10px">
         <button id="check" type="button">Check</button>
-        <button id="save" class="primary" type="button">Save</button>
+        <button id="save" class="primary" type="button" title="Save draft (⌘/Ctrl+S)">Save</button>
         <button id="reset" type="button">Reset</button>
         <span id="save-state" class="pill warn">idle</span>
       </div>
@@ -414,7 +414,7 @@ pub(crate) const LAMBDA_FUNCTIONS_BODY: &str = r###"<div class="app">
         <textarea id="request-json" spellcheck="false"></textarea>
       </label>
       <div class="actions" style="margin-top: 10px">
-        <button id="run" class="primary" type="button">Run</button>
+        <button id="run" class="primary" type="button" title="Run selected function (⌘/Ctrl+Enter)">Run</button>
         <code id="invoke-route">/lambdas/invoke/:function-id</code>
       </div>
       <pre id="output" class="output"></pre>
@@ -1603,6 +1603,28 @@ $("run").addEventListener("click", () => invokeSelected().catch((error) => {
   setRunState("failed", "bad");
   $("output").textContent = String(error);
 }));
+
+// Keyboard shortcuts: ⌘/Ctrl+S saves the draft, ⌘/Ctrl+Enter runs the selected
+// function — the same paths the Save and Run buttons take, with matching error
+// handling. Additive; leaves every other key untouched.
+document.addEventListener("keydown", (event) => {
+  const mod = event.metaKey || event.ctrlKey;
+  if (!mod) return;
+  const key = event.key.toLowerCase();
+  if (key === "s") {
+    event.preventDefault();
+    save().catch((error) => {
+      setSaveState("failed", "bad");
+      $("output").textContent = String(error);
+    });
+  } else if (key === "enter") {
+    event.preventDefault();
+    invokeSelected().catch((error) => {
+      setRunState("failed", "bad");
+      $("output").textContent = String(error);
+    });
+  }
+});
 
 fillEditor(null);
 applyQueryAutofill();

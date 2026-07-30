@@ -20,6 +20,8 @@ use crate::analysis::tools::check_tool_present;
 use crate::analysis::workspace::Workspace;
 use crate::analysis::{Analyzer, StepReport, StepStatus};
 
+const MAX_CONF_FILES: usize = 128;
+
 #[derive(Debug, Clone)]
 pub struct CertoraAnalyzer {
     pub enabled: bool,
@@ -52,22 +54,52 @@ impl Analyzer for CertoraAnalyzer {
         let mut stderr_combined = String::new();
         let mut passed = 0usize;
         let mut failed = 0usize;
+        let mut files_seen = 0usize;
 
         while let Ok(Some(entry)) = entries.next_entry().await {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("conf") {
                 continue;
             }
+            files_seen += 1;
+            if files_seen > MAX_CONF_FILES {
+                failed += 1;
+                runner::append_aggregated_tail(
+                    &mut stderr_combined,
+                    &format!("Certora config limit exceeded (max {MAX_CONF_FILES})\n"),
+                );
+                break;
+            }
+            if !matches!(entry.file_type().await, Ok(file_type) if file_type.is_file() && !file_type.is_symlink())
+            {
+                failed += 1;
+                runner::append_aggregated_tail(
+                    &mut stderr_combined,
+                    &format!("refusing non-regular Certora config: {}\n", path.display()),
+                );
+                continue;
+            }
             let path_str = path.display().to_string();
             let args: Vec<&str> = vec![path_str.as_str()];
-            let outcome = runner::run("certoraRun", &args, ws.root(), &[], self.timeout).await;
-            stdout_combined.push_str(&format!("== {path_str}\n"));
-            stdout_combined.push_str(&outcome.stdout_tail);
-            stdout_combined.push('\n');
+            let remaining = self.timeout.saturating_sub(started.elapsed());
+            if remaining.is_zero() {
+                failed += 1;
+                runner::append_aggregated_tail(
+                    &mut stderr_combined,
+                    "Certora analyzer exhausted its total time budget\n",
+                );
+                break;
+            }
+            let outcome = runner::run("certoraRun", &args, ws.root(), &[], remaining).await;
+            runner::append_aggregated_tail(
+                &mut stdout_combined,
+                &format!("== {path_str}\n{}\n", outcome.stdout_tail),
+            );
             if !outcome.stderr_tail.is_empty() {
-                stderr_combined.push_str(&format!("== {path_str}\n"));
-                stderr_combined.push_str(&outcome.stderr_tail);
-                stderr_combined.push('\n');
+                runner::append_aggregated_tail(
+                    &mut stderr_combined,
+                    &format!("== {path_str}\n{}\n", outcome.stderr_tail),
+                );
             }
             match outcome.status {
                 ProcessStatus::Exited { code: 0 } => passed += 1,
