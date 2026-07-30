@@ -56,7 +56,7 @@ data:
         "spark,spark-master,spark-worker,airflow,benefactor-backend-rs,dd-agent-sim-server,"
         "dd-ai-agent-bridge,dd-akrion-web-server-rs,dd-alertmanager,dd-benefactor-marketing-rs,"
         "dd-canonical-cloud,dd-chaos,dd-constraint-scheduler,dd-data-viz-rs,dd-dataset-labeling,"
-        "dd-document-rs,dd-email-sms-contact-rs,dd-embeddings-rs,dd-evolution-optimizer-island,"
+        "dd-document-rs,dd-email-sms-contact-rs,dd-embeddings-rs,dd-evolution-optimizer-island,dd-happy-wakey-gateway,"
         "dd-evolution-optimizer-master,dd-fiducia-rs,dd-func-approx-rs,dd-git-rs,dd-gpu-rs,"
         "dd-image-builder,dd-knowledge-graph-builder,dd-monte-carlo-server,dd-next-1-js,dd-ocr-rs,"
         "dd-quantum-compute-rs,dd-raft-consensus,dd-route-optimizer,dd-routing-server-master,"
