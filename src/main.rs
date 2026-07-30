@@ -55,6 +55,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{postgres::PgPoolOptions, PgPool, Row};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tower_http::trace::TraceLayer;
 use uuid::Uuid;
 
 const SERVICE_NAME: &str = "dd-in-house-mip-solver-node";
@@ -8308,6 +8309,7 @@ fn app_router(state: AppState) -> Router {
         .route("/sessions/:session_id/events", post(stream_session))
         .route("/sessions/:session_id/solve", post(solve_session))
         .layer(DefaultBodyLimit::max(max_http_body_bytes()))
+        .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
 
@@ -8345,9 +8347,13 @@ async fn shutdown_signal() {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    // Retain the provider guard through graceful shutdown so the batch
+    // processor flushes solver traces, warnings, and request spans.
+    let _telemetry = fiducia_telemetry::init(SERVICE_NAME);
+
     let runtime_config = runtime_config::initialize();
     for warning in runtime_config.warnings() {
-        eprintln!("runtime config warning: {warning}");
+        tracing::warn!(%warning, "runtime config warning");
     }
     if runtime_config.help_requested() {
         let help_table = runtime_config
@@ -8379,7 +8385,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let coordination = CoordinationConfig::from_env(redis.is_some());
     let state = AppState {
         role,
-        node_id,
+        node_id: node_id.clone(),
         nats,
         redis,
         pg,
@@ -8400,7 +8406,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let control_state = state.clone();
     tokio::spawn(async move {
         if let Err(error) = run_master_control_listener(control_state).await {
-            eprintln!("mip solver control listener stopped: {error}");
+            tracing::error!(%error, "mip solver control listener stopped");
         }
     });
 
@@ -8408,7 +8414,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         let worker_state = state.clone();
         tokio::spawn(async move {
             if let Err(error) = run_slave(worker_state).await {
-                eprintln!("mip solver slave loop stopped: {error}");
+                tracing::error!(%error, "mip solver slave loop stopped");
             }
         });
     }
@@ -8419,7 +8425,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let port = env_value("PORT", "8097");
     let addr: SocketAddr = format!("{host}:{port}").parse()?;
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    println!("{SERVICE_NAME} listening on {addr}");
+    tracing::info!(%addr, role = ?role, node.id = %node_id, "mip solver listening");
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;

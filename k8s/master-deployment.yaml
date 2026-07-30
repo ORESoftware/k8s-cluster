@@ -17,6 +17,10 @@ spec:
       app: dd-in-house-mip-solver-node-master
   template:
     metadata:
+      annotations:
+        prometheus.io/scrape: 'true'
+        prometheus.io/port: '8117'
+        prometheus.io/path: /metrics
       labels:
         app: dd-in-house-mip-solver-node-master
         app.kubernetes.io/component: master
@@ -99,6 +103,15 @@ spec:
               value: /tmp/mip-solver-node-target
             - name: CARGO_BUILD_JOBS
               value: '1'
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4317
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: >-
+                service.namespace=oresoftware,
+                deployment.environment.name=remote-dev,
+                github.repository=ORESoftware/mip-solver-node.rs
             - name: MIP_SOLVER_NODE_ROLE
               value: master
             - name: NATS_URL
