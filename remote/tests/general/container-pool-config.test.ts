@@ -20,6 +20,35 @@ async function readRepoFile(relativePath: string): Promise<string> {
   return readFile(resolve(repoRoot, relativePath), 'utf8');
 }
 
+async function readContainerPoolSource(): Promise<string> {
+  const modules = [
+    'background',
+    'config',
+    'dispatch',
+    'engine',
+    'http_api',
+    'lifecycle',
+    'pool_config',
+    'redis_lock',
+    'types',
+    'util',
+  ];
+  const main = await readRepoFile('remote/deployments/container-pool-rs/src/main.rs');
+  for (const moduleName of modules) {
+    assert.match(
+      main,
+      new RegExp(`mod ${moduleName};`),
+      `container-pool-rs main.rs must register ${moduleName}.rs`,
+    );
+  }
+  const moduleSources = await Promise.all(
+    modules.map((moduleName) =>
+      readRepoFile(`remote/deployments/container-pool-rs/src/${moduleName}.rs`),
+    ),
+  );
+  return [main, ...moduleSources].join('\n');
+}
+
 function parseContainerPoolAppConfigSeed(seedSql: string): {
   runtimeContract: {
     defaultRequestPath: string;
@@ -61,7 +90,16 @@ function parseContainerPoolAppConfigSeed(seedSql: string): {
 
 test('rust container pool reads Postgres config and dispatches over HTTP or NATS', async () => {
   const cargoToml = await readRepoFile('remote/deployments/container-pool-rs/Cargo.toml');
-  const source = await readRepoFile('remote/deployments/container-pool-rs/src/main.rs');
+  const source = await readContainerPoolSource();
+  const natsBackgroundSource = await readRepoFile(
+    'remote/deployments/container-pool-rs/src/background.rs',
+  );
+  const natsConfigSource = await readRepoFile(
+    'remote/deployments/container-pool-rs/src/config.rs',
+  );
+  const natsLifecycleSource = await readRepoFile(
+    'remote/deployments/container-pool-rs/src/lifecycle.rs',
+  );
   const readme = await readRepoFile('remote/deployments/container-pool-rs/readme.md');
   // schema/schema.sql is the single source of truth for every shared table
   // (app_config + container_pool_configs + lambda_functions + agent_remote_dev_*),
@@ -123,20 +161,28 @@ test('rust container pool reads Postgres config and dispatches over HTTP or NATS
   // Source-of-truth NATS subject constants come from the generated
   // @dd/nats-subject-defs crate.
   assert.match(
-    source,
-    /use dd_nats_subject_defs::\{[\s\S]*?cdc_table_filter_subject[\s\S]*?container_pool_events_subject[\s\S]*?container_pool_heartbeats_subject[\s\S]*?CONTAINER_POOL_REQUESTS_SUBJECT[\s\S]*?CONTAINER_POOL_RESULTS_SUBJECT[\s\S]*?\};/,
-  );
+  natsBackgroundSource,
+  /use dd_nats_subject_defs::cdc_table_filter_subject;/,
+);
+assert.match(
+  natsConfigSource,
+  /use dd_nats_subject_defs::\{CONTAINER_POOL_REQUESTS_SUBJECT, CONTAINER_POOL_RESULTS_SUBJECT\};/,
+);
+assert.match(
+  natsLifecycleSource,
+  /use dd_nats_subject_defs::\{container_pool_events_subject, container_pool_heartbeats_subject\};/,
+);
   assert.match(source, /CONTAINER_POOL_REQUESTS_SUBJECT/);
   assert.match(source, /CONTAINER_POOL_RESULTS_SUBJECT/);
   assert.match(source, /container_pool_events_subject\(&pool\.slug\)/);
   assert.match(source, /container_pool_heartbeats_subject\(&pool\.slug\)/);
   assert.match(
     source,
-    /cdc_table_filter_subject\("cdc", "public", "app_config"\)/,
+    /cdc_table_filter_subject\(\s*"cdc",\s*"public",\s*"app_config",?\s*\)/,
   );
   assert.match(
     source,
-    /cdc_table_filter_subject\("cdc", "public", "container_pool_configs"\)/,
+    /cdc_table_filter_subject\(\s*"cdc",\s*"public",\s*"container_pool_configs",?\s*\)/,
   );
   assert.match(source, /route\("\/pools\/:pool\/dispatch", post\(dispatch_pool\)\)/);
   assert.match(source, /route\("\/pools\/:pool\/warm", post\(warm_pool\)\)/);
@@ -292,6 +338,7 @@ test('container pool app_config seed is a complete runtime contract', async () =
     parsed.pools.map((entry) => entry.slug).sort(),
     [
       'nodejs',
+      'dd-document',
       'nodejs-chat-claude-k8s-cluster-dev',
       'nodejs-chat-claude-live-mutex-dev',
       'nodejs-chat-claude-us-anti-corruption-court-project-main',
@@ -307,7 +354,26 @@ test('container pool app_config seed is a complete runtime contract', async () =
 
   const baseImageByRuntime = new Map(parsed.baseImages.map((entry) => [entry.runtime, entry]));
   for (const pool of parsed.pools) {
-    const baseImage =
+  if (pool.slug === 'dd-document') {
+    assert.match(pool.image, /^docker\.io\/library\/dd-document-rs:/);
+    assert.equal(pool.requestPath, '/convert');
+    assert.equal(pool.healthPath, '/healthz');
+    assert.equal(pool.containerPort, 8122);
+    assert.equal(pool.minWarm, 1);
+    assert.equal(pool.maxWarm, 3);
+    assert.equal(pool.maxConcurrencyPerContainer, 4);
+    assert.equal(pool.requestTimeoutMs, 120_000);
+    assert.equal(pool.idleTtlSeconds, 1_800);
+    assert.equal(pool.env.DOCUMENT_MAX_INPUT_BYTES, '67108864');
+    assert.equal(pool.env.DOCUMENT_MAX_OUTPUT_BYTES, '67108864');
+    assert.equal(pool.env.DOCUMENT_MAX_IMAGE_BYTES, '67108864');
+    assert.equal(pool.env.DOCUMENT_MAX_STREAM_BYTES, '134217728');
+    assert.equal(pool.env.DOCUMENT_IMAGE_CONCURRENCY, '4');
+    assert.equal(pool.natsSubject, 'dd.remote.container_pool.dd-document.requests');
+    continue;
+  }
+
+  const baseImage =
       baseImageByRuntime.get(pool.slug) ??
       (pool.slug.startsWith('nodejs-chat-claude-')
         ? baseImageByRuntime.get('nodejs-chat-claude')

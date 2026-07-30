@@ -2,7 +2,7 @@ use std::error::Error;
 use std::fmt::{Display, Formatter};
 
 pub const SDK_SCOPE: &str = "public";
-pub const CATALOG_SHA256: &str = "23a49b456e478b3498a905f8ee905adcc639ba25d867705ed69fee205d3c55c3";
+pub const CATALOG_SHA256: &str = "b9b45458249438952fa12da2a86cebdb6851ddd3cdf5945f0a4e65c72380acdd";
 pub const OPERATION_COUNT: usize = 279;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -340,69 +340,69 @@ pub static OPERATIONS: &[ApiOperation] = &[
     },
     ApiOperation {
         service: "browser-test-server",
-        operation_id: "browser_test_server_get_api_docs_9fcd645a3eb1",
-        method: "GET",
-        path: "/api/docs",
-        path_parameters: &[],
-        required_query_parameters: &[],
-        optional_query_parameters: &[],
-        request_body_required: false,
-        contract_sha256: "f9d8219e1511073edaffd8d942443d5d75c86beafb0dacd31a1582529cde25a9",
-    },
-    ApiOperation {
-        service: "browser-test-server",
-        operation_id: "browser_test_server_get_api_docs_json_aeee36ad5e79",
-        method: "GET",
-        path: "/api/docs.json",
-        path_parameters: &[],
-        required_query_parameters: &[],
-        optional_query_parameters: &[],
-        request_body_required: false,
-        contract_sha256: "e093a8331bef715e5b4f047327d04d1d34b2e2b5f5fe42958b2af68d27daa9be",
-    },
-    ApiOperation {
-        service: "browser-test-server",
-        operation_id: "browser_test_server_get_docs_api_03e6dc5fb010",
-        method: "GET",
-        path: "/docs/api",
-        path_parameters: &[],
-        required_query_parameters: &[],
-        optional_query_parameters: &[],
-        request_body_required: false,
-        contract_sha256: "bb35d1b6ed8426f431607e394355980935fd1d34a66cfa2a92445df05abb7558",
-    },
-    ApiOperation {
-        service: "browser-test-server",
-        operation_id: "browser_test_server_get_healthz_4722a067e6ee",
+        operation_id: "getBrowserTestHealth",
         method: "GET",
         path: "/healthz",
         path_parameters: &[],
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "14ae48c27d1382bab824232c4cb0eec9205ec2a5db3207e7d4cd8a90a87f3f61",
+        contract_sha256: "e46b134416c9a47da9e3da05fbbeb8b4f3642d52e9fba10d80a57106a57780b2",
     },
     ApiOperation {
         service: "browser-test-server",
-        operation_id: "browser_test_server_get_metrics_73d9974b01c6",
+        operation_id: "getBrowserTestPrometheusMetrics",
         method: "GET",
         path: "/metrics",
         path_parameters: &[],
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "377d1dec9953b1c44f251d7cd5410cdde54a6f284a8e380ce90c47dac88afd90",
+        contract_sha256: "d2c1c4a292ff9fb9db85429af5eba5d65b76ab3a4c1dd29acc1f4483eec87ab6",
     },
     ApiOperation {
         service: "browser-test-server",
-        operation_id: "browser_test_server_get_openapi_json_db092e1508a9",
+        operation_id: "getBrowserTestPublicApiReference",
+        method: "GET",
+        path: "/api/docs",
+        path_parameters: &[],
+        required_query_parameters: &[],
+        optional_query_parameters: &[],
+        request_body_required: false,
+        contract_sha256: "4b25d32c1b32129382a13133419e188ce9460b0f77394451c00b0f6128bbcba4",
+    },
+    ApiOperation {
+        service: "browser-test-server",
+        operation_id: "getBrowserTestPublicApiReferenceCompatibilityAlias",
+        method: "GET",
+        path: "/docs/api",
+        path_parameters: &[],
+        required_query_parameters: &[],
+        optional_query_parameters: &[],
+        request_body_required: false,
+        contract_sha256: "019594fb3c4df74cfc932438fdb9960af02b8bcd415a7cbd313b02b548f7e8e4",
+    },
+    ApiOperation {
+        service: "browser-test-server",
+        operation_id: "getBrowserTestPublicOpenApi",
         method: "GET",
         path: "/openapi.json",
         path_parameters: &[],
         required_query_parameters: &[],
         optional_query_parameters: &[],
         request_body_required: false,
-        contract_sha256: "6f1789f370fd12eadd9afa1de631b49fe6d1d55a7b7c60cde203d5105ee03fdd",
+        contract_sha256: "e5bbceb5a0518181d55f405fa318c5e9e23adfe1ff7a6680b8497293a30295f1",
+    },
+    ApiOperation {
+        service: "browser-test-server",
+        operation_id: "getBrowserTestPublicOpenApiCompatibilityAlias",
+        method: "GET",
+        path: "/api/docs.json",
+        path_parameters: &[],
+        required_query_parameters: &[],
+        optional_query_parameters: &[],
+        request_body_required: false,
+        contract_sha256: "a756191fe3244f48769e2b65c0ec400b14a612f8b549494f24f53be62e6cb875",
     },
     ApiOperation {
         service: "build-server-rs",
@@ -3225,7 +3225,7 @@ mod tests {
     #[test]
     fn builds_canonical_docs_request() {
         assert_eq!(SDK_SCOPE, "public");
-        assert_eq!(CATALOG_SHA256, "23a49b456e478b3498a905f8ee905adcc639ba25d867705ed69fee205d3c55c3");
+        assert_eq!(CATALOG_SHA256, "b9b45458249438952fa12da2a86cebdb6851ddd3cdf5945f0a4e65c72380acdd");
         assert_eq!(OPERATIONS.len(), 279);
         let request = build_request(
             "https://example.test/",
