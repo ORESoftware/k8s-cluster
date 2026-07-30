@@ -39,21 +39,18 @@ impl Config {
             "BRIDGE_INTERNAL_TOKEN must be at least 16 characters"
         );
 
+        let subject_prefix = env_or("BRIDGE_SUBJECT_PREFIX", "shared-auth.");
         let deliveries_raw = env_or("BRIDGE_DELIVERIES", "[]");
         let deliveries: Vec<DeliveryRoute> = serde_json::from_str(&deliveries_raw)
             .context("BRIDGE_DELIVERIES must be a JSON array of {subject, webhook}")?;
         for route in &deliveries {
-            anyhow::ensure!(
-                route.webhook.starts_with("http://") || route.webhook.starts_with("https://"),
-                "delivery webhook must be http(s): {}",
-                route.webhook
-            );
+            validate_delivery_webhook(&route.webhook).map_err(|reason| {
+                anyhow::anyhow!("invalid delivery webhook '{}': {reason}", route.webhook)
+            })?;
             // Delivery subscriptions may use wildcards, but still only under
             // the bridge's own prefix — this bridge is not a generic NATS tap.
             anyhow::ensure!(
-                route
-                    .subject
-                    .starts_with(env_or("BRIDGE_SUBJECT_PREFIX", "shared-auth.").as_str()),
+                route.subject.starts_with(subject_prefix.as_str()),
                 "delivery subject must stay under the bridge prefix: {}",
                 route.subject
             );
@@ -67,7 +64,7 @@ impl Config {
                 "BRIDGE_NATS_URL",
                 "nats://dd-nats.messaging.svc.cluster.local:4222",
             ),
-            subject_prefix: env_or("BRIDGE_SUBJECT_PREFIX", "shared-auth."),
+            subject_prefix,
             internal_token,
             deliveries,
             max_payload_bytes: 64 * 1024,
@@ -102,6 +99,81 @@ pub fn validate_publish_subject(subject: &str, prefix: &str) -> Result<(), &'sta
         }
     }
     Ok(())
+}
+
+/// Constrain NATS→HTTP delivery destinations so configuration cannot turn this
+/// service into a redirect-following SSRF primitive. Public destinations require
+/// HTTPS; plain HTTP is reserved for loopback, private IPs, and Kubernetes Service
+/// DNS names. Query strings, fragments, and URL credentials are rejected so the
+/// configured destination remains stable and auditable.
+pub fn validate_delivery_webhook(webhook: &str) -> Result<(), &'static str> {
+    let raw = webhook.trim();
+    if raw.is_empty()
+        || raw.len() > 2_048
+        || raw
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
+    {
+        return Err("URL is empty, too long, or contains invalid characters");
+    }
+
+    let parsed = reqwest::Url::parse(raw).map_err(|_| "URL is invalid")?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("URL must use http or https");
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err("URL must not contain credentials");
+    }
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err("URL must not contain a query or fragment");
+    }
+
+    let host = parsed
+        .host_str()
+        .ok_or("URL requires a host")?
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    if matches!(
+        host.as_str(),
+        "metadata.google.internal" | "metadata.azure.internal"
+    ) {
+        return Err("cloud metadata destinations are not allowed");
+    }
+
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        let forbidden = match ip {
+            std::net::IpAddr::V4(address) => {
+                address.is_unspecified() || address.is_link_local() || address.is_multicast()
+            }
+            std::net::IpAddr::V6(address) => {
+                address.is_unspecified()
+                    || address.is_unicast_link_local()
+                    || address.is_multicast()
+            }
+        };
+        if forbidden {
+            return Err("link-local, unspecified, and multicast destinations are not allowed");
+        }
+    }
+
+    if parsed.scheme() == "http" && !plain_http_destination_allowed(&host) {
+        return Err("public webhook destinations must use https");
+    }
+    Ok(())
+}
+
+fn plain_http_destination_allowed(host: &str) -> bool {
+    if host == "localhost" || host.ends_with(".localhost") {
+        return true;
+    }
+    if host.ends_with(".svc") || host.ends_with(".svc.cluster.local") {
+        return true;
+    }
+    match host.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(address)) => address.is_loopback() || address.is_private(),
+        Ok(std::net::IpAddr::V6(address)) => address.is_loopback() || address.is_unique_local(),
+        Err(_) => false,
+    }
 }
 
 fn env_or(key: &str, default: &str) -> String {
@@ -141,5 +213,28 @@ mod tests {
         .unwrap();
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].subject, "shared-auth.commands.>");
+        assert!(validate_delivery_webhook(&routes[0].webhook).is_ok());
+    }
+
+    #[test]
+    fn webhook_egress_policy_blocks_unsafe_destinations() {
+        assert!(validate_delivery_webhook("https://hooks.example.com/events").is_ok());
+        assert!(validate_delivery_webhook(
+            "http://dd-shared-auth.shared-auth.svc.cluster.local:8120/internal/commands"
+        )
+        .is_ok());
+        assert!(validate_delivery_webhook("http://127.0.0.1:8120/hook").is_ok());
+
+        assert!(validate_delivery_webhook("http://hooks.example.com/events").is_err());
+        assert!(validate_delivery_webhook("http://169.254.169.254/latest/meta-data").is_err());
+        assert!(
+            validate_delivery_webhook("http://metadata.google.internal/computeMetadata/v1")
+                .is_err()
+        );
+        assert!(validate_delivery_webhook("https://user:pass@hooks.example.com/events").is_err());
+        assert!(
+            validate_delivery_webhook("https://hooks.example.com/events?token=secret").is_err()
+        );
+        assert!(validate_delivery_webhook("file:///tmp/hook").is_err());
     }
 }
