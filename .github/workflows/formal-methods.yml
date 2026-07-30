@@ -7,6 +7,7 @@ on:
       - 'remote/deployments/formal-methods-service-rs/**'
       - 'remote/libs/runtime-config-client-rs/**'
       - 'remote/libs/telemetry-rs/**'
+      - 'scripts/ci/init-submodules-with-report.sh'
       - '.github/workflows/formal-methods.yml'
   push:
     branches:
@@ -17,6 +18,7 @@ on:
       - 'remote/deployments/formal-methods-service-rs/**'
       - 'remote/libs/runtime-config-client-rs/**'
       - 'remote/libs/telemetry-rs/**'
+      - 'scripts/ci/init-submodules-with-report.sh'
       - '.github/workflows/formal-methods.yml'
   workflow_dispatch:
 
@@ -33,51 +35,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      - name: Require private libraries deploy key
+        env:
+          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+        run: test -n "$K8S_LIBS_DEPLOY_KEY"
+
       - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           show-progress: false
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
-      - name: Probe shared-library access
-        id: shared_libs
-        continue-on-error: true
+      - name: Initialize exact pinned shared libraries
         env:
-          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
-        run: |
-          set -euo pipefail
-          test -n "$K8S_SUBMODULE_TOKEN"
-          token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
-          git -c "url.${token_url}.insteadOf=git@github.com:" \
-            ls-remote git@github.com:ORESoftware/k8s-libs-and-shared-defs.git HEAD >/dev/null
-
-      - name: Report unavailable integration tests
-        if: steps.shared_libs.outcome != 'success'
-        run: |
-          echo "::warning::The private shared-library token is unavailable or expired; service integration tests were skipped."
-
-      - name: Initialize shared Rust libraries
-        if: steps.shared_libs.outcome == 'success'
-        env:
-          K8S_SUBMODULE_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
-        run: |
-          set -euo pipefail
-          token_url="https://x-access-token:${K8S_SUBMODULE_TOKEN}@github.com/"
-          git -c "url.${token_url}.insteadOf=git@github.com:" \
-            submodule update --init --recursive --depth 1 -- remote/libs
+          SUBMODULE_AUTH_MODE: ssh
+        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
 
       - name: Install Z3
-        if: steps.shared_libs.outcome == 'success'
         run: |
           sudo apt-get update
           sudo apt-get install --yes z3
 
       - name: Test annotation analyzer
-        if: steps.shared_libs.outcome == 'success'
         run: cargo test --locked
         working-directory: remote/deployments/formal-methods-server-rs
 
       - name: Test repository analyzer service
-        if: steps.shared_libs.outcome == 'success'
         run: cargo test --locked --all-targets
         working-directory: remote/deployments/formal-methods-service-rs
