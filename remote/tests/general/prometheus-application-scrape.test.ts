@@ -182,6 +182,13 @@ test("application metrics remain off customer-facing gateway routes", async () =
     gateway,
     /server_name app\.fiducia\.cloud;[\s\S]*?location \^~ \/metrics \{\s*return 404;/,
   );
+  assert.match(gateway, /location = \/canonical\/metrics \{\s*return 404;/);
+  assert.match(gateway, /location \^~ \/canonical\/metrics\/ \{\s*return 404;/);
+  const canonicalMetricsDeny = gateway.indexOf('location = /canonical/metrics');
+  const canonicalMetricsPrefixDeny = gateway.indexOf('location ^~ /canonical/metrics/');
+  const canonicalProxy = gateway.indexOf('location /canonical/');
+  assert.ok(canonicalMetricsDeny >= 0 && canonicalMetricsDeny < canonicalProxy);
+  assert.ok(canonicalMetricsPrefixDeny >= 0 && canonicalMetricsPrefixDeny < canonicalProxy);
   assert.match(gateway, /location \^~ \/akrion-sim\/metrics \{\s*return 404;/);
   assert.doesNotMatch(
     gateway,

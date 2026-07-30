@@ -2286,6 +2286,16 @@ data:
         return 302 /canonical/;
       }
 
+      # Prometheus exposition is an in-cluster operational surface. Keep both
+      # the exact endpoint and path variants out of the public marketing proxy.
+      location = /canonical/metrics {
+        return 404;
+      }
+
+      location ^~ /canonical/metrics/ {
+        return 404;
+      }
+
       location /canonical/ {
         if ($request_method !~ ^(GET|HEAD)$) {
           return 405;
