@@ -253,6 +253,40 @@ test('dev-server compares shared secrets in constant time', async () => {
   );
 });
 
+test('the public browser MCP fails closed on authentication', async () => {
+  // /browser-mcp is publicly routed and write-capable — browser_act drives a
+  // real browser. Authentication is enforced by BROWSER_MCP_REQUIRE_AUTH, which
+  // used to default to false in code and be switched on only by the production
+  // manifest. Any deployment path that missed the variable served anonymous
+  // write access, and validate_config never checked it (unlike
+  // SERVER_AUTH_SECRET and the domain allowlist, which hard-error).
+  const main = await readRepoFile('remote/deployments/browser-mcp-rs/src/main.rs');
+  assert.match(
+    main,
+    /require_auth:\s*env_bool\("BROWSER_MCP_REQUIRE_AUTH",\s*true\)/,
+    'BROWSER_MCP_REQUIRE_AUTH must default to true so an unconfigured process ' +
+      'stays authenticated',
+  );
+
+  // Belt and braces: the manifest ArgoCD actually deploys must still say so.
+  const deployment = await readRepoFile(
+    'remote/deployments/browser-mcp-rs/k8s/ec2/dd-browser-mcp-rs.deployment.yaml',
+  );
+  assert.match(
+    deployment,
+    /-\s*name:\s*BROWSER_MCP_REQUIRE_AUTH\s*\n\s*value:\s*'?"?true'?"?/,
+    'the deployed browser-mcp manifest must set BROWSER_MCP_REQUIRE_AUTH=true',
+  );
+
+  const app = await readRepoFile('remote/argocd/apps/dd-browser-mcp-rs.application.yaml');
+  assert.match(
+    app,
+    /path:\s*remote\/deployments\/browser-mcp-rs\/k8s\/ec2/,
+    'if the Argo source path moves, the manifest asserted above is no longer ' +
+      'the one being deployed — re-point this test at the new path',
+  );
+});
+
 test('Erlang distribution cookies are never shipped as a usable value', async () => {
   // These files sit in a numbered, apply-in-order directory, so `kubectl apply
   // -f k8s/` used to install a cookie whose value is printed in this repo. The
