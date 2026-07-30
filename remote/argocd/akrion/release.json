@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "promotedAt": "2026-07-27T17:13:37Z",
+  "promotedAt": "2026-07-30T02:56:00Z",
   "source": {
     "repository": "akrion-sim/akrion-monorepo",
     "revision": "c757cc425ff0932b37695a458d08b1741de9ad6d",
@@ -14,7 +14,7 @@
     },
     "web": {
       "repository": "akrion-sim/akrion-web-server.rs",
-      "revision": "f692449e7fc3b1c376e5c02a567fd5803c7d388d",
+      "revision": "1bd5dc5a050ce05f9a495e08038cc02e9647e092",
       "workflow": "ci.yml"
     },
     "soccer": {
