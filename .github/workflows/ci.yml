@@ -101,6 +101,25 @@ jobs:
             echo "::endgroup::"
           done
           [ "$found" = 1 ] || echo "no per-database schemas to check"
+      - name: Supabase policy layers apply and enforce owner isolation
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          if ! psql "$SHADOW_DATABASE_URL" -tAc \
+            "select 1 from pg_roles where rolname = 'authenticated'" | grep -q 1; then
+            psql "$SHADOW_DATABASE_URL" -c 'create role authenticated nologin'
+          fi
+          for policy in pg-defs/schema/databases/*/supabase.sql; do
+            dir="$(dirname "$policy")"
+            db="dpm_check_$(basename "$dir")"
+            url="postgresql://postgres:postgres@localhost:5432/$db"
+            echo "::group::$db Supabase RLS"
+            psql "$url" -v ON_ERROR_STOP=1 -q -f "$policy"
+            if [ -f "$dir/supabase-rls.test.sql" ]; then
+              psql "$url" -v ON_ERROR_STOP=1 -q -f "$dir/supabase-rls.test.sql"
+            fi
+            echo "::endgroup::"
+          done
       # dpm verify replays the migration on a shadow replica and proves an empty
       # re-diff (true convergence, catching bugs the source-vs-target diff can't).
       # The deparse fixed-point bug that made this fail on varchar IN-list CHECK
