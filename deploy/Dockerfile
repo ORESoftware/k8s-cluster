@@ -20,7 +20,9 @@ FROM debian:bookworm-slim@sha256:96e378d7e6531ac9a15ad505478fcc2e69f371b10f5cdf8
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
 COPY --from=build /usr/local/bin/threefa-sync-server /usr/local/bin/threefa-sync-server
+COPY .cli-flags.toml /app/.cli-flags.toml
 
 ENV BIND_ADDR=0.0.0.0:8080
 EXPOSE 8080

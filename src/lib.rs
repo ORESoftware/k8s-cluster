@@ -10,6 +10,7 @@ mod device_sync_protocol;
 mod devices;
 mod entity;
 mod error;
+mod flags;
 mod health;
 mod json;
 mod metrics;
@@ -24,6 +25,7 @@ mod supabase_auth;
 mod telemetry;
 mod vault_blob;
 
+pub use flags::apply_cli_flags;
 pub use server::run;
 
 #[cfg(test)]
@@ -32,7 +34,8 @@ mod architecture_tests {
 
     #[test]
     fn binary_entrypoint_stays_a_thin_library_adapter() {
-        assert!(MAIN.lines().count() <= 12, "main.rs grew past its boundary");
+        assert!(MAIN.lines().count() <= 16, "main.rs grew past its boundary");
+        assert!(MAIN.contains("threefa_backend::apply_cli_flags()"));
         assert!(MAIN.contains("threefa_backend::run().await"));
         for misplaced in [
             "Router::new",
