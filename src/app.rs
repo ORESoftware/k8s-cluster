@@ -577,8 +577,13 @@ mod tests {
     async fn an_unauthenticated_post_with_a_malformed_body_is_401_not_a_body_error() {
         // Credentials are checked before the body is parsed, so an anonymous
         // caller cannot use rejection messages to enumerate the wire type.
-        for path in ["/v1/vault", "/v1/devices/revoke"] {
-            let response = router(test_state())
+        for path in [
+            "/v1/vault",
+            "/v1/devices/revoke",
+            "/v1/signal/envelopes",
+            "/v1/signal/mailbox/ack",
+        ] {
+            let response = router_with_signal(test_state(), true)
                 .oneshot(
                     Request::builder()
                         .method("POST")
