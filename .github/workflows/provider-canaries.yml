@@ -1,0 +1,53 @@
+name: Provider canaries
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sendgrid-sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SENDGRID_CANARY_API_KEY: ${{ secrets.SENDGRID_CANARY_API_KEY }}
+      SENDGRID_CANARY_FROM_EMAIL: ${{ secrets.SENDGRID_CANARY_FROM_EMAIL }}
+      SENDGRID_CANARY_TO_EMAIL: ${{ secrets.SENDGRID_CANARY_TO_EMAIL }}
+      SENDGRID_CANARY_REGION: ${{ vars.SENDGRID_CANARY_REGION }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Run SendGrid sandbox canary when configured
+        shell: bash
+        run: |
+          if [[ -z "$SENDGRID_CANARY_API_KEY" || -z "$SENDGRID_CANARY_FROM_EMAIL" || -z "$SENDGRID_CANARY_TO_EMAIL" ]]; then
+            echo "SendGrid canary secrets are not configured; skipping without contacting SendGrid."
+            exit 0
+          fi
+          cargo test --locked --test provider_canaries \
+            sendgrid_sandbox_accepts_the_canonical_email_contract \
+            -- --ignored --exact --nocapture
+
+  twilio-test-credentials:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TWILIO_TEST_ACCOUNT_SID: ${{ secrets.TWILIO_TEST_ACCOUNT_SID }}
+      TWILIO_TEST_AUTH_TOKEN: ${{ secrets.TWILIO_TEST_AUTH_TOKEN }}
+      TWILIO_TEST_TO_NUMBER: ${{ secrets.TWILIO_TEST_TO_NUMBER }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Run Twilio test-credential canary when configured
+        shell: bash
+        run: |
+          if [[ -z "$TWILIO_TEST_ACCOUNT_SID" || -z "$TWILIO_TEST_AUTH_TOKEN" || -z "$TWILIO_TEST_TO_NUMBER" ]]; then
+            echo "Twilio test credentials are not configured; skipping without contacting Twilio."
+            exit 0
+          fi
+          cargo test --locked --test provider_canaries \
+            twilio_test_credentials_accept_the_canonical_sms_contract \
+            -- --ignored --exact --nocapture
