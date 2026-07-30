@@ -1,0 +1,92 @@
+{
+  "publish_prekeys": {
+    "request": {
+      "version": 1,
+      "bundle_revision": 7,
+      "registration_id": 42,
+      "identity_key": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+      "signed_pre_key_id": 10,
+      "signed_pre_key": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+      "signed_pre_key_signature": [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
+      "pq_signed_pre_key_id": 11,
+      "pq_signed_pre_key": [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+      "pq_signed_pre_key_signature": [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+      "one_time_prekeys": [
+        {
+          "prekey_id": 100,
+          "public_key": [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5]
+        }
+      ],
+      "expires_at_ms": 2000000
+    },
+    "response": {
+      "bundle_revision": 7,
+      "device_revision": 12,
+      "unclaimed_prekey_count": 24
+    }
+  },
+  "queue_envelope": {
+    "request": {
+      "envelope": {
+        "metadata": {
+          "version": 1,
+          "envelope_id": "00000000-0000-0000-0000-000000000031",
+          "account_id": "00000000-0000-0000-0000-000000000001",
+          "sender_device_id": "00000000-0000-0000-0000-000000000002",
+          "recipient_device_id": "00000000-0000-0000-0000-000000000003",
+          "session_id": "session-public-fixture",
+          "message_number": 4,
+          "kind": "vault_mutation",
+          "created_at_ms": 1000000,
+          "expires_at_ms": 1060000
+        },
+        "ciphertext": [9, 8, 7]
+      }
+    },
+    "response": {
+      "mailbox_seq": 31,
+      "duplicate": false
+    }
+  },
+  "pull_mailbox": {
+    "response": {
+      "items": [
+        {
+          "mailbox_seq": 31,
+          "envelope": {
+            "metadata": {
+              "version": 1,
+              "envelope_id": "00000000-0000-0000-0000-000000000031",
+              "account_id": "00000000-0000-0000-0000-000000000001",
+              "sender_device_id": "00000000-0000-0000-0000-000000000002",
+              "recipient_device_id": "00000000-0000-0000-0000-000000000003",
+              "session_id": "session-public-fixture",
+              "message_number": 4,
+              "kind": "vault_mutation",
+              "created_at_ms": 1000000,
+              "expires_at_ms": 1060000
+            },
+            "ciphertext": [9, 8, 7]
+          }
+        }
+      ],
+      "next_cursor": 31
+    },
+    "empty_response": {
+      "items": [],
+      "next_cursor": 31
+    }
+  },
+  "acknowledge_mailbox": {
+    "request": {
+      "items": [
+        {
+          "envelope_id": "00000000-0000-0000-0000-000000000031"
+        }
+      ]
+    },
+    "response": {
+      "acknowledged": 1
+    }
+  }
+}

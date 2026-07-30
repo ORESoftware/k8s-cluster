@@ -148,33 +148,44 @@ pub(crate) async fn device_revision_handler(
     Ok(Json(DeviceRevisionResponse { device_revision }))
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct EnqueueEnvelopeResponse {
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct QueueEnvelopeRequest {
+    envelope: SignalCiphertextEnvelope,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct QueueEnvelopeResponse {
     mailbox_seq: i64,
-    inserted: bool,
+    duplicate: bool,
 }
 
 pub(crate) async fn enqueue_envelope_handler(
     State(state): State<AppState>,
     who: AuthedDevice,
-    JsonBody(envelope): JsonBody<SignalCiphertextEnvelope>,
-) -> Result<(StatusCode, Json<EnqueueEnvelopeResponse>), ApiError> {
-    require_authenticated_sender(&envelope, who)?;
-    let result = signal_store::enqueue_envelope(state.database(), &envelope)
+    JsonBody(request): JsonBody<QueueEnvelopeRequest>,
+) -> Result<(StatusCode, Json<QueueEnvelopeResponse>), ApiError> {
+    require_authenticated_sender(&request.envelope, who)?;
+    let result = signal_store::enqueue_envelope(state.database(), &request.envelope)
         .await
         .map_err(map_store_error)?;
-    let status = if result.inserted {
+    let (status, response) = queue_http_response(result.mailbox_seq, result.inserted);
+    Ok((status, Json(response)))
+}
+
+fn queue_http_response(mailbox_seq: i64, inserted: bool) -> (StatusCode, QueueEnvelopeResponse) {
+    let status = if inserted {
         StatusCode::CREATED
     } else {
         StatusCode::OK
     };
-    Ok((
+    (
         status,
-        Json(EnqueueEnvelopeResponse {
-            mailbox_seq: result.mailbox_seq,
-            inserted: result.inserted,
-        }),
-    ))
+        QueueEnvelopeResponse {
+            mailbox_seq,
+            duplicate: !inserted,
+        },
+    )
 }
 
 #[derive(Debug, Deserialize)]
@@ -184,43 +195,52 @@ pub(crate) struct PullMailboxQuery {
     limit: Option<u64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct MailboxEnvelopeResponse {
     mailbox_seq: i64,
     envelope: SignalCiphertextEnvelope,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct MailboxPullResponse {
+    items: Vec<MailboxEnvelopeResponse>,
+    next_cursor: i64,
 }
 
 pub(crate) async fn pull_mailbox_handler(
     State(state): State<AppState>,
     who: AuthedDevice,
     Query(query): Query<PullMailboxQuery>,
-) -> Result<Json<Vec<MailboxEnvelopeResponse>>, ApiError> {
+) -> Result<Json<MailboxPullResponse>, ApiError> {
     if query.after_mailbox_seq < 0 || query.limit == Some(0) {
         return Err(ApiError::BadRequest);
     }
+    let after_mailbox_seq = query.after_mailbox_seq;
     let rows = signal_store::pull_mailbox(
         state.database(),
         who.account_id,
         who.device_id,
-        query.after_mailbox_seq,
+        after_mailbox_seq,
         query.limit.unwrap_or(DEFAULT_MAILBOX_LIMIT),
     )
     .await
     .map_err(map_store_error)?;
-    Ok(Json(rows.into_iter().map(mailbox_response).collect()))
+    Ok(Json(mailbox_pull_response(rows, after_mailbox_seq)))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct AcknowledgeBatchItem {
     envelope_id: Uuid,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct AcknowledgeBatchRequest {
     items: Vec<AcknowledgeBatchItem>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct AcknowledgeBatchResponse {
     acknowledged: u32,
 }
@@ -293,6 +313,18 @@ fn mailbox_response(row: MailboxEnvelope) -> MailboxEnvelopeResponse {
     }
 }
 
+fn mailbox_pull_response(
+    rows: Vec<MailboxEnvelope>,
+    after_mailbox_seq: i64,
+) -> MailboxPullResponse {
+    let items: Vec<MailboxEnvelopeResponse> = rows.into_iter().map(mailbox_response).collect();
+    let next_cursor = items
+        .last()
+        .map(|item| item.mailbox_seq)
+        .unwrap_or(after_mailbox_seq);
+    MailboxPullResponse { items, next_cursor }
+}
+
 fn map_maintenance_error(error: SignalMaintenanceError) -> ApiError {
     match error {
         SignalMaintenanceError::InvalidBatch | SignalMaintenanceError::DeviceUnavailable => {
@@ -324,6 +356,26 @@ fn map_store_error(error: SignalStoreError) -> ApiError {
 mod tests {
     use super::*;
     use crate::device_sync_protocol::{SignalEnvelopeKind, SignalEnvelopeMetadata};
+    use serde::de::DeserializeOwned;
+    use serde_json::Value;
+    use sha2::{Digest, Sha256};
+
+    const SIGNAL_HTTP_FIXTURE: &str = include_str!("../fixtures/signal-http-wire.json");
+    const SIGNAL_HTTP_FIXTURE_SHA256: &str =
+        "8c6a2a72b52cb6d5c9e3ff32b4348d426dec81c32746d83540af67e497559ef3";
+
+    fn fixture_round_trip<T>(value: &Value) -> T
+    where
+        T: DeserializeOwned + Serialize,
+    {
+        let decoded: T = serde_json::from_value(value.clone()).expect("canonical fixture decodes");
+        assert_eq!(
+            serde_json::to_value(&decoded).expect("backend DTO serializes"),
+            value.clone(),
+            "backend DTO must preserve the canonical wire shape"
+        );
+        decoded
+    }
 
     fn envelope(account_id: Uuid, sender_device_id: Uuid) -> SignalCiphertextEnvelope {
         SignalCiphertextEnvelope {
@@ -396,11 +448,81 @@ mod tests {
     }
 
     #[test]
-    fn batch_ack_wire_shape_matches_shared_interfaces() {
-        let id = Uuid::new_v4();
-        let json = serde_json::json!({"items": [{"envelope_id": id}]});
-        let request: AcknowledgeBatchRequest = serde_json::from_value(json).unwrap();
+    fn canonical_interface_fixture_crosses_backend_dtos_and_cursor_logic() {
+        assert_eq!(
+            hex::encode(Sha256::digest(SIGNAL_HTTP_FIXTURE.as_bytes())),
+            SIGNAL_HTTP_FIXTURE_SHA256,
+            "fixture must remain byte-identical to 3fa-interfaces@f8114237"
+        );
+        let fixture: Value =
+            serde_json::from_str(SIGNAL_HTTP_FIXTURE).expect("canonical fixture is JSON");
+
+        let queue = &fixture["queue_envelope"];
+        let request: QueueEnvelopeRequest = fixture_round_trip(&queue["request"]);
+        request
+            .envelope
+            .validate()
+            .expect("fixture envelope validates");
+        let who = AuthedDevice {
+            account_id: request
+                .envelope
+                .metadata
+                .account_id
+                .parse()
+                .expect("fixture account UUID"),
+            device_id: request
+                .envelope
+                .metadata
+                .sender_device_id
+                .parse()
+                .expect("fixture sender UUID"),
+        };
+        assert!(require_authenticated_sender(&request.envelope, who).is_ok());
+        let _: QueueEnvelopeResponse = fixture_round_trip(&queue["response"]);
+        let (created_status, created) = queue_http_response(31, true);
+        assert_eq!(created_status, StatusCode::CREATED);
+        assert_eq!(
+            serde_json::to_value(created).unwrap(),
+            queue["response"],
+            "new queue rows map inserted=true to duplicate=false"
+        );
+        let (duplicate_status, duplicate) = queue_http_response(31, false);
+        assert_eq!(duplicate_status, StatusCode::OK);
+        assert!(duplicate.duplicate);
+
+        let pull = &fixture["pull_mailbox"];
+        let _: MailboxPullResponse = fixture_round_trip(&pull["response"]);
+        let _: MailboxPullResponse = fixture_round_trip(&pull["empty_response"]);
+        let page = mailbox_pull_response(
+            vec![MailboxEnvelope {
+                mailbox_seq: 31,
+                envelope: request.envelope.clone(),
+            }],
+            0,
+        );
+        assert_eq!(serde_json::to_value(page).unwrap(), pull["response"]);
+        let empty_page = mailbox_pull_response(Vec::new(), 31);
+        assert_eq!(
+            serde_json::to_value(empty_page).unwrap(),
+            pull["empty_response"],
+            "empty pages preserve the caller's monotonic cursor"
+        );
+
+        let acknowledge = &fixture["acknowledge_mailbox"];
+        let request: AcknowledgeBatchRequest = fixture_round_trip(&acknowledge["request"]);
         assert_eq!(request.items.len(), 1);
-        assert_eq!(request.items[0].envelope_id, id);
+        let _: AcknowledgeBatchResponse = fixture_round_trip(&acknowledge["response"]);
+
+        assert!(matches!(
+            map_store_error(SignalStoreError::IdempotencyConflict),
+            ApiError::Conflict
+        ));
+        assert!(
+            serde_json::from_value::<PublishPreKeysRequest>(
+                fixture["publish_prekeys"]["request"].clone()
+            )
+            .is_err(),
+            "publish-prekey remains an explicit store-semantics blocker"
+        );
     }
 }
