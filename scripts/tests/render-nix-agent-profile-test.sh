@@ -9,7 +9,12 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 renderer="$repo_root/scripts/render-nix-agent-profile.sh"
 profiles_file="$repo_root/nix-agent-profiles/profiles.json"
 tmp_root="$(mktemp -d)"
-trap 'rm -rf "$tmp_root"' EXIT
+cleanup() {
+  if [[ -d "$tmp_root" ]]; then
+    find "$tmp_root" -depth -delete
+  fi
+}
+trap cleanup EXIT
 
 jq -e '
   .schemaVersion == 1

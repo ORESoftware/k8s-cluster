@@ -150,7 +150,6 @@ jobs:
 
       - name: Render Rust profile
         run: |
-          rm -rf "$PROFILE_TARGET"
           mkdir -p "$PROFILE_TARGET"
           git -C "$PROFILE_TARGET" init -q
           nix develop -c bash scripts/render-nix-agent-profile.sh \
