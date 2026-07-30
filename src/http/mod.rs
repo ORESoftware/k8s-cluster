@@ -19,6 +19,8 @@ mod introspect;
 mod jwks;
 mod local;
 mod metrics;
+mod mfa;
+mod passwordless;
 mod session_tokens;
 mod ui;
 pub mod webhook;
@@ -59,6 +61,10 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/exchange", post(exchange::exchange))
         .route("/auth/register", post(local::register))
         .route("/auth/login", post(local::login))
+        .route("/auth/passwordless/request", post(passwordless::request))
+        .route("/auth/passwordless/consume", post(passwordless::consume))
+        .route("/auth/mfa/sms/request", post(mfa::request_sms))
+        .route("/auth/mfa/sms/verify", post(mfa::verify_sms))
         .route("/auth/refresh", post(local::refresh))
         .route("/auth/logout", post(local::logout))
         .route("/auth/introspect", post(introspect::introspect))

@@ -103,6 +103,8 @@ pub async fn introspect(
             "provider": claims.provider,
             "provider_tenant": claims.provider_tenant,
             "provider_subject": claims.provider_subject,
+            "aal": claims.aal,
+            "amr": claims.amr,
             "project": claims.project,
             "supabase_user_id": claims.supabase_user_id,
             "email": claims.email,
@@ -123,6 +125,8 @@ pub async fn verify(State(state): State<AppState>, headers: HeaderMap) -> impl I
             let mut output = HeaderMap::new();
             insert_header(&mut output, "x-auth-user-id", &claims.sub);
             insert_header(&mut output, "x-auth-provider", &claims.provider);
+            insert_header(&mut output, "x-auth-aal", &claims.aal.to_string());
+            insert_header(&mut output, "x-auth-amr", &claims.amr.join(","));
             insert_header(
                 &mut output,
                 "x-auth-provider-tenant",

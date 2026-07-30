@@ -23,6 +23,12 @@ pub struct OreClaims {
     pub provider: String,
     pub provider_tenant: String,
     pub provider_subject: String,
+    /// Authentication assurance level. Existing pre-MFA tokens deserialize as
+    /// AAL1 for rolling-deploy compatibility.
+    #[serde(default = "default_auth_level")]
+    pub aal: u8,
+    #[serde(default)]
+    pub amr: Vec<String>,
     /// Compatibility aliases for current Supabase consumers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
@@ -33,4 +39,8 @@ pub struct OreClaims {
     pub email_verified: bool,
     #[serde(default)]
     pub roles: Vec<String>,
+}
+
+fn default_auth_level() -> u8 {
+    1
 }

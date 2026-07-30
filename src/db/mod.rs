@@ -21,6 +21,41 @@ const IDENTITY_NAMESPACE: Uuid = Uuid::from_bytes([
     0x6e, 0x7f, 0x92, 0x29, 0x8a, 0xe2, 0x4b, 0x3f, 0x9a, 0xd7, 0x38, 0x0a, 0xb8, 0xdd, 0x73, 0x2b,
 ]);
 
+fn auth_methods_json(auth_methods: &[String]) -> serde_json::Value {
+    serde_json::Value::Array(
+        auth_methods
+            .iter()
+            .cloned()
+            .map(serde_json::Value::String)
+            .collect(),
+    )
+}
+
+fn auth_methods_from_json(value: serde_json::Value) -> Result<Vec<String>, AuthError> {
+    let serde_json::Value::Array(methods) = value else {
+        return Err(AuthError::Internal);
+    };
+    let methods = methods
+        .into_iter()
+        .map(|method| match method {
+            serde_json::Value::String(method)
+                if !method.is_empty()
+                    && method.len() <= 64
+                    && method.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
+                    }) =>
+            {
+                Ok(method)
+            }
+            _ => Err(AuthError::Internal),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if methods.is_empty() || methods.len() > 16 {
+        return Err(AuthError::Internal);
+    }
+    Ok(methods)
+}
+
 #[derive(Clone, Debug)]
 pub struct AuthenticatedIdentity {
     pub shared_user_id: Uuid,
@@ -44,6 +79,8 @@ pub struct SessionRecord {
     pub session_id: Uuid,
     pub identity: AuthenticatedIdentity,
     pub expires_at: chrono::DateTime<chrono::FixedOffset>,
+    pub auth_level: u8,
+    pub auth_methods: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -236,6 +273,301 @@ impl DbStore {
         })
     }
 
+    /// Prepare a passwordless login without exposing whether the address exists.
+    ///
+    /// When signup is enabled, a new provider-neutral principal is created. A
+    /// password account with the same verified address reuses its principal, but
+    /// external provider identities are never linked merely because their email
+    /// claim happens to match.
+    pub async fn prepare_magic_link(
+        &self,
+        email: &str,
+        allow_signup: bool,
+        token_hash: &str,
+        otp_hash: &str,
+        identifier_hash: &str,
+        expires_at: chrono::DateTime<chrono::FixedOffset>,
+    ) -> Result<bool, AuthError> {
+        let transaction = self.db.begin().await.map_err(db_error)?;
+        let recent = transaction
+            .query_one_raw(statement(
+                "SELECT count(*)::bigint AS count \
+                 FROM shared_auth.magic_link_tokens \
+                 WHERE identifier_hash = $1 AND created_at > now() - interval '15 minutes'",
+                vec![identifier_hash.to_owned().into()],
+            ))
+            .await
+            .map_err(db_error)?
+            .ok_or(AuthError::Internal)?;
+        let recent_count: i64 = recent.try_get("", "count").map_err(db_error)?;
+        if recent_count >= 5 {
+            transaction.rollback().await.map_err(db_error)?;
+            return Ok(false);
+        }
+
+        let existing = transaction
+            .query_one_raw(statement(
+                "SELECT shared_user_id FROM shared_auth.principals \
+                 WHERE lower(email) = $1 AND status = 'active'",
+                vec![email.to_owned().into()],
+            ))
+            .await
+            .map_err(db_error)?;
+        let shared_user_id: Uuid = if let Some(row) = existing {
+            row.try_get("", "shared_user_id").map_err(db_error)?
+        } else if allow_signup {
+            let candidate = Uuid::new_v4();
+            transaction
+                .execute_raw(statement(
+                    "INSERT INTO shared_auth.principals \
+                        (shared_user_id, email, email_verified) \
+                     VALUES ($1, $2, false) \
+                     ON CONFLICT DO NOTHING",
+                    vec![candidate.into(), email.to_owned().into()],
+                ))
+                .await
+                .map_err(db_error)?;
+            transaction
+                .query_one_raw(statement(
+                    "SELECT shared_user_id FROM shared_auth.principals \
+                     WHERE lower(email) = $1 AND status = 'active'",
+                    vec![email.to_owned().into()],
+                ))
+                .await
+                .map_err(db_error)?
+                .ok_or(AuthError::Conflict)?
+                .try_get("", "shared_user_id")
+                .map_err(db_error)?
+        } else {
+            transaction.rollback().await.map_err(db_error)?;
+            return Ok(false);
+        };
+        let subject = shared_user_id.to_string();
+
+        transaction
+            .execute_raw(statement(
+                "INSERT INTO shared_auth.provider_identities \
+                    (shared_user_id, provider, provider_tenant, provider_subject, email) \
+                 VALUES ($1, 'magic_link', 'default', $2, $3) \
+                 ON CONFLICT (provider, provider_tenant, provider_subject) DO UPDATE SET \
+                    email = EXCLUDED.email, updated_at = now(), last_seen_at = now()",
+                vec![
+                    shared_user_id.into(),
+                    subject.into(),
+                    email.to_owned().into(),
+                ],
+            ))
+            .await
+            .map_err(db_error)?;
+        transaction
+            .execute_raw(statement(
+                "INSERT INTO shared_auth.roles (shared_user_id, role_name) \
+                 VALUES ($1, 'user') ON CONFLICT DO NOTHING",
+                vec![shared_user_id.into()],
+            ))
+            .await
+            .map_err(db_error)?;
+        transaction
+            .execute_raw(statement(
+                "UPDATE shared_auth.magic_link_tokens SET consumed_at = now() \
+                 WHERE shared_user_id = $1 AND consumed_at IS NULL",
+                vec![shared_user_id.into()],
+            ))
+            .await
+            .map_err(db_error)?;
+        transaction
+            .execute_raw(statement(
+                "INSERT INTO shared_auth.magic_link_tokens \
+                    (token_hash, otp_hash, shared_user_id, identifier_hash, expires_at) \
+                 VALUES ($1, $2, $3, $4, $5)",
+                vec![
+                    token_hash.to_owned().into(),
+                    otp_hash.to_owned().into(),
+                    shared_user_id.into(),
+                    identifier_hash.to_owned().into(),
+                    expires_at.into(),
+                ],
+            ))
+            .await
+            .map_err(db_error)?;
+        transaction.commit().await.map_err(db_error)?;
+        Ok(true)
+    }
+
+    /// Atomically consume a passwordless token and return its verified identity.
+    pub async fn consume_magic_link(
+        &self,
+        token_hash: &str,
+    ) -> Result<AuthenticatedIdentity, AuthError> {
+        let transaction = self.db.begin().await.map_err(db_error)?;
+        let consumed = transaction
+            .query_one_raw(statement(
+                "UPDATE shared_auth.magic_link_tokens SET consumed_at = now() \
+                 WHERE token_hash = $1 AND consumed_at IS NULL AND expires_at > now() \
+                 RETURNING shared_user_id",
+                vec![token_hash.to_owned().into()],
+            ))
+            .await
+            .map_err(db_error)?
+            .ok_or(AuthError::Unauthorized)?;
+        let shared_user_id: Uuid = consumed.try_get("", "shared_user_id").map_err(db_error)?;
+        let row = verify_magic_link_identity(&transaction, shared_user_id).await?;
+        transaction.commit().await.map_err(db_error)?;
+        let mut identity = identity_from_row(&row)?;
+        identity.roles = self.roles_for(shared_user_id).await?;
+        Ok(identity)
+    }
+
+    /// Consume a six-digit email OTP with a strict attempt cap.
+    pub async fn consume_email_otp(
+        &self,
+        identifier_hash: &str,
+        otp_hash: &str,
+    ) -> Result<AuthenticatedIdentity, AuthError> {
+        let transaction = self.db.begin().await.map_err(db_error)?;
+        let consumed = transaction
+            .query_one_raw(statement(
+                "UPDATE shared_auth.magic_link_tokens SET consumed_at = now() \
+                 WHERE token_hash = ( \
+                    SELECT token_hash FROM shared_auth.magic_link_tokens \
+                    WHERE identifier_hash = $1 AND otp_hash = $2 \
+                      AND consumed_at IS NULL AND expires_at > now() \
+                      AND failed_attempts < 5 \
+                    ORDER BY created_at DESC LIMIT 1 FOR UPDATE \
+                 ) \
+                 RETURNING shared_user_id",
+                vec![
+                    identifier_hash.to_owned().into(),
+                    otp_hash.to_owned().into(),
+                ],
+            ))
+            .await
+            .map_err(db_error)?;
+        let Some(consumed) = consumed else {
+            transaction
+                .execute_raw(statement(
+                    "UPDATE shared_auth.magic_link_tokens SET \
+                        failed_attempts = LEAST(failed_attempts + 1, 5), \
+                        consumed_at = CASE WHEN failed_attempts + 1 >= 5 \
+                                           THEN now() ELSE consumed_at END \
+                     WHERE token_hash = ( \
+                        SELECT token_hash FROM shared_auth.magic_link_tokens \
+                        WHERE identifier_hash = $1 AND consumed_at IS NULL \
+                          AND expires_at > now() \
+                        ORDER BY created_at DESC LIMIT 1 FOR UPDATE \
+                     )",
+                    vec![identifier_hash.to_owned().into()],
+                ))
+                .await
+                .map_err(db_error)?;
+            transaction.commit().await.map_err(db_error)?;
+            return Err(AuthError::Unauthorized);
+        };
+        let shared_user_id: Uuid = consumed.try_get("", "shared_user_id").map_err(db_error)?;
+        let row = verify_magic_link_identity(&transaction, shared_user_id).await?;
+        transaction.commit().await.map_err(db_error)?;
+        let mut identity = identity_from_row(&row)?;
+        identity.roles = self.roles_for(shared_user_id).await?;
+        Ok(identity)
+    }
+
+    pub async fn phone_for_user(&self, shared_user_id: Uuid) -> Result<Option<String>, AuthError> {
+        let row = self
+            .db
+            .query_one_raw(statement(
+                "SELECT phone FROM shared_auth.principals \
+                 WHERE shared_user_id = $1 AND status = 'active'",
+                vec![shared_user_id.into()],
+            ))
+            .await
+            .map_err(db_error)?
+            .ok_or(AuthError::Unauthorized)?;
+        row.try_get("", "phone").map_err(db_error)
+    }
+
+    pub async fn create_sms_challenge(
+        &self,
+        shared_user_id: Uuid,
+        phone_e164: &str,
+        expires_at: chrono::DateTime<chrono::FixedOffset>,
+    ) -> Result<Uuid, AuthError> {
+        let transaction = self.db.begin().await.map_err(db_error)?;
+        transaction
+            .execute_raw(statement(
+                "UPDATE shared_auth.mfa_sms_challenges SET verified_at = now() \
+                 WHERE shared_user_id = $1 AND verified_at IS NULL",
+                vec![shared_user_id.into()],
+            ))
+            .await
+            .map_err(db_error)?;
+        let challenge_id = Uuid::new_v4();
+        transaction
+            .execute_raw(statement(
+                "INSERT INTO shared_auth.mfa_sms_challenges \
+                    (challenge_id, shared_user_id, phone_e164, expires_at) \
+                 VALUES ($1, $2, $3, $4)",
+                vec![
+                    challenge_id.into(),
+                    shared_user_id.into(),
+                    phone_e164.to_owned().into(),
+                    expires_at.into(),
+                ],
+            ))
+            .await
+            .map_err(db_error)?;
+        transaction.commit().await.map_err(db_error)?;
+        Ok(challenge_id)
+    }
+
+    pub async fn sms_challenge_phone(
+        &self,
+        shared_user_id: Uuid,
+        challenge_id: Uuid,
+    ) -> Result<String, AuthError> {
+        self.db
+            .query_one_raw(statement(
+                "SELECT phone_e164 FROM shared_auth.mfa_sms_challenges \
+                 WHERE challenge_id = $1 AND shared_user_id = $2 \
+                   AND verified_at IS NULL AND expires_at > now()",
+                vec![challenge_id.into(), shared_user_id.into()],
+            ))
+            .await
+            .map_err(db_error)?
+            .ok_or(AuthError::Unauthorized)?
+            .try_get("", "phone_e164")
+            .map_err(db_error)
+    }
+
+    pub async fn complete_sms_challenge(
+        &self,
+        shared_user_id: Uuid,
+        challenge_id: Uuid,
+    ) -> Result<(), AuthError> {
+        let transaction = self.db.begin().await.map_err(db_error)?;
+        let row = transaction
+            .query_one_raw(statement(
+                "UPDATE shared_auth.mfa_sms_challenges SET verified_at = now() \
+                 WHERE challenge_id = $1 AND shared_user_id = $2 \
+                   AND verified_at IS NULL AND expires_at > now() \
+                 RETURNING phone_e164",
+                vec![challenge_id.into(), shared_user_id.into()],
+            ))
+            .await
+            .map_err(db_error)?
+            .ok_or(AuthError::Unauthorized)?;
+        let phone: String = row.try_get("", "phone_e164").map_err(db_error)?;
+        transaction
+            .execute_raw(statement(
+                "UPDATE shared_auth.principals SET phone = $2, updated_at = now() \
+                 WHERE shared_user_id = $1 AND status = 'active'",
+                vec![shared_user_id.into(), phone.into()],
+            ))
+            .await
+            .map_err(db_error)?;
+        transaction.commit().await.map_err(db_error)?;
+        Ok(())
+    }
+
     pub async fn local_credential(
         &self,
         normalized_email: &str,
@@ -292,14 +624,16 @@ impl DbStore {
         refresh_token_hash: &str,
         expires_at: chrono::DateTime<chrono::FixedOffset>,
         rotated_from: Option<Uuid>,
+        auth_level: u8,
+        auth_methods: &[String],
     ) -> Result<SessionRecord, AuthError> {
         let session_id = Uuid::new_v4();
         self.db
             .execute_raw(statement(
                 "INSERT INTO shared_auth.sessions \
                     (session_id, shared_user_id, refresh_token_hash, provider, provider_tenant, \
-                     provider_subject, expires_at, rotated_from) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                     provider_subject, expires_at, rotated_from, auth_level, auth_methods) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
                 vec![
                     session_id.into(),
                     identity.shared_user_id.into(),
@@ -309,6 +643,8 @@ impl DbStore {
                     identity.provider_subject.clone().into(),
                     expires_at.into(),
                     rotated_from.into(),
+                    i16::from(auth_level).into(),
+                    auth_methods_json(auth_methods).into(),
                 ],
             ))
             .await
@@ -317,6 +653,8 @@ impl DbStore {
             session_id,
             identity,
             expires_at,
+            auth_level,
+            auth_methods: auth_methods.to_vec(),
         })
     }
 
@@ -333,7 +671,8 @@ impl DbStore {
             .query_one_raw(statement(
                 "SELECT s.session_id, s.shared_user_id, s.provider, s.provider_tenant, \
                         s.provider_subject, COALESCE(pi.email, u.email) AS email, \
-                        COALESCE(pi.email_verified, u.email_verified) AS email_verified \
+                        COALESCE(pi.email_verified, u.email_verified) AS email_verified, \
+                        s.auth_level, s.auth_methods \
                  FROM shared_auth.sessions s \
                  JOIN shared_auth.principals u USING (shared_user_id) \
                  LEFT JOIN shared_auth.provider_identities pi \
@@ -349,6 +688,11 @@ impl DbStore {
             .map_err(db_error)?
             .ok_or(AuthError::Unauthorized)?;
         let old_session_id: Uuid = row.try_get("", "session_id").map_err(db_error)?;
+        let auth_level: i16 = row.try_get("", "auth_level").map_err(db_error)?;
+        let auth_methods = auth_methods_from_json(
+            row.try_get::<serde_json::Value>("", "auth_methods")
+                .map_err(db_error)?,
+        )?;
         let mut identity = identity_from_row(&row)?;
 
         let revoked = transaction
@@ -368,8 +712,8 @@ impl DbStore {
             .execute_raw(statement(
                 "INSERT INTO shared_auth.sessions \
                     (session_id, shared_user_id, refresh_token_hash, provider, provider_tenant, \
-                     provider_subject, expires_at, rotated_from) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                     provider_subject, expires_at, rotated_from, auth_level, auth_methods) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
                 vec![
                     new_session_id.into(),
                     identity.shared_user_id.into(),
@@ -379,6 +723,8 @@ impl DbStore {
                     identity.provider_subject.clone().into(),
                     new_expires_at.into(),
                     old_session_id.into(),
+                    auth_level.into(),
+                    auth_methods_json(&auth_methods).into(),
                 ],
             ))
             .await
@@ -389,6 +735,8 @@ impl DbStore {
             session_id: new_session_id,
             identity,
             expires_at: new_expires_at,
+            auth_level: u8::try_from(auth_level).map_err(|_| AuthError::Internal)?,
+            auth_methods,
         })
     }
 
@@ -501,6 +849,36 @@ impl DbStore {
             .map(|row| row.try_get("", "role_name").map_err(db_error))
             .collect()
     }
+}
+
+async fn verify_magic_link_identity(
+    transaction: &sea_orm::DatabaseTransaction,
+    shared_user_id: Uuid,
+) -> Result<sea_orm::QueryResult, AuthError> {
+    let updated = transaction
+        .execute_raw(statement(
+            "UPDATE shared_auth.principals SET email_verified = true, \
+                updated_at = now(), last_seen_at = now() \
+             WHERE shared_user_id = $1 AND status = 'active'",
+            vec![shared_user_id.into()],
+        ))
+        .await
+        .map_err(db_error)?;
+    if updated.rows_affected() != 1 {
+        return Err(AuthError::Unauthorized);
+    }
+    transaction
+        .query_one_raw(statement(
+            "UPDATE shared_auth.provider_identities SET email_verified = true, \
+                updated_at = now(), last_seen_at = now() \
+             WHERE shared_user_id = $1 AND provider = 'magic_link' \
+             RETURNING shared_user_id, provider, provider_tenant, provider_subject, \
+                       email, email_verified",
+            vec![shared_user_id.into()],
+        ))
+        .await
+        .map_err(db_error)?
+        .ok_or(AuthError::Unauthorized)
 }
 
 fn identity_from_row(row: &sea_orm::QueryResult) -> Result<AuthenticatedIdentity, AuthError> {
