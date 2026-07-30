@@ -78,6 +78,11 @@ test("navigation and resource attributes reject active or mixed-content URLs", (
         /^http:/i,
         `${relative(dist, page.path)} contains mixed content`,
       );
+      assert.doesNotMatch(
+        value,
+        /^\/\//,
+        `${relative(dist, page.path)} contains a protocol-relative URL`,
+      );
     }
   }
 });

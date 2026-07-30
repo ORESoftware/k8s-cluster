@@ -14,9 +14,10 @@ const {
   description = "Sonus Auris is the always-on audio dashcam. Never lose that killer riff again, and keep a private, secure record when you need one. Open-source app, privacy-first.",
 } = Astro.props;
 
-// Public assets must be prefixed with the deploy base path so links work on
-// the GitHub Pages subpath. BASE_URL has no trailing slash, so add one.
-const base = import.meta.env.BASE_URL;
+// Public assets must be prefixed with the deploy base path so links work both
+// at the production root and on preview subpaths. Astro's root base is `/`,
+// so normalize trailing slashes before appending an asset path.
+const base = import.meta.env.BASE_URL.replace(/\/+$/, "");
 const ogImage = new URL(`${base}/og.svg`, Astro.site);
 const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
 const fontFaceCss = `@font-face {

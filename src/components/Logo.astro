@@ -8,9 +8,10 @@ interface Props {
 const { size = 34, light = false } = Astro.props;
 const word = light ? "#fffdf8" : "#0c2a22";
 const sub = light ? "rgba(255,253,248,0.75)" : "#355a4f";
+const homeHref = `${import.meta.env.BASE_URL.replace(/\/+$/, "")}/`;
 ---
 
-<a href={`${import.meta.env.BASE_URL}/`} class="logo" aria-label="Sonus Auris home">
+<a href={homeHref} class="logo" aria-label="Sonus Auris home">
   <svg
     width={size}
     height={size}
