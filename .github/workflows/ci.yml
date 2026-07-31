@@ -31,3 +31,174 @@ jobs:
           context: .
           push: false
           tags: push-notification-server:test
+
+  den-600-openapi-materialize:
+    name: DEN-600 executable OpenAPI materialization
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.head_ref == 'agent/code-first-openapi-routes' &&
+      github.actor != 'github-actions[bot]'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact writable branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/code-first-openapi-routes
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Setup Rust 1.88
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt, clippy
+
+      - name: Apply the bounded source transformation
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/apply_code_first_openapi.py')
+          source = path.read_text()
+
+          before_counts = '''for path in ["src/contracts.rs", "src/contact/contracts.rs"]:
+              replace_once(path, "use serde_json::Value;", "use serde_json::Value;\\nuse utoipa::ToSchema;", "ToSchema import")
+              replace_all(path, "Serialize, Deserialize", "Serialize, Deserialize, ToSchema", 8, "wire schema derives")
+          '''
+          after_counts = '''for path, minimum in [("src/contracts.rs", 9), ("src/contact/contracts.rs", 7)]:
+              replace_once(path, "use serde_json::Value;", "use serde_json::Value;\\nuse utoipa::ToSchema;", "ToSchema import")
+              replace_all(path, "Serialize, Deserialize", "Serialize, Deserialize, ToSchema", minimum, "wire schema derives")
+          '''
+          if before_counts in source:
+              source = source.replace(before_counts, after_counts, 1)
+          elif after_counts not in source:
+              raise SystemExit('unknown DTO schema-count contract')
+
+          before_import = 'use crate::contact::{ContactApiState, contact_openapi_router};'
+          after_import = 'use crate::contact::http::{ContactApiState, contact_openapi_router};'
+          if before_import in source:
+              source = source.replace(before_import, after_import, 1)
+          elif after_import not in source:
+              raise SystemExit('unknown contact OpenAPI import contract')
+
+          before_projection = '''fn public_projection(openapi: &OpenApi) -> Result<OpenApi, serde_json::Error> {
+              let mut value = serde_json::to_value(openapi)?;
+              let allowed = PUBLIC_PATHS.iter().copied().collect::<std::collections::BTreeSet<_>>();
+              value["paths"]
+                  .as_object_mut()
+                  .expect("OpenAPI paths are always an object")
+                  .retain(|path, _| allowed.contains(path.as_str()));
+              value["info"]["title"] = serde_json::Value::String(
+                  "push-notification-server API (public)".to_owned(),
+              );
+              value["x-dd-contract-scope"] = serde_json::Value::String("public".to_owned());
+              serde_json::from_value(value)
+          }
+          '''
+          after_projection = '''fn public_projection(openapi: &OpenApi) -> Result<OpenApi, serde_json::Error> {
+              let mut public = openapi.clone();
+              public
+                  .paths
+                  .paths
+                  .retain(|path, _| PUBLIC_PATHS.contains(&path.as_str()));
+              public.info.title = "push-notification-server API (public)".to_owned();
+              public
+                  .extensions
+                  .get_or_insert_with(Default::default)
+                  .insert(
+                      "x-dd-contract-scope".to_owned(),
+                      serde_json::Value::String("public".to_owned()),
+                  );
+              Ok(public)
+          }
+          '''
+          if before_projection in source:
+              source = source.replace(before_projection, after_projection, 1)
+          elif after_projection not in source:
+              raise SystemExit('unknown public projection contract')
+
+          path.write_text(source)
+          PY
+          python3 -m py_compile scripts/apply_code_first_openapi.py
+          python3 scripts/apply_code_first_openapi.py
+          cargo fmt --all
+
+      - name: Compile, lint, and test every target
+        run: |
+          set -euo pipefail
+          cargo check
+          cargo test --all-targets
+          cargo clippy --all-targets -- -D warnings
+          cargo fmt --all -- --check
+          cargo check --locked
+          cargo test --locked --all-targets
+
+      - name: Generate deterministic public and private contracts
+        run: |
+          set -euo pipefail
+          mkdir -p generated
+          cargo run --locked --quiet -- --export-openapi=internal > generated/openapi.internal.json
+          cargo run --locked --quiet -- --export-openapi=public > generated/openapi.public.json
+          cargo run --locked --quiet -- --export-openapi=internal > /tmp/openapi.internal.2.json
+          cargo run --locked --quiet -- --export-openapi=public > /tmp/openapi.public.2.json
+          cmp generated/openapi.internal.json /tmp/openapi.internal.2.json
+          cmp generated/openapi.public.json /tmp/openapi.public.2.json
+          python3 -m json.tool generated/openapi.internal.json >/dev/null
+          python3 -m json.tool generated/openapi.public.json >/dev/null
+
+      - name: Validate exact visibility, authentication, and operation identities
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          internal = json.loads(Path('generated/openapi.internal.json').read_text())
+          public = json.loads(Path('generated/openapi.public.json').read_text())
+          expected_public = {
+              '/healthz', '/readyz', '/v1/contact/readyz',
+              '/openapi.json', '/api/docs.json', '/api/docs', '/docs/api',
+          }
+          expected_internal = expected_public | {
+              '/v1/push/jobs', '/v1/push/jobs/batch',
+              '/v1/contact/jobs', '/v1/contact/jobs/batch',
+              '/internal/openapi.json', '/internal/docs/api',
+          }
+          assert set(public['paths']) == expected_public
+          assert set(internal['paths']) == expected_internal
+          assert public['x-dd-contract-scope'] == 'public'
+          assert 'bearer_auth' in internal['components']['securitySchemes']
+          operation_ids = []
+          for path, item in internal['paths'].items():
+              for method, operation in item.items():
+                  if method.lower() not in {'get', 'post', 'put', 'patch', 'delete'}:
+                      continue
+                  operation_ids.append(operation['operationId'])
+                  if path.startswith('/v1/') and path != '/v1/contact/readyz':
+                      assert operation.get('security') == [{'bearer_auth': []}], (method, path)
+          assert len(operation_ids) == len(set(operation_ids))
+          PY
+          git diff --check
+          ! grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' src generated Cargo.toml
+
+      - name: Remove every migration carrier and commit product files only
+        run: |
+          set -euo pipefail
+          git checkout origin/main -- .github/workflows/ci.yml
+          rm -rf scripts/__pycache__
+          rm -f \
+            .github/workflows/apply-code-first-openapi.yml \
+            .github/workflows/fix-openapi-schema-count.yml \
+            scripts/apply_code_first_openapi.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          test -z "$(git diff --cached --name-only | grep -E 'apply-code-first-openapi|fix-openapi-schema-count|apply_code_first_openapi|scripts/__pycache__' || true)"
+          git commit -m 'feat(DEN-600): add executable OpenAPI routes and contracts'
+          git push origin HEAD:agent/code-first-openapi-routes
