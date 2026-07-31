@@ -99,7 +99,7 @@ jobs:
           chmod 700 "$remote_script"
 
           encoded="$(base64 --wrap=0 "$remote_script")"
-          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-repositories.sh && chown ec2-user:ec2-user /tmp/publish-critical-org-repositories.sh && chmod 700 /tmp/publish-critical-org-repositories.sh && sudo -u ec2-user -H bash -lc 'bash /tmp/publish-critical-org-repositories.sh \"\$1\"' _ '$trusted_sha'; status=\$?; rm -f /tmp/publish-critical-org-repositories.sh; exit \$status"
+          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-repositories.sh && chown ec2-user:ec2-user /tmp/publish-critical-org-repositories.sh && chmod 700 /tmp/publish-critical-org-repositories.sh && sudo -u ec2-user -H bash -lc 'source /tmp/publish-critical-org-repositories.sh \"\$1\"' _ '$trusted_sha'; status=\$?; rm -f /tmp/publish-critical-org-repositories.sh; exit \$status"
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
