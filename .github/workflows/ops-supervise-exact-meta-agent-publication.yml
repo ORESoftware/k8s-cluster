@@ -40,7 +40,7 @@ jobs:
       TARGET_REPOSITORY: meta-agents-demo/meta-agent-control-plane.rs
 
     steps:
-      - name: Validate the one-file carrier against exact current main
+      - name: Validate the one-file carrier as an ancestor of current main
         id: carrier
         shell: bash
         env:
@@ -48,16 +48,15 @@ jobs:
         run: |
           set -euo pipefail
           pull="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
-          base_sha="$(jq -er '.base.sha' <<<"$pull")"
           head_sha="$(jq -er '.head.sha' <<<"$pull")"
           main_sha="$(gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
-          test "$base_sha" = "$main_sha"
-          [[ "$base_sha" =~ ^[0-9a-f]{40}$ ]]
           [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]
 
           commits="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/commits?per_page=100")"
           test "$(jq 'length' <<<"$commits")" -eq 1
-          test "$(jq -r '.[0].parents[0].sha' <<<"$commits")" = "$base_sha"
+          parent_sha="$(jq -er '.[0].parents[0].sha' <<<"$commits")"
+          [[ "$parent_sha" =~ ^[0-9a-f]{40}$ ]]
 
           files="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100")"
           test "$(jq 'length' <<<"$files")" -eq 1
@@ -73,12 +72,23 @@ jobs:
               --jq '.content'
           )"
           marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
-          expected="$(printf 'target=%s\ntrusted-main=%s\nbundle-sha256=%s' \
-            "$TARGET_REPOSITORY" "$base_sha" "$BUNDLE_SHA256")"
-          test "$marker" = "$expected"
+          marker_target="$(sed -n 's/^target=//p' <<<"$marker")"
+          marker_main="$(sed -n 's/^trusted-main=//p' <<<"$marker")"
+          marker_bundle="$(sed -n 's/^bundle-sha256=//p' <<<"$marker")"
+          test "$marker_target" = "$TARGET_REPOSITORY"
+          test "$marker_bundle" = "$BUNDLE_SHA256"
+          test "$marker_main" = "$parent_sha"
+          [[ "$marker_main" =~ ^[0-9a-f]{40}$ ]]
+
+          comparison="$(gh api "repos/${REPOSITORY}/compare/${marker_main}...${main_sha}")"
+          jq -e '
+            (.status == "ahead" or .status == "identical") and
+            .behind_by == 0
+          ' <<<"$comparison" >/dev/null
 
           {
-            printf 'trusted_sha=%s\n' "$base_sha"
+            printf 'trusted_sha=%s\n' "$main_sha"
+            printf 'carrier_parent=%s\n' "$marker_main"
             printf 'head_sha=%s\n' "$head_sha"
           } >> "$GITHUB_OUTPUT"
 
@@ -247,7 +257,7 @@ jobs:
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
               --document-name AWS-RunShellScript \
-              --comment "Publish exact Meta Agents repository from trusted main $TRUSTED_SHA" \
+              --comment "Publish exact Meta Agents repo" \
               --parameters "file://$parameters" \
               --query 'Command.CommandId' \
               --output text
