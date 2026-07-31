@@ -1,5 +1,5 @@
 name: Dispatch sealed fleet from trusted owner comment
-run-name: Dispatch sealed fleet for PR #${{ github.event.issue.number }}
+run-name: Dispatch sealed fleet for PR #${{ github.event.issue.number }} from ${{ github.sha }}
 
 on:
   issue_comment:
@@ -51,6 +51,9 @@ jobs:
         run: |
           set -euo pipefail
           trigger_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          gh pr comment "$TRACKING_PR" \
+            --body "Trusted owner-comment dispatcher started: ${trigger_url}" >/dev/null
+
           before="$(
             gh run list \
               --workflow "$PUBLISH_WORKFLOW" \
@@ -60,9 +63,6 @@ jobs:
               --json databaseId \
               --jq '.[0].databaseId // empty'
           )"
-
-          gh pr comment "$TRACKING_PR" \
-            --body "Trusted owner-comment dispatcher started: ${trigger_url}" >/dev/null
           gh workflow run "$PUBLISH_WORKFLOW" --ref main
 
           run_id=''
