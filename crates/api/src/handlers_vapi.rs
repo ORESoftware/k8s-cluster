@@ -345,18 +345,23 @@ async fn run_translate_tool(state: &AppState, args: &Value) -> Result<String, St
 }
 
 /// The live-translator assistant config returned for `assistant-request`.
-/// The model calls back our `translate_text` server tool; `{{SERVER_URL}}` is
-/// filled in by Vapi from the assistant's configured server, so the tool posts
-/// to this same webhook.
-fn translator_assistant() -> Value {
-    json!({
+///
+/// The model calls back our `translate_text` server tool. When a public
+/// `server_url` is configured we set it (plus the webhook secret and a tool
+/// timeout) explicitly on the assistant's `server` block, so Vapi routes
+/// tool-calls / status-update / end-of-call-report back to this webhook and
+/// echoes the secret as `x-vapi-secret` — closing the auth loop instead of
+/// relying on the phone-number-level server. A `voice` is always set so Vapi
+/// has an explicit TTS provider.
+fn translator_assistant(config: &VapiAssistantConfig, webhook_secret: Option<&str>) -> Value {
+    let mut assistant = json!({
         "name": "t2v Live Translator",
-        "firstMessage": "Hi! I can translate between languages in real time. What would you like translated, and into which language?",
+        "firstMessage": config.first_message,
         "firstMessageMode": "assistant-speaks-first",
         "serverMessages": ["assistant-request", "tool-calls", "status-update", "end-of-call-report"],
         "model": {
-            "provider": "openai",
-            "model": "gpt-4o",
+            "provider": config.model_provider,
+            "model": config.model,
             "temperature": 0.2,
             "messages": [{
                 "role": "system",
@@ -379,8 +384,28 @@ fn translator_assistant() -> Value {
                     }
                 }
             }]
+        },
+        "voice": {
+            "provider": config.voice_provider,
+            "voiceId": config.voice_id,
+        },
+    });
+
+    if let (Some(provider), Some(model)) =
+        (config.transcriber_provider.as_deref(), config.transcriber_model.as_deref())
+    {
+        assistant["transcriber"] = json!({ "provider": provider, "model": model });
+    }
+
+    if let Some(url) = config.server_url.as_deref() {
+        let mut server = json!({ "url": url, "timeoutSeconds": config.tool_timeout_secs });
+        if let Some(secret) = webhook_secret {
+            server["secret"] = json!(secret);
         }
-    })
+        assistant["server"] = server;
+    }
+
+    assistant
 }
 
 // ---------------------------------------------------------------------------
