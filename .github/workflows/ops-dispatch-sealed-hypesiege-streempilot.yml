@@ -99,3 +99,5 @@ jobs:
               --body "Sealed HypeSiege/StreemPilot publisher did not complete successfully. Dispatch=${PUBLISH_RESULT}; job=${WATCH_RESULT}; run=${RUN_URL:-unavailable}" >/dev/null
             exit 1
           fi
+
+# Dispatch nonce: 2026-07-31T14:09:00Z
