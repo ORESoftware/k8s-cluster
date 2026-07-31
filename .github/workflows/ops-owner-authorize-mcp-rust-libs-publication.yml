@@ -34,10 +34,9 @@ jobs:
       TRACKING_PR: '326'
       TRIGGER_PR: ${{ github.event.pull_request.number }}
       TARGET_SHA: ${{ github.event.pull_request.head.sha }}
-      TRUSTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
 
     steps:
-      - name: Validate the one-file execution carrier against trusted main
+      - name: Validate the one-file execution carrier against trusted main history
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -45,18 +44,15 @@ jobs:
           set -Eeuo pipefail
           pull="$(gh api "repos/${REPOSITORY}/pulls/${TRIGGER_PR}")"
           head_sha="$(jq -er '.head.sha' <<<"$pull")"
-          base_sha="$(jq -er '.base.sha' <<<"$pull")"
           main_sha="$(gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
           test "$head_sha" = "$TARGET_SHA"
-          test "$base_sha" = "$TRUSTED_BASE_SHA"
           [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$base_sha" =~ ^[0-9a-f]{40}$ ]]
           [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]
 
           commits="$(gh api "repos/${REPOSITORY}/pulls/${TRIGGER_PR}/commits?per_page=100")"
           test "$(jq 'length' <<<"$commits")" -eq 1
           parent_sha="$(jq -er '.[0].parents[0].sha' <<<"$commits")"
-          test "$parent_sha" = "$base_sha"
+          [[ "$parent_sha" =~ ^[0-9a-f]{40}$ ]]
 
           files="$(gh api "repos/${REPOSITORY}/pulls/${TRIGGER_PR}/files?per_page=100")"
           test "$(jq 'length' <<<"$files")" -eq 1
@@ -70,16 +66,19 @@ jobs:
           marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
           test "$(sed -n 's/^target=//p' <<<"$marker")" = 'ORESoftware/mcp-rust-libs'
           test "$(sed -n 's/^source=//p' <<<"$marker")" = 'ORESoftware/testing@069b1aa4251658c8348d2eb477ad71369d9b742b:mcp-rust-libs'
-          test "$(sed -n 's/^trusted-main=//p' <<<"$marker")" = "$base_sha"
+          trusted_source_sha="$(sed -n 's/^trusted-main=//p' <<<"$marker")"
+          [[ "$trusted_source_sha" =~ ^[0-9a-f]{40}$ ]]
+          test "$parent_sha" = "$trusted_source_sha"
 
-          comparison="$(gh api "repos/${REPOSITORY}/compare/${base_sha}...${main_sha}")"
+          comparison="$(gh api "repos/${REPOSITORY}/compare/${trusted_source_sha}...${main_sha}")"
           jq -e '(.status == "ahead" or .status == "identical") and .behind_by == 0' <<<"$comparison" >/dev/null
+          echo "TRUSTED_SOURCE_SHA=$trusted_source_sha" >> "$GITHUB_ENV"
 
       - name: Check out the immutable trusted publication source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ORESoftware/k8s-cluster
-          ref: ${{ env.TRUSTED_BASE_SHA }}
+          ref: ${{ env.TRUSTED_SOURCE_SHA }}
           persist-credentials: false
           fetch-depth: 1
 
@@ -89,7 +88,7 @@ jobs:
           set -Eeuo pipefail
           umask 077
           trusted_sha="$(git rev-parse HEAD)"
-          test "$trusted_sha" = "$TRUSTED_BASE_SHA"
+          test "$trusted_sha" = "$TRUSTED_SOURCE_SHA"
           test -f scripts/ops/publish_mcp_rust_libs.sh
           bash -n scripts/ops/publish_mcp_rust_libs.sh
 
