@@ -106,14 +106,16 @@ spec:
               value: json
             - name: RUST_LOG
               value: info,ai_agent_bridge=info,hyper=warn,reqwest=warn
-            # The binary refuses a non-loopback bind without this global bearer.
-            # Reuse the cluster's required server-to-server credential so every
-            # non-health HTTP route and every TCP connection fails closed.
+            # The binary refuses a non-loopback bind without this global bearer,
+            # so every non-health HTTP route and every TCP connection fails
+            # closed; a missing secret must fail startup rather than expose the
+            # agent/channel/workflow APIs. Backed by the bridge's dedicated
+            # secret (enforced by the k8s contract test and kind smoke fixture).
             - name: API_AUTH_BEARER
               valueFrom:
                 secretKeyRef:
-                  name: dd-agent-secrets
-                  key: SERVER_AUTH_SECRET
+                  name: dd-ai-agent-bridge-secrets
+                  key: inbox_token
             - name: OTEL_SERVICE_NAME
               value: dd-ai-agent-bridge
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -130,8 +132,8 @@ spec:
             - name: AI_AGENT_BRIDGE_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: dd-agent-secrets
-                  key: SERVER_AUTH_SECRET
+                  name: dd-ai-agent-bridge-secrets
+                  key: inbox_token
             # In-cluster embedder is optional — the built-in deterministic local
             # embedder is used when this is unset. Enable once the endpoint/contract
             # is confirmed:
