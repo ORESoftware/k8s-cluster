@@ -45,6 +45,17 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    # OTLP/gRPC export to the in-cluster collector.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app: dd-otel-collector
+      ports:
+        - protocol: TCP
+          port: 4317
     # Shared Postgres (RDS) on private networks.
     - to:
         - ipBlock:
