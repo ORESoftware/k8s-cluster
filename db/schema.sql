@@ -16,6 +16,7 @@ create table if not exists shared_auth.principals (
     email             text,
     email_verified    boolean     not null default false,
     phone             text,
+    phone_verified    boolean     not null default false,
     display_name      text,
     status            text        not null default 'active'
                                   check (status in ('active', 'disabled', 'deleted')),
@@ -143,6 +144,66 @@ create table if not exists shared_auth.roles (
 
 create index if not exists roles_user_idx
     on shared_auth.roles (shared_user_id);
+
+-- Enrolled MFA factors. TOTP seeds are AES-256-GCM ciphertext and nonce; passkeys
+-- contain only the serialised public credential returned by webauthn-rs. Raw
+-- fingerprint/face material is never accepted or stored.
+create table if not exists shared_auth.auth_factors (
+    factor_id          uuid        primary key default gen_random_uuid(),
+    shared_user_id     uuid        not null references shared_auth.principals(shared_user_id) on delete cascade,
+    kind               text        not null check (kind in ('totp', 'passkey')),
+    label              text,
+    secret_ciphertext  bytea,
+    secret_nonce       bytea,
+    public_data        jsonb       not null default '{}'::jsonb,
+    external_id        text,
+    enabled            boolean     not null default false,
+    confirmed_at       timestamptz,
+    last_used_at       timestamptz,
+    created_at         timestamptz not null default now(),
+    updated_at         timestamptz not null default now(),
+    check (label is null or length(label) <= 160),
+    check (external_id is null or length(external_id) <= 2048),
+    check (
+        (kind = 'totp' and secret_ciphertext is not null and secret_nonce is not null)
+        or
+        (kind = 'passkey' and secret_ciphertext is null and secret_nonce is null and external_id is not null)
+    )
+);
+
+create index if not exists auth_factors_user_idx
+    on shared_auth.auth_factors (shared_user_id, kind, enabled);
+create unique index if not exists auth_factors_external_id_unique_idx
+    on shared_auth.auth_factors (kind, external_id)
+    where external_id is not null;
+
+-- Short-lived server-side challenge state. OTP codes are represented only by a
+-- keyed tag; WebAuthn registration/authentication state is JSON owned by the
+-- server and consumed exactly once.
+create table if not exists shared_auth.auth_challenges (
+    challenge_id       uuid        primary key default gen_random_uuid(),
+    shared_user_id     uuid        not null references shared_auth.principals(shared_user_id) on delete cascade,
+    session_id         uuid        not null references shared_auth.sessions(session_id) on delete cascade,
+    kind               text        not null check (kind in ('email_otp', 'sms_otp', 'passkey_register', 'passkey_auth')),
+    destination_hint   text,
+    code_tag           bytea,
+    state              jsonb       not null default '{}'::jsonb,
+    attempts           integer     not null default 0 check (attempts >= 0),
+    max_attempts       integer     not null check (max_attempts between 1 and 20),
+    expires_at         timestamptz not null,
+    consumed_at        timestamptz,
+    created_at         timestamptz not null default now(),
+    check (expires_at > created_at),
+    check (
+        (kind in ('email_otp', 'sms_otp') and code_tag is not null)
+        or
+        (kind in ('passkey_register', 'passkey_auth') and code_tag is null)
+    )
+);
+
+create index if not exists auth_challenges_active_idx
+    on shared_auth.auth_challenges (shared_user_id, session_id, kind, expires_at)
+    where consumed_at is null;
 
 -- HMAC-authenticated sync events are recorded before they are applied. The
 -- primary key makes webhook retries idempotent across all replicas.
