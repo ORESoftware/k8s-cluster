@@ -20,7 +20,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/usacc-source-revision: '2d56ef1e69783285526d098abb810e096cd94908'
+        dd.dev/usacc-source-revision: '5551885a7d28a9865e62fd1f9e7440a0f78eea4a'
         dd.dev/telemetry-revision: '2026-06-08-usacc-rest-api'
       labels:
         app: usacc-rest-api-backend-rs
@@ -67,7 +67,7 @@ spec:
               exec /usr/local/cargo/bin/cargo run --release --locked
           env:
             - name: USACC_SOURCE_REVISION
-              value: '2d56ef1e69783285526d098abb810e096cd94908'
+              value: '5551885a7d28a9865e62fd1f9e7440a0f78eea4a'
             - name: HOST
               value: 0.0.0.0
             - name: PORT
