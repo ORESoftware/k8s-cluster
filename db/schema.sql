@@ -16,6 +16,7 @@ create table if not exists shared_auth.principals (
     email             text,
     email_verified    boolean     not null default false,
     phone             text,
+    phone_verified    boolean     not null default false,
     display_name      text,
     status            text        not null default 'active'
                                   check (status in ('active', 'disabled', 'deleted')),
@@ -74,6 +75,8 @@ create table if not exists shared_auth.sessions (
     provider            text        not null,
     provider_tenant     text        not null default 'default',
     provider_subject    text        not null,
+    auth_level          smallint    not null default 1 check (auth_level in (1, 2)),
+    auth_methods        jsonb       not null default '[]'::jsonb,
     created_at          timestamptz not null default now(),
     updated_at          timestamptz not null default now(),
     last_seen_at        timestamptz not null default now(),
@@ -81,6 +84,7 @@ create table if not exists shared_auth.sessions (
     revoked_at          timestamptz,
     rotated_from        uuid        references shared_auth.sessions(session_id) on delete set null,
     check (length(refresh_token_hash) = 43),
+    check (jsonb_typeof(auth_methods) = 'array'),
     check (expires_at > created_at)
 );
 
@@ -89,6 +93,45 @@ create index if not exists sessions_user_idx
 create index if not exists sessions_active_expiry_idx
     on shared_auth.sessions (expires_at)
     where revoked_at is null;
+
+-- Passwordless email tokens are opaque, single-use, short-lived credentials.
+-- Only the SHA-256 hash is persisted; the plaintext exists only long enough to
+-- be placed in the SendGrid message.
+create table if not exists shared_auth.magic_link_tokens (
+    token_hash          text        primary key check (length(token_hash) = 43),
+    otp_hash            text        not null check (length(otp_hash) = 43),
+    shared_user_id      uuid        not null references shared_auth.principals(shared_user_id) on delete cascade,
+    identifier_hash     text        not null check (length(identifier_hash) = 43),
+    failed_attempts     integer     not null default 0 check (failed_attempts between 0 and 5),
+    created_at          timestamptz not null default now(),
+    expires_at          timestamptz not null,
+    consumed_at         timestamptz,
+    check (expires_at > created_at)
+);
+
+create index if not exists magic_link_tokens_user_idx
+    on shared_auth.magic_link_tokens (shared_user_id);
+create index if not exists magic_link_tokens_active_expiry_idx
+    on shared_auth.magic_link_tokens (expires_at)
+    where consumed_at is null;
+create index if not exists magic_link_tokens_identifier_created_idx
+    on shared_auth.magic_link_tokens (identifier_hash, created_at desc);
+
+create table if not exists shared_auth.mfa_sms_challenges (
+    challenge_id        uuid        primary key default gen_random_uuid(),
+    shared_user_id      uuid        not null references shared_auth.principals(shared_user_id) on delete cascade,
+    phone_e164          text        not null check (phone_e164 ~ '^\+[1-9][0-9]{7,14}$'),
+    created_at          timestamptz not null default now(),
+    expires_at          timestamptz not null,
+    verified_at         timestamptz,
+    check (expires_at > created_at)
+);
+
+create index if not exists mfa_sms_challenges_user_idx
+    on shared_auth.mfa_sms_challenges (shared_user_id, created_at desc);
+create index if not exists mfa_sms_challenges_active_expiry_idx
+    on shared_auth.mfa_sms_challenges (expires_at)
+    where verified_at is null;
 
 create table if not exists shared_auth.roles (
     role_id           uuid        primary key default gen_random_uuid(),
@@ -101,6 +144,66 @@ create table if not exists shared_auth.roles (
 
 create index if not exists roles_user_idx
     on shared_auth.roles (shared_user_id);
+
+-- Enrolled MFA factors. TOTP seeds are AES-256-GCM ciphertext and nonce; passkeys
+-- contain only the serialised public credential returned by webauthn-rs. Raw
+-- fingerprint/face material is never accepted or stored.
+create table if not exists shared_auth.auth_factors (
+    factor_id          uuid        primary key default gen_random_uuid(),
+    shared_user_id     uuid        not null references shared_auth.principals(shared_user_id) on delete cascade,
+    kind               text        not null check (kind in ('totp', 'passkey')),
+    label              text,
+    secret_ciphertext  bytea,
+    secret_nonce       bytea,
+    public_data        jsonb       not null default '{}'::jsonb,
+    external_id        text,
+    enabled            boolean     not null default false,
+    confirmed_at       timestamptz,
+    last_used_at       timestamptz,
+    created_at         timestamptz not null default now(),
+    updated_at         timestamptz not null default now(),
+    check (label is null or length(label) <= 160),
+    check (external_id is null or length(external_id) <= 2048),
+    check (
+        (kind = 'totp' and secret_ciphertext is not null and secret_nonce is not null)
+        or
+        (kind = 'passkey' and secret_ciphertext is null and secret_nonce is null and external_id is not null)
+    )
+);
+
+create index if not exists auth_factors_user_idx
+    on shared_auth.auth_factors (shared_user_id, kind, enabled);
+create unique index if not exists auth_factors_external_id_unique_idx
+    on shared_auth.auth_factors (kind, external_id)
+    where external_id is not null;
+
+-- Short-lived server-side challenge state. OTP codes are represented only by a
+-- keyed tag; WebAuthn registration/authentication state is JSON owned by the
+-- server and consumed exactly once.
+create table if not exists shared_auth.auth_challenges (
+    challenge_id       uuid        primary key default gen_random_uuid(),
+    shared_user_id     uuid        not null references shared_auth.principals(shared_user_id) on delete cascade,
+    session_id         uuid        not null references shared_auth.sessions(session_id) on delete cascade,
+    kind               text        not null check (kind in ('email_otp', 'sms_otp', 'passkey_register', 'passkey_auth')),
+    destination_hint   text,
+    code_tag           bytea,
+    state              jsonb       not null default '{}'::jsonb,
+    attempts           integer     not null default 0 check (attempts >= 0),
+    max_attempts       integer     not null check (max_attempts between 1 and 20),
+    expires_at         timestamptz not null,
+    consumed_at        timestamptz,
+    created_at         timestamptz not null default now(),
+    check (expires_at > created_at),
+    check (
+        (kind in ('email_otp', 'sms_otp') and code_tag is not null)
+        or
+        (kind in ('passkey_register', 'passkey_auth') and code_tag is null)
+    )
+);
+
+create index if not exists auth_challenges_active_idx
+    on shared_auth.auth_challenges (shared_user_id, session_id, kind, expires_at)
+    where consumed_at is null;
 
 -- HMAC-authenticated sync events are recorded before they are applied. The
 -- primary key makes webhook retries idempotent across all replicas.

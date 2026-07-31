@@ -46,7 +46,8 @@ pub fn landing(project_count: usize, issuer: &str, db_enabled: bool) -> Markup {
             p class="muted" {
                 "Postgres-primary OreSoftware auth with " (project_count)
                 " configured Supabase secondary project(s), provider-neutral "
-                "identities, rotated sessions, roles, and unified access tokens."
+                "identities, passwordless email, SMS MFA, rotated sessions, roles, "
+                "and unified access tokens."
             }
             h2 { "status" }
             table {
@@ -58,6 +59,10 @@ pub fn landing(project_count: usize, issuer: &str, db_enabled: bool) -> Markup {
             table {
                 tr { td { code { "POST /auth/exchange" } } td class="muted" { "Supabase token → OreSoftware JWT (JSON)" } }
                 tr { td { code { "POST /auth/login" } } td class="muted" { "local credentials → access and refresh tokens" } }
+                tr { td { code { "POST /auth/passwordless/request" } } td class="muted" { "SendGrid magic link and email OTP" } }
+                tr { td { code { "POST /auth/passwordless/consume" } } td class="muted" { "one-time email credential → AAL1 session" } }
+                tr { td { code { "POST /auth/mfa/sms/request" } } td class="muted" { "start a Twilio Verify SMS challenge" } }
+                tr { td { code { "POST /auth/mfa/sms/verify" } } td class="muted" { "verify SMS and issue an AAL2 session" } }
                 tr { td { code { "POST /auth/refresh" } } td class="muted" { "rotate a one-time refresh token" } }
                 tr { td { code { "POST /auth/introspect" } } td class="muted" { "validate an OreSoftware JWT" } }
                 tr { td { code { "GET /.well-known/jwks.json" } } td class="muted" { "our public JWKS" } }

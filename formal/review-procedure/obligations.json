@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "repository": "shared-auth/shared-auth-server.rs",
+  "procedure": "docs/FORMAL_REVIEW_PROCEDURE.md",
+  "obligations": [
+    {
+      "id": "AUTH_ROTATE",
+      "kind": "safety",
+      "statement": "One accepted refresh atomically consumes the old token and installs exactly one fresh token.",
+      "trigger_paths": [
+        "src/**",
+        "db/**",
+        "tests/auth_state_model.rs",
+        "tests/postgres.rs"
+      ],
+      "model": "tests/auth_state_model.rs",
+      "evidence": [
+        "canonical bounded Rust auth state model",
+        "two-contender PostgreSQL refresh regression"
+      ],
+      "commands": [
+        "cargo test --test auth_state_model --locked",
+        "cargo test --all-targets --locked"
+      ],
+      "assumptions": [
+        "the database transaction provides the isolation required by the refresh-consumption update"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "AUTH_REPLAY",
+      "kind": "safety",
+      "statement": "A consumed or non-current refresh token is rejected without mutating the session.",
+      "trigger_paths": [
+        "src/**",
+        "tests/auth_state_model.rs",
+        "tests/postgres.rs"
+      ],
+      "model": "tests/auth_state_model.rs",
+      "evidence": [
+        "canonical bounded Rust auth state model",
+        "refresh replay regression tests"
+      ],
+      "commands": [
+        "cargo test --test auth_state_model --locked",
+        "cargo test --all-targets --locked"
+      ],
+      "assumptions": [
+        "token digests preserve equality and collision resistance at the application boundary"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "AUTH_REVOKE",
+      "kind": "safety",
+      "statement": "After logout, expiry, or administrative revocation no refresh or access token can reactivate the session.",
+      "trigger_paths": [
+        "src/**",
+        "db/**",
+        "tests/auth_state_model.rs"
+      ],
+      "model": "tests/auth_state_model.rs",
+      "evidence": [
+        "canonical bounded Rust auth state model",
+        "logout, expiry, and revocation tests"
+      ],
+      "commands": [
+        "cargo test --test auth_state_model --locked",
+        "cargo test --all-targets --locked"
+      ],
+      "assumptions": [
+        "revocation reads observe authoritative PostgreSQL state"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "AUTH_KEY_ROTATION",
+      "kind": "safety",
+      "statement": "Signing-key rotation preserves an explicit overlap window, keeps the active key trusted, and rejects tokens after their signing key is retired.",
+      "trigger_paths": [
+        "src/**",
+        "tests/auth_state_model.rs"
+      ],
+      "model": "tests/auth_state_model.rs",
+      "evidence": [
+        "canonical bounded Rust auth state model",
+        "signing-key overlap and retirement regressions"
+      ],
+      "commands": [
+        "cargo test --test auth_state_model --locked",
+        "cargo test --all-targets --locked"
+      ],
+      "assumptions": [
+        "key identifiers uniquely select the intended verification key"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "AUTH_IDENTITY",
+      "kind": "safety",
+      "statement": "External accounts are linked only by configured authority, tenant, and provider subject—not email equality.",
+      "trigger_paths": [
+        "src/**",
+        "db/**"
+      ],
+      "model": null,
+      "evidence": [
+        "identity-linking tests",
+        "schema uniqueness constraints"
+      ],
+      "commands": [
+        "python3 formal/review-procedure/check.py",
+        "cargo test --all-targets --locked"
+      ],
+      "assumptions": [
+        "provider subject and issuer verification are trustworthy"
+      ],
+      "bounded": false
+    },
+    {
+      "id": "AUTH_CLAIMS",
+      "kind": "refinement",
+      "statement": "Accepted and issued JWTs enforce the configured issuer, audience, algorithm, expiry, not-before, signing key, and session provenance.",
+      "trigger_paths": [
+        "src/**"
+      ],
+      "model": null,
+      "evidence": [
+        "JWT claim-boundary tests",
+        "JWKS algorithm and key allow-list tests"
+      ],
+      "commands": [
+        "python3 formal/review-procedure/check.py",
+        "cargo test --all-targets --locked"
+      ],
+      "assumptions": [
+        "cryptographic libraries satisfy their documented contracts",
+        "JWKS transport supplies authentic configured key material"
+      ],
+      "bounded": false
+    }
+  ]
+}

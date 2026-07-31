@@ -2,7 +2,7 @@
 name = "shared-auth-server"
 version = "0.1.0"
 edition = "2021"
-description = "Centralized OreSoftware auth server: verifies Supabase access tokens across multiple orgs/projects, mirrors identities into RDS, mints unified OreSoftware JWTs, and serves a Maud/htmx status UI."
+description = "Centralized OreSoftware auth server: verifies external access tokens, owns local sessions and MFA factors, mints unified OreSoftware JWTs, and serves a Maud/htmx status UI."
 license = "UNLICENSED"
 publish = false
 
@@ -19,16 +19,22 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "syn
 tower-http = { version = "0.7", features = ["cors", "limit", "set-header", "timeout", "trace"] }
 http = "1"
 
-# --- JWT: verify Supabase tokens + sign/verify our own (ES256) ---
-# v10 requires exactly one explicit crypto provider; AWS-LC avoids pulling the
+# --- JWT: verify provider tokens + sign/verify our own (ES256) ---
+# v11 requires exactly one explicit crypto provider; AWS-LC avoids pulling the
 # unused RustCrypto RSA implementation covered by RUSTSEC-2023-0071.
-jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
+jsonwebtoken = { version = "11", features = ["aws_lc_rs"] }
 p256 = { version = "0.13", features = ["ecdsa", "jwk", "pem", "pkcs8"] }
 sha2 = "0.11"
+sha1 = "0.11"
 hmac = "0.13"
 argon2 = "0.5"
-base64 = "0.22"
+base64 = "0.23"
 rand = "0.10"
+
+# --- MFA: encrypted TOTP seeds and WebAuthn/passkeys ---
+aes-gcm = "0.10"
+webauthn-rs = { version = "0.5.5", default-features = false, features = ["danger-allow-state-serialisation"] }
+url = "2"
 
 # --- Identity mirror in AWS RDS Postgres (SeaORM; schema owned by pg-defs) ---
 sea-orm = { version = "2.0", default-features = false, features = [
@@ -39,7 +45,7 @@ sea-orm = { version = "2.0", default-features = false, features = [
     "with-uuid",
 ] }
 
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["form", "json", "rustls-tls"] }
 # Explicit rustls provider (reqwest + sqlx both use rustls); installed once at startup.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive"] }
@@ -77,7 +83,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 # Used by integration tests to sign Supabase-style test tokens and build JWKS.
-jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
+jsonwebtoken = { version = "11", features = ["aws_lc_rs"] }
 p256 = { version = "0.13", features = ["ecdsa", "jwk", "pem", "pkcs8"] }
 serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }

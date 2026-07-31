@@ -103,11 +103,15 @@ pub async fn introspect(
             "provider": claims.provider,
             "provider_tenant": claims.provider_tenant,
             "provider_subject": claims.provider_subject,
+            "aal": claims.aal,
+            "amr": claims.amr,
             "project": claims.project,
             "supabase_user_id": claims.supabase_user_id,
             "email": claims.email,
             "email_verified": claims.email_verified,
             "roles": claims.roles,
+            "amr": claims.amr,
+            "acr": claims.acr,
         }))
         .into_response(),
         Err(_) => Json(json!({ "active": false })).into_response(),
@@ -123,12 +127,18 @@ pub async fn verify(State(state): State<AppState>, headers: HeaderMap) -> impl I
             let mut output = HeaderMap::new();
             insert_header(&mut output, "x-auth-user-id", &claims.sub);
             insert_header(&mut output, "x-auth-provider", &claims.provider);
+            insert_header(&mut output, "x-auth-aal", &claims.aal.to_string());
+            insert_header(&mut output, "x-auth-amr", &claims.amr.join(","));
             insert_header(
                 &mut output,
                 "x-auth-provider-tenant",
                 &claims.provider_tenant,
             );
             insert_header(&mut output, "x-auth-roles", &claims.roles.join(","));
+            insert_header(&mut output, "x-auth-amr", &claims.amr.join(","));
+            if let Some(acr) = &claims.acr {
+                insert_header(&mut output, "x-auth-acr", acr);
+            }
             if let Some(project) = &claims.project {
                 insert_header(&mut output, "x-auth-project", project);
             }

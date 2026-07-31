@@ -2,9 +2,12 @@
 
 use serde::{Deserialize, Serialize};
 
+pub const ACR_BASE: &str = "urn:oresoftware:loa:1";
+pub const ACR_STEP_UP: &str = "urn:oresoftware:loa:2";
+
 /// The token this server mints. `sub` is the stable OreSoftware `shared_user_id`
 /// (not the Supabase `sub`), so downstream services get one identity namespace
-/// regardless of which Supabase project the user came from.
+/// regardless of which provider project the user came from.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OreClaims {
     /// Stable OreSoftware user id (`shared_user_id`).
@@ -23,6 +26,12 @@ pub struct OreClaims {
     pub provider: String,
     pub provider_tenant: String,
     pub provider_subject: String,
+    /// Authentication assurance level. Existing pre-MFA tokens deserialize as
+    /// AAL1 for rolling-deploy compatibility.
+    #[serde(default = "default_auth_level")]
+    pub aal: u8,
+    #[serde(default)]
+    pub amr: Vec<String>,
     /// Compatibility aliases for current Supabase consumers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
@@ -33,4 +42,25 @@ pub struct OreClaims {
     pub email_verified: bool,
     #[serde(default)]
     pub roles: Vec<String>,
+    /// Authentication Methods References. Legacy tokens decode to an empty list
+    /// and therefore never satisfy an explicit high-assurance policy.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub amr: Vec<String>,
+    /// Authentication Context Class Reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acr: Option<String>,
+}
+
+impl OreClaims {
+    pub fn has_acr(&self, required: &str) -> bool {
+        self.acr.as_deref() == Some(required)
+    }
+
+    pub fn used_method(&self, method: &str) -> bool {
+        self.amr.iter().any(|candidate| candidate == method)
+    }
+}
+
+fn default_auth_level() -> u8 {
+    1
 }
