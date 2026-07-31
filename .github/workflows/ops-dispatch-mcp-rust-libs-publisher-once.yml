@@ -1,5 +1,5 @@
-name: Dispatch and observe trusted-runner mcp-rust-libs publisher
-run-name: Observe complete canonical MCP bootstrap @ ${{ github.sha }}
+name: Dispatch and observe Meta Agents installed-App publication
+run-name: Observe creation of meta-agent-control-plane.rs @ ${{ github.sha }}
 
 on:
   push:
@@ -14,65 +14,60 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: observe-trusted-runner-mcp-rust-libs-publisher
+  group: observe-meta-agents-installed-app-publication
   cancel-in-progress: false
 
 jobs:
   observe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 145
+    timeout-minutes: 45
     steps:
-      - name: Dispatch and observe the exact trusted-main publisher run
+      - name: Dispatch and observe exact Meta Agents publisher run
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TRACKING_PR: '398'
-          PUBLISHER_WORKFLOW: ops-main-repository-publication-credential.yml
+          TRACKING_PR: '413'
+          PUBLISHER_WORKFLOW: ops-supervise-exact-meta-agent-publication.yml
         run: |
           set -Eeuo pipefail
           repository="$GITHUB_REPOSITORY"
           trusted_sha="$(gh api "repos/${repository}/commits/main" --jq .sha)"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
 
-          before_json="$(
-            gh run list --repo "$repository" --workflow "$PUBLISHER_WORKFLOW" \
-              --event workflow_dispatch --limit 100 --json databaseId \
-              | jq '[.[].databaseId]'
-          )"
+          before="$(gh run list --repo "$repository" --workflow "$PUBLISHER_WORKFLOW" --event workflow_dispatch --limit 100 --json databaseId | jq '[.[].databaseId]')"
           gh workflow run "$PUBLISHER_WORKFLOW" --repo "$repository" --ref main
 
-          run_json=''
+          run=''
           for _ in $(seq 1 120); do
-            candidates="$(
-              gh run list --repo "$repository" --workflow "$PUBLISHER_WORKFLOW" \
-                --event workflow_dispatch --limit 50 \
-                --json databaseId,headSha,createdAt,status,conclusion,url
-            )"
-            run_json="$(
-              jq -c --argjson before "$before_json" --arg sha "$trusted_sha" \
-                '[.[] | select(.headSha == $sha and ((.databaseId as $id | $before | index($id)) == null))] | sort_by(.createdAt) | last // empty' \
-                <<<"$candidates"
-            )"
-            test -n "$run_json" && break
+            candidates="$(gh run list --repo "$repository" --workflow "$PUBLISHER_WORKFLOW" --event workflow_dispatch --limit 50 --json databaseId,headSha,createdAt,status,conclusion,url)"
+            run="$(jq -c --argjson before "$before" --arg sha "$trusted_sha" '[.[] | select(.headSha == $sha and ((.databaseId as $id | $before | index($id)) == null))] | sort_by(.createdAt) | last // empty' <<<"$candidates")"
+            test -n "$run" && break
             sleep 2
           done
-          test -n "$run_json"
-
-          run_id="$(jq -r .databaseId <<<"$run_json")"
-          run_url="$(jq -r .url <<<"$run_json")"
+          test -n "$run"
+          run_id="$(jq -r .databaseId <<<"$run")"
+          run_url="$(jq -r .url <<<"$run")"
           [[ "$run_id" =~ ^[0-9]+$ ]]
-          gh pr comment "$TRACKING_PR" --repo "$repository" \
-            --body "Trusted-runner canonical MCP publisher dispatched from \`${trusted_sha}\`: ${run_url}" >/dev/null || true
+
+          gh pr comment "$TRACKING_PR" --repo "$repository" --body "Installed-App Meta Agents publisher dispatched from trusted main \`${trusted_sha}\`: ${run_url}" >/dev/null || true
 
           status=0
           gh run watch "$run_id" --repo "$repository" --exit-status || status=$?
           detail="$(gh run view "$run_id" --repo "$repository" --json headSha,status,conclusion,url)"
           test "$(jq -r .headSha <<<"$detail")" = "$trusted_sha"
 
+          log_file="$(mktemp)"
+          trap 'rm -f "$log_file"' EXIT
+          gh run view "$run_id" --repo "$repository" --log >"$log_file" 2>/dev/null || true
+          markers="$(grep -Eo 'meta-agent-app-installation=[0-9]+ repository_selection=[a-z]+|meta-agent-app-permissions administration=[a-z]+ contents=[a-z]+ metadata=[a-z]+|meta-agent-publisher-stage=[A-Za-z0-9._-]+ status=failed exit=[0-9]+|META_AGENT_REPOSITORY=[^[:space:]]+|META_AGENT_MAIN=[0-9a-f]{40}|META_AGENT_FEATURE_SHA=[0-9a-f]{40}|META_AGENT_VISIBILITY=public|META_AGENT_DEFAULT_BRANCH=main' "$log_file" | sort -u || true)"
+
           target='not-created'
-          if metadata="$(gh api repos/ORESoftware/mcp-rust-libs 2>/dev/null)"; then
+          if metadata="$(gh api repos/meta-agents-demo/meta-agent-control-plane.rs 2>/dev/null)"; then
             target="$(jq -r '"owner=" + .owner.login + " visibility=" + .visibility + " default_branch=" + .default_branch + " id=" + (.id|tostring)' <<<"$metadata")"
           fi
-          body="Trusted-runner canonical MCP publisher completed: ${run_url}\n\n- trusted main: \`${trusted_sha}\`\n- conclusion: \`$(jq -r '.conclusion // ""' <<<"$detail")\`\n- target: \`${target}\`"
+          body="Installed-App Meta Agents publisher completed: ${run_url}\n\n- trusted main: \`${trusted_sha}\`\n- conclusion: \`$(jq -r '.conclusion // ""' <<<"$detail")\`\n- target: \`${target}\`"
+          if test -n "$markers"; then
+            body="${body}\n\n\`\`\`text\n${markers}\n\`\`\`"
+          fi
           gh pr comment "$TRACKING_PR" --repo "$repository" --body "$body" >/dev/null || true
           exit "$status"
