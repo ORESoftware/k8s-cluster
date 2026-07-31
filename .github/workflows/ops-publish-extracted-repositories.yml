@@ -1,0 +1,150 @@
+name: Publish extracted Meta Agents and File Tunnel repositories
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-extracted-repositories.yml
+      - scripts/ops/publish_extracted_repositories.py
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: ops-publish-extracted-repositories
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      REPORT_JSON: ${{ runner.temp }}/extracted-repository-publication.json
+      REPORT_MARKDOWN: ${{ runner.temp }}/extracted-repository-publication.md
+
+    steps:
+      - name: Check out the exact trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Configure short-lived AWS credentials from trusted main
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: extracted-repository-publisher
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Load and mask the protected repository-administration credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_json="$(aws secretsmanager get-secret-value \
+            --secret-id dd/remote-dev/agent-secrets \
+            --query SecretString \
+            --output text)"
+          token="$(jq -er '.GH_PAT | select(type == "string" and length > 0)' <<<"$secret_json")"
+          [[ "$token" != *$'\n'* && "$token" != *$'\r'* ]]
+          printf '::add-mask::%s\n' "$token"
+          {
+            printf 'GH_TOKEN=%s\n' "$token"
+            printf 'GITHUB_REPOSITORY_ADMIN_TOKEN=%s\n' "$token"
+          } >> "$GITHUB_ENV"
+          unset token secret_json
+
+      - name: Verify exact publisher identity and organization ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api user --jq .login)" = ORESoftware
+          for org in meta-agents-demo file-tunnel; do
+            membership="$(gh api "/user/memberships/orgs/$org" --jq '.role + ":" + .state')"
+            test "$membership" = admin:active
+            echo "$org owner membership verified"
+          done
+
+      - name: Validate the bounded publication entry point
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ops/publish_missing_org_repositories.py \
+            scripts/ops/publish_extracted_repositories.py
+          python3 scripts/ops/publish_extracted_repositories.py --help >/dev/null
+
+      - name: Publish, activate CI, and verify the two exact repositories
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/publish_extracted_repositories.py \
+            --json-report "$REPORT_JSON" \
+            --markdown-report "$REPORT_MARKDOWN"
+          jq -e '
+            .success == true and
+            .repository_count == 2 and
+            ([.repositories[].repository] | sort) ==
+              (["file-tunnel/ftnl-mcp-server.rs", "meta-agents-demo/meta-agent-control-plane.rs"] | sort) and
+            all(.repositories[];
+              .visibility == "public" and
+              .default_branch == "main" and
+              (.main_sha | test("^[0-9a-f]{40}$"))
+            )
+          ' "$REPORT_JSON" >/dev/null
+
+      - name: Persist non-secret evidence on trusted main
+        shell: bash
+        run: |
+          set -euo pipefail
+          publish_report() {
+            source_path="$1"
+            target_path="$2"
+            message="$3"
+            encoded="$(base64 --wrap=0 "$source_path")"
+            existing_sha="$(
+              gh api "repos/${GITHUB_REPOSITORY}/contents/${target_path}?ref=main" \
+                --jq .sha 2>/dev/null || true
+            )"
+            payload="$RUNNER_TEMP/report-payload.json"
+            if [[ -n "$existing_sha" ]]; then
+              jq -nc \
+                --arg message "$message" \
+                --arg content "$encoded" \
+                --arg branch main \
+                --arg sha "$existing_sha" \
+                '{message:$message,content:$content,branch:$branch,sha:$sha}' \
+                > "$payload"
+            else
+              jq -nc \
+                --arg message "$message" \
+                --arg content "$encoded" \
+                --arg branch main \
+                '{message:$message,content:$content,branch:$branch}' \
+                > "$payload"
+            fi
+            gh api --method PUT \
+              "repos/${GITHUB_REPOSITORY}/contents/${target_path}" \
+              --input "$payload" >/dev/null
+          }
+
+          publish_report "$REPORT_MARKDOWN" \
+            docs/ops/extracted-repository-publication-2026-07-31.md \
+            'docs: record verified extracted repository publication'
+          publish_report "$REPORT_JSON" \
+            docs/ops/extracted-repository-publication-2026-07-31.json \
+            'docs: record machine-readable extracted repository inventory'
+
+      - name: Upload publication evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: extracted-repository-publication
+          path: |
+            ${{ env.REPORT_MARKDOWN }}
+            ${{ env.REPORT_JSON }}
+          if-no-files-found: error
+          retention-days: 14
