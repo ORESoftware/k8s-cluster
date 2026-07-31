@@ -46,17 +46,25 @@ jobs:
       - name: Install pinned contract dependencies
         run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
 
-      - name: Compile the application and exporter
-        run: python -m py_compile src/dd_ai_ml_pipeline.py src/dd_ai_ml_pipeline_api.py src/export_openapi.py
+      - name: Compile the application, exporter, and contract-only shim
+        run: >-
+          python -m py_compile
+          src/dd_ai_ml_pipeline.py
+          src/dd_ai_ml_pipeline_api.py
+          src/export_openapi.py
+          tests/shims/dd_nats_subject_defs.py
 
       - name: Run executable contract tests
         env:
-          PYTHONPATH: src
+          # Production imports the generated package from remote/libs. The
+          # focused checkout may not materialize that separate library gitlink,
+          # so contract-only CI supplies the same constants through a test shim.
+          PYTHONPATH: tests/shims:src
         run: python -m pytest -q tests/test_api_contract.py
 
       - name: Re-export deterministic contracts
         env:
-          PYTHONPATH: src
+          PYTHONPATH: tests/shims:src
         run: |
           set -euo pipefail
           output_dir="$RUNNER_TEMP/ai-ml-pipeline-openapi"
