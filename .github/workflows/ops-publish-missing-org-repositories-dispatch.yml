@@ -56,8 +56,12 @@ jobs:
           trusted_sha="${1:?trusted SHA required}"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
           work="$(mktemp -d /tmp/critical-org-publisher.XXXXXX)"
+          codex_home="${CODEX_HOME:-}"
+          test -z "${codex_home:-}"
+          export CODEX_HOME="$work/codex-home"
+          install -d -m 700 "$CODEX_HOME"
           cleanup() {
-            unset GH_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            unset GH_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN CODEX_HOME
             rm -rf "$work"
           }
           trap cleanup EXIT
