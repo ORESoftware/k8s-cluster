@@ -1,23 +1,24 @@
 name: Probe protected publisher capabilities
-run-name: Probe protected publisher capabilities after gh CLI home repair
+run-name: Probe protected publisher capabilities from exact same-repository PR
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - .github/workflows/protected-publisher-capability-probe.yml
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: protected-publisher-capability-probe
+  group: protected-publisher-capability-probe-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   probe:
+    if: >-
+      github.actor == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'probe/den-319-protected-gh-auth-state'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -54,7 +55,8 @@ jobs:
               "if [ -r /home/ec2-user/.kube/config ]; then echo ec2.kube_config=root-readable; else echo ec2.kube_config=absent; fi",
               "if command -v kubectl >/dev/null 2>&1; then if kubectl -n default auth can-i get secret/dd-agent-secrets >/dev/null 2>&1; then echo root.kube_secret_access=yes; else echo root.kube_secret_access=no; fi; else echo root.kube_secret_access=no-kubectl; fi",
               "if command -v aws >/dev/null 2>&1; then if aws secretsmanager get-secret-value --secret-id dd/remote-dev/agent-secrets --query SecretString --output text >/dev/null 2>&1; then echo root.secretsmanager_access=yes; else echo root.secretsmanager_access=no; fi; else echo root.secretsmanager_access=no-aws; fi",
-              "sudo -u ec2-user -H bash -lc 'set -u; echo ec2.user=$(id -un); for cmd in bash python3 git gh kubectl aws curl; do path=$(command -v $cmd 2>/dev/null || true); if [ -n \"$path\" ]; then echo ec2.$cmd=$path; else echo ec2.$cmd=absent; fi; done; if [ -n \"${GH_TOKEN:-}\" ]; then echo ec2.gh_token_env=present; else echo ec2.gh_token_env=absent; fi; if [ -r \"$HOME/.config/gh/hosts.yml\" ]; then echo ec2.gh_config=readable; else echo ec2.gh_config=absent; fi; if command -v gh >/dev/null 2>&1; then if gh auth status --hostname github.com >/dev/null 2>&1; then echo ec2.gh_auth=valid; else echo ec2.gh_auth=unavailable; fi; else echo ec2.gh_auth=no-gh; fi; if [ -r \"$HOME/.kube/config\" ]; then echo ec2.kube_config=readable; else echo ec2.kube_config=absent; fi'"
+              "ec2_home=$(getent passwd ec2-user | awk -F: '$1 == \"ec2-user\" { print $6 }'); case \"$ec2_home\" in /*) echo ec2.home=$ec2_home ;; *) echo ec2.home=unresolved ;; esac",
+              "sudo -u ec2-user -H env HOME=/home/ec2-user XDG_CONFIG_HOME=/home/ec2-user/.config bash -c 'set -u; echo ec2.user=$(id -un); for cmd in bash python3 git gh kubectl aws curl; do path=$(command -v $cmd 2>/dev/null || true); if [ -n \"$path\" ]; then echo ec2.$cmd=$path; else echo ec2.$cmd=absent; fi; done; if [ -n \"${GH_TOKEN:-}\" ]; then echo ec2.gh_token_env=present; else echo ec2.gh_token_env=absent; fi; if [ -r \"$HOME/.config/gh/hosts.yml\" ]; then echo ec2.gh_config=readable; else echo ec2.gh_config=absent; fi; if command -v gh >/dev/null 2>&1; then if gh auth status --hostname github.com >/dev/null 2>&1; then echo ec2.gh_auth=valid; else echo ec2.gh_auth=unavailable; fi; else echo ec2.gh_auth=no-gh; fi; if [ -r \"$HOME/.kube/config\" ]; then echo ec2.kube_config=readable; else echo ec2.kube_config=absent; fi'"
             ]
           }
           JSON
