@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/ops-supervise-exact-meta-agent-publication.yml
+      - .github/meta-agent-app-publish-trigger
       - scripts/ops/publish_meta_agent_control_plane_with_app.sh
   workflow_dispatch:
 
