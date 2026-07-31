@@ -33,6 +33,12 @@ pub struct OreClaims {
     pub email_verified: bool,
     #[serde(default)]
     pub roles: Vec<String>,
+    /// Numeric authentication assurance level, derived from [`Self::acr`] and
+    /// always consistent with it. Retained for consumers that read `aal`
+    /// rather than the OIDC `acr`; pre-MFA tokens deserialize as level 1 so a
+    /// rolling deploy keeps verifying older tokens.
+    #[serde(default = "default_auth_level")]
+    pub aal: u8,
     /// Authentication methods used for this token. Missing legacy claims decode
     /// as an empty list and therefore never satisfy an explicit method policy.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -40,4 +46,18 @@ pub struct OreClaims {
     /// Authentication context. Missing legacy claims fail closed for LOA2.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acr: Option<String>,
+}
+
+impl OreClaims {
+    pub fn has_acr(&self, required: &str) -> bool {
+        self.acr.as_deref() == Some(required)
+    }
+
+    pub fn used_method(&self, method: &str) -> bool {
+        self.amr.iter().any(|candidate| candidate == method)
+    }
+}
+
+fn default_auth_level() -> u8 {
+    1
 }
