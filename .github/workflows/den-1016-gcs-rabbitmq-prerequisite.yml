@@ -54,7 +54,8 @@ jobs:
           grep -Fq '::add-mask::' "$workflow"
           grep -Fq 'automation/gcs-rabbitmq-secret-status' "$workflow"
           grep -Fq 'dd/remote-dev/gcs-rabbitmq' "$workflow"
-          if grep -Fq 'set -x' "$workflow"; then
+          trace_token='set'' -x'
+          if grep -Fq "$trace_token" "$workflow"; then
             echo 'Shell tracing is forbidden in the secret prerequisite workflow.' >&2
             exit 1
           fi
