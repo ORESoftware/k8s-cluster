@@ -173,7 +173,7 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
     environment = os.environ.copy()
     environment["GITHUB_REPOSITORY_ADMIN_TOKEN"] = MODULE.TOKEN
     records = generated_manifest.get("repositories")
-    if not isinstance(records, list):
+    if not isinstance(records, list) or len(records) != 32:
         fail("reviewed fleet repository ledger is malformed")
 
     for record in records:
