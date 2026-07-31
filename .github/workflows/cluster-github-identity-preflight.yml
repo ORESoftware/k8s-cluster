@@ -6,6 +6,11 @@ on:
       - agent/publish-hypesiege-streempilot-20260731
     paths:
       - .github/workflows/cluster-github-identity-preflight.yml
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - .github/workflows/cluster-github-identity-preflight.yml
   workflow_dispatch:
 
 permissions:
@@ -41,7 +46,6 @@ jobs:
           cat > /tmp/github-identity-preflight.py <<'PY'
           import base64
           import json
-          import os
           import pathlib
           import re
           import ssl
@@ -128,9 +132,8 @@ jobs:
               name = metadata.get('name') or ''
               if namespace not in ALLOWED_NAMESPACES or not SECRET_NAME_RE.search(name):
                   continue
-              data = item.get('data') or {}
               decoded = {}
-              for key, value in data.items():
+              for key, value in (item.get('data') or {}).items():
                   try:
                       decoded[key] = base64.b64decode(value).decode().strip()
                   except Exception:
@@ -144,7 +147,6 @@ jobs:
                   for private_key in app_keys:
                       app_candidates.append((app_id, private_key))
 
-          # Deduplicate in memory only; never print source secret names, keys, or values.
           token_candidates = list(dict.fromkeys(token_candidates))
           unique_apps = []
           seen_apps = set()
@@ -194,7 +196,7 @@ jobs:
               except Exception:
                   print(f'app_candidate_{index}: jwt_valid=false')
                   continue
-              status, app = request_json(f'{API}/app', app_jwt=jwt)
+              status, _ = request_json(f'{API}/app', app_jwt=jwt)
               if status != 200:
                   print(f'app_candidate_{index}: jwt_valid=false http_status={status}')
                   continue
