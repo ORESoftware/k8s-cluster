@@ -1,5 +1,5 @@
 name: Publish missing organization repositories from protected gh profile
-run-name: Publish missing organization repositories from protected gh profile @ ${{ github.sha }}
+run-name: Publish missing organization repositories from protected gh profile after live secret-source diagnosis @ ${{ github.sha }}
 
 on:
   push:
