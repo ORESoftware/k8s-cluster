@@ -29,6 +29,18 @@ spec:
           port: 8142
         - protocol: TCP
           port: 8143
+    # Central Prometheus may scrape only the public HTTP metrics endpoint. TCP
+    # coordination remains inaccessible from observability.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app: dd-prometheus
+      ports:
+        - protocol: TCP
+          port: 8142
     # Warm pool workers use the node network, so pod selectors cannot identify
     # them. Keep this exception constrained to the EC2 VPC instead of the pod
     # network; application-layer bearer auth remains mandatory on both ports.
