@@ -52,15 +52,21 @@ jobs:
           cat > "$remote_script" <<'REMOTE_EOF'
           #!/usr/bin/env bash
           set -euo pipefail
+          umask 077
 
           trusted_sha="${1:?trusted SHA required}"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
           work="$(mktemp -d /tmp/critical-org-publisher.XXXXXX)"
           test -z "${CODEX_HOME:-}"
+          test -z "${GH_TOKEN:-}"
+          test -z "${GITHUB_REPOSITORY_ADMIN_TOKEN:-}"
+          test -z "${GIT_ASKPASS:-}"
           export CODEX_HOME="$work/codex-home"
           install -d -m 700 "$CODEX_HOME"
           cleanup() {
             unset GH_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN CODEX_HOME
+            unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+            unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
             rm -rf "$work"
           }
           trap cleanup EXIT
@@ -71,8 +77,27 @@ jobs:
           GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
           unset encoded_pat
           test -n "$GH_TOKEN"
+          [[ "$GH_TOKEN" != *$'\n'* ]]
+          [[ "$GH_TOKEN" != *$'\r'* ]]
           export GH_TOKEN
           export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
+
+          git_askpass="$work/git-askpass.sh"
+          cat > "$git_askpass" <<'ASKPASS_EOF'
+          #!/usr/bin/env sh
+          case "${1:-}" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) printf '%s\n' "${GH_TOKEN:?GH_TOKEN is required}" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS_EOF
+          chmod 700 "$git_askpass"
+          export GIT_ASKPASS="$git_askpass"
+          export GIT_ASKPASS_REQUIRE=force
+          export GIT_TERMINAL_PROMPT=0
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=credential.helper
+          export GIT_CONFIG_VALUE_0=
 
           python3 - <<'PY'
           import json
@@ -120,6 +145,9 @@ jobs:
               print(f"{organization} owner membership verified")
           PY
 
+          git ls-remote --exit-code \
+            https://github.com/ORESoftware/k8s-cluster.git \
+            refs/heads/main >/dev/null
           git clone --filter=blob:none --no-checkout \
             https://github.com/ORESoftware/k8s-cluster.git \
             "$work/k8s-cluster"
