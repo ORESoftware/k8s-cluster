@@ -132,6 +132,7 @@ pub async fn verify(State(state): State<AppState>, headers: HeaderMap) -> impl I
                 &claims.provider_tenant,
             );
             insert_header(&mut output, "x-auth-roles", &claims.roles.join(","));
+            insert_header(&mut output, "x-auth-aal", &claims.aal.to_string());
             if !claims.amr.is_empty() {
                 insert_header(&mut output, "x-auth-amr", &claims.amr.join(","));
             }
