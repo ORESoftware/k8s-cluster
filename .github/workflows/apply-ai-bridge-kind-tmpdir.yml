@@ -1,0 +1,95 @@
+name: apply AI bridge kind writable directory
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-ai-bridge-kind-tmpdir
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: github.event.pull_request.head.ref == 'agent/den-845-ai-bridge-k8s-smoke'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact feature head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Align the writable inbox with the production runtime strategy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/ai-agent-bridge-kind-smoke.yml')
+          text = path.read_text(encoding='utf-8')
+
+          old_env = '''                      - name: AI_AGENT_BRIDGE_TOKEN
+                        valueFrom:
+                          secretKeyRef:
+                            name: dd-ai-agent-bridge-secrets
+                            key: inbox_token
+                      - name: HOST
+          '''
+          new_env = '''                      - name: AI_AGENT_BRIDGE_TOKEN
+                        valueFrom:
+                          secretKeyRef:
+                            name: dd-ai-agent-bridge-secrets
+                            key: inbox_token
+                      - name: AI_AGENT_BRIDGE_DIR
+                        value: /tmp/claude_bridge
+                      - name: HOST
+          '''
+          if text.count(old_env) != 1:
+              raise SystemExit('AI_AGENT_BRIDGE_TOKEN environment marker missing or duplicated')
+          text = text.replace(old_env, new_env, 1)
+
+          old_volume = '''                    volumeMounts:
+                      - name: inbox
+                        mountPath: /var/lib/bridge/claude-inbox
+                volumes:
+                  - name: inbox
+                    emptyDir:
+                      sizeLimit: 16Mi
+          '''
+          new_volume = '''                    volumeMounts:
+                      - name: tmp
+                        mountPath: /tmp
+                volumes:
+                  - name: tmp
+                    emptyDir:
+                      sizeLimit: 64Mi
+          '''
+          if text.count(old_volume) != 1:
+              raise SystemExit('inbox volume marker missing or duplicated')
+          text = text.replace(old_volume, new_volume, 1)
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          git diff --check
+          git rm .github/workflows/apply-ai-bridge-kind-tmpdir.yml
+
+      - name: Commit the semantic Kubernetes fix
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add .github/workflows/ai-agent-bridge-kind-smoke.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(ai-bridge): create the compat inbox as the runtime UID'
+          git push origin "HEAD:${HEAD_BRANCH}"
