@@ -1,0 +1,73 @@
+name: Publish exact Meta Agents repository from trusted main
+run-name: Publish meta-agents-demo/meta-agent-control-plane.rs @ ${{ github.sha }}
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-meta-agent-control-plane-from-actions.yml
+      - scripts/ops/publish_meta_agent_control_plane_from_actions.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-exact-meta-agent-control-plane
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out exact trusted main and pinned publication history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Configure short-lived AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: publish-exact-meta-agent-control-plane
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Load and mask the protected repository-administration credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_json="$(
+            aws secretsmanager get-secret-value \
+              --secret-id dd/remote-dev/agent-secrets \
+              --query SecretString \
+              --output text
+          )"
+          token="$(jq -er '.GH_PAT | select(type == "string" and length > 0)' <<<"$secret_json")"
+          [[ "$token" != *$'\n'* && "$token" != *$'\r'* && "$token" != *$'\t'* && "$token" != *' '* ]]
+          echo "::add-mask::$token"
+          printf 'GITHUB_REPOSITORY_ADMIN_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+          printf 'GH_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+          unset token secret_json
+
+      - name: Verify exact actor and organization administration before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api user --jq .login)" = ORESoftware
+          membership="$(gh api user/memberships/orgs/meta-agents-demo)"
+          test "$(jq -er .role <<<"$membership")" = admin
+          test "$(jq -er .state <<<"$membership")" = active
+          unset membership
+
+      - name: Materialize, publish, and verify the exact reviewed Git bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod 700 scripts/ops/publish_meta_agent_control_plane_from_actions.sh
+          exec scripts/ops/publish_meta_agent_control_plane_from_actions.sh
