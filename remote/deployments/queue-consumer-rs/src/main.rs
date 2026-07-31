@@ -44,7 +44,10 @@ static ACK_PROGRESS_FAILURES: AtomicU64 = AtomicU64::new(0);
 static HANDOFF_SUCCESSES: AtomicU64 = AtomicU64::new(0);
 static HANDOFF_FAILURES: AtomicU64 = AtomicU64::new(0);
 static DEAD_LETTERED: AtomicU64 = AtomicU64::new(0);
+static DLQ_DUPLICATES: AtomicU64 = AtomicU64::new(0);
 static DLQ_PUBLISH_FAILURES: AtomicU64 = AtomicU64::new(0);
+static DLQ_PUBLISH_EXHAUSTED: AtomicU64 = AtomicU64::new(0);
+static DLQ_SOURCE_MESSAGES_PRESERVED: AtomicU64 = AtomicU64::new(0);
 
 /// Reject identifiers that are empty, overlong, or carry characters that would
 /// let a NATS payload steer the REST request path (`/api/agents/threads/{id}/
@@ -175,18 +178,371 @@ where
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+struct DlqPublishPolicy {
+    attempts: u32,
+    retry_base: Duration,
+    publish_timeout: Duration,
+}
+
+#[derive(Debug)]
+struct DlqPublishAck {
+    stream: String,
+    sequence: u64,
+    duplicate: bool,
+}
+
+#[derive(Debug)]
+struct DeadLetterSource {
+    stream: String,
+    consumer: String,
+    original_subject: String,
+    stream_sequence: u64,
+    consumer_sequence: u64,
+    delivered: i64,
+}
+
+fn configured_dlq_publish_policy() -> DlqPublishPolicy {
+    DlqPublishPolicy {
+        attempts: env_u64("NATS_TASK_DLQ_PUBLISH_ATTEMPTS", 5).clamp(1, 20) as u32,
+        retry_base: Duration::from_millis(
+            env_u64("NATS_TASK_DLQ_RETRY_BASE_MS", 250).clamp(10, 5_000),
+        ),
+        publish_timeout: Duration::from_millis(
+            env_u64("NATS_TASK_DLQ_PUBLISH_TIMEOUT_MS", 5_000).clamp(100, 30_000),
+        ),
+    }
+}
+
+fn dlq_publish_backoff(attempt: u32, base: Duration) -> Duration {
+    let exponent = attempt.saturating_sub(1).min(10);
+    let multiplier = 1u128 << exponent;
+    let millis = base.as_millis().saturating_mul(multiplier).min(30_000) as u64;
+    Duration::from_millis(millis)
+}
+
+fn stable_payload_hash(payload: &[u8]) -> u64 {
+    // FNV-1a is stable across processes and Rust releases, unlike DefaultHasher.
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in payload {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
+fn dead_letter_source(
+    message: &async_nats::jetstream::Message,
+    fallback_stream: &str,
+) -> DeadLetterSource {
+    let info = message.info().ok();
+    DeadLetterSource {
+        stream: info
+            .as_ref()
+            .map(|info| info.stream.to_string())
+            .unwrap_or_else(|| fallback_stream.to_string()),
+        consumer: info
+            .as_ref()
+            .map(|info| info.consumer.to_string())
+            .unwrap_or_else(|| "unknown".to_string()),
+        original_subject: message.subject.to_string(),
+        stream_sequence: info.as_ref().map(|info| info.stream_sequence).unwrap_or(0),
+        consumer_sequence: info
+            .as_ref()
+            .map(|info| info.consumer_sequence)
+            .unwrap_or(0),
+        delivered: info.as_ref().map(|info| info.delivered).unwrap_or(0),
+    }
+}
+
+fn dead_letter_message_id(source: &DeadLetterSource, payload: &[u8]) -> String {
+    let identity = if source.stream_sequence > 0 {
+        source.stream_sequence
+    } else {
+        stable_payload_hash(payload)
+    };
+    format!("{}:{identity}:dd-dead-letter-v2", source.stream)
+}
+
+fn dead_letter_payload(
+    message: &async_nats::jetstream::Message,
+    source: &DeadLetterSource,
+    task: Option<&QueueTaskMessage>,
+    reason: &str,
+    error_text: &str,
+    max_deliver: i64,
+) -> Value {
+    let original_payload = serde_json::from_slice::<Value>(&message.payload).unwrap_or_else(|_| {
+        json!({
+            "encoding": "utf8-lossy",
+            "data": String::from_utf8_lossy(&message.payload).to_string(),
+            "payloadBytes": message.payload.len(),
+        })
+    });
+    let task_metadata = task
+        .map(|task| {
+            json!({
+                "threadId": &task.thread_id,
+                "taskId": &task.task_id,
+                "messageKind": &task.message_kind,
+                "shadow": task.shadow.unwrap_or(false),
+                "directDispatch": task.direct_dispatch.unwrap_or(false),
+            })
+        })
+        .unwrap_or(Value::Null);
+    json!({
+        "type": "dead-letter",
+        "schema": "dd.dead_letter.v2",
+        "sourceService": SERVICE_NAME,
+        "reason": reason,
+        "source": {
+            "stream": &source.stream,
+            "consumer": &source.consumer,
+            "subject": &source.original_subject,
+            "streamSequence": source.stream_sequence,
+            "consumerSequence": source.consumer_sequence,
+            "deliveries": source.delivered,
+            "maxDeliver": max_deliver,
+        },
+        "task": task_metadata,
+        "originalPayload": original_payload,
+        "error": error_text.chars().take(4_096).collect::<String>(),
+        "emittedAtMs": now_ms(),
+    })
+}
+
+async fn publish_dead_letter_with_retry(
+    message: &async_nats::jetstream::Message,
+    nats: &async_nats::Client,
+    dlq_subject: &str,
+    source: &DeadLetterSource,
+    payload: Vec<u8>,
+    policy: DlqPublishPolicy,
+) -> Result<DlqPublishAck, String> {
+    let jetstream = async_nats::jetstream::new(nats.clone());
+    let message_id = dead_letter_message_id(source, &message.payload);
+    let mut last_error = "dead-letter publish was not attempted".to_string();
+
+    for attempt in 1..=policy.attempts {
+        let mut headers = async_nats::HeaderMap::new();
+        headers.insert("Nats-Msg-Id", message_id.as_str());
+        headers.insert("X-DD-DLQ-Schema", "dd.dead_letter.v2");
+        headers.insert("X-DD-DLQ-Source-Stream", source.stream.as_str());
+        headers.insert(
+            "X-DD-DLQ-Source-Sequence",
+            source.stream_sequence.to_string(),
+        );
+        let result = tokio::time::timeout(policy.publish_timeout, async {
+            let ack = jetstream
+                .publish_with_headers(dlq_subject.to_string(), headers, payload.clone().into())
+                .await
+                .map_err(|error| error.to_string())?;
+            ack.await.map_err(|error| error.to_string())
+        })
+        .await;
+
+        match result {
+            Ok(Ok(ack)) => {
+                return Ok(DlqPublishAck {
+                    stream: ack.stream,
+                    sequence: ack.sequence,
+                    duplicate: ack.duplicate,
+                });
+            }
+            Ok(Err(error)) => last_error = error,
+            Err(_) => {
+                last_error = format!(
+                    "dead-letter publish attempt timed out after {}ms",
+                    policy.publish_timeout.as_millis()
+                )
+            }
+        }
+
+        DLQ_PUBLISH_FAILURES.fetch_add(1, Ordering::Relaxed);
+        log_warn(
+            "dead-letter-publish-attempt-failed",
+            "Queue consumer could not durably publish a task to the dead-letter stream.",
+            json!({
+                "dlqSubject": dlq_subject,
+                "sourceStream": &source.stream,
+                "sourceSequence": source.stream_sequence,
+                "attempt": attempt,
+                "maxAttempts": policy.attempts,
+                "error": &last_error,
+            }),
+        );
+
+        if attempt < policy.attempts {
+            // Keep the source delivery alive while retrying the durable side of
+            // the transfer, then apply bounded exponential backoff.
+            if let Err(error) = message
+                .ack_with(async_nats::jetstream::AckKind::Progress)
+                .await
+            {
+                ACK_PROGRESS_FAILURES.fetch_add(1, Ordering::Relaxed);
+                log_warn(
+                    "dead-letter-ack-progress-failed",
+                    "Queue consumer could not extend the source ack deadline during DLQ retry.",
+                    json!({ "error": error.to_string(), "attempt": attempt }),
+                );
+            }
+            tokio::time::sleep(dlq_publish_backoff(attempt, policy.retry_base)).await;
+        }
+    }
+
+    Err(last_error)
+}
+
+async fn preserve_source_after_dlq_failure(
+    message: &async_nats::jetstream::Message,
+    delivered: i64,
+    max_deliver: i64,
+    nak_delay: Duration,
+) {
+    let ack_kind = if is_final_delivery(delivered, max_deliver) {
+        // At MaxDeliver, another Nak cannot produce a normal redelivery. Keep
+        // the message un-terminated and refresh its ack deadline so the source
+        // stream remains the recovery record until an operator repairs the DLQ.
+        async_nats::jetstream::AckKind::Progress
+    } else {
+        async_nats::jetstream::AckKind::Nak(Some(nak_delay))
+    };
+    if let Err(error) = message.ack_with(ack_kind).await {
+        log_warn(
+            "dead-letter-source-preserve-ack-failed",
+            "Queue consumer could not signal source preservation after DLQ failure.",
+            json!({
+                "delivered": delivered,
+                "maxDeliver": max_deliver,
+                "error": error.to_string(),
+            }),
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn move_to_dead_letter(
+    message: &async_nats::jetstream::Message,
+    nats: &async_nats::Client,
+    critical_subject: &str,
+    dlq_subject: &str,
+    stream_name: &str,
+    task: Option<&QueueTaskMessage>,
+    max_deliver: i64,
+    nak_delay: Duration,
+    reason: &str,
+    error_text: &str,
+    policy: DlqPublishPolicy,
+) -> bool {
+    let source = dead_letter_source(message, stream_name);
+    let payload = dead_letter_payload(message, &source, task, reason, error_text, max_deliver);
+    let encoded = match serde_json::to_vec(&payload) {
+        Ok(encoded) => encoded,
+        Err(error) => {
+            DLQ_PUBLISH_EXHAUSTED.fetch_add(1, Ordering::Relaxed);
+            DLQ_SOURCE_MESSAGES_PRESERVED.fetch_add(1, Ordering::Relaxed);
+            emit_runtime_critical_event(
+                nats,
+                critical_subject,
+                "dead-letter-serialize-failed-source-preserved",
+                "Queue consumer could not serialize a dead-letter envelope; the source message was preserved.",
+                json!({
+                    "sourceStream": &source.stream,
+                    "sourceSequence": source.stream_sequence,
+                    "reason": reason,
+                    "error": error.to_string(),
+                }),
+            )
+            .await;
+            preserve_source_after_dlq_failure(message, source.delivered, max_deliver, nak_delay)
+                .await;
+            return false;
+        }
+    };
+
+    match publish_dead_letter_with_retry(message, nats, dlq_subject, &source, encoded, policy).await
+    {
+        Ok(ack) => {
+            DEAD_LETTERED.fetch_add(1, Ordering::Relaxed);
+            if ack.duplicate {
+                DLQ_DUPLICATES.fetch_add(1, Ordering::Relaxed);
+            }
+            emit_runtime_critical_event(
+                nats,
+                critical_subject,
+                "queue-task-dead-lettered",
+                "Queue consumer durably moved a source message to the dead-letter stream.",
+                json!({
+                    "threadId": task.map(|task| task.thread_id.as_str()),
+                    "taskId": task.map(|task| task.task_id.as_str()),
+                    "reason": reason,
+                    "dlqSubject": dlq_subject,
+                    "dlqStream": &ack.stream,
+                    "dlqSequence": ack.sequence,
+                    "duplicate": ack.duplicate,
+                    "sourceStream": &source.stream,
+                    "sourceSequence": source.stream_sequence,
+                    "deliveries": source.delivered,
+                    "maxDeliver": max_deliver,
+                    "error": error_text,
+                }),
+            )
+            .await;
+
+            // The ordering is the durability invariant: only Term the source
+            // after the DLQ server ACK has completed. If Term fails, a later
+            // redelivery republishes with the same Nats-Msg-Id and receives a
+            // duplicate ACK instead of creating another DLQ record.
+            if let Err(error) = message.ack_with(async_nats::jetstream::AckKind::Term).await {
+                emit_runtime_critical_event(
+                    nats,
+                    critical_subject,
+                    "queue-task-term-failed-after-dlq-ack",
+                    "Queue consumer durably published the DLQ record but could not terminate the source message.",
+                    json!({
+                        "sourceStream": &source.stream,
+                        "sourceSequence": source.stream_sequence,
+                        "dlqStream": &ack.stream,
+                        "dlqSequence": ack.sequence,
+                        "error": error.to_string(),
+                    }),
+                )
+                .await;
+            }
+            true
+        }
+        Err(error) => {
+            DLQ_PUBLISH_EXHAUSTED.fetch_add(1, Ordering::Relaxed);
+            DLQ_SOURCE_MESSAGES_PRESERVED.fetch_add(1, Ordering::Relaxed);
+            emit_runtime_critical_event(
+                nats,
+                critical_subject,
+                "dead-letter-publish-exhausted-source-preserved",
+                "All durable DLQ publish attempts failed; the source message was not terminated.",
+                json!({
+                    "threadId": task.map(|task| task.thread_id.as_str()),
+                    "taskId": task.map(|task| task.task_id.as_str()),
+                    "reason": reason,
+                    "dlqSubject": dlq_subject,
+                    "sourceStream": &source.stream,
+                    "sourceSequence": source.stream_sequence,
+                    "deliveries": source.delivered,
+                    "maxDeliver": max_deliver,
+                    "attempts": policy.attempts,
+                    "error": &error,
+                }),
+            )
+            .await;
+            preserve_source_after_dlq_failure(message, source.delivered, max_deliver, nak_delay)
+                .await;
+            false
+        }
+    }
+}
+
 /// After a handoff failure, either negatively-acknowledge the message for
-/// another delivery attempt or, if JetStream has already delivered it
-/// `max_deliver` times, terminate it and route the payload to the dead-letter
-/// subject.
-///
-/// Terminating matters under WorkQueue retention: a message that is only ever
-/// Nak'd is never removed once redelivery is exhausted, so it lingers in the
-/// stream until `max_age` (14 days here) and keeps counting toward the
-/// consumer's pending/lag total — the exact metric KEDA scales the consumer on,
-/// so one poison message can pin a replica alive for days. `Term` removes it
-/// immediately; the best-effort dead-letter publish preserves it for
-/// inspection, and the critical event is the durable audit record.
+/// another delivery attempt or, at MaxDeliver, durably transfer it to the DLQ.
+/// The source message is terminated only after the DLQ publish ACK succeeds.
 #[allow(clippy::too_many_arguments)]
 async fn nak_or_dead_letter(
     message: &async_nats::jetstream::Message,
@@ -198,6 +554,7 @@ async fn nak_or_dead_letter(
     max_deliver: i64,
     nak_delay: Duration,
     error_text: &str,
+    policy: DlqPublishPolicy,
 ) {
     let delivered = message.info().map(|info| info.delivered).unwrap_or(0);
     if !is_final_delivery(delivered, max_deliver) {
@@ -223,85 +580,20 @@ async fn nak_or_dead_letter(
         return;
     }
 
-    DEAD_LETTERED.fetch_add(1, Ordering::Relaxed);
-    // Final delivery: preserve the payload on the dedicated JetStream
-    // dead-letter stream, then Term so WorkQueue frees it.
-    let dead_letter = json!({
-        "type": "dead-letter",
-        "schema": "dd.dead_letter.v1",
-        "source": SERVICE_NAME,
-        "stream": stream_name,
-        "threadId": &task.thread_id,
-        "taskId": &task.task_id,
-        "messageKind": &task.message_kind,
-        "deliveries": delivered,
-        "maxDeliver": max_deliver,
-        "error": error_text,
-        "emittedAtMs": now_ms(),
-    });
-    match serde_json::to_vec(&dead_letter) {
-        Ok(bytes) => {
-            let jetstream = async_nats::jetstream::new(nats.clone());
-            let publish_result = match jetstream
-                .publish(dlq_subject.to_string(), bytes.into())
-                .await
-            {
-                Ok(ack) => ack.await.map(|_| ()),
-                Err(error) => Err(error),
-            };
-            if let Err(publish_error) = publish_result {
-                DLQ_PUBLISH_FAILURES.fetch_add(1, Ordering::Relaxed);
-                log_warn(
-                    "dead-letter-publish-failed",
-                    "Queue consumer could not durably publish a task to the dead-letter stream.",
-                    json!({
-                        "threadId": &task.thread_id,
-                        "taskId": &task.task_id,
-                        "dlqSubject": dlq_subject,
-                        "error": publish_error.to_string(),
-                    }),
-                );
-            }
-        }
-        Err(serialize_error) => log_warn(
-            "dead-letter-serialize-failed",
-            "Queue consumer could not serialize a dead-letter payload.",
-            json!({
-                "threadId": &task.thread_id,
-                "taskId": &task.task_id,
-                "error": serialize_error.to_string(),
-            }),
-        ),
-    }
-    emit_runtime_critical_event(
+    move_to_dead_letter(
+        message,
         nats,
         critical_subject,
-        "queue-task-dead-lettered",
-        "Queue consumer exhausted redelivery for a task and moved it to the dead-letter subject.",
-        json!({
-            "threadId": &task.thread_id,
-            "taskId": &task.task_id,
-            "dlqSubject": dlq_subject,
-            "deliveries": delivered,
-            "maxDeliver": max_deliver,
-            "error": error_text,
-        }),
+        dlq_subject,
+        stream_name,
+        Some(task),
+        max_deliver,
+        nak_delay,
+        "handoff-failed-after-max-deliver",
+        error_text,
+        policy,
     )
     .await;
-    if let Err(term_error) = message.ack_with(async_nats::jetstream::AckKind::Term).await {
-        emit_runtime_critical_event(
-            nats,
-            critical_subject,
-            "queue-task-term-failed",
-            "Queue consumer could not terminate a poison task message; it may linger in the WorkQueue stream.",
-            json!({
-                "threadId": &task.thread_id,
-                "taskId": &task.task_id,
-                "error": term_error.to_string(),
-            }),
-        )
-        .await;
-    }
 }
 
 fn env_value(key: &str, fallback: &str) -> String {
@@ -552,8 +844,20 @@ fn render_metrics() -> String {
             DEAD_LETTERED.load(Ordering::Relaxed),
         ),
         (
+            "dd_queue_consumer_dlq_duplicates_total",
+            DLQ_DUPLICATES.load(Ordering::Relaxed),
+        ),
+        (
             "dd_queue_consumer_dlq_publish_failures_total",
             DLQ_PUBLISH_FAILURES.load(Ordering::Relaxed),
+        ),
+        (
+            "dd_queue_consumer_dlq_publish_exhausted_total",
+            DLQ_PUBLISH_EXHAUSTED.load(Ordering::Relaxed),
+        ),
+        (
+            "dd_queue_consumer_dlq_source_messages_preserved_total",
+            DLQ_SOURCE_MESSAGES_PRESERVED.load(Ordering::Relaxed),
         ),
     ];
     for (name, value) in metrics {
@@ -1064,6 +1368,7 @@ async fn ensure_dead_letter_stream(
             retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
             storage: async_nats::jetstream::stream::StorageType::File,
             max_age: Duration::from_secs(30 * 24 * 60 * 60),
+            max_message_size: 8 * 1024 * 1024,
             ..Default::default()
         })
         .await?;
@@ -1270,6 +1575,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let nak_delay_seconds = env_u64("NATS_TASK_NAK_DELAY_SECONDS", 15);
     let dlq_subject = env_value("NATS_TASK_DLQ_SUBJECT", THREAD_TASKS_DEAD_LETTER_SUBJECT);
     let dlq_stream_name = env_value("NATS_TASK_DLQ_STREAM", DD_REMOTE_TASKS_DLQ_STREAM_NAME);
+    let dlq_publish_policy = configured_dlq_publish_policy();
     let rest_api_url = env_value(
         "REMOTE_REST_API_URL",
         "http://dd-remote-rest-api.default.svc.cluster.local:8082",
@@ -1324,7 +1630,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         "queue-consumer-starting",
         "Queue consumer starting.",
         json!({
-            "natsUrl": &nats_url,
+            "natsEndpointConfigured": !nats_url.is_empty(),
             "stream": &stream_name,
             "subject": &subject,
             "eventSubject": &event_subject,
@@ -1335,6 +1641,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             "consumer": &consumer_name,
             "dlqSubject": &dlq_subject,
             "dlqStream": &dlq_stream_name,
+            "dlqPublishAttempts": dlq_publish_policy.attempts,
+            "dlqRetryBaseMs": dlq_publish_policy.retry_base.as_millis(),
+            "dlqPublishTimeoutMs": dlq_publish_policy.publish_timeout.as_millis(),
             "restApiUrl": &rest_api_url,
             "containerPoolUrl": &container_pool_url,
             "httpTimeoutSeconds": http_timeout_seconds,
@@ -1491,20 +1800,20 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                     }),
                 )
                 .await;
-                if let Err(ack_error) = message.ack().await {
-                    emit_runtime_critical_event(
-                        &nats_client,
-                        &critical_subject,
-                        "invalid-queue-task-ack-failed",
-                        "Queue consumer could not acknowledge an invalid task payload.",
-                        json!({
-                            "stream": &stream_name,
-                            "subject": message.subject.to_string(),
-                            "error": ack_error.to_string(),
-                        }),
-                    )
-                    .await;
-                }
+                move_to_dead_letter(
+                    &message,
+                    &nats_client,
+                    &critical_subject,
+                    &dlq_subject,
+                    &stream_name,
+                    None,
+                    max_deliver,
+                    Duration::from_secs(nak_delay_seconds),
+                    "invalid-json-payload",
+                    &error.to_string(),
+                    dlq_publish_policy,
+                )
+                .await;
                 continue;
             }
         };
@@ -1522,22 +1831,22 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 }),
             )
             .await;
-            // Drop the poison message: a bad id can't become valid on retry,
-            // and we must not let it steer the REST path or alias a receipt.
-            if let Err(ack_error) = message.ack().await {
-                emit_runtime_critical_event(
-                    &nats_client,
-                    &critical_subject,
-                    "invalid-queue-task-identifiers-ack-failed",
-                    "Queue consumer could not acknowledge a task with unsafe identifiers.",
-                    json!({
-                        "stream": &stream_name,
-                        "subject": message.subject.to_string(),
-                        "error": ack_error.to_string(),
-                    }),
-                )
-                .await;
-            }
+            // Unsafe identifiers are poison, but they are still evidence. Move
+            // them to the DLQ instead of silently acknowledging and discarding.
+            move_to_dead_letter(
+                &message,
+                &nats_client,
+                &critical_subject,
+                &dlq_subject,
+                &stream_name,
+                Some(&task),
+                max_deliver,
+                Duration::from_secs(nak_delay_seconds),
+                "unsafe-task-identifiers",
+                &validation_error,
+                dlq_publish_policy,
+            )
+            .await;
             continue;
         }
         if has_task_receipt(&mut receipts, &receipts_dir, &task.task_id) {
@@ -1927,6 +2236,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 max_deliver,
                 Duration::from_secs(nak_delay_seconds),
                 &error_text,
+                dlq_publish_policy,
             )
             .await;
             continue;
@@ -2137,7 +2447,9 @@ mod tests {
     // excluded. Recovers a poisoned lock so one failing env test can't cascade.
     static ENV_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {
-        ENV_GUARD.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        ENV_GUARD
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     // ---- message parsing / validation ----------------------------------
@@ -2249,7 +2561,9 @@ mod tests {
             json!({"threadId": "t", "taskId": "k", "messageKind": "task.shadow"})
         )));
         // Neither signal present → not a shadow task.
-        assert!(!is_shadow_task(&parse_task(json!({"threadId": "t", "taskId": "k"}))));
+        assert!(!is_shadow_task(&parse_task(
+            json!({"threadId": "t", "taskId": "k"})
+        )));
         assert!(!is_shadow_task(&parse_task(
             json!({"threadId": "t", "taskId": "k", "shadow": false, "messageKind": "task.dispatch"})
         )));
@@ -2258,10 +2572,21 @@ mod tests {
     #[test]
     fn container_pool_dispatch_mode_matches_only_pool_aliases() {
         for mode in ["queued-pool", "nats-pool", "container-pool", "pool"] {
-            assert!(is_container_pool_dispatch_mode(mode), "{mode} should be a pool alias");
+            assert!(
+                is_container_pool_dispatch_mode(mode),
+                "{mode} should be a pool alias"
+            );
         }
         // Non-pool modes and case variants are not pool aliases (match is exact).
-        for mode in ["queued", "nats", "async", "direct", "", "POOL", "Container-Pool"] {
+        for mode in [
+            "queued",
+            "nats",
+            "async",
+            "direct",
+            "",
+            "POOL",
+            "Container-Pool",
+        ] {
             assert!(
                 !is_container_pool_dispatch_mode(mode),
                 "{mode} should not be a pool alias"
@@ -2392,7 +2717,10 @@ mod tests {
         // Any present-but-non-truthy value is false even when the fallback is true.
         for falsy in ["0", "false", "no", "off", "2", ""] {
             std::env::set_var(key, falsy);
-            assert!(!env_bool(key, true), "{falsy:?} should override fallback to false");
+            assert!(
+                !env_bool(key, true),
+                "{falsy:?} should override fallback to false"
+            );
         }
         std::env::remove_var(key);
     }
@@ -2462,9 +2790,19 @@ mod tests {
             .unwrap()
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert_eq!(entries.len(), 1, "unexpected receipt dir contents: {entries:?}");
-        assert!(entries[0].ends_with(".json"), "not a .json receipt: {entries:?}");
-        assert!(!entries[0].contains(".tmp-"), "leftover tmp file: {entries:?}");
+        assert_eq!(
+            entries.len(),
+            1,
+            "unexpected receipt dir contents: {entries:?}"
+        );
+        assert!(
+            entries[0].ends_with(".json"),
+            "not a .json receipt: {entries:?}"
+        );
+        assert!(
+            !entries[0].contains(".tmp-"),
+            "leftover tmp file: {entries:?}"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -2627,7 +2965,10 @@ mod tests {
             "dd_queue_consumer_handoff_successes_total",
             "dd_queue_consumer_handoff_failures_total",
             "dd_queue_consumer_dead_lettered_total",
+            "dd_queue_consumer_dlq_duplicates_total",
             "dd_queue_consumer_dlq_publish_failures_total",
+            "dd_queue_consumer_dlq_publish_exhausted_total",
+            "dd_queue_consumer_dlq_source_messages_preserved_total",
         ] {
             assert!(
                 metrics.contains(&format!("# TYPE {name} counter")),
@@ -2635,7 +2976,9 @@ mod tests {
             );
             // Each counter also emits a "name <value>" sample line.
             assert!(
-                metrics.lines().any(|line| line.starts_with(&format!("{name} "))),
+                metrics
+                    .lines()
+                    .any(|line| line.starts_with(&format!("{name} "))),
                 "missing sample line for {name}"
             );
         }
@@ -2646,6 +2989,221 @@ mod tests {
             .find(|line| line.starts_with("dd_queue_consumer_ready "))
             .expect("ready gauge sample line");
         let value = ready_line.rsplit(' ').next().unwrap();
-        assert!(value == "0" || value == "1", "ready gauge value was {value:?}");
+        assert!(
+            value == "0" || value == "1",
+            "ready gauge value was {value:?}"
+        );
+    }
+
+    #[test]
+    fn dlq_backoff_is_bounded_and_message_id_is_stable() {
+        let base = Duration::from_millis(100);
+        assert_eq!(dlq_publish_backoff(1, base), Duration::from_millis(100));
+        assert_eq!(dlq_publish_backoff(2, base), Duration::from_millis(200));
+        assert_eq!(dlq_publish_backoff(5, base), Duration::from_millis(1_600));
+        assert_eq!(dlq_publish_backoff(100, base), Duration::from_secs(30));
+
+        let source = DeadLetterSource {
+            stream: "SOURCE".to_string(),
+            consumer: "worker".to_string(),
+            original_subject: "tasks.one".to_string(),
+            stream_sequence: 42,
+            consumer_sequence: 7,
+            delivered: 5,
+        };
+        assert_eq!(
+            dead_letter_message_id(&source, b"payload-a"),
+            dead_letter_message_id(&source, b"payload-b"),
+            "stream sequence is the durable source identity"
+        );
+        let fallback = DeadLetterSource {
+            stream_sequence: 0,
+            ..source
+        };
+        assert_ne!(
+            dead_letter_message_id(&fallback, b"payload-a"),
+            dead_letter_message_id(&fallback, b"payload-b")
+        );
+    }
+
+    #[test]
+    fn configured_dlq_policy_clamps_retry_limits() {
+        let _guard = env_lock();
+        std::env::set_var("NATS_TASK_DLQ_PUBLISH_ATTEMPTS", "999");
+        std::env::set_var("NATS_TASK_DLQ_RETRY_BASE_MS", "1");
+        std::env::set_var("NATS_TASK_DLQ_PUBLISH_TIMEOUT_MS", "999999");
+        let policy = configured_dlq_publish_policy();
+        assert_eq!(policy.attempts, 20);
+        assert_eq!(policy.retry_base, Duration::from_millis(10));
+        assert_eq!(policy.publish_timeout, Duration::from_millis(30_000));
+        std::env::remove_var("NATS_TASK_DLQ_PUBLISH_ATTEMPTS");
+        std::env::remove_var("NATS_TASK_DLQ_RETRY_BASE_MS");
+        std::env::remove_var("NATS_TASK_DLQ_PUBLISH_TIMEOUT_MS");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn live_dlq_failure_preserves_source_then_recovers_idempotently() {
+        let Ok(nats_url) = std::env::var("NATS_DLQ_E2E_URL") else {
+            return;
+        };
+        let client = async_nats::connect(&nats_url)
+            .await
+            .expect("connect to live NATS test server");
+        let jetstream = async_nats::jetstream::new(client.clone());
+        let suffix = format!("{}-{}", std::process::id(), now_unix_nano());
+        let source_stream_name = format!("DLQ_SOURCE_{}", suffix.replace('-', "_"));
+        let dlq_stream_name = format!("DLQ_TARGET_{}", suffix.replace('-', "_"));
+        let source_subject = format!("e2e.source.{suffix}");
+        let dlq_subject = format!("e2e.dlq.{suffix}");
+        let consumer_name = format!("worker-{}", suffix);
+
+        let source_stream = jetstream
+            .create_stream(async_nats::jetstream::stream::Config {
+                name: source_stream_name.clone(),
+                subjects: vec![source_subject.clone()],
+                retention: async_nats::jetstream::stream::RetentionPolicy::WorkQueue,
+                storage: async_nats::jetstream::stream::StorageType::Memory,
+                ..Default::default()
+            })
+            .await
+            .expect("create source stream");
+        let consumer = source_stream
+            .create_consumer(async_nats::jetstream::consumer::pull::Config {
+                durable_name: Some(consumer_name.clone()),
+                filter_subject: source_subject.clone(),
+                ack_wait: Duration::from_secs(2),
+                max_deliver: 1,
+                ..Default::default()
+            })
+            .await
+            .expect("create source consumer");
+        let task_json = json!({
+            "threadId": "thread-e2e",
+            "taskId": "task-e2e",
+            "messageKind": "task.dispatch"
+        });
+        let payload = serde_json::to_vec(&task_json).unwrap();
+        jetstream
+            .publish(source_subject.clone(), payload.clone().into())
+            .await
+            .expect("start source publish")
+            .await
+            .expect("source publish ack");
+
+        let mut messages = consumer.messages().await.expect("open source consumer");
+        let message = tokio::time::timeout(Duration::from_secs(5), messages.next())
+            .await
+            .expect("source delivery timeout")
+            .expect("source stream ended")
+            .expect("source delivery error");
+        let task = serde_json::from_slice::<QueueTaskMessage>(&message.payload).unwrap();
+        let policy = DlqPublishPolicy {
+            attempts: 2,
+            retry_base: Duration::from_millis(10),
+            publish_timeout: Duration::from_millis(500),
+        };
+
+        // No DLQ stream exists. The transfer must fail without Terminating the
+        // source message—the historical implementation lost it here.
+        nak_or_dead_letter(
+            &message,
+            &client,
+            "e2e.critical",
+            &dlq_subject,
+            &source_stream_name,
+            &task,
+            1,
+            Duration::from_millis(10),
+            "forced handoff failure",
+            policy,
+        )
+        .await;
+        let source_info = source_stream
+            .get_info()
+            .await
+            .expect("source info after failure");
+        assert_eq!(
+            source_info.state.messages, 1,
+            "source message was lost on DLQ failure"
+        );
+
+        jetstream
+            .create_stream(async_nats::jetstream::stream::Config {
+                name: dlq_stream_name.clone(),
+                subjects: vec![dlq_subject.clone()],
+                retention: async_nats::jetstream::stream::RetentionPolicy::Limits,
+                storage: async_nats::jetstream::stream::StorageType::Memory,
+                ..Default::default()
+            })
+            .await
+            .expect("create repaired DLQ stream");
+
+        // Retry the same source delivery after repair. Durable ACK precedes Term.
+        nak_or_dead_letter(
+            &message,
+            &client,
+            "e2e.critical",
+            &dlq_subject,
+            &source_stream_name,
+            &task,
+            1,
+            Duration::from_millis(10),
+            "forced handoff failure",
+            policy,
+        )
+        .await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let source_info = source_stream
+            .get_info()
+            .await
+            .expect("source info after recovery");
+        let dlq_stream = jetstream
+            .get_stream(&dlq_stream_name)
+            .await
+            .expect("get repaired DLQ stream");
+        let dlq_info = dlq_stream.get_info().await.expect("DLQ info");
+        assert_eq!(
+            source_info.state.messages, 0,
+            "source was not Terminated after DLQ ACK"
+        );
+        assert_eq!(
+            dlq_info.state.messages, 1,
+            "DLQ did not receive exactly one record"
+        );
+
+        // Re-running the transfer simulates an ACK/Term ambiguity. Nats-Msg-Id
+        // must make the DLQ write idempotent and keep the target at one record.
+        let source = dead_letter_source(&message, &source_stream_name);
+        let encoded = serde_json::to_vec(&dead_letter_payload(
+            &message,
+            &source,
+            Some(&task),
+            "handoff-failed-after-max-deliver",
+            "forced handoff failure",
+            1,
+        ))
+        .unwrap();
+        let duplicate_ack = publish_dead_letter_with_retry(
+            &message,
+            &client,
+            &dlq_subject,
+            &source,
+            encoded,
+            policy,
+        )
+        .await
+        .expect("duplicate DLQ publish ack");
+        assert!(
+            duplicate_ack.duplicate,
+            "server did not de-duplicate DLQ retry"
+        );
+        let dlq_info = dlq_stream
+            .get_info()
+            .await
+            .expect("DLQ info after duplicate");
+        assert_eq!(dlq_info.state.messages, 1);
+
+        let _ = jetstream.delete_stream(&source_stream_name).await;
+        let _ = jetstream.delete_stream(&dlq_stream_name).await;
     }
 }

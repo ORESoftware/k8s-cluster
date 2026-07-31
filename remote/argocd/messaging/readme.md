@@ -60,8 +60,16 @@ on `:8222` to scale that deployment by consumer lag.
   HTTP→NATS chokepoint for callers that shouldn't get raw bus access
   (e.g. the voxletra tenant). Bearer-token auth (fail-closed), subject
   allowlist (`dd.vapi.tasks.`, `vxl.` — never `$SYS`/`$JS`/wildcards), JSON-only
-  bodies capped at 256KB, JetStream acked publishes. Token comes from
-  ClusterSecretStore key `dd/messaging/nats-bridge-secrets`.
+  bodies capped at 256KB, bounded in-flight publish pressure, and optional
+  `Nats-Msg-Id` de-duplication. `dd.vapi.tasks.>` is durable-only: if its
+  JetStream stream is absent, the bridge returns 503 instead of silently
+  downgrading to core NATS. Token comes from ClusterSecretStore key
+  `dd/messaging/nats-bridge-secrets`.
+- `dd-remote-queue-consumer`: DLQ transfer is now transactional in order—
+  retry and durably ACK the idempotent DLQ record first, then `Term` the
+  source message. Exhausted DLQ writes preserve the source message and
+  expose dedicated Prometheus counters instead of dropping work. Invalid
+  JSON and unsafe identifiers are preserved in the same DLQ path.
 
 ## Vapi work queue + autoscaling
 
