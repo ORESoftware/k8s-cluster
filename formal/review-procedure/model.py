@@ -40,6 +40,8 @@ class State:
     pinned: bool = False
     expired: bool = False
     mirror: int = MIRROR_NONE
+    mirror_started: bool = False
+    mirror_copy_fenced: bool = False
 
 
 def successors(state: State):
@@ -63,8 +65,12 @@ def successors(state: State):
         yield "complete-retry", state
         if not state.pinned:
             yield "pin", replace(state, pinned=True)
-        if state.mirror == MIRROR_NONE:
-            yield "mirror-claim", replace(state, mirror=MIRROR_COPYING)
+        if state.mirror == MIRROR_NONE and not state.mirror_started:
+            yield "mirror-claim", replace(
+                state,
+                mirror=MIRROR_COPYING,
+                mirror_started=True,
+            )
         if state.mirror == MIRROR_COPYING:
             yield "mirror-claim-retry", state
             yield "mirror-complete", replace(state, mirror=MIRRORED)
@@ -80,16 +86,21 @@ def successors(state: State):
         if state.primary_exists:
             yield "delete-primary", replace(state, primary_exists=False)
         if state.mirror == MIRROR_COPYING:
-            # A mirror operation already in flight must be observed to completion
-            # or explicitly abandoned before erasure can be finalized.
+            # An in-flight copy must either become an inventoried mirror or be
+            # durably fenced before it can be treated as absent.
             yield "mirror-copy-complete-after-delete-claim", replace(
                 state,
                 mirror=MIRRORED,
             )
-            yield "mirror-copy-abort-after-delete-claim", replace(
+            yield "mirror-copy-fence-and-abandon-after-delete-claim", replace(
                 state,
                 mirror=MIRROR_NONE,
+                mirror_copy_fenced=True,
             )
+        if state.mirror_copy_fenced:
+            # A delayed worker may still report completion, but the durable
+            # generation/lease fence rejects publication and preserves state.
+            yield "mirror-copy-late-complete-rejected", state
         if state.mirror == MIRRORED:
             yield "mirror-delete-claim", replace(
                 state,
@@ -98,12 +109,20 @@ def successors(state: State):
         if state.mirror == MIRROR_DELETE_CLAIMED:
             yield "mirror-delete-claim-retry", state
             yield "delete-mirror", replace(state, mirror=MIRROR_DELETED)
-        if not state.primary_exists and state.mirror in {MIRROR_NONE, MIRROR_DELETED}:
+
+        mirror_resolved = state.mirror == MIRROR_DELETED or (
+            state.mirror == MIRROR_NONE
+            and (not state.mirror_started or state.mirror_copy_fenced)
+        )
+        if not state.primary_exists and mirror_resolved:
             yield "finalize-delete", replace(state, status=DELETED)
 
     if state.status == DELETED:
         # Replaying finalization cannot resurrect or duplicate data.
         yield "finalize-delete-retry", state
+        if state.mirror_copy_fenced:
+            # The fence must remain authoritative after finalization too.
+            yield "mirror-copy-late-complete-rejected", state
 
 
 def assert_invariants(state: State) -> None:
@@ -120,27 +139,69 @@ def assert_invariants(state: State) -> None:
             state.mirror in {MIRROR_NONE, MIRROR_DELETED},
             "deleted segment still has an authoritative mirror",
         )
+        if state.mirror_started and state.mirror == MIRROR_NONE:
+            require(
+                state.mirror_copy_fenced,
+                "deleted segment forgot an abandoned in-flight mirror without fencing it",
+            )
     if state.pinned:
         require(state.status == UPLOADED, "pinned segment left uploaded state")
-    if state.mirror in {MIRROR_COPYING, MIRRORED, MIRROR_DELETE_CLAIMED}:
+
+    if state.mirror != MIRROR_NONE:
+        require(state.mirror_started, "mirror state exists without a mirror claim")
+        require(not state.mirror_copy_fenced, "fenced mirror remained publishable")
         require(state.verified, "mirror exists for an unverified segment")
+    if state.mirror in {MIRROR_COPYING, MIRRORED}:
         require(
             state.status in {UPLOADED, DELETE_CLAIMED},
-            "mirror exists outside uploaded/deletion state",
+            "live mirror exists outside uploaded/deletion state",
+        )
+    if state.mirror == MIRROR_DELETE_CLAIMED:
+        require(state.status == DELETE_CLAIMED, "mirror deletion claim escaped deletion state")
+    if state.mirror == MIRROR_DELETED:
+        require(
+            state.status in {DELETE_CLAIMED, DELETED},
+            "deleted mirror exists outside deletion state",
+        )
+
+    if state.mirror_started and state.mirror == MIRROR_NONE:
+        require(
+            state.mirror_copy_fenced,
+            "started mirror became absent without a durable fence",
+        )
+    if state.mirror_copy_fenced:
+        require(state.mirror_started, "mirror fence exists without a prior mirror claim")
+        require(state.mirror == MIRROR_NONE, "fenced mirror is still represented as present")
+        require(
+            state.status in {DELETE_CLAIMED, DELETED},
+            "mirror fence exists outside deletion state",
         )
 
 
 def assert_transition(action: str, source: State, target: State) -> None:
     if action == "verify-head-and-complete":
         require(source.primary_exists, "completion ran before object existence")
+    if action == "mirror-claim":
+        require(not source.mirror_started, "mirror claim reused an exhausted generation")
     if action == "retention-delete-claim":
         require(source.expired and not source.pinned, "illegal retention deletion claim")
+    if action == "mirror-copy-fence-and-abandon-after-delete-claim":
+        require(source.mirror == MIRROR_COPYING, "fenced a mirror that was not copying")
+        require(target.mirror_copy_fenced, "abandoned mirror without durable fencing")
+    if action == "mirror-copy-late-complete-rejected":
+        require(source.mirror_copy_fenced, "late mirror completion lacked a fence")
+        require(target == source, "rejected mirror completion changed abstract state")
     if action == "finalize-delete":
         require(not source.primary_exists, "finalized deletion before primary removal")
         require(
             source.mirror in {MIRROR_NONE, MIRROR_DELETED},
             "finalized deletion before mirror removal",
         )
+        if source.mirror_started and source.mirror == MIRROR_NONE:
+            require(
+                source.mirror_copy_fenced,
+                "finalized deletion after mirror abandonment without fencing",
+            )
     if action.endswith("-retry"):
         require(target == source, f"retry transition {action} changed abstract state")
 
@@ -176,8 +237,21 @@ def main() -> None:
     )
     require(
         "mirror-copy-complete-after-delete-claim" in action_names
-        and "mirror-copy-abort-after-delete-claim" in action_names,
+        and "mirror-copy-fence-and-abandon-after-delete-claim" in action_names,
         "in-flight mirror resolution paths were not explored",
+    )
+    require(
+        "mirror-copy-late-complete-rejected" in action_names,
+        "late mirror completion rejection was not explored",
+    )
+    require(
+        any(
+            state.status == DELETED
+            and state.mirror_started
+            and state.mirror_copy_fenced
+            for state in seen
+        ),
+        "fenced mirror-abandonment erasure path was not explored",
     )
 
     print(
