@@ -82,7 +82,12 @@ pub async fn webhook(State(state): State<AppState>, headers: HeaderMap, body: By
     match event_type.as_str() {
         "assistant-request" => json_response(
             StatusCode::OK,
-            json!({ "assistant": translator_assistant() }),
+            json!({
+                "assistant": translator_assistant(
+                    &state.vapi_assistant,
+                    state.vapi_webhook_secret.as_deref(),
+                )
+            }),
         ),
         "tool-calls" => handle_tool_calls(&state, &message).await,
         "status-update" => {
