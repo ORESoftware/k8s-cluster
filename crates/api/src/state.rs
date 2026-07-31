@@ -26,6 +26,8 @@ pub struct AppState {
     /// Bearer secret guarding operator (`/vapi/call`) and history endpoints.
     /// None → those endpoints fail closed (503).
     pub server_auth_secret: Option<Arc<str>>,
+    /// Config for the inline assistant returned on Vapi `assistant-request`.
+    pub vapi_assistant: VapiAssistantConfig,
     /// Limits concurrent upstream LLM calls.
     llm_semaphore: Arc<Semaphore>,
 }
