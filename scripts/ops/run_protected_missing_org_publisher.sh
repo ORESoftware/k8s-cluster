@@ -4,12 +4,14 @@ umask 077
 
 trusted_sha="${1:?trusted k8s-cluster SHA required}"
 [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+publisher_region="${AWS_REGION:-${AWS_DEFAULT_REGION:-us-east-1}}"
+[[ "$publisher_region" =~ ^[a-z]{2}(-gov)?-[a-z0-9-]+-[0-9]$ ]]
 stage=initialization
 work="$(mktemp -d /tmp/missing-org-publisher.XXXXXX)"
 
 cleanup() {
   unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
-  unset encoded_pat raw_pat secret_json credential_source ec2_home
+  unset encoded_pat raw_pat secret_json credential_source ec2_home publisher_region
   unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
   unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
   rm -rf "$work"
@@ -32,7 +34,7 @@ GH_TOKEN=''
 if command -v aws >/dev/null 2>&1; then
   secret_json="$(
     aws secretsmanager get-secret-value \
-      --region us-east-1 \
+      --region "$publisher_region" \
       --secret-id dd/remote-dev/agent-secrets \
       --query SecretString \
       --output text 2>/dev/null || true
@@ -126,7 +128,7 @@ if test -z "$GH_TOKEN"; then
   aws_diagnostic=aws-cli-absent
   if command -v aws >/dev/null 2>&1; then
     if aws secretsmanager get-secret-value \
-      --region us-east-1 \
+      --region "$publisher_region" \
       --secret-id dd/remote-dev/agent-secrets \
       --query SecretString \
       --output text >/dev/null 2>&1; then
