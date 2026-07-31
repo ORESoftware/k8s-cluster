@@ -51,29 +51,47 @@ jobs:
           remote_script="$RUNNER_TEMP/publish-critical-org-repositories.sh"
           cat > "$remote_script" <<'REMOTE_EOF'
           #!/usr/bin/env bash
-          set -euo pipefail
+          set -Eeuo pipefail
+
+          stage=bootstrap
+          report_error() {
+            status=$?
+            trap - ERR
+            printf 'publisher-stage-failed=%s exit=%s\n' "$stage" "$status" >&2
+            exit "$status"
+          }
+          trap report_error ERR
 
           trusted_sha="${1:?trusted SHA required}"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
-          work="$(mktemp -d /tmp/critical-org-publisher.XXXXXX)"
           test -z "${CODEX_HOME:-}"
+
+          stage=prepare-disposable-state
+          work="$(mktemp -d /tmp/critical-org-publisher.XXXXXX)"
           export CODEX_HOME="$work/codex-home"
           install -d -m 700 "$CODEX_HOME"
+          case "$CODEX_HOME" in
+            "$work"/*) ;;
+            *) echo 'disposable CODEX_HOME escaped the temporary worktree' >&2; exit 1 ;;
+          esac
           cleanup() {
             unset GH_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN CODEX_HOME
+            unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
             rm -rf "$work"
           }
           trap cleanup EXIT
 
-          command -v kubectl >/dev/null
-          encoded_pat="$(kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}')"
+          stage=receive-cluster-credential
+          IFS= read -r encoded_pat
           test -n "$encoded_pat"
           GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
           unset encoded_pat
           test -n "$GH_TOKEN"
+          [[ "$GH_TOKEN" != *$'\n'* && "$GH_TOKEN" != *$'\r'* ]]
           export GH_TOKEN
           export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
 
+          stage=verify-github-identity
           python3 - <<'PY'
           import json
           import os
@@ -120,6 +138,22 @@ jobs:
               print(f"{organization} owner membership verified")
           PY
 
+          stage=configure-git-authentication
+          askpass="$work/git-askpass.sh"
+          cat > "$askpass" <<'ASKPASS_EOF'
+          #!/usr/bin/env bash
+          case "${1:-}" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *Password*) printf '%s\n' "${GH_TOKEN:?}" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS_EOF
+          chmod 700 "$askpass"
+          export GIT_ASKPASS="$askpass"
+          export GIT_ASKPASS_REQUIRE=force
+          export GIT_TERMINAL_PROMPT=0
+
+          stage=checkout-trusted-main
           git clone --filter=blob:none --no-checkout \
             https://github.com/ORESoftware/k8s-cluster.git \
             "$work/k8s-cluster"
@@ -127,24 +161,29 @@ jobs:
           git -C "$work/k8s-cluster" checkout --detach "$trusted_sha"
           test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
 
+          stage=compile-publisher
           python3 -m py_compile \
             "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories.py" \
             "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py" \
             "$work/k8s-cluster/scripts/ops/finalize_missing_org_repositories.py"
 
+          stage=publish-repositories
           python3 "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py"
 
+          stage=finalize-and-verify
           python3 "$work/k8s-cluster/scripts/ops/finalize_missing_org_repositories.py" \
             --json-report "$work/critical-org-publication.json" \
             --markdown-report "$work/critical-org-publication.md" \
             --close-carriers
 
+          stage=report-completion
           cat "$work/critical-org-publication.md"
+          stage=complete
           REMOTE_EOF
           chmod 700 "$remote_script"
 
           encoded="$(base64 --wrap=0 "$remote_script")"
-          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-repositories.sh && chown ec2-user:ec2-user /tmp/publish-critical-org-repositories.sh && chmod 700 /tmp/publish-critical-org-repositories.sh && sudo -u ec2-user -H bash -lc 'unset CODEX_HOME; bash /tmp/publish-critical-org-repositories.sh \"\$1\"' _ '$trusted_sha'; status=\$?; rm -f /tmp/publish-critical-org-repositories.sh; exit \$status"
+          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-repositories.sh && chown ec2-user:ec2-user /tmp/publish-critical-org-repositories.sh && chmod 700 /tmp/publish-critical-org-repositories.sh; status=0; if ! command -v kubectl >/dev/null; then echo 'publisher-stage-failed=locate-root-kubectl' >&2; status=127; elif ! test -r /etc/kubernetes/admin.conf; then echo 'publisher-stage-failed=read-admin-kubeconfig' >&2; status=1; elif ! encoded_pat=\$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}'); then echo 'publisher-stage-failed=read-cluster-credential' >&2; status=1; elif test -z \"\$encoded_pat\"; then echo 'publisher-stage-failed=empty-cluster-credential' >&2; status=1; else printf '%s\n' \"\$encoded_pat\" | sudo -u ec2-user -H bash -lc 'unset CODEX_HOME; exec bash /tmp/publish-critical-org-repositories.sh \"\$1\"' _ '$trusted_sha'; status=\$?; fi; unset encoded_pat; rm -f /tmp/publish-critical-org-repositories.sh; exit \$status"
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
