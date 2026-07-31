@@ -53,6 +53,9 @@ pre-committed `out/`. `dd-des-rs` runs the **real Rust engine** in-process.
   stream.
 - `POST /streaming/<name>` — stream JSONL commands (one per line) to a solver;
   responds with a JSONL stream of result frames.
+
+  The generic streaming registry is intentionally separate from the soccer
+  planner's dedicated `/soccer/planner/stream` endpoint below.
 - `GET  /out/soccer-sim.html` — rendered 2D 11v11 soccer videogame playback
   artifact. The same render also writes `/out/soccer-sim.meta.json` (config,
   summary, events, and run metadata) and `/out/soccer-sim.frames.jsonl`
