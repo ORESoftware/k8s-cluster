@@ -10,12 +10,40 @@ from dd_ai_ml_pipeline_api import (
     canonical_openapi_bytes,
     create_app,
 )
+from dd_nats_subject_defs import (
+    ML_DEAD_LETTER_SUBJECT,
+    ML_FEATURES_SUBJECT,
+    RUNTIME_EVENTS_SUBJECT,
+    TELEMETRY_MDP_SUBJECT,
+    TELEMETRY_RAW_QUEUE_GROUP,
+    TELEMETRY_RAW_SUBJECT,
+)
 
 
 def make_app():
     return create_app(
         config=Config(server_auth_secret="service-secret", allow_unauthenticated=False),
         contract_only=True,
+    )
+
+
+def test_contract_shim_matches_deployed_nats_defaults() -> None:
+    """Keep the CI-only shim aligned without replacing production generation."""
+
+    assert (
+        ML_DEAD_LETTER_SUBJECT,
+        ML_FEATURES_SUBJECT,
+        RUNTIME_EVENTS_SUBJECT,
+        TELEMETRY_MDP_SUBJECT,
+        TELEMETRY_RAW_QUEUE_GROUP,
+        TELEMETRY_RAW_SUBJECT,
+    ) == (
+        "dd.remote.ml.deadletter",
+        "dd.remote.ml.features",
+        "dd.remote.events",
+        "dd.remote.telemetry.mdp",
+        "dd-ai-ml-pipeline",
+        "dd.remote.telemetry.raw",
     )
 
 
