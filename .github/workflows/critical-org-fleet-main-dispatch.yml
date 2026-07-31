@@ -29,10 +29,10 @@ jobs:
       TARGET_SHA: ${{ github.event.pull_request.head.sha }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       MARKER_PATH: .github/critical-org-publish-trigger-main
-      PUBLISH_WORKFLOW: ops-publish-missing-org-repositories-gh-profile.yml
+      PUBLISH_WORKFLOW: ops-publish-missing-org-repositories-v2.yml
 
     steps:
-      - name: Validate carrier, dispatch protected publisher, and follow exact run
+      - name: Validate carrier, dispatch protected publisher v2, and follow exact run
         shell: bash
         run: |
           set -euo pipefail
@@ -81,29 +81,35 @@ jobs:
               | tr -d '\n' \
               | base64 --decode
           )"
-          [[ "$marker" == 'publish=protected-gh-profile-v1' ]] || \
+          [[ "$marker" == 'publish=protected-host-v2' ]] || \
             fail 'carrier marker content is not approved' "$marker"
 
           workflow="$(gh api "repos/${repository}/actions/workflows/${PUBLISH_WORKFLOW}" 2>&1)" || \
-            fail 'protected publisher workflow is not registered' "$workflow"
+            fail 'protected publisher v2 workflow is not registered' "$workflow"
           [[ "$(jq -r '.state' <<<"$workflow")" == active ]] || \
-            fail 'protected publisher workflow is not active' "$workflow"
+            fail 'protected publisher v2 workflow is not active' "$workflow"
 
           runs_endpoint="repos/${repository}/actions/workflows/${PUBLISH_WORKFLOW}/runs?branch=main&event=workflow_dispatch&per_page=100"
           before="$RUNNER_TEMP/before-run-ids.txt"
           before_runs="$(gh api "$runs_endpoint" 2>&1)" || \
-            fail 'unable to snapshot publisher runs' "$before_runs"
+            fail 'unable to snapshot publisher v2 runs' "$before_runs"
           jq -r '.workflow_runs[].id' <<<"$before_runs" | sort -n > "$before"
 
+          request_id="carrier-${PR_NUMBER}-${TARGET_SHA}"
+          payload="$RUNNER_TEMP/dispatch.json"
+          jq -nc \
+            --arg ref main \
+            --arg request_id "$request_id" \
+            '{ref:$ref,inputs:{request_id:$request_id}}' > "$payload"
           dispatch="$(gh api --method POST \
             "repos/${repository}/actions/workflows/${PUBLISH_WORKFLOW}/dispatches" \
-            -f ref=main 2>&1)" || fail 'workflow dispatch API rejected the request' "$dispatch"
+            --input "$payload" 2>&1)" || fail 'workflow dispatch API rejected the request' "$dispatch"
 
           run_id=''
           last_runs=''
           for _ in $(seq 1 90); do
             last_runs="$(gh api "$runs_endpoint" 2>&1)" || \
-              fail 'unable to list publisher runs after dispatch' "$last_runs"
+              fail 'unable to list publisher v2 runs after dispatch' "$last_runs"
             while IFS= read -r candidate; do
               [[ "$candidate" =~ ^[0-9]+$ ]] || continue
               if ! grep -Fxq "$candidate" "$before"; then
@@ -117,17 +123,17 @@ jobs:
 
           if [[ ! "$run_id" =~ ^[0-9]+$ ]]; then
             recent="$(jq -r '.workflow_runs[:10][] | [.id,.status,.conclusion,.display_title] | @tsv' <<<"$last_runs" 2>/dev/null || true)"
-            fail 'dispatch accepted but no new publisher run appeared' "$recent"
+            fail 'dispatch accepted but no new publisher v2 run appeared' "$recent"
           fi
 
           run_url="https://github.com/${repository}/actions/runs/${run_id}"
           gh api --method POST "repos/${repository}/statuses/${TARGET_SHA}" \
             -f state=pending \
             -f context='ops/missing-repository-publication' \
-            -f description="publisher run ${run_id} is executing" \
+            -f description="publisher v2 run ${run_id} is executing" \
             -f target_url="$run_url" >/dev/null
           gh pr comment "$PR_NUMBER" --repo "$repository" \
-            --body "Trusted protected-profile publisher dispatched: ${run_url}" >/dev/null || true
+            --body "Trusted protected-host publisher v2 dispatched: ${run_url}" >/dev/null || true
 
           status=queued
           conclusion=''
@@ -135,7 +141,7 @@ jobs:
             current="$(gh api "repos/${repository}/actions/runs/${run_id}")"
             status="$(jq -r '.status' <<<"$current")"
             conclusion="$(jq -r '.conclusion // empty' <<<"$current")"
-            echo "publisher run=${run_id} status=${status} conclusion=${conclusion:-pending}"
+            echo "publisher v2 run=${run_id} status=${status} conclusion=${conclusion:-pending}"
             [[ "$status" == completed ]] && break
             sleep 15
           done
@@ -143,10 +149,10 @@ jobs:
 
           if [[ "$conclusion" == success ]]; then
             state=success
-            description='protected publisher succeeded; direct remote audit pending'
+            description='protected publisher v2 succeeded; direct remote audit pending'
           else
             state=failure
-            description="repository publication ${conclusion:-failed}"
+            description="repository publication v2 ${conclusion:-failed}"
           fi
           gh api --method POST "repos/${repository}/statuses/${TARGET_SHA}" \
             -f state="$state" \
@@ -154,5 +160,5 @@ jobs:
             -f description="$description" \
             -f target_url="$run_url" >/dev/null
           gh pr comment "$PR_NUMBER" --repo "$repository" \
-            --body "Publisher completed with **${conclusion:-unknown}**: ${run_url}" >/dev/null || true
+            --body "Publisher v2 completed with **${conclusion:-unknown}**: ${run_url}" >/dev/null || true
           test "$conclusion" = success
