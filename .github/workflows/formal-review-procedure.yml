@@ -1,0 +1,51 @@
+name: Formal review procedure
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'db/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'docs/FORMAL_REVIEW_PROCEDURE.md'
+      - 'formal/review-procedure/**'
+      - '.github/workflows/formal-review-procedure.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'db/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'docs/FORMAL_REVIEW_PROCEDURE.md'
+      - 'formal/review-procedure/**'
+      - '.github/workflows/formal-review-procedure.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  obligations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Validate formal obligation register
+        run: python3 formal/review-procedure/check.py
+
+      - name: Install repository Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Exhaust canonical bounded auth state model
+        run: cargo +stable test --test auth_state_model --locked
