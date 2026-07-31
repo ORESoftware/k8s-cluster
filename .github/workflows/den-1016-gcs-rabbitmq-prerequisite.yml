@@ -6,6 +6,7 @@ on:
       - dev
     paths:
       - '.github/workflows/den-1016-gcs-rabbitmq-prerequisite.yml'
+      - 'scripts/ci/den-1016-gcs-rabbitmq-prerequisite.sh'
       - 'remote/deployments/gcs/k8s/ec2/gcs-rabbitmq.externalsecret.yaml'
       - 'remote/deployments/gcs/k8s/ec2/gcs-rabbitmq.deployment.yaml'
       - 'remote/deployments/gcs/k8s/ec2/kustomization.yaml'
@@ -17,6 +18,7 @@ on:
       - dev
     paths:
       - '.github/workflows/den-1016-gcs-rabbitmq-prerequisite.yml'
+      - 'scripts/ci/den-1016-gcs-rabbitmq-prerequisite.sh'
       - 'remote/deployments/gcs/k8s/ec2/gcs-rabbitmq.externalsecret.yaml'
       - 'remote/deployments/gcs/k8s/ec2/gcs-rabbitmq.deployment.yaml'
       - 'remote/deployments/gcs/k8s/ec2/kustomization.yaml'
@@ -47,22 +49,27 @@ jobs:
         with:
           args: .github/workflows/den-1016-gcs-rabbitmq-prerequisite.yml
 
-      - name: Validate staged resources and non-disclosure controls
+      - name: Validate operator script and trust boundaries
         run: |
           set -euo pipefail
           workflow=.github/workflows/den-1016-gcs-rabbitmq-prerequisite.yml
-          grep -Fq '::add-mask::' "$workflow"
+          operator=scripts/ci/den-1016-gcs-rabbitmq-prerequisite.sh
+          bash -n "$operator"
           grep -Fq 'automation/gcs-rabbitmq-secret-status' "$workflow"
-          grep -Fq 'dd/remote-dev/gcs-rabbitmq' "$workflow"
+          grep -Fq 'sudo -u ec2-user -H env' "$workflow"
+          grep -Fq 'dd/remote-dev/gcs-rabbitmq' "$operator"
+          payload_marker="--secret-string \"file://\$payload_file\""
+          grep -Fq -- "$payload_marker" "$operator"
           trace_token='set'' -x'
-          if grep -Fq "$trace_token" "$workflow"; then
-            echo 'Shell tracing is forbidden in the secret prerequisite workflow.' >&2
+          if grep -Fq "$trace_token" "$workflow" "$operator"; then
+            echo 'Shell tracing is forbidden in the prerequisite path.' >&2
             exit 1
           fi
           grep -Fq 'gcs-rabbitmq.externalsecret.yaml' remote/deployments/gcs/k8s/ec2/kustomization.yaml
           grep -Fq 'gcs-rabbitmq-management.externalsecret.yaml' remote/argocd/observability/kustomization.yaml
           if grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' \
-            .github/workflows/den-1016-gcs-rabbitmq-prerequisite.yml \
+            "$workflow" \
+            "$operator" \
             remote/deployments/gcs/k8s/ec2 \
             remote/argocd/observability; then
             echo 'Conflict markers are forbidden in staged security resources.' >&2
@@ -91,13 +98,14 @@ jobs:
             "status": "not_started",
             "secret_id": "dd/remote-dev/gcs-rabbitmq",
             "aws_outcome": "not_started",
+            "ssm_outcome": "not_started",
             "secret_state": "unknown",
-            "external_secret_outcome": "not_started",
+            "external_secret_state": "unknown",
             "source_commit": "${GITHUB_SHA}"
           }
           JSON
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials for SSM only
         id: aws
         continue-on-error: true
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
@@ -105,146 +113,45 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
 
-      - name: Create or validate the backing AWS secret
-        id: provision
+      - name: Run the operator through the trusted SSM target
+        id: ssm
         if: steps.aws.outcome == 'success'
         continue-on-error: true
         env:
-          SECRET_ID: dd/remote-dev/gcs-rabbitmq
-        run: |
-          set -euo pipefail
-          payload_file=''
-          cleanup_payload_file() {
-            if [ -n "$payload_file" ]; then
-              rm -f "$payload_file"
-            fi
-          }
-          trap cleanup_payload_file EXIT
-
-          validate_payload() {
-            jq -e '
-              type == "object" and
-              (.RABBITMQ_DEFAULT_USER | type == "string" and length >= 1) and
-              (.RABBITMQ_DEFAULT_PASS | type == "string" and length >= 32) and
-              (.RABBITMQ_ERLANG_COOKIE | type == "string" and length >= 32)
-            ' >/dev/null
-          }
-
-          if aws secretsmanager describe-secret --secret-id "$SECRET_ID" >/dev/null 2>&1; then
-            payload="$(
-              aws secretsmanager get-secret-value \
-                --secret-id "$SECRET_ID" \
-                --query SecretString \
-                --output text
-            )"
-            printf '%s' "$payload" | validate_payload
-            secret_state=existing_valid
-          else
-            broker_user=gcs
-            broker_password="$(openssl rand -hex 32)"
-            erlang_cookie="$(openssl rand -hex 32)"
-            echo "::add-mask::$broker_password"
-            echo "::add-mask::$erlang_cookie"
-            payload="$(
-              jq -cn \
-                --arg user "$broker_user" \
-                --arg password "$broker_password" \
-                --arg cookie "$erlang_cookie" \
-                '{
-                  RABBITMQ_DEFAULT_USER: $user,
-                  RABBITMQ_DEFAULT_PASS: $password,
-                  RABBITMQ_ERLANG_COOKIE: $cookie
-                }'
-            )"
-            payload_file="$(mktemp "$RUNNER_TEMP/gcs-rabbitmq-secret.XXXXXX.json")"
-            chmod 600 "$payload_file"
-            printf '%s' "$payload" >"$payload_file"
-            aws secretsmanager create-secret \
-              --name "$SECRET_ID" \
-              --description 'GCS RabbitMQ credentials managed for External Secrets Operator' \
-              --secret-string "file://$payload_file" \
-              --tags Key=managed-by,Value=k8s-cluster Key=linear-issue,Value=DEN-1016 \
-              >/dev/null
-            rm -f "$payload_file"
-            payload_file=''
-            unset broker_password erlang_cookie payload
-            payload="$(
-              aws secretsmanager get-secret-value \
-                --secret-id "$SECRET_ID" \
-                --query SecretString \
-                --output text
-            )"
-            printf '%s' "$payload" | validate_payload
-            secret_state=created_and_valid
-          fi
-
-          unset payload
-          echo "secret_state=$secret_state" >>"$GITHUB_OUTPUT"
-          echo 'The backing secret exists and has the required value-free schema.'
-
-      - name: Wait for both ExternalSecrets through the trusted SSM target
-        id: external_secrets
-        if: steps.provision.outcome == 'success'
-        continue-on-error: true
-        env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+          AWS_REGION_VALUE: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          SOURCE_REVISION: dev
         run: |
           set -euo pipefail
           test -n "$INSTANCE_ID"
 
           python3 - <<'PY' >"$RUNNER_TEMP/gcs-rabbitmq-prerequisite-commands.json"
           import json
+          import os
           import shlex
 
+          region = os.environ.get('AWS_REGION_VALUE', 'us-east-1') or 'us-east-1'
+          revision = os.environ.get('SOURCE_REVISION', 'dev') or 'dev'
           script = r'''set -euo pipefail
-          for attempt in $(seq 1 90); do
-            default_ready="$(
-              kubectl -n default get externalsecret gcs-rabbitmq \
-                -o jsonpath='{range .status.conditions[?(@.type=="Ready")]}{.status}{end}' \
-                2>/dev/null || true
-            )"
-            observability_ready="$(
-              kubectl -n observability get externalsecret gcs-rabbitmq-management \
-                -o jsonpath='{range .status.conditions[?(@.type=="Ready")]}{.status}{end}' \
-                2>/dev/null || true
-            )"
-
-            if [ "$default_ready" = True ] && [ "$observability_ready" = True ]; then
-              kubectl -n default get secret gcs-rabbitmq -o json |
-                jq -e '.data
-                  | has("RABBITMQ_DEFAULT_USER") and
-                    has("RABBITMQ_DEFAULT_PASS") and
-                    has("RABBITMQ_ERLANG_COOKIE")' >/dev/null
-              kubectl -n observability get secret gcs-rabbitmq-management -o json |
-                jq -e '.data
-                  | has("RABBITMQ_MANAGEMENT_USER") and
-                    has("RABBITMQ_MANAGEMENT_PASSWORD")' >/dev/null
-              kubectl -n default rollout status deployment/gcs-rabbitmq --timeout=120s
-              kubectl -n observability rollout status deployment/dd-k8s-resource-exporter --timeout=120s
-              echo 'default_external_secret=Ready'
-              echo 'observability_external_secret=Ready'
-              echo 'legacy_workloads=Available'
-              exit 0
-            fi
-
-            echo "waiting_for_external_secrets attempt=${attempt}/90"
-            sleep 10
-          done
-
-          echo 'ExternalSecrets did not become Ready before the deadline.' >&2
-          kubectl -n default get externalsecret gcs-rabbitmq \
-            -o custom-columns=NAME:.metadata.name,READY:.status.conditions[-1].status,REASON:.status.conditions[-1].reason \
-            --no-headers 2>/dev/null || true
-          kubectl -n observability get externalsecret gcs-rabbitmq-management \
-            -o custom-columns=NAME:.metadata.name,READY:.status.conditions[-1].status,REASON:.status.conditions[-1].reason \
-            --no-headers 2>/dev/null || true
-          exit 1
+          repo=/home/ec2-user/codes/dd/dd-next-1
+          cd "$repo"
+          git fetch origin "$SOURCE_REVISION"
+          git show "origin/$SOURCE_REVISION:scripts/ci/den-1016-gcs-rabbitmq-prerequisite.sh" \
+            > /tmp/den-1016-gcs-rabbitmq-prerequisite.sh
+          chmod 700 /tmp/den-1016-gcs-rabbitmq-prerequisite.sh
+          AWS_REGION="$AWS_REGION" bash /tmp/den-1016-gcs-rabbitmq-prerequisite.sh
+          rm -f /tmp/den-1016-gcs-rabbitmq-prerequisite.sh
           '''
 
           print(json.dumps({
-              "commands": [
-                  "set -euo pipefail",
-                  f"sudo -u ec2-user -H bash -lc {shlex.quote(script)}",
+              'commands': [
+                  'set -euo pipefail',
+                  (
+                      'sudo -u ec2-user -H env '
+                      f'SOURCE_REVISION={shlex.quote(revision)} '
+                      f'AWS_REGION={shlex.quote(region)} '
+                      f'bash -lc {shlex.quote(script)}'
+                  ),
               ],
           }))
           PY
@@ -261,7 +168,7 @@ jobs:
           echo "SSM command id: $command_id"
 
           status=Pending
-          for _ in $(seq 1 160); do
+          for _ in $(seq 1 200); do
             status="$(
               aws ssm get-command-invocation \
                 --command-id "$command_id" \
@@ -284,28 +191,34 @@ jobs:
             --output json >"$RUNNER_TEMP/gcs-rabbitmq-prerequisite-ssm.json"
 
           jq -r '.Stdout, .Stderr' "$RUNNER_TEMP/gcs-rabbitmq-prerequisite-ssm.json"
+          stdout="$(jq -r '.Stdout' "$RUNNER_TEMP/gcs-rabbitmq-prerequisite-ssm.json")"
+          secret_state="$(printf '%s\n' "$stdout" | awk -F= '$1 == "secret_state" {print $2}' | tail -n 1)"
+          external_secret_state="$(printf '%s\n' "$stdout" | awk -F= '$1 == "external_secret_state" {print $2}' | tail -n 1)"
+          echo "secret_state=${secret_state:-unknown}" >>"$GITHUB_OUTPUT"
+          echo "external_secret_state=${external_secret_state:-unknown}" >>"$GITHUB_OUTPUT"
           test "$(jq -r '.Status' "$RUNNER_TEMP/gcs-rabbitmq-prerequisite-ssm.json")" = Success
 
       - name: Finalize sanitized prerequisite result
         if: always()
         env:
           AWS_OUTCOME: ${{ steps.aws.outcome }}
-          PROVISION_OUTCOME: ${{ steps.provision.outcome }}
-          EXTERNAL_SECRET_OUTCOME: ${{ steps.external_secrets.outcome }}
-          SECRET_STATE: ${{ steps.provision.outputs.secret_state }}
+          SSM_OUTCOME: ${{ steps.ssm.outcome }}
+          SECRET_STATE: ${{ steps.ssm.outputs.secret_state }}
+          EXTERNAL_SECRET_STATE: ${{ steps.ssm.outputs.external_secret_state }}
         run: |
           set -euo pipefail
           status=failure
-          if [ "$AWS_OUTCOME" = success ] && \
-             [ "$PROVISION_OUTCOME" = success ] && \
-             [ "$EXTERNAL_SECRET_OUTCOME" = success ]; then
+          if [[ "$AWS_OUTCOME" == success && \
+                "$SSM_OUTCOME" == success && \
+                "$EXTERNAL_SECRET_STATE" == ready ]]; then
             status=success
           fi
           jq -n \
             --arg status "$status" \
             --arg aws_outcome "${AWS_OUTCOME:-skipped}" \
+            --arg ssm_outcome "${SSM_OUTCOME:-skipped}" \
             --arg secret_state "${SECRET_STATE:-unknown}" \
-            --arg external_secret_outcome "${EXTERNAL_SECRET_OUTCOME:-skipped}" \
+            --arg external_secret_state "${EXTERNAL_SECRET_STATE:-unknown}" \
             --arg source_commit "$GITHUB_SHA" \
             --arg checked_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             '{
@@ -313,8 +226,9 @@ jobs:
               status: $status,
               secret_id: "dd/remote-dev/gcs-rabbitmq",
               aws_outcome: $aws_outcome,
+              ssm_outcome: $ssm_outcome,
               secret_state: $secret_state,
-              external_secret_outcome: $external_secret_outcome,
+              external_secret_state: $external_secret_state,
               source_commit: $source_commit,
               checked_at: $checked_at
             }' >"$RUNNER_TEMP/gcs-rabbitmq-prerequisite.json"
