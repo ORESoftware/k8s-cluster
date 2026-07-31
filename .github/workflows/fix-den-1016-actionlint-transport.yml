@@ -1,6 +1,11 @@
 name: Fix DEN-1016 actionlint transport
 
 on:
+  push:
+    branches:
+      - agent/den-1016-audit-current-dev
+    paths:
+      - '.github/workflows/fix-den-1016-actionlint-transport.yml'
   pull_request:
     branches:
       - dev
