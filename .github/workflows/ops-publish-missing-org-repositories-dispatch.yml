@@ -20,7 +20,7 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 55
     steps:
       - name: Check out the trusted main revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,9 +62,20 @@ jobs:
             echo "$org owner membership verified"
           done
 
-      - name: Publish and verify the fixed 34-repository allowlist
+      - name: Publish, finalize, and verify the fixed 34-repository allowlist
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/ops/publish_missing_org_repositories.py
-          python3 scripts/ops/publish_missing_org_repositories.py
+          python3 -m py_compile \
+            scripts/ops/publish_missing_org_repositories.py \
+            scripts/ops/publish_missing_org_repositories_current.py \
+            scripts/ops/finalize_missing_org_repositories.py
+
+          python3 scripts/ops/publish_missing_org_repositories_current.py
+
+          python3 scripts/ops/finalize_missing_org_repositories.py \
+            --json-report "$RUNNER_TEMP/critical-org-publication.json" \
+            --markdown-report "$RUNNER_TEMP/critical-org-publication.md" \
+            --close-carriers
+
+          cat "$RUNNER_TEMP/critical-org-publication.md"
