@@ -37,9 +37,9 @@ pub async fn sync_circle(
         })?;
     let api = CircleApi::new(cred);
 
-    let mut cursor: Option<String> = caller_cursor.map(str::to_string).or_else(|| {
-        conn.last_sync_cursor.clone().filter(|s| !s.is_empty())
-    });
+    let mut cursor: Option<String> = caller_cursor
+        .map(str::to_string)
+        .or_else(|| conn.last_sync_cursor.clone().filter(|s| !s.is_empty()));
     let mut pages = 0u32;
     let mut total_events: i64 = 0;
     let mut total_postings: i64 = 0;
@@ -89,10 +89,7 @@ enum PostOutcome {
     Skipped,
 }
 
-async fn post_one(
-    ctx: &SyncCtx<'_>,
-    t: &CircleTransfer,
-) -> AppResult<PostOutcome> {
+async fn post_one(ctx: &SyncCtx<'_>, t: &CircleTransfer) -> AppResult<PostOutcome> {
     if t.status.as_deref() != Some("complete") {
         return Ok(PostOutcome::Skipped);
     }
@@ -137,10 +134,7 @@ async fn post_one(
         "fiat_equivalent": fiat,
     });
 
-    for (code, kind) in &[
-        (clearing.as_str(), AccountKind::Asset),
-        (cp_acct, cp_kind),
-    ] {
+    for (code, kind) in &[(clearing.as_str(), AccountKind::Asset), (cp_acct, cp_kind)] {
         ctx.ledger
             .ensure_account(
                 ctx.tenant_id,
@@ -155,10 +149,7 @@ async fn post_one(
 
     let draft = DraftTransaction {
         tenant_id: ctx.tenant_id,
-        kind: format!(
-            "circle.{}",
-            if inflow { "deposit" } else { "redemption" }
-        ),
+        kind: format!("circle.{}", if inflow { "deposit" } else { "redemption" }),
         idempotency_key: format!("circle:transfer:{}", t.id),
         description: Some(format!(
             "circle transfer {} {} {} ({})",

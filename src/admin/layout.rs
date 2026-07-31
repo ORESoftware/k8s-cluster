@@ -40,12 +40,7 @@ impl Tab {
             Self::Notifications => "Notifications",
         }
     }
-    pub const ALL: [Tab; 4] = [
-        Tab::Connections,
-        Tab::Jobs,
-        Tab::Locks,
-        Tab::Notifications,
-    ];
+    pub const ALL: [Tab; 4] = [Tab::Connections, Tab::Jobs, Tab::Locks, Tab::Notifications];
 }
 
 /// Top-level navigation entry.

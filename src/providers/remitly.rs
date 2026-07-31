@@ -217,9 +217,7 @@ fn normalize_base_url(field: &str, value: &str, mode: BaseUrlMode) -> AppResult<
         .map_err(|e| AppError::BadRequest(format!("{field} must be a valid URL: {e}")))?;
     let allow_http = matches!(mode, BaseUrlMode::Test);
     if parsed.scheme() != "https" && !(allow_http && parsed.scheme() == "http") {
-        return Err(AppError::BadRequest(format!(
-            "{field} must use https"
-        )));
+        return Err(AppError::BadRequest(format!("{field} must use https")));
     }
     if !parsed.username().is_empty() || parsed.password().is_some() {
         return Err(AppError::BadRequest(format!(

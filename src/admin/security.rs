@@ -81,11 +81,7 @@ pub async fn require_admin_auth(
     if !provided.is_empty() && const_time_eq(provided.as_bytes(), expected.as_bytes()) {
         return next.run(req).await;
     }
-    let mut resp = (
-        StatusCode::UNAUTHORIZED,
-        "admin authentication required\n",
-    )
-        .into_response();
+    let mut resp = (StatusCode::UNAUTHORIZED, "admin authentication required\n").into_response();
     resp.headers_mut().insert(
         header::WWW_AUTHENTICATE,
         HeaderValue::from_static("Bearer realm=\"billing-admin\""),
@@ -123,8 +119,7 @@ pub async fn csrf_guard(
         .get("Sec-Fetch-Site")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let sec_fetch_same_site =
-        matches!(sec_fetch_site, "same-origin" | "same-site" | "none");
+    let sec_fetch_same_site = matches!(sec_fetch_site, "same-origin" | "same-site" | "none");
 
     if !hx_request && !sec_fetch_same_site {
         tracing::warn!(
@@ -266,25 +261,57 @@ mod tests {
     #[test]
     fn origin_check_accepts_same_host() {
         let allow: Vec<String> = vec![];
-        assert!(origin_is_allowed("http://localhost:18087", "localhost:18087", &allow));
-        assert!(origin_is_allowed("https://billing.example.com", "billing.example.com", &allow));
-        assert!(origin_is_allowed("HTTPS://Billing.Example.com", "billing.example.com", &allow));
+        assert!(origin_is_allowed(
+            "http://localhost:18087",
+            "localhost:18087",
+            &allow
+        ));
+        assert!(origin_is_allowed(
+            "https://billing.example.com",
+            "billing.example.com",
+            &allow
+        ));
+        assert!(origin_is_allowed(
+            "HTTPS://Billing.Example.com",
+            "billing.example.com",
+            &allow
+        ));
     }
 
     #[test]
     fn origin_check_rejects_different_host_without_allow_list() {
         let allow: Vec<String> = vec![];
-        assert!(!origin_is_allowed("https://evil.example", "billing.example.com", &allow));
-        assert!(!origin_is_allowed("https://billing.example.com.evil", "billing.example.com", &allow));
+        assert!(!origin_is_allowed(
+            "https://evil.example",
+            "billing.example.com",
+            &allow
+        ));
+        assert!(!origin_is_allowed(
+            "https://billing.example.com.evil",
+            "billing.example.com",
+            &allow
+        ));
         // Subdomain confusion guard:
-        assert!(!origin_is_allowed("https://api.billing.example.com", "billing.example.com", &allow));
+        assert!(!origin_is_allowed(
+            "https://api.billing.example.com",
+            "billing.example.com",
+            &allow
+        ));
     }
 
     #[test]
     fn origin_check_allows_explicit_allow_list_entries() {
         let allow = vec!["https://ops.example.com".to_string()];
-        assert!(origin_is_allowed("https://ops.example.com", "billing.example.com", &allow));
-        assert!(!origin_is_allowed("https://other.example.com", "billing.example.com", &allow));
+        assert!(origin_is_allowed(
+            "https://ops.example.com",
+            "billing.example.com",
+            &allow
+        ));
+        assert!(!origin_is_allowed(
+            "https://other.example.com",
+            "billing.example.com",
+            &allow
+        ));
     }
 
     #[test]

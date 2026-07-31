@@ -235,8 +235,8 @@ async fn record_event(
     // fresh `synthetic-{uuid}` — a random id defeats the
     // `(provider, external_event_id)` upsert and inserts a new row on every
     // re-delivery, so identical bodies would never dedup.
-    let external_event_id = event_id(provider, &payload)
-        .unwrap_or_else(|| format!("sha256-{payload_sha256}"));
+    let external_event_id =
+        event_id(provider, &payload).unwrap_or_else(|| format!("sha256-{payload_sha256}"));
 
     let event_type = event_type(provider, &payload).unwrap_or_else(|| "unknown".into());
     let external_account_id = external_account_id(provider, &payload);
@@ -583,7 +583,9 @@ async fn verify_delivery(
                     return Ok(false);
                 };
                 let item: adyen::AdyenNotificationItem = serde_json::from_value(item_val.clone())
-                    .map_err(|e| AppError::BadRequest(format!("adyen notification item: {e}")))?;
+                    .map_err(|e| {
+                    AppError::BadRequest(format!("adyen notification item: {e}"))
+                })?;
                 // Err (wrong signature) propagates and rejects the whole batch.
                 adyen::verify_item_signature(&item, sig, &key_hex)?;
             }
@@ -808,8 +810,8 @@ async fn load_bridge_public_key(
         .connections
         .load_credential(conn.tenant_id, conn.id)
         .await?;
-    let cred: crate::providers::bridge::BridgeCredential =
-        serde_json::from_slice(&plaintext).map_err(|e| AppError::Provider {
+    let cred: crate::providers::bridge::BridgeCredential = serde_json::from_slice(&plaintext)
+        .map_err(|e| AppError::Provider {
             provider: "bridge".into(),
             message: format!("decode sealed credential: {e}"),
         })?;
@@ -1045,9 +1047,7 @@ mod tests {
     #[test]
     fn event_id_plaid_none_when_missing_pieces() {
         assert!(event_id(WebhookProvider::PlaidBank, &json!({"item_id": "x"})).is_none());
-        assert!(
-            event_id(WebhookProvider::PlaidBank, &json!({"webhook_code": "x"})).is_none()
-        );
+        assert!(event_id(WebhookProvider::PlaidBank, &json!({"webhook_code": "x"})).is_none());
     }
 
     #[test]

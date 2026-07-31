@@ -155,7 +155,11 @@ impl WesternUnionApi {
         let currency = normalize_currency_code(currency_code)?;
         let url = url_with_segments(
             self.base_url(),
-            &["HoldingBalance", self.cred.client_id.as_str(), currency.as_str()],
+            &[
+                "HoldingBalance",
+                self.cred.client_id.as_str(),
+                currency.as_str(),
+            ],
         )?;
 
         let resp = self

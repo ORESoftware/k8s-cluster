@@ -59,11 +59,7 @@ pub async fn readyz(State(state): State<AppState>) -> (StatusCode, Json<HealthBo
 }
 
 pub async fn metrics(State(state): State<AppState>) -> Response {
-    let db_ready = match state
-        .pool
-        .query_one(crate::db::stmt("SELECT 1", []))
-        .await
-    {
+    let db_ready = match state.pool.query_one(crate::db::stmt("SELECT 1", [])).await {
         Ok(_) => 1,
         Err(_) => 0,
     };

@@ -76,7 +76,10 @@ mod tests {
         let past = Utc::now() - chrono::Duration::seconds(120);
         let s = rel(past).into_string();
         assert!(s.contains("ago"), "expected 'ago' suffix in {s}");
-        assert!(s.contains("title="), "expected exact timestamp in title attr");
+        assert!(
+            s.contains("title="),
+            "expected exact timestamp in title attr"
+        );
 
         let future = Utc::now() + chrono::Duration::seconds(120);
         let s = rel(future).into_string();

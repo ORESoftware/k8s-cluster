@@ -57,7 +57,10 @@ impl fmt::Debug for AdyenCredential {
             .field("merchant_account", &self.merchant_account)
             .field("environment", &self.environment)
             .field("api_base_url", &self.api_base_url)
-            .field("hmac_key_hex", &self.hmac_key_hex.as_ref().map(|_| "<redacted>"))
+            .field(
+                "hmac_key_hex",
+                &self.hmac_key_hex.as_ref().map(|_| "<redacted>"),
+            )
             .finish()
     }
 }
@@ -103,10 +106,17 @@ pub struct AdyenAmount {
 
 impl AdyenNotificationItem {
     fn amount_value(&self) -> String {
-        self.amount.as_ref().map(|a| a.value).unwrap_or(0).to_string()
+        self.amount
+            .as_ref()
+            .map(|a| a.value)
+            .unwrap_or(0)
+            .to_string()
     }
     fn amount_currency(&self) -> &str {
-        self.amount.as_ref().map(|a| a.currency.as_str()).unwrap_or("")
+        self.amount
+            .as_ref()
+            .map(|a| a.currency.as_str())
+            .unwrap_or("")
     }
 }
 

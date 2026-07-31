@@ -30,7 +30,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures_util::StreamExt;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 use dd_nats_subject_defs::{
@@ -349,36 +349,36 @@ pub async fn run_sync_command_loop(state: AppState) {
         );
 
         while let Some(message) = subscription.next().await {
-        if message.payload.len() > max_bytes {
-            tracing::warn!(
-                bytes = message.payload.len(),
-                max = max_bytes,
-                "billing sync-command rejected: oversize payload"
-            );
-            continue;
-        }
-        let command: SyncCommand = match serde_json::from_slice(&message.payload) {
-            Ok(c) => c,
-            Err(error) => {
-                tracing::warn!(error = %error, "billing sync-command rejected: malformed payload");
+            if message.payload.len() > max_bytes {
+                tracing::warn!(
+                    bytes = message.payload.len(),
+                    max = max_bytes,
+                    "billing sync-command rejected: oversize payload"
+                );
                 continue;
             }
-        };
-        // Bound concurrency: when all permits are in use, awaiting here applies
-        // backpressure to the subscription instead of spawning unboundedly.
-        let permit = match inflight.clone().acquire_owned().await {
-            Ok(p) => p,
-            Err(_) => break, // semaphore closed (never, in practice)
-        };
-        let state = state.clone();
-        // Each command runs independently; a slow/erroring one must not block
-        // the subscription's forward progress.
-        tokio::spawn(async move {
-            let _permit = permit; // released when the task finishes
-            if let Err(error) = handle_sync_command(&state, command).await {
-                tracing::warn!(error = %error, "billing sync-command failed to enqueue");
-            }
-        });
+            let command: SyncCommand = match serde_json::from_slice(&message.payload) {
+                Ok(c) => c,
+                Err(error) => {
+                    tracing::warn!(error = %error, "billing sync-command rejected: malformed payload");
+                    continue;
+                }
+            };
+            // Bound concurrency: when all permits are in use, awaiting here applies
+            // backpressure to the subscription instead of spawning unboundedly.
+            let permit = match inflight.clone().acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => break, // semaphore closed (never, in practice)
+            };
+            let state = state.clone();
+            // Each command runs independently; a slow/erroring one must not block
+            // the subscription's forward progress.
+            tokio::spawn(async move {
+                let _permit = permit; // released when the task finishes
+                if let Err(error) = handle_sync_command(&state, command).await {
+                    tracing::warn!(error = %error, "billing sync-command failed to enqueue");
+                }
+            });
         }
 
         tracing::info!("billing sync-command subscription ended; re-subscribing in 5s");
