@@ -1,5 +1,7 @@
 name: no PAT propagation
 
+# DEN-443 accepts either the reviewed patch carrier or the fully remediated,
+# carrier-free tree. The permanent live contract remains authoritative.
 on:
   pull_request:
     paths:
