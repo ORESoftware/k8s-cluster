@@ -238,7 +238,6 @@ def main() -> None:
     )
     require(
         "mirror-copy-complete-after-delete-claim" in action_names
-<<<<<<< HEAD
         and "mirror-copy-fence-and-abandon-after-delete-claim" in action_names,
         "in-flight mirror resolution paths were not explored",
     )
@@ -255,11 +254,6 @@ def main() -> None:
         ),
         "fenced mirror-abandonment erasure path was not explored",
     )
-=======
-        and "mirror-copy-abort-after-delete-claim" in action_names,
-        "in-flight mirror resolution paths were not explored",
-    )
->>>>>>> origin/agent/formal-methods-20260730-segment-lifecycle
 
     print(
         f"segment lifecycle model: {len(seen)} states, "
