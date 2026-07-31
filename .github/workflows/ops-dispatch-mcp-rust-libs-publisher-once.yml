@@ -1,5 +1,5 @@
-name: Dispatch and observe canonical mcp-rust-libs repair applicator
-run-name: Apply and observe canonical mcp-rust-libs publisher repair @ ${{ github.sha }}
+name: Publish canonical mcp-rust-libs from trusted Actions credential
+run-name: Create ORESoftware/mcp-rust-libs from normalized trusted credential v2 @ ${{ github.sha }}
 
 on:
   push:
@@ -10,121 +10,189 @@ on:
 
 permissions:
   contents: read
-  actions: write
   pull-requests: write
 
 concurrency:
-  group: dispatch-canonical-mcp-rust-libs-publisher
+  group: publish-canonical-mcp-rust-libs-trusted-actions
   cancel-in-progress: false
 
 jobs:
-  dispatch:
-    runs-on: ubuntu-latest
-    timeout-minutes: 70
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      REMOTE_DEV_GH_PAT: ${{ secrets.REMOTE_DEV_GH_PAT }}
+      ORG_GITOPS_TOKEN: ${{ secrets.ORG_GITOPS_TOKEN }}
+      GH_PAT_SECRET: ${{ secrets.GH_PAT }}
+      REPOSITORY_ADMIN_TOKEN_SECRET: ${{ secrets.REPOSITORY_ADMIN_TOKEN }}
+      GITHUB_REPOSITORY_ADMIN_TOKEN_SECRET: ${{ secrets.GITHUB_REPOSITORY_ADMIN_TOKEN }}
+
     steps:
-      - name: Dispatch, observe, and report the exact trusted-main repair applicator run
+      - name: Check out exact trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Normalize credential, validate identity, and publish exact reviewed source
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TRACKING_PR: '326'
-          PUBLISHER_WORKFLOW: ops-fix-and-run-mcp-rust-libs-publisher-once.yml
         run: |
-          set -euo pipefail
-          repository="$GITHUB_REPOSITORY"
-          trusted_sha="$(gh api "repos/${repository}/commits/main" --jq .sha)"
+          set -Eeuo pipefail
+          umask 077
+          trusted_sha="$(git rev-parse HEAD)"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
-          before_json="$(
-            gh run list \
-              --repo "$repository" \
-              --workflow "$PUBLISHER_WORKFLOW" \
-              --event workflow_dispatch \
-              --limit 100 \
-              --json databaseId \
-              | jq '[.[].databaseId]'
-          )"
+          token="$(python3 - <<'PYTHON'
+          import base64
+          import binascii
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
 
-          gh workflow run "$PUBLISHER_WORKFLOW" --repo "$repository" --ref main
+          names = (
+              "REMOTE_DEV_GH_PAT",
+              "ORG_GITOPS_TOKEN",
+              "GH_PAT_SECRET",
+              "REPOSITORY_ADMIN_TOKEN_SECRET",
+              "GITHUB_REPOSITORY_ADMIN_TOKEN_SECRET",
+          )
+          candidates = []
 
-          run_json=''
-          for _ in $(seq 1 120); do
-            candidates="$(
-              gh run list \
-                --repo "$repository" \
-                --workflow "$PUBLISHER_WORKFLOW" \
-                --event workflow_dispatch \
-                --limit 50 \
-                --json databaseId,headSha,createdAt,status,conclusion,url
-            )"
-            run_json="$(
-              jq -c \
-                --argjson before "$before_json" \
-                --arg sha "$trusted_sha" \
-                '[.[] | select(.headSha == $sha and ((.databaseId as $id | $before | index($id)) == null))] | sort_by(.createdAt) | last // empty' \
-                <<<"$candidates"
-            )"
-            if test -n "$run_json"; then
-              break
-            fi
-            sleep 2
-          done
-          test -n "$run_json"
+          def add(value):
+              if not isinstance(value, str):
+                  return
+              value = value.strip("\r\n")
+              if value and value not in candidates:
+                  candidates.append(value)
 
-          run_id="$(jq -r .databaseId <<<"$run_json")"
-          run_url="$(jq -r .url <<<"$run_json")"
-          [[ "$run_id" =~ ^[0-9]+$ ]]
-          test -n "$run_url"
+          for name in names:
+              raw = os.environ.get(name, "")
+              if not raw:
+                  continue
+              add(raw)
+              stripped = raw.strip()
+              add(stripped)
+              if len(stripped) >= 2 and stripped[0] == stripped[-1] and stripped[0] in "\"'":
+                  add(stripped[1:-1])
+              try:
+                  payload = json.loads(stripped)
+              except (json.JSONDecodeError, TypeError):
+                  payload = None
+              if isinstance(payload, dict):
+                  for key in ("GH_PAT", "gh_pat", "token", "github_token", "GITHUB_TOKEN"):
+                      add(payload.get(key))
+              for line in stripped.splitlines():
+                  if "=" in line:
+                      key, value = line.split("=", 1)
+                      if key.strip() in {"GH_PAT", "GITHUB_TOKEN", "token"}:
+                          add(value.strip().strip("\"'"))
+              try:
+                  decoded = base64.b64decode(stripped, validate=True).decode("utf-8")
+              except (binascii.Error, UnicodeDecodeError, ValueError):
+                  decoded = ""
+              add(decoded)
+              try:
+                  nested = json.loads(decoded) if decoded else None
+              except json.JSONDecodeError:
+                  nested = None
+              if isinstance(nested, dict):
+                  for key in ("GH_PAT", "gh_pat", "token", "github_token", "GITHUB_TOKEN"):
+                      add(nested.get(key))
 
-          gh pr comment "$TRACKING_PR" \
-            --repo "$repository" \
-            --body "Canonical MCP repair applicator dispatched from trusted main \`${trusted_sha}\`: ${run_url}" \
-            >/dev/null || true
+          for candidate in candidates:
+              if any(character.isspace() for character in candidate):
+                  continue
+              request = urllib.request.Request(
+                  "https://api.github.com/user",
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {candidate}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "canonical-mcp-rust-libs-credential-selector",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      identity = json.load(response)
+              except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+                  continue
+              if identity.get("login") == "ORESoftware":
+                  sys.stdout.write(candidate)
+                  raise SystemExit(0)
+          raise SystemExit(65)
+          PYTHON
+          )" || {
+            status=$?
+            gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body "Trusted Actions credential normalization failed closed before canonical MCP repository mutation: ${run_url} (status ${status})." >/dev/null || true
+            exit "$status"
+          }
+          test -n "$token"
+          [[ "$token" != *$'\n'* && "$token" != *$'\r'* && "$token" != *$'\t'* && "$token" != *' '* ]]
+          echo "::add-mask::${token}"
 
-          watch_status=0
-          gh run watch "$run_id" --repo "$repository" --exit-status || watch_status=$?
+          workflow=.github/workflows/ops-fix-and-run-mcp-rust-libs-publisher-once.yml
+          publisher="$RUNNER_TEMP/trusted-actions-mcp-rust-libs-publisher.sh"
+          python3 - "$workflow" "$publisher" <<'PYTHON'
+          from pathlib import Path
+          import sys
+          import textwrap
 
-          detail="$(
-            gh run view "$run_id" \
-              --repo "$repository" \
-              --json databaseId,headSha,status,conclusion,url,name
-          )"
-          observed_sha="$(jq -r .headSha <<<"$detail")"
-          test "$observed_sha" = "$trusted_sha"
+          workflow_path = Path(sys.argv[1])
+          output_path = Path(sys.argv[2])
+          text = workflow_path.read_text(encoding="utf-8")
+          start_marker = "          cat > \"$remote_script\" <<'REMOTE_SCRIPT'\n"
+          end_marker = "\n          REMOTE_SCRIPT\n"
+          if text.count(start_marker) != 1:
+              raise SystemExit("reviewed remote publisher start marker is not unique")
+          start = text.index(start_marker) + len(start_marker)
+          end = text.index(end_marker, start)
+          remote = textwrap.dedent(text[start:end]) + "\n"
 
-          log_file="$(mktemp)"
-          body_file="$(mktemp)"
-          trap 'rm -f "$log_file" "$body_file"' EXIT
-          gh run view "$run_id" --repo "$repository" --log >"$log_file" 2>/dev/null || true
+          credential_start = "stage=protected-credential\n"
+          credential_end = "printf 'publisher-stage=%s status=ready source=%s\\n' \"$stage\" \"$credential_source\"\n"
+          if remote.count(credential_start) != 1 or remote.count(credential_end) != 1:
+              raise SystemExit("reviewed credential boundary markers drifted")
+          begin = remote.index(credential_start)
+          finish = remote.index(credential_end, begin) + len(credential_end)
+          replacement = '''stage=protected-credential
+          GH_TOKEN="${GITHUB_REPOSITORY_ADMIN_TOKEN:?trusted Actions credential required}"
+          credential_source=trusted-actions-secret
+          if [[ "$GH_TOKEN" == *$'\\n'* || "$GH_TOKEN" == *$'\\r'* || "$GH_TOKEN" == *$'\\t'* || "$GH_TOKEN" == *' '* ]]; then
+            echo 'publisher-stage=protected-credential status=failed reason=invalid-trusted-actions-credential' >&2
+            exit 65
+          fi
+          export GH_TOKEN
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
+          printf 'publisher-stage=%s status=ready source=%s\\n' "$stage" "$credential_source"
+          '''
+          remote = remote[:begin] + textwrap.dedent(replacement) + remote[finish:]
+          if "aws secretsmanager get-secret-value" in remote[: remote.index("stage=github-api-helper")]:
+              raise SystemExit("protected-host credential discovery remains before API helper")
+          output_path.write_text(remote, encoding="utf-8")
+          PYTHON
 
-          markers="$(
-            grep -Eo \
-              'publisher-stage-failed=[A-Za-z0-9._-]+ exit=[0-9]+|publisher-root-credential-source=[^[:space:]]+|CREATED ORESoftware/mcp-rust-libs|PUBLISHED ORESoftware/mcp-rust-libs PR#[0-9]+ head=[0-9a-f]{40} source_tree=[0-9a-f]{40} trusted_k8s=[0-9a-f]{40}|ALREADY_PUBLISHED ORESoftware/mcp-rust-libs main=[0-9a-f]{40} source_tree=[0-9a-f]{40} trusted_k8s=[0-9a-f]{40}' \
-              "$log_file" \
-              | tail -n 30 \
-              | sort -u \
-              || true
-          )"
+          chmod 700 "$publisher"
+          bash -n "$publisher"
+          gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body "Trusted Actions canonical MCP publication started from \`${trusted_sha}\`: ${run_url}" >/dev/null || true
 
-          target_summary='not-created'
-          if target="$(gh api repos/ORESoftware/mcp-rust-libs 2>/dev/null)"; then
+          status=0
+          GITHUB_REPOSITORY_ADMIN_TOKEN="$token" bash "$publisher" "$trusted_sha" || status=$?
+          unset token GITHUB_REPOSITORY_ADMIN_TOKEN
+
+          target_summary=not-created
+          if target="$(curl --silent --show-error --fail https://api.github.com/repos/ORESoftware/mcp-rust-libs 2>/dev/null)"; then
             target_summary="$(jq -r '"owner=" + .owner.login + " visibility=" + .visibility + " default_branch=" + .default_branch + " id=" + (.id|tostring)' <<<"$target")"
           fi
-
-          {
-            echo "Canonical MCP repair applicator run: ${run_url}"
-            echo
-            echo "- trusted main: \`${trusted_sha}\`"
-            echo "- status: \`$(jq -r .status <<<"$detail")\`"
-            echo "- conclusion: \`$(jq -r '.conclusion // ""' <<<"$detail")\`"
-            echo "- target: \`${target_summary}\`"
-            if test -n "$markers"; then
-              echo
-              echo 'Sanitized nested publisher markers:'
-              echo '```text'
-              printf '%s\n' "$markers"
-              echo '```'
-            fi
-          } >"$body_file"
-
-          gh pr comment "$TRACKING_PR" --repo "$repository" --body-file "$body_file" >/dev/null || true
-          exit "$watch_status"
+          if test "$status" -eq 0; then
+            gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body "Trusted Actions canonical MCP publication succeeded: ${run_url}; target \`${target_summary}\`." >/dev/null || true
+          else
+            gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body "Trusted Actions canonical MCP publication failed closed: ${run_url}; status \`${status}\`; target \`${target_summary}\`." >/dev/null || true
+            exit "$status"
+          fi

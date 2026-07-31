@@ -1,18 +1,10 @@
-name: Probe protected publisher capabilities
-run-name: Probe protected publisher capabilities @ ${{ github.sha }}
+name: Trusted protected publisher capability probe
+run-name: Trusted protected publisher capability probe for PR #${{ github.event.pull_request.number }}
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - .github/workflows/protected-publisher-capability-probe.yml
   pull_request_target:
-    branches:
-      - main
-    types: [opened, reopened, synchronize, ready_for_review]
-    paths:
-      - .github/protected-publisher-capability-probe-trigger
+    branches: [main]
+    types: [opened, reopened, synchronize]
 
 permissions:
   contents: read
@@ -20,20 +12,20 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: protected-publisher-capability-probe-${{ github.event.pull_request.number || github.sha }}
+  group: trusted-protected-publisher-capability-probe-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   probe:
     if: >-
-      github.event_name == 'push' ||
-      (github.event.pull_request.head.repo.full_name == github.repository &&
-       github.event.pull_request.head.ref == 'agent/protected-publisher-capability-probe-20260731-v1')
+      github.actor == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/protected-publisher-capability-probe-20260731-v1' &&
+      github.event.pull_request.title == 'DO NOT MERGE: sanitized protected credential capability probe'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Validate the dedicated read-only probe carrier
-        if: github.event_name == 'pull_request_target'
+      - name: Validate exact one-file no-code carrier
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -67,7 +59,7 @@ jobs:
           retry-max-attempts: 2
           mask-aws-account-id: true
 
-      - name: Inspect protected credential capabilities without exposing values
+      - name: Probe protected host without exposing credential values
         shell: bash
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
@@ -81,10 +73,8 @@ jobs:
           set -u
           umask 077
 
-          command_path() {
-            local prefix=$1
-            local command_name=$2
-            local path
+          command_state() {
+            local prefix=$1 command_name=$2 path
             path="$(command -v "$command_name" 2>/dev/null || true)"
             if test -n "$path"; then
               printf '%s.%s=%s\n' "$prefix" "$command_name" "$path"
@@ -95,7 +85,7 @@ jobs:
 
           echo root.user="$(id -un)"
           for command_name in bash python3 git gh kubectl aws curl sudo getent; do
-            command_path root "$command_name"
+            command_state root "$command_name"
           done
 
           if test -r /root/.config/gh/hosts.yml; then
@@ -104,14 +94,12 @@ jobs:
             echo root.gh_config=absent
           fi
           if command -v gh >/dev/null 2>&1; then
-            if GH_CONFIG_DIR=/root/.config/gh \
-              gh auth status --hostname github.com >/dev/null 2>&1; then
+            if GH_CONFIG_DIR=/root/.config/gh gh auth status --hostname github.com >/dev/null 2>&1; then
               echo root.gh_auth=valid
             else
               echo root.gh_auth=unavailable
             fi
-            if GH_CONFIG_DIR=/root/.config/gh \
-              gh auth token --hostname github.com >/dev/null 2>&1; then
+            if GH_CONFIG_DIR=/root/.config/gh gh auth token --hostname github.com >/dev/null 2>&1; then
               echo root.gh_token=available
             else
               echo root.gh_token=unavailable
