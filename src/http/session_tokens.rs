@@ -17,6 +17,11 @@ pub struct IssuedSession {
 /// server-owned flow. Local register/login is password-authenticated; any
 /// other provider remains fail-closed unless its verified assurance is passed
 /// through [`issue_with_assurance`].
+///
+// Not yet routed: `local.rs` still calls `issue_with_assurance` directly with
+// its own (level, methods) pair. Kept as the intended entry point for flows
+// whose method is implied by the server rather than supplied by the caller.
+#[allow(dead_code)]
 pub async fn issue(
     state: &AppState,
     identity: AuthenticatedIdentity,
