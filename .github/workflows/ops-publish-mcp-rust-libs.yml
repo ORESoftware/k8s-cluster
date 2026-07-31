@@ -48,7 +48,16 @@ jobs:
           remote_script="$RUNNER_TEMP/publish-mcp-rust-libs.sh"
           cat > "$remote_script" <<'REMOTE_SCRIPT'
           #!/usr/bin/env bash
-          set -euo pipefail
+          set -Eeuo pipefail
+
+          stage=bootstrap
+          report_error() {
+            status=$?
+            trap - ERR
+            printf 'publisher-stage-failed=%s exit=%s\n' "$stage" "$status" >&2
+            exit "$status"
+          }
+          trap report_error ERR
 
           trusted_sha="${1:?trusted k8s-cluster SHA required}"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
@@ -64,26 +73,33 @@ jobs:
           readonly source_timestamp='2026-07-31T13:31:00Z'
 
           test -z "${CODEX_HOME:-}"
+          stage=prepare-disposable-state
           work="$(mktemp -d /tmp/mcp-rust-libs-publisher.XXXXXX)"
           export CODEX_HOME="$work/codex-home"
           install -d -m 700 "$CODEX_HOME"
+          case "$CODEX_HOME" in
+            "$work"/*) ;;
+            *) echo 'disposable CODEX_HOME escaped the temporary worktree' >&2; exit 1 ;;
+          esac
           cleanup() {
             unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN \
-              GIT_ASKPASS GIT_USERNAME GIT_TERMINAL_PROMPT \
+              GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_USERNAME GIT_TERMINAL_PROMPT \
               GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM CODEX_HOME
             rm -rf "$work"
           }
           trap cleanup EXIT
 
-          command -v kubectl >/dev/null
-          encoded_pat="$(kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}')"
+          stage=receive-cluster-credential
+          IFS= read -r encoded_pat
           test -n "$encoded_pat"
           GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
           unset encoded_pat
           test -n "$GH_TOKEN"
+          [[ "$GH_TOKEN" != *$'\n'* && "$GH_TOKEN" != *$'\r'* ]]
           export GH_TOKEN
           export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
 
+          stage=verify-github-identity
           api_helper="$work/github_api.py"
           cat > "$api_helper" <<'PYTHON'
           import json
@@ -221,8 +237,8 @@ jobs:
 
           actual_login="$(python3 "$api_helper" user)"
           test "$actual_login" = "$expected_login"
-          python3 "$api_helper" ensure-repository
 
+          stage=configure-git-authentication
           askpass="$work/git-askpass.sh"
           cat > "$askpass" <<'ASKPASS'
           #!/usr/bin/env bash
@@ -233,11 +249,13 @@ jobs:
           ASKPASS
           chmod 700 "$askpass"
           export GIT_ASKPASS="$askpass"
+          export GIT_ASKPASS_REQUIRE=force
           export GIT_USERNAME='x-access-token'
           export GIT_TERMINAL_PROMPT=0
           export GIT_CONFIG_GLOBAL=/dev/null
           export GIT_CONFIG_NOSYSTEM=1
 
+          stage=checkout-reviewed-source
           carrier="$work/carrier"
           git clone --filter=blob:none --no-checkout \
             "https://github.com/${source_repository}.git" "$carrier"
@@ -263,6 +281,7 @@ jobs:
           source_tree="$(git -C "$carrier" rev-parse "${source_sha}:${source_subdirectory}")"
           [[ "$source_tree" =~ ^[0-9a-f]{40}$ ]]
 
+          stage=validate-reviewed-source
           (
             cd "$source"
             python3 scripts/regenerate-generated.py --check
@@ -272,6 +291,10 @@ jobs:
             python3 scripts/update-source-manifest.py --check
           )
 
+          stage=ensure-target-repository
+          python3 "$api_helper" ensure-repository
+
+          stage=prepare-target-review-gate
           baseline="$work/baseline"
           mkdir -p "$baseline/.github/workflows"
           git -C "$baseline" init -b main
@@ -298,6 +321,7 @@ jobs:
             python3 "$api_helper" set-default-main
           fi
 
+          stage=publish-reviewed-source-branch
           target="$work/target"
           git clone --depth=1 --branch main "https://github.com/${target_repository}.git" "$target"
           main_tree="$(git -C "$target" rev-parse 'HEAD^{tree}')"
@@ -358,14 +382,16 @@ jobs:
 
           Refs DEN-319, DEN-957, DEN-959, DEN-967, DEN-968, DEN-969, DEN-970, DEN-972, DEN-1186.
           EOF
+          stage=ensure-target-pull-request
           pr_number="$(python3 "$api_helper" ensure-pr "$target_branch" "$expected_head" "$pr_body")"
           test "$(python3 "$api_helper" get-ref "heads/${target_branch}")" = "$expected_head"
+          stage=complete
           echo "PUBLISHED $target_repository PR#$pr_number head=$expected_head source_tree=$source_tree trusted_k8s=$trusted_sha"
           REMOTE_SCRIPT
           chmod 700 "$remote_script"
 
           encoded="$(base64 --wrap=0 "$remote_script")"
-          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-mcp-rust-libs.sh && chown ec2-user:ec2-user /tmp/publish-mcp-rust-libs.sh && chmod 700 /tmp/publish-mcp-rust-libs.sh && sudo -u ec2-user -H bash -lc 'unset CODEX_HOME; exec bash /tmp/publish-mcp-rust-libs.sh \"\$1\"' _ '$trusted_sha'; status=\$?; rm -f /tmp/publish-mcp-rust-libs.sh; exit \$status"
+          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-mcp-rust-libs.sh && chown ec2-user:ec2-user /tmp/publish-mcp-rust-libs.sh && chmod 700 /tmp/publish-mcp-rust-libs.sh; status=0; if ! command -v kubectl >/dev/null; then echo 'publisher-stage-failed=locate-root-kubectl' >&2; status=127; elif ! test -r /etc/kubernetes/admin.conf; then echo 'publisher-stage-failed=read-admin-kubeconfig' >&2; status=1; elif ! encoded_pat=\$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}'); then echo 'publisher-stage-failed=read-cluster-credential' >&2; status=1; elif test -z \"\$encoded_pat\"; then echo 'publisher-stage-failed=empty-cluster-credential' >&2; status=1; else printf '%s\n' \"\$encoded_pat\" | sudo -u ec2-user -H bash -lc 'unset CODEX_HOME; exec bash /tmp/publish-mcp-rust-libs.sh \"\$1\"' _ '$trusted_sha'; status=\$?; fi; unset encoded_pat; rm -f /tmp/publish-mcp-rust-libs.sh; exit \$status"
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
