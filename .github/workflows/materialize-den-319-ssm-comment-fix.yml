@@ -1,0 +1,108 @@
+name: Materialize DEN-319 SSM comment and REST evidence fix
+
+on:
+  push:
+    branches:
+      - fix/den-319-ssm-comment-and-rest-evidence-20260731
+    paths:
+      - .github/workflows/materialize-den-319-ssm-comment-fix.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-den-319-ssm-comment-fix
+  cancel-in-progress: false
+
+jobs:
+  materialize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out exact repair branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/den-319-ssm-comment-and-rest-evidence-20260731
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Apply exact semantic repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/ops-publish-missing-org-repositories-gh-profile.yml')
+          text = path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  '''          gh pr comment "$TRACKING_PR" --body \\
+            "Protected gh-profile publisher started from trusted main \\`${trusted_sha}\\`: ${run_url}" >/dev/null || true
+''',
+                  '''          gh api --method POST \\
+            "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_PR}/comments" \\
+            -f body="Protected gh-profile publisher started from trusted main \\`${trusted_sha}\\`: ${run_url}" \\
+            >/dev/null || true
+''',
+              ),
+              (
+                  '''            --comment "Publish reviewed organization fleet from $trusted_sha via protected gh profile" \\
+''',
+                  '''            --comment "Publish org fleet ${trusted_sha:0:12} via protected profile" \\
+''',
+              ),
+              (
+                  '''            gh pr comment "$TRACKING_PR" --body \\
+              "Protected gh-profile publisher completed successfully from \\`${trusted_sha}\\`: ${run_url}" >/dev/null || true
+''',
+                  '''            gh api --method POST \\
+              "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_PR}/comments" \\
+              -f body="Protected gh-profile publisher completed successfully from \\`${trusted_sha}\\`: ${run_url}" \\
+              >/dev/null || true
+''',
+              ),
+              (
+                  '''            gh pr comment "$TRACKING_PR" --body-file "$body" >/dev/null || true
+''',
+                  '''            gh api --method POST \\
+              "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_PR}/comments" \\
+              -f body="$(cat \"$body\")" >/dev/null || true
+''',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one match, found {count}: {old.splitlines()[0]!r}')
+              text = text.replace(old, new, 1)
+
+          if len(f"Publish org fleet {'0' * 12} via protected profile") > 100:
+              raise SystemExit('SSM comment remains over the AWS limit')
+          path.write_text(text, encoding='utf-8')
+          PY
+
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('.github/workflows/ops-publish-missing-org-repositories-gh-profile.yml').read_text(encoding='utf-8')
+          assert 'Publish reviewed organization fleet from $trusted_sha via protected gh profile' not in text
+          assert 'Publish org fleet ${trusted_sha:0:12} via protected profile' in text
+          assert text.count('repos/${GITHUB_REPOSITORY}/issues/${TRACKING_PR}/comments') == 3
+          PY
+
+          rm .github/workflows/materialize-den-319-ssm-comment-fix.yml
+          git diff --check
+
+      - name: Commit repaired trusted publisher only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml \
+            .github/workflows/materialize-den-319-ssm-comment-fix.yml
+          git commit -m 'fix(DEN-319): satisfy SSM comment limit and use REST evidence'
+          git push origin HEAD:fix/den-319-ssm-comment-and-rest-evidence-20260731
