@@ -14,7 +14,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ops-dispatch-sealed-hypesiege-streempilot
+  group: ops-dispatch-sealed-hypesiege-streempilot-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
