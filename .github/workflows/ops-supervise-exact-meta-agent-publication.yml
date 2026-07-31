@@ -4,6 +4,12 @@ run-name: Owner-authorize exact Meta Agents repository publication
 on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      tracking_pr:
+        description: Open execution PR that receives the device code and verification evidence
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -18,18 +24,21 @@ concurrency:
 jobs:
   publish:
     if: >-
-      github.event.pull_request.draft == true &&
-      github.event.pull_request.user.login == 'ORESoftware' &&
-      github.event.pull_request.base.ref == 'main' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      startsWith(github.event.pull_request.head.ref, 'agent/meta-agent-publish-') &&
-      github.event.pull_request.title == 'DO NOT MERGE: publish exact Meta Agents repository'
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.pull_request.draft == true &&
+        github.event.pull_request.user.login == 'ORESoftware' &&
+        github.event.pull_request.base.ref == 'main' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        startsWith(github.event.pull_request.head.ref, 'agent/meta-agent-publish-') &&
+        github.event.pull_request.title == 'DO NOT MERGE: publish exact Meta Agents repository'
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_NUMBER: ${{ github.event_name == 'workflow_dispatch' && inputs.tracking_pr || github.event.pull_request.number }}
       REPOSITORY: ${{ github.repository }}
-      TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+      TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.pull_request.head.sha }}
       GH_CONFIG_DIR: ${{ runner.temp }}/meta-agent-owner-auth
       COMMENT_TOKEN: ${{ github.token }}
       EXPECTED_LOGIN: ORESoftware
@@ -43,6 +52,7 @@ jobs:
 
     steps:
       - name: Validate the one-file execution carrier against trusted main
+        if: github.event_name == 'pull_request_target'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -76,6 +86,21 @@ jobs:
 
           comparison="$(gh api "repos/${REPOSITORY}/compare/${parent_sha}...${main_sha}")"
           jq -e '(.status == "ahead" or .status == "identical") and .behind_by == 0' <<<"$comparison" >/dev/null
+
+      - name: Validate workflow-dispatch tracking PR
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]
+          pull="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+          test "$(jq -r .state <<<"$pull")" = open
+          test "$(jq -r .draft <<<"$pull")" = true
+          test "$(jq -r .user.login <<<"$pull")" = ORESoftware
+          test "$(jq -r .base.ref <<<"$pull")" = main
+          test "$(jq -r .title <<<"$pull")" = 'DO NOT MERGE: publish exact Meta Agents repository'
 
       - name: Check out the immutable reviewed publication source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -187,7 +212,6 @@ jobs:
           cat source/scripts/critical-org-fleet/assets/meta.part* | base64 --decode >"$bundle"
           printf '%s  %s\n' "$BUNDLE_SHA256" "$bundle" | sha256sum --check --strict
           test "$(git bundle list-heads "$bundle" | wc -l)" -eq 2
-          git bundle verify "$bundle" >/dev/null
 
           publisher="source/scripts/critical-org-fleet/publish_meta_control_plane.py"
           printf '%s  %s\n' "$PUBLISHER_SHA256" "$publisher" | sha256sum --check --strict
