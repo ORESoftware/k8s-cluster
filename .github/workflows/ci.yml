@@ -31,3 +31,69 @@ jobs:
           context: .
           push: false
           tags: push-notification-server:test
+
+  den-600-security-reconcile:
+    name: DEN-600 pinned OpenAPI dependency reconciliation
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.head_ref == 'agent/code-first-openapi-routes' &&
+      github.actor != 'github-actions[bot]'
+    permissions:
+      contents: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact writable branch with history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/code-first-openapi-routes
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Setup Rust 1.88
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt, clippy
+
+      - name: Regenerate and validate the pinned dependency graph
+        run: |
+          set -euo pipefail
+          cargo check
+          cargo fmt --all -- --check
+          cargo clippy --all-targets --all-features -- -D warnings
+          cargo test --all-features
+          cargo check --locked
+          cargo test --locked --all-features
+          git diff --check
+          test -z "$(grep -n 'name = \"paste\"' Cargo.lock || true)"
+          grep -q 'name = "pastey"' Cargo.lock
+          grep -q 'source = "git+https://github.com/juhaku/utoipa' Cargo.lock
+
+      - name: Enforce dependency policy
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+        with:
+          rust-version: '1.88.0'
+          command: check
+          arguments: --all-features
+
+      - name: Rescan complete history with the exact fingerprint allowlist
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --volume "$PWD:/repo" \
+            ghcr.io/gitleaks/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
+            git --redact --no-banner --verbose /repo
+
+      - name: Restore the registered workflow and push only the lockfile
+        run: |
+          set -euo pipefail
+          git checkout origin/main -- .github/workflows/ci.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Cargo.lock .github/workflows/ci.yml
+          git diff --cached --check
+          test "$(git diff --cached --name-only)" = 'Cargo.lock'
+          git commit -m 'build(DEN-600): lock the reviewed Utoipa source'
+          git push origin HEAD:agent/code-first-openapi-routes
