@@ -11,7 +11,7 @@ permissions:
   actions: write
   contents: read
   issues: write
-  pull-requests: read
+  pull-requests: write
 
 concurrency:
   group: ops-dispatch-sealed-hypesiege-streempilot
@@ -87,13 +87,6 @@ jobs:
               --jq '.[0].databaseId // empty'
           )"
 
-          gh pr comment "$TRIGGER_PR" \
-            --repo "$GITHUB_REPOSITORY" \
-            --body "Validated exact trigger; dispatcher run: ${dispatcher_url}" >/dev/null
-          gh pr comment "$PUBLICATION_PR" \
-            --repo "$GITHUB_REPOSITORY" \
-            --body "Trusted trigger PR #${TRIGGER_PR} validated; dispatcher run: ${dispatcher_url}" >/dev/null
-
           gh workflow run "$PUBLISH_WORKFLOW" \
             --repo "$GITHUB_REPOSITORY" \
             --ref main
@@ -120,12 +113,15 @@ jobs:
           run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
           echo "run_url=$run_url" >> "$GITHUB_OUTPUT"
+
           gh pr comment "$TRIGGER_PR" \
             --repo "$GITHUB_REPOSITORY" \
-            --body "Sealed fleet publisher dispatched as ${run_url}" >/dev/null
+            --body "Validated exact trigger; dispatcher ${dispatcher_url}; publisher ${run_url}" \
+            >/dev/null || true
           gh pr comment "$PUBLICATION_PR" \
             --repo "$GITHUB_REPOSITORY" \
-            --body "Sealed fleet publisher dispatched as ${run_url}" >/dev/null
+            --body "Trusted trigger PR #${TRIGGER_PR} dispatched sealed fleet publisher ${run_url} from ${dispatcher_url}" \
+            >/dev/null || true
 
       - name: Follow the exact publisher run to completion
         env:
