@@ -57,26 +57,21 @@ jobs:
             exit 1
           }
 
-          workflow_path='.github/workflows/ops-publish-missing-org-repositories-dispatch.yml'
-          if ! workflows_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows?per_page=100" 2>&1)"; then
-            report_error 'unable to list Actions workflows' "$workflows_json"
-          fi
-          workflow_id="$(jq -r --arg path "$workflow_path" \
-            '.workflows[] | select(.path == $path) | .id' \
-            <<<"$workflows_json" | head -n1)"
-          if [[ -z "$workflow_id" ]]; then
-            available="$(jq -r '.workflows[].path' <<<"$workflows_json" | sort)"
-            report_error 'dispatchable publisher workflow is not registered' "Expected: ${workflow_path}\nRegistered workflows:\n${available}"
-          fi
+          workflow_file='ops-publish-missing-org-repositories-dispatch.yml'
+          runs_endpoint="repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_file}/runs?branch=main&event=workflow_dispatch&per_page=100"
 
-          expected_title="Publish missing organization repositories (${TARGET_SHA})"
+          if ! before_runs="$(gh api "$runs_endpoint" 2>&1)"; then
+            report_error 'dispatchable publisher workflow is not registered' "$before_runs"
+          fi
+          before_ids="$(jq -r '.workflow_runs[].id' <<<"$before_runs")"
+
           payload="$RUNNER_TEMP/dispatch.json"
           jq -nc \
             --arg ref main \
             --arg request_id "$TARGET_SHA" \
             '{ref:$ref,inputs:{request_id:$request_id}}' > "$payload"
           if ! dispatch_output="$(gh api --method POST \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/dispatches" \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_file}/dispatches" \
             --input "$payload" 2>&1)"; then
             report_error 'workflow dispatch API rejected the request' "$dispatch_output"
           fi
@@ -84,12 +79,16 @@ jobs:
           run_id=''
           last_runs=''
           for _ in $(seq 1 60); do
-            if ! last_runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/runs?branch=main&event=workflow_dispatch&per_page=100" 2>&1)"; then
+            if ! last_runs="$(gh api "$runs_endpoint" 2>&1)"; then
               report_error 'unable to list dispatched publisher runs' "$last_runs"
             fi
-            run_id="$(jq -r --arg title "$expected_title" \
-              '.workflow_runs[] | select(.display_title == $title) | .id' \
-              <<<"$last_runs" | head -n1)"
+            while IFS= read -r candidate; do
+              [[ -n "$candidate" ]] || continue
+              if ! grep -qxF "$candidate" <<<"$before_ids"; then
+                run_id="$candidate"
+                break
+              fi
+            done < <(jq -r '.workflow_runs[].id' <<<"$last_runs")
             if [[ -n "$run_id" ]]; then
               break
             fi
@@ -98,7 +97,7 @@ jobs:
 
           if [[ -z "$run_id" ]]; then
             recent="$(jq -r '.workflow_runs[:10][] | [.id,.event,.head_branch,.display_title,.status,.conclusion] | @tsv' <<<"$last_runs" 2>/dev/null || true)"
-            report_error 'dispatch accepted but no correlated run appeared' "Workflow id: ${workflow_id}\nExpected title: ${expected_title}\nRecent runs:\n${recent}"
+            report_error 'dispatch accepted but no new publisher run appeared' "Workflow: ${workflow_file}\nRecent runs:\n${recent}"
           fi
 
           run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
@@ -107,7 +106,6 @@ jobs:
             -f context='ops/missing-repository-publication' \
             -f description="publisher run ${run_id} is executing on trusted main" \
             -f target_url="$run_url" >/dev/null
-
           gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
             --body "Trusted-main publisher dispatched: ${run_url}" >/dev/null || true
 
