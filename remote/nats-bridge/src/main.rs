@@ -89,11 +89,9 @@ async fn main() {
         );
         std::process::exit(1);
     }
-    if let Some(t) = &bridge_token {
-        if t.len() < 16 {
-            eprintln!("Fatal: BRIDGE_TOKEN must be at least 16 characters");
-            std::process::exit(1);
-        }
+    if bridge_token.as_ref().is_some_and(|t| t.len() < 16) {
+        eprintln!("Fatal: BRIDGE_TOKEN must be at least 16 characters");
+        std::process::exit(1);
     }
 
     let subject_prefixes = parse_prefixes(
