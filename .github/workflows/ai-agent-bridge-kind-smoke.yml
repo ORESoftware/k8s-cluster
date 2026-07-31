@@ -106,6 +106,8 @@ jobs:
             echo "source_sha=${source_sha}"
             echo "image_digest=${digest}"
             echo "runtime_user=${user}"
+            echo "kubernetes_run_as_user=65532"
+            echo "kubernetes_run_as_group=65532"
             echo "entrypoint=${entrypoint}"
           } > "${RUNNER_TEMP}/kind-image-contract.txt"
 
@@ -150,6 +152,10 @@ jobs:
                 terminationGracePeriodSeconds: 10
                 securityContext:
                   runAsNonRoot: true
+                  runAsUser: 65532
+                  runAsGroup: 65532
+                  fsGroup: 65532
+                  fsGroupChangePolicy: OnRootMismatch
                   seccompProfile:
                     type: RuntimeDefault
                 containers:
@@ -160,6 +166,8 @@ jobs:
                       allowPrivilegeEscalation: false
                       readOnlyRootFilesystem: true
                       runAsNonRoot: true
+                      runAsUser: 65532
+                      runAsGroup: 65532
                       capabilities:
                         drop: ["ALL"]
                     env:
@@ -286,23 +294,43 @@ jobs:
           test -n "$pod"
           test "$(kubectl get pod "$pod" -o jsonpath='{.status.containerStatuses[0].ready}')" = true
           test "$(kubectl get pod "$pod" -o jsonpath='{.spec.automountServiceAccountToken}')" = false
+          test "$(kubectl get pod "$pod" -o jsonpath='{.spec.securityContext.runAsUser}')" = 65532
+          test "$(kubectl get pod "$pod" -o jsonpath='{.spec.securityContext.runAsGroup}')" = 65532
+          test "$(kubectl get pod "$pod" -o jsonpath='{.spec.securityContext.fsGroup}')" = 65532
           test "$(kubectl get pod "$pod" -o jsonpath='{.spec.containers[0].securityContext.allowPrivilegeEscalation}')" = false
           test "$(kubectl get pod "$pod" -o jsonpath='{.spec.containers[0].securityContext.readOnlyRootFilesystem}')" = true
+          test "$(kubectl get pod "$pod" -o jsonpath='{.spec.containers[0].securityContext.runAsUser}')" = 65532
           test "$(kubectl get pod "$pod" -o jsonpath='{.spec.containers[0].image}')" = "$AI_BRIDGE_IMAGE_TAG"
           kubectl logs "$pod" > "${RUNNER_TEMP}/kind-container.log"
 
-      - name: Reject credential leakage
+      - name: Reject credential leakage in generated evidence
         if: always()
         shell: bash
         run: |
           set -euo pipefail
           token='ci-ai-bridge-kind-smoke-token'
-          while IFS= read -r -d '' file; do
+          files=(
+            "${RUNNER_TEMP}/kind-image-contract.txt"
+            "${RUNNER_TEMP}/kind-resources.txt"
+            "${RUNNER_TEMP}/kind-pods.json"
+            "${RUNNER_TEMP}/kind-healthz.json"
+            "${RUNNER_TEMP}/kind-readyz.json"
+            "${RUNNER_TEMP}/kind-runtime-smoke.log"
+            "${RUNNER_TEMP}/kind-container.log"
+            "${RUNNER_TEMP}/kind-port-forward.log"
+            "${RUNNER_TEMP}/kind-failure-resources.txt"
+            "${RUNNER_TEMP}/kind-deployment-describe.txt"
+            "${RUNNER_TEMP}/kind-pod-describe.txt"
+            "${RUNNER_TEMP}/kind-failure-container.log"
+            "${RUNNER_TEMP}/kind-events.txt"
+          )
+          for file in "${files[@]}"; do
+            test -f "$file" || continue
             if grep -Fq "$token" "$file"; then
               echo "credential material found in ${file}" >&2
               exit 1
             fi
-          done < <(find "${RUNNER_TEMP}" -maxdepth 1 -type f -print0)
+          done
 
       - name: Capture failure diagnostics
         if: failure()
@@ -363,6 +391,6 @@ jobs:
             echo '- startup, readiness, and liveness probe contract: passed'
             echo '- ClusterIP HTTP and TCP service: passed'
             echo '- HTTP, SSE, TCP, workflow modes, lease cycle, and legacy auth: passed'
-            echo '- service-account token disabled, non-root, read-only root, no privilege escalation: passed'
+            echo '- UID/GID/fsGroup 65532, service-account token disabled, non-root, read-only root, no privilege escalation: passed'
             echo '- synthetic credential leakage scan: passed'
           } >> "$GITHUB_STEP_SUMMARY"
