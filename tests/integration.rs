@@ -225,10 +225,11 @@ async fn exchange_preserves_supabase_aal2() {
     let intro: serde_json::Value = serde_json::from_str(&body_string(resp).await).unwrap();
     assert_eq!(intro["active"], true);
     assert_eq!(intro["aal"], 2);
-    assert_eq!(
-        intro["amr"],
-        serde_json::json!(["federated", "password", "otp"])
-    );
+    // AMR values are canonicalized on the way in, so the upstream "password"
+    // is recorded as the RFC 8176 registered value "pwd" rather than verbatim.
+    // Downstream policy therefore matches one spelling instead of every
+    // provider's variant. See AuthenticationAssurance::from_supabase.
+    assert_eq!(intro["amr"], serde_json::json!(["federated", "pwd", "otp"]));
 }
 
 #[tokio::test]

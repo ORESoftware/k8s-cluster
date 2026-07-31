@@ -44,6 +44,9 @@ pub struct SessionResponse {
     shared_user_id: String,
     provider: String,
     roles: Vec<String>,
+    amr: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    acr: Option<String>,
 }
 
 pub async fn register(
@@ -131,6 +134,8 @@ pub async fn refresh(
         shared_user_id: session.identity.shared_user_id.to_string(),
         provider: session.identity.provider,
         roles: session.identity.roles,
+        amr: access.amr,
+        acr: access.acr,
     }))
 }
 
@@ -178,8 +183,12 @@ pub(crate) async fn response_from_issued_with_assurance(
     let shared_user_id = identity.shared_user_id.to_string();
     let provider = identity.provider.clone();
     let roles = identity.roles.clone();
-    let issued =
-        session_tokens::issue_with_assurance(state, identity, auth_level, auth_methods).await?;
+    let issued = session_tokens::issue_with_assurance(
+        state,
+        identity,
+        crate::token::AuthenticationAssurance::from_level_and_methods(auth_level, &auth_methods),
+    )
+    .await?;
     Ok(SessionResponse {
         access_token: issued.access.token,
         token_type: "Bearer",
@@ -189,6 +198,8 @@ pub(crate) async fn response_from_issued_with_assurance(
         shared_user_id,
         provider,
         roles,
+        amr: issued.access.amr,
+        acr: issued.access.acr,
     })
 }
 
