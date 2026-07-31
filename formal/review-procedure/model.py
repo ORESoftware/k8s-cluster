@@ -86,13 +86,10 @@ def successors(state: State):
         if state.primary_exists:
             yield "delete-primary", replace(state, primary_exists=False)
         if state.mirror == MIRROR_COPYING:
-<<<<<<< HEAD
-            # An in-flight copy must either become an inventoried mirror or be
-            # durably fenced before it can be treated as absent.
-=======
-            # A mirror operation already in flight must be observed to completion
-            # or explicitly abandoned before erasure can be finalized.
->>>>>>> origin/agent/formal-methods-20260730-segment-lifecycle
+            # A mirror operation already in flight must either be observed to
+            # completion (becoming an inventoried mirror) or be explicitly
+            # abandoned behind a durable fence before erasure can treat it as
+            # absent and be finalized.
             yield "mirror-copy-complete-after-delete-claim", replace(
                 state,
                 mirror=MIRRORED,
