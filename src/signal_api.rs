@@ -384,7 +384,7 @@ fn map_store_error(error: SignalStoreError) -> ApiError {
         SignalStoreError::InvalidStoredCiphertext(_)
         | SignalStoreError::InvalidStoredMessageNumber(_)
         | SignalStoreError::InvalidStoredKind => {
-            tracing::error!("invalid Signal mailbox state read from database");
+            tracing::error!("invalid Signal state read from database");
             ApiError::Internal
         }
     }
@@ -561,6 +561,10 @@ mod tests {
 
         assert!(matches!(
             map_store_error(SignalStoreError::IdempotencyConflict),
+            ApiError::Conflict
+        ));
+        assert!(matches!(
+            map_store_error(SignalStoreError::RevisionConflict),
             ApiError::Conflict
         ));
     }

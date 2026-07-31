@@ -110,7 +110,7 @@ async fn wait_for_lock_wait(db: &DatabaseConnection, query_fragment: &str) {
     timeout(Duration::from_secs(2), async {
         loop {
             let row = db
-                .query_one(Statement::from_sql_and_values(
+                .query_one_raw(Statement::from_sql_and_values(
                     DatabaseBackend::Postgres,
                     r#"
 SELECT EXISTS (
@@ -221,7 +221,7 @@ async fn concurrent_prekey_claims_return_distinct_one_time_keys() {
     assert_eq!(claimed_b.device_revision, 12);
 
     let row = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT count(*)::bigint AS claimed, count(DISTINCT claimed_by_device_id)::bigint AS claimants FROM threefa.device_one_time_prekeys WHERE claimed_at IS NOT NULL",
         ))
@@ -319,7 +319,7 @@ async fn concurrent_exact_retry_and_locked_cursor_cannot_skip_mail() {
 
     let transaction = db.begin().await.expect("begin uncommitted enqueue");
     let inserted = transaction
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             r#"
 INSERT INTO threefa.device_mailbox (
@@ -380,7 +380,7 @@ RETURNING mailbox_seq
 
     let locker = db.begin().await.expect("begin cursor lock");
     locker
-        .query_one(Statement::from_sql_and_values(
+        .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
             "SELECT mailbox_seq FROM threefa.device_mailbox WHERE mailbox_seq = $1 FOR UPDATE",
             vec![first_cursor.into()],

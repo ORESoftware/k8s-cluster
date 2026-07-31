@@ -2,7 +2,7 @@
 name = "threefa-backend"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 authors = ["ORES"]
 
@@ -41,7 +41,7 @@ opentelemetry-semantic-conventions = { version = "0.32", features = ["semconv_ex
 
 # Persistence. SeaORM owns the application-facing database contract; schema
 # migrations remain an explicit operator action and are never run at startup.
-sea-orm = { version = "1.1.20", default-features = false, features = [
+sea-orm = { version = "2.0.0", default-features = false, features = [
     "macros", "runtime-tokio-rustls", "sqlx-postgres", "with-json", "with-time", "with-uuid",
 ] }
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -59,7 +59,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 
 [dev-dependencies]
 http-body-util = "0.1"
-sea-orm = { version = "1.1.20", default-features = false, features = ["mock"] }
+sea-orm = { version = "2.0.0", default-features = false, features = ["mock"] }
 tempfile = "3"
 tokio = { version = "1", features = ["rt", "macros", "test-util"] }
 tower = { version = "0.5", features = ["util"] }

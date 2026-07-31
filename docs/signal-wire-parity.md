@@ -90,11 +90,19 @@ Pulls wait for an earlier locked mailbox row instead of skipping to a later curs
 
 `POST /v1/signal/mailbox/ack` matches the shared bounded `{items:[{envelope_id}]}` request and `{acknowledged}` response. Acknowledgement remains recipient-scoped and means decrypt, payload validation, and atomic local persistence already succeeded.
 
+### Publish or replenish prekeys
+
+`PUT /v1/signal/prekeys` now accepts the shared flattened `SignalPublishPreKeysRequest` and returns `bundle_revision`, `device_revision`, and the current `unclaimed_prekey_count`.
+
+The device supplies a positive `bundle_revision`. A lower revision is rejected, a same-revision retry must match the stored bundle and any reused prekey IDs exactly, and a higher revision rotates the bundle. A same-revision request may add previously unseen one-time prekeys without rewriting the bundle. Exact retries do not increment `device_revision`; effective bundle rotations or pool replenishments do.
+
+The response counts the current unclaimed pool after the transaction, rather than only the rows inserted by this request. Bundle comparison, one-time prekey conflict checks, revision updates, security events, and the pool count all share one transaction.
+
 ## Canonical fixture provenance
 
 `fixtures/signal-http-wire.json` is a byte-identical snapshot of the canonical fixture merged in `3FA-app/3fa-interfaces` at `f8114237994112647453321b4e1bc4287b0bf3c9` (SHA-256 `8c6a2a72b52cb6d5c9e3ff32b4348d426dec81c32746d83540af67e497559ef3`).
 
-Backend tests hash that snapshot and round-trip publish, queue, pull, empty-pull, and acknowledgement values through the actual HTTP DTOs. Ignored real-PostgreSQL coverage exercises first publication, exact retry, stale revision, same-revision conflict, higher-revision replenishment, reused prekey-ID rollback, account revision monotonicity, and current unclaimed-key counts.
+Backend tests hash that snapshot and round-trip publish, queue, pull, empty-pull, and acknowledgement values through the actual HTTP DTOs, and drive the duplicate/status behavior and monotonic-cursor mapping with those exact values. Ignored real-PostgreSQL coverage exercises first publication, exact retry, stale revision, same-revision conflict, higher-revision replenishment, reused prekey-ID rollback, account revision monotonicity, and current unclaimed-key counts.
 
 ## Remaining rollout gates
 

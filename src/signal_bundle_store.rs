@@ -124,7 +124,7 @@ pub async fn claim_prekey_bundle(
     }
 
     let row = db
-        .query_one(postgres(
+        .query_one_raw(postgres(
             CLAIM_BUNDLE_SQL,
             vec![
                 account_id.into(),
@@ -189,7 +189,7 @@ pub async fn current_device_revision(
     requester_device_id: Uuid,
 ) -> Result<i64, SignalStoreError> {
     let row = db
-        .query_one(postgres(
+        .query_one_raw(postgres(
             DEVICE_REVISION_SQL,
             vec![account_id.into(), requester_device_id.into()],
         ))

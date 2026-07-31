@@ -49,7 +49,7 @@ impl AppState {
     /// counted like everything else.
     pub async fn ping_database(&self) -> Result<(), DbErr> {
         self.database()
-            .execute(Statement::from_string(
+            .execute_raw(Statement::from_string(
                 DatabaseBackend::Postgres,
                 "SELECT 1",
             ))

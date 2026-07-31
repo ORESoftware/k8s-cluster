@@ -165,7 +165,7 @@ async fn publish_revision_retry_stale_conflict_and_replenishment_are_atomic() {
     ));
 
     let row = db
-        .query_one(sea_orm::Statement::from_string(
+        .query_one_raw(sea_orm::Statement::from_string(
             sea_orm::DatabaseBackend::Postgres,
             format!(
                 "SELECT bundle_revision, (SELECT signal_device_revision FROM threefa.accounts WHERE id = '{account_id}') AS device_revision FROM threefa.device_prekey_bundles WHERE device_id = '{device_id}'"
