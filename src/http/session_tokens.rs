@@ -4,7 +4,7 @@ use crate::db::AuthenticatedIdentity;
 use crate::error::AuthError;
 use crate::session::RefreshToken;
 use crate::state::AppState;
-use crate::token::{MintContext, MintedToken};
+use crate::token::{AuthenticationAssurance, MintContext, MintedToken};
 
 pub struct IssuedSession {
     pub access: MintedToken,
@@ -12,9 +12,29 @@ pub struct IssuedSession {
     pub refresh_expires_at: Option<u64>,
 }
 
+/// Issue a session when the authentication method is already implied by the
+/// server-owned flow. Local register/login is password-authenticated; any
+/// other provider remains fail-closed unless its verified assurance is passed
+/// through [`issue_with_assurance`].
 pub async fn issue(
     state: &AppState,
     identity: AuthenticatedIdentity,
+) -> Result<IssuedSession, AuthError> {
+    let assurance = if identity.provider == "local" {
+        AuthenticationAssurance::local_password()
+    } else {
+        AuthenticationAssurance::from_supabase(None, &[])
+    };
+    issue_with_assurance(state, identity, assurance).await
+}
+
+/// Issue a session with assurance extracted only after the upstream token or
+/// ceremony has been cryptographically verified. This function stays inside
+/// the HTTP module so request payloads cannot supply their own AMR/ACR.
+pub(super) async fn issue_with_assurance(
+    state: &AppState,
+    identity: AuthenticatedIdentity,
+    assurance: AuthenticationAssurance,
 ) -> Result<IssuedSession, AuthError> {
     let (identity, session_id, refresh_token, refresh_expires_at) = if let Some(db) = &state.db {
         let refresh = RefreshToken::generate();
@@ -42,6 +62,7 @@ pub async fn issue(
         email: identity.email,
         email_verified: identity.email_verified,
         roles: identity.roles,
+        assurance,
     })?;
     Ok(IssuedSession {
         access,
@@ -64,5 +85,6 @@ pub fn mint_for_session(
         email: identity.email.clone(),
         email_verified: identity.email_verified,
         roles: identity.roles.clone(),
+        assurance: AuthenticationAssurance::refresh_token(),
     })
 }
