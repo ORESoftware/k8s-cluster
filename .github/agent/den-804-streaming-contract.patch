@@ -6,7 +6,7 @@ diff --git a/remote/deployments/des-rs/src/models.rs b/remote/deployments/des-rs
 -/// mdp, pomdp, soccer-planner): each is an iterative solver fed a JSONL
 +/// mdp, pomdp): each is an iterative solver fed a JSONL
  /// command stream.
-@@ -215,7 +215,17 @@ mod tests {
+@@ -215,7 +215,21 @@ mod tests {
 -        assert!(streaming_model_names().contains(&"lp"));
 -        assert!(streaming_model_names().contains(&"mdp"));
 -        assert!(streaming_model_names().contains(&"soccer-planner"));
@@ -21,15 +21,19 @@ diff --git a/remote/deployments/des-rs/src/models.rs b/remote/deployments/des-rs
 +            );
 +        }
 +        let contracts = streaming_contracts();
-+        let contract_names: Vec<&str> = contracts
-+            .iter()
-+            .map(|contract| contract.model.as_str())
-+            .collect();
 +        assert_eq!(
-+            contract_names.as_slice(),
-+            streaming_names,
-+            "the advertised streaming names and contracts must stay in lockstep"
++            contracts.len(),
++            streaming_names.len(),
++            "every advertised streaming name must expose exactly one contract"
          );
++        for (name, contract) in streaming_names.iter().zip(&contracts) {
++            let expected_model = format!("streaming-{name}");
++            assert_eq!(
++                contract.model.as_str(),
++                expected_model.as_str(),
++                "streaming contract identifier drifted for route name {name}"
++            );
++        }
      }
 diff --git a/remote/deployments/des-rs/readme.md b/remote/deployments/des-rs/readme.md
 --- a/remote/deployments/des-rs/readme.md
