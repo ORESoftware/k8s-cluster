@@ -117,3 +117,64 @@ impl From<VapiError> for crate::error::ApiError {
         }
     }
 }
+
+/// Everything needed to build the inline assistant we return to Vapi on
+/// `assistant-request`. Loaded once from the environment so the model, voice,
+/// greeting, and — importantly — the callback server URL/secret are operator
+/// config, not hardcoded.
+#[derive(Debug, Clone)]
+pub struct VapiAssistantConfig {
+    /// Public URL of our `/vapi/webhook`. When set, it is put on the assistant's
+    /// `server` block so Vapi routes tool-calls/status/end-of-call back to us
+    /// (with `server.secret` echoed as `x-vapi-secret`), closing the loop
+    /// explicitly instead of relying on the phone-number-level server.
+    pub server_url: Option<String>,
+    pub model_provider: String,
+    pub model: String,
+    pub voice_provider: String,
+    pub voice_id: String,
+    pub transcriber_provider: Option<String>,
+    pub transcriber_model: Option<String>,
+    pub first_message: String,
+    /// Server-tool timeout Vapi waits for our webhook, in seconds.
+    pub tool_timeout_secs: u64,
+}
+
+impl VapiAssistantConfig {
+    pub fn from_env() -> Self {
+        let server_url = std::env::var("VAPI_SERVER_URL")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty());
+        Self {
+            server_url,
+            model_provider: env_or("VAPI_MODEL_PROVIDER", "openai"),
+            model: env_or("VAPI_MODEL", "gpt-4o"),
+            voice_provider: env_or("VAPI_VOICE_PROVIDER", "openai"),
+            voice_id: env_or("VAPI_VOICE_ID", "alloy"),
+            transcriber_provider: env_opt("VAPI_TRANSCRIBER_PROVIDER"),
+            transcriber_model: env_opt("VAPI_TRANSCRIBER_MODEL"),
+            first_message: env_or(
+                "VAPI_FIRST_MESSAGE",
+                "Hi! I can translate between languages in real time. \
+                 What would you like translated, and into which language?",
+            ),
+            tool_timeout_secs: std::env::var("VAPI_TOOL_TIMEOUT_SECS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .filter(|n| (1..=120).contains(n))
+                .unwrap_or(30),
+        }
+    }
+}
+
+fn env_opt(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+}
+
+fn env_or(name: &str, default: &str) -> String {
+    env_opt(name).unwrap_or_else(|| default.to_string())
+}
