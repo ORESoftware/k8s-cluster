@@ -101,7 +101,22 @@ Both servers read config from the environment.
 | `T2V_SERVER_AUTH_SECRET` | api | — | bearer token for operator (`/vapi/call`) + `/v1/history/*`; **unset = those routes return 503** |
 | `T2V_MAX_INFLIGHT_LLM` | api | `32` | max concurrent upstream LLM calls; excess → 503 |
 | `T2V_REQUEST_TIMEOUT_SECS` | api | `300` | backstop request timeout |
+| `VAPI_MODEL` / `VAPI_MODEL_PROVIDER` | api | `gpt-4o` / `openai` | live-translator assistant model |
+| `VAPI_VOICE_PROVIDER` / `VAPI_VOICE_ID` | api | `openai` / `alloy` | assistant TTS voice |
+| `VAPI_SERVER_URL` | api | — | public `/vapi/webhook`; when set, put on the assistant's `server` block so Vapi routes callbacks here with the secret |
+| `VAPI_TOOL_TIMEOUT_SECS` | api | `30` | server-tool timeout Vapi waits for the webhook |
 | `API_BASE_URL` | web | `http://localhost:8130` | where the dashboard sends actions |
+
+### Vapi.ai interop
+
+On `assistant-request` the webhook returns a live-translator assistant with an
+explicit **`voice`**, a **`server`** block (URL + `x-vapi-secret` + tool timeout,
+when `VAPI_SERVER_URL` is set) that routes `tool-calls` / `status-update` /
+`end-of-call-report` back here, and a `translate_text` server tool. Tool results
+follow Vapi's `ToolCallResult` contract: success returns the translated text as a
+bare **string** (spoken straight back to the caller), failures use the **`error`**
+field. `status-update` upserts call status; `end-of-call-report` persists
+transcript + summary; every event is audited to `t2v.vapi_events`.
 
 ### Security posture
 

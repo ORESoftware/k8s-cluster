@@ -392,9 +392,10 @@ fn translator_assistant(config: &VapiAssistantConfig, webhook_secret: Option<&st
         },
     });
 
-    if let (Some(provider), Some(model)) =
-        (config.transcriber_provider.as_deref(), config.transcriber_model.as_deref())
-    {
+    if let (Some(provider), Some(model)) = (
+        config.transcriber_provider.as_deref(),
+        config.transcriber_model.as_deref(),
+    ) {
         assistant["transcriber"] = json!({ "provider": provider, "model": model });
     }
 
@@ -494,19 +495,32 @@ mod tests {
 
         // Tool is declared for the model to call.
         assert_eq!(
-            a.pointer("/model/tools/0/function/name").and_then(Value::as_str),
+            a.pointer("/model/tools/0/function/name")
+                .and_then(Value::as_str),
             Some("translate_text")
         );
         // A voice is always set so Vapi has an explicit TTS provider.
-        assert_eq!(a.pointer("/voice/provider").and_then(Value::as_str), Some("openai"));
-        assert_eq!(a.pointer("/voice/voiceId").and_then(Value::as_str), Some("alloy"));
+        assert_eq!(
+            a.pointer("/voice/provider").and_then(Value::as_str),
+            Some("openai")
+        );
+        assert_eq!(
+            a.pointer("/voice/voiceId").and_then(Value::as_str),
+            Some("alloy")
+        );
         // The server block routes callbacks here and carries the secret + timeout.
         assert_eq!(
             a.pointer("/server/url").and_then(Value::as_str),
             Some("https://api.example.test/vapi/webhook")
         );
-        assert_eq!(a.pointer("/server/secret").and_then(Value::as_str), Some("s3cr3t"));
-        assert_eq!(a.pointer("/server/timeoutSeconds").and_then(Value::as_u64), Some(30));
+        assert_eq!(
+            a.pointer("/server/secret").and_then(Value::as_str),
+            Some("s3cr3t")
+        );
+        assert_eq!(
+            a.pointer("/server/timeoutSeconds").and_then(Value::as_u64),
+            Some(30)
+        );
     }
 
     #[test]
@@ -523,7 +537,10 @@ mod tests {
             tool_timeout_secs: 30,
         };
         let a = translator_assistant(&config, None);
-        assert!(a.get("server").is_none(), "no server block without a configured URL");
+        assert!(
+            a.get("server").is_none(),
+            "no server block without a configured URL"
+        );
         // Voice is still present.
         assert!(a.get("voice").is_some());
     }
