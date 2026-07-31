@@ -92,13 +92,11 @@ mod tests {
     #[test]
     fn routers_can_be_constructed_without_runtime_credentials() {
         let authenticator = Arc::new(DenyAllAuthenticator);
-        let _ = router(ApiState::new(
-            ProviderRegistry::new(),
-            authenticator.clone(),
-        ))
-        .merge(contact_router(ContactApiState::new(
-            ContactProviderRegistry::new(),
+        let _ = push_notification_server::application_router(
+            ApiState::new(ProviderRegistry::new(), authenticator.clone()),
+            ContactApiState::new(ContactProviderRegistry::new(), authenticator.clone()),
             authenticator,
-        )));
+        )
+        .expect("application router");
     }
 }
