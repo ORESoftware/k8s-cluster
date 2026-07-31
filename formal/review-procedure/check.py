@@ -60,17 +60,35 @@ def require_string_list(
 
 def require_safe_repo_path(value: object, label: str) -> PurePosixPath:
     raw = require_string(value, label)
+    require("\\" not in raw, f"{label} must use POSIX separators")
     path = PurePosixPath(raw)
     require(not path.is_absolute(), f"{label} must be repository-relative")
     require(".." not in path.parts, f"{label} must not traverse outside the repository")
     require(raw not in {".", ""}, f"{label} must name a repository file")
+    require(raw == path.as_posix(), f"{label} must use normalized POSIX syntax")
     return path
 
 
+def require_existing_repo_file(path: PurePosixPath, label: str) -> None:
+    candidate = ROOT.joinpath(*path.parts)
+    try:
+        root = ROOT.resolve(strict=True)
+        resolved = candidate.resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        fail(f"{label} file is missing or cannot be resolved safely: {path}: {error}")
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        fail(f"{label} resolves outside the repository: {path}")
+    require(resolved.is_file(), f"{label} is not a regular file: {path}")
+
+
 def require_safe_trigger(value: str, label: str) -> None:
+    require("\\" not in value, f"{label} must use POSIX separators")
     path = PurePosixPath(value)
     require(not path.is_absolute(), f"{label} must be repository-relative")
     require(".." not in path.parts, f"{label} must not traverse outside the repository")
+    require(value == path.as_posix(), f"{label} must use normalized POSIX syntax")
 
 
 def validate_document(document: object) -> tuple[str, int]:
@@ -86,7 +104,7 @@ def validate_document(document: object) -> tuple[str, int]:
     )
 
     procedure_path = require_safe_repo_path(document.get("procedure"), "procedure")
-    require((ROOT / procedure_path).is_file(), f"procedure file is missing: {procedure_path}")
+    require_existing_repo_file(procedure_path, "procedure")
 
     obligations = document.get("obligations")
     require(isinstance(obligations, list) and bool(obligations), "obligations must be non-empty")
@@ -131,7 +149,7 @@ def validate_document(document: object) -> tuple[str, int]:
         model = item.get("model")
         if model is not None:
             model_path = require_safe_repo_path(model, f"{obligation_id}.model")
-            require((ROOT / model_path).is_file(), f"model file is missing: {model_path}")
+            require_existing_repo_file(model_path, f"{obligation_id}.model")
         if bounded:
             require(model is not None, f"{obligation_id} is bounded but does not name a model")
 
