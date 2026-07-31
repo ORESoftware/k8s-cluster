@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 65
     env:
-      PUBLISH_WORKFLOW: ops-publish-missing-org-repositories-dispatch.yml
+      PUBLISH_WORKFLOW: ops-publish-missing-org-repositories-v2.yml
       PUBLICATION_PR: '270'
       MARKER_PATH: docs/ops/triggers/hypesiege-streempilot-publication-2026-07-31.json
       EXPECTED_COORDINATOR_SHA: e125b9c7c0be1d625abad3ff276311639d52585e
