@@ -1,8 +1,13 @@
 name: Dispatch protected organization repository publisher
+run-name: Dispatch repaired organization publisher @ ${{ github.sha }}
 
 on:
   issue_comment:
     types: [created]
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-dispatch-gh-profile-publisher-comment.yml
 
 permissions:
   actions: write
@@ -16,11 +21,14 @@ concurrency:
 jobs:
   dispatch:
     if: >-
-      github.event.repository.full_name == 'ORESoftware/k8s-cluster' &&
-      github.event.issue.pull_request != null &&
-      github.event.issue.number == 291 &&
-      github.event.comment.user.login == 'ORESoftware' &&
-      github.event.comment.body == 'ops-dispatch-gh-profile-publisher:291'
+      github.event_name == 'push' ||
+      (
+        github.event.repository.full_name == 'ORESoftware/k8s-cluster' &&
+        github.event.issue.pull_request != null &&
+        github.event.issue.number == 291 &&
+        github.event.comment.user.login == 'ORESoftware' &&
+        github.event.comment.body == 'ops-dispatch-gh-profile-publisher:291'
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -34,7 +42,7 @@ jobs:
           runs_endpoint="repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs?branch=main&event=workflow_dispatch&per_page=100"
           before="$(gh api "$runs_endpoint")"
           before_ids="$(jq -r '.workflow_runs[].id' <<<"$before")"
-          request_id="den-319-comment-${GITHUB_RUN_ID}"
+          request_id="den-319-${GITHUB_EVENT_NAME}-${GITHUB_RUN_ID}"
 
           payload="$(jq -nc --arg ref main --arg request_id "$request_id" '{ref:$ref,inputs:{request_id:$request_id}}')"
           response="$RUNNER_TEMP/dispatch-response.json"
