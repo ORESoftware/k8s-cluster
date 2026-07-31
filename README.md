@@ -27,6 +27,10 @@ visibility, so public repos (UI, marketing site) coexist with private ones
 
 ## Docs
 
+- [`docs/contractor-work-intelligence/`](docs/contractor-work-intelligence/) —
+  product and engineering handbook for the separately branded contractor sister
+  app: product scope, architecture, domain model, field UX, privacy/trust,
+  deterministic reports and billing, quality gates, roadmap, glossary, and ADRs.
 - [`docs/DEPLOY.md`](docs/DEPLOY.md) — how each app deploys.
 - [`docs/FOLLOWUPS.md`](docs/FOLLOWUPS.md) — what still needs finishing (the
   paid-tier server enforcement, mobile passwordless UI, web MFA screen, …),

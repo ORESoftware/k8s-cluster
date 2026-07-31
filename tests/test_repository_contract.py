@@ -8,6 +8,23 @@ from urllib.parse import urlparse
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APPROVED_OWNERS = {"sonus-auris", "ORESoftware"}
+CONTRACTOR_HANDBOOK = ROOT / "docs" / "contractor-work-intelligence"
+CONTRACTOR_HANDBOOK_FILES = {
+    "README.md",
+    "PRODUCT.md",
+    "ARCHITECTURE.md",
+    "DOMAIN_MODEL.md",
+    "USER_EXPERIENCE.md",
+    "PRIVACY_AND_TRUST.md",
+    "REPORTS_AND_BILLING.md",
+    "OPERATIONS_AND_QUALITY.md",
+    "ROADMAP.md",
+    "GLOSSARY.md",
+    "adrs/0001-separate-sister-product.md",
+    "adrs/0002-evidence-is-not-accounting.md",
+    "adrs/0003-local-first-selective-sync.md",
+}
+MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 
 
 def submodules():
@@ -22,6 +39,19 @@ def submodules():
         }
         for section in config.sections()
     ]
+
+
+def target_is_inside_declared_submodule(target: pathlib.Path) -> bool:
+    try:
+        relative = target.relative_to(ROOT)
+    except ValueError:
+        return False
+    declared = [pathlib.PurePosixPath(entry["path"]) for entry in submodules()]
+    relative_posix = pathlib.PurePosixPath(relative.as_posix())
+    return any(
+        relative_posix == path or path in relative_posix.parents
+        for path in declared
+    )
 
 
 class RepositoryContractTests(unittest.TestCase):
@@ -67,6 +97,59 @@ class RepositoryContractTests(unittest.TestCase):
         }
         declared = {entry["path"] for entry in submodules()}
         self.assertEqual(gitlinks, declared)
+
+    def test_contractor_handbook_has_the_required_product_and_engineering_set(self):
+        actual = {
+            path.relative_to(CONTRACTOR_HANDBOOK).as_posix()
+            for path in CONTRACTOR_HANDBOOK.rglob("*.md")
+        }
+        self.assertTrue(CONTRACTOR_HANDBOOK_FILES.issubset(actual))
+
+        for relative in sorted(CONTRACTOR_HANDBOOK_FILES):
+            path = CONTRACTOR_HANDBOOK / relative
+            content = path.read_text(encoding="utf-8")
+            self.assertTrue(content.startswith("# "), relative)
+            self.assertGreater(len(content), 900, relative)
+            self.assertEqual(content.count("```" ) % 2, 0, relative)
+
+    def test_contractor_handbook_keeps_the_product_name_provisional(self):
+        index = (CONTRACTOR_HANDBOOK / "README.md").read_text(encoding="utf-8")
+        product = (CONTRACTOR_HANDBOOK / "PRODUCT.md").read_text(encoding="utf-8")
+        combined = f"{index}\n{product}"
+        self.assertIn("not a final product name", combined)
+        self.assertIn("DEN-990", combined)
+        self.assertIn("Sensor observations are evidence", combined)
+        self.assertNotIn("Sonus Operis", combined)
+
+    def test_contractor_handbook_relative_links_resolve_or_target_a_gitlink(self):
+        root = ROOT.resolve()
+        markdown_files = [ROOT / "README.md", *CONTRACTOR_HANDBOOK.rglob("*.md")]
+        for source in markdown_files:
+            content = source.read_text(encoding="utf-8")
+            for raw_target in MARKDOWN_LINK.findall(content):
+                target = raw_target.strip().split(maxsplit=1)[0]
+                if target.startswith(("https://", "http://", "mailto:", "#")):
+                    continue
+                path_part = target.split("#", 1)[0]
+                if not path_part:
+                    continue
+                resolved = (source.parent / path_part).resolve()
+                self.assertTrue(
+                    resolved == root or root in resolved.parents,
+                    f"{source.relative_to(ROOT)} links outside the repository: {target}",
+                )
+                self.assertTrue(
+                    resolved.exists() or target_is_inside_declared_submodule(resolved),
+                    f"{source.relative_to(ROOT)} has an unresolved link: {target}",
+                )
+
+    def test_contractor_adrs_expose_decision_status_and_consequences(self):
+        for path in sorted((CONTRACTOR_HANDBOOK / "adrs").glob("*.md")):
+            content = path.read_text(encoding="utf-8")
+            self.assertIn("**Status:**", content, path.name)
+            self.assertIn("## Context", content, path.name)
+            self.assertIn("## Decision", content, path.name)
+            self.assertIn("## Consequences", content, path.name)
 
 
 if __name__ == "__main__":
