@@ -1,0 +1,32 @@
+name: Trigger corrected full critical organization fleet publication
+run-name: Dispatch corrected fleet publisher for carrier 471
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-trigger-full-critical-org-fleet-publication.yml
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: trigger-corrected-full-critical-org-fleet-publication
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch the corrected owner-authorization workflow
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          gh workflow run ops-dispatch-full-critical-org-fleet-publication.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f pr_number=471
