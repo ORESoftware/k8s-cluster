@@ -1,0 +1,211 @@
+name: Probe protected GitHub token aliases (trusted dispatch)
+run-name: Probe protected GitHub token aliases @ ${{ github.sha }}
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: protected-github-token-alias-dispatch
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Configure AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: protected-github-token-alias-dispatch
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Emit only bounded redacted alias evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${INSTANCE_ID:-}"
+          target_region="${AWS_REGION:?configured AWS region is required}"
+          [[ "$target_region" =~ ^[a-z]{2}(-gov)?-[a-z0-9-]+-[0-9]$ ]]
+
+          probe="$RUNNER_TEMP/protected-token-alias-dispatch.py"
+          cat > "$probe" <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import urllib.error
+          import urllib.request
+
+          completed = subprocess.run(
+              [
+                  "aws",
+                  "secretsmanager",
+                  "get-secret-value",
+                  "--region",
+                  os.environ["AWS_REGION"],
+                  "--secret-id",
+                  "dd/remote-dev/agent-secrets",
+                  "--query",
+                  "SecretString",
+                  "--output",
+                  "text",
+              ],
+              check=False,
+              capture_output=True,
+              text=True,
+              timeout=30,
+          )
+          if completed.returncode != 0 or not completed.stdout.strip():
+              raise SystemExit("protected secret is unreadable in configured region")
+          try:
+              payload = json.loads(completed.stdout)
+          except json.JSONDecodeError as exc:
+              raise SystemExit("protected secret is not a JSON object") from exc
+          finally:
+              completed.stdout = ""
+          if not isinstance(payload, dict):
+              raise SystemExit("protected secret is not a JSON object")
+
+          organizations = (
+              "hypesiege",
+              "StreemPilot",
+              "meta-agents-demo",
+              "file-tunnel",
+              "unreal-unity-poc",
+          )
+          name_pattern = re.compile(r"(?:github|gh|token|pat)", re.IGNORECASE)
+
+          def request_json(token: str, path: str):
+              request = urllib.request.Request(
+                  "https://api.github.com" + path,
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "protected-token-alias-dispatch",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=20) as response:
+                      return response.status, json.load(response)
+              except urllib.error.HTTPError as error:
+                  return error.code, None
+              except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+                  return None, None
+
+          result = {"schema_version": 1, "candidates": []}
+          for name in sorted(payload):
+              if not name_pattern.search(name):
+                  continue
+              value = payload.get(name)
+              valid_shape = (
+                  isinstance(value, str)
+                  and bool(value)
+                  and not any(character.isspace() for character in value)
+              )
+              candidate = {
+                  "name": name,
+                  "type": type(value).__name__,
+                  "nonempty_string": isinstance(value, str) and bool(value),
+                  "whitespace_free": valid_shape,
+                  "user_http_status": None,
+                  "login": None,
+                  "organizations": {},
+              }
+              if valid_shape:
+                  status, user = request_json(value, "/user")
+                  candidate["user_http_status"] = status
+                  if isinstance(user, dict):
+                      candidate["login"] = user.get("login")
+                  if status == 200 and candidate["login"] == "ORESoftware":
+                      for organization in organizations:
+                          membership_status, membership = request_json(
+                              value,
+                              f"/user/memberships/orgs/{organization}",
+                          )
+                          candidate["organizations"][organization] = {
+                              "http_status": membership_status,
+                              "role": membership.get("role")
+                              if isinstance(membership, dict)
+                              else None,
+                              "state": membership.get("state")
+                              if isinstance(membership, dict)
+                              else None,
+                          }
+              result["candidates"].append(candidate)
+          payload.clear()
+          print(json.dumps(result, indent=2, sort_keys=True))
+          PY
+
+          encoded="$(base64 --wrap=0 "$probe")"
+          remote_command="remote_probe=/tmp/protected-token-alias-dispatch.py; printf '%s' '$encoded' | base64 --decode > \"\$remote_probe\"; chmod 700 \"\$remote_probe\"; AWS_REGION='$target_region' python3 \"\$remote_probe\"; status=\$?; rm -f \"\$remote_probe\"; exit \$status"
+          parameters="$RUNNER_TEMP/probe-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment 'Probe GitHub-related protected secret aliases without values' \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "ssm_command_id=$command_id"
+
+          status=Pending
+          for _ in $(seq 1 90); do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling) break ;;
+            esac
+            sleep 3
+          done
+
+          invocation="$RUNNER_TEMP/protected-token-alias-dispatch-invocation.json"
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json > "$invocation"
+          test "$status" = Success
+
+          result="$RUNNER_TEMP/protected-token-alias-dispatch-result.json"
+          jq -er '.StandardOutputContent | fromjson' "$invocation" > "$result"
+          jq -e '
+            .schema_version == 1 and
+            (.candidates | type == "array") and
+            all(.candidates[];
+              (.name | type == "string") and
+              (.type | type == "string") and
+              (.nonempty_string | type == "boolean") and
+              (.whitespace_free | type == "boolean") and
+              (.organizations | type == "object") and
+              (.login == null or .login == "ORESoftware")
+            )
+          ' "$result" >/dev/null
+          echo 'PROTECTED_GITHUB_TOKEN_ALIAS_EVIDENCE_BEGIN'
+          cat "$result"
+          echo 'PROTECTED_GITHUB_TOKEN_ALIAS_EVIDENCE_END'
