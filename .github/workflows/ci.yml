@@ -199,6 +199,12 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git diff --cached --check
-          test -z "$(git diff --cached --name-only | grep -E 'apply-code-first-openapi|fix-openapi-schema-count|apply_code_first_openapi|scripts/__pycache__' || true)"
+          for carrier in \
+            .github/workflows/apply-code-first-openapi.yml \
+            .github/workflows/fix-openapi-schema-count.yml \
+            scripts/apply_code_first_openapi.py; do
+            test ! -e "$carrier"
+          done
+          test ! -d scripts/__pycache__
           git commit -m 'feat(DEN-600): add executable OpenAPI routes and contracts'
           git push origin HEAD:agent/code-first-openapi-routes
