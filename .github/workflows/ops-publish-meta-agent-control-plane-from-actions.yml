@@ -118,7 +118,7 @@ jobs:
           token="$(cat "$token_file")"
           aliases="$(cat "$alias_file")"
           test -n "$token"
-          [[ "$token" != *$'\n'* && "$token" != *$'\r'* && "$token" != *$'\t'* && "$token" != *' '* ]]
+          [[ "$token" != *$'\n'* && "$token" != *$'\r'* && "$token" != *$'\t'* && "$token" != *" "* ]]
           echo "::add-mask::$token"
           printf 'selected_protected_aliases=%s\n' "$aliases"
           printf 'GITHUB_REPOSITORY_ADMIN_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
