@@ -1,5 +1,5 @@
 name: Publish exact Meta Agents repository with owner authorization
-run-name: Create and verify meta-agent-control-plane.rs @ ${{ github.sha }}
+run-name: Owner-authorize and publish meta-agent-control-plane.rs @ ${{ github.sha }}
 
 on:
   push:
