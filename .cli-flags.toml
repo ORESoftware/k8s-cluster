@@ -1,0 +1,41 @@
+# Process flags are normalized into environment variables before the typed
+# Config loader and telemetry initialization run. Secret-bearing configuration
+# is deliberately environment-only and never appears in generated help.
+
+[help]
+url = "https://github.com/3FA-app/3fa-backend.rs"
+columns = ["options", "env", "type", "default", "description"]
+
+[parse]
+allow_unknown = false
+
+[env]
+ignore = ["DATABASE_URL", "OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_HEADERS", "OTEL_EXPORTER_OTLP_TRACES_HEADERS"]
+
+[flags.bind-addr]
+env = "BIND_ADDR"
+aliases = ["bind-addr", "bind"]
+short = "b"
+type = "string"
+default = "0.0.0.0:8080"
+help = "HTTP API listen address."
+
+[flags.metrics-bind-addr]
+env = "METRICS_BIND_ADDR"
+aliases = ["metrics-bind-addr", "metrics-bind"]
+type = "string"
+default = "0.0.0.0:9091"
+help = "Prometheus metrics listen address; keep separate from the public API listener."
+
+[flags.shared-auth-base-url]
+env = "SHARED_AUTH_BASE_URL"
+aliases = ["shared-auth-base-url", "shared-auth-url"]
+type = "string"
+help = "HTTPS, loopback HTTP, or trusted in-cluster shared-auth base URL."
+
+[flags.log-filter]
+env = "RUST_LOG"
+aliases = ["log-filter"]
+type = "string"
+default = "info,tower_http=info"
+help = "Tracing filter for local diagnostics; sensitive values must never be logged."

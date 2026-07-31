@@ -7,6 +7,10 @@
 //!   POST /v1/devices/revoke  -> revoke a device   (auth)
 //!   GET  /v1/vault           -> pull sealed blob   (auth)
 //!   POST /v1/vault           -> push sealed blob   (auth)
+//!   PUT  /v1/signal/prekeys  -> publish public Signal prekeys (auth, flag)
+//!   POST /v1/signal/envelopes -> enqueue opaque recipient ciphertext (auth, flag)
+//!   GET  /v1/signal/mailbox  -> pull opaque recipient ciphertext (auth, flag)
+//!   POST /v1/signal/mailbox/{id}/ack -> acknowledge local apply (auth, flag)
 //!   GET  /livez              -> liveness (no DB)   (/healthz: back-compat alias)
 //!   GET  /readyz             -> readiness (DB ping)
 //!
@@ -18,7 +22,7 @@
 //! body-size capped and wrapped in a request timeout (see [`router`]).
 
 use crate::state::AppState;
-use crate::{devices, health, metrics, supabase_auth, telemetry, vault_blob};
+use crate::{devices, health, metrics, signal_api, supabase_auth, telemetry, vault_blob};
 use axum::extract::DefaultBodyLimit;
 use axum::http::{header, HeaderName, HeaderValue, StatusCode};
 use axum::middleware;
@@ -71,6 +75,12 @@ const DEFAULT_BODY_LIMIT: usize = 1024 * 1024;
 const VAULT_BODY_LIMIT: usize = 4 * 1024 * 1024;
 
 pub fn router(state: AppState) -> Router {
+    router_with_signal(state, false)
+}
+
+/// Compose the public router. Signal sync routes are absent unless startup
+/// explicitly enables the guarded rollout flag.
+pub fn router_with_signal(state: AppState, signal_sync_enabled: bool) -> Router {
     // GCRA: replenish ~1 request/s with a small burst. SmartIpKeyExtractor uses
     // trusted ingress forwarding headers and falls back to the socket peer.
     //
@@ -105,15 +115,13 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/auth/supabase", post(supabase_auth::enroll_provider))
         // Route-only layering preserves the outer router's normal 404 fallback.
         .route_layer(RequestBodyLimitLayer::new(DEFAULT_BODY_LIMIT))
-        .route_layer(GovernorLayer { config: governor });
+        .route_layer(GovernorLayer::new(governor));
 
     let device_routes = Router::new()
         .route("/v1/devices", get(devices::list_handler))
         .route("/v1/devices/revoke", post(devices::revoke_handler))
         .route_layer(RequestBodyLimitLayer::new(DEFAULT_BODY_LIMIT))
-        .route_layer(GovernorLayer {
-            config: Arc::clone(&authed_governor),
-        });
+        .route_layer(GovernorLayer::new(Arc::clone(&authed_governor)));
 
     // The one route that legitimately carries a large body. Kept in its own
     // sub-router so the larger cap cannot leak onto anything else; the GET on
@@ -131,9 +139,16 @@ pub fn router(state: AppState) -> Router {
         )
         .route_layer(DefaultBodyLimit::max(VAULT_BODY_LIMIT))
         .route_layer(RequestBodyLimitLayer::new(VAULT_BODY_LIMIT))
-        .route_layer(GovernorLayer {
-            config: authed_governor,
-        });
+        .route_layer(GovernorLayer::new(Arc::clone(&authed_governor)));
+
+    let signal_routes = if signal_sync_enabled {
+        signal_api::routes()
+            .route_layer(DefaultBodyLimit::max(VAULT_BODY_LIMIT))
+            .route_layer(RequestBodyLimitLayer::new(VAULT_BODY_LIMIT))
+            .route_layer(GovernorLayer::new(authed_governor))
+    } else {
+        Router::<AppState>::new()
+    };
 
     Router::new()
         // Liveness must not depend on the DB; readiness does. These stay
@@ -144,6 +159,7 @@ pub fn router(state: AppState) -> Router {
         .merge(auth_routes)
         .merge(device_routes)
         .merge(vault_routes)
+        .merge(signal_routes)
         // Inside the trace layer, so every access-log line inherits the request
         // span's trace/span ids; outside the routes, so a 404, a 405, and a
         // rate-limited 429 are logged like everything else.
@@ -323,9 +339,39 @@ mod tests {
     async fn authed_routes_are_rate_limited_but_probes_are_not() {
         let app = router(test_state());
 
+        // The unauthenticated enrollment budget is intentionally smaller than
+        // the sync budget. Exercise that independent GovernorLayer instance so
+        // an API migration cannot silently leave the highest-risk routes
+        // unthrottled while the authed layer below still works.
+        let mut auth_throttled = None;
+        for _ in 0..16 {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/v1/auth/shared")
+                        .header("x-forwarded-for", "203.0.113.6")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            if response.status() == StatusCode::TOO_MANY_REQUESTS {
+                auth_throttled = Some(response);
+                break;
+            }
+        }
+        let auth_throttled =
+            auth_throttled.expect("/v1/auth/shared must carry the per-IP governor");
+        assert!(
+            auth_throttled.headers().contains_key(header::RETRY_AFTER),
+            "the limiter response must tell clients when retrying is safe"
+        );
+
         // Drive one client IP past the authed burst budget: the governor must
         // start rejecting with 429 before the handler runs.
-        let mut throttled = false;
+        let mut throttled = None;
         for _ in 0..40 {
             let response = app
                 .clone()
@@ -339,11 +385,15 @@ mod tests {
                 .await
                 .unwrap();
             if response.status() == StatusCode::TOO_MANY_REQUESTS {
-                throttled = true;
+                throttled = Some(response);
                 break;
             }
         }
-        assert!(throttled, "/v1/vault must carry the per-IP governor");
+        let throttled = throttled.expect("/v1/vault must carry the per-IP governor");
+        assert!(
+            throttled.headers().contains_key(header::RETRY_AFTER),
+            "the limiter response must tell clients when retrying is safe"
+        );
 
         // Probe routes share the kubelet's node IP and must stay unthrottled.
         for _ in 0..40 {
@@ -527,8 +577,13 @@ mod tests {
     async fn an_unauthenticated_post_with_a_malformed_body_is_401_not_a_body_error() {
         // Credentials are checked before the body is parsed, so an anonymous
         // caller cannot use rejection messages to enumerate the wire type.
-        for path in ["/v1/vault", "/v1/devices/revoke"] {
-            let response = router(test_state())
+        for path in [
+            "/v1/vault",
+            "/v1/devices/revoke",
+            "/v1/signal/envelopes",
+            "/v1/signal/mailbox/ack",
+        ] {
+            let response = router_with_signal(test_state(), true)
                 .oneshot(
                     Request::builder()
                         .method("POST")

@@ -1,0 +1,4 @@
+[advisories]
+# Keep this table explicit so `cargo audit --deny warnings` has one reviewed
+# home for future policy changes. DEN-538 removed the only exception.
+ignore = []
