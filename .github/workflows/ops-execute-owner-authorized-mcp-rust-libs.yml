@@ -50,8 +50,11 @@ jobs:
           marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
           test "$(sed -n 's/^target=//p' <<<"$marker")" = 'ORESoftware/mcp-rust-libs'
           test "$(sed -n 's/^source=//p' <<<"$marker")" = 'ORESoftware/testing@069b1aa4251658c8348d2eb477ad71369d9b742b:mcp-rust-libs'
-          test "$(sed -n 's/^trusted-main=//p' <<<"$marker")" = "$parent_sha"
-          echo "TRUSTED_SOURCE_SHA=$parent_sha" >> "$GITHUB_ENV"
+          trusted_source_sha="$(sed -n 's/^trusted-main=//p' <<<"$marker")"
+          [[ "$trusted_source_sha" =~ ^[0-9a-f]{40}$ ]]
+          comparison="$(gh api "repos/${repository}/compare/${trusted_source_sha}...${parent_sha}")"
+          jq -e '(.status == "ahead" or .status == "identical") and .behind_by == 0' <<<"$comparison" >/dev/null
+          echo "TRUSTED_SOURCE_SHA=$trusted_source_sha" >> "$GITHUB_ENV"
 
       - name: Check out the immutable trusted publication source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
