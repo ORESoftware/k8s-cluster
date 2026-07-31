@@ -29,7 +29,7 @@ jobs:
       PR_NUMBER: ${{ github.event.pull_request.number }}
       MARKER_PATH: .github/critical-org-publish-trigger-main
     steps:
-      - name: Dispatch and supervise the trusted protected-profile publisher
+      - name: Dispatch and supervise the trusted protected publisher v2
         shell: bash
         run: |
           set -euo pipefail
@@ -75,19 +75,21 @@ jobs:
               | tr -d '\n' \
               | base64 --decode
           )"
-          [[ "$marker" == 'publish=protected-gh-profile-v1' ]] || \
+          [[ "$marker" == 'publish=protected-publisher-v2' ]] || \
             report_error 'carrier marker content is not approved' "$marker"
 
-          workflow_file='ops-publish-missing-org-repositories-gh-profile.yml'
+          workflow_file='ops-publish-missing-org-repositories-v2.yml'
+          request_id="den-877-pr-${PR_NUMBER}-${TARGET_SHA:0:12}"
           runs_endpoint="repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_file}/runs?branch=main&event=workflow_dispatch&per_page=100"
 
           if ! before_runs="$(gh api "$runs_endpoint" 2>&1)"; then
-            report_error 'dispatchable protected-profile workflow is not registered' "$before_runs"
+            report_error 'dispatchable protected publisher v2 is not registered' "$before_runs"
           fi
           before_ids="$(jq -r '.workflow_runs[].id' <<<"$before_runs")"
 
           payload="$RUNNER_TEMP/dispatch.json"
-          jq -nc --arg ref main '{ref:$ref}' > "$payload"
+          jq -nc --arg ref main --arg request_id "$request_id" \
+            '{ref:$ref,inputs:{request_id:$request_id}}' > "$payload"
           if ! dispatch_output="$(gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_file}/dispatches" \
             --input "$payload" 2>&1)"; then
@@ -106,7 +108,8 @@ jobs:
                 run_id="$candidate"
                 break
               fi
-            done < <(jq -r '.workflow_runs[].id' <<<"$last_runs")
+            done < <(jq -r --arg request_id "$request_id" \
+              '.workflow_runs[] | select(.display_title | contains($request_id)) | .id' <<<"$last_runs")
             if [[ -n "$run_id" ]]; then
               break
             fi
@@ -115,7 +118,7 @@ jobs:
 
           if [[ -z "$run_id" ]]; then
             recent="$(jq -r '.workflow_runs[:10][] | [.id,.event,.head_branch,.display_title,.status,.conclusion] | @tsv' <<<"$last_runs" 2>/dev/null || true)"
-            report_error 'dispatch accepted but no new publisher run appeared' "Workflow: ${workflow_file}\nRecent runs:\n${recent}"
+            report_error 'dispatch accepted but no exact publisher run appeared' "Workflow: ${workflow_file}\nRequest: ${request_id}\nRecent runs:\n${recent}"
           fi
 
           run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
@@ -125,7 +128,7 @@ jobs:
             -f description="publisher run ${run_id} is executing on trusted main" \
             -f target_url="$run_url" >/dev/null
           gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --body "Trusted protected-profile publisher dispatched: ${run_url}" >/dev/null || true
+            --body "Trusted protected publisher v2 dispatched: ${run_url}" >/dev/null || true
 
           status='queued'
           conclusion=''
