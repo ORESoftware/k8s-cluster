@@ -478,11 +478,53 @@ mod tests {
     }
 
     #[test]
-    fn translator_assistant_declares_translate_tool() {
-        let a = translator_assistant();
-        let tool_name = a
-            .pointer("/model/tools/0/function/name")
-            .and_then(Value::as_str);
-        assert_eq!(tool_name, Some("translate_text"));
+    fn translator_assistant_declares_tool_voice_and_server() {
+        let config = VapiAssistantConfig {
+            server_url: Some("https://api.example.test/vapi/webhook".to_string()),
+            model_provider: "openai".to_string(),
+            model: "gpt-4o".to_string(),
+            voice_provider: "openai".to_string(),
+            voice_id: "alloy".to_string(),
+            transcriber_provider: None,
+            transcriber_model: None,
+            first_message: "Hi".to_string(),
+            tool_timeout_secs: 30,
+        };
+        let a = translator_assistant(&config, Some("s3cr3t"));
+
+        // Tool is declared for the model to call.
+        assert_eq!(
+            a.pointer("/model/tools/0/function/name").and_then(Value::as_str),
+            Some("translate_text")
+        );
+        // A voice is always set so Vapi has an explicit TTS provider.
+        assert_eq!(a.pointer("/voice/provider").and_then(Value::as_str), Some("openai"));
+        assert_eq!(a.pointer("/voice/voiceId").and_then(Value::as_str), Some("alloy"));
+        // The server block routes callbacks here and carries the secret + timeout.
+        assert_eq!(
+            a.pointer("/server/url").and_then(Value::as_str),
+            Some("https://api.example.test/vapi/webhook")
+        );
+        assert_eq!(a.pointer("/server/secret").and_then(Value::as_str), Some("s3cr3t"));
+        assert_eq!(a.pointer("/server/timeoutSeconds").and_then(Value::as_u64), Some(30));
+    }
+
+    #[test]
+    fn translator_assistant_omits_server_when_no_url() {
+        let config = VapiAssistantConfig {
+            server_url: None,
+            model_provider: "openai".to_string(),
+            model: "gpt-4o".to_string(),
+            voice_provider: "openai".to_string(),
+            voice_id: "alloy".to_string(),
+            transcriber_provider: None,
+            transcriber_model: None,
+            first_message: "Hi".to_string(),
+            tool_timeout_secs: 30,
+        };
+        let a = translator_assistant(&config, None);
+        assert!(a.get("server").is_none(), "no server block without a configured URL");
+        // Voice is still present.
+        assert!(a.get("voice").is_some());
     }
 }
