@@ -1,3 +1,4 @@
+# DEN-600: self-removing migration from runtime routes to one executable OpenAPI contract.
 name: Apply code-first OpenAPI contract
 
 on:
