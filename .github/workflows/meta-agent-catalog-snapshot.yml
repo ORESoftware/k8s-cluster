@@ -1,0 +1,46 @@
+name: Meta-agent catalog snapshot
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/meta-agent-catalog-snapshot.yml'
+      - 'remote/argocd/**'
+      - 'catalog/applications.json'
+      - 'tools/application_catalog.py'
+      - 'flake.nix'
+      - 'flake.lock'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    if: github.head_ref == 'agent/promote-meta-agent-bootstrap-den-1058'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact PR tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342
+
+      - name: Generate and validate catalog
+        run: |
+          set -euo pipefail
+          nix develop --accept-flake-config -c python3 tools/application_catalog.py generate catalog/applications.json
+          nix develop --accept-flake-config -c python3 tools/application_catalog.py validate catalog/applications.json
+
+      - name: Upload generated catalog
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v6
+        with:
+          name: meta-agent-catalog-snapshot
+          path: catalog/applications.json
+          if-no-files-found: error
+          retention-days: 1
