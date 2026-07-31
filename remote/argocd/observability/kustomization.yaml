@@ -13,6 +13,7 @@ resources:
   - otel-collector.configmap.yaml
   - otel-collector.deployment.yaml
   - otel-collector.service.yaml
+  - prometheus.rbac.yaml
   - prometheus.configmap.yaml
   - prometheus.deployment.yaml
   - prometheus.service.yaml
