@@ -57,6 +57,15 @@ spec:
             allowPrivilegeEscalation: false
             seccompProfile:
               type: RuntimeDefault
+          # Shallow clone of the public superproject only. Generous enough not
+          # to OOM the clone, bounded so a wedged init cannot take the node.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
           volumeMounts:
             - name: repo
               mountPath: /opt/dd-next-1
