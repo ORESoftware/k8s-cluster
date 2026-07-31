@@ -78,6 +78,7 @@ jobs:
           dispatcher_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           before="$(
             gh run list \
+              --repo "$GITHUB_REPOSITORY" \
               --workflow "$PUBLISH_WORKFLOW" \
               --event workflow_dispatch \
               --branch main \
@@ -87,16 +88,21 @@ jobs:
           )"
 
           gh pr comment "$TRIGGER_PR" \
+            --repo "$GITHUB_REPOSITORY" \
             --body "Validated exact trigger; dispatcher run: ${dispatcher_url}" >/dev/null
           gh pr comment "$PUBLICATION_PR" \
+            --repo "$GITHUB_REPOSITORY" \
             --body "Trusted trigger PR #${TRIGGER_PR} validated; dispatcher run: ${dispatcher_url}" >/dev/null
 
-          gh workflow run "$PUBLISH_WORKFLOW" --ref main
+          gh workflow run "$PUBLISH_WORKFLOW" \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
 
           run_id=''
           for _ in $(seq 1 60); do
             candidate="$(
               gh run list \
+                --repo "$GITHUB_REPOSITORY" \
                 --workflow "$PUBLISH_WORKFLOW" \
                 --event workflow_dispatch \
                 --branch main \
@@ -115,8 +121,10 @@ jobs:
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
           echo "run_url=$run_url" >> "$GITHUB_OUTPUT"
           gh pr comment "$TRIGGER_PR" \
+            --repo "$GITHUB_REPOSITORY" \
             --body "Sealed fleet publisher dispatched as ${run_url}" >/dev/null
           gh pr comment "$PUBLICATION_PR" \
+            --repo "$GITHUB_REPOSITORY" \
             --body "Sealed fleet publisher dispatched as ${run_url}" >/dev/null
 
       - name: Follow the exact publisher run to completion
@@ -126,7 +134,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh run watch "$RUN_ID" --exit-status
+          gh run watch "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --exit-status
 
       - name: Report the exact publisher result
         if: always()
@@ -145,8 +155,12 @@ jobs:
           else
             body="Sealed HypeSiege/StreemPilot publisher did not complete successfully. Dispatch=${DISPATCH_OUTCOME}; job=${JOB_RESULT}; run=${RUN_URL:-unavailable}"
           fi
-          gh pr comment "$TRIGGER_PR" --body "$body" >/dev/null || true
-          gh pr comment "$PUBLICATION_PR" --body "$body" >/dev/null || true
+          gh pr comment "$TRIGGER_PR" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "$body" >/dev/null || true
+          gh pr comment "$PUBLICATION_PR" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "$body" >/dev/null || true
           test "$DISPATCH_OUTCOME" = success
           test -n "$RUN_ID"
           test "$JOB_RESULT" = success
