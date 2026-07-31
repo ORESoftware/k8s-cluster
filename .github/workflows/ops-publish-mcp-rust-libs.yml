@@ -84,7 +84,7 @@ jobs:
           cleanup() {
             unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN \
               GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_USERNAME GIT_TERMINAL_PROMPT \
-              GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM CODEX_HOME gh_hosts credential_source
+              GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM CODEX_HOME credential_source
             rm -rf "$work"
           }
           trap cleanup EXIT
@@ -95,50 +95,14 @@ jobs:
             GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
             credential_source=cluster-secret
           else
-            stage=protected-gh-profile-credential
-            gh_hosts="${GH_CONFIG_DIR:-$HOME/.config/gh}/hosts.yml"
-            test -r "$gh_hosts"
-            GH_TOKEN="$(
-              GH_HOSTS="$gh_hosts" python3 - <<'PY_PROFILE'
-          import ast
-          import os
-          import re
-          import sys
-          from pathlib import Path
-
-          path = Path(os.environ["GH_HOSTS"])
-          current_host = None
-          for raw in path.read_text(encoding="utf-8").splitlines():
-              stripped = raw.strip()
-              if not stripped or stripped.startswith("#"):
-                  continue
-              indent = len(raw) - len(raw.lstrip())
-              if indent == 0 and stripped.endswith(":"):
-                  current_host = stripped[:-1]
-                  continue
-              if current_host != "github.com":
-                  continue
-              match = re.match(r"^\s+oauth_token:\s*(.*?)\s*$", raw)
-              if match is None:
-                  continue
-              value = match.group(1)
-              if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
-                  try:
-                      value = ast.literal_eval(value)
-                  except (SyntaxError, ValueError):
-                      raise SystemExit(65)
-              if not isinstance(value, str) or not value or any(ch.isspace() for ch in value):
-                  raise SystemExit(65)
-              sys.stdout.write(value)
-              raise SystemExit(0)
-          raise SystemExit(65)
-          PY_PROFILE
-            )"
-            credential_source=protected-gh-profile
+            stage=protected-gh-cli-credential
+            command -v gh >/dev/null
+            GH_TOKEN="$(gh auth token --hostname github.com)"
+            credential_source=protected-gh-cli
           fi
-          unset encoded_pat gh_hosts
+          unset encoded_pat
           test -n "$GH_TOKEN"
-          [[ "$GH_TOKEN" != *$'\n'* && "$GH_TOKEN" != *$'\r'* ]]
+          [[ "$GH_TOKEN" != *[[:space:]]* ]]
           export GH_TOKEN
           export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
           printf 'publisher-stage=%s status=ready source=%s\n' "$stage" "$credential_source"
@@ -435,7 +399,7 @@ jobs:
           chmod 700 "$remote_script"
 
           encoded="$(base64 --wrap=0 "$remote_script")"
-          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-mcp-rust-libs.sh && chown ec2-user:ec2-user /tmp/publish-mcp-rust-libs.sh && chmod 700 /tmp/publish-mcp-rust-libs.sh; status=0; encoded_pat=''; if command -v kubectl >/dev/null && test -r /etc/kubernetes/admin.conf; then encoded_pat=\$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}' 2>/dev/null || true); fi; if test -n \"\$encoded_pat\"; then printf '%s\n' \"\$encoded_pat\" | sudo -u ec2-user -H bash -lc 'unset CODEX_HOME GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS GIT_ASKPASS_REQUIRE; exec bash /tmp/publish-mcp-rust-libs.sh \"\$1\"' _ '$trusted_sha'; status=\$?; else sudo -u ec2-user -H bash -lc 'unset CODEX_HOME GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS GIT_ASKPASS_REQUIRE; exec bash /tmp/publish-mcp-rust-libs.sh \"\$1\"' _ '$trusted_sha' </dev/null; status=\$?; fi; unset encoded_pat; rm -f /tmp/publish-mcp-rust-libs.sh; exit \$status"
+          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-mcp-rust-libs.sh && chown ec2-user:ec2-user /tmp/publish-mcp-rust-libs.sh && chmod 700 /tmp/publish-mcp-rust-libs.sh; status=0; ec2_home=\$(getent passwd ec2-user | awk -F: '\$1==\"ec2-user\"{print \$6}'); case \"\$ec2_home\" in /*) ;; *) echo 'publisher-stage-failed=resolve-ec2-home' >&2; status=1 ;; esac; encoded_pat=''; if test \"\$status\" -eq 0 && command -v kubectl >/dev/null && test -r /etc/kubernetes/admin.conf; then encoded_pat=\$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}' 2>/dev/null || true); fi; if test \"\$status\" -eq 0 && test -n \"\$encoded_pat\"; then printf '%s\n' \"\$encoded_pat\" | sudo -u ec2-user -H env HOME=\"\$ec2_home\" XDG_CONFIG_HOME=\"\$ec2_home/.config\" bash -c 'unset CODEX_HOME GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS GIT_ASKPASS_REQUIRE; exec bash /tmp/publish-mcp-rust-libs.sh \"\$1\"' _ '$trusted_sha'; status=\$?; elif test \"\$status\" -eq 0; then sudo -u ec2-user -H env HOME=\"\$ec2_home\" XDG_CONFIG_HOME=\"\$ec2_home/.config\" bash -c 'unset CODEX_HOME GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS GIT_ASKPASS_REQUIRE; exec bash /tmp/publish-mcp-rust-libs.sh \"\$1\"' _ '$trusted_sha' </dev/null; status=\$?; fi; unset encoded_pat ec2_home; rm -f /tmp/publish-mcp-rust-libs.sh; exit \$status"
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
