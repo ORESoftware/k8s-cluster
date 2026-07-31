@@ -102,12 +102,8 @@ The response counts the current unclaimed pool after the transaction, rather tha
 
 `fixtures/signal-http-wire.json` is a byte-identical snapshot of the canonical fixture merged in `3FA-app/3fa-interfaces` at `f8114237994112647453321b4e1bc4287b0bf3c9` (SHA-256 `8c6a2a72b52cb6d5c9e3ff32b4348d426dec81c32746d83540af67e497559ef3`).
 
-<<<<<<< HEAD
-Backend tests hash that snapshot and round-trip publish, queue, pull, empty-pull, and acknowledgement values through the actual HTTP DTOs. Ignored real-PostgreSQL coverage exercises first publication, exact retry, stale revision, same-revision conflict, higher-revision replenishment, reused prekey-ID rollback, account revision monotonicity, and current unclaimed-key counts.
+Backend tests hash that snapshot and round-trip publish, queue, pull, empty-pull, and acknowledgement values through the actual HTTP DTOs, and drive the duplicate/status behavior and monotonic-cursor mapping with those exact values. Ignored real-PostgreSQL coverage exercises first publication, exact retry, stale revision, same-revision conflict, higher-revision replenishment, reused prekey-ID rollback, account revision monotonicity, and current unclaimed-key counts.
 
 ## Remaining rollout gates
 
 Wire parity does not enable Signal sync. Production remains blocked on the disabled-by-default rollout gate, native provider/legal review, least-privilege E2E repository access, real service-container E2E, telemetry review, rollback drills, and restoration of GitHub-hosted runner allocation under DEN-539.
-=======
-The backend test hashes that snapshot and round-trips its publish, queue, pull, empty-pull, and acknowledgement values through the actual HTTP DTOs. It also drives the publish/store mapping, duplicate/status behavior, and monotonic-cursor mapping with those exact values.
->>>>>>> den-536-publish-prekey-parity
