@@ -217,8 +217,8 @@ pub async fn publish_prekeys(
         return Err(SignalStoreError::DeviceUnavailable);
     }
 
-    let requested_revision = i64::try_from(request.bundle_revision)
-        .map_err(|_| SignalStoreError::RevisionConflict)?;
+    let requested_revision =
+        i64::try_from(request.bundle_revision).map_err(|_| SignalStoreError::RevisionConflict)?;
     let expires_at_ms = i64::try_from(request.expires_at_ms).map_err(|_| {
         SignalStoreError::Validation(SignalProtocolValidationError::InvalidTimestamps)
     })?;
@@ -350,7 +350,10 @@ async fn current_device_revision<C: ConnectionTrait>(
     account_id: Uuid,
 ) -> Result<u64, SignalStoreError> {
     let row = connection
-        .query_one_raw(postgres(CURRENT_DEVICE_REVISION_SQL, vec![account_id.into()]))
+        .query_one_raw(postgres(
+            CURRENT_DEVICE_REVISION_SQL,
+            vec![account_id.into()],
+        ))
         .await?
         .ok_or(SignalStoreError::DeviceUnavailable)?;
     nonnegative_u64(row.try_get("", "signal_device_revision")?)
@@ -449,7 +452,9 @@ mod tests {
     fn publication_requires_unique_fresh_prekey_ids_and_bounded_revisions() {
         assert!(request().validate().is_ok());
         let mut duplicate = request();
-        duplicate.one_time_prekeys.push(duplicate.one_time_prekeys[0].clone());
+        duplicate
+            .one_time_prekeys
+            .push(duplicate.one_time_prekeys[0].clone());
         assert!(matches!(
             duplicate.validate(),
             Err(SignalStoreError::IdempotencyConflict)
