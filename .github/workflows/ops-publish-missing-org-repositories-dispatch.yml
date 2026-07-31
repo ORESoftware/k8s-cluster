@@ -77,7 +77,10 @@ jobs:
             GH_TOKEN \
             GITHUB_TOKEN \
             GITHUB_REPOSITORY_ADMIN_TOKEN \
-            GIT_ASKPASS
+            GIT_ASKPASS \
+            GIT_ASKPASS_REQUIRE \
+            GIT_TERMINAL_PROMPT \
+            GIT_CONFIG_COUNT
           do
             if test -n "${!inherited:-}"; then
               printf 'publisher-stage=%s status=failed reason=inherited-%s\n' \
@@ -92,80 +95,37 @@ jobs:
 
           cleanup() {
             unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
-            unset CODEX_HOME credential_source
+            unset CODEX_HOME
             unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
             unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
             rm -rf "$work"
           }
           trap cleanup EXIT
 
-          stage=credential-discovery
-          credential_source=
-          GH_TOKEN=
-          if command -v aws >/dev/null 2>&1; then
-            if GH_TOKEN="$(
-              aws secretsmanager get-secret-value \
-                --region "${AWS_REGION:-us-east-1}" \
-                --secret-id dd/remote-dev/agent-secrets \
-                --query SecretString \
-                --output text 2>/dev/null \
-                | python3 -c '
-          import json
-          import sys
-
-          try:
-              payload = json.load(sys.stdin)
-          except (json.JSONDecodeError, OSError):
-              raise SystemExit(65)
-          value = payload.get("GH_PAT")
-          if not isinstance(value, str) or not value:
-              raise SystemExit(65)
-          sys.stdout.write(value)
-          ' 2>/dev/null
-            )" && test -n "$GH_TOKEN"; then
-              credential_source=aws-secrets-manager
-            else
-              unset GH_TOKEN
-              GH_TOKEN=
-            fi
+          stage=receive-cluster-credential
+          IFS= read -r encoded_pat
+          if test -z "$encoded_pat"; then
+            printf 'publisher-stage=%s status=failed reason=missing-encoded-credential\n' \
+              "$stage" >&2
+            exit 65
           fi
-
-          if test -z "$GH_TOKEN"; then
-            stage=credential-kubernetes
-            if ! command -v kubectl >/dev/null 2>&1; then
-              printf 'publisher-stage=%s status=failed reason=no-supported-credential-source\n' \
-                "$stage" >&2
-              exit 69
-            fi
-            encoded_pat="$(
-              kubectl -n default get secret dd-agent-secrets \
-                -o jsonpath='{.data.GH_PAT}'
-            )"
-            if test -z "$encoded_pat"; then
-              printf 'publisher-stage=%s status=failed reason=missing-or-empty-gh-pat\n' \
-                "$stage" >&2
-              exit 65
-            fi
-            if ! GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode 2>/dev/null)" ||
-              test -z "$GH_TOKEN"; then
-              printf 'publisher-stage=%s status=failed reason=invalid-gh-pat-encoding\n' \
-                "$stage" >&2
-              exit 65
-            fi
-            unset encoded_pat
-            credential_source=kubernetes-secret
+          if ! GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode 2>/dev/null)" ||
+            test -z "$GH_TOKEN"; then
+            printf 'publisher-stage=%s status=failed reason=invalid-credential-encoding\n' \
+              "$stage" >&2
+            exit 65
           fi
-
+          unset encoded_pat
           case "$GH_TOKEN" in
             *$'\n'*|*$'\r'*)
-              printf 'publisher-stage=%s status=failed reason=invalid-gh-pat-bytes\n' \
+              printf 'publisher-stage=%s status=failed reason=invalid-credential-bytes\n' \
                 "$stage" >&2
               exit 65
               ;;
           esac
           export GH_TOKEN
           export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
-          printf 'publisher-stage=credential-ready source=%s\n' "$credential_source"
+          printf 'publisher-stage=%s status=ready\n' "$stage"
 
           stage=git-credential-transport
           git_askpass="$work/git-askpass.sh"
@@ -278,7 +238,7 @@ jobs:
           chmod 700 "$remote_script"
 
           encoded="$(base64 --wrap=0 "$remote_script")"
-          remote_command="remote_log=/tmp/publish-critical-org-repositories.log; printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-repositories.sh; setup_status=\$?; if test \$setup_status -ne 0; then echo 'FAILED stage=remote-script-transfer' >&2; rm -f /tmp/publish-critical-org-repositories.sh \"\$remote_log\"; exit \$setup_status; fi; chown ec2-user:ec2-user /tmp/publish-critical-org-repositories.sh && chmod 700 /tmp/publish-critical-org-repositories.sh; setup_status=\$?; if test \$setup_status -ne 0; then echo 'FAILED stage=remote-script-ownership' >&2; rm -f /tmp/publish-critical-org-repositories.sh \"\$remote_log\"; exit \$setup_status; fi; sudo -u ec2-user -H bash -lc 'source /tmp/publish-critical-org-repositories.sh \"\$1\"' _ '$trusted_sha' >\"\$remote_log\" 2>&1; status=\$?; tail -c 20000 \"\$remote_log\"; rm -f /tmp/publish-critical-org-repositories.sh \"\$remote_log\"; exit \$status"
+          remote_command="remote_log=/tmp/publish-critical-org-repositories.log; printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-repositories.sh; setup_status=\$?; if test \$setup_status -ne 0; then echo 'FAILED stage=remote-script-transfer' >&2; rm -f /tmp/publish-critical-org-repositories.sh \"\$remote_log\"; exit \$setup_status; fi; chown ec2-user:ec2-user /tmp/publish-critical-org-repositories.sh && chmod 700 /tmp/publish-critical-org-repositories.sh; setup_status=\$?; if test \$setup_status -ne 0; then echo 'FAILED stage=remote-script-ownership' >&2; rm -f /tmp/publish-critical-org-repositories.sh \"\$remote_log\"; exit \$setup_status; fi; status=0; if ! command -v kubectl >/dev/null 2>&1; then echo 'FAILED stage=root-kubectl-capability' >&2; status=127; elif ! test -r /etc/kubernetes/admin.conf; then echo 'FAILED stage=root-kubeconfig-readability' >&2; status=1; elif ! encoded_pat=\$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}'); then echo 'FAILED stage=root-cluster-credential-read' >&2; status=1; elif test -z \"\$encoded_pat\"; then echo 'FAILED stage=root-cluster-credential-empty' >&2; status=1; else case \"\$encoded_pat\" in *[!A-Za-z0-9+/=]*) echo 'FAILED stage=root-cluster-credential-format' >&2; status=1 ;; *) printf '%s\n' \"\$encoded_pat\" | sudo -u ec2-user -H bash -lc 'unset CODEX_HOME GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0; exec bash /tmp/publish-critical-org-repositories.sh \"\$1\"' _ '$trusted_sha' >\"\$remote_log\" 2>&1; status=\$? ;; esac; fi; unset encoded_pat; if test -f \"\$remote_log\"; then tail -c 20000 \"\$remote_log\"; fi; rm -f /tmp/publish-critical-org-repositories.sh \"\$remote_log\"; exit \$status"
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
