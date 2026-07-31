@@ -146,13 +146,11 @@ spec:
             - name: AI_AGENT_BRIDGE_TOKEN
               valueFrom:
                 secretKeyRef:
-<<<<<<< HEAD
+                  # Same source as API_AUTH_BEARER above, deliberately: the legacy
+                  # claude-inbox route must not be reachable with a different (or
+                  # missing) credential. Migrate both together, never one.
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
-=======
-                  name: dd-ai-agent-bridge-secrets
-                  key: inbox_token
->>>>>>> origin/dev
             # In-cluster embedder is optional — the built-in deterministic local
             # embedder is used when this is unset. Enable once the endpoint/contract
             # is confirmed:
