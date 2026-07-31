@@ -1,7 +1,7 @@
 # App-owned allow-list; pairs with the shared-auth tenant default-deny.
 # Ingress: shared-auth peers (the server, the sync flusher) hit /publish;
-# observability scrapes /metrics. Egress: DNS, NATS (messaging:4222), and
-# webhook fan-out back into the shared-auth namespace.
+# the central Prometheus pod scrapes /metrics. Egress: DNS, NATS
+# (messaging:4222), webhook fan-out, and OTLP export.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -19,10 +19,15 @@ spec:
               app.kubernetes.io/part-of: shared-auth
       ports:
         - { protocol: TCP, port: 8121 }
+    # Direct /metrics scraping is limited to the central Prometheus pod rather
+    # than every workload in the observability namespace.
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app: dd-prometheus
       ports:
         - { protocol: TCP, port: 8121 }
   egress:
@@ -50,5 +55,8 @@ spec:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app: dd-otel-collector
       ports:
         - { protocol: TCP, port: 4318 }
