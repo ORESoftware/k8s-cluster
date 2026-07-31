@@ -1,4 +1,4 @@
-name: Dispatch protected gh-profile repository publisher
+name: Dispatch protected organization repository publisher
 
 on:
   issue_comment:
@@ -10,7 +10,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: dispatch-protected-gh-profile-repository-publisher
+  group: dispatch-protected-organization-repository-publisher
   cancel-in-progress: false
 
 jobs:
@@ -30,12 +30,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          workflow='ops-publish-missing-org-repositories-gh-profile.yml'
+          workflow='ops-publish-missing-org-repositories-v2.yml'
           runs_endpoint="repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs?branch=main&event=workflow_dispatch&per_page=100"
           before="$(gh api "$runs_endpoint")"
           before_ids="$(jq -r '.workflow_runs[].id' <<<"$before")"
+          request_id="den-319-comment-${GITHUB_RUN_ID}"
 
-          payload="$(jq -nc '{ref:"main"}')"
+          payload="$(jq -nc --arg ref main --arg request_id "$request_id" '{ref:$ref,inputs:{request_id:$request_id}}')"
           response="$RUNNER_TEMP/dispatch-response.json"
           status="$(curl --silent --show-error \
             --output "$response" \
@@ -61,7 +62,7 @@ jobs:
                 run_id="$candidate"
                 break
               fi
-            done < <(jq -r '.workflow_runs[].id' <<<"$current")
+            done < <(jq -r --arg request_id "$request_id" '.workflow_runs[] | select(.display_title | contains($request_id)) | .id' <<<"$current")
             test -z "$run_id" || break
             sleep 2
           done
@@ -69,6 +70,6 @@ jobs:
           run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
           gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/issues/291/comments" \
-            -f body="Exact protected gh-profile publisher dispatched: ${run_url}" \
+            -f body="Exact protected publisher dispatched: ${run_url} (request ${request_id})" \
             >/dev/null
-          printf 'publisher_run_id=%s\n' "$run_id"
+          printf 'publisher_run_id=%s request_id=%s\n' "$run_id" "$request_id"
