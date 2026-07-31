@@ -104,11 +104,7 @@ def validate_document(document: object) -> tuple[str, int]:
     )
 
     procedure_path = require_safe_repo_path(document.get("procedure"), "procedure")
-<<<<<<< HEAD
     require_existing_repo_file(procedure_path, "procedure")
-=======
-    require((ROOT / procedure_path).is_file(), f"procedure file is missing: {procedure_path}")
->>>>>>> origin/agent/formal-methods-20260730-segment-lifecycle
 
     obligations = document.get("obligations")
     require(isinstance(obligations, list) and bool(obligations), "obligations must be non-empty")
