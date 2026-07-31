@@ -1,5 +1,5 @@
 name: DEN-319 protected publisher execution carrier
-run-name: DEN-319 dispatch protected publisher for PR #${{ github.event.pull_request.number }}
+run-name: DEN-319 recover protected publisher child for PR #${{ github.event.pull_request.number }}
 
 on:
   pull_request:
@@ -9,70 +9,32 @@ on:
       - .github/workflows/ops-den-319-execute-publisher-carrier.yml
 
 permissions:
-  actions: write
+  actions: read
   contents: read
-  issues: write
 
 concurrency:
-  group: den-319-protected-publisher-dispatch
+  group: den-319-protected-publisher-recovery
   cancel-in-progress: false
 
 jobs:
-  dispatch:
+  recover:
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.head.ref == 'ops/den-319-execute-reusable-publisher-20260731-1054'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Dispatch exact trusted-main publisher and record child run
+      - name: Recover exact already-dispatched trusted-main publisher run
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           workflow='ops-publish-missing-org-repositories-v2.yml'
-          request_id="den-319-pr-${PR_NUMBER}-${PR_HEAD_SHA}"
+          request_id='den-319-pr-424-4bf424c6a5b59eff571f6b186f49812d13de09fd'
           runs_endpoint="repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs?branch=main&event=workflow_dispatch&per_page=100"
-          before="$(gh api "$runs_endpoint")"
-          run_id="$(jq -r --arg request_id "$request_id" '[.workflow_runs[] | select(.display_title | contains($request_id))][0].id // empty' <<<"$before")"
-
-          if test -z "$run_id"; then
-            before_ids="$(jq -r '.workflow_runs[].id' <<<"$before")"
-            payload="$(jq -nc --arg ref main --arg request_id "$request_id" '{ref:$ref,inputs:{request_id:$request_id}}')"
-            response="$RUNNER_TEMP/dispatch-response.json"
-            status="$(curl --silent --show-error \
-              --output "$response" \
-              --write-out '%{http_code}' \
-              --request POST \
-              --header 'Accept: application/vnd.github+json' \
-              --header "Authorization: Bearer $GH_TOKEN" \
-              --header 'X-GitHub-Api-Version: 2022-11-28' \
-              --data "$payload" \
-              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/${workflow}/dispatches")"
-            if test "$status" != 204; then
-              cat "$response" >&2
-              printf 'workflow dispatch failed with HTTP %s\n' "$status" >&2
-              exit 1
-            fi
-
-            for _ in $(seq 1 60); do
-              current="$(gh api "$runs_endpoint")"
-              while IFS= read -r candidate; do
-                test -n "$candidate" || continue
-                if ! grep -qxF "$candidate" <<<"$before_ids"; then
-                  run_id="$candidate"
-                  break
-                fi
-              done < <(jq -r --arg request_id "$request_id" '.workflow_runs[] | select(.display_title | contains($request_id)) | .id' <<<"$current")
-              test -z "$run_id" || break
-              sleep 2
-            done
-          fi
-
+          current="$(gh api "$runs_endpoint")"
+          run_id="$(jq -r --arg request_id "$request_id" '[.workflow_runs[] | select(.display_title | contains($request_id))][0].id // empty' <<<"$current")"
           test -n "$run_id"
           run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
-          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body="Trusted-main protected publisher dispatched: ${run_url} (request ${request_id})"
-          printf 'publisher_run_id=%s request_id=%s\n' "$run_id" "$request_id"
+          printf 'publisher_run_id=%s\npublisher_run_url=%s\nrequest_id=%s\n' "$run_id" "$run_url" "$request_id"
