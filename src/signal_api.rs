@@ -119,36 +119,6 @@ pub(crate) async fn publish_prekeys_handler(
             bundle_revision,
             bundle,
             one_time_prekeys: one_time_prekeys
-=======
-impl PublishPreKeysRequest {
-    fn into_store_request(self, who: AuthedDevice) -> Result<PublishPreKeys, ApiError> {
-        if self.one_time_prekeys.len() > MAX_PUBLISHED_ONE_TIME_PREKEYS {
-            return Err(ApiError::BadRequest);
-        }
-        let bundle_revision =
-            i64::try_from(self.bundle_revision).map_err(|_| ApiError::BadRequest)?;
-        let expires_at_ms = i64::try_from(self.expires_at_ms).map_err(|_| ApiError::BadRequest)?;
-        Ok(PublishPreKeys {
-            account_id: who.account_id,
-            device_id: who.device_id,
-            bundle_revision,
-            bundle: SignalDevicePreKeyBundle {
-                version: self.version,
-                device_id: who.device_id.to_string(),
-                registration_id: self.registration_id,
-                identity_key: self.identity_key,
-                signed_pre_key_id: self.signed_pre_key_id,
-                signed_pre_key: self.signed_pre_key,
-                signed_pre_key_signature: self.signed_pre_key_signature,
-                pq_signed_pre_key_id: self.pq_signed_pre_key_id,
-                pq_signed_pre_key: self.pq_signed_pre_key,
-                pq_signed_pre_key_signature: self.pq_signed_pre_key_signature,
-                one_time_pre_key_id: None,
-                one_time_pre_key: None,
-            },
-            one_time_prekeys: self
-                .one_time_prekeys
->>>>>>> den-536-publish-prekey-parity
                 .into_iter()
                 .map(|prekey| OneTimePreKey {
                     prekey_id: prekey.prekey_id,
