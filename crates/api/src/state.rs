@@ -87,6 +87,7 @@ impl AppState {
             vapi_webhook_secret,
             allow_insecure_webhook,
             server_auth_secret,
+            vapi_assistant: VapiAssistantConfig::from_env(),
             llm_semaphore: Arc::new(Semaphore::new(max_inflight)),
         }
     }
