@@ -37,40 +37,42 @@ jobs:
           request_id="den-319-pr-${PR_NUMBER}-${PR_HEAD_SHA}"
           runs_endpoint="repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs?branch=main&event=workflow_dispatch&per_page=100"
           before="$(gh api "$runs_endpoint")"
-          before_ids="$(jq -r '.workflow_runs[].id' <<<"$before")"
+          run_id="$(jq -r --arg request_id "$request_id" '[.workflow_runs[] | select(.display_title | contains($request_id))][0].id // empty' <<<"$before")"
 
-          payload="$(jq -nc --arg ref main --arg request_id "$request_id" '{ref:$ref,inputs:{request_id:$request_id}}')"
-          response="$RUNNER_TEMP/dispatch-response.json"
-          status="$(curl --silent --show-error \
-            --output "$response" \
-            --write-out '%{http_code}' \
-            --request POST \
-            --header 'Accept: application/vnd.github+json' \
-            --header "Authorization: Bearer $GH_TOKEN" \
-            --header 'X-GitHub-Api-Version: 2022-11-28' \
-            --data "$payload" \
-            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/${workflow}/dispatches")"
-          if test "$status" != 204; then
-            cat "$response" >&2
-            printf 'workflow dispatch failed with HTTP %s\n' "$status" >&2
-            exit 1
+          if test -z "$run_id"; then
+            before_ids="$(jq -r '.workflow_runs[].id' <<<"$before")"
+            payload="$(jq -nc --arg ref main --arg request_id "$request_id" '{ref:$ref,inputs:{request_id:$request_id}}')"
+            response="$RUNNER_TEMP/dispatch-response.json"
+            status="$(curl --silent --show-error \
+              --output "$response" \
+              --write-out '%{http_code}' \
+              --request POST \
+              --header 'Accept: application/vnd.github+json' \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header 'X-GitHub-Api-Version: 2022-11-28' \
+              --data "$payload" \
+              "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/${workflow}/dispatches")"
+            if test "$status" != 204; then
+              cat "$response" >&2
+              printf 'workflow dispatch failed with HTTP %s\n' "$status" >&2
+              exit 1
+            fi
+
+            for _ in $(seq 1 60); do
+              current="$(gh api "$runs_endpoint")"
+              while IFS= read -r candidate; do
+                test -n "$candidate" || continue
+                if ! grep -qxF "$candidate" <<<"$before_ids"; then
+                  run_id="$candidate"
+                  break
+                fi
+              done < <(jq -r --arg request_id "$request_id" '.workflow_runs[] | select(.display_title | contains($request_id)) | .id' <<<"$current")
+              test -z "$run_id" || break
+              sleep 2
+            done
           fi
-
-          run_id=''
-          for _ in $(seq 1 60); do
-            current="$(gh api "$runs_endpoint")"
-            while IFS= read -r candidate; do
-              test -n "$candidate" || continue
-              if ! grep -qxF "$candidate" <<<"$before_ids"; then
-                run_id="$candidate"
-                break
-              fi
-            done < <(jq -r --arg request_id "$request_id" '.workflow_runs[] | select(.display_title | contains($request_id)) | .id' <<<"$current")
-            test -z "$run_id" || break
-            sleep 2
-          done
 
           test -n "$run_id"
           run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
-          gh pr comment "$PR_NUMBER" --body="Trusted-main protected publisher dispatched: ${run_url} (request ${request_id})"
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body="Trusted-main protected publisher dispatched: ${run_url} (request ${request_id})"
           printf 'publisher_run_id=%s request_id=%s\n' "$run_id" "$request_id"
