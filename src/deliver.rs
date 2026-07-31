@@ -38,10 +38,11 @@ pub fn spawn_delivery_loops(
                     let outcome =
                         forward(&http, &route.webhook, &message.subject, &message.payload).await;
                     let label = if outcome.is_ok() { "ok" } else { "failed" };
-                    metrics
-                        .deliveries
-                        .with_label_values(&[route.subject.as_str(), label])
-                        .inc();
+                    // Keep routing identities in structured logs, not metric
+                    // labels. A route subject may contain tenant- or
+                    // resource-specific segments and is not a bounded
+                    // Prometheus dimension.
+                    metrics.deliveries.with_label_values(&[label]).inc();
                     if let Err(error) = outcome {
                         tracing::warn!(subject = %message.subject, webhook = %route.webhook, %error, "delivery failed");
                     }
