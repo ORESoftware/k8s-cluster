@@ -18,7 +18,12 @@ def require_string(value: object, label: str) -> str:
     return value.strip()
 
 
-def require_string_list(value: object, label: str, *, allow_empty: bool = False) -> list[str]:
+def require_string_list(
+    value: object,
+    label: str,
+    *,
+    allow_empty: bool = False,
+) -> list[str]:
     assert isinstance(value, list), f"{label} must be a list"
     if not allow_empty:
         assert value, f"{label} must not be empty"
@@ -27,12 +32,22 @@ def require_string_list(value: object, label: str, *, allow_empty: bool = False)
     return result
 
 
+def repository_file(relative_path: str, label: str) -> Path:
+    candidate = Path(relative_path)
+    assert not candidate.is_absolute(), f"{label} must be repository-relative"
+    resolved_root = ROOT.resolve()
+    resolved = (ROOT / candidate).resolve()
+    assert resolved.is_relative_to(resolved_root), f"{label} escapes the repository"
+    assert resolved.is_file(), f"{label} is missing: {relative_path}"
+    return resolved
+
+
 def main() -> None:
     document = json.loads(REGISTER.read_text(encoding="utf-8"))
     assert document.get("schema_version") == 1, "unsupported schema_version"
     repository = require_string(document.get("repository"), "repository")
     procedure = require_string(document.get("procedure"), "procedure")
-    assert (ROOT / procedure).is_file(), f"procedure file is missing: {procedure}"
+    repository_file(procedure, "procedure")
 
     obligations = document.get("obligations")
     assert isinstance(obligations, list) and obligations, "obligations must be non-empty"
@@ -55,15 +70,18 @@ def main() -> None:
         require_string_list(item.get("trigger_paths"), f"{obligation_id}.trigger_paths")
         require_string_list(item.get("evidence"), f"{obligation_id}.evidence")
         require_string_list(item.get("commands"), f"{obligation_id}.commands")
-        require_string_list(item.get("assumptions"), f"{obligation_id}.assumptions", allow_empty=True)
+        require_string_list(
+            item.get("assumptions"),
+            f"{obligation_id}.assumptions",
+            allow_empty=True,
+        )
 
         bounded = item.get("bounded")
         assert isinstance(bounded, bool), f"{obligation_id}.bounded must be boolean"
         model = item.get("model")
         if model is not None:
             model_path = require_string(model, f"{obligation_id}.model")
-            if model_path.startswith("formal/review-procedure/"):
-                assert (ROOT / model_path).is_file(), f"model file is missing: {model_path}"
+            repository_file(model_path, f"{obligation_id}.model")
 
     assert safety_count > 0, "at least one safety obligation is required"
     print(f"formal obligation register: {repository}: {len(obligations)} obligations validated")
