@@ -1,11 +1,12 @@
-# Strict Argo CD boundary for the coordinator application repository.
+# Strict Argo CD boundary for the coordinator application repository. The app
+# may deploy only namespace-scoped workload resources into its own namespace.
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
   name: ai-agent-coordinator
   namespace: argocd
 spec:
-  description: "Tenant project for ai-agent-coordinator — one namespace, no cluster resources."
+  description: "Tenant project for ai-agent-coordinator — one source, one namespace, no cluster resources."
   sourceRepos:
     - "https://github.com/ORESoftware/ai-agent-coordinator.rs.git"
   destinations:

@@ -307,6 +307,17 @@ data:
         static_configs:
           - targets:
               - gcs-router.default.svc.cluster.local:9100
+      # DEN-675 Shared Auth control-plane metrics remain cluster-internal.
+      - job_name: dd-shared-auth
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-shared-auth.shared-auth.svc.cluster.local:8120
+      - job_name: dd-shared-auth-nats-bridge
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-shared-auth-nats-bridge.shared-auth.svc.cluster.local:8121
       # fiducia data-plane raft metrics. Each fiducia-node StatefulSet pod runs a
       # sidecar (fiducia-node-sidecar) that translates the node's JSON observe API
       # into Prometheus text on :8091/metrics. Addressed per-pod through the
@@ -358,6 +369,60 @@ data:
             annotations:
               summary: "Application metrics target {{ $labels.job }} is down"
               description: "Prometheus cannot scrape {{ $labels.instance }}/metrics for {{ $labels.job }}."
+          - alert: SharedAuthServerTargetMissing
+            expr: absent(up{job="dd-shared-auth"})
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-shared-auth
+            annotations:
+              summary: Shared Auth scrape target is missing
+              description: "Prometheus has no cluster-internal target for the Shared Auth API."
+          - alert: SharedAuthBridgeTargetMissing
+            expr: absent(up{job="dd-shared-auth-nats-bridge"})
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-shared-auth-nats-bridge
+            annotations:
+              summary: Shared Auth NATS bridge scrape target is missing
+              description: "Prometheus has no cluster-internal target for the Shared Auth NATS bridge."
+          - alert: SharedAuthMetricsTargetDown
+            expr: up{job=~"dd-shared-auth|dd-shared-auth-nats-bridge"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: shared-auth
+            annotations:
+              summary: "Shared Auth metrics target {{ $labels.job }} is down"
+              description: "Prometheus cannot scrape the cluster-internal /metrics endpoint for {{ $labels.job }}."
+          - alert: SharedAuthVerificationFailuresHigh
+            expr: increase(shared_auth_verify_failures_total[10m]) > 100
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-shared-auth
+            annotations:
+              summary: Shared Auth verification failures are unusually high
+              description: "More than 100 token-verification failures occurred in ten minutes and the condition persisted for five minutes."
+          - alert: SharedAuthBridgePublishFailuresHigh
+            expr: sum(increase(shared_auth_bridge_publishes_total{outcome="failed"}[10m])) > 10
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-shared-auth-nats-bridge
+            annotations:
+              summary: Shared Auth bridge publish failures are high
+              description: "More than ten internal HTTP-to-NATS failures occurred in ten minutes. Client rejections are intentionally excluded."
+          - alert: SharedAuthBridgeDeliveryFailuresHigh
+            expr: sum(increase(shared_auth_bridge_deliveries_total{outcome="failed"}[10m])) > 5
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-shared-auth-nats-bridge
+            annotations:
+              summary: Shared Auth bridge delivery failures are high
+              description: "More than five NATS-to-webhook delivery failures occurred in ten minutes."
           - alert: BenefactorBackendTargetMissing
             expr: absent(up{job="benefactor-backend-rs"})
             for: 2m

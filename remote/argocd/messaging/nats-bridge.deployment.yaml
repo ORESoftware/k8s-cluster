@@ -79,8 +79,10 @@ spec:
               value: /etc/nats-bridge/routes.json
             - name: BRIDGE_CLIENTS_FILE
               value: /var/run/secrets/nats-bridge/clients.json
+            # Preserve the bounded pressure limit proven by the bridge/DLQ
+            # resilience suite; widen only with measured broker and pod headroom.
             - name: BRIDGE_MAX_IN_FLIGHT
-              value: '128'
+              value: '64'
             - name: BRIDGE_PUBLISH_TIMEOUT_MS
               value: '5000'
           ports:

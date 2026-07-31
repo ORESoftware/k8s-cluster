@@ -1,0 +1,25 @@
+# Platform-owned namespace and AppProject registration. This Application must
+# converge before the workload Application can become healthy.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-agent-coordinator-platform
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/projects/ai-agent-coordinator
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - PruneLast=true
