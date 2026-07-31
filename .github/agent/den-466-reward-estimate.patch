@@ -1,0 +1,12 @@
+diff --git a/remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline_api.py b/remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline_api.py
+--- a/remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline_api.py
++++ b/remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline_api.py
+@@ -143,7 +143,7 @@ class AnalysisResponse(ApiModel):
+     recommended_next: str = Field(alias="recommendedNext")
+     features: list[dict[str, Any]]
+     anomalies: list[dict[str, Any]]
+-    reward_estimate: dict[str, Any] = Field(alias="rewardEstimate")
++    reward_estimate: float = Field(alias="rewardEstimate")
+     transition_model: list[dict[str, Any]] = Field(alias="transitionModel")
+     mdp_telemetry: MdpTelemetryResponse = Field(alias="mdpTelemetry")
+     published: PublishedState
