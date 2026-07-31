@@ -9,7 +9,7 @@ work="$(mktemp -d /tmp/missing-org-publisher.XXXXXX)"
 
 cleanup() {
   unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
-  unset encoded_pat raw_pat secret_json credential_source
+  unset encoded_pat raw_pat secret_json credential_source ec2_home
   unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
   unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
   rm -rf "$work"
@@ -86,15 +86,33 @@ fi
 unset raw_pat encoded_pat
 
 # The protected host also has the authenticated ORESoftware GitHub CLI profile
-# requested by the owner. Use the CLI abstraction rather than parsing hosts.yml,
-# because gh may store the token in the operating-system credential store.
-if test -z "$GH_TOKEN" && command -v sudo >/dev/null 2>&1; then
-  raw_pat="$(
-    sudo -u ec2-user -H \
-      env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_REPOSITORY_ADMIN_TOKEN \
-      bash -lc 'command -v gh >/dev/null 2>&1 && gh auth token --hostname github.com' \
-      2>/dev/null || true
-  )"
+# requested by the owner. Resolve the account home explicitly and use the CLI
+# abstraction rather than parsing hosts.yml, because gh may store the token in
+# the operating-system credential store.
+if test -z "$GH_TOKEN" && \
+   command -v sudo >/dev/null 2>&1 && \
+   command -v getent >/dev/null 2>&1; then
+  ec2_home="$(getent passwd ec2-user | awk -F: '$1 == "ec2-user" { print $6 }')"
+  case "$ec2_home" in
+    /*)
+      raw_pat="$(
+        sudo -u ec2-user -H \
+          env \
+            -u GH_TOKEN \
+            -u GITHUB_TOKEN \
+            -u GH_ENTERPRISE_TOKEN \
+            -u GITHUB_REPOSITORY_ADMIN_TOKEN \
+            -u GH_CONFIG_DIR \
+            HOME="$ec2_home" \
+            XDG_CONFIG_HOME="$ec2_home/.config" \
+            bash -c 'command -v gh >/dev/null 2>&1 && gh auth token --hostname github.com' \
+          2>/dev/null || true
+      )"
+      ;;
+    *)
+      raw_pat=''
+      ;;
+  esac
   if test -n "$raw_pat" && \
      [[ "$raw_pat" != *$'\n'* && "$raw_pat" != *$'\r'* && \
         "$raw_pat" != *$'\t'* && "$raw_pat" != *' '* ]]; then
@@ -102,7 +120,7 @@ if test -z "$GH_TOKEN" && command -v sudo >/dev/null 2>&1; then
     credential_source=protected-gh-profile
   fi
 fi
-unset raw_pat
+unset raw_pat ec2_home
 
 if test -z "$GH_TOKEN"; then
   echo 'publisher-stage=protected-credential status=failed reason=no-readable-protected-credential' >&2
