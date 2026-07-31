@@ -36,7 +36,7 @@ test('Loki and OTEL produce bounded remediation signals without activating secre
   assert.doesNotMatch(kustomization, /alertmanager\.telemetry\.externalsecret\.yaml/);
 });
 
-test('instrumented workloads can reach OTLP and promotion remains draft-only', async () => {
+test('instrumented workloads can reach OTLP and promotion remains least-privilege and draft-only', async () => {
   const paths = [
     'remote/argocd/dd-next-runtime/dd-rust-network-mutex-mills.statefulset.yaml',
     'remote/argocd/dd-next-runtime/dd-t2v-api.deployment.yaml',
@@ -61,4 +61,13 @@ test('instrumented workloads can reach OTLP and promotion remains draft-only', a
   assert.match(workflow, /repository_dispatch/);
   assert.match(workflow, /draft:\s*true|--draft/);
   assert.doesNotMatch(workflow, /gh\s+pr\s+merge|merge_pull_request|push\s+origin\s+(?:dev|main)/i);
+
+  assert.doesNotMatch(workflow, /ORG_GITOPS_TOKEN|personal[_-]?access[_-]?token/i);
+  assert.match(workflow, /K8S_SUBMODULE_APP_ID/);
+  assert.match(workflow, /K8S_SUBMODULE_APP_PRIVATE_KEY/);
+  assert.match(workflow, /mint-github-app-installation-token\.sh/);
+  assert.match(workflow, /GH_TOKEN:\s*\$\{\{\s*github\.token\s*\}\}/);
+  assert.match(workflow, /Authorization: Bearer \$\{upstream_token\}/);
+  assert.match(workflow, /request DELETE[\s\S]*\/installation\/token/);
+  assert.match(workflow, /contents:\s*write[\s\S]*pull-requests:\s*write/);
 });
