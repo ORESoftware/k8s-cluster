@@ -1,0 +1,153 @@
+name: DEN-675 repair materialized Prometheus YAML semantics
+
+on:
+  push:
+    branches:
+      - agent/den-675-shared-auth-observability-dev
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-675-fix-yaml-indentation
+  cancel-in-progress: false
+
+jobs:
+  repair-validate-clean:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: agent/den-675-shared-auth-observability-dev
+          persist-credentials: true
+
+      - name: Replace malformed generated ranges by semantic anchors
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/argocd/observability/prometheus.configmap.yaml')
+          text = path.read_text(encoding='utf-8')
+
+          jobs_start = text.index('      # DEN-675 Shared Auth control-plane metrics remain cluster-internal.')
+          jobs_end = text.index('      # fiducia data-plane raft metrics.', jobs_start)
+          jobs = '''      # DEN-675 Shared Auth control-plane metrics remain cluster-internal.
+      - job_name: dd-shared-auth
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-shared-auth.shared-auth.svc.cluster.local:8120
+      - job_name: dd-shared-auth-nats-bridge
+        metrics_path: /metrics
+        static_configs:
+          - targets:
+              - dd-shared-auth-nats-bridge.shared-auth.svc.cluster.local:8121
+'''
+          text = text[:jobs_start] + jobs + text[jobs_end:]
+
+          alerts_start = text.index('          - alert: SharedAuthServerTargetMissing')
+          alerts_end = text.index('          - alert: BenefactorBackendTargetMissing', alerts_start)
+          alerts = '''          - alert: SharedAuthServerTargetMissing
+            expr: absent(up{job="dd-shared-auth"})
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-shared-auth
+            annotations:
+              summary: Shared Auth scrape target is missing
+              description: "Prometheus has no cluster-internal target for the Shared Auth API."
+          - alert: SharedAuthBridgeTargetMissing
+            expr: absent(up{job="dd-shared-auth-nats-bridge"})
+            for: 2m
+            labels:
+              severity: warning
+              service: dd-shared-auth-nats-bridge
+            annotations:
+              summary: Shared Auth NATS bridge scrape target is missing
+              description: "Prometheus has no cluster-internal target for the Shared Auth NATS bridge."
+          - alert: SharedAuthMetricsTargetDown
+            expr: up{job=~"dd-shared-auth|dd-shared-auth-nats-bridge"} == 0
+            for: 2m
+            labels:
+              severity: warning
+              service: shared-auth
+            annotations:
+              summary: "Shared Auth metrics target {{ $labels.job }} is down"
+              description: "Prometheus cannot scrape the cluster-internal /metrics endpoint for {{ $labels.job }}."
+          - alert: SharedAuthVerificationFailuresHigh
+            expr: increase(shared_auth_verify_failures_total[10m]) > 100
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-shared-auth
+            annotations:
+              summary: Shared Auth verification failures are unusually high
+              description: "More than 100 token-verification failures occurred in ten minutes and the condition persisted for five minutes."
+          - alert: SharedAuthBridgePublishFailuresHigh
+            expr: sum(increase(shared_auth_bridge_publishes_total{outcome="failed"}[10m])) > 10
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-shared-auth-nats-bridge
+            annotations:
+              summary: Shared Auth bridge publish failures are high
+              description: "More than ten internal HTTP-to-NATS failures occurred in ten minutes. Client rejections are intentionally excluded."
+          - alert: SharedAuthBridgeDeliveryFailuresHigh
+            expr: sum(increase(shared_auth_bridge_deliveries_total{outcome="failed"}[10m])) > 5
+            for: 5m
+            labels:
+              severity: warning
+              service: dd-shared-auth-nats-bridge
+            annotations:
+              summary: Shared Auth bridge delivery failures are high
+              description: "More than five NATS-to-webhook delivery failures occurred in ten minutes."
+'''
+          text = text[:alerts_start] + alerts + text[alerts_end:]
+          path.write_text(text, encoding='utf-8')
+          PY
+          git diff --check
+
+      - name: Setup Node and focused dependencies
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+
+      - name: Run Shared Auth observability contract
+        working-directory: remote/tests
+        env:
+          SHARED_AUTH_SERVER_REVISION: 821386ba8b167571b27d91012c665ffcb724ae46
+          SHARED_AUTH_BRIDGE_REVISION: d03316944e33fd59ee90a4acaa4fee67cae71d61
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+          pnpm install --frozen-lockfile
+          pnpm run test:cli:prometheus-applications
+
+      - name: Render affected overlays
+        run: |
+          set -euo pipefail
+          kubectl kustomize remote/argocd/observability >/tmp/observability.yaml
+          kubectl kustomize remote/argocd/dd-next-runtime >/tmp/dd-next-runtime.yaml
+          grep -q 'job_name: dd-shared-auth' /tmp/observability.yaml
+          grep -q 'job_name: dd-shared-auth-nats-bridge' /tmp/observability.yaml
+          grep -q 'location = /shared-auth/metrics' /tmp/dd-next-runtime.yaml
+
+      - name: Remove repair transport and commit validated semantics
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/den-675-fix-yaml-indentation.yml
+          git diff --check
+          ! grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' \
+            docs/observability/prometheus-application-rollout.yaml \
+            remote/argocd/observability/prometheus.configmap.yaml \
+            remote/tests/general/prometheus-application-scrape.test.ts
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git commit -m 'fix(DEN-675): preserve Prometheus YAML structure'
+          git push origin HEAD:agent/den-675-shared-auth-observability-dev
