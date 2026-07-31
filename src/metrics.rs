@@ -7,9 +7,13 @@ use prometheus::{Encoder, IntCounterVec, Opts, Registry, TextEncoder};
 #[derive(Clone)]
 pub struct Metrics {
     registry: Arc<Registry>,
-    /// Publishes through POST /publish, by outcome (ok|rejected|failed).
+    /// Publishes through POST /publish, by bounded outcome (ok|rejected|failed).
     pub publishes: IntCounterVec,
-    /// NATS→webhook deliveries, by route subject and outcome (ok|failed).
+    /// NATS→webhook deliveries, by bounded outcome (ok|failed).
+    ///
+    /// Do not add raw NATS subjects here. Subjects are routing identities and can
+    /// be high-cardinality or tenant-bearing; logs already retain them for
+    /// diagnostics without turning them into Prometheus labels.
     pub deliveries: IntCounterVec,
 }
 
@@ -26,7 +30,7 @@ impl Metrics {
                 "shared_auth_bridge_deliveries_total",
                 "NATS→webhook deliveries.",
             ),
-            &["subject", "outcome"],
+            &["outcome"],
         )
         .expect("valid metric");
         registry
