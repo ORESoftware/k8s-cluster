@@ -123,7 +123,78 @@ fi
 unset raw_pat ec2_home
 
 if test -z "$GH_TOKEN"; then
-  echo 'publisher-stage=protected-credential status=failed reason=no-readable-protected-credential' >&2
+  aws_diagnostic=aws-cli-absent
+  if command -v aws >/dev/null 2>&1; then
+    if aws secretsmanager get-secret-value \
+      --region us-east-1 \
+      --secret-id dd/remote-dev/agent-secrets \
+      --query SecretString \
+      --output text >/dev/null 2>&1; then
+      aws_diagnostic=secret-readable-but-gh-pat-unusable
+    else
+      aws_diagnostic=secret-unavailable-or-denied
+    fi
+  fi
+
+  kube_diagnostic=kubectl-absent
+  if command -v kubectl >/dev/null 2>&1; then
+    kube_diagnostic=no-readable-kubeconfig
+    for diagnostic_kubeconfig in \
+      /etc/kubernetes/admin.conf \
+      /root/.kube/config \
+      /home/ec2-user/.kube/config
+    do
+      test -r "$diagnostic_kubeconfig" || continue
+      kube_diagnostic=secret-unavailable-or-empty
+      if KUBECONFIG="$diagnostic_kubeconfig" \
+        kubectl -n default get secret dd-agent-secrets \
+        -o jsonpath='{.data.GH_PAT}' 2>/dev/null | grep -q .; then
+        kube_diagnostic=encoded-gh-pat-present-but-unusable
+      fi
+      break
+    done
+  fi
+
+  gh_diagnostic=prerequisites-absent
+  if command -v sudo >/dev/null 2>&1 && command -v getent >/dev/null 2>&1; then
+    diagnostic_home="$(getent passwd ec2-user | awk -F: '$1 == "ec2-user" { print $6 }')"
+    case "$diagnostic_home" in
+      /*)
+        if sudo -u ec2-user -H env \
+          -u GH_TOKEN \
+          -u GITHUB_TOKEN \
+          -u GH_ENTERPRISE_TOKEN \
+          -u GITHUB_REPOSITORY_ADMIN_TOKEN \
+          -u GH_CONFIG_DIR \
+          HOME="$diagnostic_home" \
+          XDG_CONFIG_HOME="$diagnostic_home/.config" \
+          bash -c 'command -v gh >/dev/null 2>&1'; then
+          if sudo -u ec2-user -H env \
+            -u GH_TOKEN \
+            -u GITHUB_TOKEN \
+            -u GH_ENTERPRISE_TOKEN \
+            -u GITHUB_REPOSITORY_ADMIN_TOKEN \
+            -u GH_CONFIG_DIR \
+            HOME="$diagnostic_home" \
+            XDG_CONFIG_HOME="$diagnostic_home/.config" \
+            bash -c 'gh auth status --hostname github.com >/dev/null 2>&1'; then
+            gh_diagnostic=auth-valid-but-token-unavailable
+          else
+            gh_diagnostic=auth-unavailable
+          fi
+        else
+          gh_diagnostic=gh-cli-absent
+        fi
+        ;;
+      *)
+        gh_diagnostic=ec2-home-unresolved
+        ;;
+    esac
+  fi
+  unset diagnostic_home diagnostic_kubeconfig
+
+  printf 'publisher-stage=protected-credential status=failed reason=no-readable-protected-credential aws=%s kubernetes=%s gh=%s\n' \
+    "$aws_diagnostic" "$kube_diagnostic" "$gh_diagnostic" >&2
   exit 65
 fi
 export GH_TOKEN
