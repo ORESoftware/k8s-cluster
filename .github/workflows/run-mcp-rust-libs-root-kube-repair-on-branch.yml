@@ -64,3 +64,5 @@ jobs:
           git add .github/workflows/ops-publish-mcp-rust-libs.yml
           git commit -m 'fix(ops): split root Kubernetes read from unprivileged MCP publication'
           git push origin HEAD:agent/fix-mcp-publisher-root-kube-boundary-20260731
+
+# Manual retrigger after semantic review.
