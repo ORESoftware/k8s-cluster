@@ -1,4 +1,5 @@
 name: Probe protected publisher capabilities
+run-name: Probe protected publisher capabilities after gh CLI home repair
 
 on:
   push:
