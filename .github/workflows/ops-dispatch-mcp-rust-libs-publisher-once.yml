@@ -1,5 +1,5 @@
-name: Dispatch and observe canonical mcp-rust-libs repair applicator
-run-name: Apply and observe canonical mcp-rust-libs publisher repair @ ${{ github.sha }}
+name: Dispatch and observe canonical mcp-rust-libs direct publisher
+run-name: Dispatch direct canonical mcp-rust-libs publication v2 @ ${{ github.sha }}
 
 on:
   push:
@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 70
     steps:
-      - name: Dispatch, observe, and report the exact trusted-main repair applicator run
+      - name: Dispatch, observe, and report the exact trusted-main direct publisher run
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -77,19 +77,14 @@ jobs:
 
           gh pr comment "$TRACKING_PR" \
             --repo "$repository" \
-            --body "Canonical MCP repair applicator dispatched from trusted main \`${trusted_sha}\`: ${run_url}" \
+            --body "Direct canonical MCP publisher dispatched from trusted main \`${trusted_sha}\`: ${run_url}" \
             >/dev/null || true
 
           watch_status=0
           gh run watch "$run_id" --repo "$repository" --exit-status || watch_status=$?
 
-          detail="$(
-            gh run view "$run_id" \
-              --repo "$repository" \
-              --json databaseId,headSha,status,conclusion,url,name
-          )"
-          observed_sha="$(jq -r .headSha <<<"$detail")"
-          test "$observed_sha" = "$trusted_sha"
+          detail="$(gh run view "$run_id" --repo "$repository" --json databaseId,headSha,status,conclusion,url,name)"
+          test "$(jq -r .headSha <<<"$detail")" = "$trusted_sha"
 
           log_file="$(mktemp)"
           body_file="$(mktemp)"
@@ -98,7 +93,7 @@ jobs:
 
           markers="$(
             grep -Eo \
-              'publisher-stage-failed=[A-Za-z0-9._-]+ exit=[0-9]+|publisher-root-credential-source=[^[:space:]]+|CREATED ORESoftware/mcp-rust-libs|PUBLISHED ORESoftware/mcp-rust-libs PR#[0-9]+ head=[0-9a-f]{40} source_tree=[0-9a-f]{40} trusted_k8s=[0-9a-f]{40}|ALREADY_PUBLISHED ORESoftware/mcp-rust-libs main=[0-9a-f]{40} source_tree=[0-9a-f]{40} trusted_k8s=[0-9a-f]{40}' \
+              'publisher-stage-failed=[A-Za-z0-9._-]+ exit=[0-9]+|publisher-stage=[A-Za-z0-9._-]+ status=[A-Za-z0-9._-]+ source=[^[:space:]]+|CREATED ORESoftware/mcp-rust-libs|PUBLISHED ORESoftware/mcp-rust-libs PR#[0-9]+ head=[0-9a-f]{40} source_tree=[0-9a-f]{40} trusted_k8s=[0-9a-f]{40}|ALREADY_PUBLISHED ORESoftware/mcp-rust-libs main=[0-9a-f]{40} source_tree=[0-9a-f]{40} trusted_k8s=[0-9a-f]{40}' \
               "$log_file" \
               | tail -n 30 \
               | sort -u \
@@ -111,7 +106,7 @@ jobs:
           fi
 
           {
-            echo "Canonical MCP repair applicator run: ${run_url}"
+            echo "Direct canonical MCP publisher run: ${run_url}"
             echo
             echo "- trusted main: \`${trusted_sha}\`"
             echo "- status: \`$(jq -r .status <<<"$detail")\`"
@@ -119,7 +114,7 @@ jobs:
             echo "- target: \`${target_summary}\`"
             if test -n "$markers"; then
               echo
-              echo 'Sanitized nested publisher markers:'
+              echo 'Sanitized publisher markers:'
               echo '```text'
               printf '%s\n' "$markers"
               echo '```'
