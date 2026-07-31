@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-ai-agent-bridge
+  labels:
+    app: dd-ai-agent-bridge
+spec:
+  replicas: 1
+  minReadySeconds: 1
+  selector:
+    matchLabels:
+      app: dd-ai-agent-bridge
+  template:
+    metadata:
+      labels:
+        app: dd-ai-agent-bridge
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ai-agent-bridge
+          image: __AI_BRIDGE_IMAGE__
+          imagePullPolicy: Never
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: API_AUTH_BEARER
+              valueFrom:
+                secretKeyRef:
+                  name: dd-ai-agent-bridge-secrets
+                  key: inbox_token
+            - name: AI_AGENT_BRIDGE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-ai-agent-bridge-secrets
+                  key: inbox_token
+            - name: AI_AGENT_BRIDGE_DIR
+              value: /tmp/claude_bridge
+            - name: HOST
+              value: 0.0.0.0
+            - name: HTTP_PORT
+              value: "8142"
+            - name: TCP_PORT
+              value: "8143"
+            - name: LOG_FORMAT
+              value: json
+            - name: RUST_LOG
+              value: info,ai_agent_bridge=info,hyper=warn,reqwest=warn
+          ports:
+            - name: http
+              containerPort: 8142
+            - name: tcp
+              containerPort: 8143
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 1
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dd-ai-agent-bridge
+  labels:
+    app: dd-ai-agent-bridge
+spec:
+  type: ClusterIP
+  selector:
+    app: dd-ai-agent-bridge
+  ports:
+    - name: http
+      port: 8142
+      targetPort: http
+    - name: tcp
+      port: 8143
+      targetPort: tcp
