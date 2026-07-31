@@ -30,7 +30,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo 'observer_attempt=2'
+          echo 'observer_attempt=3'
           repository="$GITHUB_REPOSITORY"
           trusted_sha="$(gh api "repos/${repository}/commits/main" --jq .sha)"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
