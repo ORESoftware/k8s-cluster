@@ -33,4 +33,11 @@ pub struct OreClaims {
     pub email_verified: bool,
     #[serde(default)]
     pub roles: Vec<String>,
+    /// Authentication methods used for this token. Missing legacy claims decode
+    /// as an empty list and therefore never satisfy an explicit method policy.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub amr: Vec<String>,
+    /// Authentication context. Missing legacy claims fail closed for LOA2.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acr: Option<String>,
 }
