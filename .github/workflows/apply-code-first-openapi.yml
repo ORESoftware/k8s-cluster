@@ -1,0 +1,118 @@
+name: Apply code-first OpenAPI contract
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-code-first-openapi.yml'
+      - 'scripts/apply_code_first_openapi.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-push-openapi-contract
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: >-
+      github.repository == 'ORESoftware/push-notification-server.rs' &&
+      (github.event_name != 'pull_request' || github.head_ref == 'agent/code-first-openapi-routes')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact writable branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/code-first-openapi-routes
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Setup Rust 1.88
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt, clippy
+
+      - name: Apply the bounded source transformation
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/apply_code_first_openapi.py
+          python3 scripts/apply_code_first_openapi.py
+          cargo fmt --all
+
+      - name: Resolve and validate the new dependency graph
+        run: |
+          set -euo pipefail
+          cargo check
+          cargo test --all-targets
+          cargo clippy --all-targets -- -D warnings
+          cargo fmt --all -- --check
+          cargo check --locked
+          cargo test --locked --all-targets
+
+      - name: Generate deterministic public and private contracts
+        run: |
+          set -euo pipefail
+          mkdir -p generated
+          cargo run --locked --quiet -- --export-openapi=internal > generated/openapi.internal.json
+          cargo run --locked --quiet -- --export-openapi=public > generated/openapi.public.json
+          cargo run --locked --quiet -- --export-openapi=internal > /tmp/openapi.internal.2.json
+          cargo run --locked --quiet -- --export-openapi=public > /tmp/openapi.public.2.json
+          cmp generated/openapi.internal.json /tmp/openapi.internal.2.json
+          cmp generated/openapi.public.json /tmp/openapi.public.2.json
+          python3 -m json.tool generated/openapi.internal.json >/dev/null
+          python3 -m json.tool generated/openapi.public.json >/dev/null
+
+      - name: Run the permanent contract assertions before commit
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          internal = json.loads(Path('generated/openapi.internal.json').read_text())
+          public = json.loads(Path('generated/openapi.public.json').read_text())
+          expected_public = {
+              '/healthz', '/readyz', '/v1/contact/readyz',
+              '/openapi.json', '/api/docs.json', '/api/docs', '/docs/api',
+          }
+          expected_internal = expected_public | {
+              '/v1/push/jobs', '/v1/push/jobs/batch',
+              '/v1/contact/jobs', '/v1/contact/jobs/batch',
+              '/internal/openapi.json', '/internal/docs/api',
+          }
+          assert set(public['paths']) == expected_public
+          assert set(internal['paths']) == expected_internal
+          assert public['x-dd-contract-scope'] == 'public'
+          assert 'bearer_auth' in internal['components']['securitySchemes']
+          operation_ids = []
+          for path, item in internal['paths'].items():
+              for method, operation in item.items():
+                  if method.lower() not in {'get', 'post', 'put', 'patch', 'delete'}:
+                      continue
+                  operation_ids.append(operation['operationId'])
+                  if path.startswith('/v1/') and path != '/v1/contact/readyz':
+                      assert operation.get('security') == [{'bearer_auth': []}], (method, path)
+          assert len(operation_ids) == len(set(operation_ids))
+          PY
+          git diff --check
+          ! grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' src generated Cargo.toml
+
+      - name: Remove one-shot transport and commit the product change
+        run: |
+          set -euo pipefail
+          rm -f \
+            .github/workflows/apply-code-first-openapi.yml \
+            scripts/apply_code_first_openapi.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          test -z "$(git diff --cached --name-only | grep -E 'apply-code-first-openapi|apply_code_first_openapi' || true)"
+          git commit -m 'feat(DEN-600): add executable OpenAPI routes and contracts'
+          git push origin HEAD:agent/code-first-openapi-routes
