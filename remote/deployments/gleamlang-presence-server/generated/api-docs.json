@@ -15,8 +15,8 @@
     "/": {
       "get": {
         "operationId": "gleamlang_presence_server_get_23af72802f06",
-        "summary": "Help text.",
-        "description": "Help text.",
+        "summary": "Presence service help",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -34,8 +34,8 @@
     "/api/docs": {
       "get": {
         "operationId": "gleamlang_presence_server_get_api_docs_7955b2b65374",
-        "summary": "Human-readable generated API documentation.",
-        "description": "Human-readable generated API documentation.",
+        "summary": "Interactive API reference",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -53,8 +53,8 @@
     "/api/docs.json": {
       "get": {
         "operationId": "gleamlang_presence_server_get_api_docs_json_33894b4d682c",
-        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
-        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "summary": "Public OpenAPI contract alias",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -72,8 +72,8 @@
     "/docs/api": {
       "get": {
         "operationId": "gleamlang_presence_server_get_docs_api_dfad3d725db1",
-        "summary": "Human-readable generated API documentation.",
-        "description": "Human-readable generated API documentation.",
+        "summary": "Interactive API reference alias",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -88,11 +88,11 @@
         "security": []
       }
     },
-    "/healthz": {
+    "/openapi.json": {
       "get": {
-        "operationId": "gleamlang_presence_server_get_healthz_65610a4485ce",
-        "summary": "JSON health check.",
-        "description": "JSON health check.",
+        "operationId": "gleamlang_presence_server_get_openapi_json_3b3a44f2453e",
+        "summary": "Public OpenAPI contract",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],

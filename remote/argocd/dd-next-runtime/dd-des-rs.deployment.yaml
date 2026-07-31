@@ -58,6 +58,15 @@ spec:
               python -m venv /tools/yt-dlp-venv
               /tools/yt-dlp-venv/bin/python -m pip install --no-cache-dir --upgrade pip yt-dlp
               /tools/yt-dlp-venv/bin/yt-dlp --version
+          # Builds a venv and pip-installs yt-dlp on every pod start. Bounded so
+          # a slow or wedged index fetch cannot starve the node.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: '1'
+              memory: 1Gi
           volumeMounts:
             - name: tools
               mountPath: /tools

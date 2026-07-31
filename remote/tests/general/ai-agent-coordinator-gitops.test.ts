@@ -10,11 +10,41 @@ function findRepoRoot(): string {
       return candidate;
     }
   }
+<<<<<<< HEAD
+  throw new Error(`Unable to locate repo root from ${process.cwd()}`);
+=======
   throw new Error(`Unable to locate repository root from ${process.cwd()}`);
+>>>>>>> origin/dev
 }
 
 const repoRoot = findRepoRoot();
 const read = (path: string) => readFile(resolve(repoRoot, path), 'utf8');
+<<<<<<< HEAD
+const tenantPath = 'remote/argocd/projects/ai-agent-coordinator.tenant.yaml';
+const projectPath = 'remote/argocd/projects/ai-agent-coordinator.appproject.yaml';
+const applicationPath = 'remote/argocd/apps/ai-agent-coordinator.application.yaml';
+const appCommit = '83091cb3b3dc1fc4797e822f7fe2d320ca1c3cd9';
+
+test('coordinator tenant owns the namespace guardrails and identity', async () => {
+  const tenant = await read(tenantPath);
+  assert.match(tenant, /kind: Namespace\s+metadata:\s+name: ai-agent-coordinator/s);
+  assert.match(tenant, /kind: ResourceQuota/);
+  assert.match(tenant, /requests\.storage: 10Gi/);
+  assert.match(tenant, /persistentvolumeclaims: "2"/);
+  assert.match(tenant, /kind: LimitRange/);
+  assert.match(tenant, /kind: ServiceAccount\s+metadata:\s+name: ai-agent-coordinator\s+namespace: ai-agent-coordinator/s);
+  assert.match(tenant, /app\.kubernetes\.io\/part-of: oresoftware-agent-platform/);
+  assert.match(tenant, /automountServiceAccountToken: false/);
+  assert.match(tenant, /name: ai-agent-coordinator-default-deny-ingress/);
+  assert.match(tenant, /policyTypes: \[Ingress\]/);
+});
+
+test('coordinator AppProject admits one source and no cluster resources', async () => {
+  const project = await read(projectPath);
+  assert.match(project, /name: ai-agent-coordinator\s+namespace: argocd/);
+  assert.match(project, /sourceRepos:\s+- "https:\/\/github\.com\/ORESoftware\/ai-agent-coordinator\.rs\.git"/);
+  assert.match(project, /namespace: ai-agent-coordinator/);
+=======
 const appCommit = 'a6fb1f89e064c21dc1e435931c75e9871746d0f7';
 const platformRoot = 'remote/argocd/projects/ai-agent-coordinator';
 const tenantPath = `${platformRoot}/tenant.yaml`;
@@ -71,6 +101,7 @@ test('strict AppProject allows one source, one namespace, and no cluster resourc
   assert.match(project, /name: ai-agent-coordinator\s+namespace: argocd/);
   assert.match(project, /sourceRepos:\s+- "https:\/\/github\.com\/ORESoftware\/ai-agent-coordinator\.rs\.git"/);
   assert.match(project, /destinations:\s+- server: https:\/\/kubernetes\.default\.svc\s+namespace: ai-agent-coordinator/s);
+>>>>>>> origin/dev
   assert.match(project, /clusterResourceWhitelist: \[\]/);
   for (const kind of ['ResourceQuota', 'LimitRange', 'ServiceAccount']) {
     assert.match(project, new RegExp(`kind: ${kind}`));
@@ -79,6 +110,25 @@ test('strict AppProject allows one source, one namespace, and no cluster resourc
   assert.doesNotMatch(project, /k8s-cluster\.git/);
 });
 
+<<<<<<< HEAD
+test('Argo tracks the reviewed app repo commit and deploy directory', async () => {
+  const application = await read(applicationPath);
+  assert.match(application, /name: dd-ai-agent-coordinator/);
+  assert.match(application, /project: ai-agent-coordinator/);
+  assert.match(application, /repoURL: https:\/\/github\.com\/ORESoftware\/ai-agent-coordinator\.rs\.git/);
+  assert.match(application, new RegExp(`targetRevision: ${appCommit}`));
+  assert.doesNotMatch(application, /targetRevision: (?:main|master|HEAD)/);
+  assert.match(application, /path: deploy\/k8s/);
+  assert.match(application, /namespace: ai-agent-coordinator/);
+  assert.match(application, /prune: true/);
+  assert.match(application, /selfHeal: true/);
+});
+
+test('registration files are free of unresolved merge markers', async () => {
+  const files = await Promise.all([tenantPath, projectPath, applicationPath].map(read));
+  for (const contents of files) {
+    assert.doesNotMatch(contents, /^(?:<<<<<<<|=======|>>>>>>>)/m);
+=======
 test('platform bundle is self-contained and composes only tenant resources plus AppProject', async () => {
   const kustomization = await read(platformKustomizationPath);
   assert.match(kustomization, /- tenant\.yaml/);
@@ -129,5 +179,6 @@ test('registration files contain no credentials, plaintext Secrets, or merge mar
     assert.doesNotMatch(contents, /gh[pousr]_[A-Za-z0-9_]{20,}/);
     assert.doesNotMatch(contents, /sk-[A-Za-z0-9_-]{16,}/);
     assert.doesNotMatch(contents, /LINEAR_API_TOKEN\s*[:=]\s*[^\s#]+/);
+>>>>>>> origin/dev
   }
 });

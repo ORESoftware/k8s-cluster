@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-web-scraper
+  namespace: default
+spec:
+  template:
+    spec:
+      containers:
+        - name: web-scraper
+          env:
+            - name: BROWSER_AGENT_ALLOWED_DOMAINS
+              value: 'benefactor.cc,confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,app.posthog.com,elevenlabs.io,www.together.ai,support.snyk.io,us.ovhcloud.com,www.pulumi.com,tally.so,allthingsopen.org,allthingsopen.wufoo.com,static.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com,www.gstatic.com,ssl.gstatic.com,fonts.googleapis.com,fonts.gstatic.com,boards.greenhouse.io,job-boards.greenhouse.io,greenhouse.io,jobs.lever.co,lever.co,jobs.ashbyhq.com,ashbyhq.com,jobs.smartrecruiters.com,smartrecruiters.com,myworkdayjobs.com,workday.com,apply.workable.com,workable.com,jobs.jobvite.com,jobvite.com,careers-page.com,click.appcast.io,to.indeed.com,www.indeed.com,www.ziprecruiter.com,httpbingo.org'

@@ -31,7 +31,7 @@ jobs:
         run: test -n "$K8S_LIBS_DEPLOY_KEY"
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
@@ -41,12 +41,12 @@ jobs:
         run: bash scripts/ci/init-submodules-with-report.sh remote/libs
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 10.33.0
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
           cache: pnpm
@@ -114,6 +114,7 @@ jobs:
             general/remote-libs-submodule-contract.test.ts
             general/remote-dev-worker-git-hardening.test.ts
             general/runtime-split-config.test.ts
+            general/security-hardening-contract.test.ts
             general/selenium-server-config.test.ts
             general/thread-fleet-exporter-go-config.test.ts
             general/thread-operator-go-config.test.ts
@@ -130,6 +131,49 @@ jobs:
           pnpm exec tsx --test "${static_tests[@]}"
         working-directory: remote/tests
 
+  fiducia-secret-contract:
+    name: Fiducia KV secret-delivery contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v5
+        with:
+          version: v1.32.2
+
+      - name: Render and verify the hardened Fiducia secret contract
+        id: fiducia-contract
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          mkdir -p "${RUNNER_TEMP}/fiducia-contract"
+          kubectl kustomize ../../remote/argocd/secrets/common > "${RUNNER_TEMP}/fiducia-contract/common.yaml"
+          kubectl kustomize ../../remote/argocd/fiducia > "${RUNNER_TEMP}/fiducia-contract/fiducia.yaml"
+          node --experimental-strip-types --test general/fiducia-secret-delivery.test.ts \
+            > "${RUNNER_TEMP}/fiducia-contract/test.log" 2>&1
+        working-directory: remote/tests
+
+      - name: Upload Fiducia contract failure diagnostics
+        if: steps.fiducia-contract.outcome == 'failure'
+        uses: actions/upload-artifact@v6
+        with:
+          name: fiducia-secret-contract-diagnostics
+          path: ${{ runner.temp }}/fiducia-contract
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Enforce Fiducia secret contract result
+        if: steps.fiducia-contract.outcome == 'failure'
+        run: exit 1
+
   backend-contracts:
     name: backend pins + private deployment contracts
     runs-on: ubuntu-latest
@@ -141,7 +185,7 @@ jobs:
         run: test -n "$K8S_LIBS_DEPLOY_KEY"
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
@@ -176,12 +220,12 @@ jobs:
           exit 1
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 10.33.0
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
           cache: pnpm
@@ -214,7 +258,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Initialize required public overlay submodule
         run: |
@@ -223,7 +267,7 @@ jobs:
           git submodule update --init --depth 1 -- remote/deployments/mip-solver-node.rs
 
       - name: Setup kubectl
-        uses: azure/setup-kubectl@v5
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
         with:
           version: v1.32.2
 

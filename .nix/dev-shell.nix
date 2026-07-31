@@ -14,6 +14,7 @@ let
       git
       gleam
       go
+      gh
       jq
       just
       kubectl
@@ -25,9 +26,11 @@ let
       opentofu
       pnpm_10
       postgresql_16
+      python312
       rust-analyzer
       rustc
       rustfmt
+      ruff
       shellcheck
       shfmt
       yq-go

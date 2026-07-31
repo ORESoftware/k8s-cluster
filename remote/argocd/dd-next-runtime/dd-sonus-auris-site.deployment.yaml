@@ -39,8 +39,13 @@ spec:
         - name: build-sonus-auris-site
           image: docker.io/library/node:22-bookworm
           imagePullPolicy: IfNotPresent
+          # apt-get + npm build need root and a writable rootfs, so this stays a
+          # root init container; RuntimeDefault seccomp is the part that costs
+          # nothing here.
           securityContext:
             allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           command:
             - /bin/bash
             - -lc

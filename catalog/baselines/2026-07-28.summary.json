@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "snapshot": {
+    "id": "2026-07-28-governed",
+    "captured_at": "2026-07-28T00:00:00Z",
+    "record_scope": "aggregate-only",
+    "governing_issue": "DEN-598",
+    "source_urls": [
+      "https://linear.app/denman/issue/DEN-598",
+      "https://linear.app/denman/issue/DEN-627"
+    ]
+  },
+  "inventory": {
+    "repository_count": 547,
+    "public_count": 386,
+    "private_count": 161,
+    "fork_count": 51,
+    "empty_count": 5,
+    "archived_count": 1,
+    "canonical_active_count": 490
+  },
+  "confidential_overlay": {
+    "contains_private_repository_names": false,
+    "status": "requires an approved access-controlled storage destination",
+    "public_repository_policy": "private repository names and dependency edges must not be committed here"
+  }
+}

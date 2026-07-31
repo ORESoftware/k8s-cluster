@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
@@ -15,7 +15,12 @@ test('node task workers publish every stream event to nats for websocket fanout'
   const publisher = await readRepoFile('remote/deployments/dev-server/src/nats-publisher.ts');
   const wsFanout = await readRepoFile('remote/deployments/dev-server/src/ws-fanout.ts');
   const packageJson = await readRepoFile('remote/deployments/dev-server/package.json');
-  const restApi = await readRepoFile('remote/deployments/rest-api-rs/src/main.rs');
+  const restApi = [
+    await readRepoFile('remote/deployments/rest-api-rs/src/events.rs'),
+    await readRepoFile('remote/deployments/rest-api-rs/src/dispatch.rs'),
+    await readRepoFile('remote/deployments/rest-api-rs/src/shared.rs'),
+    await readRepoFile('remote/deployments/rest-api-rs/src/threads.rs'),
+  ].join('\n');
   const bootstrapDeployment = await readRepoFile(
     'remote/argocd/dd-next-runtime/dd-dev-server-home.deployment.yaml',
   );
@@ -98,6 +103,12 @@ test('gleam websocket deployment bridges nats tcp events into browser websockets
   );
   const bridge = await readRepoFile('remote/deployments/gleamlang-ws-server/nats-bridge.mjs');
   const natsClient = await readRepoFile('remote/deployments/gleamlang-ws-server/nats-client.mjs');
+  const fullServerBridge = await readRepoFile(
+    'remote/deployments/gleamlang-server/nats-bridge.mjs',
+  );
+  const fullServerNatsClient = await readRepoFile(
+    'remote/deployments/gleamlang-server/nats-client.mjs',
+  );
   const dockerfile = await readRepoFile('remote/deployments/gleamlang-ws-server/Dockerfile');
   const deployment = await readRepoFile(
     'remote/deployments/gleamlang-server/k8s/ec2/dd-gleamlang-server.deployment.yaml',
@@ -140,12 +151,31 @@ test('gleam websocket deployment bridges nats tcp events into browser websockets
   assert.match(natsClient, /SUB \$\{subscription\.subject\} \$\{sid\}/);
   assert.match(natsClient, /PUB \$\{next\.subject\} \$\{next\.payload\.length\}/);
   assert.match(natsClient, /PONG\\r\\n/);
+  assert.equal(
+    natsClient,
+    fullServerNatsClient,
+    'both websocket deployments must use the same hardened raw NATS client',
+  );
+  assert.match(natsClient, /MAX_QUEUE_BYTES = 8 \* 1024 \* 1024/);
+  assert.match(natsClient, /MAX_PAYLOAD_BYTES = 1024 \* 1024/);
+  assert.match(natsClient, /MAX_INBOUND_BUFFER_BYTES = 2 \* 1024 \* 1024/);
+  assert.match(natsClient, /queueBytes/);
+  assert.match(natsClient, /waitingForDrain/);
+  assert.match(natsClient, /socket\.once\('drain'/);
+  assert.match(natsClient, /MAX_RECONNECT_MS/);
+  assert.match(natsClient, /2 \*\* this\.reconnectAttempts/);
+  assert.match(natsClient, /0\.8 \+ Math\.random\(\) \* 0\.4/);
+  assert.match(natsClient, /inbound buffer limit exceeded/);
+  assert.match(natsClient, /control line limit exceeded/);
+  assert.match(natsClient, /invalid MSG terminator/);
+  assert.match(natsClient, /auth_token/);
+  assert.doesNotMatch(natsClient, /invalid NATS_URL: \$\{this\.url\}/);
   assert.match(dockerfile, /apk add --no-cache nodejs/);
   assert.match(bridge, /getNatsClient/);
   assert.match(bridge, /NATS_BRIDGE_DEDUPE_TTL_MS/);
   assert.match(bridge, /seenMessageIds/);
-  assert.match(bridge, /dropDuplicate\(payload\)/);
-  assert.match(bridge, /extractMessageId/);
+  assert.match(bridge, /dropDuplicate\(event\.messageId\)/);
+  assert.match(bridge, /normalizeEvent/);
   assert.match(bridge, /NATS_READ_SUBJECT/);
   assert.match(bridge, /NATS_PUBLISH_SUBJECT/);
   // The nats-bridge .mjs files default the read/publish subjects from the
@@ -163,10 +193,25 @@ test('gleam websocket deployment bridges nats tcp events into browser websockets
   assert.doesNotMatch(bridge, /GLEAM_BROADCAST_SECRET \?\?/);
   assert.match(bridge, /'x-dd-internal-auth': broadcastSecret/);
   assert.match(bridge, /nats\.publish\(subject, body\)/);
+  for (const candidate of [bridge, fullServerBridge]) {
+    assert.match(candidate, /timingSafeEqual/);
+    assert.match(candidate, /NATS_BRIDGE_MAX_BROADCAST_CONCURRENCY/);
+    assert.match(candidate, /NATS_BRIDGE_MAX_BROADCAST_QUEUE_BYTES/);
+    assert.match(candidate, /NATS_BRIDGE_MAX_DEDUPE_ENTRIES/);
+    assert.match(candidate, /AbortSignal\.timeout\(broadcastTimeoutMs\)/);
+    assert.match(candidate, /subject !== publishSubject/);
+    assert.match(candidate, /subject-not-allowed/);
+    assert.match(candidate, /invalid-json-event/);
+    assert.match(candidate, /server\.maxRequestsPerSocket = 100/);
+    assert.match(candidate, /'x-content-type-options': 'nosniff'/);
+    assert.match(candidate, /service: 'dd-nats-bridge'/);
+    assert.match(candidate, /process\.once\('SIGTERM', shutdown\)/);
+    assert.match(candidate, /nats\.destroy\(\)/);
+  }
   assert.match(deployment, /name:\s*nats-bridge/);
   assert.match(
     deployment,
-    /cd \/opt\/dd-next-1\/remote\/deployments\/gleamlang-ws-server/,
+    /exec node \/opt\/dd-next-1\/remote\/deployments\/gleamlang-ws-server\/nats-bridge\.mjs/,
   );
   assert.match(deployment, /GLEAM_NATS_PUBLISH_URL[\s\S]*127\.0\.0\.1:8083\/publish/);
   assert.match(deployment, /NATS_READ_SUBJECT[\s\S]*dd\.remote\.events/);
@@ -182,8 +227,54 @@ test('gleam websocket deployment bridges nats tcp events into browser websockets
   );
 });
 
+test('raw nats bridge client enforces byte, depth, payload, and subject bounds', async () => {
+  const moduleUrl = pathToFileURL(
+    resolve(repoRoot, 'remote/deployments/gleamlang-ws-server/nats-client.mjs'),
+  ).href;
+  const { NatsClient } = (await import(moduleUrl)) as {
+    NatsClient: new (options: Record<string, unknown>) => {
+      connect: () => void;
+      destroy: () => void;
+      publish: (subject: string, payload: string | Buffer) => boolean;
+      queue: Array<{ payload: Buffer }>;
+      queueBytes: number;
+    };
+  };
+  const warnings: string[] = [];
+  const client = new NatsClient({
+    url: 'nats://127.0.0.1:4222',
+    logger: { warn: (message: string) => warnings.push(message) },
+    maxQueueDepth: 2,
+    maxQueueBytes: 8,
+    maxPayloadBytes: 4,
+  });
+  // Keep this unit test deterministic and offline; queue behavior does not
+  // require opening a socket.
+  client.connect = () => {};
+
+  assert.equal(client.publish('dd.remote.events', 'aaaa'), true);
+  assert.equal(client.publish('dd.remote.events', 'bbbb'), true);
+  assert.equal(client.publish('dd.remote.events', 'cccc'), true);
+  assert.equal(client.queue.length, 2);
+  assert.equal(client.queueBytes, 8);
+  assert.deepEqual(
+    client.queue.map((entry) => entry.payload.toString('utf8')),
+    ['bbbb', 'cccc'],
+  );
+  assert.ok(warnings.some((message) => message.includes('outbound queue full')));
+  assert.throws(
+    () => client.publish('dd.remote.events', 'oversized'),
+    /payload exceeds 4 byte limit/,
+  );
+  assert.throws(
+    () => client.publish('dd.remote.*', 'ok'),
+    /invalid NATS publish subject/,
+  );
+  client.destroy();
+});
+
 test('rust task page opens websocket before dispatch and dedupes with sse fallback', async () => {
-  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/agents.rs');
 
   assert.match(home, /new WebSocket\(wsUrl\)/);
   assert.match(home, /\/gleam\/ws\?threadId=/);

@@ -22,7 +22,7 @@
       "get": {
         "operationId": "formal_methods_service_rs_get_api_docs_c5a3074a89a9",
         "summary": "Human-readable generated API documentation.",
-        "description": "Human-readable generated API documentation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -34,12 +34,12 @@
         },
         "x-dd-auth": "public",
         "x-dd-handlers": [
-          "api_docs_html"
+          "getFormalMethodsPublicApiReference"
         ],
-        "x-dd-implementation": "service",
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+          "remote/deployments/formal-methods-service-rs/generated/openapi.json"
         ],
         "x-dd-source-path": "/api/docs",
         "x-dd-source-paths": [
@@ -53,7 +53,7 @@
       "get": {
         "operationId": "formal_methods_service_rs_get_api_docs_json_4e712a700e26",
         "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
-        "description": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -65,12 +65,12 @@
         },
         "x-dd-auth": "public",
         "x-dd-handlers": [
-          "api_docs_json"
+          "getFormalMethodsPublicOpenApiCompatibilityAlias"
         ],
-        "x-dd-implementation": "service",
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+          "remote/deployments/formal-methods-service-rs/generated/openapi.json"
         ],
         "x-dd-source-path": "/api/docs.json",
         "x-dd-source-paths": [
@@ -84,7 +84,7 @@
       "get": {
         "operationId": "formal_methods_service_rs_get_docs_api_a4b22bcd9b65",
         "summary": "Human-readable generated API documentation.",
-        "description": "Human-readable generated API documentation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -96,12 +96,12 @@
         },
         "x-dd-auth": "public",
         "x-dd-handlers": [
-          "api_docs_html"
+          "getFormalMethodsPublicApiReferenceCompatibilityAlias"
         ],
-        "x-dd-implementation": "service",
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+          "remote/deployments/formal-methods-service-rs/generated/openapi.json"
         ],
         "x-dd-source-path": "/docs/api",
         "x-dd-source-paths": [
@@ -115,7 +115,7 @@
       "get": {
         "operationId": "formal_methods_service_rs_get_health_737ec805a839",
         "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "user-generated"
         ],
@@ -125,14 +125,14 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "service-defined",
+        "x-dd-auth": "cluster-network-policy",
         "x-dd-handlers": [
-          "health"
+          "getFormalMethodsHealth"
         ],
-        "x-dd-implementation": "code-first",
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "user-generated",
         "x-dd-source-files": [
-          "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+          "remote/deployments/formal-methods-service-rs/generated/openapi.json"
         ],
         "x-dd-source-path": "/health",
         "x-dd-source-paths": [
@@ -144,38 +144,8 @@
     "/internal/runtime-config": {
       "get": {
         "operationId": "formal_methods_service_rs_get_internal_runtime_config_481742439553",
-        "summary": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
-        "description": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
-        "tags": [
-          "runtime-config"
-        ],
-        "parameters": [],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "service-defined",
-        "x-dd-handlers": [
-          "dd_runtime_config_client::handle_get"
-        ],
-        "x-dd-implementation": "code-first",
-        "x-dd-route-type": "runtime-config",
-        "x-dd-source-files": [
-          "remote/libs/runtime-config-client-rs/src/lib.rs"
-        ],
-        "x-dd-source-path": "/internal/runtime-config",
-        "x-dd-source-paths": [
-          "/internal/runtime-config"
-        ],
-        "x-dd-visibility": "internal"
-      }
-    },
-    "/internal/runtime-config/reset": {
-      "post": {
-        "operationId": "formal_methods_service_rs_post_internal_runtime_config_reset_9c67bded3147",
-        "summary": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
-        "description": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+        "summary": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "runtime-config"
         ],
@@ -187,12 +157,47 @@
         },
         "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
         "x-dd-handlers": [
-          "dd_runtime_config_client::handle_reset"
+          "getRuntimeConfigSnapshot"
         ],
-        "x-dd-implementation": "code-first",
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "runtime-config",
         "x-dd-source-files": [
-          "remote/libs/runtime-config-client-rs/src/lib.rs"
+          "remote/deployments/formal-methods-service-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/internal/runtime-config",
+        "x-dd-source-paths": [
+          "/internal/runtime-config"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "serverAuth": []
+          }
+        ]
+      }
+    },
+    "/internal/runtime-config/reset": {
+      "post": {
+        "operationId": "formal_methods_service_rs_post_internal_runtime_config_reset_9c67bded3147",
+        "summary": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "runtime-config"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+        "x-dd-handlers": [
+          "resetRuntimeConfigSnapshot"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "runtime-config",
+        "x-dd-source-files": [
+          "remote/deployments/formal-methods-service-rs/generated/openapi.json"
         ],
         "x-dd-source-path": "/internal/runtime-config/reset",
         "x-dd-source-paths": [
@@ -209,8 +214,8 @@
     "/internal/update-runtime-config": {
       "post": {
         "operationId": "formal_methods_service_rs_post_internal_update_runtime_config_de2d66c20e67",
-        "summary": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
-        "description": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+        "summary": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "runtime-config"
         ],
@@ -222,12 +227,12 @@
         },
         "x-dd-auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
         "x-dd-handlers": [
-          "dd_runtime_config_client::handle_apply"
+          "applyRuntimeConfigSnapshot"
         ],
-        "x-dd-implementation": "code-first",
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "runtime-config",
         "x-dd-source-files": [
-          "remote/libs/runtime-config-client-rs/src/lib.rs"
+          "remote/deployments/formal-methods-service-rs/generated/openapi.json"
         ],
         "x-dd-source-path": "/internal/update-runtime-config",
         "x-dd-source-paths": [
@@ -245,7 +250,37 @@
       "get": {
         "operationId": "formal_methods_service_rs_get_metrics_91fecfa1e3e9",
         "summary": "Prometheus metrics.",
-        "description": "Prometheus metrics.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
+        "tags": [
+          "service"
+        ],
+        "parameters": [],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "cluster-network-policy",
+        "x-dd-handlers": [
+          "getFormalMethodsPrometheusMetrics"
+        ],
+        "x-dd-implementation": "openapi-code-first",
+        "x-dd-route-type": "service",
+        "x-dd-source-files": [
+          "remote/deployments/formal-methods-service-rs/generated/openapi.json"
+        ],
+        "x-dd-source-path": "/metrics",
+        "x-dd-source-paths": [
+          "/metrics"
+        ],
+        "x-dd-visibility": "internal"
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "formal_methods_service_rs_get_openapi_json_c11fbd46dde8",
+        "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "service"
         ],
@@ -257,16 +292,16 @@
         },
         "x-dd-auth": "public",
         "x-dd-handlers": [
-          "health"
+          "getFormalMethodsPublicOpenApi"
         ],
-        "x-dd-implementation": "service",
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "service",
         "x-dd-source-files": [
-          "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+          "remote/deployments/formal-methods-service-rs/generated/openapi.json"
         ],
-        "x-dd-source-path": "/metrics",
+        "x-dd-source-path": "/openapi.json",
         "x-dd-source-paths": [
-          "/metrics"
+          "/openapi.json"
         ],
         "x-dd-visibility": "public",
         "security": []
@@ -276,7 +311,7 @@
       "get": {
         "operationId": "formal_methods_service_rs_get_ready_6bbc311e4a9d",
         "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "user-generated"
         ],
@@ -286,14 +321,14 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "service-defined",
+        "x-dd-auth": "cluster-network-policy",
         "x-dd-handlers": [
-          "health"
+          "getFormalMethodsReadiness"
         ],
-        "x-dd-implementation": "code-first",
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "user-generated",
         "x-dd-source-files": [
-          "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+          "remote/deployments/formal-methods-service-rs/generated/openapi.json"
         ],
         "x-dd-source-path": "/ready",
         "x-dd-source-paths": [
@@ -306,7 +341,7 @@
       "post": {
         "operationId": "formal_methods_service_rs_post_webhook_github_7ab592acd84c",
         "summary": "Custom code-first route derived from the service router.",
-        "description": "Custom code-first route derived from the service router.",
+        "description": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher.",
         "tags": [
           "user-generated"
         ],
@@ -316,14 +351,14 @@
             "description": "Response produced by the registered service handler."
           }
         },
-        "x-dd-auth": "service-defined",
+        "x-dd-auth": "github-webhook-signature",
         "x-dd-handlers": [
-          "webhook"
+          "receiveGitHubFormalMethodsWebhook"
         ],
-        "x-dd-implementation": "code-first",
+        "x-dd-implementation": "openapi-code-first",
         "x-dd-route-type": "user-generated",
         "x-dd-source-files": [
-          "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+          "remote/deployments/formal-methods-service-rs/generated/openapi.json"
         ],
         "x-dd-source-path": "/webhook/github",
         "x-dd-source-paths": [
@@ -355,8 +390,8 @@
   "x-dd-contract-scope": "internal",
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "rust",
-  "x-dd-operation-count": 10,
-  "x-dd-route-count": 10,
+  "x-dd-operation-count": 11,
+  "x-dd-route-count": 11,
   "x-dd-service": "formal-methods-service-rs",
   "x-dd-standard-docs-routes": [
     "/docs/api",

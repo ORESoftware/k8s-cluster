@@ -1245,7 +1245,16 @@ async function takeSnapshot(session: Session, maxElements: number, maxText: numb
     maxTextChars: maxText,
   })) as RawSnapshot;
   session.lastSnapshot = snap;
-  session.lastBlocker = detectBlocker(snap);
+  // Content blockers (captcha/mfa/payment/...) are recomputed each snapshot.
+  // A policy blocker set by the navigation interceptor (domain_not_allowed) is
+  // NOT recomputable from page content, so preserve it here; it is cleared by
+  // the framenavigated handler once a navigation actually succeeds.
+  const contentBlocker = detectBlocker(snap);
+  if (contentBlocker) {
+    session.lastBlocker = contentBlocker;
+  } else if (session.lastBlocker?.type !== 'domain_not_allowed') {
+    session.lastBlocker = null;
+  }
   assignRefs(session, snap);
   return snap;
 }

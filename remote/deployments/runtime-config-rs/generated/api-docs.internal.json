@@ -317,8 +317,8 @@
       }
     },
     "/entries/{env}/{scope}/{key}": {
-      "get": {
-        "operationId": "runtime_config_rs_get_entries_env_scope_key_7ddaba147efe",
+      "delete": {
+        "operationId": "runtime_config_rs_delete_entries_env_scope_key_f09e417132d1",
         "summary": "Custom code-first route derived from the service router.",
         "description": "Custom code-first route derived from the service router.",
         "tags": [
@@ -371,8 +371,8 @@
         ],
         "x-dd-visibility": "internal"
       },
-      "delete": {
-        "operationId": "runtime_config_rs_delete_entries_env_scope_key_f09e417132d1",
+      "get": {
+        "operationId": "runtime_config_rs_get_entries_env_scope_key_7ddaba147efe",
         "summary": "Custom code-first route derived from the service router.",
         "description": "Custom code-first route derived from the service router.",
         "tags": [
@@ -839,7 +839,7 @@
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "rust",
   "x-dd-operation-count": 21,
-  "x-dd-route-count": 19,
+  "x-dd-route-count": 21,
   "x-dd-service": "runtime-config-rs",
   "x-dd-standard-docs-routes": [
     "/docs/api",

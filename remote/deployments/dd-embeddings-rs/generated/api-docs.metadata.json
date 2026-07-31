@@ -29,7 +29,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/docs.json",
@@ -46,7 +46,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/embeddings",
@@ -63,7 +63,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/providers",
@@ -80,7 +80,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/rag/collections",
@@ -97,7 +97,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/rag/collections/{collection}",
@@ -114,7 +114,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/rag/delete",
@@ -131,7 +131,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/rag/index",
@@ -148,7 +148,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/rag/search",
@@ -165,7 +165,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/rerank",
@@ -182,7 +182,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/search",
@@ -199,7 +199,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/search/collections",
@@ -216,7 +216,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/search/collections/{collection}",
@@ -233,7 +233,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/search/delete",
@@ -250,7 +250,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/search/edges",
@@ -267,7 +267,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/search/index",
@@ -284,7 +284,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/docs/api",
@@ -301,7 +301,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/healthz",
@@ -318,7 +318,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/internal/docs/api",
@@ -335,7 +335,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/internal/openapi.json",
@@ -352,7 +352,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/metrics",
@@ -369,7 +369,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/openapi.json",
@@ -386,7 +386,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/readyz",
@@ -403,7 +403,7 @@
       "sourceFiles": [
         "remote/deployments/dd-embeddings-rs/generated/openapi.json"
       ],
-      "notes": "Executable OpenAPI contract collected from the same typed handler registration as the runtime Axum router."
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     }
   ]
 }

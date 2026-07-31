@@ -1,3 +1,12 @@
+<<<<<<< HEAD
+# AI agent coordinator Application. The app repository owns deploy/k8s; this
+# platform repository owns its tenant boundary and pins the reviewed app commit.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-ai-agent-coordinator
+  namespace: argocd
+=======
 # App-repo-sourced coordinator pilot. The application repository owns the
 # namespace-scoped workload manifests; this platform repository pins the exact
 # reviewed commit and enforces the destination through AppProject.
@@ -8,12 +17,18 @@ metadata:
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "0"
+>>>>>>> origin/dev
 spec:
   project: ai-agent-coordinator
   source:
     repoURL: https://github.com/ORESoftware/ai-agent-coordinator.rs.git
+<<<<<<< HEAD
+    targetRevision: 83091cb3b3dc1fc4797e822f7fe2d320ca1c3cd9
+    path: deploy/k8s
+=======
     targetRevision: a6fb1f89e064c21dc1e435931c75e9871746d0f7
     path: deploy/overlays/cross-org-linear-pilot
+>>>>>>> origin/dev
   destination:
     server: https://kubernetes.default.svc
     namespace: ai-agent-coordinator

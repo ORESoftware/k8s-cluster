@@ -5,8 +5,8 @@
   "packageName": "oresoftware_k8s_api_sdk_public",
   "generatedBy": "remote/tools/generate-api-sdks.mjs",
   "catalogPath": "remote/api-sdks/contracts/public.json",
-  "catalogSha256": "b9b45458249438952fa12da2a86cebdb6851ddd3cdf5945f0a4e65c72380acdd",
-  "catalogFileSha256": "0affdff532feb9d29d9fed8efa2bee349cd662f2e0f41562f00dac24ebd85839",
+  "catalogSha256": "dd6cd2dfce13705381cfcc79c99d9f2b7e7307fc846e28609defe908e9859689",
+  "catalogFileSha256": "466aac12982428e724553c9d33f656efaa79df4443536626ccbb06cbc24558f7",
   "serviceCount": 44,
   "operationCount": 279,
   "skippedServices": [
@@ -53,11 +53,11 @@
     },
     {
       "path": "bin/smoke.dart",
-      "sha256": "bda06538af0e5b384900ce5a012743f8a6fe4f7875f51f2fb86f76dd5d34d9b4"
+      "sha256": "18db770f8a23806fb6946dac02992d8123794c40c439aca894734158463b3afa"
     },
     {
       "path": "lib/dd_api_sdk.dart",
-      "sha256": "daefdb97c048e79a055232273921e1162660f9fa71422272200d25fe317ad49a"
+      "sha256": "5fa7593d521857fa9241b52d2930b610b2c66108b35112b164fa11c4646f625c"
     },
     {
       "path": "pubspec.yaml",

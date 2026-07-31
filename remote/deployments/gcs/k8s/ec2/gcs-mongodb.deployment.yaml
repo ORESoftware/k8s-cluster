@@ -31,6 +31,13 @@ spec:
           ports:
             - name: mongodb
               containerPort: 27017
+          # Same reasoning as gcs-rabbitmq: the official mongo entrypoint chowns
+          # /data/db as root then drops to the mongodb user, so ALL is not
+          # droppable here, but it never needs to gain privileges.
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           lifecycle:
             postStart:
               exec:

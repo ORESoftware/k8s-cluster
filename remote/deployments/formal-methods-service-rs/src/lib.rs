@@ -13,12 +13,16 @@
 //!   `cargo test`) against a freshly checked-out PR head commit. Formal-
 //!   methods steps (Kani, Verus, raw Z3, ...) plug in as additional
 //!   [`analysis::Analyzer`] implementations.
-//! * [`routes`]   builds the axum router and HTTP handlers.
+//! * [`routes`]   builds the Axum router and executable OpenAPI contract from
+//!   the same typed handler registrations.
+//! * [`docs`]     composes the local and shared runtime-config contracts and
+//!   renders fail-closed public documentation.
 //! * [`state`]    holds the shared application state.
 
 pub mod analysis;
 pub mod config;
 pub mod dedupe;
+pub mod docs;
 pub mod error;
 pub mod github;
 pub mod path_filter;

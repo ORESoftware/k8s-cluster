@@ -5,8 +5,8 @@
   "packageName": "@oresoftware/k8s-api-sdk-public",
   "generatedBy": "remote/tools/generate-api-sdks.mjs",
   "catalogPath": "remote/api-sdks/contracts/public.json",
-  "catalogSha256": "b9b45458249438952fa12da2a86cebdb6851ddd3cdf5945f0a4e65c72380acdd",
-  "catalogFileSha256": "0affdff532feb9d29d9fed8efa2bee349cd662f2e0f41562f00dac24ebd85839",
+  "catalogSha256": "dd6cd2dfce13705381cfcc79c99d9f2b7e7307fc846e28609defe908e9859689",
+  "catalogFileSha256": "466aac12982428e724553c9d33f656efaa79df4443536626ccbb06cbc24558f7",
   "serviceCount": 44,
   "operationCount": 279,
   "skippedServices": [
@@ -53,11 +53,11 @@
     },
     {
       "path": "src/index.ts",
-      "sha256": "8bcafc3b0afa02615d46fc2f0abd41e16b822e51961c1d547b5d6a85eb196223"
+      "sha256": "896776e71a127827b165bce5512b810e3496ebf6560abbd2b704fe157bc5df9a"
     },
     {
       "path": "test/smoke.test.mjs",
-      "sha256": "0f6a8250bfeb84170c422a6a1683a7cea0648f01baf0eaaf7fe094829c0528e4"
+      "sha256": "05009fe7da7f820a61be312591f99b510f192ae83238d7041098257a63c87b73"
     },
     {
       "path": "tsconfig.json",

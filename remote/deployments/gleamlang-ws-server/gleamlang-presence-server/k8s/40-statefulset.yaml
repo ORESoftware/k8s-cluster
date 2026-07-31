@@ -20,11 +20,30 @@ spec:
         app: presence
     spec:
       serviceAccountName: presence
+      # The SA token IS required here — the presence binary reads it from
+      # /var/run/secrets/… to list sibling pods for Erlang cluster discovery
+      # (see 10-rbac.yaml), so automountServiceAccountToken stays on.
       terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: presence
           image: ghcr.io/your-org/presence:0.1.0
           imagePullPolicy: IfNotPresent
+          # BEAM binds 8081/4369/9100 — all unprivileged — and never needs to
+          # escalate, so drop the whole capability set.
+          # readOnlyRootFilesystem is deliberately NOT set: an OTP release
+          # writes to its release dir and $RELEASE_TMP at boot, so turning it
+          # on needs writable emptyDir mounts verified against a real deploy.
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           env:
             - name: PORT
               value: "8081"

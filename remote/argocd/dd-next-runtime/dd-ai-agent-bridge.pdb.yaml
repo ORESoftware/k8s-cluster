@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dd-ai-agent-bridge
+  namespace: default
+  labels:
+    app: dd-ai-agent-bridge
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: dd-ai-agent-bridge

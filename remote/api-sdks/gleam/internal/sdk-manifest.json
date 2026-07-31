@@ -5,10 +5,10 @@
   "packageName": "oresoftware_k8s_api_sdk_internal",
   "generatedBy": "remote/tools/generate-api-sdks.mjs",
   "catalogPath": "remote/api-sdks/contracts/internal.json",
-  "catalogSha256": "99f0be62a7df7015cc0245308db52ebad595fa5f0c4969275bb7a241c6acea25",
-  "catalogFileSha256": "8cc6165ab7d44291c5cecb2f71b09724d5ae5b2a79b9e02e2e52bf452f06c70d",
+  "catalogSha256": "ae1ce6bfb16657296304863f0dde0395858173c3acd113fcfa93b11dc43e1288",
+  "catalogFileSha256": "64df987084745bbb80725bf6f7e59827f0f5e6fe0f83047d3fe7a64581e4a528",
   "serviceCount": 44,
-  "operationCount": 941,
+  "operationCount": 943,
   "skippedServices": [
     {
       "service": "billing-server-rs",
@@ -53,11 +53,11 @@
     },
     {
       "path": "src/dd_api_sdk.gleam",
-      "sha256": "69913a82a38497fa9a6a1addd26f0e30540abb6e02e89fb9de2ef823ae1ba123"
+      "sha256": "afaece4aa4493f980899f4273854ff4a8966d59e4ca0f0bc709048b02c4f6819"
     },
     {
       "path": "test/oresoftware_k8s_api_sdk_internal_test.gleam",
-      "sha256": "7883bda7a5f92088c3184c06de6781c58946eae5fb84b9f2291e02ec2ab5e0fd"
+      "sha256": "e5d644dab5eaebc60b515e152be1e195753da9035f537488399b94f32dcffa97"
     }
   ]
 }

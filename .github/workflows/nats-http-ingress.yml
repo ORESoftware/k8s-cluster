@@ -5,6 +5,13 @@ on:
     paths:
       - 'remote/nats-bridge/**'
       - 'remote/argocd/messaging/nats-bridge*'
+<<<<<<< HEAD
+      - 'remote/tests/general/nats-http-ingress-boundary.test.ts'
+      - '.github/workflows/nats-http-ingress.yml'
+  push:
+    branches:
+      - agent/den-440-nats-http-ingress-clean
+=======
       - 'remote/argocd/messaging/kustomization.yaml'
       - 'remote/argocd/messaging/readme.md'
       - 'docs/nats-external-http-ingress.md'
@@ -20,6 +27,7 @@ on:
       - 'docs/nats-external-http-ingress.md'
       - 'remote/tests/general/nats-http-ingress-boundary.test.ts'
       - '.github/workflows/nats-http-ingress.yml'
+>>>>>>> origin/dev
   workflow_dispatch:
 
 permissions:

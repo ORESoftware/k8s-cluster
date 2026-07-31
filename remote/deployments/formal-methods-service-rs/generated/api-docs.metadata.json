@@ -3,9 +3,9 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "formal-methods-service-rs",
   "language": "rust",
-  "routeCount": 10,
+  "routeCount": 11,
   "routeTypeCounts": {
-    "service": 4,
+    "service": 5,
     "user-generated": 3,
     "runtime-config": 3
   },
@@ -21,16 +21,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
+      "visibility": "public",
       "purpose": "Human-readable generated API documentation.",
       "handlers": [
-        "api_docs_html"
+        "getFormalMethodsPublicApiReference"
       ],
       "sourceFiles": [
-        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/api/docs.json",
@@ -38,16 +39,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
+      "visibility": "public",
       "purpose": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
       "handlers": [
-        "api_docs_json"
+        "getFormalMethodsPublicOpenApiCompatibilityAlias"
       ],
       "sourceFiles": [
-        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/docs/api",
@@ -55,16 +57,17 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
+      "implementation": "openapi-code-first",
       "auth": "public",
+      "visibility": "public",
       "purpose": "Human-readable generated API documentation.",
       "handlers": [
-        "api_docs_html"
+        "getFormalMethodsPublicApiReferenceCompatibilityAlias"
       ],
       "sourceFiles": [
-        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/health",
@@ -72,16 +75,17 @@
         "GET"
       ],
       "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "health"
+        "getFormalMethodsHealth"
       ],
       "sourceFiles": [
-        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/internal/runtime-config",
@@ -89,16 +93,17 @@
         "GET"
       ],
       "routeType": "runtime-config",
-      "implementation": "code-first",
-      "auth": "service-defined",
-      "purpose": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+      "implementation": "openapi-code-first",
+      "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+      "visibility": "internal",
+      "purpose": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
       "handlers": [
-        "dd_runtime_config_client::handle_get"
+        "getRuntimeConfigSnapshot"
       ],
       "sourceFiles": [
-        "remote/libs/runtime-config-client-rs/src/lib.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/internal/runtime-config/reset",
@@ -106,16 +111,17 @@
         "POST"
       ],
       "routeType": "runtime-config",
-      "implementation": "code-first",
+      "implementation": "openapi-code-first",
       "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-      "purpose": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+      "visibility": "internal",
+      "purpose": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
       "handlers": [
-        "dd_runtime_config_client::handle_reset"
+        "resetRuntimeConfigSnapshot"
       ],
       "sourceFiles": [
-        "remote/libs/runtime-config-client-rs/src/lib.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/internal/update-runtime-config",
@@ -123,16 +129,17 @@
         "POST"
       ],
       "routeType": "runtime-config",
-      "implementation": "code-first",
+      "implementation": "openapi-code-first",
       "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
-      "purpose": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+      "visibility": "internal",
+      "purpose": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
       "handlers": [
-        "dd_runtime_config_client::handle_apply"
+        "applyRuntimeConfigSnapshot"
       ],
       "sourceFiles": [
-        "remote/libs/runtime-config-client-rs/src/lib.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/metrics",
@@ -140,16 +147,35 @@
         "GET"
       ],
       "routeType": "service",
-      "implementation": "service",
-      "auth": "public",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
       "purpose": "Prometheus metrics.",
       "handlers": [
-        "health"
+        "getFormalMethodsPrometheusMetrics"
       ],
       "sourceFiles": [
-        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
+    },
+    {
+      "path": "/openapi.json",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "service",
+      "implementation": "openapi-code-first",
+      "auth": "public",
+      "visibility": "public",
+      "purpose": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+      "handlers": [
+        "getFormalMethodsPublicOpenApi"
+      ],
+      "sourceFiles": [
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
+      ],
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/ready",
@@ -157,16 +183,17 @@
         "GET"
       ],
       "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
+      "implementation": "openapi-code-first",
+      "auth": "cluster-network-policy",
+      "visibility": "internal",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "health"
+        "getFormalMethodsReadiness"
       ],
       "sourceFiles": [
-        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     },
     {
       "path": "/webhook/github",
@@ -174,16 +201,17 @@
         "POST"
       ],
       "routeType": "user-generated",
-      "implementation": "code-first",
-      "auth": "service-defined",
+      "implementation": "openapi-code-first",
+      "auth": "github-webhook-signature",
+      "visibility": "internal",
       "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "webhook"
+        "receiveGitHubFormalMethodsWebhook"
       ],
       "sourceFiles": [
-        "remote/deployments/formal-methods-service-rs/src/routes/mod.rs"
+        "remote/deployments/formal-methods-service-rs/generated/openapi.json"
       ],
-      "notes": ""
+      "notes": "Executable OpenAPI contract collected from the same typed route registration used by the runtime dispatcher."
     }
   ]
 }

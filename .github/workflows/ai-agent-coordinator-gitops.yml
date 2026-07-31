@@ -4,12 +4,19 @@ on:
   pull_request:
     paths:
       - '.github/workflows/ai-agent-coordinator-gitops.yml'
+<<<<<<< HEAD
+      - 'remote/argocd/apps/ai-agent-coordinator.application.yaml'
+      - 'remote/argocd/projects/ai-agent-coordinator.appproject.yaml'
+      - 'remote/argocd/projects/ai-agent-coordinator.tenant.yaml'
+      - 'remote/tests/general/ai-agent-coordinator-gitops.test.ts'
+=======
       - 'remote/argocd/apps/ai-agent-coordinator*.application.yaml'
       - 'remote/argocd/projects/ai-agent-coordinator/**'
       - 'remote/argocd/clusters/*/ai-agent-coordinator.applications.yaml'
       - 'remote/argocd/clusters/*/kustomization.yaml'
       - 'remote/tests/general/ai-agent-coordinator-gitops.test.ts'
   workflow_dispatch:
+>>>>>>> origin/dev
 
 permissions:
   contents: read
@@ -18,6 +25,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+<<<<<<< HEAD
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+=======
 env:
   COORDINATOR_REVISION: a6fb1f89e064c21dc1e435931c75e9871746d0f7
 
@@ -31,10 +48,16 @@ jobs:
         with:
           persist-credentials: false
 
+>>>>>>> origin/dev
       - name: Validate workflow
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
           args: .github/workflows/ai-agent-coordinator-gitops.yml
+<<<<<<< HEAD
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+=======
 
       - name: Check out immutable coordinator source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -48,11 +71,20 @@ jobs:
         with:
           version: 10.33.0
 
+>>>>>>> origin/dev
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: '22'
           cache: pnpm
           cache-dependency-path: remote/tests/pnpm-lock.yaml
+<<<<<<< HEAD
+      - name: Install test dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: remote/tests
+      - name: Run coordinator GitOps contract
+        run: pnpm exec tsx --test general/ai-agent-coordinator-gitops.test.ts
+        working-directory: remote/tests
+=======
 
       - name: Install focused test dependencies
         run: pnpm install --frozen-lockfile
@@ -144,3 +176,4 @@ jobs:
             fail_contract("#{cloud} creates the namespace from the app") if workload.dig('spec', 'syncPolicy', 'syncOptions').to_a.include?('CreateNamespace=true')
           end
           RUBY
+>>>>>>> origin/dev
