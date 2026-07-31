@@ -1,4 +1,5 @@
 name: Dispatch and observe current missing-organization publisher once
+run-name: Observe corrected missing-organization publisher for Meta Agents
 
 on:
   push:
