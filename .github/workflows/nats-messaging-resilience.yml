@@ -72,9 +72,7 @@ jobs:
               "    }\n"
           )
           new = (
-              "    if let Some(t) = &bridge_token\n"
-              "        && t.len() < 16\n"
-              "    {\n"
+              "    if bridge_token.as_ref().is_some_and(|t| t.len() < 16) {\n"
               "        eprintln!(\"Fatal: BRIDGE_TOKEN must be at least 16 characters\");\n"
               "        std::process::exit(1);\n"
               "    }\n"
