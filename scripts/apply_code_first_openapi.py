@@ -742,7 +742,7 @@ jobs:
 Path(".github/workflows/openapi-contract.yml").write_text(workflow)
 
 Path("docs/openapi-contract.md").write_text(
-    """# Executable HTTP API contract\n\n"
+    "# Executable HTTP API contract\n\n"
     "The running Axum routes and the OpenAPI operations are registered together through "
     "`utoipa_axum::routes!`. `generated/openapi.internal.json` is the complete private SDK "
     "source. `generated/openapi.public.json` is a fail-closed projection containing only "
