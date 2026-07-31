@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "repository": "akrion-sim/akrion-soccer-engine-rs",
+  "procedure": "docs/FORMAL_REVIEW_PROCEDURE.md",
+  "obligations": [
+    {
+      "id": "SIM_PHASE",
+      "kind": "safety",
+      "statement": "Every reachable state follows the legal phase and restart transition relation.",
+      "trigger_paths": [
+        "src/**"
+      ],
+      "model": "formal/review-procedure/model.py",
+      "evidence": [
+        "bounded transition model",
+        "Rust phase-transition tests"
+      ],
+      "commands": [
+        "python3 formal/review-procedure/model.py",
+        "cargo test --lib"
+      ],
+      "assumptions": [
+        "finite phases and bounded event depth"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "SIM_TIME",
+      "kind": "safety",
+      "statement": "Match time is monotonic, bounded, and cannot move backward across events.",
+      "trigger_paths": [
+        "src/**"
+      ],
+      "model": "formal/review-procedure/model.py",
+      "evidence": [
+        "bounded transition model",
+        "deterministic clock tests"
+      ],
+      "commands": [
+        "python3 formal/review-procedure/model.py",
+        "cargo test --lib"
+      ],
+      "assumptions": [
+        "logical time abstracts scheduler latency"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "SIM_POSSESSION",
+      "kind": "safety",
+      "statement": "At most one team or player owns possession in every abstract match state.",
+      "trigger_paths": [
+        "src/**"
+      ],
+      "model": "formal/review-procedure/model.py",
+      "evidence": [
+        "bounded transition model",
+        "possession transfer tests"
+      ],
+      "commands": [
+        "python3 formal/review-procedure/model.py",
+        "cargo test --lib"
+      ],
+      "assumptions": [
+        "continuous loose-ball geometry is abstracted"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "SIM_SCORE",
+      "kind": "safety",
+      "statement": "Scores remain non-negative and change only through an admitted goal transition.",
+      "trigger_paths": [
+        "src/**"
+      ],
+      "model": "formal/review-procedure/model.py",
+      "evidence": [
+        "bounded transition model",
+        "goal and restart tests"
+      ],
+      "commands": [
+        "python3 formal/review-procedure/model.py",
+        "cargo test --lib"
+      ],
+      "assumptions": [
+        "video-review and officiating delays are abstracted"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "SIM_REPLAY",
+      "kind": "refinement",
+      "statement": "Equal seeds and initial states must produce equal abstract traces and terminal results.",
+      "trigger_paths": [
+        "src/**",
+        "tests/**"
+      ],
+      "model": "formal/review-procedure/model.py",
+      "evidence": [
+        "seeded model run",
+        "Rust deterministic replay tests"
+      ],
+      "commands": [
+        "python3 formal/review-procedure/model.py",
+        "cargo test --lib"
+      ],
+      "assumptions": [
+        "platform floating-point differences require explicit tolerances outside this discrete model"
+      ],
+      "bounded": true
+    }
+  ]
+}
