@@ -7,6 +7,7 @@ resources:
   - nats.deployment.yaml
   - nats.service.yaml
   - nats.networkpolicy.yaml
+  - nats.pdb.yaml
   - nats-bridge.configmap.yaml
   - nats-bridge.externalsecret.yaml
   - nats-bridge.deployment.yaml
