@@ -1,0 +1,79 @@
+name: no PAT propagation
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/ci/**'
+      - 'patches/den-443-remove-pat-runtime-propagation.patch'
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - '.github/workflows/**'
+      - 'scripts/ci/**'
+      - 'patches/den-443-remove-pat-runtime-propagation.patch'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: no-pat-propagation-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  patch-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prove the reviewed incident patch applies cleanly
+        run: |
+          set -euo pipefail
+          patch='patches/den-443-remove-pat-runtime-propagation.patch'
+          test -s "$patch"
+          git apply --check "$patch"
+          git apply "$patch"
+          forbidden='REMOTE_DEV_GH_PAT|sync-agent-gh-pat|x-access-token:|data\["GH_PAT"\]|env REMOTE_DEV_GH_PAT='
+          if grep -nE "$forbidden" \
+            .github/workflows/remote-k8s-maintenance.yml \
+            .github/workflows/formal-methods.yml; then
+            echo 'The reviewed patch did not remove every broad-PAT path.' >&2
+            exit 1
+          fi
+          git diff --check
+          git diff --exit-code -- . ':(exclude).github/workflows/remote-k8s-maintenance.yml' || {
+            echo 'The incident patch modifies files outside the reviewed maintenance workflow.' >&2
+            exit 1
+          }
+
+  live-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Reject broad PAT fallbacks and persistence paths
+        run: |
+          set -euo pipefail
+          files=(
+            .github/workflows/remote-k8s-maintenance.yml
+            .github/workflows/formal-methods.yml
+          )
+          forbidden='REMOTE_DEV_GH_PAT|sync-agent-gh-pat|x-access-token:|data\["GH_PAT"\]|env REMOTE_DEV_GH_PAT='
+          if grep -nE "$forbidden" "${files[@]}"; then
+            echo 'A broad PAT fallback or PAT-to-runtime persistence path is forbidden.' >&2
+            echo 'Apply patches/den-443-remove-pat-runtime-propagation.patch with workflow-write permission.' >&2
+            exit 1
+          fi
+      - name: Require non-persistent Git authentication posture
+        run: |
+          set -euo pipefail
+          grep -F 'persist-credentials: false' .github/workflows/formal-methods.yml
+          grep -F 'K8S_LIBS_DEPLOY_KEY' .github/workflows/formal-methods.yml
+          ! grep -F 'continue-on-error: true' .github/workflows/formal-methods.yml
