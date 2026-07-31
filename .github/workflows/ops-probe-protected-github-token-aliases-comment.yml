@@ -1,46 +1,69 @@
-name: Probe protected GitHub token aliases once
-run-name: Final trusted-main token-alias evidence execution @ ${{ github.sha }}
+name: Probe protected GitHub token aliases from trusted carrier
 
 on:
-  push:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
     branches: [main]
     paths:
-      - .github/workflows/ops-probe-protected-github-token-aliases-once.yml
+      - .github/protected-github-token-alias-probe-trigger
 
 permissions:
-  contents: write
+  contents: read
   id-token: write
+  pull-requests: write
 
 concurrency:
-  group: probe-protected-github-token-aliases-den-319
-  cancel-in-progress: false
+  group: protected-github-token-alias-probe-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   probe:
-    if: github.actor == 'ORESoftware'
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'ops/den-319-protected-token-alias-carrier-20260731-v1'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
     steps:
+      - name: Validate the exact read-only carrier
+        shell: bash
+        run: |
+          set -euo pipefail
+          files="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100")"
+          test "$(jq 'length' <<<"$files")" = 1
+          test "$(jq -r '.[0].filename' <<<"$files")" = \
+            .github/protected-github-token-alias-probe-trigger
+          test "$(jq -r '.[0].status' <<<"$files")" = added
+          encoded="$(
+            gh api \
+              "repos/${GITHUB_REPOSITORY}/contents/.github/protected-github-token-alias-probe-trigger?ref=${HEAD_SHA}" \
+              --jq .content
+          )"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
+          test "$marker" = probe=protected-github-token-aliases-v1
+
       - name: Check out trusted main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
-          fetch-depth: 0
-          persist-credentials: true
+          fetch-depth: 1
+          persist-credentials: false
 
       - name: Configure AWS OIDC credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
-          role-session-name: protected-github-token-alias-probe
+          role-session-name: protected-github-token-alias-observer
           retry-max-attempts: 2
           mask-aws-account-id: true
 
-      - name: Test GitHub-related protected fields without exposing values
+      - name: Probe aliases and post only validated redacted evidence
         shell: bash
-        env:
-          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
         run: |
           set -euo pipefail
           test -n "${INSTANCE_ID:-}"
@@ -56,14 +79,13 @@ jobs:
           import urllib.error
           import urllib.request
 
-          region = os.environ["AWS_REGION"]
           completed = subprocess.run(
               [
                   "aws",
                   "secretsmanager",
                   "get-secret-value",
                   "--region",
-                  region,
+                  os.environ["AWS_REGION"],
                   "--secret-id",
                   "dd/remote-dev/agent-secrets",
                   "--query",
@@ -78,14 +100,12 @@ jobs:
           )
           if completed.returncode != 0 or not completed.stdout.strip():
               raise SystemExit("protected secret is unreadable in configured region")
-
           try:
               payload = json.loads(completed.stdout)
           except json.JSONDecodeError as exc:
               raise SystemExit("protected secret is not a JSON object") from exc
           finally:
               completed.stdout = ""
-
           if not isinstance(payload, dict):
               raise SystemExit("protected secret is not a JSON object")
 
@@ -105,7 +125,7 @@ jobs:
                       "Accept": "application/vnd.github+json",
                       "Authorization": f"Bearer {token}",
                       "X-GitHub-Api-Version": "2022-11-28",
-                      "User-Agent": "protected-token-alias-probe",
+                      "User-Agent": "protected-token-alias-observer",
                   },
               )
               try:
@@ -153,7 +173,6 @@ jobs:
                               else None,
                           }
               result["candidates"].append(candidate)
-
           payload.clear()
           print(json.dumps(result, indent=2, sort_keys=True))
           PY
@@ -172,7 +191,6 @@ jobs:
               --query 'Command.CommandId' \
               --output text
           )"
-          echo "ssm_command_id=$command_id"
 
           status=Pending
           for _ in $(seq 1 90); do
@@ -197,9 +215,9 @@ jobs:
             --output json > "$invocation"
           test "$status" = Success
 
-          evidence="$RUNNER_TEMP/protected-github-token-aliases.json"
-          jq -er '.StandardOutputContent | fromjson' "$invocation" > "$evidence"
-          python3 - "$evidence" <<'PY'
+          result="$RUNNER_TEMP/protected-token-alias-result.json"
+          jq -er '.StandardOutputContent | fromjson' "$invocation" > "$result"
+          python3 - "$result" <<'PY'
           import json
           import re
           import sys
@@ -207,59 +225,42 @@ jobs:
 
           path = Path(sys.argv[1])
           evidence = json.loads(path.read_text(encoding="utf-8"))
-          if evidence.get("schema_version") != 1:
+          if evidence.get("schema_version") != 1 or not isinstance(evidence.get("candidates"), list):
               raise SystemExit("unexpected evidence schema")
-          candidates = evidence.get("candidates")
-          if not isinstance(candidates, list):
-              raise SystemExit("candidate evidence is not a list")
           allowed_candidate_keys = {
-              "name",
-              "type",
-              "nonempty_string",
-              "whitespace_free",
-              "user_http_status",
-              "login",
-              "organizations",
+              "name", "type", "nonempty_string", "whitespace_free",
+              "user_http_status", "login", "organizations",
           }
-          allowed_organization_keys = {"http_status", "role", "state"}
+          allowed_membership_keys = {"http_status", "role", "state"}
           name_pattern = re.compile(r"(?:github|gh|token|pat)", re.IGNORECASE)
-          for candidate in candidates:
+          approved_orgs = {
+              "hypesiege", "StreemPilot", "meta-agents-demo",
+              "file-tunnel", "unreal-unity-poc",
+          }
+          for candidate in evidence["candidates"]:
               if not isinstance(candidate, dict) or set(candidate) != allowed_candidate_keys:
-                  raise SystemExit("candidate evidence contains unexpected fields")
+                  raise SystemExit("unexpected candidate fields")
               if not isinstance(candidate["name"], str) or not name_pattern.search(candidate["name"]):
-                  raise SystemExit("candidate name is outside the bounded filter")
+                  raise SystemExit("candidate name outside bounded filter")
               if candidate["login"] not in (None, "ORESoftware"):
-                  raise SystemExit("unexpected authenticated identity in evidence")
-              organizations = candidate["organizations"]
-              if not isinstance(organizations, dict):
-                  raise SystemExit("organization evidence is not an object")
-              for organization, membership in organizations.items():
-                  if organization not in {
-                      "hypesiege",
-                      "StreemPilot",
-                      "meta-agents-demo",
-                      "file-tunnel",
-                      "unreal-unity-poc",
-                  }:
-                      raise SystemExit("unexpected organization in evidence")
-                  if not isinstance(membership, dict) or set(membership) != allowed_organization_keys:
-                      raise SystemExit("unexpected organization evidence fields")
+                  raise SystemExit("unexpected authenticated identity")
+              memberships = candidate["organizations"]
+              if not isinstance(memberships, dict) or not set(memberships).issubset(approved_orgs):
+                  raise SystemExit("unexpected organization evidence")
+              for membership in memberships.values():
+                  if not isinstance(membership, dict) or set(membership) != allowed_membership_keys:
+                      raise SystemExit("unexpected membership fields")
           path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
           PY
-          echo "protected_token_alias_candidates=$(jq '.candidates | length' "$evidence")"
 
-      - name: Commit redacted evidence and remove the one-shot workflow
-        shell: bash
-        run: |
-          set -euo pipefail
-          git pull --rebase origin main
-          mkdir -p ops/evidence
-          cp "$RUNNER_TEMP/protected-github-token-aliases.json" \
-            ops/evidence/protected-github-token-aliases.json
-          git rm .github/workflows/ops-probe-protected-github-token-aliases-once.yml
-          git add ops/evidence/protected-github-token-aliases.json
-          git diff --cached --check
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git commit -m 'ops(DEN-319): record protected GitHub token alias evidence'
-          git push origin HEAD:refs/heads/main
+          body="$RUNNER_TEMP/protected-token-alias-comment.md"
+          {
+            echo '### Protected GitHub token alias evidence'
+            echo
+            echo 'No credential values, lengths, headers, or arbitrary errors are included.'
+            echo
+            echo '```json'
+            cat "$result"
+            echo '```'
+          } > "$body"
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$body"

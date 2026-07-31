@@ -1,7 +1,9 @@
 name: Observe canonical mcp-rust-libs publisher exactly once
-run-name: Observe canonical mcp-rust-libs publication after gh-profile repair
+run-name: Retry canonical mcp-rust-libs publication after owner gh authentication @ ${{ github.sha }}
 
 on:
+  # Merging this reviewed operational retry to trusted main dispatches the
+  # existing fail-closed publisher and follows that exact workflow run.
   push:
     branches: [main]
     paths:
