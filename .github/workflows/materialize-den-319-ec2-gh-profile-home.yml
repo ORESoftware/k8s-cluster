@@ -1,9 +1,8 @@
 name: Materialize DEN-319 ec2-user gh profile home
 
 on:
-  push:
-    branches:
-      - fix/den-319-ec2-gh-profile-home
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
@@ -14,6 +13,7 @@ concurrency:
 
 jobs:
   materialize:
+    if: github.head_ref == 'fix/den-319-ec2-gh-profile-home'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
