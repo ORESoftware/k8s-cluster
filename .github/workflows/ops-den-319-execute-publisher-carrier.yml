@@ -1,0 +1,27 @@
+name: DEN-319 protected publisher execution carrier
+run-name: DEN-319 protected publisher execution for PR #${{ github.event.pull_request.number }}
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - .github/workflows/ops-den-319-execute-publisher-carrier.yml
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: den-319-protected-publisher-execution
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'ops/den-319-execute-reusable-publisher-20260731-1054'
+    uses: ./.github/workflows/ops-publish-missing-org-repositories-dispatch.yml
+    with:
+      request_id: den-319-pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+    secrets: inherit
