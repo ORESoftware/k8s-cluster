@@ -1,5 +1,5 @@
 name: Trigger corrected full critical organization fleet publication
-run-name: Dispatch corrected fleet publisher for carrier 471
+run-name: Dispatch corrected fleet publisher for carrier 471 v2
 
 on:
   push:
