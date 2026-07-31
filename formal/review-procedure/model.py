@@ -199,14 +199,11 @@ def assert_transition(action: str, source: State, target: State) -> None:
             source.mirror in {MIRROR_NONE, MIRROR_DELETED},
             "finalized deletion before mirror removal",
         )
-<<<<<<< HEAD
         if source.mirror_started and source.mirror == MIRROR_NONE:
             require(
                 source.mirror_copy_fenced,
                 "finalized deletion after mirror abandonment without fencing",
             )
-=======
->>>>>>> origin/agent/formal-methods-20260730-segment-lifecycle
     if action.endswith("-retry"):
         require(target == source, f"retry transition {action} changed abstract state")
 
