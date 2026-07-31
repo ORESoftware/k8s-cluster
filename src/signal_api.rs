@@ -66,7 +66,6 @@ pub(crate) struct PublishPreKeysRequest {
     expires_at_ms: u64,
 }
 
-<<<<<<< HEAD
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PublishPreKeysResponse {
