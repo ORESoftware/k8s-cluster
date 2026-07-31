@@ -12,6 +12,7 @@ work="$(mktemp -d /tmp/missing-org-publisher.XXXXXX)"
 cleanup() {
   unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
   unset encoded_pat raw_pat secret_json credential_source ec2_home publisher_region
+  unset profile_path profile_owner profile_mode profile_expected_uid profile_diagnostic
   unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
   unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
   rm -rf "$work"
@@ -28,6 +29,7 @@ trap report_failure ERR
 stage=protected-credential
 credential_source=''
 GH_TOKEN=''
+profile_diagnostic=not-checked
 
 # Prefer the protected EC2 instance role. This keeps the credential outside the
 # GitHub-hosted runner and matches the External Secrets read path.
@@ -87,10 +89,9 @@ if test -z "$GH_TOKEN" && command -v kubectl >/dev/null 2>&1; then
 fi
 unset raw_pat encoded_pat
 
-# The protected host also has the authenticated ORESoftware GitHub CLI profile
-# requested by the owner. Resolve the account home explicitly and use the CLI
-# abstraction rather than parsing hosts.yml, because gh may store the token in
-# the operating-system credential store.
+# Prefer the GitHub CLI abstraction when the protected host has gh installed.
+# Resolve the account home explicitly so shell startup files cannot change the
+# credential boundary.
 if test -z "$GH_TOKEN" && \
    command -v sudo >/dev/null 2>&1 && \
    command -v getent >/dev/null 2>&1; then
@@ -123,6 +124,90 @@ if test -z "$GH_TOKEN" && \
   fi
 fi
 unset raw_pat ec2_home
+
+# A host may retain a file-backed GitHub CLI profile after the gh binary has
+# been removed. Read only the two canonical protected paths, reject symlinks,
+# require the expected account owner, and reject group/world-writable files.
+# Token bytes stay in process memory and are never printed or passed on argv.
+if test -z "$GH_TOKEN" && \
+   command -v python3 >/dev/null 2>&1 && \
+   command -v stat >/dev/null 2>&1; then
+  profile_diagnostic=no-canonical-profile
+  ec2_uid=''
+  if command -v id >/dev/null 2>&1; then
+    ec2_uid="$(id -u ec2-user 2>/dev/null || true)"
+  fi
+
+  for profile_record in \
+    '/root/.config/gh/hosts.yml:0' \
+    "/home/ec2-user/.config/gh/hosts.yml:${ec2_uid}"
+  do
+    profile_path="${profile_record%:*}"
+    profile_expected_uid="${profile_record##*:}"
+    test -n "$profile_expected_uid" || continue
+    test -f "$profile_path" || continue
+    if test -L "$profile_path" || ! test -r "$profile_path"; then
+      profile_diagnostic=canonical-profile-unreadable-or-symlink
+      continue
+    fi
+
+    profile_owner="$(stat -c '%u' "$profile_path" 2>/dev/null || true)"
+    profile_mode="$(stat -c '%a' "$profile_path" 2>/dev/null || true)"
+    if test "$profile_owner" != "$profile_expected_uid" || \
+       [[ ! "$profile_mode" =~ ^[0-7]{3,4}$ ]] || \
+       (( (8#$profile_mode & 0022) != 0 )); then
+      profile_diagnostic=canonical-profile-ownership-or-mode-rejected
+      continue
+    fi
+
+    raw_pat="$(
+      GH_HOSTS_PROFILE="$profile_path" python3 - <<'PY' 2>/dev/null || true
+import ast
+import os
+import re
+import sys
+from pathlib import Path
+
+path = Path(os.environ["GH_HOSTS_PROFILE"])
+current_host = None
+for raw in path.read_text(encoding="utf-8").splitlines():
+    stripped = raw.strip()
+    if not stripped or stripped.startswith("#"):
+        continue
+    indent = len(raw) - len(raw.lstrip(" "))
+    if indent == 0 and stripped.endswith(":"):
+        current_host = stripped[:-1].strip().strip("'\"")
+        continue
+    if current_host != "github.com":
+        continue
+    match = re.match(r"^\s+oauth_token:\s*(.*?)\s*$", raw)
+    if match is None:
+        continue
+    value = match.group(1)
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+        try:
+            value = ast.literal_eval(value)
+        except (SyntaxError, ValueError):
+            raise SystemExit(65)
+    if not isinstance(value, str) or not value or any(ch.isspace() for ch in value):
+        raise SystemExit(65)
+    sys.stdout.write(value)
+    raise SystemExit(0)
+raise SystemExit(66)
+PY
+    )"
+    if test -n "$raw_pat" && \
+       [[ "$raw_pat" != *$'\n'* && "$raw_pat" != *$'\r'* && \
+          "$raw_pat" != *$'\t'* && "$raw_pat" != *' '* ]]; then
+      GH_TOKEN="$raw_pat"
+      credential_source="protected-gh-profile-file:${profile_path}"
+      profile_diagnostic=canonical-profile-token-loaded
+      break
+    fi
+    profile_diagnostic=canonical-profile-has-no-file-backed-token
+  done
+fi
+unset raw_pat ec2_uid profile_record profile_path profile_owner profile_mode profile_expected_uid
 
 if test -z "$GH_TOKEN"; then
   aws_diagnostic=aws-cli-absent
@@ -195,8 +280,8 @@ if test -z "$GH_TOKEN"; then
   fi
   unset diagnostic_home diagnostic_kubeconfig
 
-  printf 'publisher-stage=protected-credential status=failed reason=no-readable-protected-credential aws=%s kubernetes=%s gh=%s\n' \
-    "$aws_diagnostic" "$kube_diagnostic" "$gh_diagnostic" >&2
+  printf 'publisher-stage=protected-credential status=failed reason=no-readable-protected-credential aws=%s kubernetes=%s gh=%s profile=%s\n' \
+    "$aws_diagnostic" "$kube_diagnostic" "$gh_diagnostic" "$profile_diagnostic" >&2
   exit 65
 fi
 export GH_TOKEN
