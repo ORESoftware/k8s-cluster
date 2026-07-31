@@ -11,7 +11,7 @@ permissions:
   actions: write
 
 concurrency:
-  group: observe-full-critical-org-fleet-publisher-${{ github.event.pull_request.number }}
+  group: observe-full-critical-org-fleet-publisher-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -30,7 +30,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo 'observer_attempt=4'
+          echo 'observer_attempt=5'
           repository="$GITHUB_REPOSITORY"
           trusted_sha="$(gh api "repos/${repository}/commits/main" --jq .sha)"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
