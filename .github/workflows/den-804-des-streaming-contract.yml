@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: den-804-des-streaming-contract-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   apply-and-test:
@@ -45,7 +45,7 @@ jobs:
         run: |
           set -euo pipefail
           patch_file='.github/agent/den-804-streaming-contract.patch'
-          echo 'b4b58a7534173029eb0de001921563431268ce628c944f36977578a2f6d6435d  '"$patch_file" | sha256sum --check
+          echo '81da91ed0c864f51aee286497385baf7689a42d5a96eadf5ebbc156ff440a998  '"$patch_file" | sha256sum --check
 
           if grep -q 'pomdp, soccer-planner): each is an iterative solver' remote/deployments/des-rs/src/models.rs; then
             git apply --check "$patch_file"
@@ -58,6 +58,7 @@ jobs:
           ! grep -q 'pomdp`, `soccer-planner`): iterative solvers' remote/deployments/des-rs/readme.md
           ! grep -q 'pomdp, soccer-planner).' remote/deployments/des-rs/src/docs.rs
           grep -q 'streaming_names.contains(&expected)' remote/deployments/des-rs/src/models.rs
+          grep -q 'expected_model = format!("streaming-{name}")' remote/deployments/des-rs/src/models.rs
           git diff --check
 
       - name: Initialize the exact public engine gitlinks
