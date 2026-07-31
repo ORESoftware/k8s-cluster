@@ -2,6 +2,12 @@ name: Publish missing organization repositories (dispatch)
 run-name: Publish missing organization repositories (${{ inputs.request_id }})
 
 on:
+  workflow_call:
+    inputs:
+      request_id:
+        description: Immutable request correlation identifier
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       request_id:
