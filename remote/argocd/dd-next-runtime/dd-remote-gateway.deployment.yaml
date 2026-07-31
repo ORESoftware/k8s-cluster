@@ -8,7 +8,6 @@ metadata:
   labels:
     app: dd-remote-gateway
 spec:
-  revisionHistoryLimit: 10
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
@@ -20,7 +19,7 @@ spec:
     metadata:
       annotations:
         dd.dev/telemetry-revision: '2026-06-07-gateway-quoted-regex'
-        dd.dev/gateway-config-revision: '2026-07-27-browser-mcp-public-edge-daemonset-v1'
+        dd.dev/gateway-config-revision: '2026-07-26-browser-mcp-oauth-nat-queue-v4'
       labels:
         app: dd-remote-gateway
     spec:
@@ -80,21 +79,21 @@ spec:
               hostPort: 443
           readinessProbe:
             httpGet:
+              scheme: HTTPS
               path: /browser-mcp/healthz
               port: https
-              scheme: HTTPS
             initialDelaySeconds: 5
             periodSeconds: 10
-            timeoutSeconds: 3
-            failureThreshold: 3
+            timeoutSeconds: 5
+            failureThreshold: 6
           livenessProbe:
             httpGet:
+              scheme: HTTPS
               path: /browser-mcp/healthz
               port: https
-              scheme: HTTPS
-            initialDelaySeconds: 15
+            initialDelaySeconds: 20
             periodSeconds: 20
-            timeoutSeconds: 3
+            timeoutSeconds: 5
             failureThreshold: 3
           resources:
             requests:
