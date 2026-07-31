@@ -7,7 +7,7 @@ on:
       - .github/workflows/ops-probe-protected-github-token-aliases-once.yml
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 concurrency:
@@ -24,8 +24,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
-          fetch-depth: 1
-          persist-credentials: false
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Configure AWS OIDC credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
@@ -51,14 +51,11 @@ jobs:
           import json
           import os
           import re
+          import subprocess
           import urllib.error
           import urllib.request
 
           region = os.environ["AWS_REGION"]
-          secret_id = "dd/remote-dev/agent-secrets"
-
-          import subprocess
-
           completed = subprocess.run(
               [
                   "aws",
@@ -67,7 +64,7 @@ jobs:
                   "--region",
                   region,
                   "--secret-id",
-                  secret_id,
+                  "dd/remote-dev/agent-secrets",
                   "--query",
                   "SecretString",
                   "--output",
@@ -156,11 +153,7 @@ jobs:
                           }
               result["candidates"].append(candidate)
 
-          for value in payload.values():
-              if isinstance(value, str):
-                  value = ""
           payload.clear()
-
           print(json.dumps(result, indent=2, sort_keys=True))
           PY
 
@@ -195,9 +188,77 @@ jobs:
             sleep 3
           done
 
+          invocation="$RUNNER_TEMP/protected-token-alias-invocation.json"
           aws ssm get-command-invocation \
             --command-id "$command_id" \
             --instance-id "$INSTANCE_ID" \
             --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
-            --output json
+            --output json > "$invocation"
           test "$status" = Success
+
+          evidence="$RUNNER_TEMP/protected-github-token-aliases.json"
+          jq -er '.StandardOutputContent | fromjson' "$invocation" > "$evidence"
+          python3 - "$evidence" <<'PY'
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          evidence = json.loads(path.read_text(encoding="utf-8"))
+          if evidence.get("schema_version") != 1:
+              raise SystemExit("unexpected evidence schema")
+          candidates = evidence.get("candidates")
+          if not isinstance(candidates, list):
+              raise SystemExit("candidate evidence is not a list")
+          allowed_candidate_keys = {
+              "name",
+              "type",
+              "nonempty_string",
+              "whitespace_free",
+              "user_http_status",
+              "login",
+              "organizations",
+          }
+          allowed_organization_keys = {"http_status", "role", "state"}
+          name_pattern = re.compile(r"(?:github|gh|token|pat)", re.IGNORECASE)
+          for candidate in candidates:
+              if not isinstance(candidate, dict) or set(candidate) != allowed_candidate_keys:
+                  raise SystemExit("candidate evidence contains unexpected fields")
+              if not isinstance(candidate["name"], str) or not name_pattern.search(candidate["name"]):
+                  raise SystemExit("candidate name is outside the bounded filter")
+              if candidate["login"] not in (None, "ORESoftware"):
+                  raise SystemExit("unexpected authenticated identity in evidence")
+              organizations = candidate["organizations"]
+              if not isinstance(organizations, dict):
+                  raise SystemExit("organization evidence is not an object")
+              for organization, membership in organizations.items():
+                  if organization not in {
+                      "hypesiege",
+                      "StreemPilot",
+                      "meta-agents-demo",
+                      "file-tunnel",
+                      "unreal-unity-poc",
+                  }:
+                      raise SystemExit("unexpected organization in evidence")
+                  if not isinstance(membership, dict) or set(membership) != allowed_organization_keys:
+                      raise SystemExit("unexpected organization evidence fields")
+          path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+          echo "protected_token_alias_candidates=$(jq '.candidates | length' "$evidence")"
+
+      - name: Commit redacted evidence and remove the one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git pull --rebase origin main
+          mkdir -p ops/evidence
+          cp "$RUNNER_TEMP/protected-github-token-aliases.json" \
+            ops/evidence/protected-github-token-aliases.json
+          git rm .github/workflows/ops-probe-protected-github-token-aliases-once.yml
+          git add ops/evidence/protected-github-token-aliases.json
+          git diff --cached --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'ops(DEN-319): record protected GitHub token alias evidence'
+          git push origin HEAD:refs/heads/main
