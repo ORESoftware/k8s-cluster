@@ -1,0 +1,77 @@
+name: Fix DEN-1016 bounded actionlint transport
+
+on:
+  push:
+    branches:
+      - agent/den-1016-audit-current-dev
+    paths:
+      - '.github/workflows/fix-den-1016-bounded-actionlint.yml'
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/fix-den-1016-bounded-actionlint.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-den-1016-bounded-actionlint
+  cancel-in-progress: true
+
+jobs:
+  patch:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      (github.event_name != 'pull_request' || github.head_ref == 'agent/den-1016-audit-current-dev')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact writable branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1016-audit-current-dev
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Bound the pinned actionlint source execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/apply-den-1016-audit-current-dev.yml')
+          text = path.read_text()
+          old = '''            go run github.com/rhysd/actionlint/cmd/actionlint@03d0035246f3e81f36aed592ffb4bebf33a03106 \\
+              "${workflows[@]}"
+'''
+          new = '''            timeout 300s env \\
+              GOTOOLCHAIN=local \\
+              GOPROXY=https://proxy.golang.org,direct \\
+              GOSUMDB=sum.golang.org \\
+              go run github.com/rhysd/actionlint/cmd/actionlint@03d0035246f3e81f36aed592ffb4bebf33a03106 \\
+                "${workflows[@]}"
+'''
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one unbounded actionlint source invocation')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          git diff --check
+          grep -Fq 'timeout 300s env' .github/workflows/apply-den-1016-audit-current-dev.yml
+          grep -Fq 'actionlint@03d0035246f3e81f36aed592ffb4bebf33a03106' \
+            .github/workflows/apply-den-1016-audit-current-dev.yml
+
+      - name: Remove this repair carrier and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/fix-den-1016-bounded-actionlint.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'ci(DEN-1016): bound pinned actionlint execution'
+          git push origin HEAD:agent/den-1016-audit-current-dev
