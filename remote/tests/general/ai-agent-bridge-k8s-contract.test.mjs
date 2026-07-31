@@ -29,12 +29,12 @@ function envBlock(name) {
 test('bridge deployment executes the current Rust binary', () => {
   assert.match(
     deployment,
-    /target\/release\/fiducia-ai-agent-bridge/,
+    /\/release\/fiducia-ai-agent-bridge(?:["'\s]|$)/,
     'the deployment must execute fiducia-ai-agent-bridge',
   );
   assert.doesNotMatch(
     deployment,
-    /target\/release\/ai-agent-bridge(?:["'\s]|$)/,
+    /\/release\/ai-agent-bridge(?:["'\s]|$)/,
     'the retired ai-agent-bridge binary name must not return',
   );
 });
