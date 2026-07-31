@@ -15,6 +15,12 @@ ClipTown is an open-source, cross-platform clipboard history that makes copied t
 
 The repositories above are included under `apps/` as secondary submodule checkouts. Their standalone repositories and `main` branches remain the source of truth.
 
+## Companion applications
+
+[Memebank](https://github.com/memebank) is a companion image and meme catalog. Memebank owns ingestion, OCR, visual tagging, semantic retrieval, collections, and explicit image export; ClipTown owns generic clipboard history and trusted-device clipboard synchronization. The products integrate through standard clipboard representations and versioned public metadata rather than shared databases.
+
+See [`docs/memebank-integration.md`](docs/memebank-integration.md) for the proposed clipboard, security, privacy, authentication, and versioning contract.
+
 ## Authentication
 
 Supabase provides the primary identity and session layer. A six-digit PIN can be used as a local unlock or step-up factor, while platform biometrics can unlock device-protected key material. Optional 3FA and `shared-auth` integrations provide additional authentication signals.
