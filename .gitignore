@@ -10,3 +10,6 @@
 
 # Editor / OS
 .DS_Store
+
+# Cloudflare Wrangler's local account/build cache (may contain account metadata).
+.wrangler/

@@ -11,17 +11,19 @@ aws-config = "1"
 # is the maintained rustls 0.23 stack. Other listed features match the crate's
 # defaults minus `rustls`.
 aws-sdk-s3 = { version = "1.138", default-features = false, features = ["default-https-client", "http-1x", "rt-tokio", "sigv4a"] }
-axum = { version = "0.7", features = ["macros"] }
+axum = { version = "0.7", features = ["macros", "ws"] }
 aes-gcm = { version = "0.10.3", features = ["aes"] }
 base64 = "0.22"
-bb8 = "0.8"
-bb8-postgres = "0.8"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 # CLI-flags -> env at startup, driven by .cli-flags.toml. Loads a native lib at
 # runtime; if it's absent the app degrades gracefully to plain env vars.
 flags2env = { git = "https://github.com/ORESoftware/flags-2-env.git", rev = "16fbd8b724e76990e9dcf6237bf44528433b09b1" }
+futures-util = "0.3"
 jsonwebtoken = "9"
 once_cell = "1"
+opentelemetry = "0.27"
+opentelemetry-otlp = { version = "0.27", features = ["grpc-tonic", "metrics", "trace"] }
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
 # default-features off drops the `protobuf` feature (protobuf 2.x,
 # RUSTSEC-2024-0437); we only use the text exposition format (TextEncoder).
 prometheus = { version = "0.13", default-features = false }
@@ -30,12 +32,11 @@ reqwest = { version = "=0.12.9", default-features = false, features = ["json", "
 rustls = { version = "=0.23.31", default-features = false, features = ["ring", "std"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sea-orm = { version = "1.1.20", default-features = false, features = ["postgres-array", "runtime-tokio-rustls", "sqlx-postgres", "with-chrono", "with-json"] }
 sha2 = "0.10"
 sonus-auris-interfaces = { path = "../sonus-auris-interfaces/generated/rust" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
-tokio-postgres = { version = "=0.7.18", features = ["with-chrono-0_4", "with-serde_json-1"] }
-tokio-postgres-rustls = "=0.12.0"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-opentelemetry = "0.28"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 uuid = { version = "1", features = ["v4"] }
-webpki-roots = "=0.26.7"

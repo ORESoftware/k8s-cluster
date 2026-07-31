@@ -30,10 +30,8 @@ the event.
 
 This crate is deliberately small on disk. Each meaningful folder has its own `README.md`.
 
-- [`src/`](./src/README.md) — the Rust source. All logic lives in the single binary
-  [`src/main.rs`](./src/main.rs), whose top-of-file `//!` doc comment maps its sections
-  (config, auth/JWT, presign, cloud-copy, alerts, account deletion, retention, rate limiting,
-  metrics, router).
+- [`src/`](./src/README.md) — a thin binary plus library modules for SeaORM
+  persistence, OpenTelemetry/Loki telemetry, and the Axum domain service.
 - [`migrations/`](./migrations/README.md) — reviewed, copy-pasteable reference SQL and the
   [`RUNBOOK.md`](./migrations/RUNBOOK.md). Schema is declared authoritatively in the
   `ores/k8s-cluster` monorepo (`remote/libs/pg-defs/schema/schema.sql`) and applied out-of-band,
@@ -50,33 +48,58 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 - The service stores metadata in Postgres and audio bytes in the configured AWS S3 / Cloudflare R2
   primary backend. Normal mobile transfer is direct via presigned URLs; the Rust process reads
   bytes only for explicit server-managed Google Drive / OneDrive copy jobs.
-- Google Drive and Microsoft OneDrive links use server-side OAuth tokens sealed with AES-256-GCM.
+- Google Drive, Microsoft OneDrive, and Dropbox links use authorization-code
+  OAuth with S256 PKCE, offline refresh access, and server-side tokens sealed
+  with AES-256-GCM. OneDrive uses the Microsoft `common` tenant by default so
+  both personal and work/school accounts are supported when enabled on the app
+  registration.
   The server stores only sealed token envelopes in Postgres and refreshes access tokens inside the
   internal copy drain.
 - Apple iCloud is client-managed because Apple does not expose a general server-side iCloud Drive
   OAuth/write API. The backend tracks the linked iCloud destination and exposes copy jobs with
   short-lived S3 download URLs for the iOS client to copy into its iCloud/CloudKit container.
+- User-owned Amazon S3 and Cloudflare R2 destinations are also client-managed.
+  Their credentials remain in the device secure store; the backend records only
+  safe connection status, display name, and folder path.
+- Postgres is authoritative for connection lifecycle. A durable outbox projects
+  safe owner-scoped status into Supabase `public.cloud_connections`; OAuth
+  tokens, storage credentials, provider subject IDs, and arbitrary metadata are
+  never included in that projection.
 - CloudFront belongs on the playback/download side. Uploads are presigned S3 `PUT`s; evidence
   exports use short-lived S3 `GET` URLs until a CloudFront-signing layer is added.
 - Device auth uses opaque bearer tokens. Tokens are returned only on registration and stored as
   SHA-256 hashes with a server-side pepper.
-- Account identity is rooted in Supabase. When `register` is called with a verified Supabase access
-  token in the `x-supabase-auth` header, the account is keyed to the token's `sub`
-  (`external_subject = supabase:<sub>`), which is the only way to attach a device to an existing
-  account. A shared `SOUND_RECORDER_REGISTRATION_BEARER` still works for trusted server-to-server
-  callers and may assert an arbitrary `externalSubject`; public registration keys the account to the
-  install id and ignores any client-supplied `externalSubject`, so an anonymous caller can never
-  claim another user's account.
-- Account deletion is also rooted in Supabase: `DELETE /api/mobile/v1/account` verifies the signed-in
-  user's JWT, deletes Sonus Auris backend metadata, revokes device/cloud tokens, and deletes the
-  Supabase Auth user with the server-only service-role key.
+- Account identity is rooted in the RDS-backed shared-auth authority. When
+  `register` receives a shared-auth access token in `x-shared-auth`, the backend
+  introspects it and keys the account to the verified UUID
+  (`external_subject = shared-auth:<sub>`). AAL2 is required by default, so an
+  email magic link/OTP must be followed by verified SMS MFA before enrolling a
+  device.
+- Supabase remains a secondary identity path. A verified token in
+  `x-supabase-auth` uses `external_subject = supabase:<sub>`, but empty
+  Supabase configuration and a short Supabase outage do not affect existing
+  device sessions or backend readiness. A shared
+  `SOUND_RECORDER_REGISTRATION_BEARER` still works for trusted
+  server-to-server callers and may assert an arbitrary `externalSubject`;
+  public registration keys the account to the install id and ignores any
+  client-supplied `externalSubject`, so an anonymous caller can never claim
+  another user's account.
+- `DELETE /api/mobile/v1/account` remains the Supabase-specific deletion path:
+  it verifies the signed-in user's JWT, deletes Sonus Auris backend metadata,
+  revokes device/cloud tokens, and deletes the Supabase Auth user with the
+  server-only service-role key.
 - Browser account data stays a JSON concern here: the typed `/api/v1/data/*` routes verify the
   caller's Supabase JWT and forward that JWT plus the publishable key to the Supabase Data API.
   `sonus-auris-interfaces` deserializes the response and Supabase RLS remains the row-authorization
   boundary; these routes never use the service-role key.
-- Google Drive / OneDrive links support a hybrid OAuth flow: the client may pass Supabase-brokered
+- Google Drive / OneDrive / Dropbox links support a hybrid OAuth flow: the client may pass Supabase-brokered
   `providerAccessToken`/`providerRefreshToken` to `cloud-connections/oauth/complete` to be sealed
   directly, or omit them to fall back to the server-side authorization-code exchange.
+- Cloud-copy delivery uses Google Drive resumable uploads in aligned 8 MiB
+  chunks, OneDrive's single-call AppFolder upload within the service's 200 MiB
+  ceiling, and Dropbox upload sessions above its 150 MiB single-call limit.
+  Provider requests have a separate bounded upload timeout and never forward a
+  Google bearer token to the provider-issued resumable-session URL.
 - Upload sessions carry a `useCase` (`security` default, `music`, `meeting`, `voice_note`,
   `ambient`) and an optional `audioProfile` (sensitivity, treble/mid/bass gain, channel layout)
   stored with session metadata, so the same backend serves dashcam and musician capture.
@@ -103,6 +126,17 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
   Browser data routes carry the Supabase JWT in `X-Supabase-Auth: Bearer ...`, intentionally
   separate from the device token accepted in `Authorization` on mobile routes.
 - `POST /api/mobile/v1/devices/register` — creates or rotates a device token.
+- `POST /api/mobile/v1/devices/heartbeat` — refreshes server-owned `last_seen_at`
+  with the opaque device token. Apps call it every ten minutes as the durable
+  fallback to Supabase Realtime Presence.
+- `GET /api/mobile/v1/devices/presence` — upgrades to the independent Rust
+  presence WebSocket. The device token is sent in the first bounded frame,
+  never in a URL; open sockets recheck revocation every 30 seconds.
+- `POST /api/mobile/v1/devices/:install_id/revoke` — verifies that the install
+  is visible through the caller's Supabase device/group RLS view, then
+  invalidates every matching Rust device token.
+- `GET /api/v1/data/devices?limit=200` — lists devices visible through the
+  caller's Supabase account-group RLS view for browser/desktop device screens.
 - `DELETE /api/mobile/v1/account` — deletes private storage objects, revokes Sonus Auris metadata
   and credentials, then deletes the signed-in Supabase Auth user. Storage deletion is batched,
   checked, and retry-safe.
@@ -126,30 +160,59 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
   optionally posts an email payload to `SOUND_RECORDER_ALERT_EMAIL_WEBHOOK_URL`. Alerts are
   accepted only when uploaded retained segments overlap the requested listening window.
 - `GET /api/mobile/v1/cloud-connections` — lists linked user cloud destinations.
-- `POST /api/mobile/v1/cloud-connections/oauth/start` — starts a Google Drive, OneDrive, or
-  client-managed iCloud link flow.
+- `POST /api/mobile/v1/cloud-connections/oauth/start` — starts a Google Drive,
+  OneDrive, Dropbox, or client-managed iCloud/S3/R2 link flow.
+- `GET /oauth/callback` — hosted provider callback that safely forwards the
+  one-time OAuth code and state into the waiting Sonus Auris app session.
+- `GET /oauth/manual-callback` — hosted Windows/Linux fallback that displays
+  the escaped one-time provider code for an explicit paste back into the
+  desktop Connections window.
 - `POST /api/mobile/v1/cloud-connections/oauth/complete` — completes a link, seals OAuth tokens
   for server-managed providers, and backfills recent uploaded segments into copy jobs.
 - `POST /api/mobile/v1/cloud-connections/:connection_id/revoke` — revokes a linked destination,
-  clears sealed credentials, and skips pending copy jobs.
+  makes a five-second best-effort upstream authorization revocation for Google
+  Drive/Dropbox, clears sealed credentials regardless of provider availability,
+  and skips pending copy jobs. OneDrive credentials are destroyed locally;
+  Microsoft requires the user/admin consent portal for grant-wide revocation.
 - `GET /api/mobile/v1/cloud-copy-jobs` — lists iCloud client-managed copy jobs with short-lived
   S3 download links.
 - `POST /api/mobile/v1/cloud-copy-jobs/:job_id/complete` — marks a client-managed cloud copy
   complete.
 - `POST /internal/retention/sweep` — server-authenticated marker sweep for expired segment rows.
-- `POST /internal/cloud-copy/drain` — server-authenticated worker drain for pending Google Drive
-  and OneDrive copy jobs.
+- `POST /internal/cloud-copy/drain` — server-authenticated worker drain for pending Google Drive,
+  OneDrive, and Dropbox copy jobs.
+- `POST /internal/cloud-connection-projections/drain` — server-authenticated
+  outbox drain that upserts safe connection status into Supabase.
 - `GET /healthz`, `GET /readyz`, `GET /metrics`.
 - `GET /docs/api`, `GET /api/docs`, `GET /api/docs.json`.
 
 ## Environment
 
+### Auth invariants — do not weaken
+
+- **Shared-auth is primary and server-introspected.** Mobile registration sends
+  its access token only in `x-shared-auth`; the backend authenticates to
+  `/auth/introspect` with a separate service secret and uses only the returned
+  active UUID. Unverified email is discarded, and AAL2 is required by default.
+- **Supabase is optional and secondary.** Its absence or outage does not gate
+  readiness unless `SOUND_RECORDER_REQUIRE_SUPABASE=true` is explicitly set.
+
+- **A pinned issuer is mandatory.** `SOUND_RECORDER_SUPABASE_ISSUER` (derived
+  from `SOUND_RECORDER_SUPABASE_URL` when unset) must resolve, or Supabase auth
+  stays off. `aud` is `authenticated` on *every* Supabase project, so `iss` is
+  the only claim that binds a token to this one. See `SupabaseConfig::is_enabled`.
+- **An unconfirmed email claim is discarded.** The verifier only keeps `email`
+  when the token asserts `email_verified` (top-level or under `user_metadata`).
+  Without that, an email-keyed decision is only as strong as the project's
+  "Confirm email" setting — with it off, anyone can sign up claiming someone
+  else's address. The token is still valid; `sub` remains the account identity.
+
 | Var | Default | Notes |
 | --- | --- | --- |
 | `HOST` | `0.0.0.0` | Bind host. |
 | `PORT` | `8126` | Bind port. |
-| `SOUND_RECORDER_RDS_DATABASE_URL` | falls back to shared RDS env vars | Postgres URL. |
-| `SOUND_RECORDER_PG_POOL_MAX_SIZE` | `16` | Max pooled Postgres connections (clamped to `1..100`). Connections are pooled and reused, not opened per request. |
+| `SOUND_RECORDER_RDS_DATABASE_URL` | falls back to shared RDS env vars | Postgres URL used by SeaORM. |
+| `SOUND_RECORDER_PG_POOL_MAX_SIZE` | `16` | SeaORM Postgres pool size (clamped to `1..100`). |
 | `SOUND_RECORDER_S3_BUCKET` / `S3_BUCKET` | unset | Primary AWS S3 bucket. `SOUND_RECORDER_R2_BUCKET` / `R2_BUCKET` are equivalent R2 aliases. |
 | `SOUND_RECORDER_S3_KEY_PREFIX` | `sound-recorder/segments` | Object key prefix. |
 | `SOUND_RECORDER_S3_REGION` / `R2_REGION` | `us-east-1` (`auto` for R2) | SigV4 region. R2 endpoints are always signed with Cloudflare's required `auto` region. |
@@ -170,28 +233,34 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 | `SOUND_RECORDER_DEVICE_TOKEN_PEPPER` | local random fallback | Required for durable device-token verification. |
 | `SOUND_RECORDER_REGISTRATION_BEARER` | unset | Optional bearer required by device registration. |
 | `SOUND_RECORDER_ALLOW_PUBLIC_DEVICE_REGISTRATION` | `false` | Explicitly opens registration when no bearer is configured. |
-| `SOUND_RECORDER_SERVER_AUTH_SECRET` / `SERVER_AUTH_SECRET` | unset | Required for both `/internal/retention/sweep` and `/internal/cloud-copy/drain`. |
+| `SOUND_RECORDER_SERVER_AUTH_SECRET` / `SERVER_AUTH_SECRET` | unset | Required for retention, cloud-copy, storage-mirror, and cloud-connection projection internal drains. |
 | `SOUND_RECORDER_DEFAULT_RETENTION_HOURS` | `500` | Clamped to `1..500`. |
 | `SOUND_RECORDER_DEFAULT_SEGMENT_SECONDS` | `60` | Suggested mobile segment length. |
 | `SOUND_RECORDER_MAX_SEGMENT_SECONDS` | `120` | Upper bound accepted by the API. |
 | `SOUND_RECORDER_MAX_SEGMENT_BYTES` | `10485760` | Upper bound accepted by the API. |
 | `SOUND_RECORDER_UPLOAD_URL_TTL_SECONDS` | `300` | Short-lived S3 PUT URL TTL. A segment too near its retention cutoff to leave this TTL plus a ten-minute upload-settle window is rejected rather than risking a post-delete write. |
 | `SOUND_RECORDER_DOWNLOAD_URL_TTL_SECONDS` | `900` | Short-lived evidence GET URL TTL. |
-| `SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY` | unset | Base64-encoded 32-byte AES-GCM key required for server-managed Google Drive and OneDrive links. |
+| `SOUND_RECORDER_CLOUD_TOKEN_ENCRYPTION_KEY` | unset | Base64-encoded 32-byte AES-GCM key required for server-managed Google Drive, OneDrive, and Dropbox links. |
+| `SOUND_RECORDER_SHARED_AUTH_BASE_URL` | unset | Root URL for the RDS-backed shared-auth authority. HTTPS is required except for loopback or in-cluster HTTP. Empty disables this registration path. |
+| `SOUND_RECORDER_SHARED_AUTH_INTROSPECT_SECRET` | unset | 32+ byte service credential for shared-auth introspection. Must be configured with the base URL and never shipped in an app. |
+| `SOUND_RECORDER_SHARED_AUTH_REQUIRED_AAL` | `2` | Minimum assurance level for shared-auth device registration. `2` requires verified second-factor SMS/TOTP-equivalent assurance. |
 | `SOUND_RECORDER_SUPABASE_URL` / `SUPABASE_URL` | unset | Supabase project URL. Used to derive the JWKS URL and expected issuer. |
 | `SOUND_RECORDER_SUPABASE_PUBLISHABLE_KEY` / `SUPABASE_PUBLISHABLE_KEY` | unset | Publishable (or legacy anon) key used with the caller's JWT for typed `/api/v1/data/*` reads. It is not a service-role key. |
 | `SOUND_RECORDER_SUPABASE_JWT_SECRET` / `SUPABASE_JWT_SECRET` | unset | Legacy HS256 JWT secret. Enables verifying HS256 Supabase tokens. |
 | `SOUND_RECORDER_SUPABASE_JWKS_URL` | `${SUPABASE_URL}/auth/v1/.well-known/jwks.json` | JWKS endpoint for asymmetric (RS256/ES256) Supabase signing keys. It must share the project URL's origin and is cached for at most ten minutes. |
-| `SOUND_RECORDER_SUPABASE_ISSUER` | `${SUPABASE_URL}/auth/v1` | Expected `iss` claim. |
+| `SOUND_RECORDER_SUPABASE_ISSUER` | `${SUPABASE_URL}/auth/v1` | Expected `iss` claim. **Required for Supabase auth to be enabled at all.** `aud` is the literal `authenticated` on every Supabase project, so `iss` is the only claim binding a token to *this* project; without it the verifier is not built and token-authenticated routes report unavailable rather than accepting tokens from any project. Setting `SOUND_RECORDER_SUPABASE_URL` derives it automatically — a setup that configures only a raw `SOUND_RECORDER_SUPABASE_JWT_SECRET` (local/dev) must set this variable explicitly. |
 | `SOUND_RECORDER_SUPABASE_AUDIENCE` | `authenticated` | Expected `aud` claim. |
-| `SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | unset | Server-only Supabase service-role key. Required for `DELETE /api/mobile/v1/account`; never expose it to the mobile app. |
-| `SOUND_RECORDER_REQUIRE_SUPABASE` | `true` | Makes complete Supabase account support (URL/JWKS/issuer, publishable key, service-role key) part of readiness. Set `false` only for isolated anonymous/local development. |
+| `SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_SERVICE_ROLE_KEY` | unset | Server-only Supabase service-role key. Required for account deletion and the safe `cloud_connections` projection; never expose it to an app. |
+| `SOUND_RECORDER_REQUIRE_SUPABASE` | `false` | Opt-in readiness gate for complete Supabase account support. Keep false when Supabase is a secondary auth/projection service. |
 | `SOUND_RECORDER_GOOGLE_CLIENT_ID` / `SOUND_RECORDER_GOOGLE_CLIENT_SECRET` | unset | OAuth client for Google Drive `drive.file` links. |
 | `SOUND_RECORDER_MICROSOFT_CLIENT_ID` / `SOUND_RECORDER_MICROSOFT_CLIENT_SECRET` | unset | OAuth client for Microsoft OneDrive AppFolder links. |
+| `SOUND_RECORDER_DROPBOX_CLIENT_ID` / `SOUND_RECORDER_DROPBOX_CLIENT_SECRET` | unset | OAuth client for Dropbox app-folder links using `files.content.write`. |
 | `SOUND_RECORDER_GOOGLE_AUTHORIZATION_URL` / `SOUND_RECORDER_GOOGLE_TOKEN_URL` | Google OAuth endpoints | Optional provider endpoint overrides for local integration tests. |
 | `SOUND_RECORDER_GOOGLE_DRIVE_UPLOAD_URL` | Google Drive upload endpoint | Optional upload endpoint override for local integration tests. |
-| `SOUND_RECORDER_MICROSOFT_AUTHORIZATION_URL` / `SOUND_RECORDER_MICROSOFT_TOKEN_URL` | Microsoft consumer OAuth endpoints | Optional provider endpoint overrides for local integration tests. |
+| `SOUND_RECORDER_MICROSOFT_AUTHORIZATION_URL` / `SOUND_RECORDER_MICROSOFT_TOKEN_URL` | Microsoft `common` OAuth endpoints | Optional provider endpoint overrides for local integration tests. |
 | `SOUND_RECORDER_MICROSOFT_GRAPH_BASE_URL` | Microsoft Graph v1.0 endpoint | Optional Graph endpoint override for local integration tests. |
+| `SOUND_RECORDER_DROPBOX_AUTHORIZATION_URL` / `SOUND_RECORDER_DROPBOX_TOKEN_URL` | Dropbox OAuth endpoints | Optional provider endpoint overrides for local integration tests. |
+| `SOUND_RECORDER_DROPBOX_UPLOAD_URL` | Dropbox content upload endpoint | Optional upload endpoint override for local integration tests. |
 | `SOUND_RECORDER_OAUTH_STATE_TTL_SECONDS` | `600` | OAuth link state TTL, clamped to `60..3600`. |
 | `SOUND_RECORDER_CLOUD_COPY_BATCH_SIZE` | `25` | Internal copy drain batch size, clamped to `1..100`. |
 | `SOUND_RECORDER_CLOUD_COPY_MAX_ATTEMPTS` | `3` | Retry attempts before a server-managed copy job is marked failed. |
@@ -199,17 +268,34 @@ The crate is also packaged with Nix (`flake.nix`, `.nix/`) and a `Dockerfile` fo
 | `SOUND_RECORDER_CLOUD_BACKFILL_SEGMENTS` | `240` | Uploaded retained segments to enqueue when a cloud destination is linked. |
 | `SOUND_RECORDER_IOS_APP_STORE_URL` | unset | `/download/ios` target. |
 | `SOUND_RECORDER_ANDROID_PLAY_STORE_URL` | unset | `/download/android` target. |
+| `RUST_LOG` | `dd_sound_recorder_rs=info,tower_http=warn` | Filter for structured `tracing` logs. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | OTLP/gRPC collector endpoint, for example `http://dd-otel-collector.observability.svc.cluster.local:4317`. |
+| `OTEL_RESOURCE_ATTRIBUTES` | unset | Optional non-secret resource attributes; service identity cannot be overridden and secret-like keys are rejected. |
 
 `/readyz` performs a live Postgres `select 1`, checks storage-history compatibility, and requires a
 bounded remote `HeadObject` of `SOUND_RECORDER_S3_READINESS_OBJECT_KEY`. It deliberately does not
 call `HeadBucket` or `ListBucket`: a least-privilege principal can access the configured object
-prefix without a list grant. Signing-only readiness is available solely through the explicit
-development flag above. When Supabase is required (the default), readiness also fetches and parses a
-non-empty JWKS for asymmetric projects or calls the documented Auth health route for legacy HS256
-projects. Durable token pepper, registration posture, internal auth, and complete Supabase account
-configuration remain required. `/healthz` reports process health, the non-secret storage fingerprint,
-and configuration booleans without contacting dependencies. Unknown boolean spellings are invalid
-configuration and fail readiness; they never silently become `false`.
+prefix without a list grant. Signing-only readiness is available solely through
+the explicit development flag above. Shared-auth and Supabase are not probed as
+readiness dependencies: existing device-token traffic remains available during
+a short auth-provider outage. If Supabase is explicitly required, readiness
+also fetches and parses a non-empty JWKS for asymmetric projects or calls the
+documented Auth health route for legacy HS256 projects. Durable token pepper,
+registration posture, and internal auth remain required. `/healthz` reports
+process health, the non-secret storage fingerprint, auth posture, and
+configuration booleans without contacting dependencies. Unknown boolean
+spellings are invalid configuration and fail readiness; they never silently
+become `false`.
+
+## Observability
+
+Every HTTP request creates an OpenTelemetry-compatible span and records
+low-cardinality method, route-template, status, and duration metrics. Logs are
+newline-delimited JSON on stderr so Kubernetes Promtail can forward them to
+Loki. When `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, traces and metrics are
+also exported to the cluster collector for its Prometheus/Tempo pipeline. The
+existing `/metrics` Prometheus exposition remains available for direct scrape
+compatibility.
 
 ## CLI flags
 

@@ -1,0 +1,84 @@
+schema_version = 1
+procedure_version = 1
+repository = "sonus-auris/sonus-auris-backend.rs"
+
+[policy]
+claim_classes = ["typechecked-specification", "randomized-exploration", "bounded-exhaustive-verification", "implementation-replay", "differential-replay", "unbounded-proof"]
+required_evidence = ["method", "bounds", "assumptions", "model-hash", "implementation-revision", "tool-versions"]
+counterexample = "Preserve, minimize, classify, retain, and convert implementation mismatches into deterministic Rust regressions."
+change_trigger = "Review this inventory with upload, completion, retention, mirror, cloud-copy, claim, retry, or account-deletion changes."
+
+[[machine]]
+id = "segment-upload-session"
+risk = "critical"
+status = "planned"
+backend = "quint+apalache+itf-rust-replay"
+owner = "sonus-storage"
+source_paths = ["src/service.rs", "src/database.rs"]
+safety = [
+  "one logical segment has one account-bound upload identity",
+  "completed status requires a verified storage key for the expected object",
+  "duplicate or stale completion cannot replace a newer session",
+  "presign expiry or response loss cannot create a false completed state",
+  "storage metadata never crosses account or device identity",
+]
+liveness = ["with valid credentials, available storage, and recurring client retry, an eligible session eventually completes or reaches an explicit terminal failure"]
+faults = ["presign response lost", "PUT succeeds but completion fails", "duplicate completion", "expired session", "database commit response lost", "account token revoked"]
+bounds = ["two accounts", "two segments", "two session generations", "bounded URL TTL", "one primary storage target"]
+review_triggers = ["session identity", "presign", "completion", "storage key", "segment status", "account binding"]
+
+[[machine]]
+id = "retention-delete-claim"
+risk = "critical"
+status = "planned"
+backend = "quint+tlc+itf-rust-replay"
+owner = "sonus-retention"
+source_paths = ["src/service.rs", "src/database.rs"]
+safety = [
+  "a nonexpired or pinned segment is not deleted",
+  "one live deletion claim owns a segment at a time",
+  "final deletion is not recorded while a deletable primary or mirror object may remain",
+  "a stale claimant cannot finalize after reclaim",
+  "account deletion and retention deletion converge without resurrecting metadata",
+]
+liveness = ["with advancing time, recurring sweeps, and eventually available object stores, an eligible unpinned segment is eventually removed or remains in an explicit retryable state"]
+faults = ["crash after claim", "primary delete succeeds and mirror delete fails", "claim lease expires", "two workers sweep", "account deletion races retention", "database response lost"]
+bounds = ["two workers", "two segments", "primary plus mirror object", "two claim generations", "bounded logical time"]
+review_triggers = ["retention deadline", "pinning", "claim metadata", "object deletion order", "finalization", "account erasure"]
+
+[[machine]]
+id = "storage-mirror-worker"
+risk = "high"
+status = "planned"
+backend = "quint+apalache+itf-rust-replay"
+owner = "sonus-backup"
+source_paths = ["src/service.rs", "src/database.rs"]
+safety = [
+  "mirrored state is published only for the expected bucket and storage fingerprint",
+  "one live copy claim is authoritative at a time",
+  "a stale worker cannot overwrite a newer retry or mirrored result",
+  "retention cannot finalize while a mirror copy may still exist",
+  "retry accounting and next-attempt time do not regress",
+]
+liveness = ["with recurring drains and eventually available source and destination stores, an uploaded segment eventually mirrors or reaches the configured terminal attempt limit"]
+faults = ["source read timeout", "destination write timeout", "copy succeeds response lost", "worker crash", "claim lease expiry", "fingerprint configuration change"]
+bounds = ["two workers", "two attempts", "one source", "one destination", "two fingerprint generations"]
+review_triggers = ["mirror claim", "fingerprint", "attempt count", "backoff", "source or destination identity", "retention interaction"]
+
+[[machine]]
+id = "cloud-copy-and-revocation"
+risk = "high"
+status = "planned"
+backend = "quint+itf-rust-replay"
+owner = "sonus-cloud-copy"
+source_paths = ["src/service.rs", "src/database.rs", "src/supabase_auth.rs"]
+safety = [
+  "copy uses credentials bound to the owning account and provider connection",
+  "transfer pause is honored only for its bounded lease",
+  "retries preserve one logical destination object identity",
+  "revoked or deleted accounts cannot start new copies",
+]
+liveness = ["after pause expiry, with valid credentials and provider availability, queued work eventually copies or records a bounded terminal failure"]
+faults = ["OAuth token expires", "provider response lost", "pause lease expires", "account deletion", "duplicate drain", "provider object already exists"]
+bounds = ["two providers", "two accounts", "two copy attempts", "bounded pause lease"]
+review_triggers = ["OAuth state", "copy identity", "pause lease", "provider retry", "credential revocation", "account deletion"]

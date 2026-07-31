@@ -1,0 +1,292 @@
+name: auth and storage security audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auth-storage-security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-and-dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+          components: rustfmt
+
+      - name: Check Rust formatting without resolving sibling private crates
+        run: >-
+          rustfmt --edition 2021 --check
+          src/main.rs src/lib.rs src/database.rs src/service.rs
+          src/supabase_auth.rs src/telemetry.rs
+
+      - name: Check audit shell
+        run: |
+          bash -n scripts/audit_auth_storage.sh
+          if command -v shellcheck >/dev/null; then
+            shellcheck scripts/audit_auth_storage.sh
+          fi
+
+      - name: Guard authentication invariants
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          auth = Path('src/supabase_auth.rs').read_text()
+          service = Path('src/service.rs').read_text()
+          database = Path('src/database.rs').read_text()
+          cargo = Path('Cargo.toml').read_text()
+          required_auth = {
+              'audience pin': 'set_audience',
+              'issuer pin': 'set_issuer',
+              'expiry validation': 'validate_exp = true',
+              'algorithm allow-list': 'is_supported_supabase_algorithm',
+              'JWKS refresh throttle': 'JWKS_MIN_REFRESH_INTERVAL',
+              'JWKS single flight': 'jwks_refresh_lock',
+              'email confirmation gate': 'email_is_confirmed',
+              'mandatory AAL2 gate': 'has_aal2',
+              'key-use/algorithm match': 'jwk_is_usable_for_algorithm',
+          }
+          required_service = {
+              'separate Supabase header': 'x-supabase-auth',
+              'required production auth switch': 'require_supabase',
+              'service role isolated to admin operations': 'service_role_key',
+              'caller JWT forwarded to Data API': 'authenticate_supabase_account',
+          }
+          required_database = {
+              'parameterized database adapter': 'DbParam',
+              'bound SQL construction': 'from_sql_and_values',
+              'SQL logging disabled': 'sqlx_logging(false)',
+          }
+          required_cargo = {
+              'SeaORM defaults disabled': 'sea-orm = { version = "1.1.20", default-features = false',
+              'Postgres-only SQLx feature': '"sqlx-postgres"',
+          }
+          forbidden_cargo = {
+              'SQLx MySQL feature': '"sqlx-mysql"',
+              'SQLx all-databases feature': '"all"',
+          }
+          missing = [name for name, marker in required_auth.items() if marker not in auth]
+          missing += [name for name, marker in required_service.items() if marker not in service]
+          missing += [name for name, marker in required_database.items() if marker not in database]
+          missing += [name for name, marker in required_cargo.items() if marker not in cargo]
+          forbidden = [name for name, marker in forbidden_cargo.items() if marker in cargo]
+          if missing:
+              raise SystemExit('missing security invariants: ' + ', '.join(missing))
+          if forbidden:
+              raise SystemExit('forbidden database features enabled: ' + ', '.join(forbidden))
+          PY
+
+      - name: Install the reviewed RustSec audit version
+        uses: taiki-e/install-action@c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd # v2.84.1
+        with:
+          tool: cargo-audit@0.22.2
+
+      - name: Audit locked Rust dependency vulnerabilities
+        run: |
+          # RUSTSEC-2023-0071 affects private-key RSA operations. `rsa` appears in
+          # Cargo.lock only through SQLx's MySQL package; this service disables
+          # SeaORM defaults and enables only sqlx-postgres. The invariant above
+          # fails if a MySQL/all-databases feature is introduced. RustSec still
+          # has no patched rsa release, so keep this one explicit exception and
+          # fail on every other vulnerability.
+          cargo audit --ignore RUSTSEC-2023-0071
+
+  rust-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: sonus-auris-backend.rs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: sonus-auris-backend.rs
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+
+      - name: Always validate local Rust formatting
+        run: cargo fmt --check
+
+      - name: Detect private interfaces credential
+        id: private_interfaces
+        env:
+          SUBMODULE_TOKEN: ${{ secrets.SONUS_SUBMODULE_TOKEN }}
+        run: |
+          if [[ -n "$SUBMODULE_TOKEN" ]]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo '::warning::SONUS_SUBMODULE_TOKEN is not configured; compile, clippy, and unit tests that require the private interfaces crate are skipped.'
+            {
+              echo '### Private interfaces build skipped'
+              echo
+              echo 'Configure `SONUS_SUBMODULE_TOKEN` with read-only Contents access to `sonus-auris/sonus-auris-interfaces`, preferably using a short-lived GitHub App token.'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Check out private generated interfaces
+        if: steps.private_interfaces.outputs.available == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: sonus-auris/sonus-auris-interfaces
+          ref: main
+          path: sonus-auris-interfaces
+          token: ${{ secrets.SONUS_SUBMODULE_TOKEN }}
+          persist-credentials: false
+
+      - if: steps.private_interfaces.outputs.available == 'true'
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: sonus-auris-backend.rs
+
+      - name: Check all Rust targets
+        if: steps.private_interfaces.outputs.available == 'true'
+        run: cargo check --locked --all-targets
+
+      - name: Lint all Rust targets
+        if: steps.private_interfaces.outputs.available == 'true'
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Run Rust unit and integration tests
+        if: steps.private_interfaces.outputs.available == 'true'
+        run: cargo test --locked
+
+  postgres-policy-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sonus_security_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sonus_security_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: sonus_security_test
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Install PostgreSQL client
+        run: |
+          command -v psql >/dev/null || {
+            sudo apt-get update
+            sudo apt-get install -y postgresql-client
+          }
+
+      - name: Create representative owner-scoped Supabase schema
+        run: |
+          psql --no-psqlrc --set=ON_ERROR_STOP=1 <<'SQL'
+          create role anon nologin;
+          create role authenticated nologin;
+          create schema auth;
+          create function auth.uid() returns uuid
+          language sql stable
+          as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+          create function auth.jwt() returns jsonb
+          language sql stable
+          as $$ select jsonb_build_object('aal', 'aal2') $$;
+
+          create table public.acoustic_events (
+            id uuid primary key,
+            user_id uuid not null default auth.uid(),
+            kind text not null
+          );
+          create table public.client_telemetry (
+            id uuid primary key,
+            user_id uuid not null default auth.uid(),
+            level text not null,
+            event text not null
+          );
+          create table public.user_consents (
+            id uuid primary key,
+            user_id uuid not null default auth.uid(),
+            consent_version text not null
+          );
+          create table public.user_settings (
+            user_id uuid primary key default auth.uid(),
+            settings jsonb not null default '{}'::jsonb
+          );
+          create table public.devices (
+            id uuid primary key,
+            user_id uuid not null default auth.uid()
+          );
+          create table public.entitlements (
+            id uuid primary key,
+            user_id uuid not null default auth.uid()
+          );
+          alter table public.acoustic_events enable row level security;
+          alter table public.client_telemetry enable row level security;
+          alter table public.user_consents enable row level security;
+          alter table public.user_settings enable row level security;
+          alter table public.devices enable row level security;
+          alter table public.entitlements enable row level security;
+
+          create policy acoustic_select on public.acoustic_events for select to authenticated using (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
+          create policy acoustic_insert on public.acoustic_events for insert to authenticated with check (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
+          create policy acoustic_update on public.acoustic_events for update to authenticated using (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2') with check (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
+          create policy acoustic_delete on public.acoustic_events for delete to authenticated using (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
+          create policy telemetry_select on public.client_telemetry for select to authenticated using (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
+          create policy telemetry_insert on public.client_telemetry for insert to authenticated with check (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
+          create policy consent_select on public.user_consents for select to authenticated using (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
+          create policy consent_insert on public.user_consents for insert to authenticated with check (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
+          create policy settings_select on public.user_settings for select to authenticated using (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
+          create policy settings_insert on public.user_settings for insert to authenticated with check (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
+          create policy settings_update on public.user_settings for update to authenticated using (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2') with check (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
+          create policy devices_owner on public.devices for all to authenticated using (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2') with check (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
+          create policy entitlements_select on public.entitlements for select to authenticated using (auth.uid() = user_id and auth.jwt()->>'aal' = 'aal2');
+          SQL
+
+      - name: Prove compliant Supabase fixture is clean
+        run: |
+          output="$(psql --no-psqlrc --set=ON_ERROR_STOP=1 --tuples-only --no-align --field-separator='|' --file=security/supabase_rls_audit.sql)"
+          [[ -z "${output//[[:space:]]/}" ]] || { printf '%s\n' "$output"; exit 1; }
+
+      - name: Prove the audit detects an RLS regression
+        run: |
+          psql --no-psqlrc --set=ON_ERROR_STOP=1 -c 'alter table public.acoustic_events disable row level security'
+          output="$(psql --no-psqlrc --set=ON_ERROR_STOP=1 --tuples-only --no-align --field-separator='|' --file=security/supabase_rls_audit.sql)"
+          grep -q '^critical|rls_disabled|public.acoustic_events|' <<<"$output" || {
+            printf '%s\n' "$output"
+            echo '::error::RLS audit did not detect the intentional regression'
+            exit 1
+          }
+
+      - name: Prove the RDS audit flags an unencrypted local connection
+        run: |
+          output="$(psql --no-psqlrc --set=ON_ERROR_STOP=1 --tuples-only --no-align --field-separator='|' --file=security/rds_role_audit.sql)"
+          grep -q '^critical|tls_disabled|' <<<"$output" || {
+            printf '%s\n' "$output"
+            echo '::error::RDS audit did not detect an unencrypted connection'
+            exit 1
+          }
