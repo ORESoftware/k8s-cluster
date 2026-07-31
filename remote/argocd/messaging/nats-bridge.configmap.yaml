@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dd-nats-bridge-routes
+  namespace: messaging
+  labels:
+    app: dd-nats-bridge
+data:
+  routes.json: |
+    {
+      "vapi-task": {
+        "subject": "dd.vapi.tasks.external",
+        "stream": "DD_VAPI_TASKS",
+        "max_body_bytes": 262144
+      }
+    }
