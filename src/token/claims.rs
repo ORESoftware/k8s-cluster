@@ -30,8 +30,6 @@ pub struct OreClaims {
     /// AAL1 for rolling-deploy compatibility.
     #[serde(default = "default_auth_level")]
     pub aal: u8,
-    #[serde(default)]
-    pub amr: Vec<String>,
     /// Compatibility aliases for current Supabase consumers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project: Option<String>,
