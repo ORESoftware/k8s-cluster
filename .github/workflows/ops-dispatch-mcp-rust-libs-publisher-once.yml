@@ -1,5 +1,5 @@
-name: Dispatch and observe canonical mcp-rust-libs publisher
-run-name: Observe canonical mcp-rust-libs publication @ ${{ github.sha }}
+name: Dispatch and observe canonical mcp-rust-libs repair applicator
+run-name: Apply and observe canonical mcp-rust-libs publisher repair @ ${{ github.sha }}
 
 on:
   push:
@@ -20,14 +20,14 @@ concurrency:
 jobs:
   dispatch:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 70
     steps:
-      - name: Dispatch, observe, and report the exact trusted-main publisher run
+      - name: Dispatch, observe, and report the exact trusted-main repair applicator run
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TRACKING_PR: '326'
-          PUBLISHER_WORKFLOW: ops-publish-mcp-rust-libs.yml
+          PUBLISHER_WORKFLOW: ops-fix-and-run-mcp-rust-libs-publisher-once.yml
         run: |
           set -euo pipefail
           repository="$GITHUB_REPOSITORY"
@@ -47,13 +47,13 @@ jobs:
           gh workflow run "$PUBLISHER_WORKFLOW" --repo "$repository" --ref main
 
           run_json=''
-          for _ in $(seq 1 90); do
+          for _ in $(seq 1 120); do
             candidates="$(
               gh run list \
                 --repo "$repository" \
                 --workflow "$PUBLISHER_WORKFLOW" \
                 --event workflow_dispatch \
-                --limit 40 \
+                --limit 50 \
                 --json databaseId,headSha,createdAt,status,conclusion,url
             )"
             run_json="$(
@@ -77,7 +77,7 @@ jobs:
 
           gh pr comment "$TRACKING_PR" \
             --repo "$repository" \
-            --body "Canonical MCP publisher dispatched from trusted main \`${trusted_sha}\`: ${run_url}" \
+            --body "Canonical MCP repair applicator dispatched from trusted main \`${trusted_sha}\`: ${run_url}" \
             >/dev/null || true
 
           watch_status=0
@@ -114,7 +114,7 @@ jobs:
           fi
 
           {
-            echo "Canonical MCP publisher run: ${run_url}"
+            echo "Canonical MCP repair applicator run: ${run_url}"
             echo
             echo "- trusted main: \`${trusted_sha}\`"
             echo "- status: \`$(jq -r .status <<<"$detail")\`"
@@ -122,7 +122,7 @@ jobs:
             echo "- target: \`${target_summary}\`"
             if test -n "$markers"; then
               echo
-              echo 'Sanitized publisher markers:'
+              echo 'Sanitized nested publisher markers:'
               echo '```text'
               printf '%s\n' "$markers"
               echo '```'
