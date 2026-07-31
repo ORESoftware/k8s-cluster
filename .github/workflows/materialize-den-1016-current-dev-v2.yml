@@ -41,7 +41,6 @@ jobs:
           git fetch origin \
             dev:refs/remotes/origin/dev \
             harden/dev-audit-2026-07-29-post-secret-stage:refs/remotes/origin/harden/dev-audit-2026-07-29-post-secret-stage
-          test "$(git rev-parse HEAD^)" != "$(git rev-parse HEAD)" || true
           set +e
           git merge --no-commit --no-ff \
             origin/harden/dev-audit-2026-07-29-post-secret-stage
@@ -67,6 +66,13 @@ jobs:
               Path(path).write_text(content)
               subprocess.check_call(['git', 'add', '--', path])
 
+          def yaml_semantic_lines(lines: list[str]) -> list[str]:
+              return [
+                  line.rstrip()
+                  for line in lines
+                  if line.strip() and not line.lstrip().startswith('#')
+              ]
+
           conflicts = [
               line for line in run('git', 'diff', '--name-only', '--diff-filter=U').splitlines()
               if line
@@ -87,9 +93,18 @@ jobs:
                   decisions.append((path, 'byte-identical'))
                   continue
 
+              if path.endswith('.externalsecret.yaml'):
+                  # The two reviewed add/add conflicts describe exactly the same
+                  # ExternalSecret objects. Their only difference is explanatory
+                  # comments, so retain current dev's richer operational guidance.
+                  if yaml_semantic_lines(ours_lines) == yaml_semantic_lines(theirs_lines):
+                      stage(path, ours)
+                      decisions.append((path, 'identical YAML object; preserve current documentation'))
+                      continue
+
               if path.endswith('/kustomization.yaml'):
                   # Kustomizations are ordered resource inventories. Preserve every current
-                  # line and append only missing resource entries from the reviewed audit.
+                  # line and append only resources introduced by the reviewed audit.
                   audit_non_resources = {
                       line for line in theirs_lines if not line.startswith('  - ')
                   }
@@ -208,9 +223,11 @@ jobs:
         run: |
           set -euo pipefail
           rm -f .github/workflows/materialize-den-1016-current-dev-v2.yml
+          rm -f .github/workflows/repair-den-1016-externalsecret-merge.yml
           git add -A
           git diff --cached --check
           test -z "$(git diff --cached --name-only | grep 'materialize-den-1016-current-dev-v2.yml' || true)"
+          test -z "$(git diff --cached --name-only | grep 'repair-den-1016-externalsecret-merge.yml' || true)"
           git status --short
           git commit -m 'harden: semantically merge July audit onto current dev [DEN-1016]'
           git push origin HEAD:agent/den-1016-audit-current-dev-v2
