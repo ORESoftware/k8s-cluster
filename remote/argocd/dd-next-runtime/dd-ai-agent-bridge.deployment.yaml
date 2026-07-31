@@ -23,11 +23,7 @@ spec:
   template:
     metadata:
       annotations:
-<<<<<<< HEAD
-        dd.dev/ai-agent-bridge-revision: '2026-07-30-auth-otel-network-hardening'
-=======
-        dd.dev/ai-agent-bridge-revision: 'required-api-auth+current-binary+http-sse+tcp-jsonl'
->>>>>>> origin/dev
+        dd.dev/ai-agent-bridge-revision: '2026-07-31-required-api-auth+otel+http-sse+tcp-jsonl'
       labels:
         app: dd-ai-agent-bridge
     spec:
