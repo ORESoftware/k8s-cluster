@@ -19,19 +19,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Check out repository under validation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          persist-credentials: false
+      - name: Check out the pinned validator implementation
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: canonical-cloud/canonical.cloud
+          ref: ${{ github.workflow_sha }}
+          path: .agents-validator
           persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.12"
       - name: Validate canonical files and pointers
-        run: python3 scripts/resolve_agents.py --check-layout
+        run: >-
+          python3 .agents-validator/scripts/resolve_agents.py
+          --repo-root "$GITHUB_WORKSPACE"
+          --check-layout
       - name: Exercise ancestor discovery and diagnostics
-        run: python3 scripts/resolve_agents.py --self-test
+        run: python3 .agents-validator/scripts/resolve_agents.py --self-test
       - name: Print repository chain from a nested directory
         run: |
           mkdir -p .agents-ci/nested/path
-          python3 scripts/resolve_agents.py \
+          python3 .agents-validator/scripts/resolve_agents.py \
             --cwd .agents-ci/nested/path \
             --print-chain

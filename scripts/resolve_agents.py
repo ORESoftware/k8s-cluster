@@ -103,6 +103,17 @@ def repository_root() -> Path:
     return Path(__file__).resolve(strict=True).parents[1]
 
 
+def resolve_repository_root(value: Path | None) -> Path:
+    requested = repository_root() if value is None else value.expanduser()
+    try:
+        resolved = requested.resolve(strict=True)
+    except (OSError, RuntimeError) as error:
+        raise DiscoveryError(f"cannot resolve repository root {requested}: {error}") from error
+    if not resolved.is_dir():
+        raise DiscoveryError(f"repository root is not a directory: {resolved}")
+    return resolved
+
+
 def validate_layout(root: Path) -> None:
     canonical = root / "agents.md"
     if not canonical.is_file():
@@ -213,6 +224,7 @@ def self_test() -> None:
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repo-root", type=Path, help="repository root to validate")
     parser.add_argument("--cwd", type=Path, default=Path.cwd(), help="discovery start path")
     parser.add_argument("--print-chain", action="store_true", help="print resolved files")
     parser.add_argument("--render", action="store_true", help="render merged instructions")
@@ -225,7 +237,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     try:
         if args.check_layout:
-            validate_layout(repository_root())
+            validate_layout(resolve_repository_root(args.repo_root))
             print("agent instruction layout: PASS")
         if args.self_test:
             self_test()
