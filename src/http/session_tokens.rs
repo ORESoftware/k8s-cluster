@@ -46,22 +46,24 @@ pub async fn issue_with_assurance(
         (identity, None, None, None)
     };
 
-<<<<<<< HEAD
+    // Start from base assurance, then raise it to what the caller actually
+    // proved. Minting the base context unchanged would silently downgrade an
+    // aal2 login to level 1, so the numeric pair and the OIDC pair are both
+    // overridden together and kept consistent.
     let access = state.minter.mint(MintContext {
-        shared_user_id: identity.shared_user_id.to_string(),
-        session_id,
-        provider: identity.provider,
-        provider_tenant: identity.provider_tenant,
-        provider_subject: identity.provider_subject,
+        acr: Some(
+            if auth_level >= 2 {
+                ACR_STEP_UP
+            } else {
+                ACR_BASE
+            }
+            .to_string(),
+        ),
+        amr: auth_methods.clone(),
         auth_level,
         auth_methods,
-        email: identity.email,
-        email_verified: identity.email_verified,
-        roles: identity.roles,
+        ..base_context(&identity, session_id)
     })?;
-=======
-    let access = state.minter.mint(base_context(&identity, session_id))?;
->>>>>>> origin/agent/high-assurance-mfa-platform
     Ok(IssuedSession {
         access,
         refresh_token,
