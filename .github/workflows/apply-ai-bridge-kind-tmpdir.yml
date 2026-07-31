@@ -34,49 +34,80 @@ jobs:
           from pathlib import Path
 
           path = Path('.github/workflows/ai-agent-bridge-kind-smoke.yml')
-          text = path.read_text(encoding='utf-8')
+          lines = path.read_text(encoding='utf-8').splitlines()
 
-          old_env = '''                      - name: AI_AGENT_BRIDGE_TOKEN
-                        valueFrom:
-                          secretKeyRef:
-                            name: dd-ai-agent-bridge-secrets
-                            key: inbox_token
-                      - name: HOST
-          '''
-          new_env = '''                      - name: AI_AGENT_BRIDGE_TOKEN
-                        valueFrom:
-                          secretKeyRef:
-                            name: dd-ai-agent-bridge-secrets
-                            key: inbox_token
-                      - name: AI_AGENT_BRIDGE_DIR
-                        value: /tmp/claude_bridge
-                      - name: HOST
-          '''
-          if text.count(old_env) != 1:
-              raise SystemExit('AI_AGENT_BRIDGE_TOKEN environment marker missing or duplicated')
-          text = text.replace(old_env, new_env, 1)
+          token_indexes = [
+              index for index, line in enumerate(lines)
+              if line.strip() == '- name: AI_AGENT_BRIDGE_TOKEN'
+          ]
+          if len(token_indexes) != 1:
+              raise SystemExit(
+                  f'expected one AI_AGENT_BRIDGE_TOKEN entry, found {len(token_indexes)}'
+              )
+          token_index = token_indexes[0]
+          host_index = next(
+              (
+                  index for index in range(token_index + 1, len(lines))
+                  if lines[index].strip() == '- name: HOST'
+              ),
+              None,
+          )
+          if host_index is None:
+              raise SystemExit('HOST entry after AI_AGENT_BRIDGE_TOKEN is missing')
+          if any(
+              line.strip() == '- name: AI_AGENT_BRIDGE_DIR'
+              for line in lines[token_index:host_index]
+          ):
+              raise SystemExit('AI_AGENT_BRIDGE_DIR already exists in the target env block')
+          env_indent = lines[host_index][:-len(lines[host_index].lstrip())]
+          lines[host_index:host_index] = [
+              f'{env_indent}- name: AI_AGENT_BRIDGE_DIR',
+              f'{env_indent}  value: /tmp/claude_bridge',
+          ]
 
-          old_volume = '''                    volumeMounts:
-                      - name: inbox
-                        mountPath: /var/lib/bridge/claude-inbox
-                volumes:
-                  - name: inbox
-                    emptyDir:
-                      sizeLimit: 16Mi
-          '''
-          new_volume = '''                    volumeMounts:
-                      - name: tmp
-                        mountPath: /tmp
-                volumes:
-                  - name: tmp
-                    emptyDir:
-                      sizeLimit: 64Mi
-          '''
-          if text.count(old_volume) != 1:
-              raise SystemExit('inbox volume marker missing or duplicated')
-          text = text.replace(old_volume, new_volume, 1)
+          mount_indexes = [
+              index for index, line in enumerate(lines)
+              if line.strip() == 'mountPath: /var/lib/bridge/claude-inbox'
+          ]
+          if len(mount_indexes) != 1:
+              raise SystemExit(
+                  f'expected one legacy inbox mount, found {len(mount_indexes)}'
+              )
+          mount_index = mount_indexes[0]
+          volume_name_index = mount_index - 1
+          if lines[volume_name_index].strip() != '- name: inbox':
+              raise SystemExit('legacy inbox volumeMount name is not adjacent')
+          name_indent = lines[volume_name_index][:-len(lines[volume_name_index].lstrip())]
+          mount_indent = lines[mount_index][:-len(lines[mount_index].lstrip())]
+          lines[volume_name_index] = f'{name_indent}- name: tmp'
+          lines[mount_index] = f'{mount_indent}mountPath: /tmp'
 
-          path.write_text(text, encoding='utf-8')
+          volume_indexes = [
+              index for index in range(mount_index + 1, len(lines))
+              if lines[index].strip() == '- name: inbox'
+          ]
+          if len(volume_indexes) != 1:
+              raise SystemExit(
+                  f'expected one legacy inbox volume, found {len(volume_indexes)}'
+              )
+          volume_index = volume_indexes[0]
+          lines[volume_index] = (
+              f'{lines[volume_index][:-len(lines[volume_index].lstrip())]}- name: tmp'
+          )
+          size_index = next(
+              (
+                  index for index in range(volume_index + 1, len(lines))
+                  if lines[index].strip().startswith('sizeLimit:')
+              ),
+              None,
+          )
+          if size_index is None or lines[size_index].strip() != 'sizeLimit: 16Mi':
+              raise SystemExit('legacy inbox emptyDir sizeLimit is missing or unexpected')
+          lines[size_index] = (
+              f'{lines[size_index][:-len(lines[size_index].lstrip())]}sizeLimit: 64Mi'
+          )
+
+          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
           PY
 
           git diff --check
