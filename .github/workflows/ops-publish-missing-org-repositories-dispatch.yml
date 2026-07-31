@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 55
     steps:
       - name: Check out the trusted main revision
@@ -44,87 +44,51 @@ jobs:
           retry-max-attempts: 2
           mask-aws-account-id: true
 
-      - name: Publish, finalize, and verify through the protected remote GitHub credential
+      - name: Publish and verify from the protected SSM host
         shell: bash
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
-          PUBLISHER_AWS_REGION: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
         run: |
           set -euo pipefail
           test -n "${INSTANCE_ID:-}"
-          test -n "${PUBLISHER_AWS_REGION:-}"
-          [[ "$PUBLISHER_AWS_REGION" =~ ^[a-z0-9-]+$ ]]
-
           trusted_sha="$(git rev-parse HEAD)"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
-          publisher_script="$RUNNER_TEMP/publish-critical-org-repositories.sh"
-          root_script="$RUNNER_TEMP/publish-critical-org-repositories-root.sh"
 
-          cat > "$publisher_script" <<'PUBLISHER_EOF'
+          remote_script="$RUNNER_TEMP/publish-critical-org-repositories.sh"
+          cat > "$remote_script" <<'REMOTE_EOF'
           #!/usr/bin/env bash
           set -Eeuo pipefail
           umask 077
 
-          stage=initialization
-          report_failure() {
-            local rc=$?
-            trap - ERR
-            printf 'publisher-stage=%s status=failed rc=%s\n' "$stage" "$rc" >&2
-            exit "$rc"
-          }
-          trap report_failure ERR
-
           trusted_sha="${1:?trusted SHA required}"
-          credential_source="${2:?credential source required}"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
-          case "$credential_source" in
-            aws-secrets-manager|kubernetes-secret) ;;
-            *) echo 'publisher-stage=initialization status=failed reason=invalid-credential-source' >&2; exit 64 ;;
-          esac
-
-          for inherited in \
-            CODEX_HOME \
-            GH_TOKEN \
-            GITHUB_TOKEN \
-            GITHUB_REPOSITORY_ADMIN_TOKEN \
-            GIT_ASKPASS \
-            GIT_ASKPASS_REQUIRE
-          do
-            if test -n "${!inherited:-}"; then
-              printf 'publisher-stage=%s status=failed reason=inherited-%s\n' \
-                "$stage" "$inherited" >&2
-              exit 64
-            fi
-          done
-
-          stage=prepare-disposable-state
+          stage=initialization
           work="$(mktemp -d /tmp/critical-org-publisher.XXXXXX)"
-          export CODEX_HOME="$work/codex-home"
-          install -d -m 700 "$CODEX_HOME"
-          case "$CODEX_HOME" in
-            "$work"/*) ;;
-            *) echo 'publisher-stage=prepare-disposable-state status=failed reason=escaped-worktree' >&2; exit 1 ;;
-          esac
 
           cleanup() {
-            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
-            unset CODEX_HOME credential_source
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN encoded_pat
             unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
-            unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
             rm -rf "$work"
           }
           trap cleanup EXIT
+          trap 'rc=$?; printf "publisher-stage=%s status=failed rc=%s\n" "$stage" "$rc" >&2; exit "$rc"' ERR
 
-          stage=receive-protected-credential
-          IFS= read -r encoded_pat
+          stage=protected-credential
+          command -v kubectl >/dev/null
+          test -r /etc/kubernetes/admin.conf
+          encoded_pat="$(
+            KUBECONFIG=/etc/kubernetes/admin.conf \
+              kubectl -n default get secret dd-agent-secrets \
+              -o jsonpath='{.data.GH_PAT}'
+          )"
           test -n "$encoded_pat"
-          GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode 2>/dev/null)"
+          GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
           unset encoded_pat
           test -n "$GH_TOKEN"
           [[ "$GH_TOKEN" != *$'\n'* && "$GH_TOKEN" != *$'\r'* ]]
           export GH_TOKEN
           export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
-          printf 'publisher-stage=credential-ready source=%s\n' "$credential_source"
+          printf 'publisher-stage=%s status=passed\n' "$stage"
 
           stage=git-credential-transport
           git_askpass="$work/git-askpass.sh"
@@ -140,10 +104,7 @@ jobs:
           export GIT_ASKPASS="$git_askpass"
           export GIT_ASKPASS_REQUIRE=force
           export GIT_TERMINAL_PROMPT=0
-          export GIT_CONFIG_COUNT=1
-          export GIT_CONFIG_KEY_0=credential.helper
-          export GIT_CONFIG_VALUE_0=
-          printf 'publisher-stage=%s status=ready\n' "$stage"
+          printf 'publisher-stage=%s status=passed\n' "$stage"
 
           stage=github-identity-and-ownership
           python3 - <<'PY'
@@ -152,17 +113,17 @@ jobs:
           import urllib.error
           import urllib.request
 
-          token = os.environ["GH_TOKEN"]
+          token = os.environ['GH_TOKEN']
           headers = {
-              "Accept": "application/vnd.github+json",
-              "Authorization": f"Bearer {token}",
-              "X-GitHub-Api-Version": "2022-11-28",
-              "User-Agent": "bounded-missing-repository-publisher",
+              'Accept': 'application/vnd.github+json',
+              'Authorization': f'Bearer {token}',
+              'X-GitHub-Api-Version': '2022-11-28',
+              'User-Agent': 'bounded-critical-org-repository-publisher',
           }
 
           def get(path: str) -> dict:
               request = urllib.request.Request(
-                  "https://api.github.com" + path,
+                  'https://api.github.com' + path,
                   headers=headers,
               )
               try:
@@ -170,45 +131,33 @@ jobs:
                       return json.load(response)
               except urllib.error.HTTPError as error:
                   error.read(4096)
-                  raise SystemExit(
-                      f"GitHub preflight failed for {path}: HTTP {error.code}"
-                  ) from error
+                  raise SystemExit(f'GitHub preflight failed for {path}: HTTP {error.code}') from error
 
-          identity = get("/user")
-          if identity.get("login") != "ORESoftware":
-              raise SystemExit(
-                  f"unexpected publisher identity: {identity.get('login')!r}"
-              )
+          identity = get('/user')
+          if identity.get('login') != 'ORESoftware':
+              raise SystemExit(f"unexpected publisher identity: {identity.get('login')!r}")
 
           for organization in (
-              "hypesiege",
-              "StreemPilot",
-              "meta-agents-demo",
-              "file-tunnel",
-              "unreal-unity-poc",
+              'hypesiege',
+              'StreemPilot',
+              'meta-agents-demo',
+              'file-tunnel',
+              'unreal-unity-poc',
           ):
-              membership = get(f"/user/memberships/orgs/{organization}")
-              observed = (
-                  membership.get("role"),
-                  membership.get("state"),
-              )
-              if observed != ("admin", "active"):
-                  raise SystemExit(
-                      f"{organization} owner membership is {observed!r}"
-                  )
-              print(f"{organization} owner membership verified")
+              membership = get(f'/user/memberships/orgs/{organization}')
+              observed = (membership.get('role'), membership.get('state'))
+              if observed != ('admin', 'active'):
+                  raise SystemExit(f'{organization} owner membership is {observed!r}')
+              print(f'{organization} owner membership verified')
           PY
           printf 'publisher-stage=%s status=passed\n' "$stage"
 
           stage=trusted-publisher-source
-          git ls-remote --exit-code \
-            https://github.com/ORESoftware/k8s-cluster.git \
-            refs/heads/main >/dev/null
-          git clone --filter=blob:none --no-checkout \
-            https://github.com/ORESoftware/k8s-cluster.git \
-            "$work/k8s-cluster"
+          git init "$work/k8s-cluster"
+          git -C "$work/k8s-cluster" remote add origin \
+            https://github.com/ORESoftware/k8s-cluster.git
           git -C "$work/k8s-cluster" fetch --depth=1 origin "$trusted_sha"
-          git -C "$work/k8s-cluster" checkout --detach "$trusted_sha"
+          git -C "$work/k8s-cluster" checkout --detach FETCH_HEAD
           test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
           printf 'publisher-stage=%s status=passed sha=%s\n' "$stage" "$trusted_sha"
 
@@ -220,11 +169,12 @@ jobs:
           printf 'publisher-stage=%s status=passed\n' "$stage"
 
           stage=bounded-repository-publication
-          python3 "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py"
+          cd "$work/k8s-cluster"
+          python3 scripts/ops/publish_missing_org_repositories_current.py
           printf 'publisher-stage=%s status=passed\n' "$stage"
 
           stage=publication-finalization
-          python3 "$work/k8s-cluster/scripts/ops/finalize_missing_org_repositories.py" \
+          python3 scripts/ops/finalize_missing_org_repositories.py \
             --json-report "$work/critical-org-publication.json" \
             --markdown-report "$work/critical-org-publication.md" \
             --close-carriers
@@ -233,100 +183,11 @@ jobs:
 
           stage=complete
           printf 'publisher-stage=%s status=success\n' "$stage"
-          PUBLISHER_EOF
+          REMOTE_EOF
+          chmod 700 "$remote_script"
 
-          cat > "$root_script" <<'ROOT_EOF'
-          #!/usr/bin/env bash
-          set -Eeuo pipefail
-          umask 077
-
-          trusted_sha="${1:?trusted SHA required}"
-          region="${2:?AWS region required}"
-          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$region" =~ ^[a-z0-9-]+$ ]]
-
-          publisher_path=/tmp/publish-critical-org-repositories.sh
-          root_path=/tmp/publish-critical-org-repositories-root.sh
-          remote_log=/tmp/publish-critical-org-repositories.log
-          encoded_pat=
-          credential_source=
-
-          cleanup() {
-            unset encoded_pat raw_pat credential_source
-            rm -f "$publisher_path" "$root_path" "$remote_log"
-          }
-          trap cleanup EXIT
-
-          if command -v aws >/dev/null 2>&1; then
-            raw_pat="$(
-              aws secretsmanager get-secret-value \
-                --region "$region" \
-                --secret-id dd/remote-dev/agent-secrets \
-                --query SecretString \
-                --output text 2>/dev/null \
-                | python3 -c '
-          import json
-          import sys
-
-          try:
-              payload = json.load(sys.stdin)
-          except (json.JSONDecodeError, OSError):
-              raise SystemExit(65)
-          value = payload.get("GH_PAT")
-          if not isinstance(value, str) or not value:
-              raise SystemExit(65)
-          sys.stdout.write(value)
-          ' 2>/dev/null
-            )" || raw_pat=
-            if test -n "$raw_pat" &&
-              [[ "$raw_pat" != *$'\n'* && "$raw_pat" != *$'\r'* ]]; then
-              encoded_pat="$(printf '%s' "$raw_pat" | base64 --wrap=0)"
-              credential_source=aws-secrets-manager
-            fi
-            unset raw_pat
-          fi
-
-          if test -z "$encoded_pat"; then
-            if ! command -v kubectl >/dev/null 2>&1; then
-              echo 'publisher-stage=credential-root status=failed reason=no-root-kubectl' >&2
-              exit 127
-            fi
-            if ! test -r /etc/kubernetes/admin.conf; then
-              echo 'publisher-stage=credential-root status=failed reason=unreadable-admin-kubeconfig' >&2
-              exit 1
-            fi
-            if ! encoded_pat="$(
-              KUBECONFIG=/etc/kubernetes/admin.conf \
-                kubectl -n default get secret dd-agent-secrets \
-                -o jsonpath='{.data.GH_PAT}'
-            )"; then
-              echo 'publisher-stage=credential-root status=failed reason=kubernetes-secret-read' >&2
-              exit 1
-            fi
-            test -n "$encoded_pat"
-            credential_source=kubernetes-secret
-          fi
-
-          printf 'publisher-stage=credential-root status=ready source=%s\n' "$credential_source"
-          set +e
-          printf '%s\n' "$encoded_pat" |
-            sudo -u ec2-user -H bash -lc \
-              'unset CODEX_HOME GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT; exec bash /tmp/publish-critical-org-repositories.sh "$1" "$2"' \
-              _ "$trusted_sha" "$credential_source" >"$remote_log" 2>&1
-          status=$?
-          set -e
-          if test -f "$remote_log"; then
-            tail -c 20000 "$remote_log"
-          else
-            echo 'publisher-stage=remote-execution status=failed reason=missing-remote-log' >&2
-          fi
-          exit "$status"
-          ROOT_EOF
-
-          chmod 700 "$publisher_script" "$root_script"
-          encoded_publisher="$(base64 --wrap=0 "$publisher_script")"
-          encoded_root="$(base64 --wrap=0 "$root_script")"
-          remote_command="printf '%s' '$encoded_publisher' | base64 --decode > /tmp/publish-critical-org-repositories.sh && printf '%s' '$encoded_root' | base64 --decode > /tmp/publish-critical-org-repositories-root.sh && chown ec2-user:ec2-user /tmp/publish-critical-org-repositories.sh && chmod 700 /tmp/publish-critical-org-repositories.sh /tmp/publish-critical-org-repositories-root.sh && bash /tmp/publish-critical-org-repositories-root.sh '$trusted_sha' '$PUBLISHER_AWS_REGION'"
+          encoded_script="$(base64 --wrap=0 "$remote_script")"
+          remote_command="printf '%s' '$encoded_script' | base64 --decode > /tmp/publish-critical-org-repositories.sh; chmod 700 /tmp/publish-critical-org-repositories.sh; bash /tmp/publish-critical-org-repositories.sh '$trusted_sha' > /tmp/publish-critical-org-repositories.log 2>&1; status=\$?; if test -f /tmp/publish-critical-org-repositories.log; then tail -c 20000 /tmp/publish-critical-org-repositories.log; fi; rm -f /tmp/publish-critical-org-repositories.sh /tmp/publish-critical-org-repositories.log; exit \$status"
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
@@ -334,7 +195,7 @@ jobs:
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
               --document-name AWS-RunShellScript \
-              --comment "Publish fixed 34-repository allowlist from $trusted_sha" \
+              --comment "Publish fixed organization repository allowlist from $trusted_sha" \
               --parameters "file://$parameters" \
               --query 'Command.CommandId' \
               --output text
