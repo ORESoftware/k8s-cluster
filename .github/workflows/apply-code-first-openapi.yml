@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: apply-push-openapi-contract
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   apply:
@@ -59,6 +59,14 @@ jobs:
               source = source.replace(before, after, 1)
           elif after not in source:
               raise SystemExit('unknown DTO schema-count contract')
+
+          before_import = 'use crate::contact::{ContactApiState, contact_openapi_router};'
+          after_import = 'use crate::contact::http::{ContactApiState, contact_openapi_router};'
+          if before_import in source:
+              source = source.replace(before_import, after_import, 1)
+          elif after_import not in source:
+              raise SystemExit('unknown contact OpenAPI import contract')
+
           path.write_text(source)
           PY
           python3 -m py_compile scripts/apply_code_first_openapi.py
