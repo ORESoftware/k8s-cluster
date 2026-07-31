@@ -97,19 +97,21 @@
         "src/**",
         "tests/**"
       ],
-      "model": null,
+      "model": "formal/review-procedure/model.py",
       "evidence": [
+        "bounded idempotent retry transitions",
         "retry tests with stable request/claim identity",
         "database uniqueness constraints"
       ],
       "commands": [
         "python3 formal/review-procedure/check.py",
+        "python3 formal/review-procedure/model.py",
         "cargo test --all-targets --locked"
       ],
       "assumptions": [
         "request identifiers and claim leases remain stable across transport retry"
       ],
-      "bounded": false
+      "bounded": true
     }
   ]
 }
