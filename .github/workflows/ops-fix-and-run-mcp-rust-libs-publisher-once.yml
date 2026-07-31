@@ -1,0 +1,208 @@
+name: Fix and run canonical mcp-rust-libs publisher once
+run-name: Replace brittle profile parsing and publish canonical mcp-rust-libs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-fix-and-run-mcp-rust-libs-publisher-once.yml
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: fix-and-run-canonical-mcp-rust-libs-publisher-once
+  cancel-in-progress: false
+
+jobs:
+  fix-dispatch-observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
+    steps:
+      - name: Check out trusted main with bounded write permission
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Replace direct hosts.yml parsing with gh auth token
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          import textwrap
+
+          path = Path('.github/workflows/ops-publish-mcp-rust-libs.yml')
+          text = path.read_text(encoding='utf-8')
+
+          start_marker = "          stage=protected-gh-profile-credential\n"
+          end_marker = "          fi\n          unset encoded_pat gh_hosts\n"
+          start = text.find(start_marker)
+          if start < 0:
+              raise SystemExit('protected profile block start was not found exactly once')
+          if text.find(start_marker, start + 1) >= 0:
+              raise SystemExit('protected profile block start is duplicated')
+          end = text.find(end_marker, start)
+          if end < 0:
+              raise SystemExit('protected profile block end was not found')
+
+          replacement = """          stage=protected-gh-cli-profile-credential
+          if ! command -v gh >/dev/null 2>&1; then
+            printf 'publisher-stage=%s status=failed reason=gh-cli-unavailable\\n' "$stage" >&2
+            exit 66
+          fi
+          if ! GH_TOKEN="$(gh auth token --hostname github.com 2>/dev/null)"; then
+            printf 'publisher-stage=%s status=failed reason=gh-auth-token-unavailable\\n' "$stage" >&2
+            exit 66
+          fi
+          credential_source=protected-gh-cli-profile
+"""
+          text = text[:start] + replacement + text[end:]
+          text = text.replace(
+              'GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM CODEX_HOME gh_hosts credential_source',
+              'GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM CODEX_HOME credential_source',
+              1,
+          )
+          text = text.replace('          unset encoded_pat gh_hosts\n', '          unset encoded_pat\n', 1)
+          if 'GH_TOKEN="$(gh auth token --hostname github.com 2>/dev/null)"' not in text:
+              raise SystemExit('gh auth token replacement did not materialize')
+          if "GH_HOSTS=\"$gh_hosts\" python3" in text:
+              raise SystemExit('brittle direct hosts.yml parser remains')
+          path.write_text(text, encoding='utf-8')
+
+          run_marker = '        run: |\n'
+          run_start = text.index(run_marker, text.index('Publish the reviewed subtree')) + len(run_marker)
+          outer_lines = []
+          for line in text[run_start:].splitlines():
+              if line.startswith('          '):
+                  outer_lines.append(line[10:])
+              elif not line:
+                  outer_lines.append('')
+              else:
+                  break
+          outer = '\n'.join(outer_lines) + '\n'
+          Path('/tmp/mcp-publisher-outer.sh').write_text(outer, encoding='utf-8')
+
+          remote_begin_marker = "cat > \"$remote_script\" <<'REMOTE_SCRIPT'\n"
+          remote_begin = outer.index(remote_begin_marker) + len(remote_begin_marker)
+          remote_end = outer.index('\nREMOTE_SCRIPT\n', remote_begin)
+          remote = outer[remote_begin:remote_end] + '\n'
+          Path('/tmp/mcp-publisher-remote.sh').write_text(remote, encoding='utf-8')
+
+          python_begin_marker = "cat > \"$api_helper\" <<'PYTHON'\n"
+          python_begin = remote.index(python_begin_marker) + len(python_begin_marker)
+          python_end = remote.index('\nPYTHON\n', python_begin)
+          helper = remote[python_begin:python_end] + '\n'
+          Path('/tmp/mcp-publisher-api.py').write_text(helper, encoding='utf-8')
+          PYTHON
+
+          bash -n /tmp/mcp-publisher-outer.sh
+          bash -n /tmp/mcp-publisher-remote.sh
+          python3 -m py_compile /tmp/mcp-publisher-api.py
+          git diff --check -- .github/workflows/ops-publish-mcp-rust-libs.yml
+
+      - name: Commit only the reviewed publisher repair to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$(git status --short .github/workflows/ops-publish-mcp-rust-libs.yml)"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/ops-publish-mcp-rust-libs.yml
+          test "$(git diff --cached --name-only)" = '.github/workflows/ops-publish-mcp-rust-libs.yml'
+          git commit -m 'fix(ops): use gh auth token for canonical MCP publication'
+          git push origin HEAD:main
+
+      - name: Dispatch and observe the repaired publisher
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_WORKFLOW: ops-publish-mcp-rust-libs.yml
+          TRACKING_PR: '326'
+        run: |
+          set -euo pipefail
+          repository="$GITHUB_REPOSITORY"
+          trusted_sha="$(gh api "repos/${repository}/commits/main" --jq .sha)"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          before="$(
+            gh run list \
+              --repo "$repository" \
+              --workflow "$PUBLISH_WORKFLOW" \
+              --event workflow_dispatch \
+              --limit 100 \
+              --json databaseId \
+              | jq '[.[].databaseId]'
+          )"
+          gh workflow run "$PUBLISH_WORKFLOW" --repo "$repository" --ref main
+
+          run=''
+          for _ in $(seq 1 120); do
+            candidates="$(
+              gh run list \
+                --repo "$repository" \
+                --workflow "$PUBLISH_WORKFLOW" \
+                --event workflow_dispatch \
+                --limit 50 \
+                --json databaseId,headSha,createdAt,url,status,conclusion
+            )"
+            run="$(
+              jq -c \
+                --argjson before "$before" \
+                --arg sha "$trusted_sha" \
+                '[.[] | select(.headSha == $sha and ((.databaseId as $id | $before | index($id)) == null))] | sort_by(.createdAt) | last // empty' \
+                <<<"$candidates"
+            )"
+            test -n "$run" && break
+            sleep 2
+          done
+          test -n "$run"
+          run_id="$(jq -r .databaseId <<<"$run")"
+          run_url="$(jq -r .url <<<"$run")"
+          [[ "$run_id" =~ ^[0-9]+$ ]]
+
+          gh pr comment "$TRACKING_PR" \
+            --repo "$repository" \
+            --body "Repaired canonical MCP publisher dispatched from \`${trusted_sha}\`: ${run_url}" \
+            >/dev/null || true
+
+          status=0
+          gh run watch "$run_id" --repo "$repository" --exit-status || status=$?
+
+          detail="$(gh run view "$run_id" --repo "$repository" --json headSha,status,conclusion,url)"
+          test "$(jq -r .headSha <<<"$detail")" = "$trusted_sha"
+          log_file="$(mktemp)"
+          body_file="$(mktemp)"
+          trap 'rm -f "$log_file" "$body_file"' EXIT
+          gh run view "$run_id" --repo "$repository" --log >"$log_file" 2>/dev/null || true
+          markers="$(
+            grep -Eo \
+              'publisher-stage-failed=[A-Za-z0-9._-]+ exit=[0-9]+|CREATED ORESoftware/mcp-rust-libs|PUBLISHED ORESoftware/mcp-rust-libs PR#[0-9]+ head=[0-9a-f]{40} source_tree=[0-9a-f]{40} trusted_k8s=[0-9a-f]{40}|ALREADY_PUBLISHED ORESoftware/mcp-rust-libs main=[0-9a-f]{40} source_tree=[0-9a-f]{40} trusted_k8s=[0-9a-f]{40}' \
+              "$log_file" | sort -u | tail -n 20 || true
+          )"
+          target='not-created'
+          if metadata="$(curl --silent --show-error --fail https://api.github.com/repos/ORESoftware/mcp-rust-libs 2>/dev/null)"; then
+            target="$(jq -r '"owner=" + .owner.login + " visibility=" + .visibility + " default_branch=" + .default_branch + " id=" + (.id|tostring)' <<<"$metadata")"
+          fi
+          {
+            echo "Repaired canonical MCP publisher run: ${run_url}"
+            echo
+            echo "- trusted main: \`${trusted_sha}\`"
+            echo "- status: \`$(jq -r .status <<<"$detail")\`"
+            echo "- conclusion: \`$(jq -r '.conclusion // ""' <<<"$detail")\`"
+            echo "- target: \`${target}\`"
+            if test -n "$markers"; then
+              echo
+              echo 'Sanitized publisher markers:'
+              echo '```text'
+              printf '%s\n' "$markers"
+              echo '```'
+            fi
+          } > "$body_file"
+          gh pr comment "$TRACKING_PR" --repo "$repository" --body-file "$body_file" >/dev/null || true
+          exit "$status"
