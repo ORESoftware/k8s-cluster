@@ -2626,6 +2626,11 @@ pub const LambdaFunctionRuntime = enum {
     ex,
     java,
     jvm,
+    gleam,
+    gleamlang,
+    rust,
+    rs,
+    browser,
 
     pub fn toString(self: LambdaFunctionRuntime) []const u8 {
         return switch (self) {
@@ -2646,6 +2651,11 @@ pub const LambdaFunctionRuntime = enum {
             .ex => "ex",
             .java => "java",
             .jvm => "jvm",
+            .gleam => "gleam",
+            .gleamlang => "gleamlang",
+            .rust => "rust",
+            .rs => "rs",
+            .browser => "browser",
         };
     }
 
@@ -2667,6 +2677,11 @@ pub const LambdaFunctionRuntime = enum {
         if (std.mem.eql(u8, value, "ex")) return .ex;
         if (std.mem.eql(u8, value, "java")) return .java;
         if (std.mem.eql(u8, value, "jvm")) return .jvm;
+        if (std.mem.eql(u8, value, "gleam")) return .gleam;
+        if (std.mem.eql(u8, value, "gleamlang")) return .gleamlang;
+        if (std.mem.eql(u8, value, "rust")) return .rust;
+        if (std.mem.eql(u8, value, "rs")) return .rs;
+        if (std.mem.eql(u8, value, "browser")) return .browser;
         return null;
     }
 };
@@ -2813,6 +2828,317 @@ pub fn validateLambdaFunctionsIdleTimeoutSeconds(value: i32) ?[]const u8 {
 pub fn validateLambdaFunctionsMaxRunMs(value: i32) ?[]const u8 {
     if (value < 1000) return "lambda_functions.max_run_ms is below the minimum";
     if (value > 300000) return "lambda_functions.max_run_ms is above the maximum";
+    return null;
+}
+
+// Immutable published snapshots of lambda function code and runtime configuration.
+pub const lambda_function_revisions_table: []const u8 = "lambda_function_revisions";
+pub const lambda_function_revisions_columns = [_][]const u8{ "id", "function_id", "revision_number", "definition_digest", "description", "runtime", "entry_command", "function_body", "reuse_key", "idle_timeout_seconds", "max_run_ms", "containerized", "container_image", "container_build_status", "container_build_error", "container_built_at", "env", "labels", "meta_data", "created_at", "created_by" };
+pub const lambda_function_revisions_select_sql: []const u8 = "select\n      id::text as id,\n      function_id::text as function_id,\n      revision_number,\n      definition_digest,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      created_by::text as created_by\n    from lambda_function_revisions";
+
+pub const LambdaFunctionRevisionRuntime = enum {
+    nodejs,
+    javascript,
+    typescript,
+    python3,
+    python,
+    ruby,
+    bash,
+    shell,
+    golang,
+    go,
+    dart,
+    erlang,
+    erl,
+    elixir,
+    ex,
+    java,
+    jvm,
+    gleam,
+    gleamlang,
+    rust,
+    rs,
+    browser,
+
+    pub fn toString(self: LambdaFunctionRevisionRuntime) []const u8 {
+        return switch (self) {
+            .nodejs => "nodejs",
+            .javascript => "javascript",
+            .typescript => "typescript",
+            .python3 => "python3",
+            .python => "python",
+            .ruby => "ruby",
+            .bash => "bash",
+            .shell => "shell",
+            .golang => "golang",
+            .go => "go",
+            .dart => "dart",
+            .erlang => "erlang",
+            .erl => "erl",
+            .elixir => "elixir",
+            .ex => "ex",
+            .java => "java",
+            .jvm => "jvm",
+            .gleam => "gleam",
+            .gleamlang => "gleamlang",
+            .rust => "rust",
+            .rs => "rs",
+            .browser => "browser",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?LambdaFunctionRevisionRuntime {
+        if (std.mem.eql(u8, value, "nodejs")) return .nodejs;
+        if (std.mem.eql(u8, value, "javascript")) return .javascript;
+        if (std.mem.eql(u8, value, "typescript")) return .typescript;
+        if (std.mem.eql(u8, value, "python3")) return .python3;
+        if (std.mem.eql(u8, value, "python")) return .python;
+        if (std.mem.eql(u8, value, "ruby")) return .ruby;
+        if (std.mem.eql(u8, value, "bash")) return .bash;
+        if (std.mem.eql(u8, value, "shell")) return .shell;
+        if (std.mem.eql(u8, value, "golang")) return .golang;
+        if (std.mem.eql(u8, value, "go")) return .go;
+        if (std.mem.eql(u8, value, "dart")) return .dart;
+        if (std.mem.eql(u8, value, "erlang")) return .erlang;
+        if (std.mem.eql(u8, value, "erl")) return .erl;
+        if (std.mem.eql(u8, value, "elixir")) return .elixir;
+        if (std.mem.eql(u8, value, "ex")) return .ex;
+        if (std.mem.eql(u8, value, "java")) return .java;
+        if (std.mem.eql(u8, value, "jvm")) return .jvm;
+        if (std.mem.eql(u8, value, "gleam")) return .gleam;
+        if (std.mem.eql(u8, value, "gleamlang")) return .gleamlang;
+        if (std.mem.eql(u8, value, "rust")) return .rust;
+        if (std.mem.eql(u8, value, "rs")) return .rs;
+        if (std.mem.eql(u8, value, "browser")) return .browser;
+        return null;
+    }
+};
+
+pub const LambdaFunctionRevisionContainerBuildStatus = enum {
+    not_requested,
+    pending,
+    building,
+    built,
+    failed,
+    skipped,
+
+    pub fn toString(self: LambdaFunctionRevisionContainerBuildStatus) []const u8 {
+        return switch (self) {
+            .not_requested => "not_requested",
+            .pending => "pending",
+            .building => "building",
+            .built => "built",
+            .failed => "failed",
+            .skipped => "skipped",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?LambdaFunctionRevisionContainerBuildStatus {
+        if (std.mem.eql(u8, value, "not_requested")) return .not_requested;
+        if (std.mem.eql(u8, value, "pending")) return .pending;
+        if (std.mem.eql(u8, value, "building")) return .building;
+        if (std.mem.eql(u8, value, "built")) return .built;
+        if (std.mem.eql(u8, value, "failed")) return .failed;
+        if (std.mem.eql(u8, value, "skipped")) return .skipped;
+        return null;
+    }
+};
+
+pub const LambdaFunctionRevisionRow = struct {
+    id: []const u8,
+    function_id: []const u8,
+    revision_number: i64,
+    definition_digest: []const u8,
+    description: []const u8,
+    runtime: []const u8,
+    entry_command: []const u8,
+    function_body: []const u8,
+    reuse_key: ?[]const u8,
+    idle_timeout_seconds: i32,
+    max_run_ms: i32,
+    containerized: bool,
+    container_image: ?[]const u8,
+    container_build_status: []const u8,
+    container_build_error: ?[]const u8,
+    container_built_at: ?[]const u8,
+    env: []const u8,
+    labels: []const u8,
+    meta_data: []const u8,
+    created_at: []const u8,
+    created_by: ?[]const u8,
+
+    pub fn fromRow(reader: RowReader) LambdaFunctionRevisionRow {
+        return LambdaFunctionRevisionRow{
+            .id = reader.text(0),
+            .function_id = reader.text(1),
+            .revision_number = reader.int(2),
+            .definition_digest = reader.text(3),
+            .description = reader.text(4),
+            .runtime = reader.text(5),
+            .entry_command = reader.text(6),
+            .function_body = reader.text(7),
+            .reuse_key = if (reader.is_null(8)) null else reader.text(8),
+            .idle_timeout_seconds = @as(i32, @intCast(reader.int(9))),
+            .max_run_ms = @as(i32, @intCast(reader.int(10))),
+            .containerized = reader.boolean(11),
+            .container_image = if (reader.is_null(12)) null else reader.text(12),
+            .container_build_status = reader.text(13),
+            .container_build_error = if (reader.is_null(14)) null else reader.text(14),
+            .container_built_at = if (reader.is_null(15)) null else reader.text(15),
+            .env = reader.text(16),
+            .labels = reader.text(17),
+            .meta_data = reader.text(18),
+            .created_at = reader.text(19),
+            .created_by = if (reader.is_null(20)) null else reader.text(20),
+        };
+    }
+};
+
+pub fn validateLambdaFunctionRevisionsRevisionNumber(value: i64) ?[]const u8 {
+    if (value < 1) return "lambda_function_revisions.revision_number is below the minimum";
+    return null;
+}
+
+pub fn validateLambdaFunctionRevisionsDefinitionDigest(value: []const u8) ?[]const u8 {
+    if (value.len < 64) return "lambda_function_revisions.definition_digest must be at least 64 characters";
+    if (value.len > 64) return "lambda_function_revisions.definition_digest must be at most 64 characters";
+    return null;
+}
+
+pub fn validateLambdaFunctionRevisionsDescription(value: []const u8) ?[]const u8 {
+    if (value.len > 4096) return "lambda_function_revisions.description must be at most 4096 characters";
+    return null;
+}
+
+pub fn validateLambdaFunctionRevisionsFunctionBody(value: []const u8) ?[]const u8 {
+    if (value.len < 1) return "lambda_function_revisions.function_body must be at least 1 characters";
+    return null;
+}
+
+pub fn validateLambdaFunctionRevisionsReuseKey(value: []const u8) ?[]const u8 {
+    if (value.len > 200) return "lambda_function_revisions.reuse_key must be at most 200 characters";
+    return null;
+}
+
+pub fn validateLambdaFunctionRevisionsIdleTimeoutSeconds(value: i32) ?[]const u8 {
+    if (value < 1) return "lambda_function_revisions.idle_timeout_seconds is below the minimum";
+    if (value > 3600) return "lambda_function_revisions.idle_timeout_seconds is above the maximum";
+    return null;
+}
+
+pub fn validateLambdaFunctionRevisionsMaxRunMs(value: i32) ?[]const u8 {
+    if (value < 1000) return "lambda_function_revisions.max_run_ms is below the minimum";
+    if (value > 300000) return "lambda_function_revisions.max_run_ms is above the maximum";
+    return null;
+}
+
+// Named weighted routing policies over immutable lambda function revisions.
+pub const lambda_function_aliases_table: []const u8 = "lambda_function_aliases";
+pub const lambda_function_aliases_columns = [_][]const u8{ "id", "function_id", "name", "description", "traffic", "routing_version", "created_at", "updated_at", "created_by", "updated_by" };
+pub const lambda_function_aliases_select_sql: []const u8 = "select\n      id::text as id,\n      function_id::text as function_id,\n      name,\n      description,\n      traffic::text as traffic_json,\n      routing_version,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_function_aliases";
+
+pub const LambdaFunctionAliasRow = struct {
+    id: []const u8,
+    function_id: []const u8,
+    name: []const u8,
+    description: []const u8,
+    traffic: []const u8,
+    routing_version: i64,
+    created_at: []const u8,
+    updated_at: []const u8,
+    created_by: ?[]const u8,
+    updated_by: ?[]const u8,
+
+    pub fn fromRow(reader: RowReader) LambdaFunctionAliasRow {
+        return LambdaFunctionAliasRow{
+            .id = reader.text(0),
+            .function_id = reader.text(1),
+            .name = reader.text(2),
+            .description = reader.text(3),
+            .traffic = reader.text(4),
+            .routing_version = reader.int(5),
+            .created_at = reader.text(6),
+            .updated_at = reader.text(7),
+            .created_by = if (reader.is_null(8)) null else reader.text(8),
+            .updated_by = if (reader.is_null(9)) null else reader.text(9),
+        };
+    }
+};
+
+pub fn validateLambdaFunctionAliasesName(value: []const u8) ?[]const u8 {
+    if (value.len < 1) return "lambda_function_aliases.name must be at least 1 characters";
+    if (value.len > 64) return "lambda_function_aliases.name must be at most 64 characters";
+    return null;
+}
+
+pub fn validateLambdaFunctionAliasesDescription(value: []const u8) ?[]const u8 {
+    if (value.len > 4096) return "lambda_function_aliases.description must be at most 4096 characters";
+    return null;
+}
+
+pub fn validateLambdaFunctionAliasesRoutingVersion(value: i64) ?[]const u8 {
+    if (value < 1) return "lambda_function_aliases.routing_version is below the minimum";
+    return null;
+}
+
+// Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
+pub const lambda_actor_instances_table: []const u8 = "lambda_actor_instances";
+pub const lambda_actor_instances_columns = [_][]const u8{ "id", "function_id", "actor_key", "state", "state_version", "alarm_at", "alarm_attempt", "lease_owner", "lease_until", "last_invoked_at", "last_error", "created_at", "updated_at" };
+pub const lambda_actor_instances_select_sql: []const u8 = "select\n      id::text as id,\n      function_id::text as function_id,\n      actor_key,\n      state::text as state_json,\n      state_version,\n      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as alarm_at,\n      alarm_attempt,\n      lease_owner,\n      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_until,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from lambda_actor_instances";
+
+pub const LambdaActorInstanceRow = struct {
+    id: []const u8,
+    function_id: []const u8,
+    actor_key: []const u8,
+    state: []const u8,
+    state_version: i64,
+    alarm_at: ?[]const u8,
+    alarm_attempt: i32,
+    lease_owner: ?[]const u8,
+    lease_until: ?[]const u8,
+    last_invoked_at: ?[]const u8,
+    last_error: ?[]const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) LambdaActorInstanceRow {
+        return LambdaActorInstanceRow{
+            .id = reader.text(0),
+            .function_id = reader.text(1),
+            .actor_key = reader.text(2),
+            .state = reader.text(3),
+            .state_version = reader.int(4),
+            .alarm_at = if (reader.is_null(5)) null else reader.text(5),
+            .alarm_attempt = @as(i32, @intCast(reader.int(6))),
+            .lease_owner = if (reader.is_null(7)) null else reader.text(7),
+            .lease_until = if (reader.is_null(8)) null else reader.text(8),
+            .last_invoked_at = if (reader.is_null(9)) null else reader.text(9),
+            .last_error = if (reader.is_null(10)) null else reader.text(10),
+            .created_at = reader.text(11),
+            .updated_at = reader.text(12),
+        };
+    }
+};
+
+pub fn validateLambdaActorInstancesActorKey(value: []const u8) ?[]const u8 {
+    if (value.len < 1) return "lambda_actor_instances.actor_key must be at least 1 characters";
+    if (value.len > 200) return "lambda_actor_instances.actor_key must be at most 200 characters";
+    return null;
+}
+
+pub fn validateLambdaActorInstancesStateVersion(value: i64) ?[]const u8 {
+    if (value < 0) return "lambda_actor_instances.state_version is below the minimum";
+    return null;
+}
+
+pub fn validateLambdaActorInstancesAlarmAttempt(value: i32) ?[]const u8 {
+    if (value < 0) return "lambda_actor_instances.alarm_attempt is below the minimum";
+    if (value > 6) return "lambda_actor_instances.alarm_attempt is above the maximum";
+    return null;
+}
+
+pub fn validateLambdaActorInstancesLeaseOwner(value: []const u8) ?[]const u8 {
+    if (value.len > 200) return "lambda_actor_instances.lease_owner must be at most 200 characters";
     return null;
 }
 
@@ -14073,6 +14399,204 @@ pub const WebSessionsRow = struct {
             .idle_expires_at = reader.text(10),
             .absolute_expires_at = reader.text(11),
             .revoked_at = if (reader.is_null(12)) null else reader.text(12),
+        };
+    }
+};
+
+pub const principals_table: []const u8 = "shared_auth.principals";
+pub const principals_columns = [_][]const u8{ "shared_user_id", "email", "email_verified", "phone", "display_name", "status", "profile", "created_at", "updated_at", "last_seen_at" };
+pub const principals_select_sql: []const u8 = "select\n      shared_user_id::text as shared_user_id,\n      email,\n      email_verified,\n      phone,\n      display_name,\n      status,\n      profile::text as profile_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.principals";
+
+pub const PrincipalsStatus = enum {
+    active,
+    disabled,
+    deleted,
+
+    pub fn toString(self: PrincipalsStatus) []const u8 {
+        return switch (self) {
+            .active => "active",
+            .disabled => "disabled",
+            .deleted => "deleted",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?PrincipalsStatus {
+        if (std.mem.eql(u8, value, "active")) return .active;
+        if (std.mem.eql(u8, value, "disabled")) return .disabled;
+        if (std.mem.eql(u8, value, "deleted")) return .deleted;
+        return null;
+    }
+};
+
+pub const PrincipalsRow = struct {
+    shared_user_id: []const u8,
+    email: ?[]const u8,
+    email_verified: bool,
+    phone: ?[]const u8,
+    display_name: ?[]const u8,
+    status: []const u8,
+    profile: []const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+    last_seen_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) PrincipalsRow {
+        return PrincipalsRow{
+            .shared_user_id = reader.text(0),
+            .email = if (reader.is_null(1)) null else reader.text(1),
+            .email_verified = reader.boolean(2),
+            .phone = if (reader.is_null(3)) null else reader.text(3),
+            .display_name = if (reader.is_null(4)) null else reader.text(4),
+            .status = reader.text(5),
+            .profile = reader.text(6),
+            .created_at = reader.text(7),
+            .updated_at = reader.text(8),
+            .last_seen_at = reader.text(9),
+        };
+    }
+};
+
+pub const provider_identities_table: []const u8 = "shared_auth.provider_identities";
+pub const provider_identities_columns = [_][]const u8{ "provider_identity_id", "shared_user_id", "provider", "provider_tenant", "provider_subject", "email", "email_verified", "metadata", "created_at", "updated_at", "last_seen_at" };
+pub const provider_identities_select_sql: []const u8 = "select\n      provider_identity_id::text as provider_identity_id,\n      shared_user_id::text as shared_user_id,\n      provider,\n      provider_tenant,\n      provider_subject,\n      email,\n      email_verified,\n      metadata::text as metadata_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.provider_identities";
+
+pub const ProviderIdentitiesRow = struct {
+    provider_identity_id: []const u8,
+    shared_user_id: []const u8,
+    provider: []const u8,
+    provider_tenant: []const u8,
+    provider_subject: []const u8,
+    email: ?[]const u8,
+    email_verified: bool,
+    metadata: []const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+    last_seen_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) ProviderIdentitiesRow {
+        return ProviderIdentitiesRow{
+            .provider_identity_id = reader.text(0),
+            .shared_user_id = reader.text(1),
+            .provider = reader.text(2),
+            .provider_tenant = reader.text(3),
+            .provider_subject = reader.text(4),
+            .email = if (reader.is_null(5)) null else reader.text(5),
+            .email_verified = reader.boolean(6),
+            .metadata = reader.text(7),
+            .created_at = reader.text(8),
+            .updated_at = reader.text(9),
+            .last_seen_at = reader.text(10),
+        };
+    }
+};
+
+pub const local_credentials_table: []const u8 = "shared_auth.local_credentials";
+pub const local_credentials_columns = [_][]const u8{ "shared_user_id", "password_hash", "password_changed_at", "failed_attempts", "locked_until", "created_at", "updated_at" };
+pub const local_credentials_select_sql: []const u8 = "select\n      shared_user_id::text as shared_user_id,\n      password_hash,\n      to_char(password_changed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as password_changed_at,\n      failed_attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from shared_auth.local_credentials";
+
+pub const LocalCredentialsRow = struct {
+    shared_user_id: []const u8,
+    password_hash: []const u8,
+    password_changed_at: []const u8,
+    failed_attempts: i32,
+    locked_until: ?[]const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) LocalCredentialsRow {
+        return LocalCredentialsRow{
+            .shared_user_id = reader.text(0),
+            .password_hash = reader.text(1),
+            .password_changed_at = reader.text(2),
+            .failed_attempts = @as(i32, @intCast(reader.int(3))),
+            .locked_until = if (reader.is_null(4)) null else reader.text(4),
+            .created_at = reader.text(5),
+            .updated_at = reader.text(6),
+        };
+    }
+};
+
+pub fn validateLocalCredentialsFailedAttempts(value: i32) ?[]const u8 {
+    if (value < 0) return "local_credentials.failed_attempts is below the minimum";
+    return null;
+}
+
+pub const sessions_table: []const u8 = "shared_auth.sessions";
+pub const sessions_columns = [_][]const u8{ "session_id", "shared_user_id", "refresh_token_hash", "provider", "provider_tenant", "provider_subject", "created_at", "updated_at", "last_seen_at", "expires_at", "revoked_at", "rotated_from" };
+pub const sessions_select_sql: []const u8 = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions";
+
+pub const SessionsRow = struct {
+    session_id: []const u8,
+    shared_user_id: []const u8,
+    refresh_token_hash: []const u8,
+    provider: []const u8,
+    provider_tenant: []const u8,
+    provider_subject: []const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+    last_seen_at: []const u8,
+    expires_at: []const u8,
+    revoked_at: ?[]const u8,
+    rotated_from: ?[]const u8,
+
+    pub fn fromRow(reader: RowReader) SessionsRow {
+        return SessionsRow{
+            .session_id = reader.text(0),
+            .shared_user_id = reader.text(1),
+            .refresh_token_hash = reader.text(2),
+            .provider = reader.text(3),
+            .provider_tenant = reader.text(4),
+            .provider_subject = reader.text(5),
+            .created_at = reader.text(6),
+            .updated_at = reader.text(7),
+            .last_seen_at = reader.text(8),
+            .expires_at = reader.text(9),
+            .revoked_at = if (reader.is_null(10)) null else reader.text(10),
+            .rotated_from = if (reader.is_null(11)) null else reader.text(11),
+        };
+    }
+};
+
+pub const roles_table: []const u8 = "shared_auth.roles";
+pub const roles_columns = [_][]const u8{ "role_id", "shared_user_id", "role_name", "granted_at", "granted_by" };
+pub const roles_select_sql: []const u8 = "select\n      role_id::text as role_id,\n      shared_user_id::text as shared_user_id,\n      role_name,\n      to_char(granted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as granted_at,\n      granted_by::text as granted_by\n    from shared_auth.roles";
+
+pub const RolesRow = struct {
+    role_id: []const u8,
+    shared_user_id: []const u8,
+    role_name: []const u8,
+    granted_at: []const u8,
+    granted_by: ?[]const u8,
+
+    pub fn fromRow(reader: RowReader) RolesRow {
+        return RolesRow{
+            .role_id = reader.text(0),
+            .shared_user_id = reader.text(1),
+            .role_name = reader.text(2),
+            .granted_at = reader.text(3),
+            .granted_by = if (reader.is_null(4)) null else reader.text(4),
+        };
+    }
+};
+
+pub const webhook_events_table: []const u8 = "shared_auth.webhook_events";
+pub const webhook_events_columns = [_][]const u8{ "event_id", "provider", "event_type", "received_at", "payload_sha256" };
+pub const webhook_events_select_sql: []const u8 = "select\n      event_id::text as event_id,\n      provider,\n      event_type,\n      to_char(received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as received_at,\n      payload_sha256\n    from shared_auth.webhook_events";
+
+pub const WebhookEventsRow = struct {
+    event_id: []const u8,
+    provider: []const u8,
+    event_type: []const u8,
+    received_at: []const u8,
+    payload_sha256: []const u8,
+
+    pub fn fromRow(reader: RowReader) WebhookEventsRow {
+        return WebhookEventsRow{
+            .event_id = reader.text(0),
+            .provider = reader.text(1),
+            .event_type = reader.text(2),
+            .received_at = reader.text(3),
+            .payload_sha256 = reader.text(4),
         };
     }
 };

@@ -1771,7 +1771,7 @@ public class LambdaFunction
     [Required]
     [Column("runtime")]
     [MaxLength(40)]
-    [RegularExpression(@"^(nodejs|javascript|typescript|python3|python|ruby|bash|shell|golang|go|dart|erlang|erl|elixir|ex|java|jvm)$")]
+    [RegularExpression(@"^(nodejs|javascript|typescript|python3|python|ruby|bash|shell|golang|go|dart|erlang|erl|elixir|ex|java|jvm|gleam|gleamlang|rust|rs|browser)$")]
     public string Runtime { get; set; } = null!;
 
     [Required]
@@ -1847,6 +1847,191 @@ public class LambdaFunction
 
     [Column("updated_by")]
     public Guid? UpdatedBy { get; set; }
+}
+
+/// <summary>Immutable published snapshots of lambda function code and runtime configuration.</summary>
+[Table("lambda_function_revisions")]
+public class LambdaFunctionRevision
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("function_id")]
+    public Guid FunctionId { get; set; }
+
+    [Column("revision_number")]
+    [Range(typeof(long), "1", "9223372036854775807")]
+    public long RevisionNumber { get; set; }
+
+    [Required]
+    [Column("definition_digest")]
+    [MaxLength(64)]
+    [RegularExpression(@"^[a-f0-9]{64}$")]
+    public string DefinitionDigest { get; set; } = null!;
+
+    [Required]
+    [Column("description")]
+    public string Description { get; set; } = null!;
+
+    [Required]
+    [Column("runtime")]
+    [MaxLength(40)]
+    [RegularExpression(@"^(nodejs|javascript|typescript|python3|python|ruby|bash|shell|golang|go|dart|erlang|erl|elixir|ex|java|jvm|gleam|gleamlang|rust|rs|browser)$")]
+    public string Runtime { get; set; } = null!;
+
+    [Required]
+    [Column("entry_command")]
+    public string EntryCommand { get; set; } = null!;
+
+    [Required]
+    [Column("function_body")]
+    public string FunctionBody { get; set; } = null!;
+
+    [Column("reuse_key")]
+    [MaxLength(200)]
+    public string? ReuseKey { get; set; }
+
+    [Column("idle_timeout_seconds")]
+    [Range(1, 3600)]
+    public int IdleTimeoutSeconds { get; set; }
+
+    [Column("max_run_ms")]
+    [Range(1000, 300000)]
+    public int MaxRunMs { get; set; }
+
+    [Column("containerized")]
+    public bool Containerized { get; set; }
+
+    [Column("container_image")]
+    public string? ContainerImage { get; set; }
+
+    [Required]
+    [Column("container_build_status")]
+    [MaxLength(32)]
+    [RegularExpression(@"^(not_requested|pending|building|built|failed|skipped)$")]
+    public string ContainerBuildStatus { get; set; } = null!;
+
+    [Column("container_build_error")]
+    public string? ContainerBuildError { get; set; }
+
+    [Column("container_built_at")]
+    public DateTimeOffset? ContainerBuiltAt { get; set; }
+
+    [Required]
+    [Column("env", TypeName = "jsonb")]
+    public string Env { get; set; } = null!;
+
+    [Required]
+    [Column("labels", TypeName = "jsonb")]
+    public string Labels { get; set; } = null!;
+
+    [Required]
+    [Column("meta_data", TypeName = "jsonb")]
+    public string MetaData { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("created_by")]
+    public Guid? CreatedBy { get; set; }
+}
+
+/// <summary>Named weighted routing policies over immutable lambda function revisions.</summary>
+[Table("lambda_function_aliases")]
+public class LambdaFunctionAlias
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("function_id")]
+    public Guid FunctionId { get; set; }
+
+    [Required]
+    [Column("name")]
+    [MaxLength(64)]
+    [RegularExpression(@"^[a-z][a-z0-9._-]{0,63}$")]
+    public string Name { get; set; } = null!;
+
+    [Required]
+    [Column("description")]
+    public string Description { get; set; } = null!;
+
+    [Required]
+    [Column("traffic", TypeName = "jsonb")]
+    public string Traffic { get; set; } = null!;
+
+    [Column("routing_version")]
+    [Range(typeof(long), "1", "9223372036854775807")]
+    public long RoutingVersion { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [Column("created_by")]
+    public Guid? CreatedBy { get; set; }
+
+    [Column("updated_by")]
+    public Guid? UpdatedBy { get; set; }
+}
+
+/// <summary>Durable state, alarms, and cross-replica execution leases for keyed serverless actors.</summary>
+[Table("lambda_actor_instances")]
+public class LambdaActorInstance
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("id")]
+    public Guid Id { get; set; }
+
+    [Column("function_id")]
+    public Guid FunctionId { get; set; }
+
+    [Required]
+    [Column("actor_key")]
+    [MaxLength(200)]
+    [RegularExpression(@"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")]
+    public string ActorKey { get; set; } = null!;
+
+    [Required]
+    [Column("state", TypeName = "jsonb")]
+    public string State { get; set; } = null!;
+
+    [Column("state_version")]
+    [Range(typeof(long), "0", "9223372036854775807")]
+    public long StateVersion { get; set; }
+
+    [Column("alarm_at")]
+    public DateTimeOffset? AlarmAt { get; set; }
+
+    [Column("alarm_attempt")]
+    [Range(0, 6)]
+    public int AlarmAttempt { get; set; }
+
+    [Column("lease_owner")]
+    [MaxLength(200)]
+    public string? LeaseOwner { get; set; }
+
+    [Column("lease_until")]
+    public DateTimeOffset? LeaseUntil { get; set; }
+
+    [Column("last_invoked_at")]
+    public DateTimeOffset? LastInvokedAt { get; set; }
+
+    [Column("last_error")]
+    public string? LastError { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
 }
 
 [Table("workflow_definitions")]
@@ -8863,6 +9048,210 @@ public class WebSessions
     public DateTimeOffset? RevokedAt { get; set; }
 }
 
+[Table("principals", Schema = "shared_auth")]
+public class Principals
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("shared_user_id")]
+    public Guid SharedUserId { get; set; }
+
+    [Column("email")]
+    public string? Email { get; set; }
+
+    [Column("email_verified")]
+    public bool EmailVerified { get; set; }
+
+    [Column("phone")]
+    public string? Phone { get; set; }
+
+    [Column("display_name")]
+    public string? DisplayName { get; set; }
+
+    [Required]
+    [Column("status")]
+    [RegularExpression(@"^(active|disabled|deleted)$")]
+    public string Status { get; set; } = null!;
+
+    [Required]
+    [Column("profile", TypeName = "jsonb")]
+    public string Profile { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [Column("last_seen_at")]
+    public DateTimeOffset LastSeenAt { get; set; }
+}
+
+[Table("provider_identities", Schema = "shared_auth")]
+public class ProviderIdentities
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("provider_identity_id")]
+    public Guid ProviderIdentityId { get; set; }
+
+    [Column("shared_user_id")]
+    public Guid SharedUserId { get; set; }
+
+    [Required]
+    [Column("provider")]
+    public string Provider { get; set; } = null!;
+
+    [Required]
+    [Column("provider_tenant")]
+    public string ProviderTenant { get; set; } = null!;
+
+    [Required]
+    [Column("provider_subject")]
+    public string ProviderSubject { get; set; } = null!;
+
+    [Column("email")]
+    public string? Email { get; set; }
+
+    [Column("email_verified")]
+    public bool EmailVerified { get; set; }
+
+    [Required]
+    [Column("metadata", TypeName = "jsonb")]
+    public string Metadata { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [Column("last_seen_at")]
+    public DateTimeOffset LastSeenAt { get; set; }
+}
+
+[Table("local_credentials", Schema = "shared_auth")]
+public class LocalCredentials
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("shared_user_id")]
+    public Guid SharedUserId { get; set; }
+
+    [Required]
+    [Column("password_hash")]
+    public string PasswordHash { get; set; } = null!;
+
+    [Column("password_changed_at")]
+    public DateTimeOffset PasswordChangedAt { get; set; }
+
+    [Column("failed_attempts")]
+    [Range(0, 2147483647)]
+    public int FailedAttempts { get; set; }
+
+    [Column("locked_until")]
+    public DateTimeOffset? LockedUntil { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+[Table("sessions", Schema = "shared_auth")]
+public class Sessions
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("session_id")]
+    public Guid SessionId { get; set; }
+
+    [Column("shared_user_id")]
+    public Guid SharedUserId { get; set; }
+
+    [Required]
+    [Column("refresh_token_hash")]
+    public string RefreshTokenHash { get; set; } = null!;
+
+    [Required]
+    [Column("provider")]
+    public string Provider { get; set; } = null!;
+
+    [Required]
+    [Column("provider_tenant")]
+    public string ProviderTenant { get; set; } = null!;
+
+    [Required]
+    [Column("provider_subject")]
+    public string ProviderSubject { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+
+    [Column("last_seen_at")]
+    public DateTimeOffset LastSeenAt { get; set; }
+
+    [Column("expires_at")]
+    public DateTimeOffset ExpiresAt { get; set; }
+
+    [Column("revoked_at")]
+    public DateTimeOffset? RevokedAt { get; set; }
+
+    [Column("rotated_from")]
+    public Guid? RotatedFrom { get; set; }
+}
+
+[Table("roles", Schema = "shared_auth")]
+public class Roles
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("role_id")]
+    public Guid RoleId { get; set; }
+
+    [Column("shared_user_id")]
+    public Guid SharedUserId { get; set; }
+
+    [Required]
+    [Column("role_name")]
+    [RegularExpression(@"^[a-z][a-z0-9:_-]{0,63}$")]
+    public string RoleName { get; set; } = null!;
+
+    [Column("granted_at")]
+    public DateTimeOffset GrantedAt { get; set; }
+
+    [Column("granted_by")]
+    public Guid? GrantedBy { get; set; }
+}
+
+[Table("webhook_events", Schema = "shared_auth")]
+public class WebhookEvents
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("event_id")]
+    public Guid EventId { get; set; }
+
+    [Required]
+    [Column("provider")]
+    public string Provider { get; set; } = null!;
+
+    [Required]
+    [Column("event_type")]
+    public string EventType { get; set; } = null!;
+
+    [Column("received_at")]
+    public DateTimeOffset ReceivedAt { get; set; }
+
+    [Required]
+    [Column("payload_sha256")]
+    public string PayloadSha256 { get; set; } = null!;
+}
+
 [Table("fab_jobs", Schema = "daedalus")]
 public class FabJobs
 {
@@ -9014,6 +9403,12 @@ public class DdPgDefsContext : DbContext
     public DbSet<MipSolverEvents> MipSolverEventsSet => Set<MipSolverEvents>();
 
     public DbSet<LambdaFunction> LambdaFunctionSet => Set<LambdaFunction>();
+
+    public DbSet<LambdaFunctionRevision> LambdaFunctionRevisionSet => Set<LambdaFunctionRevision>();
+
+    public DbSet<LambdaFunctionAlias> LambdaFunctionAliasSet => Set<LambdaFunctionAlias>();
+
+    public DbSet<LambdaActorInstance> LambdaActorInstanceSet => Set<LambdaActorInstance>();
 
     public DbSet<WorkflowDefinitions> WorkflowDefinitionsSet => Set<WorkflowDefinitions>();
 
@@ -9262,6 +9657,18 @@ public class DdPgDefsContext : DbContext
     public DbSet<FabRuns> FabRunsSet => Set<FabRuns>();
 
     public DbSet<WebSessions> WebSessionsSet => Set<WebSessions>();
+
+    public DbSet<Principals> PrincipalsSet => Set<Principals>();
+
+    public DbSet<ProviderIdentities> ProviderIdentitiesSet => Set<ProviderIdentities>();
+
+    public DbSet<LocalCredentials> LocalCredentialsSet => Set<LocalCredentials>();
+
+    public DbSet<Sessions> SessionsSet => Set<Sessions>();
+
+    public DbSet<Roles> RolesSet => Set<Roles>();
+
+    public DbSet<WebhookEvents> WebhookEventsSet => Set<WebhookEvents>();
 
     public DbSet<FabJobs> FabJobsSet => Set<FabJobs>();
 

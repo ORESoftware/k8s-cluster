@@ -35,6 +35,55 @@ test("generated outputs are up to date with schema source", () => {
   });
 });
 
+test("lambda release contract exposes immutable revisions and validated aliases", async () => {
+  const sql = await readFile(path.join(packageRoot, "schema", "schema.sql"), "utf8");
+  const schema = parseSchemaSql(sql);
+  const revisions = schema.tables.find(
+    (table) => table.name === "lambda_function_revisions",
+  );
+  const aliases = schema.tables.find(
+    (table) => table.name === "lambda_function_aliases",
+  );
+
+  assert.ok(revisions, "lambda_function_revisions must remain canonical");
+  assert.ok(aliases, "lambda_function_aliases must remain canonical");
+  assert.ok(
+    schema.routines.some(
+      (routine) => routine.name === "publish_lambda_function_revision",
+    ),
+    "atomic publish routine must be tracked for drift",
+  );
+  assert.ok(
+    schema.routines.some(
+      (routine) => routine.name === "set_lambda_function_alias",
+    ),
+    "atomic alias update routine must be tracked for drift",
+  );
+  assert.ok(
+    schema.triggers.some(
+      (trigger) =>
+        trigger.tableName === "lambda_function_revisions"
+        && trigger.name === "lambda_function_revisions_immutable",
+    ),
+    "published revision immutability trigger must be tracked for drift",
+  );
+  assert.ok(
+    schema.triggers.some(
+      (trigger) =>
+        trigger.tableName === "lambda_function_aliases"
+        && trigger.name === "lambda_function_aliases_validate",
+    ),
+    "weighted alias validation trigger must be tracked for drift",
+  );
+
+  const gleam = await readFile(
+    path.join(packageRoot, "generated", "gleam", "src", "pg_defs.gleam"),
+    "utf8",
+  );
+  assert.match(gleam, /lambda_function_revisions_select_sql/);
+  assert.match(gleam, /lambda_function_aliases_select_sql/);
+});
+
 function findColumn(schema, tableName, columnName) {
   const table = schema.tables.find((item) => item.name === tableName);
   if (!table) {

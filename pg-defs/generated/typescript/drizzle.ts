@@ -17,6 +17,7 @@ export const aiAgentBridgeSchema = pgSchema("ai_agent_bridge");
 export const fiduciaSchema = pgSchema("fiducia");
 export const t2vSchema = pgSchema("t2v");
 export const daedalusSchema = pgSchema("daedalus");
+export const sharedAuthSchema = pgSchema("shared_auth");
 
 export const accounts = threefaSchema.table(
   "accounts",
@@ -2193,7 +2194,7 @@ export type MipSolverEventsRow = z.infer<typeof mipSolverEventsRowSchema>;
 export type MipSolverEventsInsert = z.infer<typeof mipSolverEventsInsertSchema>;
 export type MipSolverEventsUpdate = z.infer<typeof mipSolverEventsUpdateSchema>;
 
-export const lambdaFunctionRuntimeValues = ["nodejs","javascript","typescript","python3","python","ruby","bash","shell","golang","go","dart","erlang","erl","elixir","ex","java","jvm"] as const;
+export const lambdaFunctionRuntimeValues = ["nodejs","javascript","typescript","python3","python","ruby","bash","shell","golang","go","dart","erlang","erl","elixir","ex","java","jvm","gleam","gleamlang","rust","rs","browser"] as const;
 export const lambdaFunctionRuntimeSchema = z.enum(lambdaFunctionRuntimeValues);
 export type LambdaFunctionRuntime = z.infer<typeof lambdaFunctionRuntimeSchema>;
 
@@ -2213,7 +2214,7 @@ export const lambdaFunctions = pgTable(
     displayName: varchar("display_name", { length: 200 }).notNull(),
     description: text("description").default(sql`''`).notNull(),
     runtime: varchar("runtime", { length: 40 }).default(sql`'nodejs'`).notNull(),
-    entryCommand: text("entry_command").default(sql`'env -i PATH="$PATH" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs'`).notNull(),
+    entryCommand: text("entry_command").default(sql`''`).notNull(),
     functionBody: text("function_body").notNull(),
     reuseKey: varchar("reuse_key", { length: 200 }),
     idleTimeoutSeconds: integer("idle_timeout_seconds").default(sql`300`).notNull(),
@@ -2237,14 +2238,14 @@ export const lambdaFunctions = pgTable(
   (table) => ({
     lambdaFunctionsSlugFormatChk: check("lambda_functions_slug_format_chk", sql.raw("slug ~ '^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$'")),
     lambdaFunctionsBodySizeChk: check("lambda_functions_body_size_chk", sql.raw("octet_length(function_body) <= 262144")),
-    lambdaFunctionsEntryCommandChk: check("lambda_functions_entry_command_chk", sql.raw("octet_length(entry_command) between 1 and 512")),
+    lambdaFunctionsEntryCommandChk: check("lambda_functions_entry_command_chk", sql.raw("octet_length(entry_command) <= 512")),
     lambdaFunctionsContainerImageSizeChk: check("lambda_functions_container_image_size_chk", sql.raw("container_image is null or octet_length(container_image) <= 512")),
     lambdaFunctionsContainerBuildErrorSizeChk: check("lambda_functions_container_build_error_size_chk", sql.raw("container_build_error is null or octet_length(container_build_error) <= 8192")),
     lambdaFunctionsLabelsArrayChk: check("lambda_functions_labels_array_chk", sql.raw("jsonb_typeof(labels) = 'array'")),
     lambdaFunctionsMetaObjectChk: check("lambda_functions_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
     lambdaFunctionsEnvObjectChk: check("lambda_functions_env_object_chk", sql.raw("jsonb_typeof(env) = 'object'")),
     lambdaFunctionsStatusChk: check("lambda_functions_status_chk", sql.raw("status in ('draft', 'active', 'paused', 'archived')")),
-    lambdaFunctionsRuntimeChk: check("lambda_functions_runtime_chk", sql.raw("runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm')")),
+    lambdaFunctionsRuntimeChk: check("lambda_functions_runtime_chk", sql.raw("runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm', 'gleam', 'gleamlang', 'rust', 'rs', 'browser')")),
     lambdaFunctionsContainerBuildStatusChk: check("lambda_functions_container_build_status_chk", sql.raw("container_build_status in ('not_requested', 'pending', 'building', 'built', 'failed', 'skipped')")),
     lambdaFunctionsSlugActiveUq: uniqueIndex("lambda_functions_slug_active_uq").on(table.slug).where(sql.raw("is_soft_deleted = false")),
     lambdaFunctionsStatusIdx: index("lambda_functions_status_idx").on(table.status).where(sql.raw("is_soft_deleted = false")),
@@ -2287,7 +2288,7 @@ export const lambdaFunctionInsertSchema = z.object({
   displayName: z.string().min(1).max(200),
   description: z.string().optional().default(""),
   runtime: lambdaFunctionRuntimeSchema.optional().default("nodejs"),
-  entryCommand: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").optional().default("env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs"),
+  entryCommand: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").optional().default(""),
   functionBody: z.string().min(1).refine((value) => byteLength(value) <= 262144, "Must be at most 262144 bytes"),
   reuseKey: z.string().max(200).nullable().optional(),
   idleTimeoutSeconds: z.number().int().min(1).max(3600).optional().default(300),
@@ -2313,6 +2314,239 @@ export const lambdaFunctionUpdateSchema = lambdaFunctionInsertSchema.partial();
 export type LambdaFunctionRow = z.infer<typeof lambdaFunctionRowSchema>;
 export type LambdaFunctionInsert = z.infer<typeof lambdaFunctionInsertSchema>;
 export type LambdaFunctionUpdate = z.infer<typeof lambdaFunctionUpdateSchema>;
+
+export const lambdaFunctionRevisionRuntimeValues = ["nodejs","javascript","typescript","python3","python","ruby","bash","shell","golang","go","dart","erlang","erl","elixir","ex","java","jvm","gleam","gleamlang","rust","rs","browser"] as const;
+export const lambdaFunctionRevisionRuntimeSchema = z.enum(lambdaFunctionRevisionRuntimeValues);
+export type LambdaFunctionRevisionRuntime = z.infer<typeof lambdaFunctionRevisionRuntimeSchema>;
+
+export const lambdaFunctionRevisionContainerBuildStatusValues = ["not_requested","pending","building","built","failed","skipped"] as const;
+export const lambdaFunctionRevisionContainerBuildStatusSchema = z.enum(lambdaFunctionRevisionContainerBuildStatusValues);
+export type LambdaFunctionRevisionContainerBuildStatus = z.infer<typeof lambdaFunctionRevisionContainerBuildStatusSchema>;
+
+export const lambdaFunctionRevisions = pgTable(
+  "lambda_function_revisions",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    functionId: uuid("function_id").notNull(),
+    revisionNumber: bigint("revision_number", { mode: "number" }).notNull(),
+    definitionDigest: varchar("definition_digest", { length: 64 }).notNull(),
+    description: text("description").default(sql`''`).notNull(),
+    runtime: varchar("runtime", { length: 40 }).notNull(),
+    entryCommand: text("entry_command").default(sql`''`).notNull(),
+    functionBody: text("function_body").notNull(),
+    reuseKey: varchar("reuse_key", { length: 200 }),
+    idleTimeoutSeconds: integer("idle_timeout_seconds").notNull(),
+    maxRunMs: integer("max_run_ms").notNull(),
+    containerized: boolean("containerized").notNull(),
+    containerImage: text("container_image"),
+    containerBuildStatus: varchar("container_build_status", { length: 32 }).notNull(),
+    containerBuildError: text("container_build_error"),
+    containerBuiltAt: timestamp("container_built_at", { withTimezone: true, mode: "string" }),
+    env: jsonb("env").notNull(),
+    labels: jsonb("labels").notNull(),
+    metaData: jsonb("meta_data").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+  },
+  (table) => ({
+    lambdaFunctionRevisionsNumberChk: check("lambda_function_revisions_number_chk", sql.raw("revision_number > 0")),
+    lambdaFunctionRevisionsDigestChk: check("lambda_function_revisions_digest_chk", sql.raw("definition_digest ~ '^[a-f0-9]{64}$'")),
+    lambdaFunctionRevisionsDescriptionSizeChk: check("lambda_function_revisions_description_size_chk", sql.raw("octet_length(description) <= 4096")),
+    lambdaFunctionRevisionsBodySizeChk: check("lambda_function_revisions_body_size_chk", sql.raw("octet_length(function_body) <= 262144")),
+    lambdaFunctionRevisionsEntryCommandChk: check("lambda_function_revisions_entry_command_chk", sql.raw("octet_length(entry_command) <= 512")),
+    lambdaFunctionRevisionsReuseKeyChk: check("lambda_function_revisions_reuse_key_chk", sql.raw("reuse_key is null or octet_length(reuse_key) <= 200")),
+    lambdaFunctionRevisionsIdleTimeoutChk: check("lambda_function_revisions_idle_timeout_chk", sql.raw("idle_timeout_seconds between 1 and 3600")),
+    lambdaFunctionRevisionsMaxRunChk: check("lambda_function_revisions_max_run_chk", sql.raw("max_run_ms between 1000 and 300000")),
+    lambdaFunctionRevisionsContainerImageSizeChk: check("lambda_function_revisions_container_image_size_chk", sql.raw("container_image is null or octet_length(container_image) <= 512")),
+    lambdaFunctionRevisionsContainerBuildErrorSizeChk: check("lambda_function_revisions_container_build_error_size_chk", sql.raw("container_build_error is null or octet_length(container_build_error) <= 8192")),
+    lambdaFunctionRevisionsEnvObjectChk: check("lambda_function_revisions_env_object_chk", sql.raw("jsonb_typeof(env) = 'object'")),
+    lambdaFunctionRevisionsLabelsArrayChk: check("lambda_function_revisions_labels_array_chk", sql.raw("jsonb_typeof(labels) = 'array'")),
+    lambdaFunctionRevisionsMetaObjectChk: check("lambda_function_revisions_meta_object_chk", sql.raw("jsonb_typeof(meta_data) = 'object'")),
+    lambdaFunctionRevisionsRuntimeChk: check("lambda_function_revisions_runtime_chk", sql.raw("runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm', 'gleam', 'gleamlang', 'rust', 'rs', 'browser')")),
+    lambdaFunctionRevisionsContainerBuildStatusChk: check("lambda_function_revisions_container_build_status_chk", sql.raw("container_build_status in ('not_requested', 'pending', 'building', 'built', 'failed', 'skipped')")),
+    lambdaFunctionRevisionsFunctionNumberUq: uniqueIndex("lambda_function_revisions_function_number_uq").on(table.functionId, table.revisionNumber),
+    lambdaFunctionRevisionsFunctionIdUq: uniqueIndex("lambda_function_revisions_function_id_uq").on(table.functionId, table.id),
+    lambdaFunctionRevisionsCreatedAtIdx: index("lambda_function_revisions_created_at_idx").on(table.functionId, table.createdAt.desc()),
+  }),
+);
+
+export const lambdaFunctionRevisionRowSchema = z.object({
+  id: z.string().uuid(),
+  functionId: z.string().uuid(),
+  revisionNumber: z.number().int().min(1),
+  definitionDigest: z.string().min(64).max(64).regex(new RegExp("^[a-f0-9]{64}$")),
+  description: z.string().max(4096).refine((value) => byteLength(value) <= 4096, "Must be at most 4096 bytes"),
+  runtime: lambdaFunctionRevisionRuntimeSchema,
+  entryCommand: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  functionBody: z.string().min(1).refine((value) => byteLength(value) <= 262144, "Must be at most 262144 bytes"),
+  reuseKey: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable(),
+  idleTimeoutSeconds: z.number().int().min(1).max(3600),
+  maxRunMs: z.number().int().min(1000).max(300000),
+  containerized: z.boolean(),
+  containerImage: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").nullable(),
+  containerBuildStatus: lambdaFunctionRevisionContainerBuildStatusSchema,
+  containerBuildError: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").nullable(),
+  containerBuiltAt: z.string().datetime().nullable(),
+  env: jsonObjectSchema,
+  labels: jsonArraySchema,
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+});
+
+export const lambdaFunctionRevisionInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  functionId: z.string().uuid(),
+  revisionNumber: z.number().int().min(1),
+  definitionDigest: z.string().min(64).max(64).regex(new RegExp("^[a-f0-9]{64}$")),
+  description: z.string().max(4096).refine((value) => byteLength(value) <= 4096, "Must be at most 4096 bytes").optional().default(""),
+  runtime: lambdaFunctionRevisionRuntimeSchema,
+  entryCommand: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").optional().default(""),
+  functionBody: z.string().min(1).refine((value) => byteLength(value) <= 262144, "Must be at most 262144 bytes"),
+  reuseKey: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable().optional(),
+  idleTimeoutSeconds: z.number().int().min(1).max(3600),
+  maxRunMs: z.number().int().min(1000).max(300000),
+  containerized: z.boolean(),
+  containerImage: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes").nullable().optional(),
+  containerBuildStatus: lambdaFunctionRevisionContainerBuildStatusSchema,
+  containerBuildError: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").nullable().optional(),
+  containerBuiltAt: z.string().datetime().nullable().optional(),
+  env: jsonObjectSchema,
+  labels: jsonArraySchema,
+  metaData: jsonObjectSchema,
+  createdAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+});
+
+export const lambdaFunctionRevisionUpdateSchema = lambdaFunctionRevisionInsertSchema.partial();
+export type LambdaFunctionRevisionRow = z.infer<typeof lambdaFunctionRevisionRowSchema>;
+export type LambdaFunctionRevisionInsert = z.infer<typeof lambdaFunctionRevisionInsertSchema>;
+export type LambdaFunctionRevisionUpdate = z.infer<typeof lambdaFunctionRevisionUpdateSchema>;
+
+export const lambdaFunctionAliases = pgTable(
+  "lambda_function_aliases",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    functionId: uuid("function_id").notNull(),
+    name: varchar("name", { length: 64 }).notNull(),
+    description: text("description").default(sql`''`).notNull(),
+    traffic: jsonb("traffic").notNull(),
+    routingVersion: bigint("routing_version", { mode: "number" }).default(sql`1`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    createdBy: uuid("created_by"),
+    updatedBy: uuid("updated_by"),
+  },
+  (table) => ({
+    lambdaFunctionAliasesNameChk: check("lambda_function_aliases_name_chk", sql.raw("name ~ '^[a-z][a-z0-9._-]{0,63}$' and name <> 'latest'")),
+    lambdaFunctionAliasesDescriptionSizeChk: check("lambda_function_aliases_description_size_chk", sql.raw("octet_length(description) <= 4096")),
+    lambdaFunctionAliasesTrafficObjectChk: check("lambda_function_aliases_traffic_object_chk", sql.raw("jsonb_typeof(traffic) = 'object'")),
+    lambdaFunctionAliasesTrafficSizeChk: check("lambda_function_aliases_traffic_size_chk", sql.raw("octet_length(traffic::text) <= 8192")),
+    lambdaFunctionAliasesRoutingVersionChk: check("lambda_function_aliases_routing_version_chk", sql.raw("routing_version > 0")),
+    lambdaFunctionAliasesFunctionNameUq: uniqueIndex("lambda_function_aliases_function_name_uq").on(table.functionId, table.name),
+    lambdaFunctionAliasesUpdatedAtIdx: index("lambda_function_aliases_updated_at_idx").on(table.functionId, table.updatedAt.desc()),
+  }),
+);
+
+export const lambdaFunctionAliasRowSchema = z.object({
+  id: z.string().uuid(),
+  functionId: z.string().uuid(),
+  name: z.string().min(1).max(64).regex(new RegExp("^[a-z][a-z0-9._-]{0,63}$")),
+  description: z.string().max(4096).refine((value) => byteLength(value) <= 4096, "Must be at most 4096 bytes"),
+  traffic: jsonObjectSchema,
+  routingVersion: z.number().int().min(1),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  createdBy: z.string().uuid().nullable(),
+  updatedBy: z.string().uuid().nullable(),
+});
+
+export const lambdaFunctionAliasInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  functionId: z.string().uuid(),
+  name: z.string().min(1).max(64).regex(new RegExp("^[a-z][a-z0-9._-]{0,63}$")),
+  description: z.string().max(4096).refine((value) => byteLength(value) <= 4096, "Must be at most 4096 bytes").optional().default(""),
+  traffic: jsonObjectSchema,
+  routingVersion: z.number().int().min(1).optional().default(1),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  createdBy: z.string().uuid().nullable().optional(),
+  updatedBy: z.string().uuid().nullable().optional(),
+});
+
+export const lambdaFunctionAliasUpdateSchema = lambdaFunctionAliasInsertSchema.partial();
+export type LambdaFunctionAliasRow = z.infer<typeof lambdaFunctionAliasRowSchema>;
+export type LambdaFunctionAliasInsert = z.infer<typeof lambdaFunctionAliasInsertSchema>;
+export type LambdaFunctionAliasUpdate = z.infer<typeof lambdaFunctionAliasUpdateSchema>;
+
+export const lambdaActorInstances = pgTable(
+  "lambda_actor_instances",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    functionId: uuid("function_id").notNull(),
+    actorKey: varchar("actor_key", { length: 200 }).notNull(),
+    state: jsonb("state").default(sql`'{}'::jsonb`).notNull(),
+    stateVersion: bigint("state_version", { mode: "number" }).default(sql`0`).notNull(),
+    alarmAt: timestamp("alarm_at", { withTimezone: true, mode: "string" }),
+    alarmAttempt: integer("alarm_attempt").default(sql`0`).notNull(),
+    leaseOwner: varchar("lease_owner", { length: 200 }),
+    leaseUntil: timestamp("lease_until", { withTimezone: true, mode: "string" }),
+    lastInvokedAt: timestamp("last_invoked_at", { withTimezone: true, mode: "string" }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    lambdaActorInstancesActorKeyChk: check("lambda_actor_instances_actor_key_chk", sql.raw("actor_key ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$'")),
+    lambdaActorInstancesStateObjectChk: check("lambda_actor_instances_state_object_chk", sql.raw("jsonb_typeof(state) = 'object'")),
+    lambdaActorInstancesStateSizeChk: check("lambda_actor_instances_state_size_chk", sql.raw("octet_length(state::text) <= 1048576")),
+    lambdaActorInstancesStateVersionChk: check("lambda_actor_instances_state_version_chk", sql.raw("state_version >= 0")),
+    lambdaActorInstancesAlarmAttemptChk: check("lambda_actor_instances_alarm_attempt_chk", sql.raw("alarm_attempt between 0 and 6")),
+    lambdaActorInstancesLeaseOwnerSizeChk: check("lambda_actor_instances_lease_owner_size_chk", sql.raw("lease_owner is null or octet_length(lease_owner) <= 200")),
+    lambdaActorInstancesLeasePairChk: check("lambda_actor_instances_lease_pair_chk", sql.raw("(lease_owner is null) = (lease_until is null)")),
+    lambdaActorInstancesLastErrorSizeChk: check("lambda_actor_instances_last_error_size_chk", sql.raw("last_error is null or octet_length(last_error) <= 8192")),
+    lambdaActorInstancesFunctionKeyUq: uniqueIndex("lambda_actor_instances_function_key_uq").on(table.functionId, table.actorKey),
+    lambdaActorInstancesAlarmDueIdx: index("lambda_actor_instances_alarm_due_idx").on(table.alarmAt).where(sql.raw("alarm_at is not null")),
+    lambdaActorInstancesLeaseExpiryIdx: index("lambda_actor_instances_lease_expiry_idx").on(table.leaseUntil).where(sql.raw("lease_until is not null")),
+  }),
+);
+
+export const lambdaActorInstanceRowSchema = z.object({
+  id: z.string().uuid(),
+  functionId: z.string().uuid(),
+  actorKey: z.string().min(1).max(200).regex(new RegExp("^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")),
+  state: jsonObjectSchema,
+  stateVersion: z.number().int().min(0),
+  alarmAt: z.string().datetime().nullable(),
+  alarmAttempt: z.number().int().min(0).max(6),
+  leaseOwner: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable(),
+  leaseUntil: z.string().datetime().nullable(),
+  lastInvokedAt: z.string().datetime().nullable(),
+  lastError: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const lambdaActorInstanceInsertSchema = z.object({
+  id: z.string().uuid().optional(),
+  functionId: z.string().uuid(),
+  actorKey: z.string().min(1).max(200).regex(new RegExp("^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")),
+  state: jsonObjectSchema.optional().default({}),
+  stateVersion: z.number().int().min(0).optional().default(0),
+  alarmAt: z.string().datetime().nullable().optional(),
+  alarmAttempt: z.number().int().min(0).max(6).optional().default(0),
+  leaseOwner: z.string().max(200).refine((value) => byteLength(value) <= 200, "Must be at most 200 bytes").nullable().optional(),
+  leaseUntil: z.string().datetime().nullable().optional(),
+  lastInvokedAt: z.string().datetime().nullable().optional(),
+  lastError: z.string().refine((value) => byteLength(value) <= 8192, "Must be at most 8192 bytes").nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const lambdaActorInstanceUpdateSchema = lambdaActorInstanceInsertSchema.partial();
+export type LambdaActorInstanceRow = z.infer<typeof lambdaActorInstanceRowSchema>;
+export type LambdaActorInstanceInsert = z.infer<typeof lambdaActorInstanceInsertSchema>;
+export type LambdaActorInstanceUpdate = z.infer<typeof lambdaActorInstanceUpdateSchema>;
 
 export const workflowDefinitionsStatusValues = ["draft","active","paused","archived"] as const;
 export const workflowDefinitionsStatusSchema = z.enum(workflowDefinitionsStatusValues);
@@ -11251,6 +11485,302 @@ export const webSessionsUpdateSchema = webSessionsInsertSchema.partial();
 export type WebSessionsRow = z.infer<typeof webSessionsRowSchema>;
 export type WebSessionsInsert = z.infer<typeof webSessionsInsertSchema>;
 export type WebSessionsUpdate = z.infer<typeof webSessionsUpdateSchema>;
+
+export const principalsStatusValues = ["active","disabled","deleted"] as const;
+export const principalsStatusSchema = z.enum(principalsStatusValues);
+export type PrincipalsStatus = z.infer<typeof principalsStatusSchema>;
+
+export const principals = sharedAuthSchema.table(
+  "principals",
+  {
+    sharedUserId: uuid("shared_user_id").default(sql`gen_random_uuid()`).primaryKey(),
+    email: text("email"),
+    emailVerified: boolean("email_verified").default(sql`false`).notNull(),
+    phone: text("phone"),
+    displayName: text("display_name"),
+    status: text("status").default(sql`'active'`).notNull(),
+    profile: jsonb("profile").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    sharedAuthUsersEmailSizeChk: check("shared_auth_users_email_size_chk", sql.raw("email is null or octet_length(email) between 3 and 320")),
+    sharedAuthUsersPhoneSizeChk: check("shared_auth_users_phone_size_chk", sql.raw("phone is null or octet_length(phone) <= 64")),
+    sharedAuthUsersDisplayNameSizeChk: check("shared_auth_users_display_name_size_chk", sql.raw("display_name is null or octet_length(display_name) <= 160")),
+    sharedAuthUsersStatusChk: check("shared_auth_users_status_chk", sql.raw("status in ('active', 'disabled', 'deleted')")),
+    sharedAuthUsersProfileObjectChk: check("shared_auth_users_profile_object_chk", sql.raw("jsonb_typeof(profile) = 'object'")),
+    sharedAuthUsersEmailUq: uniqueIndex("shared_auth_users_email_uq").on(table.lower(email)).where(sql.raw("email is not null and status <> 'deleted'")),
+    sharedAuthUsersStatusIdx: index("shared_auth_users_status_idx").on(table.status),
+  }),
+);
+
+export const principalsRowSchema = z.object({
+  sharedUserId: z.string().uuid(),
+  email: z.string().refine((value) => byteLength(value) <= 320, "Must be at most 320 bytes").nullable(),
+  emailVerified: z.boolean(),
+  phone: z.string().refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes").nullable(),
+  displayName: z.string().refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes").nullable(),
+  status: principalsStatusSchema,
+  profile: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSeenAt: z.string().datetime(),
+});
+
+export const principalsInsertSchema = z.object({
+  sharedUserId: z.string().uuid().optional(),
+  email: z.string().refine((value) => byteLength(value) <= 320, "Must be at most 320 bytes").nullable().optional(),
+  emailVerified: z.boolean().optional().default(false),
+  phone: z.string().refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes").nullable().optional(),
+  displayName: z.string().refine((value) => byteLength(value) <= 160, "Must be at most 160 bytes").nullable().optional(),
+  status: principalsStatusSchema.optional().default("active"),
+  profile: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  lastSeenAt: z.string().datetime().optional(),
+});
+
+export const principalsUpdateSchema = principalsInsertSchema.partial();
+export type PrincipalsRow = z.infer<typeof principalsRowSchema>;
+export type PrincipalsInsert = z.infer<typeof principalsInsertSchema>;
+export type PrincipalsUpdate = z.infer<typeof principalsUpdateSchema>;
+
+export const providerIdentities = sharedAuthSchema.table(
+  "provider_identities",
+  {
+    providerIdentityId: uuid("provider_identity_id").default(sql`gen_random_uuid()`).primaryKey(),
+    sharedUserId: uuid("shared_user_id").notNull(),
+    provider: text("provider").notNull(),
+    providerTenant: text("provider_tenant").default(sql`'default'`).notNull(),
+    providerSubject: text("provider_subject").notNull(),
+    email: text("email"),
+    emailVerified: boolean("email_verified").default(sql`false`).notNull(),
+    metadata: jsonb("metadata").default(sql`'{}'::jsonb`).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    sharedAuthProviderIdentitiesProviderSizeChk: check("shared_auth_provider_identities_provider_size_chk", sql.raw("octet_length(provider) between 1 and 64")),
+    sharedAuthProviderIdentitiesTenantSizeChk: check("shared_auth_provider_identities_tenant_size_chk", sql.raw("octet_length(provider_tenant) between 1 and 255")),
+    sharedAuthProviderIdentitiesSubjectSizeChk: check("shared_auth_provider_identities_subject_size_chk", sql.raw("octet_length(provider_subject) between 1 and 512")),
+    sharedAuthProviderIdentitiesEmailSizeChk: check("shared_auth_provider_identities_email_size_chk", sql.raw("email is null or octet_length(email) between 3 and 320")),
+    sharedAuthProviderIdentitiesMetadataObjectChk: check("shared_auth_provider_identities_metadata_object_chk", sql.raw("jsonb_typeof(metadata) = 'object'")),
+    sharedAuthProviderIdentitiesUserIdx: index("shared_auth_provider_identities_user_idx").on(table.sharedUserId),
+  }),
+);
+
+export const providerIdentitiesRowSchema = z.object({
+  providerIdentityId: z.string().uuid(),
+  sharedUserId: z.string().uuid(),
+  provider: z.string().refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes"),
+  providerTenant: z.string().refine((value) => byteLength(value) <= 255, "Must be at most 255 bytes"),
+  providerSubject: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  email: z.string().refine((value) => byteLength(value) <= 320, "Must be at most 320 bytes").nullable(),
+  emailVerified: z.boolean(),
+  metadata: jsonObjectSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSeenAt: z.string().datetime(),
+});
+
+export const providerIdentitiesInsertSchema = z.object({
+  providerIdentityId: z.string().uuid().optional(),
+  sharedUserId: z.string().uuid(),
+  provider: z.string().refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes"),
+  providerTenant: z.string().refine((value) => byteLength(value) <= 255, "Must be at most 255 bytes").optional().default("default"),
+  providerSubject: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  email: z.string().refine((value) => byteLength(value) <= 320, "Must be at most 320 bytes").nullable().optional(),
+  emailVerified: z.boolean().optional().default(false),
+  metadata: jsonObjectSchema.optional().default({}),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  lastSeenAt: z.string().datetime().optional(),
+});
+
+export const providerIdentitiesUpdateSchema = providerIdentitiesInsertSchema.partial();
+export type ProviderIdentitiesRow = z.infer<typeof providerIdentitiesRowSchema>;
+export type ProviderIdentitiesInsert = z.infer<typeof providerIdentitiesInsertSchema>;
+export type ProviderIdentitiesUpdate = z.infer<typeof providerIdentitiesUpdateSchema>;
+
+export const localCredentials = sharedAuthSchema.table(
+  "local_credentials",
+  {
+    sharedUserId: uuid("shared_user_id").primaryKey(),
+    passwordHash: text("password_hash").notNull(),
+    passwordChangedAt: timestamp("password_changed_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    failedAttempts: integer("failed_attempts").default(sql`0`).notNull(),
+    lockedUntil: timestamp("locked_until", { withTimezone: true, mode: "string" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+  },
+  (table) => ({
+    sharedAuthLocalCredentialsHashSizeChk: check("shared_auth_local_credentials_hash_size_chk", sql.raw("octet_length(password_hash) between 40 and 512")),
+    sharedAuthLocalCredentialsFailedAttemptsChk: check("shared_auth_local_credentials_failed_attempts_chk", sql.raw("failed_attempts >= 0")),
+  }),
+);
+
+export const localCredentialsRowSchema = z.object({
+  sharedUserId: z.string().uuid(),
+  passwordHash: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  passwordChangedAt: z.string().datetime(),
+  failedAttempts: z.number().int().min(0),
+  lockedUntil: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const localCredentialsInsertSchema = z.object({
+  sharedUserId: z.string().uuid(),
+  passwordHash: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  passwordChangedAt: z.string().datetime().optional(),
+  failedAttempts: z.number().int().min(0).optional().default(0),
+  lockedUntil: z.string().datetime().nullable().optional(),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+});
+
+export const localCredentialsUpdateSchema = localCredentialsInsertSchema.partial();
+export type LocalCredentialsRow = z.infer<typeof localCredentialsRowSchema>;
+export type LocalCredentialsInsert = z.infer<typeof localCredentialsInsertSchema>;
+export type LocalCredentialsUpdate = z.infer<typeof localCredentialsUpdateSchema>;
+
+export const sessions = sharedAuthSchema.table(
+  "sessions",
+  {
+    sessionId: uuid("session_id").default(sql`gen_random_uuid()`).primaryKey(),
+    sharedUserId: uuid("shared_user_id").notNull(),
+    refreshTokenHash: text("refresh_token_hash").notNull(),
+    provider: text("provider").notNull(),
+    providerTenant: text("provider_tenant").default(sql`'default'`).notNull(),
+    providerSubject: text("provider_subject").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "string" }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true, mode: "string" }),
+    rotatedFrom: uuid("rotated_from"),
+  },
+  (table) => ({
+    sharedAuthSessionsRefreshHashSizeChk: check("shared_auth_sessions_refresh_hash_size_chk", sql.raw("octet_length(refresh_token_hash) = 43")),
+    sharedAuthSessionsProviderSizeChk: check("shared_auth_sessions_provider_size_chk", sql.raw("octet_length(provider) between 1 and 64")),
+    sharedAuthSessionsTenantSizeChk: check("shared_auth_sessions_tenant_size_chk", sql.raw("octet_length(provider_tenant) between 1 and 255")),
+    sharedAuthSessionsSubjectSizeChk: check("shared_auth_sessions_subject_size_chk", sql.raw("octet_length(provider_subject) between 1 and 512")),
+    sharedAuthSessionsExpiryChk: check("shared_auth_sessions_expiry_chk", sql.raw("expires_at > created_at")),
+    sharedAuthSessionsUserIdx: index("shared_auth_sessions_user_idx").on(table.sharedUserId),
+    sharedAuthSessionsActiveExpiryIdx: index("shared_auth_sessions_active_expiry_idx").on(table.expiresAt).where(sql.raw("revoked_at is null")),
+  }),
+);
+
+export const sessionsRowSchema = z.object({
+  sessionId: z.string().uuid(),
+  sharedUserId: z.string().uuid(),
+  refreshTokenHash: z.string(),
+  provider: z.string().refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes"),
+  providerTenant: z.string().refine((value) => byteLength(value) <= 255, "Must be at most 255 bytes"),
+  providerSubject: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  lastSeenAt: z.string().datetime(),
+  expiresAt: z.string().datetime(),
+  revokedAt: z.string().datetime().nullable(),
+  rotatedFrom: z.string().uuid().nullable(),
+});
+
+export const sessionsInsertSchema = z.object({
+  sessionId: z.string().uuid().optional(),
+  sharedUserId: z.string().uuid(),
+  refreshTokenHash: z.string(),
+  provider: z.string().refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes"),
+  providerTenant: z.string().refine((value) => byteLength(value) <= 255, "Must be at most 255 bytes").optional().default("default"),
+  providerSubject: z.string().refine((value) => byteLength(value) <= 512, "Must be at most 512 bytes"),
+  createdAt: z.string().datetime().optional(),
+  updatedAt: z.string().datetime().optional(),
+  lastSeenAt: z.string().datetime().optional(),
+  expiresAt: z.string().datetime(),
+  revokedAt: z.string().datetime().nullable().optional(),
+  rotatedFrom: z.string().uuid().nullable().optional(),
+});
+
+export const sessionsUpdateSchema = sessionsInsertSchema.partial();
+export type SessionsRow = z.infer<typeof sessionsRowSchema>;
+export type SessionsInsert = z.infer<typeof sessionsInsertSchema>;
+export type SessionsUpdate = z.infer<typeof sessionsUpdateSchema>;
+
+export const roles = sharedAuthSchema.table(
+  "roles",
+  {
+    roleId: uuid("role_id").default(sql`gen_random_uuid()`).primaryKey(),
+    sharedUserId: uuid("shared_user_id").notNull(),
+    roleName: text("role_name").notNull(),
+    grantedAt: timestamp("granted_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    grantedBy: uuid("granted_by"),
+  },
+  (table) => ({
+    sharedAuthRolesNameChk: check("shared_auth_roles_name_chk", sql.raw("role_name ~ '^[a-z][a-z0-9:_-]{0,63}$'")),
+    sharedAuthRolesUserIdx: index("shared_auth_roles_user_idx").on(table.sharedUserId),
+  }),
+);
+
+export const rolesRowSchema = z.object({
+  roleId: z.string().uuid(),
+  sharedUserId: z.string().uuid(),
+  roleName: z.string().regex(new RegExp("^[a-z][a-z0-9:_-]{0,63}$")),
+  grantedAt: z.string().datetime(),
+  grantedBy: z.string().uuid().nullable(),
+});
+
+export const rolesInsertSchema = z.object({
+  roleId: z.string().uuid().optional(),
+  sharedUserId: z.string().uuid(),
+  roleName: z.string().regex(new RegExp("^[a-z][a-z0-9:_-]{0,63}$")),
+  grantedAt: z.string().datetime().optional(),
+  grantedBy: z.string().uuid().nullable().optional(),
+});
+
+export const rolesUpdateSchema = rolesInsertSchema.partial();
+export type RolesRow = z.infer<typeof rolesRowSchema>;
+export type RolesInsert = z.infer<typeof rolesInsertSchema>;
+export type RolesUpdate = z.infer<typeof rolesUpdateSchema>;
+
+export const webhookEvents = sharedAuthSchema.table(
+  "webhook_events",
+  {
+    eventId: uuid("event_id").primaryKey(),
+    provider: text("provider").notNull(),
+    eventType: text("event_type").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true, mode: "string" }).default(sql`now()`).notNull(),
+    payloadSha256: text("payload_sha256").notNull(),
+  },
+  (table) => ({
+    sharedAuthWebhookEventsProviderSizeChk: check("shared_auth_webhook_events_provider_size_chk", sql.raw("octet_length(provider) between 1 and 64")),
+    sharedAuthWebhookEventsTypeSizeChk: check("shared_auth_webhook_events_type_size_chk", sql.raw("octet_length(event_type) between 1 and 128")),
+    sharedAuthWebhookEventsPayloadHashSizeChk: check("shared_auth_webhook_events_payload_hash_size_chk", sql.raw("octet_length(payload_sha256) = 43")),
+    sharedAuthWebhookEventsReceivedIdx: index("shared_auth_webhook_events_received_idx").on(table.receivedAt),
+  }),
+);
+
+export const webhookEventsRowSchema = z.object({
+  eventId: z.string().uuid(),
+  provider: z.string().refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes"),
+  eventType: z.string().refine((value) => byteLength(value) <= 128, "Must be at most 128 bytes"),
+  receivedAt: z.string().datetime(),
+  payloadSha256: z.string(),
+});
+
+export const webhookEventsInsertSchema = z.object({
+  eventId: z.string().uuid(),
+  provider: z.string().refine((value) => byteLength(value) <= 64, "Must be at most 64 bytes"),
+  eventType: z.string().refine((value) => byteLength(value) <= 128, "Must be at most 128 bytes"),
+  receivedAt: z.string().datetime().optional(),
+  payloadSha256: z.string(),
+});
+
+export const webhookEventsUpdateSchema = webhookEventsInsertSchema.partial();
+export type WebhookEventsRow = z.infer<typeof webhookEventsRowSchema>;
+export type WebhookEventsInsert = z.infer<typeof webhookEventsInsertSchema>;
+export type WebhookEventsUpdate = z.infer<typeof webhookEventsUpdateSchema>;
 
 export const fabJobs = daedalusSchema.table(
   "fab_jobs",

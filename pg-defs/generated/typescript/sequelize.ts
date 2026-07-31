@@ -506,8 +506,8 @@ export function defineDdModels(sequelize: Sequelize) {
     slug: { type: DataTypes.STRING(120), allowNull: false, validate: { len: [0, 120], is: new RegExp("^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$") } },
     display_name: { type: DataTypes.STRING(200), allowNull: false, validate: { len: [1, 200] } },
     description: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
-    runtime: { type: DataTypes.STRING(40), allowNull: false, defaultValue: "nodejs", validate: { isIn: [["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"]] } },
-    entry_command: { type: DataTypes.TEXT, allowNull: false, defaultValue: "env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs" },
+    runtime: { type: DataTypes.STRING(40), allowNull: false, defaultValue: "nodejs", validate: { isIn: [["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"]] } },
+    entry_command: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
     function_body: { type: DataTypes.TEXT, allowNull: false },
     reuse_key: { type: DataTypes.STRING(200), allowNull: true, validate: { len: [0, 200] } },
     idle_timeout_seconds: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 300, validate: { min: 1, max: 3600 } },
@@ -528,6 +528,62 @@ export function defineDdModels(sequelize: Sequelize) {
     created_by: { type: DataTypes.UUID, allowNull: true },
     updated_by: { type: DataTypes.UUID, allowNull: true },
   }, { tableName: "lambda_functions", timestamps: false, freezeTableName: true });
+
+  // Immutable published snapshots of lambda function code and runtime configuration.
+  const LambdaFunctionRevision = sequelize.define("LambdaFunctionRevision", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    function_id: { type: DataTypes.UUID, allowNull: false },
+    revision_number: { type: DataTypes.BIGINT, allowNull: false, validate: { min: 1 } },
+    definition_digest: { type: DataTypes.STRING(64), allowNull: false, validate: { len: [64, 64], is: new RegExp("^[a-f0-9]{64}$") } },
+    description: { type: DataTypes.TEXT, allowNull: false, defaultValue: "", validate: { len: [0, 4096] } },
+    runtime: { type: DataTypes.STRING(40), allowNull: false, validate: { isIn: [["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"]] } },
+    entry_command: { type: DataTypes.TEXT, allowNull: false, defaultValue: "" },
+    function_body: { type: DataTypes.TEXT, allowNull: false },
+    reuse_key: { type: DataTypes.STRING(200), allowNull: true, validate: { len: [0, 200] } },
+    idle_timeout_seconds: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 1, max: 3600 } },
+    max_run_ms: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 1000, max: 300000 } },
+    containerized: { type: DataTypes.BOOLEAN, allowNull: false },
+    container_image: { type: DataTypes.TEXT, allowNull: true },
+    container_build_status: { type: DataTypes.STRING(32), allowNull: false, validate: { isIn: [["not_requested", "pending", "building", "built", "failed", "skipped"]] } },
+    container_build_error: { type: DataTypes.TEXT, allowNull: true },
+    container_built_at: { type: DataTypes.DATE, allowNull: true },
+    env: { type: DataTypes.JSONB, allowNull: false },
+    labels: { type: DataTypes.JSONB, allowNull: false },
+    meta_data: { type: DataTypes.JSONB, allowNull: false },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    created_by: { type: DataTypes.UUID, allowNull: true },
+  }, { tableName: "lambda_function_revisions", timestamps: false, freezeTableName: true });
+
+  // Named weighted routing policies over immutable lambda function revisions.
+  const LambdaFunctionAlias = sequelize.define("LambdaFunctionAlias", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    function_id: { type: DataTypes.UUID, allowNull: false },
+    name: { type: DataTypes.STRING(64), allowNull: false, validate: { len: [1, 64], is: new RegExp("^[a-z][a-z0-9._-]{0,63}$") } },
+    description: { type: DataTypes.TEXT, allowNull: false, defaultValue: "", validate: { len: [0, 4096] } },
+    traffic: { type: DataTypes.JSONB, allowNull: false },
+    routing_version: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 1, validate: { min: 1 } },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+    created_by: { type: DataTypes.UUID, allowNull: true },
+    updated_by: { type: DataTypes.UUID, allowNull: true },
+  }, { tableName: "lambda_function_aliases", timestamps: false, freezeTableName: true });
+
+  // Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
+  const LambdaActorInstance = sequelize.define("LambdaActorInstance", {
+    id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    function_id: { type: DataTypes.UUID, allowNull: false },
+    actor_key: { type: DataTypes.STRING(200), allowNull: false, validate: { len: [1, 200], is: new RegExp("^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$") } },
+    state: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+    state_version: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0, validate: { min: 0 } },
+    alarm_at: { type: DataTypes.DATE, allowNull: true },
+    alarm_attempt: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0, validate: { min: 0, max: 6 } },
+    lease_owner: { type: DataTypes.STRING(200), allowNull: true, validate: { len: [0, 200] } },
+    lease_until: { type: DataTypes.DATE, allowNull: true },
+    last_invoked_at: { type: DataTypes.DATE, allowNull: true },
+    last_error: { type: DataTypes.TEXT, allowNull: true },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "lambda_actor_instances", timestamps: false, freezeTableName: true });
 
   const WorkflowDefinitions = sequelize.define("WorkflowDefinitions", {
     id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
@@ -2556,6 +2612,74 @@ export function defineDdModels(sequelize: Sequelize) {
     revoked_at: { type: DataTypes.DATE, allowNull: true },
   }, { tableName: "web_sessions", schema: "daedalus", timestamps: false, freezeTableName: true });
 
+  const Principals = sequelize.define("Principals", {
+    shared_user_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    email: { type: DataTypes.TEXT, allowNull: true },
+    email_verified: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    phone: { type: DataTypes.TEXT, allowNull: true },
+    display_name: { type: DataTypes.TEXT, allowNull: true },
+    status: { type: DataTypes.TEXT, allowNull: false, defaultValue: "active", validate: { isIn: [["active", "disabled", "deleted"]] } },
+    profile: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+    last_seen_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "principals", schema: "shared_auth", timestamps: false, freezeTableName: true });
+
+  const ProviderIdentities = sequelize.define("ProviderIdentities", {
+    provider_identity_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    shared_user_id: { type: DataTypes.UUID, allowNull: false },
+    provider: { type: DataTypes.TEXT, allowNull: false },
+    provider_tenant: { type: DataTypes.TEXT, allowNull: false, defaultValue: "default" },
+    provider_subject: { type: DataTypes.TEXT, allowNull: false },
+    email: { type: DataTypes.TEXT, allowNull: true },
+    email_verified: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    metadata: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+    last_seen_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "provider_identities", schema: "shared_auth", timestamps: false, freezeTableName: true });
+
+  const LocalCredentials = sequelize.define("LocalCredentials", {
+    shared_user_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    password_hash: { type: DataTypes.TEXT, allowNull: false },
+    password_changed_at: { type: DataTypes.DATE, allowNull: false },
+    failed_attempts: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0, validate: { min: 0 } },
+    locked_until: { type: DataTypes.DATE, allowNull: true },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "local_credentials", schema: "shared_auth", timestamps: false, freezeTableName: true });
+
+  const Sessions = sequelize.define("Sessions", {
+    session_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    shared_user_id: { type: DataTypes.UUID, allowNull: false },
+    refresh_token_hash: { type: DataTypes.TEXT, allowNull: false },
+    provider: { type: DataTypes.TEXT, allowNull: false },
+    provider_tenant: { type: DataTypes.TEXT, allowNull: false, defaultValue: "default" },
+    provider_subject: { type: DataTypes.TEXT, allowNull: false },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+    last_seen_at: { type: DataTypes.DATE, allowNull: false },
+    expires_at: { type: DataTypes.DATE, allowNull: false },
+    revoked_at: { type: DataTypes.DATE, allowNull: true },
+    rotated_from: { type: DataTypes.UUID, allowNull: true },
+  }, { tableName: "sessions", schema: "shared_auth", timestamps: false, freezeTableName: true });
+
+  const Roles = sequelize.define("Roles", {
+    role_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    shared_user_id: { type: DataTypes.UUID, allowNull: false },
+    role_name: { type: DataTypes.TEXT, allowNull: false, validate: { is: new RegExp("^[a-z][a-z0-9:_-]{0,63}$") } },
+    granted_at: { type: DataTypes.DATE, allowNull: false },
+    granted_by: { type: DataTypes.UUID, allowNull: true },
+  }, { tableName: "roles", schema: "shared_auth", timestamps: false, freezeTableName: true });
+
+  const WebhookEvents = sequelize.define("WebhookEvents", {
+    event_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    provider: { type: DataTypes.TEXT, allowNull: false },
+    event_type: { type: DataTypes.TEXT, allowNull: false },
+    received_at: { type: DataTypes.DATE, allowNull: false },
+    payload_sha256: { type: DataTypes.TEXT, allowNull: false },
+  }, { tableName: "webhook_events", schema: "shared_auth", timestamps: false, freezeTableName: true });
+
   const FabJobs = sequelize.define("FabJobs", {
     job_id: { type: DataTypes.TEXT, allowNull: false, primaryKey: true },
     request_id: { type: DataTypes.TEXT, allowNull: false },
@@ -2583,5 +2707,5 @@ export function defineDdModels(sequelize: Sequelize) {
     created_at: { type: DataTypes.DATE, allowNull: false },
   }, { tableName: "fab_learning_outcomes", schema: "daedalus", timestamps: false, freezeTableName: true });
 
-  return { Accounts, Devices, VaultBlobs, AppConfig, VapiPhoneCallEvents, MusicSongs, MusicSongVotes, SoundRecorderAccounts, SoundRecorderDevices, SoundRecorderUploadSessions, SoundRecorderSegments, SoundRecorderEvidenceExports, SoundRecorderAuditEvents, SoundRecorderOauthStates, SoundRecorderCloudConnections, SoundRecorderCloudCopyJobs, ContainerPoolConfigs, KnownGitRepo, AgentContextBlobs, AgentContextEmbeddings, AgentRemoteDevThread, AgentRemoteDevTask, AgentRemoteDevEvent, AgentRemoteDevBreadcrumb, AgentRemoteDevArtifact, AgentRemoteDevRuntimeLock, MipSolverSessions, MipSolverSolves, MipSolverJobs, MipSolverEvents, LambdaFunction, WorkflowDefinitions, WorkflowRuns, WorkflowStepRuns, ContainerPoolImageRevisions, ContainerPoolBuildRuns, PresenceConvs, PresenceConvMembers, PresenceUsers, PresenceEvents, PresenceConsumerCheckpoints, DesSoccerLearningExperiments, DesSoccerLearningPolicyVersions, DesSoccerLearningPolicyEntries, DesSoccerLearningJobs, DesSoccerLearningRuns, DesSoccerLearningRunDeltas, DesSoccerLearningMergeEvents, DesSoccerTournaments, DesSoccerTournamentMatches, DesSoccerTournamentTeamBrains, DesSoccerLearningSetPlayRuns, DesSoccerLearningSetPlayRestartMix, DesSoccerLearningSetPlayEpisodeMetrics, DesSoccerLearningNeuralRunMetrics, DesSoccerLearningPassMetrics, DesFelElevatorLearningRuns, DesFelElevatorPolicyStates, DesFelElevatorDispatchDecisions, DesFelElevatorPomdpBeliefs, BenefactorMarketingClients, BenefactorMarketingContacts, BenefactorMarketingServicePackages, BenefactorMarketingContracts, BenefactorMarketingInvoices, BenefactorMarketingIntegrations, BenefactorMarketingLeads, BenefactorMarketingEnrichmentJobs, BenefactorMarketingCampaigns, BenefactorMarketingCampaignChannels, BenefactorMarketingCampaignExperiments, BenefactorMarketingAutomationWorkflows, BenefactorMarketingAutomationEvents, BenefactorMarketingReports, BenefactorMarketingAttributionEvents, BenefactorMarketingOpportunities, BenefactorMarketingContentAssets, BenefactorMarketingProjectTasks, BenefactorMarketingClientApprovals, BenefactorMarketingTickets, BenefactorMarketingMeetings, BenefactorMarketingTeamAllocations, BenefactorMarketingIntegrationSyncRuns, BenefactorMarketingOutreachSequences, BenefactorMarketingOutreachSteps, BenefactorMarketingOutreachEnrollments, BenefactorMarketingOutreachTouchpoints, BenefactorMarketingProspectResearchBriefs, BenefactorMarketingConversionEvents, BenefactorMarketingPortalMembers, BenefactorMarketingSharedDocuments, BenefactorMarketingCollaborationComments, BenefactorMarketingNotifications, BenefactorMarketingTimeEntries, BenefactorMarketingVendorCosts, BenefactorMarketingCommissionEntries, BenefactorMarketingBudgetForecasts, BenefactorMarketingCallInsights, UsaccUsers, UsaccCases, UsaccCaseParticipants, UsaccCaseStages, UsaccElections, UsaccVotes, UsaccEscrowAccounts, UsaccLedgerEntries, UsaccContractOperations, UsaccSimulationRuns, UsaccAuditEvents, BenefactorLeads, BenefactorLeadsDomains, BenefactorSearchLocations, BenefactorScrapeQueries, BenefactorDomainSearchTracking, BenefactorIcps, BenefactorLeadsThrottling, BenefactorLeadsReminders, VcsRepositories, VcsRefs, VcsOperations, Agents, Channels, Messages, ChannelMembers, SharedContext, SyncClock, SyncTombstones, Orgs, Projects, Users, OrgMembers, ProjectMembers, ApiKeys, MtlsClientCerts, CustomerPreferences, CustomerSessions, AuditLog, CustomerNotifications, SyncIdempotencyKeys, BillingCustomers, PaymentMethods, BillingSubscriptions, Invoices, Payments, BillingWebhookEvents, Transcriptions, Syntheses, Translations, VapiCalls, VapiEvents, FabPlans, FabDesigns, FabInstructions, FabRuns, WebSessions, FabJobs, FabLearningOutcomes };
+  return { Accounts, Devices, VaultBlobs, AppConfig, VapiPhoneCallEvents, MusicSongs, MusicSongVotes, SoundRecorderAccounts, SoundRecorderDevices, SoundRecorderUploadSessions, SoundRecorderSegments, SoundRecorderEvidenceExports, SoundRecorderAuditEvents, SoundRecorderOauthStates, SoundRecorderCloudConnections, SoundRecorderCloudCopyJobs, ContainerPoolConfigs, KnownGitRepo, AgentContextBlobs, AgentContextEmbeddings, AgentRemoteDevThread, AgentRemoteDevTask, AgentRemoteDevEvent, AgentRemoteDevBreadcrumb, AgentRemoteDevArtifact, AgentRemoteDevRuntimeLock, MipSolverSessions, MipSolverSolves, MipSolverJobs, MipSolverEvents, LambdaFunction, LambdaFunctionRevision, LambdaFunctionAlias, LambdaActorInstance, WorkflowDefinitions, WorkflowRuns, WorkflowStepRuns, ContainerPoolImageRevisions, ContainerPoolBuildRuns, PresenceConvs, PresenceConvMembers, PresenceUsers, PresenceEvents, PresenceConsumerCheckpoints, DesSoccerLearningExperiments, DesSoccerLearningPolicyVersions, DesSoccerLearningPolicyEntries, DesSoccerLearningJobs, DesSoccerLearningRuns, DesSoccerLearningRunDeltas, DesSoccerLearningMergeEvents, DesSoccerTournaments, DesSoccerTournamentMatches, DesSoccerTournamentTeamBrains, DesSoccerLearningSetPlayRuns, DesSoccerLearningSetPlayRestartMix, DesSoccerLearningSetPlayEpisodeMetrics, DesSoccerLearningNeuralRunMetrics, DesSoccerLearningPassMetrics, DesFelElevatorLearningRuns, DesFelElevatorPolicyStates, DesFelElevatorDispatchDecisions, DesFelElevatorPomdpBeliefs, BenefactorMarketingClients, BenefactorMarketingContacts, BenefactorMarketingServicePackages, BenefactorMarketingContracts, BenefactorMarketingInvoices, BenefactorMarketingIntegrations, BenefactorMarketingLeads, BenefactorMarketingEnrichmentJobs, BenefactorMarketingCampaigns, BenefactorMarketingCampaignChannels, BenefactorMarketingCampaignExperiments, BenefactorMarketingAutomationWorkflows, BenefactorMarketingAutomationEvents, BenefactorMarketingReports, BenefactorMarketingAttributionEvents, BenefactorMarketingOpportunities, BenefactorMarketingContentAssets, BenefactorMarketingProjectTasks, BenefactorMarketingClientApprovals, BenefactorMarketingTickets, BenefactorMarketingMeetings, BenefactorMarketingTeamAllocations, BenefactorMarketingIntegrationSyncRuns, BenefactorMarketingOutreachSequences, BenefactorMarketingOutreachSteps, BenefactorMarketingOutreachEnrollments, BenefactorMarketingOutreachTouchpoints, BenefactorMarketingProspectResearchBriefs, BenefactorMarketingConversionEvents, BenefactorMarketingPortalMembers, BenefactorMarketingSharedDocuments, BenefactorMarketingCollaborationComments, BenefactorMarketingNotifications, BenefactorMarketingTimeEntries, BenefactorMarketingVendorCosts, BenefactorMarketingCommissionEntries, BenefactorMarketingBudgetForecasts, BenefactorMarketingCallInsights, UsaccUsers, UsaccCases, UsaccCaseParticipants, UsaccCaseStages, UsaccElections, UsaccVotes, UsaccEscrowAccounts, UsaccLedgerEntries, UsaccContractOperations, UsaccSimulationRuns, UsaccAuditEvents, BenefactorLeads, BenefactorLeadsDomains, BenefactorSearchLocations, BenefactorScrapeQueries, BenefactorDomainSearchTracking, BenefactorIcps, BenefactorLeadsThrottling, BenefactorLeadsReminders, VcsRepositories, VcsRefs, VcsOperations, Agents, Channels, Messages, ChannelMembers, SharedContext, SyncClock, SyncTombstones, Orgs, Projects, Users, OrgMembers, ProjectMembers, ApiKeys, MtlsClientCerts, CustomerPreferences, CustomerSessions, AuditLog, CustomerNotifications, SyncIdempotencyKeys, BillingCustomers, PaymentMethods, BillingSubscriptions, Invoices, Payments, BillingWebhookEvents, Transcriptions, Syntheses, Translations, VapiCalls, VapiEvents, FabPlans, FabDesigns, FabInstructions, FabRuns, WebSessions, Principals, ProviderIdentities, LocalCredentials, Sessions, Roles, WebhookEvents, FabJobs, FabLearningOutcomes };
 }

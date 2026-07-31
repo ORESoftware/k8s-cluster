@@ -1903,6 +1903,11 @@ pub type LambdaFunctionRuntime {
   LambdaFunctionRuntimeEx
   LambdaFunctionRuntimeJava
   LambdaFunctionRuntimeJvm
+  LambdaFunctionRuntimeGleam
+  LambdaFunctionRuntimeGleamlang
+  LambdaFunctionRuntimeRust
+  LambdaFunctionRuntimeRs
+  LambdaFunctionRuntimeBrowser
 }
 
 pub fn lambda_functions_runtime_to_string(value: LambdaFunctionRuntime) -> String {
@@ -1924,6 +1929,11 @@ pub fn lambda_functions_runtime_to_string(value: LambdaFunctionRuntime) -> Strin
     LambdaFunctionRuntimeEx -> "ex"
     LambdaFunctionRuntimeJava -> "java"
     LambdaFunctionRuntimeJvm -> "jvm"
+    LambdaFunctionRuntimeGleam -> "gleam"
+    LambdaFunctionRuntimeGleamlang -> "gleamlang"
+    LambdaFunctionRuntimeRust -> "rust"
+    LambdaFunctionRuntimeRs -> "rs"
+    LambdaFunctionRuntimeBrowser -> "browser"
   }
 }
 
@@ -1946,6 +1956,11 @@ pub fn parse_lambda_functions_runtime(value: String) -> Result(LambdaFunctionRun
     "ex" -> Ok(LambdaFunctionRuntimeEx)
     "java" -> Ok(LambdaFunctionRuntimeJava)
     "jvm" -> Ok(LambdaFunctionRuntimeJvm)
+    "gleam" -> Ok(LambdaFunctionRuntimeGleam)
+    "gleamlang" -> Ok(LambdaFunctionRuntimeGleamlang)
+    "rust" -> Ok(LambdaFunctionRuntimeRust)
+    "rs" -> Ok(LambdaFunctionRuntimeRs)
+    "browser" -> Ok(LambdaFunctionRuntimeBrowser)
     _ -> Error("unsupported lambda_functions.runtime: " <> value)
   }
 }
@@ -2047,7 +2062,7 @@ pub fn validate_lambda_functions_slug(value: String) -> Result(String, String) {
 }
 
 pub fn validate_lambda_functions_runtime(value: String) -> Result(String, String) {
-  case list.contains(["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"], value) {
+  case list.contains(["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"], value) {
     True -> Ok(value)
     False -> Error("unsupported lambda_functions.runtime: " <> value)
   }
@@ -2064,6 +2079,224 @@ pub fn validate_lambda_functions_status(value: String) -> Result(String, String)
   case list.contains(["draft", "active", "paused", "archived"], value) {
     True -> Ok(value)
     False -> Error("unsupported lambda_functions.status: " <> value)
+  }
+}
+
+pub const lambda_function_revisions_table = "lambda_function_revisions"
+pub const lambda_function_revisions_select_sql = "select\n      id::text as id,\n      function_id::text as function_id,\n      revision_number,\n      definition_digest,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      created_by::text as created_by\n    from lambda_function_revisions"
+
+pub type LambdaFunctionRevisionRuntime {
+  LambdaFunctionRevisionRuntimeNodejs
+  LambdaFunctionRevisionRuntimeJavascript
+  LambdaFunctionRevisionRuntimeTypescript
+  LambdaFunctionRevisionRuntimePython3
+  LambdaFunctionRevisionRuntimePython
+  LambdaFunctionRevisionRuntimeRuby
+  LambdaFunctionRevisionRuntimeBash
+  LambdaFunctionRevisionRuntimeShell
+  LambdaFunctionRevisionRuntimeGolang
+  LambdaFunctionRevisionRuntimeGo
+  LambdaFunctionRevisionRuntimeDart
+  LambdaFunctionRevisionRuntimeErlang
+  LambdaFunctionRevisionRuntimeErl
+  LambdaFunctionRevisionRuntimeElixir
+  LambdaFunctionRevisionRuntimeEx
+  LambdaFunctionRevisionRuntimeJava
+  LambdaFunctionRevisionRuntimeJvm
+  LambdaFunctionRevisionRuntimeGleam
+  LambdaFunctionRevisionRuntimeGleamlang
+  LambdaFunctionRevisionRuntimeRust
+  LambdaFunctionRevisionRuntimeRs
+  LambdaFunctionRevisionRuntimeBrowser
+}
+
+pub fn lambda_function_revisions_runtime_to_string(value: LambdaFunctionRevisionRuntime) -> String {
+  case value {
+    LambdaFunctionRevisionRuntimeNodejs -> "nodejs"
+    LambdaFunctionRevisionRuntimeJavascript -> "javascript"
+    LambdaFunctionRevisionRuntimeTypescript -> "typescript"
+    LambdaFunctionRevisionRuntimePython3 -> "python3"
+    LambdaFunctionRevisionRuntimePython -> "python"
+    LambdaFunctionRevisionRuntimeRuby -> "ruby"
+    LambdaFunctionRevisionRuntimeBash -> "bash"
+    LambdaFunctionRevisionRuntimeShell -> "shell"
+    LambdaFunctionRevisionRuntimeGolang -> "golang"
+    LambdaFunctionRevisionRuntimeGo -> "go"
+    LambdaFunctionRevisionRuntimeDart -> "dart"
+    LambdaFunctionRevisionRuntimeErlang -> "erlang"
+    LambdaFunctionRevisionRuntimeErl -> "erl"
+    LambdaFunctionRevisionRuntimeElixir -> "elixir"
+    LambdaFunctionRevisionRuntimeEx -> "ex"
+    LambdaFunctionRevisionRuntimeJava -> "java"
+    LambdaFunctionRevisionRuntimeJvm -> "jvm"
+    LambdaFunctionRevisionRuntimeGleam -> "gleam"
+    LambdaFunctionRevisionRuntimeGleamlang -> "gleamlang"
+    LambdaFunctionRevisionRuntimeRust -> "rust"
+    LambdaFunctionRevisionRuntimeRs -> "rs"
+    LambdaFunctionRevisionRuntimeBrowser -> "browser"
+  }
+}
+
+pub fn parse_lambda_function_revisions_runtime(value: String) -> Result(LambdaFunctionRevisionRuntime, String) {
+  case value {
+    "nodejs" -> Ok(LambdaFunctionRevisionRuntimeNodejs)
+    "javascript" -> Ok(LambdaFunctionRevisionRuntimeJavascript)
+    "typescript" -> Ok(LambdaFunctionRevisionRuntimeTypescript)
+    "python3" -> Ok(LambdaFunctionRevisionRuntimePython3)
+    "python" -> Ok(LambdaFunctionRevisionRuntimePython)
+    "ruby" -> Ok(LambdaFunctionRevisionRuntimeRuby)
+    "bash" -> Ok(LambdaFunctionRevisionRuntimeBash)
+    "shell" -> Ok(LambdaFunctionRevisionRuntimeShell)
+    "golang" -> Ok(LambdaFunctionRevisionRuntimeGolang)
+    "go" -> Ok(LambdaFunctionRevisionRuntimeGo)
+    "dart" -> Ok(LambdaFunctionRevisionRuntimeDart)
+    "erlang" -> Ok(LambdaFunctionRevisionRuntimeErlang)
+    "erl" -> Ok(LambdaFunctionRevisionRuntimeErl)
+    "elixir" -> Ok(LambdaFunctionRevisionRuntimeElixir)
+    "ex" -> Ok(LambdaFunctionRevisionRuntimeEx)
+    "java" -> Ok(LambdaFunctionRevisionRuntimeJava)
+    "jvm" -> Ok(LambdaFunctionRevisionRuntimeJvm)
+    "gleam" -> Ok(LambdaFunctionRevisionRuntimeGleam)
+    "gleamlang" -> Ok(LambdaFunctionRevisionRuntimeGleamlang)
+    "rust" -> Ok(LambdaFunctionRevisionRuntimeRust)
+    "rs" -> Ok(LambdaFunctionRevisionRuntimeRs)
+    "browser" -> Ok(LambdaFunctionRevisionRuntimeBrowser)
+    _ -> Error("unsupported lambda_function_revisions.runtime: " <> value)
+  }
+}
+
+pub type LambdaFunctionRevisionContainerBuildStatus {
+  LambdaFunctionRevisionContainerBuildStatusNotRequested
+  LambdaFunctionRevisionContainerBuildStatusPending
+  LambdaFunctionRevisionContainerBuildStatusBuilding
+  LambdaFunctionRevisionContainerBuildStatusBuilt
+  LambdaFunctionRevisionContainerBuildStatusFailed
+  LambdaFunctionRevisionContainerBuildStatusSkipped
+}
+
+pub fn lambda_function_revisions_container_build_status_to_string(value: LambdaFunctionRevisionContainerBuildStatus) -> String {
+  case value {
+    LambdaFunctionRevisionContainerBuildStatusNotRequested -> "not_requested"
+    LambdaFunctionRevisionContainerBuildStatusPending -> "pending"
+    LambdaFunctionRevisionContainerBuildStatusBuilding -> "building"
+    LambdaFunctionRevisionContainerBuildStatusBuilt -> "built"
+    LambdaFunctionRevisionContainerBuildStatusFailed -> "failed"
+    LambdaFunctionRevisionContainerBuildStatusSkipped -> "skipped"
+  }
+}
+
+pub fn parse_lambda_function_revisions_container_build_status(value: String) -> Result(LambdaFunctionRevisionContainerBuildStatus, String) {
+  case value {
+    "not_requested" -> Ok(LambdaFunctionRevisionContainerBuildStatusNotRequested)
+    "pending" -> Ok(LambdaFunctionRevisionContainerBuildStatusPending)
+    "building" -> Ok(LambdaFunctionRevisionContainerBuildStatusBuilding)
+    "built" -> Ok(LambdaFunctionRevisionContainerBuildStatusBuilt)
+    "failed" -> Ok(LambdaFunctionRevisionContainerBuildStatusFailed)
+    "skipped" -> Ok(LambdaFunctionRevisionContainerBuildStatusSkipped)
+    _ -> Error("unsupported lambda_function_revisions.container_build_status: " <> value)
+  }
+}
+
+pub type LambdaFunctionRevisionRow {
+  LambdaFunctionRevisionRow(
+    id: String,
+    function_id: String,
+    revision_number: Int,
+    definition_digest: String,
+    description: String,
+    runtime: String,
+    entry_command: String,
+    function_body: String,
+    reuse_key: Option(String),
+    idle_timeout_seconds: Int,
+    max_run_ms: Int,
+    containerized: Bool,
+    container_image: Option(String),
+    container_build_status: String,
+    container_build_error: Option(String),
+    container_built_at: Option(String),
+    env_json: String,
+    labels_json: String,
+    meta_data_json: String,
+    created_at: String,
+    created_by: Option(String),
+  )
+}
+
+pub fn validate_lambda_function_revisions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("lambda_function_revisions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_lambda_function_revisions_runtime(value: String) -> Result(String, String) {
+  case list.contains(["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported lambda_function_revisions.runtime: " <> value)
+  }
+}
+
+pub fn validate_lambda_function_revisions_container_build_status(value: String) -> Result(String, String) {
+  case list.contains(["not_requested", "pending", "building", "built", "failed", "skipped"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported lambda_function_revisions.container_build_status: " <> value)
+  }
+}
+
+pub const lambda_function_aliases_table = "lambda_function_aliases"
+pub const lambda_function_aliases_select_sql = "select\n      id::text as id,\n      function_id::text as function_id,\n      name,\n      description,\n      traffic::text as traffic_json,\n      routing_version,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_function_aliases"
+
+pub type LambdaFunctionAliasRow {
+  LambdaFunctionAliasRow(
+    id: String,
+    function_id: String,
+    name: String,
+    description: String,
+    traffic_json: String,
+    routing_version: Int,
+    created_at: String,
+    updated_at: String,
+    created_by: Option(String),
+    updated_by: Option(String),
+  )
+}
+
+pub fn validate_lambda_function_aliases_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("lambda_function_aliases.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const lambda_actor_instances_table = "lambda_actor_instances"
+pub const lambda_actor_instances_select_sql = "select\n      id::text as id,\n      function_id::text as function_id,\n      actor_key,\n      state::text as state_json,\n      state_version,\n      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as alarm_at,\n      alarm_attempt,\n      lease_owner,\n      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_until,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from lambda_actor_instances"
+
+pub type LambdaActorInstanceRow {
+  LambdaActorInstanceRow(
+    id: String,
+    function_id: String,
+    actor_key: String,
+    state_json: String,
+    state_version: Int,
+    alarm_at: Option(String),
+    alarm_attempt: Int,
+    lease_owner: Option(String),
+    lease_until: Option(String),
+    last_invoked_at: Option(String),
+    last_error: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_lambda_actor_instances_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("lambda_actor_instances.slug must be a lowercase slug 3-120 characters long")
   }
 }
 
@@ -11655,6 +11888,182 @@ pub fn validate_web_sessions_slug(value: String) -> Result(String, String) {
   case length >= 3 && length <= 120 && is_slug_text(value) {
     True -> Ok(value)
     False -> Error("web_sessions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const principals_table = "shared_auth.principals"
+pub const principals_select_sql = "select\n      shared_user_id::text as shared_user_id,\n      email,\n      email_verified,\n      phone,\n      display_name,\n      status,\n      profile::text as profile_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.principals"
+
+pub type PrincipalsStatus {
+  PrincipalsStatusActive
+  PrincipalsStatusDisabled
+  PrincipalsStatusDeleted
+}
+
+pub fn principals_status_to_string(value: PrincipalsStatus) -> String {
+  case value {
+    PrincipalsStatusActive -> "active"
+    PrincipalsStatusDisabled -> "disabled"
+    PrincipalsStatusDeleted -> "deleted"
+  }
+}
+
+pub fn parse_principals_status(value: String) -> Result(PrincipalsStatus, String) {
+  case value {
+    "active" -> Ok(PrincipalsStatusActive)
+    "disabled" -> Ok(PrincipalsStatusDisabled)
+    "deleted" -> Ok(PrincipalsStatusDeleted)
+    _ -> Error("unsupported principals.status: " <> value)
+  }
+}
+
+pub type PrincipalsRow {
+  PrincipalsRow(
+    shared_user_id: String,
+    email: Option(String),
+    email_verified: Bool,
+    phone: Option(String),
+    display_name: Option(String),
+    status: String,
+    profile_json: String,
+    created_at: String,
+    updated_at: String,
+    last_seen_at: String,
+  )
+}
+
+pub fn validate_principals_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("principals.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_principals_status(value: String) -> Result(String, String) {
+  case list.contains(["active", "disabled", "deleted"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported principals.status: " <> value)
+  }
+}
+
+pub const provider_identities_table = "shared_auth.provider_identities"
+pub const provider_identities_select_sql = "select\n      provider_identity_id::text as provider_identity_id,\n      shared_user_id::text as shared_user_id,\n      provider,\n      provider_tenant,\n      provider_subject,\n      email,\n      email_verified,\n      metadata::text as metadata_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.provider_identities"
+
+pub type ProviderIdentitiesRow {
+  ProviderIdentitiesRow(
+    provider_identity_id: String,
+    shared_user_id: String,
+    provider: String,
+    provider_tenant: String,
+    provider_subject: String,
+    email: Option(String),
+    email_verified: Bool,
+    metadata_json: String,
+    created_at: String,
+    updated_at: String,
+    last_seen_at: String,
+  )
+}
+
+pub fn validate_provider_identities_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("provider_identities.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const local_credentials_table = "shared_auth.local_credentials"
+pub const local_credentials_select_sql = "select\n      shared_user_id::text as shared_user_id,\n      password_hash,\n      to_char(password_changed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as password_changed_at,\n      failed_attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from shared_auth.local_credentials"
+
+pub type LocalCredentialsRow {
+  LocalCredentialsRow(
+    shared_user_id: String,
+    password_hash: String,
+    password_changed_at: String,
+    failed_attempts: Int,
+    locked_until: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_local_credentials_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("local_credentials.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const sessions_table = "shared_auth.sessions"
+pub const sessions_select_sql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+
+pub type SessionsRow {
+  SessionsRow(
+    session_id: String,
+    shared_user_id: String,
+    refresh_token_hash: String,
+    provider: String,
+    provider_tenant: String,
+    provider_subject: String,
+    created_at: String,
+    updated_at: String,
+    last_seen_at: String,
+    expires_at: String,
+    revoked_at: Option(String),
+    rotated_from: Option(String),
+  )
+}
+
+pub fn validate_sessions_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("sessions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const roles_table = "shared_auth.roles"
+pub const roles_select_sql = "select\n      role_id::text as role_id,\n      shared_user_id::text as shared_user_id,\n      role_name,\n      to_char(granted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as granted_at,\n      granted_by::text as granted_by\n    from shared_auth.roles"
+
+pub type RolesRow {
+  RolesRow(
+    role_id: String,
+    shared_user_id: String,
+    role_name: String,
+    granted_at: String,
+    granted_by: Option(String),
+  )
+}
+
+pub fn validate_roles_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("roles.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const webhook_events_table = "shared_auth.webhook_events"
+pub const webhook_events_select_sql = "select\n      event_id::text as event_id,\n      provider,\n      event_type,\n      to_char(received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as received_at,\n      payload_sha256\n    from shared_auth.webhook_events"
+
+pub type WebhookEventsRow {
+  WebhookEventsRow(
+    event_id: String,
+    provider: String,
+    event_type: String,
+    received_at: String,
+    payload_sha256: String,
+  )
+}
+
+pub fn validate_webhook_events_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("webhook_events.slug must be a lowercase slug 3-120 characters long")
   }
 }
 

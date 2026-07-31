@@ -466,6 +466,51 @@ update lambda_functions set slug = $2, display_name = $3, description = $4, runt
 -- name: DeleteLambdaFunctions :exec
 delete from lambda_functions where id = $1;
 
+-- name: ListLambdaFunctionRevisions :many
+select id, function_id, revision_number, definition_digest, description, runtime, entry_command, function_body, reuse_key, idle_timeout_seconds, max_run_ms, containerized, container_image, container_build_status, container_build_error, container_built_at, env, labels, meta_data, created_at, created_by from lambda_function_revisions;
+
+-- name: GetLambdaFunctionRevisions :one
+select id, function_id, revision_number, definition_digest, description, runtime, entry_command, function_body, reuse_key, idle_timeout_seconds, max_run_ms, containerized, container_image, container_build_status, container_build_error, container_built_at, env, labels, meta_data, created_at, created_by from lambda_function_revisions where id = $1 limit 1;
+
+-- name: CreateLambdaFunctionRevisions :one
+insert into lambda_function_revisions (id, function_id, revision_number, definition_digest, description, runtime, entry_command, function_body, reuse_key, idle_timeout_seconds, max_run_ms, containerized, container_image, container_build_status, container_build_error, container_built_at, env, labels, meta_data, created_at, created_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) returning id, function_id, revision_number, definition_digest, description, runtime, entry_command, function_body, reuse_key, idle_timeout_seconds, max_run_ms, containerized, container_image, container_build_status, container_build_error, container_built_at, env, labels, meta_data, created_at, created_by;
+
+-- name: UpdateLambdaFunctionRevisions :one
+update lambda_function_revisions set function_id = $2, revision_number = $3, definition_digest = $4, description = $5, runtime = $6, entry_command = $7, function_body = $8, reuse_key = $9, idle_timeout_seconds = $10, max_run_ms = $11, containerized = $12, container_image = $13, container_build_status = $14, container_build_error = $15, container_built_at = $16, env = $17, labels = $18, meta_data = $19, created_by = $20 where id = $1 returning id, function_id, revision_number, definition_digest, description, runtime, entry_command, function_body, reuse_key, idle_timeout_seconds, max_run_ms, containerized, container_image, container_build_status, container_build_error, container_built_at, env, labels, meta_data, created_at, created_by;
+
+-- name: DeleteLambdaFunctionRevisions :exec
+delete from lambda_function_revisions where id = $1;
+
+-- name: ListLambdaFunctionAliases :many
+select id, function_id, name, description, traffic, routing_version, created_at, updated_at, created_by, updated_by from lambda_function_aliases;
+
+-- name: GetLambdaFunctionAliases :one
+select id, function_id, name, description, traffic, routing_version, created_at, updated_at, created_by, updated_by from lambda_function_aliases where id = $1 limit 1;
+
+-- name: CreateLambdaFunctionAliases :one
+insert into lambda_function_aliases (id, function_id, name, description, traffic, routing_version, created_at, updated_at, created_by, updated_by) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id, function_id, name, description, traffic, routing_version, created_at, updated_at, created_by, updated_by;
+
+-- name: UpdateLambdaFunctionAliases :one
+update lambda_function_aliases set function_id = $2, name = $3, description = $4, traffic = $5, routing_version = $6, updated_at = $7, created_by = $8, updated_by = $9 where id = $1 returning id, function_id, name, description, traffic, routing_version, created_at, updated_at, created_by, updated_by;
+
+-- name: DeleteLambdaFunctionAliases :exec
+delete from lambda_function_aliases where id = $1;
+
+-- name: ListLambdaActorInstances :many
+select id, function_id, actor_key, state, state_version, alarm_at, alarm_attempt, lease_owner, lease_until, last_invoked_at, last_error, created_at, updated_at from lambda_actor_instances;
+
+-- name: GetLambdaActorInstances :one
+select id, function_id, actor_key, state, state_version, alarm_at, alarm_attempt, lease_owner, lease_until, last_invoked_at, last_error, created_at, updated_at from lambda_actor_instances where id = $1 limit 1;
+
+-- name: CreateLambdaActorInstances :one
+insert into lambda_actor_instances (id, function_id, actor_key, state, state_version, alarm_at, alarm_attempt, lease_owner, lease_until, last_invoked_at, last_error, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) returning id, function_id, actor_key, state, state_version, alarm_at, alarm_attempt, lease_owner, lease_until, last_invoked_at, last_error, created_at, updated_at;
+
+-- name: UpdateLambdaActorInstances :one
+update lambda_actor_instances set function_id = $2, actor_key = $3, state = $4, state_version = $5, alarm_at = $6, alarm_attempt = $7, lease_owner = $8, lease_until = $9, last_invoked_at = $10, last_error = $11, updated_at = $12 where id = $1 returning id, function_id, actor_key, state, state_version, alarm_at, alarm_attempt, lease_owner, lease_until, last_invoked_at, last_error, created_at, updated_at;
+
+-- name: DeleteLambdaActorInstances :exec
+delete from lambda_actor_instances where id = $1;
+
 -- name: ListWorkflowDefinitions :many
 select id, slug, display_name, description, steps, default_retry, status, labels, meta_data, is_soft_deleted, created_at, updated_at, created_by, updated_by from workflow_definitions;
 
@@ -2325,6 +2370,96 @@ update daedalus.web_sessions set token_hash = $2, user_id = $3, owner_email = $4
 
 -- name: DeleteWebSessions :exec
 delete from daedalus.web_sessions where id = $1;
+
+-- name: ListPrincipals :many
+select shared_user_id, email, email_verified, phone, display_name, status, profile, created_at, updated_at, last_seen_at from shared_auth.principals;
+
+-- name: GetPrincipals :one
+select shared_user_id, email, email_verified, phone, display_name, status, profile, created_at, updated_at, last_seen_at from shared_auth.principals where shared_user_id = $1 limit 1;
+
+-- name: CreatePrincipals :one
+insert into shared_auth.principals (shared_user_id, email, email_verified, phone, display_name, status, profile, created_at, updated_at, last_seen_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning shared_user_id, email, email_verified, phone, display_name, status, profile, created_at, updated_at, last_seen_at;
+
+-- name: UpdatePrincipals :one
+update shared_auth.principals set email = $2, email_verified = $3, phone = $4, display_name = $5, status = $6, profile = $7, updated_at = $8, last_seen_at = $9 where shared_user_id = $1 returning shared_user_id, email, email_verified, phone, display_name, status, profile, created_at, updated_at, last_seen_at;
+
+-- name: DeletePrincipals :exec
+delete from shared_auth.principals where shared_user_id = $1;
+
+-- name: ListProviderIdentities :many
+select provider_identity_id, shared_user_id, provider, provider_tenant, provider_subject, email, email_verified, metadata, created_at, updated_at, last_seen_at from shared_auth.provider_identities;
+
+-- name: GetProviderIdentities :one
+select provider_identity_id, shared_user_id, provider, provider_tenant, provider_subject, email, email_verified, metadata, created_at, updated_at, last_seen_at from shared_auth.provider_identities where provider_identity_id = $1 limit 1;
+
+-- name: CreateProviderIdentities :one
+insert into shared_auth.provider_identities (provider_identity_id, shared_user_id, provider, provider_tenant, provider_subject, email, email_verified, metadata, created_at, updated_at, last_seen_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning provider_identity_id, shared_user_id, provider, provider_tenant, provider_subject, email, email_verified, metadata, created_at, updated_at, last_seen_at;
+
+-- name: UpdateProviderIdentities :one
+update shared_auth.provider_identities set shared_user_id = $2, provider = $3, provider_tenant = $4, provider_subject = $5, email = $6, email_verified = $7, metadata = $8, updated_at = $9, last_seen_at = $10 where provider_identity_id = $1 returning provider_identity_id, shared_user_id, provider, provider_tenant, provider_subject, email, email_verified, metadata, created_at, updated_at, last_seen_at;
+
+-- name: DeleteProviderIdentities :exec
+delete from shared_auth.provider_identities where provider_identity_id = $1;
+
+-- name: ListLocalCredentials :many
+select shared_user_id, password_hash, password_changed_at, failed_attempts, locked_until, created_at, updated_at from shared_auth.local_credentials;
+
+-- name: GetLocalCredentials :one
+select shared_user_id, password_hash, password_changed_at, failed_attempts, locked_until, created_at, updated_at from shared_auth.local_credentials where shared_user_id = $1 limit 1;
+
+-- name: CreateLocalCredentials :one
+insert into shared_auth.local_credentials (shared_user_id, password_hash, password_changed_at, failed_attempts, locked_until, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7) returning shared_user_id, password_hash, password_changed_at, failed_attempts, locked_until, created_at, updated_at;
+
+-- name: UpdateLocalCredentials :one
+update shared_auth.local_credentials set password_hash = $2, password_changed_at = $3, failed_attempts = $4, locked_until = $5, updated_at = $6 where shared_user_id = $1 returning shared_user_id, password_hash, password_changed_at, failed_attempts, locked_until, created_at, updated_at;
+
+-- name: DeleteLocalCredentials :exec
+delete from shared_auth.local_credentials where shared_user_id = $1;
+
+-- name: ListSessions :many
+select session_id, shared_user_id, refresh_token_hash, provider, provider_tenant, provider_subject, created_at, updated_at, last_seen_at, expires_at, revoked_at, rotated_from from shared_auth.sessions;
+
+-- name: GetSessions :one
+select session_id, shared_user_id, refresh_token_hash, provider, provider_tenant, provider_subject, created_at, updated_at, last_seen_at, expires_at, revoked_at, rotated_from from shared_auth.sessions where session_id = $1 limit 1;
+
+-- name: CreateSessions :one
+insert into shared_auth.sessions (session_id, shared_user_id, refresh_token_hash, provider, provider_tenant, provider_subject, created_at, updated_at, last_seen_at, expires_at, revoked_at, rotated_from) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning session_id, shared_user_id, refresh_token_hash, provider, provider_tenant, provider_subject, created_at, updated_at, last_seen_at, expires_at, revoked_at, rotated_from;
+
+-- name: UpdateSessions :one
+update shared_auth.sessions set shared_user_id = $2, refresh_token_hash = $3, provider = $4, provider_tenant = $5, provider_subject = $6, updated_at = $7, last_seen_at = $8, expires_at = $9, revoked_at = $10, rotated_from = $11 where session_id = $1 returning session_id, shared_user_id, refresh_token_hash, provider, provider_tenant, provider_subject, created_at, updated_at, last_seen_at, expires_at, revoked_at, rotated_from;
+
+-- name: DeleteSessions :exec
+delete from shared_auth.sessions where session_id = $1;
+
+-- name: ListRoles :many
+select role_id, shared_user_id, role_name, granted_at, granted_by from shared_auth.roles;
+
+-- name: GetRoles :one
+select role_id, shared_user_id, role_name, granted_at, granted_by from shared_auth.roles where role_id = $1 limit 1;
+
+-- name: CreateRoles :one
+insert into shared_auth.roles (role_id, shared_user_id, role_name, granted_at, granted_by) values ($1, $2, $3, $4, $5) returning role_id, shared_user_id, role_name, granted_at, granted_by;
+
+-- name: UpdateRoles :one
+update shared_auth.roles set shared_user_id = $2, role_name = $3, granted_at = $4, granted_by = $5 where role_id = $1 returning role_id, shared_user_id, role_name, granted_at, granted_by;
+
+-- name: DeleteRoles :exec
+delete from shared_auth.roles where role_id = $1;
+
+-- name: ListWebhookEvents :many
+select event_id, provider, event_type, received_at, payload_sha256 from shared_auth.webhook_events;
+
+-- name: GetWebhookEvents :one
+select event_id, provider, event_type, received_at, payload_sha256 from shared_auth.webhook_events where event_id = $1 limit 1;
+
+-- name: CreateWebhookEvents :one
+insert into shared_auth.webhook_events (event_id, provider, event_type, received_at, payload_sha256) values ($1, $2, $3, $4, $5) returning event_id, provider, event_type, received_at, payload_sha256;
+
+-- name: UpdateWebhookEvents :one
+update shared_auth.webhook_events set provider = $2, event_type = $3, received_at = $4, payload_sha256 = $5 where event_id = $1 returning event_id, provider, event_type, received_at, payload_sha256;
+
+-- name: DeleteWebhookEvents :exec
+delete from shared_auth.webhook_events where event_id = $1;
 
 -- name: ListFabJobs :many
 select job_id, request_id, kind, status, ok, severity, summary, artifact_count, payload, created_at, updated_at from daedalus.fab_jobs;

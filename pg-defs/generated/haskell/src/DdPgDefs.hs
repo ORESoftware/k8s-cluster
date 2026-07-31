@@ -2116,7 +2116,7 @@ lambdaFunctionsColumns = ["id", "slug", "display_name", "description", "runtime"
 lambdaFunctionsSelectSql :: Text
 lambdaFunctionsSelectSql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      status,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_functions"
 
-data LambdaFunctionRuntime = LambdaFunctionRuntimeNodejs | LambdaFunctionRuntimeJavascript | LambdaFunctionRuntimeTypescript | LambdaFunctionRuntimePython3 | LambdaFunctionRuntimePython | LambdaFunctionRuntimeRuby | LambdaFunctionRuntimeBash | LambdaFunctionRuntimeShell | LambdaFunctionRuntimeGolang | LambdaFunctionRuntimeGo | LambdaFunctionRuntimeDart | LambdaFunctionRuntimeErlang | LambdaFunctionRuntimeErl | LambdaFunctionRuntimeElixir | LambdaFunctionRuntimeEx | LambdaFunctionRuntimeJava | LambdaFunctionRuntimeJvm
+data LambdaFunctionRuntime = LambdaFunctionRuntimeNodejs | LambdaFunctionRuntimeJavascript | LambdaFunctionRuntimeTypescript | LambdaFunctionRuntimePython3 | LambdaFunctionRuntimePython | LambdaFunctionRuntimeRuby | LambdaFunctionRuntimeBash | LambdaFunctionRuntimeShell | LambdaFunctionRuntimeGolang | LambdaFunctionRuntimeGo | LambdaFunctionRuntimeDart | LambdaFunctionRuntimeErlang | LambdaFunctionRuntimeErl | LambdaFunctionRuntimeElixir | LambdaFunctionRuntimeEx | LambdaFunctionRuntimeJava | LambdaFunctionRuntimeJvm | LambdaFunctionRuntimeGleam | LambdaFunctionRuntimeGleamlang | LambdaFunctionRuntimeRust | LambdaFunctionRuntimeRs | LambdaFunctionRuntimeBrowser
   deriving (Eq, Show)
 
 lambdaFunctionRuntimeToText :: LambdaFunctionRuntime -> Text
@@ -2138,6 +2138,11 @@ lambdaFunctionRuntimeToText value = case value of
   LambdaFunctionRuntimeEx -> "ex"
   LambdaFunctionRuntimeJava -> "java"
   LambdaFunctionRuntimeJvm -> "jvm"
+  LambdaFunctionRuntimeGleam -> "gleam"
+  LambdaFunctionRuntimeGleamlang -> "gleamlang"
+  LambdaFunctionRuntimeRust -> "rust"
+  LambdaFunctionRuntimeRs -> "rs"
+  LambdaFunctionRuntimeBrowser -> "browser"
 
 parseLambdaFunctionRuntime :: Text -> Either Text LambdaFunctionRuntime
 parseLambdaFunctionRuntime value = case value of
@@ -2158,6 +2163,11 @@ parseLambdaFunctionRuntime value = case value of
   "ex" -> Right LambdaFunctionRuntimeEx
   "java" -> Right LambdaFunctionRuntimeJava
   "jvm" -> Right LambdaFunctionRuntimeJvm
+  "gleam" -> Right LambdaFunctionRuntimeGleam
+  "gleamlang" -> Right LambdaFunctionRuntimeGleamlang
+  "rust" -> Right LambdaFunctionRuntimeRust
+  "rs" -> Right LambdaFunctionRuntimeRs
+  "browser" -> Right LambdaFunctionRuntimeBrowser
   _ -> Left (T.append "unsupported lambda_functions.runtime: " value)
 
 data LambdaFunctionContainerBuildStatus = LambdaFunctionContainerBuildStatusNotRequested | LambdaFunctionContainerBuildStatusPending | LambdaFunctionContainerBuildStatusBuilding | LambdaFunctionContainerBuildStatusBuilt | LambdaFunctionContainerBuildStatusFailed | LambdaFunctionContainerBuildStatusSkipped
@@ -2262,6 +2272,247 @@ validateLambdaFunctionMaxRunMs :: Int -> Either Text Int
 validateLambdaFunctionMaxRunMs value
   | value < 1000 = Left "lambda_functions.max_run_ms is below the minimum"
   | value > 300000 = Left "lambda_functions.max_run_ms is above the maximum"
+  | otherwise = Right value
+
+lambdaFunctionRevisionsTable :: Text
+lambdaFunctionRevisionsTable = "lambda_function_revisions"
+
+lambdaFunctionRevisionsColumns :: [Text]
+lambdaFunctionRevisionsColumns = ["id", "function_id", "revision_number", "definition_digest", "description", "runtime", "entry_command", "function_body", "reuse_key", "idle_timeout_seconds", "max_run_ms", "containerized", "container_image", "container_build_status", "container_build_error", "container_built_at", "env", "labels", "meta_data", "created_at", "created_by"]
+
+lambdaFunctionRevisionsSelectSql :: Text
+lambdaFunctionRevisionsSelectSql = "select\n      id::text as id,\n      function_id::text as function_id,\n      revision_number,\n      definition_digest,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      created_by::text as created_by\n    from lambda_function_revisions"
+
+data LambdaFunctionRevisionRuntime = LambdaFunctionRevisionRuntimeNodejs | LambdaFunctionRevisionRuntimeJavascript | LambdaFunctionRevisionRuntimeTypescript | LambdaFunctionRevisionRuntimePython3 | LambdaFunctionRevisionRuntimePython | LambdaFunctionRevisionRuntimeRuby | LambdaFunctionRevisionRuntimeBash | LambdaFunctionRevisionRuntimeShell | LambdaFunctionRevisionRuntimeGolang | LambdaFunctionRevisionRuntimeGo | LambdaFunctionRevisionRuntimeDart | LambdaFunctionRevisionRuntimeErlang | LambdaFunctionRevisionRuntimeErl | LambdaFunctionRevisionRuntimeElixir | LambdaFunctionRevisionRuntimeEx | LambdaFunctionRevisionRuntimeJava | LambdaFunctionRevisionRuntimeJvm | LambdaFunctionRevisionRuntimeGleam | LambdaFunctionRevisionRuntimeGleamlang | LambdaFunctionRevisionRuntimeRust | LambdaFunctionRevisionRuntimeRs | LambdaFunctionRevisionRuntimeBrowser
+  deriving (Eq, Show)
+
+lambdaFunctionRevisionRuntimeToText :: LambdaFunctionRevisionRuntime -> Text
+lambdaFunctionRevisionRuntimeToText value = case value of
+  LambdaFunctionRevisionRuntimeNodejs -> "nodejs"
+  LambdaFunctionRevisionRuntimeJavascript -> "javascript"
+  LambdaFunctionRevisionRuntimeTypescript -> "typescript"
+  LambdaFunctionRevisionRuntimePython3 -> "python3"
+  LambdaFunctionRevisionRuntimePython -> "python"
+  LambdaFunctionRevisionRuntimeRuby -> "ruby"
+  LambdaFunctionRevisionRuntimeBash -> "bash"
+  LambdaFunctionRevisionRuntimeShell -> "shell"
+  LambdaFunctionRevisionRuntimeGolang -> "golang"
+  LambdaFunctionRevisionRuntimeGo -> "go"
+  LambdaFunctionRevisionRuntimeDart -> "dart"
+  LambdaFunctionRevisionRuntimeErlang -> "erlang"
+  LambdaFunctionRevisionRuntimeErl -> "erl"
+  LambdaFunctionRevisionRuntimeElixir -> "elixir"
+  LambdaFunctionRevisionRuntimeEx -> "ex"
+  LambdaFunctionRevisionRuntimeJava -> "java"
+  LambdaFunctionRevisionRuntimeJvm -> "jvm"
+  LambdaFunctionRevisionRuntimeGleam -> "gleam"
+  LambdaFunctionRevisionRuntimeGleamlang -> "gleamlang"
+  LambdaFunctionRevisionRuntimeRust -> "rust"
+  LambdaFunctionRevisionRuntimeRs -> "rs"
+  LambdaFunctionRevisionRuntimeBrowser -> "browser"
+
+parseLambdaFunctionRevisionRuntime :: Text -> Either Text LambdaFunctionRevisionRuntime
+parseLambdaFunctionRevisionRuntime value = case value of
+  "nodejs" -> Right LambdaFunctionRevisionRuntimeNodejs
+  "javascript" -> Right LambdaFunctionRevisionRuntimeJavascript
+  "typescript" -> Right LambdaFunctionRevisionRuntimeTypescript
+  "python3" -> Right LambdaFunctionRevisionRuntimePython3
+  "python" -> Right LambdaFunctionRevisionRuntimePython
+  "ruby" -> Right LambdaFunctionRevisionRuntimeRuby
+  "bash" -> Right LambdaFunctionRevisionRuntimeBash
+  "shell" -> Right LambdaFunctionRevisionRuntimeShell
+  "golang" -> Right LambdaFunctionRevisionRuntimeGolang
+  "go" -> Right LambdaFunctionRevisionRuntimeGo
+  "dart" -> Right LambdaFunctionRevisionRuntimeDart
+  "erlang" -> Right LambdaFunctionRevisionRuntimeErlang
+  "erl" -> Right LambdaFunctionRevisionRuntimeErl
+  "elixir" -> Right LambdaFunctionRevisionRuntimeElixir
+  "ex" -> Right LambdaFunctionRevisionRuntimeEx
+  "java" -> Right LambdaFunctionRevisionRuntimeJava
+  "jvm" -> Right LambdaFunctionRevisionRuntimeJvm
+  "gleam" -> Right LambdaFunctionRevisionRuntimeGleam
+  "gleamlang" -> Right LambdaFunctionRevisionRuntimeGleamlang
+  "rust" -> Right LambdaFunctionRevisionRuntimeRust
+  "rs" -> Right LambdaFunctionRevisionRuntimeRs
+  "browser" -> Right LambdaFunctionRevisionRuntimeBrowser
+  _ -> Left (T.append "unsupported lambda_function_revisions.runtime: " value)
+
+data LambdaFunctionRevisionContainerBuildStatus = LambdaFunctionRevisionContainerBuildStatusNotRequested | LambdaFunctionRevisionContainerBuildStatusPending | LambdaFunctionRevisionContainerBuildStatusBuilding | LambdaFunctionRevisionContainerBuildStatusBuilt | LambdaFunctionRevisionContainerBuildStatusFailed | LambdaFunctionRevisionContainerBuildStatusSkipped
+  deriving (Eq, Show)
+
+lambdaFunctionRevisionContainerBuildStatusToText :: LambdaFunctionRevisionContainerBuildStatus -> Text
+lambdaFunctionRevisionContainerBuildStatusToText value = case value of
+  LambdaFunctionRevisionContainerBuildStatusNotRequested -> "not_requested"
+  LambdaFunctionRevisionContainerBuildStatusPending -> "pending"
+  LambdaFunctionRevisionContainerBuildStatusBuilding -> "building"
+  LambdaFunctionRevisionContainerBuildStatusBuilt -> "built"
+  LambdaFunctionRevisionContainerBuildStatusFailed -> "failed"
+  LambdaFunctionRevisionContainerBuildStatusSkipped -> "skipped"
+
+parseLambdaFunctionRevisionContainerBuildStatus :: Text -> Either Text LambdaFunctionRevisionContainerBuildStatus
+parseLambdaFunctionRevisionContainerBuildStatus value = case value of
+  "not_requested" -> Right LambdaFunctionRevisionContainerBuildStatusNotRequested
+  "pending" -> Right LambdaFunctionRevisionContainerBuildStatusPending
+  "building" -> Right LambdaFunctionRevisionContainerBuildStatusBuilding
+  "built" -> Right LambdaFunctionRevisionContainerBuildStatusBuilt
+  "failed" -> Right LambdaFunctionRevisionContainerBuildStatusFailed
+  "skipped" -> Right LambdaFunctionRevisionContainerBuildStatusSkipped
+  _ -> Left (T.append "unsupported lambda_function_revisions.container_build_status: " value)
+
+data LambdaFunctionRevisionRow = LambdaFunctionRevisionRow
+  { lambdaFunctionRevisionId :: Text
+  , lambdaFunctionRevisionFunctionId :: Text
+  , lambdaFunctionRevisionRevisionNumber :: Int
+  , lambdaFunctionRevisionDefinitionDigest :: Text
+  , lambdaFunctionRevisionDescription :: Text
+  , lambdaFunctionRevisionRuntime :: Text
+  , lambdaFunctionRevisionEntryCommand :: Text
+  , lambdaFunctionRevisionFunctionBody :: Text
+  , lambdaFunctionRevisionReuseKey :: (Maybe Text)
+  , lambdaFunctionRevisionIdleTimeoutSeconds :: Int
+  , lambdaFunctionRevisionMaxRunMs :: Int
+  , lambdaFunctionRevisionContainerized :: Bool
+  , lambdaFunctionRevisionContainerImage :: (Maybe Text)
+  , lambdaFunctionRevisionContainerBuildStatus :: Text
+  , lambdaFunctionRevisionContainerBuildError :: (Maybe Text)
+  , lambdaFunctionRevisionContainerBuiltAt :: (Maybe Text)
+  , lambdaFunctionRevisionEnv :: Text
+  , lambdaFunctionRevisionLabels :: Text
+  , lambdaFunctionRevisionMetaData :: Text
+  , lambdaFunctionRevisionCreatedAt :: Text
+  , lambdaFunctionRevisionCreatedBy :: (Maybe Text)
+  } deriving (Eq, Show)
+
+instance FromRow LambdaFunctionRevisionRow where
+  fromRow = LambdaFunctionRevisionRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateLambdaFunctionRevisionRevisionNumber :: Int -> Either Text Int
+validateLambdaFunctionRevisionRevisionNumber value
+  | value < 1 = Left "lambda_function_revisions.revision_number is below the minimum"
+  | otherwise = Right value
+
+validateLambdaFunctionRevisionDefinitionDigest :: Text -> Either Text Text
+validateLambdaFunctionRevisionDefinitionDigest value
+  | T.length value < 64 = Left "lambda_function_revisions.definition_digest must be at least 64 characters"
+  | T.length value > 64 = Left "lambda_function_revisions.definition_digest must be at most 64 characters"
+  | otherwise = Right value
+
+validateLambdaFunctionRevisionDescription :: Text -> Either Text Text
+validateLambdaFunctionRevisionDescription value
+  | T.length value > 4096 = Left "lambda_function_revisions.description must be at most 4096 characters"
+  | otherwise = Right value
+
+validateLambdaFunctionRevisionFunctionBody :: Text -> Either Text Text
+validateLambdaFunctionRevisionFunctionBody value
+  | T.length value < 1 = Left "lambda_function_revisions.function_body must be at least 1 characters"
+  | otherwise = Right value
+
+validateLambdaFunctionRevisionReuseKey :: Text -> Either Text Text
+validateLambdaFunctionRevisionReuseKey value
+  | T.length value > 200 = Left "lambda_function_revisions.reuse_key must be at most 200 characters"
+  | otherwise = Right value
+
+validateLambdaFunctionRevisionIdleTimeoutSeconds :: Int -> Either Text Int
+validateLambdaFunctionRevisionIdleTimeoutSeconds value
+  | value < 1 = Left "lambda_function_revisions.idle_timeout_seconds is below the minimum"
+  | value > 3600 = Left "lambda_function_revisions.idle_timeout_seconds is above the maximum"
+  | otherwise = Right value
+
+validateLambdaFunctionRevisionMaxRunMs :: Int -> Either Text Int
+validateLambdaFunctionRevisionMaxRunMs value
+  | value < 1000 = Left "lambda_function_revisions.max_run_ms is below the minimum"
+  | value > 300000 = Left "lambda_function_revisions.max_run_ms is above the maximum"
+  | otherwise = Right value
+
+lambdaFunctionAliasesTable :: Text
+lambdaFunctionAliasesTable = "lambda_function_aliases"
+
+lambdaFunctionAliasesColumns :: [Text]
+lambdaFunctionAliasesColumns = ["id", "function_id", "name", "description", "traffic", "routing_version", "created_at", "updated_at", "created_by", "updated_by"]
+
+lambdaFunctionAliasesSelectSql :: Text
+lambdaFunctionAliasesSelectSql = "select\n      id::text as id,\n      function_id::text as function_id,\n      name,\n      description,\n      traffic::text as traffic_json,\n      routing_version,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_function_aliases"
+
+data LambdaFunctionAliasRow = LambdaFunctionAliasRow
+  { lambdaFunctionAliasId :: Text
+  , lambdaFunctionAliasFunctionId :: Text
+  , lambdaFunctionAliasName :: Text
+  , lambdaFunctionAliasDescription :: Text
+  , lambdaFunctionAliasTraffic :: Text
+  , lambdaFunctionAliasRoutingVersion :: Int
+  , lambdaFunctionAliasCreatedAt :: Text
+  , lambdaFunctionAliasUpdatedAt :: Text
+  , lambdaFunctionAliasCreatedBy :: (Maybe Text)
+  , lambdaFunctionAliasUpdatedBy :: (Maybe Text)
+  } deriving (Eq, Show)
+
+instance FromRow LambdaFunctionAliasRow where
+  fromRow = LambdaFunctionAliasRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateLambdaFunctionAliasName :: Text -> Either Text Text
+validateLambdaFunctionAliasName value
+  | T.length value < 1 = Left "lambda_function_aliases.name must be at least 1 characters"
+  | T.length value > 64 = Left "lambda_function_aliases.name must be at most 64 characters"
+  | otherwise = Right value
+
+validateLambdaFunctionAliasDescription :: Text -> Either Text Text
+validateLambdaFunctionAliasDescription value
+  | T.length value > 4096 = Left "lambda_function_aliases.description must be at most 4096 characters"
+  | otherwise = Right value
+
+validateLambdaFunctionAliasRoutingVersion :: Int -> Either Text Int
+validateLambdaFunctionAliasRoutingVersion value
+  | value < 1 = Left "lambda_function_aliases.routing_version is below the minimum"
+  | otherwise = Right value
+
+lambdaActorInstancesTable :: Text
+lambdaActorInstancesTable = "lambda_actor_instances"
+
+lambdaActorInstancesColumns :: [Text]
+lambdaActorInstancesColumns = ["id", "function_id", "actor_key", "state", "state_version", "alarm_at", "alarm_attempt", "lease_owner", "lease_until", "last_invoked_at", "last_error", "created_at", "updated_at"]
+
+lambdaActorInstancesSelectSql :: Text
+lambdaActorInstancesSelectSql = "select\n      id::text as id,\n      function_id::text as function_id,\n      actor_key,\n      state::text as state_json,\n      state_version,\n      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as alarm_at,\n      alarm_attempt,\n      lease_owner,\n      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_until,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from lambda_actor_instances"
+
+data LambdaActorInstanceRow = LambdaActorInstanceRow
+  { lambdaActorInstanceId :: Text
+  , lambdaActorInstanceFunctionId :: Text
+  , lambdaActorInstanceActorKey :: Text
+  , lambdaActorInstanceState :: Text
+  , lambdaActorInstanceStateVersion :: Int
+  , lambdaActorInstanceAlarmAt :: (Maybe Text)
+  , lambdaActorInstanceAlarmAttempt :: Int
+  , lambdaActorInstanceLeaseOwner :: (Maybe Text)
+  , lambdaActorInstanceLeaseUntil :: (Maybe Text)
+  , lambdaActorInstanceLastInvokedAt :: (Maybe Text)
+  , lambdaActorInstanceLastError :: (Maybe Text)
+  , lambdaActorInstanceCreatedAt :: Text
+  , lambdaActorInstanceUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow LambdaActorInstanceRow where
+  fromRow = LambdaActorInstanceRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateLambdaActorInstanceActorKey :: Text -> Either Text Text
+validateLambdaActorInstanceActorKey value
+  | T.length value < 1 = Left "lambda_actor_instances.actor_key must be at least 1 characters"
+  | T.length value > 200 = Left "lambda_actor_instances.actor_key must be at most 200 characters"
+  | otherwise = Right value
+
+validateLambdaActorInstanceStateVersion :: Int -> Either Text Int
+validateLambdaActorInstanceStateVersion value
+  | value < 0 = Left "lambda_actor_instances.state_version is below the minimum"
+  | otherwise = Right value
+
+validateLambdaActorInstanceAlarmAttempt :: Int -> Either Text Int
+validateLambdaActorInstanceAlarmAttempt value
+  | value < 0 = Left "lambda_actor_instances.alarm_attempt is below the minimum"
+  | value > 6 = Left "lambda_actor_instances.alarm_attempt is above the maximum"
+  | otherwise = Right value
+
+validateLambdaActorInstanceLeaseOwner :: Text -> Either Text Text
+validateLambdaActorInstanceLeaseOwner value
+  | T.length value > 200 = Left "lambda_actor_instances.lease_owner must be at most 200 characters"
   | otherwise = Right value
 
 workflowDefinitionsTable :: Text
@@ -11107,6 +11358,167 @@ data WebSessionsRow = WebSessionsRow
 
 instance FromRow WebSessionsRow where
   fromRow = WebSessionsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+principalsTable :: Text
+principalsTable = "shared_auth.principals"
+
+principalsColumns :: [Text]
+principalsColumns = ["shared_user_id", "email", "email_verified", "phone", "display_name", "status", "profile", "created_at", "updated_at", "last_seen_at"]
+
+principalsSelectSql :: Text
+principalsSelectSql = "select\n      shared_user_id::text as shared_user_id,\n      email,\n      email_verified,\n      phone,\n      display_name,\n      status,\n      profile::text as profile_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.principals"
+
+data PrincipalsStatus = PrincipalsStatusActive | PrincipalsStatusDisabled | PrincipalsStatusDeleted
+  deriving (Eq, Show)
+
+principalsStatusToText :: PrincipalsStatus -> Text
+principalsStatusToText value = case value of
+  PrincipalsStatusActive -> "active"
+  PrincipalsStatusDisabled -> "disabled"
+  PrincipalsStatusDeleted -> "deleted"
+
+parsePrincipalsStatus :: Text -> Either Text PrincipalsStatus
+parsePrincipalsStatus value = case value of
+  "active" -> Right PrincipalsStatusActive
+  "disabled" -> Right PrincipalsStatusDisabled
+  "deleted" -> Right PrincipalsStatusDeleted
+  _ -> Left (T.append "unsupported principals.status: " value)
+
+data PrincipalsRow = PrincipalsRow
+  { principalsSharedUserId :: Text
+  , principalsEmail :: (Maybe Text)
+  , principalsEmailVerified :: Bool
+  , principalsPhone :: (Maybe Text)
+  , principalsDisplayName :: (Maybe Text)
+  , principalsStatus :: Text
+  , principalsProfile :: Text
+  , principalsCreatedAt :: Text
+  , principalsUpdatedAt :: Text
+  , principalsLastSeenAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow PrincipalsRow where
+  fromRow = PrincipalsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+providerIdentitiesTable :: Text
+providerIdentitiesTable = "shared_auth.provider_identities"
+
+providerIdentitiesColumns :: [Text]
+providerIdentitiesColumns = ["provider_identity_id", "shared_user_id", "provider", "provider_tenant", "provider_subject", "email", "email_verified", "metadata", "created_at", "updated_at", "last_seen_at"]
+
+providerIdentitiesSelectSql :: Text
+providerIdentitiesSelectSql = "select\n      provider_identity_id::text as provider_identity_id,\n      shared_user_id::text as shared_user_id,\n      provider,\n      provider_tenant,\n      provider_subject,\n      email,\n      email_verified,\n      metadata::text as metadata_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.provider_identities"
+
+data ProviderIdentitiesRow = ProviderIdentitiesRow
+  { providerIdentitiesProviderIdentityId :: Text
+  , providerIdentitiesSharedUserId :: Text
+  , providerIdentitiesProvider :: Text
+  , providerIdentitiesProviderTenant :: Text
+  , providerIdentitiesProviderSubject :: Text
+  , providerIdentitiesEmail :: (Maybe Text)
+  , providerIdentitiesEmailVerified :: Bool
+  , providerIdentitiesMetadata :: Text
+  , providerIdentitiesCreatedAt :: Text
+  , providerIdentitiesUpdatedAt :: Text
+  , providerIdentitiesLastSeenAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow ProviderIdentitiesRow where
+  fromRow = ProviderIdentitiesRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+localCredentialsTable :: Text
+localCredentialsTable = "shared_auth.local_credentials"
+
+localCredentialsColumns :: [Text]
+localCredentialsColumns = ["shared_user_id", "password_hash", "password_changed_at", "failed_attempts", "locked_until", "created_at", "updated_at"]
+
+localCredentialsSelectSql :: Text
+localCredentialsSelectSql = "select\n      shared_user_id::text as shared_user_id,\n      password_hash,\n      to_char(password_changed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as password_changed_at,\n      failed_attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from shared_auth.local_credentials"
+
+data LocalCredentialsRow = LocalCredentialsRow
+  { localCredentialsSharedUserId :: Text
+  , localCredentialsPasswordHash :: Text
+  , localCredentialsPasswordChangedAt :: Text
+  , localCredentialsFailedAttempts :: Int
+  , localCredentialsLockedUntil :: (Maybe Text)
+  , localCredentialsCreatedAt :: Text
+  , localCredentialsUpdatedAt :: Text
+  } deriving (Eq, Show)
+
+instance FromRow LocalCredentialsRow where
+  fromRow = LocalCredentialsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+validateLocalCredentialsFailedAttempts :: Int -> Either Text Int
+validateLocalCredentialsFailedAttempts value
+  | value < 0 = Left "local_credentials.failed_attempts is below the minimum"
+  | otherwise = Right value
+
+sessionsTable :: Text
+sessionsTable = "shared_auth.sessions"
+
+sessionsColumns :: [Text]
+sessionsColumns = ["session_id", "shared_user_id", "refresh_token_hash", "provider", "provider_tenant", "provider_subject", "created_at", "updated_at", "last_seen_at", "expires_at", "revoked_at", "rotated_from"]
+
+sessionsSelectSql :: Text
+sessionsSelectSql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+
+data SessionsRow = SessionsRow
+  { sessionsSessionId :: Text
+  , sessionsSharedUserId :: Text
+  , sessionsRefreshTokenHash :: Text
+  , sessionsProvider :: Text
+  , sessionsProviderTenant :: Text
+  , sessionsProviderSubject :: Text
+  , sessionsCreatedAt :: Text
+  , sessionsUpdatedAt :: Text
+  , sessionsLastSeenAt :: Text
+  , sessionsExpiresAt :: Text
+  , sessionsRevokedAt :: (Maybe Text)
+  , sessionsRotatedFrom :: (Maybe Text)
+  } deriving (Eq, Show)
+
+instance FromRow SessionsRow where
+  fromRow = SessionsRow <$> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field <*> field
+
+rolesTable :: Text
+rolesTable = "shared_auth.roles"
+
+rolesColumns :: [Text]
+rolesColumns = ["role_id", "shared_user_id", "role_name", "granted_at", "granted_by"]
+
+rolesSelectSql :: Text
+rolesSelectSql = "select\n      role_id::text as role_id,\n      shared_user_id::text as shared_user_id,\n      role_name,\n      to_char(granted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as granted_at,\n      granted_by::text as granted_by\n    from shared_auth.roles"
+
+data RolesRow = RolesRow
+  { rolesRoleId :: Text
+  , rolesSharedUserId :: Text
+  , rolesRoleName :: Text
+  , rolesGrantedAt :: Text
+  , rolesGrantedBy :: (Maybe Text)
+  } deriving (Eq, Show)
+
+instance FromRow RolesRow where
+  fromRow = RolesRow <$> field <*> field <*> field <*> field <*> field
+
+webhookEventsTable :: Text
+webhookEventsTable = "shared_auth.webhook_events"
+
+webhookEventsColumns :: [Text]
+webhookEventsColumns = ["event_id", "provider", "event_type", "received_at", "payload_sha256"]
+
+webhookEventsSelectSql :: Text
+webhookEventsSelectSql = "select\n      event_id::text as event_id,\n      provider,\n      event_type,\n      to_char(received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as received_at,\n      payload_sha256\n    from shared_auth.webhook_events"
+
+data WebhookEventsRow = WebhookEventsRow
+  { webhookEventsEventId :: Text
+  , webhookEventsProvider :: Text
+  , webhookEventsEventType :: Text
+  , webhookEventsReceivedAt :: Text
+  , webhookEventsPayloadSha256 :: Text
+  } deriving (Eq, Show)
+
+instance FromRow WebhookEventsRow where
+  fromRow = WebhookEventsRow <$> field <*> field <*> field <*> field <*> field
 
 fabJobsTable :: Text
 fabJobsTable = "daedalus.fab_jobs"

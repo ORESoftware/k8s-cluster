@@ -1423,7 +1423,7 @@ export class LambdaFunctionEntity {
   @Column({ name: "runtime", type: "varchar", length: 40, default: () => "'nodejs'" })
   runtime!: string;
 
-  @Column({ name: "entry_command", type: "text", default: () => "'env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs'" })
+  @Column({ name: "entry_command", type: "text", default: () => "''" })
   entryCommand!: string;
 
   @Column({ name: "function_body", type: "text" })
@@ -1482,6 +1482,158 @@ export class LambdaFunctionEntity {
 
   @Column({ name: "updated_by", type: "uuid", nullable: true })
   updatedBy!: string | null;
+
+}
+
+@Index("lambda_function_revisions_function_number_uq", ["functionId", "revisionNumber"], { unique: true })
+@Index("lambda_function_revisions_function_id_uq", ["functionId", "id"], { unique: true })
+// lambda_function_revisions_created_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "lambda_function_revisions" })
+export class LambdaFunctionRevisionEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "function_id", type: "uuid" })
+  functionId!: string;
+
+  @Column({ name: "revision_number", type: "bigint" })
+  revisionNumber!: number;
+
+  @Column({ name: "definition_digest", type: "varchar", length: 64 })
+  definitionDigest!: string;
+
+  @Column({ name: "description", type: "text", default: () => "''" })
+  description!: string;
+
+  @Column({ name: "runtime", type: "varchar", length: 40 })
+  runtime!: string;
+
+  @Column({ name: "entry_command", type: "text", default: () => "''" })
+  entryCommand!: string;
+
+  @Column({ name: "function_body", type: "text" })
+  functionBody!: string;
+
+  @Column({ name: "reuse_key", type: "varchar", length: 200, nullable: true })
+  reuseKey!: string | null;
+
+  @Column({ name: "idle_timeout_seconds", type: "integer" })
+  idleTimeoutSeconds!: number;
+
+  @Column({ name: "max_run_ms", type: "integer" })
+  maxRunMs!: number;
+
+  @Column({ name: "containerized", type: "boolean" })
+  containerized!: boolean;
+
+  @Column({ name: "container_image", type: "text", nullable: true })
+  containerImage!: string | null;
+
+  @Column({ name: "container_build_status", type: "varchar", length: 32 })
+  containerBuildStatus!: string;
+
+  @Column({ name: "container_build_error", type: "text", nullable: true })
+  containerBuildError!: string | null;
+
+  @Column({ name: "container_built_at", type: "timestamptz", nullable: true })
+  containerBuiltAt!: Date | null;
+
+  @Column({ name: "env", type: "jsonb" })
+  env!: Record<string, unknown>;
+
+  @Column({ name: "labels", type: "jsonb" })
+  labels!: unknown[];
+
+  @Column({ name: "meta_data", type: "jsonb" })
+  metaData!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+}
+
+@Index("lambda_function_aliases_function_name_uq", ["functionId", "name"], { unique: true })
+// lambda_function_aliases_updated_at_idx lives in schema.sql because TypeORM decorators cannot fully model its method/order.
+@Entity({ name: "lambda_function_aliases" })
+export class LambdaFunctionAliasEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "function_id", type: "uuid" })
+  functionId!: string;
+
+  @Column({ name: "name", type: "varchar", length: 64 })
+  name!: string;
+
+  @Column({ name: "description", type: "text", default: () => "''" })
+  description!: string;
+
+  @Column({ name: "traffic", type: "jsonb" })
+  traffic!: Record<string, unknown>;
+
+  @Column({ name: "routing_version", type: "bigint", default: () => "1" })
+  routingVersion!: number;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true })
+  createdBy!: string | null;
+
+  @Column({ name: "updated_by", type: "uuid", nullable: true })
+  updatedBy!: string | null;
+
+}
+
+@Index("lambda_actor_instances_function_key_uq", ["functionId", "actorKey"], { unique: true })
+@Index("lambda_actor_instances_alarm_due_idx", ["alarmAt"], { where: "alarm_at is not null" })
+@Index("lambda_actor_instances_lease_expiry_idx", ["leaseUntil"], { where: "lease_until is not null" })
+@Entity({ name: "lambda_actor_instances" })
+export class LambdaActorInstanceEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "id" })
+  id!: string;
+
+  @Column({ name: "function_id", type: "uuid" })
+  functionId!: string;
+
+  @Column({ name: "actor_key", type: "varchar", length: 200 })
+  actorKey!: string;
+
+  @Column({ name: "state", type: "jsonb", default: () => "'{}'::jsonb" })
+  state!: Record<string, unknown>;
+
+  @Column({ name: "state_version", type: "bigint", default: () => "0" })
+  stateVersion!: number;
+
+  @Column({ name: "alarm_at", type: "timestamptz", nullable: true })
+  alarmAt!: Date | null;
+
+  @Column({ name: "alarm_attempt", type: "integer", default: () => "0" })
+  alarmAttempt!: number;
+
+  @Column({ name: "lease_owner", type: "varchar", length: 200, nullable: true })
+  leaseOwner!: string | null;
+
+  @Column({ name: "lease_until", type: "timestamptz", nullable: true })
+  leaseUntil!: Date | null;
+
+  @Column({ name: "last_invoked_at", type: "timestamptz", nullable: true })
+  lastInvokedAt!: Date | null;
+
+  @Column({ name: "last_error", type: "text", nullable: true })
+  lastError!: string | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
 
 }
 
@@ -7233,6 +7385,187 @@ export class WebSessionsEntity {
 
   @Column({ name: "revoked_at", type: "timestamptz", nullable: true })
   revokedAt!: Date | null;
+
+}
+
+@Index("shared_auth_users_email_uq", ["lower(email)"], { unique: true, where: "email is not null and status <> 'deleted'" })
+@Index("shared_auth_users_status_idx", ["status"])
+@Entity({ schema: "shared_auth", name: "principals" })
+export class PrincipalsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "shared_user_id" })
+  sharedUserId!: string;
+
+  @Column({ name: "email", type: "text", nullable: true })
+  email!: string | null;
+
+  @Column({ name: "email_verified", type: "boolean", default: () => "false" })
+  emailVerified!: boolean;
+
+  @Column({ name: "phone", type: "text", nullable: true })
+  phone!: string | null;
+
+  @Column({ name: "display_name", type: "text", nullable: true })
+  displayName!: string | null;
+
+  @Column({ name: "status", type: "text", default: () => "'active'" })
+  status!: string;
+
+  @Column({ name: "profile", type: "jsonb", default: () => "'{}'::jsonb" })
+  profile!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "last_seen_at", type: "timestamptz", default: () => "now()" })
+  lastSeenAt!: Date;
+
+}
+
+@Index("shared_auth_provider_identities_user_idx", ["sharedUserId"])
+@Entity({ schema: "shared_auth", name: "provider_identities" })
+export class ProviderIdentitiesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "provider_identity_id" })
+  providerIdentityId!: string;
+
+  @Column({ name: "shared_user_id", type: "uuid" })
+  sharedUserId!: string;
+
+  @Column({ name: "provider", type: "text" })
+  provider!: string;
+
+  @Column({ name: "provider_tenant", type: "text", default: () => "'default'" })
+  providerTenant!: string;
+
+  @Column({ name: "provider_subject", type: "text" })
+  providerSubject!: string;
+
+  @Column({ name: "email", type: "text", nullable: true })
+  email!: string | null;
+
+  @Column({ name: "email_verified", type: "boolean", default: () => "false" })
+  emailVerified!: boolean;
+
+  @Column({ name: "metadata", type: "jsonb", default: () => "'{}'::jsonb" })
+  metadata!: Record<string, unknown>;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "last_seen_at", type: "timestamptz", default: () => "now()" })
+  lastSeenAt!: Date;
+
+}
+
+@Entity({ schema: "shared_auth", name: "local_credentials" })
+export class LocalCredentialsEntity {
+  @PrimaryColumn({ name: "shared_user_id", type: "uuid" })
+  sharedUserId!: string;
+
+  @Column({ name: "password_hash", type: "text" })
+  passwordHash!: string;
+
+  @Column({ name: "password_changed_at", type: "timestamptz", default: () => "now()" })
+  passwordChangedAt!: Date;
+
+  @Column({ name: "failed_attempts", type: "integer", default: () => "0" })
+  failedAttempts!: number;
+
+  @Column({ name: "locked_until", type: "timestamptz", nullable: true })
+  lockedUntil!: Date | null;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+}
+
+@Index("shared_auth_sessions_user_idx", ["sharedUserId"])
+@Index("shared_auth_sessions_active_expiry_idx", ["expiresAt"], { where: "revoked_at is null" })
+@Entity({ schema: "shared_auth", name: "sessions" })
+export class SessionsEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "session_id" })
+  sessionId!: string;
+
+  @Column({ name: "shared_user_id", type: "uuid" })
+  sharedUserId!: string;
+
+  @Column({ name: "refresh_token_hash", type: "text" })
+  refreshTokenHash!: string;
+
+  @Column({ name: "provider", type: "text" })
+  provider!: string;
+
+  @Column({ name: "provider_tenant", type: "text", default: () => "'default'" })
+  providerTenant!: string;
+
+  @Column({ name: "provider_subject", type: "text" })
+  providerSubject!: string;
+
+  @Column({ name: "created_at", type: "timestamptz", default: () => "now()" })
+  createdAt!: Date;
+
+  @Column({ name: "updated_at", type: "timestamptz", default: () => "now()" })
+  updatedAt!: Date;
+
+  @Column({ name: "last_seen_at", type: "timestamptz", default: () => "now()" })
+  lastSeenAt!: Date;
+
+  @Column({ name: "expires_at", type: "timestamptz" })
+  expiresAt!: Date;
+
+  @Column({ name: "revoked_at", type: "timestamptz", nullable: true })
+  revokedAt!: Date | null;
+
+  @Column({ name: "rotated_from", type: "uuid", nullable: true })
+  rotatedFrom!: string | null;
+
+}
+
+@Index("shared_auth_roles_user_idx", ["sharedUserId"])
+@Entity({ schema: "shared_auth", name: "roles" })
+export class RolesEntity {
+  @PrimaryGeneratedColumn("uuid", { name: "role_id" })
+  roleId!: string;
+
+  @Column({ name: "shared_user_id", type: "uuid" })
+  sharedUserId!: string;
+
+  @Column({ name: "role_name", type: "text" })
+  roleName!: string;
+
+  @Column({ name: "granted_at", type: "timestamptz", default: () => "now()" })
+  grantedAt!: Date;
+
+  @Column({ name: "granted_by", type: "uuid", nullable: true })
+  grantedBy!: string | null;
+
+}
+
+@Index("shared_auth_webhook_events_received_idx", ["receivedAt"])
+@Entity({ schema: "shared_auth", name: "webhook_events" })
+export class WebhookEventsEntity {
+  @PrimaryColumn({ name: "event_id", type: "uuid" })
+  eventId!: string;
+
+  @Column({ name: "provider", type: "text" })
+  provider!: string;
+
+  @Column({ name: "event_type", type: "text" })
+  eventType!: string;
+
+  @Column({ name: "received_at", type: "timestamptz", default: () => "now()" })
+  receivedAt!: Date;
+
+  @Column({ name: "payload_sha256", type: "text" })
+  payloadSha256!: string;
 
 }
 

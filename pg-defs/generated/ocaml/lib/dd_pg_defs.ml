@@ -2276,7 +2276,7 @@ let lambda_functions_columns = ["id"; "slug"; "display_name"; "description"; "ru
 
 let lambda_functions_select_sql = "select\n      id::text as id,\n      slug,\n      display_name,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      status,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      is_soft_deleted,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_functions"
 
-type lambda_functions_runtime = [ `Nodejs | `Javascript | `Typescript | `Python3 | `Python | `Ruby | `Bash | `Shell | `Golang | `Go | `Dart | `Erlang | `Erl | `Elixir | `Ex | `Java | `Jvm ]
+type lambda_functions_runtime = [ `Nodejs | `Javascript | `Typescript | `Python3 | `Python | `Ruby | `Bash | `Shell | `Golang | `Go | `Dart | `Erlang | `Erl | `Elixir | `Ex | `Java | `Jvm | `Gleam | `Gleamlang | `Rust | `Rs | `Browser ]
 
 let lambda_functions_runtime_to_string (value : lambda_functions_runtime) : string =
   match value with
@@ -2297,6 +2297,11 @@ let lambda_functions_runtime_to_string (value : lambda_functions_runtime) : stri
   | `Ex -> "ex"
   | `Java -> "java"
   | `Jvm -> "jvm"
+  | `Gleam -> "gleam"
+  | `Gleamlang -> "gleamlang"
+  | `Rust -> "rust"
+  | `Rs -> "rs"
+  | `Browser -> "browser"
 
 let parse_lambda_functions_runtime (value : string) : (lambda_functions_runtime, string) result =
   match value with
@@ -2317,6 +2322,11 @@ let parse_lambda_functions_runtime (value : string) : (lambda_functions_runtime,
   | "ex" -> Ok `Ex
   | "java" -> Ok `Java
   | "jvm" -> Ok `Jvm
+  | "gleam" -> Ok `Gleam
+  | "gleamlang" -> Ok `Gleamlang
+  | "rust" -> Ok `Rust
+  | "rs" -> Ok `Rs
+  | "browser" -> Ok `Browser
   | _ -> Error ("unsupported lambda_functions.runtime: " ^ value)
 
 type lambda_functions_container_build_status = [ `NotRequested | `Pending | `Building | `Built | `Failed | `Skipped ]
@@ -2439,6 +2449,269 @@ let validate_lambda_functions_idle_timeout_seconds (value : int) : (int, string)
 let validate_lambda_functions_max_run_ms (value : int) : (int, string) result =
   if value < 1000 then Error "lambda_functions.max_run_ms is below the minimum"
   else if value > 300000 then Error "lambda_functions.max_run_ms is above the maximum"
+  else Ok value
+
+let lambda_function_revisions_table = "lambda_function_revisions"
+
+let lambda_function_revisions_columns = ["id"; "function_id"; "revision_number"; "definition_digest"; "description"; "runtime"; "entry_command"; "function_body"; "reuse_key"; "idle_timeout_seconds"; "max_run_ms"; "containerized"; "container_image"; "container_build_status"; "container_build_error"; "container_built_at"; "env"; "labels"; "meta_data"; "created_at"; "created_by"]
+
+let lambda_function_revisions_select_sql = "select\n      id::text as id,\n      function_id::text as function_id,\n      revision_number,\n      definition_digest,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      created_by::text as created_by\n    from lambda_function_revisions"
+
+type lambda_function_revisions_runtime = [ `Nodejs | `Javascript | `Typescript | `Python3 | `Python | `Ruby | `Bash | `Shell | `Golang | `Go | `Dart | `Erlang | `Erl | `Elixir | `Ex | `Java | `Jvm | `Gleam | `Gleamlang | `Rust | `Rs | `Browser ]
+
+let lambda_function_revisions_runtime_to_string (value : lambda_function_revisions_runtime) : string =
+  match value with
+  | `Nodejs -> "nodejs"
+  | `Javascript -> "javascript"
+  | `Typescript -> "typescript"
+  | `Python3 -> "python3"
+  | `Python -> "python"
+  | `Ruby -> "ruby"
+  | `Bash -> "bash"
+  | `Shell -> "shell"
+  | `Golang -> "golang"
+  | `Go -> "go"
+  | `Dart -> "dart"
+  | `Erlang -> "erlang"
+  | `Erl -> "erl"
+  | `Elixir -> "elixir"
+  | `Ex -> "ex"
+  | `Java -> "java"
+  | `Jvm -> "jvm"
+  | `Gleam -> "gleam"
+  | `Gleamlang -> "gleamlang"
+  | `Rust -> "rust"
+  | `Rs -> "rs"
+  | `Browser -> "browser"
+
+let parse_lambda_function_revisions_runtime (value : string) : (lambda_function_revisions_runtime, string) result =
+  match value with
+  | "nodejs" -> Ok `Nodejs
+  | "javascript" -> Ok `Javascript
+  | "typescript" -> Ok `Typescript
+  | "python3" -> Ok `Python3
+  | "python" -> Ok `Python
+  | "ruby" -> Ok `Ruby
+  | "bash" -> Ok `Bash
+  | "shell" -> Ok `Shell
+  | "golang" -> Ok `Golang
+  | "go" -> Ok `Go
+  | "dart" -> Ok `Dart
+  | "erlang" -> Ok `Erlang
+  | "erl" -> Ok `Erl
+  | "elixir" -> Ok `Elixir
+  | "ex" -> Ok `Ex
+  | "java" -> Ok `Java
+  | "jvm" -> Ok `Jvm
+  | "gleam" -> Ok `Gleam
+  | "gleamlang" -> Ok `Gleamlang
+  | "rust" -> Ok `Rust
+  | "rs" -> Ok `Rs
+  | "browser" -> Ok `Browser
+  | _ -> Error ("unsupported lambda_function_revisions.runtime: " ^ value)
+
+type lambda_function_revisions_container_build_status = [ `NotRequested | `Pending | `Building | `Built | `Failed | `Skipped ]
+
+let lambda_function_revisions_container_build_status_to_string (value : lambda_function_revisions_container_build_status) : string =
+  match value with
+  | `NotRequested -> "not_requested"
+  | `Pending -> "pending"
+  | `Building -> "building"
+  | `Built -> "built"
+  | `Failed -> "failed"
+  | `Skipped -> "skipped"
+
+let parse_lambda_function_revisions_container_build_status (value : string) : (lambda_function_revisions_container_build_status, string) result =
+  match value with
+  | "not_requested" -> Ok `NotRequested
+  | "pending" -> Ok `Pending
+  | "building" -> Ok `Building
+  | "built" -> Ok `Built
+  | "failed" -> Ok `Failed
+  | "skipped" -> Ok `Skipped
+  | _ -> Error ("unsupported lambda_function_revisions.container_build_status: " ^ value)
+
+type lambda_function_revisions_row = {
+  lambda_function_revisions_id : string;
+  lambda_function_revisions_function_id : string;
+  lambda_function_revisions_revision_number : int64;
+  lambda_function_revisions_definition_digest : string;
+  lambda_function_revisions_description : string;
+  lambda_function_revisions_runtime : string;
+  lambda_function_revisions_entry_command : string;
+  lambda_function_revisions_function_body : string;
+  lambda_function_revisions_reuse_key : string option;
+  lambda_function_revisions_idle_timeout_seconds : int;
+  lambda_function_revisions_max_run_ms : int;
+  lambda_function_revisions_containerized : bool;
+  lambda_function_revisions_container_image : string option;
+  lambda_function_revisions_container_build_status : string;
+  lambda_function_revisions_container_build_error : string option;
+  lambda_function_revisions_container_built_at : string option;
+  lambda_function_revisions_env : string;
+  lambda_function_revisions_labels : string;
+  lambda_function_revisions_meta_data : string;
+  lambda_function_revisions_created_at : string;
+  lambda_function_revisions_created_by : string option;
+}
+
+let lambda_function_revisions_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : lambda_function_revisions_row =
+  {
+    lambda_function_revisions_id = get 0;
+    lambda_function_revisions_function_id = get 1;
+    lambda_function_revisions_revision_number = Int64.of_string (get 2);
+    lambda_function_revisions_definition_digest = get 3;
+    lambda_function_revisions_description = get 4;
+    lambda_function_revisions_runtime = get 5;
+    lambda_function_revisions_entry_command = get 6;
+    lambda_function_revisions_function_body = get 7;
+    lambda_function_revisions_reuse_key = (if is_null 8 then None else Some (get 8));
+    lambda_function_revisions_idle_timeout_seconds = int_of_string (get 9);
+    lambda_function_revisions_max_run_ms = int_of_string (get 10);
+    lambda_function_revisions_containerized = (get 11 = "t");
+    lambda_function_revisions_container_image = (if is_null 12 then None else Some (get 12));
+    lambda_function_revisions_container_build_status = get 13;
+    lambda_function_revisions_container_build_error = (if is_null 14 then None else Some (get 14));
+    lambda_function_revisions_container_built_at = (if is_null 15 then None else Some (get 15));
+    lambda_function_revisions_env = get 16;
+    lambda_function_revisions_labels = get 17;
+    lambda_function_revisions_meta_data = get 18;
+    lambda_function_revisions_created_at = get 19;
+    lambda_function_revisions_created_by = (if is_null 20 then None else Some (get 20));
+  }
+
+let validate_lambda_function_revisions_revision_number (value : int64) : (int64, string) result =
+  if Int64.compare value 1L < 0 then Error "lambda_function_revisions.revision_number is below the minimum"
+  else Ok value
+
+let validate_lambda_function_revisions_definition_digest (value : string) : (string, string) result =
+  if String.length value < 64 then Error "lambda_function_revisions.definition_digest must be at least 64 characters"
+  else if String.length value > 64 then Error "lambda_function_revisions.definition_digest must be at most 64 characters"
+  else Ok value
+
+let validate_lambda_function_revisions_description (value : string) : (string, string) result =
+  if String.length value > 4096 then Error "lambda_function_revisions.description must be at most 4096 characters"
+  else Ok value
+
+let validate_lambda_function_revisions_function_body (value : string) : (string, string) result =
+  if String.length value < 1 then Error "lambda_function_revisions.function_body must be at least 1 characters"
+  else Ok value
+
+let validate_lambda_function_revisions_reuse_key (value : string) : (string, string) result =
+  if String.length value > 200 then Error "lambda_function_revisions.reuse_key must be at most 200 characters"
+  else Ok value
+
+let validate_lambda_function_revisions_idle_timeout_seconds (value : int) : (int, string) result =
+  if value < 1 then Error "lambda_function_revisions.idle_timeout_seconds is below the minimum"
+  else if value > 3600 then Error "lambda_function_revisions.idle_timeout_seconds is above the maximum"
+  else Ok value
+
+let validate_lambda_function_revisions_max_run_ms (value : int) : (int, string) result =
+  if value < 1000 then Error "lambda_function_revisions.max_run_ms is below the minimum"
+  else if value > 300000 then Error "lambda_function_revisions.max_run_ms is above the maximum"
+  else Ok value
+
+let lambda_function_aliases_table = "lambda_function_aliases"
+
+let lambda_function_aliases_columns = ["id"; "function_id"; "name"; "description"; "traffic"; "routing_version"; "created_at"; "updated_at"; "created_by"; "updated_by"]
+
+let lambda_function_aliases_select_sql = "select\n      id::text as id,\n      function_id::text as function_id,\n      name,\n      description,\n      traffic::text as traffic_json,\n      routing_version,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_function_aliases"
+
+type lambda_function_aliases_row = {
+  lambda_function_aliases_id : string;
+  lambda_function_aliases_function_id : string;
+  lambda_function_aliases_name : string;
+  lambda_function_aliases_description : string;
+  lambda_function_aliases_traffic : string;
+  lambda_function_aliases_routing_version : int64;
+  lambda_function_aliases_created_at : string;
+  lambda_function_aliases_updated_at : string;
+  lambda_function_aliases_created_by : string option;
+  lambda_function_aliases_updated_by : string option;
+}
+
+let lambda_function_aliases_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : lambda_function_aliases_row =
+  {
+    lambda_function_aliases_id = get 0;
+    lambda_function_aliases_function_id = get 1;
+    lambda_function_aliases_name = get 2;
+    lambda_function_aliases_description = get 3;
+    lambda_function_aliases_traffic = get 4;
+    lambda_function_aliases_routing_version = Int64.of_string (get 5);
+    lambda_function_aliases_created_at = get 6;
+    lambda_function_aliases_updated_at = get 7;
+    lambda_function_aliases_created_by = (if is_null 8 then None else Some (get 8));
+    lambda_function_aliases_updated_by = (if is_null 9 then None else Some (get 9));
+  }
+
+let validate_lambda_function_aliases_name (value : string) : (string, string) result =
+  if String.length value < 1 then Error "lambda_function_aliases.name must be at least 1 characters"
+  else if String.length value > 64 then Error "lambda_function_aliases.name must be at most 64 characters"
+  else Ok value
+
+let validate_lambda_function_aliases_description (value : string) : (string, string) result =
+  if String.length value > 4096 then Error "lambda_function_aliases.description must be at most 4096 characters"
+  else Ok value
+
+let validate_lambda_function_aliases_routing_version (value : int64) : (int64, string) result =
+  if Int64.compare value 1L < 0 then Error "lambda_function_aliases.routing_version is below the minimum"
+  else Ok value
+
+let lambda_actor_instances_table = "lambda_actor_instances"
+
+let lambda_actor_instances_columns = ["id"; "function_id"; "actor_key"; "state"; "state_version"; "alarm_at"; "alarm_attempt"; "lease_owner"; "lease_until"; "last_invoked_at"; "last_error"; "created_at"; "updated_at"]
+
+let lambda_actor_instances_select_sql = "select\n      id::text as id,\n      function_id::text as function_id,\n      actor_key,\n      state::text as state_json,\n      state_version,\n      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as alarm_at,\n      alarm_attempt,\n      lease_owner,\n      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_until,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from lambda_actor_instances"
+
+type lambda_actor_instances_row = {
+  lambda_actor_instances_id : string;
+  lambda_actor_instances_function_id : string;
+  lambda_actor_instances_actor_key : string;
+  lambda_actor_instances_state : string;
+  lambda_actor_instances_state_version : int64;
+  lambda_actor_instances_alarm_at : string option;
+  lambda_actor_instances_alarm_attempt : int;
+  lambda_actor_instances_lease_owner : string option;
+  lambda_actor_instances_lease_until : string option;
+  lambda_actor_instances_last_invoked_at : string option;
+  lambda_actor_instances_last_error : string option;
+  lambda_actor_instances_created_at : string;
+  lambda_actor_instances_updated_at : string;
+}
+
+let lambda_actor_instances_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : lambda_actor_instances_row =
+  {
+    lambda_actor_instances_id = get 0;
+    lambda_actor_instances_function_id = get 1;
+    lambda_actor_instances_actor_key = get 2;
+    lambda_actor_instances_state = get 3;
+    lambda_actor_instances_state_version = Int64.of_string (get 4);
+    lambda_actor_instances_alarm_at = (if is_null 5 then None else Some (get 5));
+    lambda_actor_instances_alarm_attempt = int_of_string (get 6);
+    lambda_actor_instances_lease_owner = (if is_null 7 then None else Some (get 7));
+    lambda_actor_instances_lease_until = (if is_null 8 then None else Some (get 8));
+    lambda_actor_instances_last_invoked_at = (if is_null 9 then None else Some (get 9));
+    lambda_actor_instances_last_error = (if is_null 10 then None else Some (get 10));
+    lambda_actor_instances_created_at = get 11;
+    lambda_actor_instances_updated_at = get 12;
+  }
+
+let validate_lambda_actor_instances_actor_key (value : string) : (string, string) result =
+  if String.length value < 1 then Error "lambda_actor_instances.actor_key must be at least 1 characters"
+  else if String.length value > 200 then Error "lambda_actor_instances.actor_key must be at most 200 characters"
+  else Ok value
+
+let validate_lambda_actor_instances_state_version (value : int64) : (int64, string) result =
+  if Int64.compare value 0L < 0 then Error "lambda_actor_instances.state_version is below the minimum"
+  else Ok value
+
+let validate_lambda_actor_instances_alarm_attempt (value : int) : (int, string) result =
+  if value < 0 then Error "lambda_actor_instances.alarm_attempt is below the minimum"
+  else if value > 6 then Error "lambda_actor_instances.alarm_attempt is above the maximum"
+  else Ok value
+
+let validate_lambda_actor_instances_lease_owner (value : string) : (string, string) result =
+  if String.length value > 200 then Error "lambda_actor_instances.lease_owner must be at most 200 characters"
   else Ok value
 
 let workflow_definitions_table = "workflow_definitions"
@@ -12118,6 +12391,203 @@ let web_sessions_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : we
     web_sessions_idle_expires_at = get 10;
     web_sessions_absolute_expires_at = get 11;
     web_sessions_revoked_at = (if is_null 12 then None else Some (get 12));
+  }
+
+let principals_table = "shared_auth.principals"
+
+let principals_columns = ["shared_user_id"; "email"; "email_verified"; "phone"; "display_name"; "status"; "profile"; "created_at"; "updated_at"; "last_seen_at"]
+
+let principals_select_sql = "select\n      shared_user_id::text as shared_user_id,\n      email,\n      email_verified,\n      phone,\n      display_name,\n      status,\n      profile::text as profile_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.principals"
+
+type principals_status = [ `Active | `Disabled | `Deleted ]
+
+let principals_status_to_string (value : principals_status) : string =
+  match value with
+  | `Active -> "active"
+  | `Disabled -> "disabled"
+  | `Deleted -> "deleted"
+
+let parse_principals_status (value : string) : (principals_status, string) result =
+  match value with
+  | "active" -> Ok `Active
+  | "disabled" -> Ok `Disabled
+  | "deleted" -> Ok `Deleted
+  | _ -> Error ("unsupported principals.status: " ^ value)
+
+type principals_row = {
+  principals_shared_user_id : string;
+  principals_email : string option;
+  principals_email_verified : bool;
+  principals_phone : string option;
+  principals_display_name : string option;
+  principals_status : string;
+  principals_profile : string;
+  principals_created_at : string;
+  principals_updated_at : string;
+  principals_last_seen_at : string;
+}
+
+let principals_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : principals_row =
+  {
+    principals_shared_user_id = get 0;
+    principals_email = (if is_null 1 then None else Some (get 1));
+    principals_email_verified = (get 2 = "t");
+    principals_phone = (if is_null 3 then None else Some (get 3));
+    principals_display_name = (if is_null 4 then None else Some (get 4));
+    principals_status = get 5;
+    principals_profile = get 6;
+    principals_created_at = get 7;
+    principals_updated_at = get 8;
+    principals_last_seen_at = get 9;
+  }
+
+let provider_identities_table = "shared_auth.provider_identities"
+
+let provider_identities_columns = ["provider_identity_id"; "shared_user_id"; "provider"; "provider_tenant"; "provider_subject"; "email"; "email_verified"; "metadata"; "created_at"; "updated_at"; "last_seen_at"]
+
+let provider_identities_select_sql = "select\n      provider_identity_id::text as provider_identity_id,\n      shared_user_id::text as shared_user_id,\n      provider,\n      provider_tenant,\n      provider_subject,\n      email,\n      email_verified,\n      metadata::text as metadata_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.provider_identities"
+
+type provider_identities_row = {
+  provider_identities_provider_identity_id : string;
+  provider_identities_shared_user_id : string;
+  provider_identities_provider : string;
+  provider_identities_provider_tenant : string;
+  provider_identities_provider_subject : string;
+  provider_identities_email : string option;
+  provider_identities_email_verified : bool;
+  provider_identities_metadata : string;
+  provider_identities_created_at : string;
+  provider_identities_updated_at : string;
+  provider_identities_last_seen_at : string;
+}
+
+let provider_identities_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : provider_identities_row =
+  {
+    provider_identities_provider_identity_id = get 0;
+    provider_identities_shared_user_id = get 1;
+    provider_identities_provider = get 2;
+    provider_identities_provider_tenant = get 3;
+    provider_identities_provider_subject = get 4;
+    provider_identities_email = (if is_null 5 then None else Some (get 5));
+    provider_identities_email_verified = (get 6 = "t");
+    provider_identities_metadata = get 7;
+    provider_identities_created_at = get 8;
+    provider_identities_updated_at = get 9;
+    provider_identities_last_seen_at = get 10;
+  }
+
+let local_credentials_table = "shared_auth.local_credentials"
+
+let local_credentials_columns = ["shared_user_id"; "password_hash"; "password_changed_at"; "failed_attempts"; "locked_until"; "created_at"; "updated_at"]
+
+let local_credentials_select_sql = "select\n      shared_user_id::text as shared_user_id,\n      password_hash,\n      to_char(password_changed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as password_changed_at,\n      failed_attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from shared_auth.local_credentials"
+
+type local_credentials_row = {
+  local_credentials_shared_user_id : string;
+  local_credentials_password_hash : string;
+  local_credentials_password_changed_at : string;
+  local_credentials_failed_attempts : int;
+  local_credentials_locked_until : string option;
+  local_credentials_created_at : string;
+  local_credentials_updated_at : string;
+}
+
+let local_credentials_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : local_credentials_row =
+  {
+    local_credentials_shared_user_id = get 0;
+    local_credentials_password_hash = get 1;
+    local_credentials_password_changed_at = get 2;
+    local_credentials_failed_attempts = int_of_string (get 3);
+    local_credentials_locked_until = (if is_null 4 then None else Some (get 4));
+    local_credentials_created_at = get 5;
+    local_credentials_updated_at = get 6;
+  }
+
+let validate_local_credentials_failed_attempts (value : int) : (int, string) result =
+  if value < 0 then Error "local_credentials.failed_attempts is below the minimum"
+  else Ok value
+
+let sessions_table = "shared_auth.sessions"
+
+let sessions_columns = ["session_id"; "shared_user_id"; "refresh_token_hash"; "provider"; "provider_tenant"; "provider_subject"; "created_at"; "updated_at"; "last_seen_at"; "expires_at"; "revoked_at"; "rotated_from"]
+
+let sessions_select_sql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+
+type sessions_row = {
+  sessions_session_id : string;
+  sessions_shared_user_id : string;
+  sessions_refresh_token_hash : string;
+  sessions_provider : string;
+  sessions_provider_tenant : string;
+  sessions_provider_subject : string;
+  sessions_created_at : string;
+  sessions_updated_at : string;
+  sessions_last_seen_at : string;
+  sessions_expires_at : string;
+  sessions_revoked_at : string option;
+  sessions_rotated_from : string option;
+}
+
+let sessions_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : sessions_row =
+  {
+    sessions_session_id = get 0;
+    sessions_shared_user_id = get 1;
+    sessions_refresh_token_hash = get 2;
+    sessions_provider = get 3;
+    sessions_provider_tenant = get 4;
+    sessions_provider_subject = get 5;
+    sessions_created_at = get 6;
+    sessions_updated_at = get 7;
+    sessions_last_seen_at = get 8;
+    sessions_expires_at = get 9;
+    sessions_revoked_at = (if is_null 10 then None else Some (get 10));
+    sessions_rotated_from = (if is_null 11 then None else Some (get 11));
+  }
+
+let roles_table = "shared_auth.roles"
+
+let roles_columns = ["role_id"; "shared_user_id"; "role_name"; "granted_at"; "granted_by"]
+
+let roles_select_sql = "select\n      role_id::text as role_id,\n      shared_user_id::text as shared_user_id,\n      role_name,\n      to_char(granted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as granted_at,\n      granted_by::text as granted_by\n    from shared_auth.roles"
+
+type roles_row = {
+  roles_role_id : string;
+  roles_shared_user_id : string;
+  roles_role_name : string;
+  roles_granted_at : string;
+  roles_granted_by : string option;
+}
+
+let roles_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : roles_row =
+  {
+    roles_role_id = get 0;
+    roles_shared_user_id = get 1;
+    roles_role_name = get 2;
+    roles_granted_at = get 3;
+    roles_granted_by = (if is_null 4 then None else Some (get 4));
+  }
+
+let webhook_events_table = "shared_auth.webhook_events"
+
+let webhook_events_columns = ["event_id"; "provider"; "event_type"; "received_at"; "payload_sha256"]
+
+let webhook_events_select_sql = "select\n      event_id::text as event_id,\n      provider,\n      event_type,\n      to_char(received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as received_at,\n      payload_sha256\n    from shared_auth.webhook_events"
+
+type webhook_events_row = {
+  webhook_events_event_id : string;
+  webhook_events_provider : string;
+  webhook_events_event_type : string;
+  webhook_events_received_at : string;
+  webhook_events_payload_sha256 : string;
+}
+
+let webhook_events_row_of_row ~(get : int -> string) ~is_null:(_ : int -> bool) : webhook_events_row =
+  {
+    webhook_events_event_id = get 0;
+    webhook_events_provider = get 1;
+    webhook_events_event_type = get 2;
+    webhook_events_received_at = get 3;
+    webhook_events_payload_sha256 = get 4;
   }
 
 let fab_jobs_table = "daedalus.fab_jobs"

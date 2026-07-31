@@ -660,8 +660,8 @@ class LambdaFunction(models.Model):
     slug = models.CharField(max_length=120, validators=[RegexValidator(regex="^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$")])
     display_name = models.CharField(max_length=200, validators=[MinLengthValidator(1)])
     description = models.TextField(default="")
-    runtime = models.CharField(max_length=40, choices=[("nodejs", "nodejs"), ("javascript", "javascript"), ("typescript", "typescript"), ("python3", "python3"), ("python", "python"), ("ruby", "ruby"), ("bash", "bash"), ("shell", "shell"), ("golang", "golang"), ("go", "go"), ("dart", "dart"), ("erlang", "erlang"), ("erl", "erl"), ("elixir", "elixir"), ("ex", "ex"), ("java", "java"), ("jvm", "jvm")], default="nodejs")
-    entry_command = models.TextField(default="env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs")
+    runtime = models.CharField(max_length=40, choices=[("nodejs", "nodejs"), ("javascript", "javascript"), ("typescript", "typescript"), ("python3", "python3"), ("python", "python"), ("ruby", "ruby"), ("bash", "bash"), ("shell", "shell"), ("golang", "golang"), ("go", "go"), ("dart", "dart"), ("erlang", "erlang"), ("erl", "erl"), ("elixir", "elixir"), ("ex", "ex"), ("java", "java"), ("jvm", "jvm"), ("gleam", "gleam"), ("gleamlang", "gleamlang"), ("rust", "rust"), ("rs", "rs"), ("browser", "browser")], default="nodejs")
+    entry_command = models.TextField(default="")
     function_body = models.TextField(validators=[MinLengthValidator(1)])
     reuse_key = models.CharField(max_length=200, null=True, blank=True)
     idle_timeout_seconds = models.IntegerField(default=300, validators=[MinValueValidator(1), MaxValueValidator(3600)])
@@ -686,6 +686,77 @@ class LambdaFunction(models.Model):
         managed = False
         app_label = "dd_pg_defs"
         db_table = "lambda_functions"
+
+
+class LambdaFunctionRevision(models.Model):
+    # Immutable published snapshots of lambda function code and runtime configuration.
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    function_id = models.UUIDField()
+    revision_number = models.BigIntegerField(validators=[MinValueValidator(1)])
+    definition_digest = models.CharField(max_length=64, validators=[MinLengthValidator(64), RegexValidator(regex="^[a-f0-9]{64}$")])
+    description = models.TextField(default="")
+    runtime = models.CharField(max_length=40, choices=[("nodejs", "nodejs"), ("javascript", "javascript"), ("typescript", "typescript"), ("python3", "python3"), ("python", "python"), ("ruby", "ruby"), ("bash", "bash"), ("shell", "shell"), ("golang", "golang"), ("go", "go"), ("dart", "dart"), ("erlang", "erlang"), ("erl", "erl"), ("elixir", "elixir"), ("ex", "ex"), ("java", "java"), ("jvm", "jvm"), ("gleam", "gleam"), ("gleamlang", "gleamlang"), ("rust", "rust"), ("rs", "rs"), ("browser", "browser")])
+    entry_command = models.TextField(default="")
+    function_body = models.TextField(validators=[MinLengthValidator(1)])
+    reuse_key = models.CharField(max_length=200, null=True, blank=True)
+    idle_timeout_seconds = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(3600)])
+    max_run_ms = models.IntegerField(validators=[MinValueValidator(1000), MaxValueValidator(300000)])
+    containerized = models.BooleanField()
+    container_image = models.TextField(null=True, blank=True)
+    container_build_status = models.CharField(max_length=32, choices=[("not_requested", "not_requested"), ("pending", "pending"), ("building", "building"), ("built", "built"), ("failed", "failed"), ("skipped", "skipped")])
+    container_build_error = models.TextField(null=True, blank=True)
+    container_built_at = models.DateTimeField(null=True, blank=True)
+    env = models.JSONField()
+    labels = models.JSONField()
+    meta_data = models.JSONField()
+    created_at = models.DateTimeField()
+    created_by = models.UUIDField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "lambda_function_revisions"
+
+
+class LambdaFunctionAlias(models.Model):
+    # Named weighted routing policies over immutable lambda function revisions.
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    function_id = models.UUIDField()
+    name = models.CharField(max_length=64, validators=[MinLengthValidator(1), RegexValidator(regex="^[a-z][a-z0-9._-]{0,63}$")])
+    description = models.TextField(default="")
+    traffic = models.JSONField()
+    routing_version = models.BigIntegerField(default=1, validators=[MinValueValidator(1)])
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+    created_by = models.UUIDField(null=True, blank=True)
+    updated_by = models.UUIDField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "lambda_function_aliases"
+
+
+class LambdaActorInstance(models.Model):
+    # Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    function_id = models.UUIDField()
+    actor_key = models.CharField(max_length=200, validators=[MinLengthValidator(1), RegexValidator(regex="^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")])
+    state = models.JSONField(default=dict)
+    state_version = models.BigIntegerField(default=0, validators=[MinValueValidator(0)])
+    alarm_at = models.DateTimeField(null=True, blank=True)
+    alarm_attempt = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(6)])
+    lease_owner = models.CharField(max_length=200, null=True, blank=True)
+    lease_until = models.DateTimeField(null=True, blank=True)
+    last_invoked_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "lambda_actor_instances"
 
 
 class WorkflowDefinitions(models.Model):
@@ -3333,6 +3404,104 @@ class WebSessions(models.Model):
         managed = False
         app_label = "dd_pg_defs"
         db_table = "daedalus\".\"web_sessions"
+
+
+class Principals(models.Model):
+    shared_user_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    email = models.TextField(null=True, blank=True)
+    email_verified = models.BooleanField(default=False)
+    phone = models.TextField(null=True, blank=True)
+    display_name = models.TextField(null=True, blank=True)
+    status = models.TextField(choices=[("active", "active"), ("disabled", "disabled"), ("deleted", "deleted")], default="active")
+    profile = models.JSONField(default=dict)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+    last_seen_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "shared_auth\".\"principals"
+
+
+class ProviderIdentities(models.Model):
+    provider_identity_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    shared_user_id = models.UUIDField()
+    provider = models.TextField()
+    provider_tenant = models.TextField(default="default")
+    provider_subject = models.TextField()
+    email = models.TextField(null=True, blank=True)
+    email_verified = models.BooleanField(default=False)
+    metadata = models.JSONField(default=dict)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+    last_seen_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "shared_auth\".\"provider_identities"
+
+
+class LocalCredentials(models.Model):
+    shared_user_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    password_hash = models.TextField()
+    password_changed_at = models.DateTimeField()
+    failed_attempts = models.IntegerField(default=0, validators=[MinValueValidator(0)])
+    locked_until = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "shared_auth\".\"local_credentials"
+
+
+class Sessions(models.Model):
+    session_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    shared_user_id = models.UUIDField()
+    refresh_token_hash = models.TextField()
+    provider = models.TextField()
+    provider_tenant = models.TextField(default="default")
+    provider_subject = models.TextField()
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+    last_seen_at = models.DateTimeField()
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    rotated_from = models.UUIDField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "shared_auth\".\"sessions"
+
+
+class Roles(models.Model):
+    role_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    shared_user_id = models.UUIDField()
+    role_name = models.TextField(validators=[RegexValidator(regex="^[a-z][a-z0-9:_-]{0,63}$")])
+    granted_at = models.DateTimeField()
+    granted_by = models.UUIDField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "shared_auth\".\"roles"
+
+
+class WebhookEvents(models.Model):
+    event_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.TextField()
+    event_type = models.TextField()
+    received_at = models.DateTimeField()
+    payload_sha256 = models.TextField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "shared_auth\".\"webhook_events"
 
 
 class FabJobs(models.Model):

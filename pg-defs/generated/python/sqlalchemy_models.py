@@ -2809,7 +2809,7 @@ class MipSolverEventsInsert(BaseModel):
     payload: dict[str, Any] | None = Field(default_factory=dict)
     createdAt: datetime | None = None
 
-LambdaFunctionRuntime = Literal["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"]
+LambdaFunctionRuntime = Literal["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"]
 LambdaFunctionContainerBuildStatus = Literal["not_requested", "pending", "building", "built", "failed", "skipped"]
 LambdaFunctionStatus = Literal["draft", "active", "paused", "archived"]
 
@@ -2818,14 +2818,14 @@ class LambdaFunction(Base):
     __table_args__ = (
         CheckConstraint("slug ~ '^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$'", name="lambda_functions_slug_format_chk"),
         CheckConstraint("octet_length(function_body) <= 262144", name="lambda_functions_body_size_chk"),
-        CheckConstraint("octet_length(entry_command) between 1 and 512", name="lambda_functions_entry_command_chk"),
+        CheckConstraint("octet_length(entry_command) <= 512", name="lambda_functions_entry_command_chk"),
         CheckConstraint("container_image is null or octet_length(container_image) <= 512", name="lambda_functions_container_image_size_chk"),
         CheckConstraint("container_build_error is null or octet_length(container_build_error) <= 8192", name="lambda_functions_container_build_error_size_chk"),
         CheckConstraint("jsonb_typeof(labels) = 'array'", name="lambda_functions_labels_array_chk"),
         CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="lambda_functions_meta_object_chk"),
         CheckConstraint("jsonb_typeof(env) = 'object'", name="lambda_functions_env_object_chk"),
         CheckConstraint("status in ('draft', 'active', 'paused', 'archived')", name="lambda_functions_status_chk"),
-        CheckConstraint("runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm')", name="lambda_functions_runtime_chk"),
+        CheckConstraint("runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm', 'gleam', 'gleamlang', 'rust', 'rs', 'browser')", name="lambda_functions_runtime_chk"),
         CheckConstraint("container_build_status in ('not_requested', 'pending', 'building', 'built', 'failed', 'skipped')", name="lambda_functions_container_build_status_chk"),
         Index("lambda_functions_slug_active_uq", "slug", unique=True, postgresql_where=text("is_soft_deleted = false")),
         Index("lambda_functions_status_idx", "status", postgresql_where=text("is_soft_deleted = false")),
@@ -2838,7 +2838,7 @@ class LambdaFunction(Base):
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
     runtime: Mapped[str] = mapped_column(String(40), nullable=False, server_default=text("'nodejs'"))
-    entry_command: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs'"))
+    entry_command: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
     function_body: Mapped[str] = mapped_column(Text(), nullable=False)
     reuse_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
     idle_timeout_seconds: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("300"))
@@ -2924,7 +2924,7 @@ class LambdaFunctionInsert(BaseModel):
     displayName: str = Field(..., min_length=1, max_length=200)
     description: str | None = ""
     runtime: LambdaFunctionRuntime | None = "nodejs"
-    entryCommand: str | None = "env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs"
+    entryCommand: str | None = ""
     functionBody: str = Field(..., min_length=1)
     reuseKey: str | None = Field(None, max_length=200)
     idleTimeoutSeconds: int | None = Field(300, ge=1, le=3600)
@@ -2971,6 +2971,345 @@ class LambdaFunctionInsert(BaseModel):
     def validate_container_build_error(cls, value):
         if value is not None and len(value.encode("utf-8")) > 8192:
             raise ValueError("lambda_functions.container_build_error exceeds 8192 bytes")
+        return value
+
+LambdaFunctionRevisionRuntime = Literal["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"]
+LambdaFunctionRevisionContainerBuildStatus = Literal["not_requested", "pending", "building", "built", "failed", "skipped"]
+
+class LambdaFunctionRevision(Base):
+    __tablename__ = "lambda_function_revisions"
+    __table_args__ = (
+        CheckConstraint("revision_number > 0", name="lambda_function_revisions_number_chk"),
+        CheckConstraint("definition_digest ~ '^[a-f0-9]{64}$'", name="lambda_function_revisions_digest_chk"),
+        CheckConstraint("octet_length(description) <= 4096", name="lambda_function_revisions_description_size_chk"),
+        CheckConstraint("octet_length(function_body) <= 262144", name="lambda_function_revisions_body_size_chk"),
+        CheckConstraint("octet_length(entry_command) <= 512", name="lambda_function_revisions_entry_command_chk"),
+        CheckConstraint("reuse_key is null or octet_length(reuse_key) <= 200", name="lambda_function_revisions_reuse_key_chk"),
+        CheckConstraint("idle_timeout_seconds between 1 and 3600", name="lambda_function_revisions_idle_timeout_chk"),
+        CheckConstraint("max_run_ms between 1000 and 300000", name="lambda_function_revisions_max_run_chk"),
+        CheckConstraint("container_image is null or octet_length(container_image) <= 512", name="lambda_function_revisions_container_image_size_chk"),
+        CheckConstraint("container_build_error is null or octet_length(container_build_error) <= 8192", name="lambda_function_revisions_container_build_error_size_chk"),
+        CheckConstraint("jsonb_typeof(env) = 'object'", name="lambda_function_revisions_env_object_chk"),
+        CheckConstraint("jsonb_typeof(labels) = 'array'", name="lambda_function_revisions_labels_array_chk"),
+        CheckConstraint("jsonb_typeof(meta_data) = 'object'", name="lambda_function_revisions_meta_object_chk"),
+        CheckConstraint("runtime in ('nodejs', 'javascript', 'typescript', 'python3', 'python', 'ruby', 'bash', 'shell', 'golang', 'go', 'dart', 'erlang', 'erl', 'elixir', 'ex', 'java', 'jvm', 'gleam', 'gleamlang', 'rust', 'rs', 'browser')", name="lambda_function_revisions_runtime_chk"),
+        CheckConstraint("container_build_status in ('not_requested', 'pending', 'building', 'built', 'failed', 'skipped')", name="lambda_function_revisions_container_build_status_chk"),
+        Index("lambda_function_revisions_function_number_uq", "function_id", "revision_number", unique=True),
+        Index("lambda_function_revisions_function_id_uq", "function_id", "id", unique=True),
+        Index("lambda_function_revisions_created_at_idx", "function_id", text("created_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    function_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    revision_number: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    definition_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    runtime: Mapped[str] = mapped_column(String(40), nullable=False)
+    entry_command: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    function_body: Mapped[str] = mapped_column(Text(), nullable=False)
+    reuse_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    idle_timeout_seconds: Mapped[int] = mapped_column(Integer(), nullable=False)
+    max_run_ms: Mapped[int] = mapped_column(Integer(), nullable=False)
+    containerized: Mapped[bool] = mapped_column(Boolean(), nullable=False)
+    container_image: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    container_build_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    container_build_error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    container_built_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    env: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)
+    labels: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False)
+    meta_data: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class LambdaFunctionRevisionRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    functionId: UUID
+    revisionNumber: int
+    definitionDigest: str = Field(..., min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")
+    description: str = Field(..., max_length=4096)
+    runtime: LambdaFunctionRevisionRuntime
+    entryCommand: str
+    functionBody: str = Field(..., min_length=1)
+    reuseKey: str | None = Field(None, max_length=200)
+    idleTimeoutSeconds: int = Field(..., ge=1, le=3600)
+    maxRunMs: int = Field(..., ge=1000, le=300000)
+    containerized: bool
+    containerImage: str | None = None
+    containerBuildStatus: LambdaFunctionRevisionContainerBuildStatus
+    containerBuildError: str | None = None
+    containerBuiltAt: datetime | None = None
+    env: dict[str, Any]
+    labels: list[Any]
+    metaData: dict[str, Any]
+    createdAt: datetime
+    createdBy: UUID | None = None
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4096:
+            raise ValueError("lambda_function_revisions.description exceeds 4096 bytes")
+        return value
+
+    @field_validator("entryCommand")
+    @classmethod
+    def validate_entry_command(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("lambda_function_revisions.entry_command exceeds 512 bytes")
+        return value
+
+    @field_validator("functionBody")
+    @classmethod
+    def validate_function_body(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 262144:
+            raise ValueError("lambda_function_revisions.function_body exceeds 262144 bytes")
+        return value
+
+    @field_validator("reuseKey")
+    @classmethod
+    def validate_reuse_key(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("lambda_function_revisions.reuse_key exceeds 200 bytes")
+        return value
+
+    @field_validator("containerImage")
+    @classmethod
+    def validate_container_image(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("lambda_function_revisions.container_image exceeds 512 bytes")
+        return value
+
+    @field_validator("containerBuildError")
+    @classmethod
+    def validate_container_build_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("lambda_function_revisions.container_build_error exceeds 8192 bytes")
+        return value
+
+class LambdaFunctionRevisionInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    functionId: UUID
+    revisionNumber: int
+    definitionDigest: str = Field(..., min_length=64, max_length=64, pattern="^[a-f0-9]{64}$")
+    description: str | None = Field("", max_length=4096)
+    runtime: LambdaFunctionRevisionRuntime
+    entryCommand: str | None = ""
+    functionBody: str = Field(..., min_length=1)
+    reuseKey: str | None = Field(None, max_length=200)
+    idleTimeoutSeconds: int = Field(..., ge=1, le=3600)
+    maxRunMs: int = Field(..., ge=1000, le=300000)
+    containerized: bool
+    containerImage: str | None = None
+    containerBuildStatus: LambdaFunctionRevisionContainerBuildStatus
+    containerBuildError: str | None = None
+    containerBuiltAt: datetime | None = None
+    env: dict[str, Any]
+    labels: list[Any]
+    metaData: dict[str, Any]
+    createdAt: datetime | None = None
+    createdBy: UUID | None = None
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4096:
+            raise ValueError("lambda_function_revisions.description exceeds 4096 bytes")
+        return value
+
+    @field_validator("entryCommand")
+    @classmethod
+    def validate_entry_command(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("lambda_function_revisions.entry_command exceeds 512 bytes")
+        return value
+
+    @field_validator("functionBody")
+    @classmethod
+    def validate_function_body(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 262144:
+            raise ValueError("lambda_function_revisions.function_body exceeds 262144 bytes")
+        return value
+
+    @field_validator("reuseKey")
+    @classmethod
+    def validate_reuse_key(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("lambda_function_revisions.reuse_key exceeds 200 bytes")
+        return value
+
+    @field_validator("containerImage")
+    @classmethod
+    def validate_container_image(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("lambda_function_revisions.container_image exceeds 512 bytes")
+        return value
+
+    @field_validator("containerBuildError")
+    @classmethod
+    def validate_container_build_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("lambda_function_revisions.container_build_error exceeds 8192 bytes")
+        return value
+
+class LambdaFunctionAlias(Base):
+    __tablename__ = "lambda_function_aliases"
+    __table_args__ = (
+        CheckConstraint("name ~ '^[a-z][a-z0-9._-]{0,63}$' and name <> 'latest'", name="lambda_function_aliases_name_chk"),
+        CheckConstraint("octet_length(description) <= 4096", name="lambda_function_aliases_description_size_chk"),
+        CheckConstraint("jsonb_typeof(traffic) = 'object'", name="lambda_function_aliases_traffic_object_chk"),
+        CheckConstraint("octet_length(traffic::text) <= 8192", name="lambda_function_aliases_traffic_size_chk"),
+        CheckConstraint("routing_version > 0", name="lambda_function_aliases_routing_version_chk"),
+        Index("lambda_function_aliases_function_name_uq", "function_id", "name", unique=True),
+        Index("lambda_function_aliases_updated_at_idx", "function_id", text("updated_at desc")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    function_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    description: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("''"))
+    traffic: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False)
+    routing_version: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("1"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    created_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+    updated_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class LambdaFunctionAliasRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    functionId: UUID
+    name: str = Field(..., min_length=1, max_length=64, pattern="^[a-z][a-z0-9._-]{0,63}$")
+    description: str = Field(..., max_length=4096)
+    traffic: dict[str, Any]
+    routingVersion: int
+    createdAt: datetime
+    updatedAt: datetime
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4096:
+            raise ValueError("lambda_function_aliases.description exceeds 4096 bytes")
+        return value
+
+class LambdaFunctionAliasInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    functionId: UUID
+    name: str = Field(..., min_length=1, max_length=64, pattern="^[a-z][a-z0-9._-]{0,63}$")
+    description: str | None = Field("", max_length=4096)
+    traffic: dict[str, Any]
+    routingVersion: int | None = 1
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    createdBy: UUID | None = None
+    updatedBy: UUID | None = None
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 4096:
+            raise ValueError("lambda_function_aliases.description exceeds 4096 bytes")
+        return value
+
+class LambdaActorInstance(Base):
+    __tablename__ = "lambda_actor_instances"
+    __table_args__ = (
+        CheckConstraint("actor_key ~ '^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$'", name="lambda_actor_instances_actor_key_chk"),
+        CheckConstraint("jsonb_typeof(state) = 'object'", name="lambda_actor_instances_state_object_chk"),
+        CheckConstraint("octet_length(state::text) <= 1048576", name="lambda_actor_instances_state_size_chk"),
+        CheckConstraint("state_version >= 0", name="lambda_actor_instances_state_version_chk"),
+        CheckConstraint("alarm_attempt between 0 and 6", name="lambda_actor_instances_alarm_attempt_chk"),
+        CheckConstraint("lease_owner is null or octet_length(lease_owner) <= 200", name="lambda_actor_instances_lease_owner_size_chk"),
+        CheckConstraint("(lease_owner is null) = (lease_until is null)", name="lambda_actor_instances_lease_pair_chk"),
+        CheckConstraint("last_error is null or octet_length(last_error) <= 8192", name="lambda_actor_instances_last_error_size_chk"),
+        Index("lambda_actor_instances_function_key_uq", "function_id", "actor_key", unique=True),
+        Index("lambda_actor_instances_alarm_due_idx", "alarm_at", postgresql_where=text("alarm_at is not null")),
+        Index("lambda_actor_instances_lease_expiry_idx", "lease_until", postgresql_where=text("lease_until is not null")),
+    )
+
+    id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    function_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    actor_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    state: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    state_version: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default=text("0"))
+    alarm_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    alarm_attempt: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    lease_owner: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_invoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class LambdaActorInstanceRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    functionId: UUID
+    actorKey: str = Field(..., min_length=1, max_length=200, pattern="^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
+    state: dict[str, Any]
+    stateVersion: int
+    alarmAt: datetime | None = None
+    alarmAttempt: int = Field(..., ge=0, le=6)
+    leaseOwner: str | None = Field(None, max_length=200)
+    leaseUntil: datetime | None = None
+    lastInvokedAt: datetime | None = None
+    lastError: str | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("leaseOwner")
+    @classmethod
+    def validate_lease_owner(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("lambda_actor_instances.lease_owner exceeds 200 bytes")
+        return value
+
+    @field_validator("lastError")
+    @classmethod
+    def validate_last_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("lambda_actor_instances.last_error exceeds 8192 bytes")
+        return value
+
+class LambdaActorInstanceInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID | None = None
+    functionId: UUID
+    actorKey: str = Field(..., min_length=1, max_length=200, pattern="^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
+    state: dict[str, Any] | None = Field(default_factory=dict)
+    stateVersion: int | None = 0
+    alarmAt: datetime | None = None
+    alarmAttempt: int | None = Field(0, ge=0, le=6)
+    leaseOwner: str | None = Field(None, max_length=200)
+    leaseUntil: datetime | None = None
+    lastInvokedAt: datetime | None = None
+    lastError: str | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("leaseOwner")
+    @classmethod
+    def validate_lease_owner(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 200:
+            raise ValueError("lambda_actor_instances.lease_owner exceeds 200 bytes")
+        return value
+
+    @field_validator("lastError")
+    @classmethod
+    def validate_last_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 8192:
+            raise ValueError("lambda_actor_instances.last_error exceeds 8192 bytes")
         return value
 
 WorkflowDefinitionsStatus = Literal["draft", "active", "paused", "archived"]
@@ -13103,6 +13442,458 @@ class WebSessionsInsert(BaseModel):
     def validate_owner_email(cls, value):
         if value is not None and len(value.encode("utf-8")) > 320:
             raise ValueError("web_sessions.owner_email exceeds 320 bytes")
+        return value
+
+PrincipalsStatus = Literal["active", "disabled", "deleted"]
+
+class Principals(Base):
+    __tablename__ = "principals"
+    __table_args__ = (
+        CheckConstraint("email is null or octet_length(email) between 3 and 320", name="shared_auth_users_email_size_chk"),
+        CheckConstraint("phone is null or octet_length(phone) <= 64", name="shared_auth_users_phone_size_chk"),
+        CheckConstraint("display_name is null or octet_length(display_name) <= 160", name="shared_auth_users_display_name_size_chk"),
+        CheckConstraint("status in ('active', 'disabled', 'deleted')", name="shared_auth_users_status_chk"),
+        CheckConstraint("jsonb_typeof(profile) = 'object'", name="shared_auth_users_profile_object_chk"),
+        Index("shared_auth_users_email_uq", "lower(email)", unique=True, postgresql_where=text("email is not null and status <> 'deleted'")),
+        Index("shared_auth_users_status_idx", "status"),
+        {"schema": "shared_auth"},
+    )
+
+    shared_user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    email: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    email_verified: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    phone: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    display_name: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    status: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'active'"))
+    profile: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class PrincipalsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    sharedUserId: UUID
+    email: str | None = None
+    emailVerified: bool
+    phone: str | None = None
+    displayName: str | None = None
+    status: PrincipalsStatus
+    profile: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+    lastSeenAt: datetime
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 320:
+            raise ValueError("principals.email exceeds 320 bytes")
+        return value
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 64:
+            raise ValueError("principals.phone exceeds 64 bytes")
+        return value
+
+    @field_validator("displayName")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("principals.display_name exceeds 160 bytes")
+        return value
+
+class PrincipalsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sharedUserId: UUID | None = None
+    email: str | None = None
+    emailVerified: bool | None = False
+    phone: str | None = None
+    displayName: str | None = None
+    status: PrincipalsStatus | None = "active"
+    profile: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    lastSeenAt: datetime | None = None
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 320:
+            raise ValueError("principals.email exceeds 320 bytes")
+        return value
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 64:
+            raise ValueError("principals.phone exceeds 64 bytes")
+        return value
+
+    @field_validator("displayName")
+    @classmethod
+    def validate_display_name(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 160:
+            raise ValueError("principals.display_name exceeds 160 bytes")
+        return value
+
+class ProviderIdentities(Base):
+    __tablename__ = "provider_identities"
+    __table_args__ = (
+        CheckConstraint("octet_length(provider) between 1 and 64", name="shared_auth_provider_identities_provider_size_chk"),
+        CheckConstraint("octet_length(provider_tenant) between 1 and 255", name="shared_auth_provider_identities_tenant_size_chk"),
+        CheckConstraint("octet_length(provider_subject) between 1 and 512", name="shared_auth_provider_identities_subject_size_chk"),
+        CheckConstraint("email is null or octet_length(email) between 3 and 320", name="shared_auth_provider_identities_email_size_chk"),
+        CheckConstraint("jsonb_typeof(metadata) = 'object'", name="shared_auth_provider_identities_metadata_object_chk"),
+        Index("shared_auth_provider_identities_user_idx", "shared_user_id"),
+        {"schema": "shared_auth"},
+    )
+
+    provider_identity_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    shared_user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    provider: Mapped[str] = mapped_column(Text(), nullable=False)
+    provider_tenant: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'default'"))
+    provider_subject: Mapped[str] = mapped_column(Text(), nullable=False)
+    email: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    email_verified: Mapped[bool] = mapped_column(Boolean(), nullable=False, server_default=text("false"))
+    metadata: Mapped[dict[str, Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'{}'::jsonb"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class ProviderIdentitiesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    providerIdentityId: UUID
+    sharedUserId: UUID
+    provider: str
+    providerTenant: str
+    providerSubject: str
+    email: str | None = None
+    emailVerified: bool
+    metadata: dict[str, Any]
+    createdAt: datetime
+    updatedAt: datetime
+    lastSeenAt: datetime
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 64:
+            raise ValueError("provider_identities.provider exceeds 64 bytes")
+        return value
+
+    @field_validator("providerTenant")
+    @classmethod
+    def validate_provider_tenant(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 255:
+            raise ValueError("provider_identities.provider_tenant exceeds 255 bytes")
+        return value
+
+    @field_validator("providerSubject")
+    @classmethod
+    def validate_provider_subject(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("provider_identities.provider_subject exceeds 512 bytes")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 320:
+            raise ValueError("provider_identities.email exceeds 320 bytes")
+        return value
+
+class ProviderIdentitiesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    providerIdentityId: UUID | None = None
+    sharedUserId: UUID
+    provider: str
+    providerTenant: str | None = "default"
+    providerSubject: str
+    email: str | None = None
+    emailVerified: bool | None = False
+    metadata: dict[str, Any] | None = Field(default_factory=dict)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    lastSeenAt: datetime | None = None
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 64:
+            raise ValueError("provider_identities.provider exceeds 64 bytes")
+        return value
+
+    @field_validator("providerTenant")
+    @classmethod
+    def validate_provider_tenant(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 255:
+            raise ValueError("provider_identities.provider_tenant exceeds 255 bytes")
+        return value
+
+    @field_validator("providerSubject")
+    @classmethod
+    def validate_provider_subject(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("provider_identities.provider_subject exceeds 512 bytes")
+        return value
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 320:
+            raise ValueError("provider_identities.email exceeds 320 bytes")
+        return value
+
+class LocalCredentials(Base):
+    __tablename__ = "local_credentials"
+    __table_args__ = (
+        CheckConstraint("octet_length(password_hash) between 40 and 512", name="shared_auth_local_credentials_hash_size_chk"),
+        CheckConstraint("failed_attempts >= 0", name="shared_auth_local_credentials_failed_attempts_chk"),
+        {"schema": "shared_auth"},
+    )
+
+    shared_user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    password_hash: Mapped[str] = mapped_column(Text(), nullable=False)
+    password_changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    failed_attempts: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class LocalCredentialsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    sharedUserId: UUID
+    passwordHash: str
+    passwordChangedAt: datetime
+    failedAttempts: int = Field(..., ge=0)
+    lockedUntil: datetime | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("passwordHash")
+    @classmethod
+    def validate_password_hash(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("local_credentials.password_hash exceeds 512 bytes")
+        return value
+
+class LocalCredentialsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sharedUserId: UUID
+    passwordHash: str
+    passwordChangedAt: datetime | None = None
+    failedAttempts: int | None = Field(0, ge=0)
+    lockedUntil: datetime | None = None
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("passwordHash")
+    @classmethod
+    def validate_password_hash(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("local_credentials.password_hash exceeds 512 bytes")
+        return value
+
+class Sessions(Base):
+    __tablename__ = "sessions"
+    __table_args__ = (
+        CheckConstraint("octet_length(refresh_token_hash) = 43", name="shared_auth_sessions_refresh_hash_size_chk"),
+        CheckConstraint("octet_length(provider) between 1 and 64", name="shared_auth_sessions_provider_size_chk"),
+        CheckConstraint("octet_length(provider_tenant) between 1 and 255", name="shared_auth_sessions_tenant_size_chk"),
+        CheckConstraint("octet_length(provider_subject) between 1 and 512", name="shared_auth_sessions_subject_size_chk"),
+        CheckConstraint("expires_at > created_at", name="shared_auth_sessions_expiry_chk"),
+        Index("shared_auth_sessions_user_idx", "shared_user_id"),
+        Index("shared_auth_sessions_active_expiry_idx", "expires_at", postgresql_where=text("revoked_at is null")),
+        {"schema": "shared_auth"},
+    )
+
+    session_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    shared_user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    refresh_token_hash: Mapped[str] = mapped_column(Text(), nullable=False)
+    provider: Mapped[str] = mapped_column(Text(), nullable=False)
+    provider_tenant: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'default'"))
+    provider_subject: Mapped[str] = mapped_column(Text(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rotated_from: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class SessionsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    sessionId: UUID
+    sharedUserId: UUID
+    refreshTokenHash: str
+    provider: str
+    providerTenant: str
+    providerSubject: str
+    createdAt: datetime
+    updatedAt: datetime
+    lastSeenAt: datetime
+    expiresAt: datetime
+    revokedAt: datetime | None = None
+    rotatedFrom: UUID | None = None
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 64:
+            raise ValueError("sessions.provider exceeds 64 bytes")
+        return value
+
+    @field_validator("providerTenant")
+    @classmethod
+    def validate_provider_tenant(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 255:
+            raise ValueError("sessions.provider_tenant exceeds 255 bytes")
+        return value
+
+    @field_validator("providerSubject")
+    @classmethod
+    def validate_provider_subject(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("sessions.provider_subject exceeds 512 bytes")
+        return value
+
+class SessionsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sessionId: UUID | None = None
+    sharedUserId: UUID
+    refreshTokenHash: str
+    provider: str
+    providerTenant: str | None = "default"
+    providerSubject: str
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+    lastSeenAt: datetime | None = None
+    expiresAt: datetime
+    revokedAt: datetime | None = None
+    rotatedFrom: UUID | None = None
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 64:
+            raise ValueError("sessions.provider exceeds 64 bytes")
+        return value
+
+    @field_validator("providerTenant")
+    @classmethod
+    def validate_provider_tenant(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 255:
+            raise ValueError("sessions.provider_tenant exceeds 255 bytes")
+        return value
+
+    @field_validator("providerSubject")
+    @classmethod
+    def validate_provider_subject(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 512:
+            raise ValueError("sessions.provider_subject exceeds 512 bytes")
+        return value
+
+class Roles(Base):
+    __tablename__ = "roles"
+    __table_args__ = (
+        CheckConstraint("role_name ~ '^[a-z][a-z0-9:_-]{0,63}$'", name="shared_auth_roles_name_chk"),
+        Index("shared_auth_roles_user_idx", "shared_user_id"),
+        {"schema": "shared_auth"},
+    )
+
+    role_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    shared_user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    role_name: Mapped[str] = mapped_column(Text(), nullable=False)
+    granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    granted_by: Mapped[UUID | None] = mapped_column(PgUUID(as_uuid=True), nullable=True)
+
+class RolesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    roleId: UUID
+    sharedUserId: UUID
+    roleName: str = Field(..., pattern="^[a-z][a-z0-9:_-]{0,63}$")
+    grantedAt: datetime
+    grantedBy: UUID | None = None
+
+class RolesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    roleId: UUID | None = None
+    sharedUserId: UUID
+    roleName: str = Field(..., pattern="^[a-z][a-z0-9:_-]{0,63}$")
+    grantedAt: datetime | None = None
+    grantedBy: UUID | None = None
+
+class WebhookEvents(Base):
+    __tablename__ = "webhook_events"
+    __table_args__ = (
+        CheckConstraint("octet_length(provider) between 1 and 64", name="shared_auth_webhook_events_provider_size_chk"),
+        CheckConstraint("octet_length(event_type) between 1 and 128", name="shared_auth_webhook_events_type_size_chk"),
+        CheckConstraint("octet_length(payload_sha256) = 43", name="shared_auth_webhook_events_payload_hash_size_chk"),
+        Index("shared_auth_webhook_events_received_idx", "received_at"),
+        {"schema": "shared_auth"},
+    )
+
+    event_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True)
+    provider: Mapped[str] = mapped_column(Text(), nullable=False)
+    event_type: Mapped[str] = mapped_column(Text(), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    payload_sha256: Mapped[str] = mapped_column(Text(), nullable=False)
+
+class WebhookEventsRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    eventId: UUID
+    provider: str
+    eventType: str
+    receivedAt: datetime
+    payloadSha256: str
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 64:
+            raise ValueError("webhook_events.provider exceeds 64 bytes")
+        return value
+
+    @field_validator("eventType")
+    @classmethod
+    def validate_event_type(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 128:
+            raise ValueError("webhook_events.event_type exceeds 128 bytes")
+        return value
+
+class WebhookEventsInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    eventId: UUID
+    provider: str
+    eventType: str
+    receivedAt: datetime | None = None
+    payloadSha256: str
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 64:
+            raise ValueError("webhook_events.provider exceeds 64 bytes")
+        return value
+
+    @field_validator("eventType")
+    @classmethod
+    def validate_event_type(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 128:
+            raise ValueError("webhook_events.event_type exceeds 128 bytes")
         return value
 
 class FabJobs(Base):

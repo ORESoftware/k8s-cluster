@@ -2392,6 +2392,11 @@ type LambdaFunctionRuntime =
     | Ex
     | Java
     | Jvm
+    | Gleam
+    | Gleamlang
+    | Rust
+    | Rs
+    | Browser
 
 let lambdaFunctionRuntimeToString (value: LambdaFunctionRuntime) : string =
     match value with
@@ -2412,6 +2417,11 @@ let lambdaFunctionRuntimeToString (value: LambdaFunctionRuntime) : string =
     | LambdaFunctionRuntime.Ex -> "ex"
     | LambdaFunctionRuntime.Java -> "java"
     | LambdaFunctionRuntime.Jvm -> "jvm"
+    | LambdaFunctionRuntime.Gleam -> "gleam"
+    | LambdaFunctionRuntime.Gleamlang -> "gleamlang"
+    | LambdaFunctionRuntime.Rust -> "rust"
+    | LambdaFunctionRuntime.Rs -> "rs"
+    | LambdaFunctionRuntime.Browser -> "browser"
 
 let parseLambdaFunctionRuntime (value: string) : Result<LambdaFunctionRuntime, string> =
     match value with
@@ -2432,6 +2442,11 @@ let parseLambdaFunctionRuntime (value: string) : Result<LambdaFunctionRuntime, s
     | "ex" -> Ok LambdaFunctionRuntime.Ex
     | "java" -> Ok LambdaFunctionRuntime.Java
     | "jvm" -> Ok LambdaFunctionRuntime.Jvm
+    | "gleam" -> Ok LambdaFunctionRuntime.Gleam
+    | "gleamlang" -> Ok LambdaFunctionRuntime.Gleamlang
+    | "rust" -> Ok LambdaFunctionRuntime.Rust
+    | "rs" -> Ok LambdaFunctionRuntime.Rs
+    | "browser" -> Ok LambdaFunctionRuntime.Browser
     | _ -> Error ("unsupported lambda_functions.runtime: " + value)
 
 [<RequireQualifiedAccess>]
@@ -2566,6 +2581,293 @@ let validateLambdaFunctionIdleTimeoutSeconds (value: int) : Result<int, string> 
 let validateLambdaFunctionMaxRunMs (value: int) : Result<int, string> =
     if value < 1000 then Error "lambda_functions.max_run_ms is below the minimum"
     elif value > 300000 then Error "lambda_functions.max_run_ms is above the maximum"
+    else Ok value
+
+let lambdaFunctionRevisionsTable = "lambda_function_revisions"
+let lambdaFunctionRevisionsColumns = [ "id"; "function_id"; "revision_number"; "definition_digest"; "description"; "runtime"; "entry_command"; "function_body"; "reuse_key"; "idle_timeout_seconds"; "max_run_ms"; "containerized"; "container_image"; "container_build_status"; "container_build_error"; "container_built_at"; "env"; "labels"; "meta_data"; "created_at"; "created_by" ]
+let lambdaFunctionRevisionsSelectSql = "select\n      id::text as id,\n      function_id::text as function_id,\n      revision_number,\n      definition_digest,\n      description,\n      runtime,\n      entry_command,\n      function_body,\n      reuse_key,\n      idle_timeout_seconds,\n      max_run_ms,\n      containerized,\n      container_image,\n      container_build_status,\n      container_build_error,\n      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as container_built_at,\n      env::text as env_json,\n      labels::text as labels_json,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      created_by::text as created_by\n    from lambda_function_revisions"
+
+[<RequireQualifiedAccess>]
+type LambdaFunctionRevisionRuntime =
+    | Nodejs
+    | Javascript
+    | Typescript
+    | Python3
+    | Python
+    | Ruby
+    | Bash
+    | Shell
+    | Golang
+    | Go
+    | Dart
+    | Erlang
+    | Erl
+    | Elixir
+    | Ex
+    | Java
+    | Jvm
+    | Gleam
+    | Gleamlang
+    | Rust
+    | Rs
+    | Browser
+
+let lambdaFunctionRevisionRuntimeToString (value: LambdaFunctionRevisionRuntime) : string =
+    match value with
+    | LambdaFunctionRevisionRuntime.Nodejs -> "nodejs"
+    | LambdaFunctionRevisionRuntime.Javascript -> "javascript"
+    | LambdaFunctionRevisionRuntime.Typescript -> "typescript"
+    | LambdaFunctionRevisionRuntime.Python3 -> "python3"
+    | LambdaFunctionRevisionRuntime.Python -> "python"
+    | LambdaFunctionRevisionRuntime.Ruby -> "ruby"
+    | LambdaFunctionRevisionRuntime.Bash -> "bash"
+    | LambdaFunctionRevisionRuntime.Shell -> "shell"
+    | LambdaFunctionRevisionRuntime.Golang -> "golang"
+    | LambdaFunctionRevisionRuntime.Go -> "go"
+    | LambdaFunctionRevisionRuntime.Dart -> "dart"
+    | LambdaFunctionRevisionRuntime.Erlang -> "erlang"
+    | LambdaFunctionRevisionRuntime.Erl -> "erl"
+    | LambdaFunctionRevisionRuntime.Elixir -> "elixir"
+    | LambdaFunctionRevisionRuntime.Ex -> "ex"
+    | LambdaFunctionRevisionRuntime.Java -> "java"
+    | LambdaFunctionRevisionRuntime.Jvm -> "jvm"
+    | LambdaFunctionRevisionRuntime.Gleam -> "gleam"
+    | LambdaFunctionRevisionRuntime.Gleamlang -> "gleamlang"
+    | LambdaFunctionRevisionRuntime.Rust -> "rust"
+    | LambdaFunctionRevisionRuntime.Rs -> "rs"
+    | LambdaFunctionRevisionRuntime.Browser -> "browser"
+
+let parseLambdaFunctionRevisionRuntime (value: string) : Result<LambdaFunctionRevisionRuntime, string> =
+    match value with
+    | "nodejs" -> Ok LambdaFunctionRevisionRuntime.Nodejs
+    | "javascript" -> Ok LambdaFunctionRevisionRuntime.Javascript
+    | "typescript" -> Ok LambdaFunctionRevisionRuntime.Typescript
+    | "python3" -> Ok LambdaFunctionRevisionRuntime.Python3
+    | "python" -> Ok LambdaFunctionRevisionRuntime.Python
+    | "ruby" -> Ok LambdaFunctionRevisionRuntime.Ruby
+    | "bash" -> Ok LambdaFunctionRevisionRuntime.Bash
+    | "shell" -> Ok LambdaFunctionRevisionRuntime.Shell
+    | "golang" -> Ok LambdaFunctionRevisionRuntime.Golang
+    | "go" -> Ok LambdaFunctionRevisionRuntime.Go
+    | "dart" -> Ok LambdaFunctionRevisionRuntime.Dart
+    | "erlang" -> Ok LambdaFunctionRevisionRuntime.Erlang
+    | "erl" -> Ok LambdaFunctionRevisionRuntime.Erl
+    | "elixir" -> Ok LambdaFunctionRevisionRuntime.Elixir
+    | "ex" -> Ok LambdaFunctionRevisionRuntime.Ex
+    | "java" -> Ok LambdaFunctionRevisionRuntime.Java
+    | "jvm" -> Ok LambdaFunctionRevisionRuntime.Jvm
+    | "gleam" -> Ok LambdaFunctionRevisionRuntime.Gleam
+    | "gleamlang" -> Ok LambdaFunctionRevisionRuntime.Gleamlang
+    | "rust" -> Ok LambdaFunctionRevisionRuntime.Rust
+    | "rs" -> Ok LambdaFunctionRevisionRuntime.Rs
+    | "browser" -> Ok LambdaFunctionRevisionRuntime.Browser
+    | _ -> Error ("unsupported lambda_function_revisions.runtime: " + value)
+
+[<RequireQualifiedAccess>]
+type LambdaFunctionRevisionContainerBuildStatus =
+    | NotRequested
+    | Pending
+    | Building
+    | Built
+    | Failed
+    | Skipped
+
+let lambdaFunctionRevisionContainerBuildStatusToString (value: LambdaFunctionRevisionContainerBuildStatus) : string =
+    match value with
+    | LambdaFunctionRevisionContainerBuildStatus.NotRequested -> "not_requested"
+    | LambdaFunctionRevisionContainerBuildStatus.Pending -> "pending"
+    | LambdaFunctionRevisionContainerBuildStatus.Building -> "building"
+    | LambdaFunctionRevisionContainerBuildStatus.Built -> "built"
+    | LambdaFunctionRevisionContainerBuildStatus.Failed -> "failed"
+    | LambdaFunctionRevisionContainerBuildStatus.Skipped -> "skipped"
+
+let parseLambdaFunctionRevisionContainerBuildStatus (value: string) : Result<LambdaFunctionRevisionContainerBuildStatus, string> =
+    match value with
+    | "not_requested" -> Ok LambdaFunctionRevisionContainerBuildStatus.NotRequested
+    | "pending" -> Ok LambdaFunctionRevisionContainerBuildStatus.Pending
+    | "building" -> Ok LambdaFunctionRevisionContainerBuildStatus.Building
+    | "built" -> Ok LambdaFunctionRevisionContainerBuildStatus.Built
+    | "failed" -> Ok LambdaFunctionRevisionContainerBuildStatus.Failed
+    | "skipped" -> Ok LambdaFunctionRevisionContainerBuildStatus.Skipped
+    | _ -> Error ("unsupported lambda_function_revisions.container_build_status: " + value)
+
+type LambdaFunctionRevisionRow =
+    { LambdaFunctionRevisionId: string
+      LambdaFunctionRevisionFunctionId: string
+      LambdaFunctionRevisionRevisionNumber: int64
+      LambdaFunctionRevisionDefinitionDigest: string
+      LambdaFunctionRevisionDescription: string
+      LambdaFunctionRevisionRuntime: string
+      LambdaFunctionRevisionEntryCommand: string
+      LambdaFunctionRevisionFunctionBody: string
+      LambdaFunctionRevisionReuseKey: string option
+      LambdaFunctionRevisionIdleTimeoutSeconds: int
+      LambdaFunctionRevisionMaxRunMs: int
+      LambdaFunctionRevisionContainerized: bool
+      LambdaFunctionRevisionContainerImage: string option
+      LambdaFunctionRevisionContainerBuildStatus: string
+      LambdaFunctionRevisionContainerBuildError: string option
+      LambdaFunctionRevisionContainerBuiltAt: string option
+      LambdaFunctionRevisionEnv: string
+      LambdaFunctionRevisionLabels: string
+      LambdaFunctionRevisionMetaData: string
+      LambdaFunctionRevisionCreatedAt: string
+      LambdaFunctionRevisionCreatedBy: string option
+    }
+
+let lambdaFunctionRevisionRowOfRow (get: int -> string) (isNullAt: int -> bool) : LambdaFunctionRevisionRow =
+    { LambdaFunctionRevisionId = get 0
+      LambdaFunctionRevisionFunctionId = get 1
+      LambdaFunctionRevisionRevisionNumber = int64 (get 2)
+      LambdaFunctionRevisionDefinitionDigest = get 3
+      LambdaFunctionRevisionDescription = get 4
+      LambdaFunctionRevisionRuntime = get 5
+      LambdaFunctionRevisionEntryCommand = get 6
+      LambdaFunctionRevisionFunctionBody = get 7
+      LambdaFunctionRevisionReuseKey = (if isNullAt 8 then None else Some (get 8))
+      LambdaFunctionRevisionIdleTimeoutSeconds = int (get 9)
+      LambdaFunctionRevisionMaxRunMs = int (get 10)
+      LambdaFunctionRevisionContainerized = (get 11 = "t")
+      LambdaFunctionRevisionContainerImage = (if isNullAt 12 then None else Some (get 12))
+      LambdaFunctionRevisionContainerBuildStatus = get 13
+      LambdaFunctionRevisionContainerBuildError = (if isNullAt 14 then None else Some (get 14))
+      LambdaFunctionRevisionContainerBuiltAt = (if isNullAt 15 then None else Some (get 15))
+      LambdaFunctionRevisionEnv = get 16
+      LambdaFunctionRevisionLabels = get 17
+      LambdaFunctionRevisionMetaData = get 18
+      LambdaFunctionRevisionCreatedAt = get 19
+      LambdaFunctionRevisionCreatedBy = (if isNullAt 20 then None else Some (get 20))
+    }
+
+let validateLambdaFunctionRevisionRevisionNumber (value: int64) : Result<int64, string> =
+    if value < 1L then Error "lambda_function_revisions.revision_number is below the minimum"
+    else Ok value
+
+let validateLambdaFunctionRevisionDefinitionDigest (value: string) : Result<string, string> =
+    if value.Length < 64 then Error "lambda_function_revisions.definition_digest must be at least 64 characters"
+    elif value.Length > 64 then Error "lambda_function_revisions.definition_digest must be at most 64 characters"
+    elif not (Regex.IsMatch(value, @"^[a-f0-9]{64}$")) then Error "lambda_function_revisions.definition_digest does not match the required pattern"
+    else Ok value
+
+let validateLambdaFunctionRevisionDescription (value: string) : Result<string, string> =
+    if value.Length > 4096 then Error "lambda_function_revisions.description must be at most 4096 characters"
+    else Ok value
+
+let validateLambdaFunctionRevisionFunctionBody (value: string) : Result<string, string> =
+    if value.Length < 1 then Error "lambda_function_revisions.function_body must be at least 1 characters"
+    else Ok value
+
+let validateLambdaFunctionRevisionReuseKey (value: string) : Result<string, string> =
+    if value.Length > 200 then Error "lambda_function_revisions.reuse_key must be at most 200 characters"
+    else Ok value
+
+let validateLambdaFunctionRevisionIdleTimeoutSeconds (value: int) : Result<int, string> =
+    if value < 1 then Error "lambda_function_revisions.idle_timeout_seconds is below the minimum"
+    elif value > 3600 then Error "lambda_function_revisions.idle_timeout_seconds is above the maximum"
+    else Ok value
+
+let validateLambdaFunctionRevisionMaxRunMs (value: int) : Result<int, string> =
+    if value < 1000 then Error "lambda_function_revisions.max_run_ms is below the minimum"
+    elif value > 300000 then Error "lambda_function_revisions.max_run_ms is above the maximum"
+    else Ok value
+
+let lambdaFunctionAliasesTable = "lambda_function_aliases"
+let lambdaFunctionAliasesColumns = [ "id"; "function_id"; "name"; "description"; "traffic"; "routing_version"; "created_at"; "updated_at"; "created_by"; "updated_by" ]
+let lambdaFunctionAliasesSelectSql = "select\n      id::text as id,\n      function_id::text as function_id,\n      name,\n      description,\n      traffic::text as traffic_json,\n      routing_version,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      created_by::text as created_by,\n      updated_by::text as updated_by\n    from lambda_function_aliases"
+
+type LambdaFunctionAliasRow =
+    { LambdaFunctionAliasId: string
+      LambdaFunctionAliasFunctionId: string
+      LambdaFunctionAliasName: string
+      LambdaFunctionAliasDescription: string
+      LambdaFunctionAliasTraffic: string
+      LambdaFunctionAliasRoutingVersion: int64
+      LambdaFunctionAliasCreatedAt: string
+      LambdaFunctionAliasUpdatedAt: string
+      LambdaFunctionAliasCreatedBy: string option
+      LambdaFunctionAliasUpdatedBy: string option
+    }
+
+let lambdaFunctionAliasRowOfRow (get: int -> string) (isNullAt: int -> bool) : LambdaFunctionAliasRow =
+    { LambdaFunctionAliasId = get 0
+      LambdaFunctionAliasFunctionId = get 1
+      LambdaFunctionAliasName = get 2
+      LambdaFunctionAliasDescription = get 3
+      LambdaFunctionAliasTraffic = get 4
+      LambdaFunctionAliasRoutingVersion = int64 (get 5)
+      LambdaFunctionAliasCreatedAt = get 6
+      LambdaFunctionAliasUpdatedAt = get 7
+      LambdaFunctionAliasCreatedBy = (if isNullAt 8 then None else Some (get 8))
+      LambdaFunctionAliasUpdatedBy = (if isNullAt 9 then None else Some (get 9))
+    }
+
+let validateLambdaFunctionAliasName (value: string) : Result<string, string> =
+    if value.Length < 1 then Error "lambda_function_aliases.name must be at least 1 characters"
+    elif value.Length > 64 then Error "lambda_function_aliases.name must be at most 64 characters"
+    elif not (Regex.IsMatch(value, @"^[a-z][a-z0-9._-]{0,63}$")) then Error "lambda_function_aliases.name does not match the required pattern"
+    else Ok value
+
+let validateLambdaFunctionAliasDescription (value: string) : Result<string, string> =
+    if value.Length > 4096 then Error "lambda_function_aliases.description must be at most 4096 characters"
+    else Ok value
+
+let validateLambdaFunctionAliasRoutingVersion (value: int64) : Result<int64, string> =
+    if value < 1L then Error "lambda_function_aliases.routing_version is below the minimum"
+    else Ok value
+
+let lambdaActorInstancesTable = "lambda_actor_instances"
+let lambdaActorInstancesColumns = [ "id"; "function_id"; "actor_key"; "state"; "state_version"; "alarm_at"; "alarm_attempt"; "lease_owner"; "lease_until"; "last_invoked_at"; "last_error"; "created_at"; "updated_at" ]
+let lambdaActorInstancesSelectSql = "select\n      id::text as id,\n      function_id::text as function_id,\n      actor_key,\n      state::text as state_json,\n      state_version,\n      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as alarm_at,\n      alarm_attempt,\n      lease_owner,\n      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as lease_until,\n      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_invoked_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from lambda_actor_instances"
+
+type LambdaActorInstanceRow =
+    { LambdaActorInstanceId: string
+      LambdaActorInstanceFunctionId: string
+      LambdaActorInstanceActorKey: string
+      LambdaActorInstanceState: string
+      LambdaActorInstanceStateVersion: int64
+      LambdaActorInstanceAlarmAt: string option
+      LambdaActorInstanceAlarmAttempt: int
+      LambdaActorInstanceLeaseOwner: string option
+      LambdaActorInstanceLeaseUntil: string option
+      LambdaActorInstanceLastInvokedAt: string option
+      LambdaActorInstanceLastError: string option
+      LambdaActorInstanceCreatedAt: string
+      LambdaActorInstanceUpdatedAt: string
+    }
+
+let lambdaActorInstanceRowOfRow (get: int -> string) (isNullAt: int -> bool) : LambdaActorInstanceRow =
+    { LambdaActorInstanceId = get 0
+      LambdaActorInstanceFunctionId = get 1
+      LambdaActorInstanceActorKey = get 2
+      LambdaActorInstanceState = get 3
+      LambdaActorInstanceStateVersion = int64 (get 4)
+      LambdaActorInstanceAlarmAt = (if isNullAt 5 then None else Some (get 5))
+      LambdaActorInstanceAlarmAttempt = int (get 6)
+      LambdaActorInstanceLeaseOwner = (if isNullAt 7 then None else Some (get 7))
+      LambdaActorInstanceLeaseUntil = (if isNullAt 8 then None else Some (get 8))
+      LambdaActorInstanceLastInvokedAt = (if isNullAt 9 then None else Some (get 9))
+      LambdaActorInstanceLastError = (if isNullAt 10 then None else Some (get 10))
+      LambdaActorInstanceCreatedAt = get 11
+      LambdaActorInstanceUpdatedAt = get 12
+    }
+
+let validateLambdaActorInstanceActorKey (value: string) : Result<string, string> =
+    if value.Length < 1 then Error "lambda_actor_instances.actor_key must be at least 1 characters"
+    elif value.Length > 200 then Error "lambda_actor_instances.actor_key must be at most 200 characters"
+    elif not (Regex.IsMatch(value, @"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")) then Error "lambda_actor_instances.actor_key does not match the required pattern"
+    else Ok value
+
+let validateLambdaActorInstanceStateVersion (value: int64) : Result<int64, string> =
+    if value < 0L then Error "lambda_actor_instances.state_version is below the minimum"
+    else Ok value
+
+let validateLambdaActorInstanceAlarmAttempt (value: int) : Result<int, string> =
+    if value < 0 then Error "lambda_actor_instances.alarm_attempt is below the minimum"
+    elif value > 6 then Error "lambda_actor_instances.alarm_attempt is above the maximum"
+    else Ok value
+
+let validateLambdaActorInstanceLeaseOwner (value: string) : Result<string, string> =
+    if value.Length > 200 then Error "lambda_actor_instances.lease_owner must be at most 200 characters"
     else Ok value
 
 let workflowDefinitionsTable = "workflow_definitions"
@@ -12900,6 +13202,193 @@ let webSessionsRowOfRow (get: int -> string) (isNullAt: int -> bool) : WebSessio
       WebSessionsIdleExpiresAt = get 10
       WebSessionsAbsoluteExpiresAt = get 11
       WebSessionsRevokedAt = (if isNullAt 12 then None else Some (get 12))
+    }
+
+let principalsTable = "shared_auth.principals"
+let principalsColumns = [ "shared_user_id"; "email"; "email_verified"; "phone"; "display_name"; "status"; "profile"; "created_at"; "updated_at"; "last_seen_at" ]
+let principalsSelectSql = "select\n      shared_user_id::text as shared_user_id,\n      email,\n      email_verified,\n      phone,\n      display_name,\n      status,\n      profile::text as profile_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.principals"
+
+[<RequireQualifiedAccess>]
+type PrincipalsStatus =
+    | Active
+    | Disabled
+    | Deleted
+
+let principalsStatusToString (value: PrincipalsStatus) : string =
+    match value with
+    | PrincipalsStatus.Active -> "active"
+    | PrincipalsStatus.Disabled -> "disabled"
+    | PrincipalsStatus.Deleted -> "deleted"
+
+let parsePrincipalsStatus (value: string) : Result<PrincipalsStatus, string> =
+    match value with
+    | "active" -> Ok PrincipalsStatus.Active
+    | "disabled" -> Ok PrincipalsStatus.Disabled
+    | "deleted" -> Ok PrincipalsStatus.Deleted
+    | _ -> Error ("unsupported principals.status: " + value)
+
+type PrincipalsRow =
+    { PrincipalsSharedUserId: string
+      PrincipalsEmail: string option
+      PrincipalsEmailVerified: bool
+      PrincipalsPhone: string option
+      PrincipalsDisplayName: string option
+      PrincipalsStatus: string
+      PrincipalsProfile: string
+      PrincipalsCreatedAt: string
+      PrincipalsUpdatedAt: string
+      PrincipalsLastSeenAt: string
+    }
+
+let principalsRowOfRow (get: int -> string) (isNullAt: int -> bool) : PrincipalsRow =
+    { PrincipalsSharedUserId = get 0
+      PrincipalsEmail = (if isNullAt 1 then None else Some (get 1))
+      PrincipalsEmailVerified = (get 2 = "t")
+      PrincipalsPhone = (if isNullAt 3 then None else Some (get 3))
+      PrincipalsDisplayName = (if isNullAt 4 then None else Some (get 4))
+      PrincipalsStatus = get 5
+      PrincipalsProfile = get 6
+      PrincipalsCreatedAt = get 7
+      PrincipalsUpdatedAt = get 8
+      PrincipalsLastSeenAt = get 9
+    }
+
+let providerIdentitiesTable = "shared_auth.provider_identities"
+let providerIdentitiesColumns = [ "provider_identity_id"; "shared_user_id"; "provider"; "provider_tenant"; "provider_subject"; "email"; "email_verified"; "metadata"; "created_at"; "updated_at"; "last_seen_at" ]
+let providerIdentitiesSelectSql = "select\n      provider_identity_id::text as provider_identity_id,\n      shared_user_id::text as shared_user_id,\n      provider,\n      provider_tenant,\n      provider_subject,\n      email,\n      email_verified,\n      metadata::text as metadata_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at\n    from shared_auth.provider_identities"
+
+type ProviderIdentitiesRow =
+    { ProviderIdentitiesProviderIdentityId: string
+      ProviderIdentitiesSharedUserId: string
+      ProviderIdentitiesProvider: string
+      ProviderIdentitiesProviderTenant: string
+      ProviderIdentitiesProviderSubject: string
+      ProviderIdentitiesEmail: string option
+      ProviderIdentitiesEmailVerified: bool
+      ProviderIdentitiesMetadata: string
+      ProviderIdentitiesCreatedAt: string
+      ProviderIdentitiesUpdatedAt: string
+      ProviderIdentitiesLastSeenAt: string
+    }
+
+let providerIdentitiesRowOfRow (get: int -> string) (isNullAt: int -> bool) : ProviderIdentitiesRow =
+    { ProviderIdentitiesProviderIdentityId = get 0
+      ProviderIdentitiesSharedUserId = get 1
+      ProviderIdentitiesProvider = get 2
+      ProviderIdentitiesProviderTenant = get 3
+      ProviderIdentitiesProviderSubject = get 4
+      ProviderIdentitiesEmail = (if isNullAt 5 then None else Some (get 5))
+      ProviderIdentitiesEmailVerified = (get 6 = "t")
+      ProviderIdentitiesMetadata = get 7
+      ProviderIdentitiesCreatedAt = get 8
+      ProviderIdentitiesUpdatedAt = get 9
+      ProviderIdentitiesLastSeenAt = get 10
+    }
+
+let localCredentialsTable = "shared_auth.local_credentials"
+let localCredentialsColumns = [ "shared_user_id"; "password_hash"; "password_changed_at"; "failed_attempts"; "locked_until"; "created_at"; "updated_at" ]
+let localCredentialsSelectSql = "select\n      shared_user_id::text as shared_user_id,\n      password_hash,\n      to_char(password_changed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as password_changed_at,\n      failed_attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from shared_auth.local_credentials"
+
+type LocalCredentialsRow =
+    { LocalCredentialsSharedUserId: string
+      LocalCredentialsPasswordHash: string
+      LocalCredentialsPasswordChangedAt: string
+      LocalCredentialsFailedAttempts: int
+      LocalCredentialsLockedUntil: string option
+      LocalCredentialsCreatedAt: string
+      LocalCredentialsUpdatedAt: string
+    }
+
+let localCredentialsRowOfRow (get: int -> string) (isNullAt: int -> bool) : LocalCredentialsRow =
+    { LocalCredentialsSharedUserId = get 0
+      LocalCredentialsPasswordHash = get 1
+      LocalCredentialsPasswordChangedAt = get 2
+      LocalCredentialsFailedAttempts = int (get 3)
+      LocalCredentialsLockedUntil = (if isNullAt 4 then None else Some (get 4))
+      LocalCredentialsCreatedAt = get 5
+      LocalCredentialsUpdatedAt = get 6
+    }
+
+let validateLocalCredentialsFailedAttempts (value: int) : Result<int, string> =
+    if value < 0 then Error "local_credentials.failed_attempts is below the minimum"
+    else Ok value
+
+let sessionsTable = "shared_auth.sessions"
+let sessionsColumns = [ "session_id"; "shared_user_id"; "refresh_token_hash"; "provider"; "provider_tenant"; "provider_subject"; "created_at"; "updated_at"; "last_seen_at"; "expires_at"; "revoked_at"; "rotated_from" ]
+let sessionsSelectSql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+
+type SessionsRow =
+    { SessionsSessionId: string
+      SessionsSharedUserId: string
+      SessionsRefreshTokenHash: string
+      SessionsProvider: string
+      SessionsProviderTenant: string
+      SessionsProviderSubject: string
+      SessionsCreatedAt: string
+      SessionsUpdatedAt: string
+      SessionsLastSeenAt: string
+      SessionsExpiresAt: string
+      SessionsRevokedAt: string option
+      SessionsRotatedFrom: string option
+    }
+
+let sessionsRowOfRow (get: int -> string) (isNullAt: int -> bool) : SessionsRow =
+    { SessionsSessionId = get 0
+      SessionsSharedUserId = get 1
+      SessionsRefreshTokenHash = get 2
+      SessionsProvider = get 3
+      SessionsProviderTenant = get 4
+      SessionsProviderSubject = get 5
+      SessionsCreatedAt = get 6
+      SessionsUpdatedAt = get 7
+      SessionsLastSeenAt = get 8
+      SessionsExpiresAt = get 9
+      SessionsRevokedAt = (if isNullAt 10 then None else Some (get 10))
+      SessionsRotatedFrom = (if isNullAt 11 then None else Some (get 11))
+    }
+
+let rolesTable = "shared_auth.roles"
+let rolesColumns = [ "role_id"; "shared_user_id"; "role_name"; "granted_at"; "granted_by" ]
+let rolesSelectSql = "select\n      role_id::text as role_id,\n      shared_user_id::text as shared_user_id,\n      role_name,\n      to_char(granted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as granted_at,\n      granted_by::text as granted_by\n    from shared_auth.roles"
+
+type RolesRow =
+    { RolesRoleId: string
+      RolesSharedUserId: string
+      RolesRoleName: string
+      RolesGrantedAt: string
+      RolesGrantedBy: string option
+    }
+
+let rolesRowOfRow (get: int -> string) (isNullAt: int -> bool) : RolesRow =
+    { RolesRoleId = get 0
+      RolesSharedUserId = get 1
+      RolesRoleName = get 2
+      RolesGrantedAt = get 3
+      RolesGrantedBy = (if isNullAt 4 then None else Some (get 4))
+    }
+
+let validateRolesRoleName (value: string) : Result<string, string> =
+    if not (Regex.IsMatch(value, @"^[a-z][a-z0-9:_-]{0,63}$")) then Error "roles.role_name does not match the required pattern"
+    else Ok value
+
+let webhookEventsTable = "shared_auth.webhook_events"
+let webhookEventsColumns = [ "event_id"; "provider"; "event_type"; "received_at"; "payload_sha256" ]
+let webhookEventsSelectSql = "select\n      event_id::text as event_id,\n      provider,\n      event_type,\n      to_char(received_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as received_at,\n      payload_sha256\n    from shared_auth.webhook_events"
+
+type WebhookEventsRow =
+    { WebhookEventsEventId: string
+      WebhookEventsProvider: string
+      WebhookEventsEventType: string
+      WebhookEventsReceivedAt: string
+      WebhookEventsPayloadSha256: string
+    }
+
+let webhookEventsRowOfRow (get: int -> string) (isNullAt: int -> bool) : WebhookEventsRow =
+    { WebhookEventsEventId = get 0
+      WebhookEventsProvider = get 1
+      WebhookEventsEventType = get 2
+      WebhookEventsReceivedAt = get 3
+      WebhookEventsPayloadSha256 = get 4
     }
 
 let fabJobsTable = "daedalus.fab_jobs"

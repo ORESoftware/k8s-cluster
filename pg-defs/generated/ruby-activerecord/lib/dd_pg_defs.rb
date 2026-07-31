@@ -506,7 +506,7 @@ module DdPgDefs
     validates :slug, format: { with: Regexp.new("\\A[a-z0-9][a-z0-9-]{1,118}[a-z0-9]\\z") }
     validates :display_name, presence: true
     validates :display_name, length: { minimum: 1, maximum: 200 }
-    validates :runtime, inclusion: { in: ["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"] }
+    validates :runtime, inclusion: { in: ["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"] }
     validates :function_body, presence: true
     validates :function_body, length: { minimum: 1 }
     validates :reuse_key, length: { maximum: 200 }, allow_nil: true
@@ -514,6 +514,63 @@ module DdPgDefs
     validates :max_run_ms, numericality: { only_integer: true, greater_than_or_equal_to: 1000, less_than_or_equal_to: 300000 }
     validates :container_build_status, inclusion: { in: ["not_requested", "pending", "building", "built", "failed", "skipped"] }
     validates :status, inclusion: { in: ["draft", "active", "paused", "archived"] }
+  end
+
+  class LambdaFunctionRevision < ActiveRecord::Base
+    # Immutable published snapshots of lambda function code and runtime configuration.
+    self.table_name = "lambda_function_revisions"
+    self.primary_key = "id"
+
+    validates :function_id, presence: true
+    validates :revision_number, presence: true
+    validates :revision_number, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
+    validates :definition_digest, presence: true
+    validates :definition_digest, length: { minimum: 64, maximum: 64 }
+    validates :definition_digest, format: { with: Regexp.new("\\A[a-f0-9]{64}\\z") }
+    validates :description, length: { maximum: 4096 }
+    validates :runtime, presence: true
+    validates :runtime, inclusion: { in: ["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"] }
+    validates :function_body, presence: true
+    validates :function_body, length: { minimum: 1 }
+    validates :reuse_key, length: { maximum: 200 }, allow_nil: true
+    validates :idle_timeout_seconds, presence: true
+    validates :idle_timeout_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 3600 }
+    validates :max_run_ms, presence: true
+    validates :max_run_ms, numericality: { only_integer: true, greater_than_or_equal_to: 1000, less_than_or_equal_to: 300000 }
+    validates :containerized, presence: true
+    validates :container_build_status, presence: true
+    validates :container_build_status, inclusion: { in: ["not_requested", "pending", "building", "built", "failed", "skipped"] }
+    validates :env, presence: true
+    validates :labels, presence: true
+    validates :meta_data, presence: true
+  end
+
+  class LambdaFunctionAlias < ActiveRecord::Base
+    # Named weighted routing policies over immutable lambda function revisions.
+    self.table_name = "lambda_function_aliases"
+    self.primary_key = "id"
+
+    validates :function_id, presence: true
+    validates :name, presence: true
+    validates :name, length: { minimum: 1, maximum: 64 }
+    validates :name, format: { with: Regexp.new("\\A[a-z][a-z0-9._-]{0,63}\\z") }
+    validates :description, length: { maximum: 4096 }
+    validates :traffic, presence: true
+    validates :routing_version, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
+  end
+
+  class LambdaActorInstance < ActiveRecord::Base
+    # Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
+    self.table_name = "lambda_actor_instances"
+    self.primary_key = "id"
+
+    validates :function_id, presence: true
+    validates :actor_key, presence: true
+    validates :actor_key, length: { minimum: 1, maximum: 200 }
+    validates :actor_key, format: { with: Regexp.new("\\A[A-Za-z0-9][A-Za-z0-9._:-]{0,199}\\z") }
+    validates :state_version, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+    validates :alarm_attempt, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 6 }
+    validates :lease_owner, length: { maximum: 200 }, allow_nil: true
   end
 
   class WorkflowDefinitions < ActiveRecord::Base
@@ -2386,6 +2443,59 @@ module DdPgDefs
     validates :refresh_nonce, presence: true
     validates :idle_expires_at, presence: true
     validates :absolute_expires_at, presence: true
+  end
+
+  class Principals < ActiveRecord::Base
+    self.table_name = "shared_auth.principals"
+    self.primary_key = "shared_user_id"
+
+    validates :status, inclusion: { in: ["active", "disabled", "deleted"] }
+  end
+
+  class ProviderIdentities < ActiveRecord::Base
+    self.table_name = "shared_auth.provider_identities"
+    self.primary_key = "provider_identity_id"
+
+    validates :shared_user_id, presence: true
+    validates :provider, presence: true
+    validates :provider_subject, presence: true
+  end
+
+  class LocalCredentials < ActiveRecord::Base
+    self.table_name = "shared_auth.local_credentials"
+    self.primary_key = "shared_user_id"
+
+    validates :password_hash, presence: true
+    validates :failed_attempts, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  end
+
+  class Sessions < ActiveRecord::Base
+    self.table_name = "shared_auth.sessions"
+    self.primary_key = "session_id"
+
+    validates :shared_user_id, presence: true
+    validates :refresh_token_hash, presence: true
+    validates :provider, presence: true
+    validates :provider_subject, presence: true
+    validates :expires_at, presence: true
+  end
+
+  class Roles < ActiveRecord::Base
+    self.table_name = "shared_auth.roles"
+    self.primary_key = "role_id"
+
+    validates :shared_user_id, presence: true
+    validates :role_name, presence: true
+    validates :role_name, format: { with: Regexp.new("\\A[a-z][a-z0-9:_-]{0,63}\\z") }
+  end
+
+  class WebhookEvents < ActiveRecord::Base
+    self.table_name = "shared_auth.webhook_events"
+    self.primary_key = "event_id"
+
+    validates :provider, presence: true
+    validates :event_type, presence: true
+    validates :payload_sha256, presence: true
   end
 
   class FabJobs < ActiveRecord::Base

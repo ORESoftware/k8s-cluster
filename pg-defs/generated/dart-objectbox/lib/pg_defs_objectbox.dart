@@ -2746,6 +2746,288 @@ class LambdaFunctionObjectBox {
 }
 
 @Entity()
+class LambdaFunctionRevisionObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String functionId;
+
+  int revisionNumber;
+
+  String definitionDigest;
+
+  String description;
+
+  String runtime;
+
+  String entryCommand;
+
+  String functionBody;
+
+  String? reuseKey;
+
+  int idleTimeoutSeconds;
+
+  int maxRunMs;
+
+  bool containerized;
+
+  String? containerImage;
+
+  String containerBuildStatus;
+
+  String? containerBuildError;
+
+  String? containerBuiltAt;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String env;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String labels;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metaData;
+
+  String createdAt;
+
+  String? createdBy;
+
+
+  LambdaFunctionRevisionObjectBox({
+    required this.id,
+    required this.functionId,
+    required this.revisionNumber,
+    required this.definitionDigest,
+    required this.description,
+    required this.runtime,
+    required this.entryCommand,
+    required this.functionBody,
+    this.reuseKey,
+    required this.idleTimeoutSeconds,
+    required this.maxRunMs,
+    required this.containerized,
+    this.containerImage,
+    required this.containerBuildStatus,
+    this.containerBuildError,
+    this.containerBuiltAt,
+    required this.env,
+    required this.labels,
+    required this.metaData,
+    required this.createdAt,
+    this.createdBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "functionId": functionId,
+    "revisionNumber": revisionNumber,
+    "definitionDigest": definitionDigest,
+    "description": description,
+    "runtime": runtime,
+    "entryCommand": entryCommand,
+    "functionBody": functionBody,
+    "reuseKey": reuseKey,
+    "idleTimeoutSeconds": idleTimeoutSeconds,
+    "maxRunMs": maxRunMs,
+    "containerized": containerized,
+    "containerImage": containerImage,
+    "containerBuildStatus": containerBuildStatus,
+    "containerBuildError": containerBuildError,
+    "containerBuiltAt": containerBuiltAt,
+    "env": jsonDecode(env),
+    "labels": jsonDecode(labels),
+    "metaData": jsonDecode(metaData),
+    "createdAt": createdAt,
+    "createdBy": createdBy,
+  };
+
+  static LambdaFunctionRevisionObjectBox fromJson(Map<String, Object?> json) {
+    return LambdaFunctionRevisionObjectBox(
+      id: json["id"] as String,
+      functionId: json["functionId"] as String,
+      revisionNumber: (json["revisionNumber"] as num).toInt(),
+      definitionDigest: json["definitionDigest"] as String,
+      description: json["description"] as String,
+      runtime: json["runtime"] as String,
+      entryCommand: json["entryCommand"] as String,
+      functionBody: json["functionBody"] as String,
+      reuseKey: json["reuseKey"] as String?,
+      idleTimeoutSeconds: (json["idleTimeoutSeconds"] as num).toInt(),
+      maxRunMs: (json["maxRunMs"] as num).toInt(),
+      containerized: json["containerized"] as bool,
+      containerImage: json["containerImage"] as String?,
+      containerBuildStatus: json["containerBuildStatus"] as String,
+      containerBuildError: json["containerBuildError"] as String?,
+      containerBuiltAt: json["containerBuiltAt"] as String?,
+      env: json["env"] is String ? json["env"] as String : jsonEncode(json["env"]),
+      labels: json["labels"] is String ? json["labels"] as String : jsonEncode(json["labels"]),
+      metaData: json["metaData"] is String ? json["metaData"] as String : jsonEncode(json["metaData"]),
+      createdAt: json["createdAt"] as String,
+      createdBy: json["createdBy"] as String?,
+    );
+  }
+}
+
+@Entity()
+class LambdaFunctionAliasObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String functionId;
+
+  String name;
+
+  String description;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String traffic;
+
+  int routingVersion;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String? createdBy;
+
+  String? updatedBy;
+
+
+  LambdaFunctionAliasObjectBox({
+    required this.id,
+    required this.functionId,
+    required this.name,
+    required this.description,
+    required this.traffic,
+    required this.routingVersion,
+    required this.createdAt,
+    required this.updatedAt,
+    this.createdBy,
+    this.updatedBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "functionId": functionId,
+    "name": name,
+    "description": description,
+    "traffic": jsonDecode(traffic),
+    "routingVersion": routingVersion,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "createdBy": createdBy,
+    "updatedBy": updatedBy,
+  };
+
+  static LambdaFunctionAliasObjectBox fromJson(Map<String, Object?> json) {
+    return LambdaFunctionAliasObjectBox(
+      id: json["id"] as String,
+      functionId: json["functionId"] as String,
+      name: json["name"] as String,
+      description: json["description"] as String,
+      traffic: json["traffic"] is String ? json["traffic"] as String : jsonEncode(json["traffic"]),
+      routingVersion: (json["routingVersion"] as num).toInt(),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      createdBy: json["createdBy"] as String?,
+      updatedBy: json["updatedBy"] as String?,
+    );
+  }
+}
+
+@Entity()
+class LambdaActorInstanceObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String id;
+
+  String functionId;
+
+  String actorKey;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String state;
+
+  int stateVersion;
+
+  String? alarmAt;
+
+  int alarmAttempt;
+
+  String? leaseOwner;
+
+  String? leaseUntil;
+
+  String? lastInvokedAt;
+
+  String? lastError;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  LambdaActorInstanceObjectBox({
+    required this.id,
+    required this.functionId,
+    required this.actorKey,
+    required this.state,
+    required this.stateVersion,
+    this.alarmAt,
+    required this.alarmAttempt,
+    this.leaseOwner,
+    this.leaseUntil,
+    this.lastInvokedAt,
+    this.lastError,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "id": id,
+    "functionId": functionId,
+    "actorKey": actorKey,
+    "state": jsonDecode(state),
+    "stateVersion": stateVersion,
+    "alarmAt": alarmAt,
+    "alarmAttempt": alarmAttempt,
+    "leaseOwner": leaseOwner,
+    "leaseUntil": leaseUntil,
+    "lastInvokedAt": lastInvokedAt,
+    "lastError": lastError,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static LambdaActorInstanceObjectBox fromJson(Map<String, Object?> json) {
+    return LambdaActorInstanceObjectBox(
+      id: json["id"] as String,
+      functionId: json["functionId"] as String,
+      actorKey: json["actorKey"] as String,
+      state: json["state"] is String ? json["state"] as String : jsonEncode(json["state"]),
+      stateVersion: (json["stateVersion"] as num).toInt(),
+      alarmAt: json["alarmAt"] as String?,
+      alarmAttempt: (json["alarmAttempt"] as num).toInt(),
+      leaseOwner: json["leaseOwner"] as String?,
+      leaseUntil: json["leaseUntil"] as String?,
+      lastInvokedAt: json["lastInvokedAt"] as String?,
+      lastError: json["lastError"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
 class WorkflowDefinitionsObjectBox {
   @Id()
   int obxId = 0;
@@ -13521,6 +13803,372 @@ class WebSessionsObjectBox {
       idleExpiresAt: json["idleExpiresAt"] as String,
       absoluteExpiresAt: json["absoluteExpiresAt"] as String,
       revokedAt: json["revokedAt"] as String?,
+    );
+  }
+}
+
+@Entity()
+class PrincipalsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String sharedUserId;
+
+  String? email;
+
+  bool emailVerified;
+
+  String? phone;
+
+  String? displayName;
+
+  String status;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String profile;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String lastSeenAt;
+
+
+  PrincipalsObjectBox({
+    required this.sharedUserId,
+    this.email,
+    required this.emailVerified,
+    this.phone,
+    this.displayName,
+    required this.status,
+    required this.profile,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.lastSeenAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "sharedUserId": sharedUserId,
+    "email": email,
+    "emailVerified": emailVerified,
+    "phone": phone,
+    "displayName": displayName,
+    "status": status,
+    "profile": jsonDecode(profile),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "lastSeenAt": lastSeenAt,
+  };
+
+  static PrincipalsObjectBox fromJson(Map<String, Object?> json) {
+    return PrincipalsObjectBox(
+      sharedUserId: json["sharedUserId"] as String,
+      email: json["email"] as String?,
+      emailVerified: json["emailVerified"] as bool,
+      phone: json["phone"] as String?,
+      displayName: json["displayName"] as String?,
+      status: json["status"] as String,
+      profile: json["profile"] is String ? json["profile"] as String : jsonEncode(json["profile"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      lastSeenAt: json["lastSeenAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class ProviderIdentitiesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String providerIdentityId;
+
+  String sharedUserId;
+
+  String provider;
+
+  String providerTenant;
+
+  String providerSubject;
+
+  String? email;
+
+  bool emailVerified;
+
+  // Stored as JSON-encoded string because ObjectBox lacks a native jsonb type.
+  String metadata;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String lastSeenAt;
+
+
+  ProviderIdentitiesObjectBox({
+    required this.providerIdentityId,
+    required this.sharedUserId,
+    required this.provider,
+    required this.providerTenant,
+    required this.providerSubject,
+    this.email,
+    required this.emailVerified,
+    required this.metadata,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.lastSeenAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "providerIdentityId": providerIdentityId,
+    "sharedUserId": sharedUserId,
+    "provider": provider,
+    "providerTenant": providerTenant,
+    "providerSubject": providerSubject,
+    "email": email,
+    "emailVerified": emailVerified,
+    "metadata": jsonDecode(metadata),
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "lastSeenAt": lastSeenAt,
+  };
+
+  static ProviderIdentitiesObjectBox fromJson(Map<String, Object?> json) {
+    return ProviderIdentitiesObjectBox(
+      providerIdentityId: json["providerIdentityId"] as String,
+      sharedUserId: json["sharedUserId"] as String,
+      provider: json["provider"] as String,
+      providerTenant: json["providerTenant"] as String,
+      providerSubject: json["providerSubject"] as String,
+      email: json["email"] as String?,
+      emailVerified: json["emailVerified"] as bool,
+      metadata: json["metadata"] is String ? json["metadata"] as String : jsonEncode(json["metadata"]),
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      lastSeenAt: json["lastSeenAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class LocalCredentialsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String sharedUserId;
+
+  String passwordHash;
+
+  String passwordChangedAt;
+
+  int failedAttempts;
+
+  String? lockedUntil;
+
+  String createdAt;
+
+  String updatedAt;
+
+
+  LocalCredentialsObjectBox({
+    required this.sharedUserId,
+    required this.passwordHash,
+    required this.passwordChangedAt,
+    required this.failedAttempts,
+    this.lockedUntil,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "sharedUserId": sharedUserId,
+    "passwordHash": passwordHash,
+    "passwordChangedAt": passwordChangedAt,
+    "failedAttempts": failedAttempts,
+    "lockedUntil": lockedUntil,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  static LocalCredentialsObjectBox fromJson(Map<String, Object?> json) {
+    return LocalCredentialsObjectBox(
+      sharedUserId: json["sharedUserId"] as String,
+      passwordHash: json["passwordHash"] as String,
+      passwordChangedAt: json["passwordChangedAt"] as String,
+      failedAttempts: (json["failedAttempts"] as num).toInt(),
+      lockedUntil: json["lockedUntil"] as String?,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+    );
+  }
+}
+
+@Entity()
+class SessionsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String sessionId;
+
+  String sharedUserId;
+
+  String refreshTokenHash;
+
+  String provider;
+
+  String providerTenant;
+
+  String providerSubject;
+
+  String createdAt;
+
+  String updatedAt;
+
+  String lastSeenAt;
+
+  String expiresAt;
+
+  String? revokedAt;
+
+  String? rotatedFrom;
+
+
+  SessionsObjectBox({
+    required this.sessionId,
+    required this.sharedUserId,
+    required this.refreshTokenHash,
+    required this.provider,
+    required this.providerTenant,
+    required this.providerSubject,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.lastSeenAt,
+    required this.expiresAt,
+    this.revokedAt,
+    this.rotatedFrom,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "sessionId": sessionId,
+    "sharedUserId": sharedUserId,
+    "refreshTokenHash": refreshTokenHash,
+    "provider": provider,
+    "providerTenant": providerTenant,
+    "providerSubject": providerSubject,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+    "lastSeenAt": lastSeenAt,
+    "expiresAt": expiresAt,
+    "revokedAt": revokedAt,
+    "rotatedFrom": rotatedFrom,
+  };
+
+  static SessionsObjectBox fromJson(Map<String, Object?> json) {
+    return SessionsObjectBox(
+      sessionId: json["sessionId"] as String,
+      sharedUserId: json["sharedUserId"] as String,
+      refreshTokenHash: json["refreshTokenHash"] as String,
+      provider: json["provider"] as String,
+      providerTenant: json["providerTenant"] as String,
+      providerSubject: json["providerSubject"] as String,
+      createdAt: json["createdAt"] as String,
+      updatedAt: json["updatedAt"] as String,
+      lastSeenAt: json["lastSeenAt"] as String,
+      expiresAt: json["expiresAt"] as String,
+      revokedAt: json["revokedAt"] as String?,
+      rotatedFrom: json["rotatedFrom"] as String?,
+    );
+  }
+}
+
+@Entity()
+class RolesObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String roleId;
+
+  String sharedUserId;
+
+  String roleName;
+
+  String grantedAt;
+
+  String? grantedBy;
+
+
+  RolesObjectBox({
+    required this.roleId,
+    required this.sharedUserId,
+    required this.roleName,
+    required this.grantedAt,
+    this.grantedBy,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "roleId": roleId,
+    "sharedUserId": sharedUserId,
+    "roleName": roleName,
+    "grantedAt": grantedAt,
+    "grantedBy": grantedBy,
+  };
+
+  static RolesObjectBox fromJson(Map<String, Object?> json) {
+    return RolesObjectBox(
+      roleId: json["roleId"] as String,
+      sharedUserId: json["sharedUserId"] as String,
+      roleName: json["roleName"] as String,
+      grantedAt: json["grantedAt"] as String,
+      grantedBy: json["grantedBy"] as String?,
+    );
+  }
+}
+
+@Entity()
+class WebhookEventsObjectBox {
+  @Id()
+  int obxId = 0;
+
+  @Unique()
+  String eventId;
+
+  String provider;
+
+  String eventType;
+
+  String receivedAt;
+
+  String payloadSha256;
+
+
+  WebhookEventsObjectBox({
+    required this.eventId,
+    required this.provider,
+    required this.eventType,
+    required this.receivedAt,
+    required this.payloadSha256,
+  });
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "eventId": eventId,
+    "provider": provider,
+    "eventType": eventType,
+    "receivedAt": receivedAt,
+    "payloadSha256": payloadSha256,
+  };
+
+  static WebhookEventsObjectBox fromJson(Map<String, Object?> json) {
+    return WebhookEventsObjectBox(
+      eventId: json["eventId"] as String,
+      provider: json["provider"] as String,
+      eventType: json["eventType"] as String,
+      receivedAt: json["receivedAt"] as String,
+      payloadSha256: json["payloadSha256"] as String,
     );
   }
 }

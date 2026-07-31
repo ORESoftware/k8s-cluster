@@ -1320,6 +1320,139 @@ impl ActiveModelBehavior for ActiveModel {}
 pub use lambda_functions::Entity as LambdaFunctionEntity;
 pub use lambda_functions::Model as LambdaFunctionModel;
 
+pub mod lambda_function_revisions {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "lambda_function_revisions")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "function_id")]
+    pub function_id: Uuid,
+    #[sea_orm(column_name = "revision_number")]
+    pub revision_number: i64,
+    #[sea_orm(column_name = "definition_digest")]
+    pub definition_digest: String,
+    pub description: String,
+    pub runtime: String,
+    #[sea_orm(column_name = "entry_command")]
+    pub entry_command: String,
+    #[sea_orm(column_name = "function_body")]
+    pub function_body: String,
+    #[sea_orm(column_name = "reuse_key")]
+    pub reuse_key: Option<String>,
+    #[sea_orm(column_name = "idle_timeout_seconds")]
+    pub idle_timeout_seconds: i32,
+    #[sea_orm(column_name = "max_run_ms")]
+    pub max_run_ms: i32,
+    pub containerized: bool,
+    #[sea_orm(column_name = "container_image")]
+    pub container_image: Option<String>,
+    #[sea_orm(column_name = "container_build_status")]
+    pub container_build_status: String,
+    #[sea_orm(column_name = "container_build_error")]
+    pub container_build_error: Option<String>,
+    #[sea_orm(column_name = "container_built_at")]
+    pub container_built_at: Option<DateTimeWithTimeZone>,
+    pub env: Json,
+    pub labels: Json,
+    #[sea_orm(column_name = "meta_data")]
+    pub meta_data: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use lambda_function_revisions::Entity as LambdaFunctionRevisionEntity;
+pub use lambda_function_revisions::Model as LambdaFunctionRevisionModel;
+
+pub mod lambda_function_aliases {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "lambda_function_aliases")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "function_id")]
+    pub function_id: Uuid,
+    pub name: String,
+    pub description: String,
+    pub traffic: Json,
+    #[sea_orm(column_name = "routing_version")]
+    pub routing_version: i64,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "created_by")]
+    pub created_by: Option<Uuid>,
+    #[sea_orm(column_name = "updated_by")]
+    pub updated_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use lambda_function_aliases::Entity as LambdaFunctionAliasEntity;
+pub use lambda_function_aliases::Model as LambdaFunctionAliasModel;
+
+pub mod lambda_actor_instances {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(table_name = "lambda_actor_instances")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false)]
+    pub id: Uuid,
+    #[sea_orm(column_name = "function_id")]
+    pub function_id: Uuid,
+    #[sea_orm(column_name = "actor_key")]
+    pub actor_key: String,
+    pub state: Json,
+    #[sea_orm(column_name = "state_version")]
+    pub state_version: i64,
+    #[sea_orm(column_name = "alarm_at")]
+    pub alarm_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "alarm_attempt")]
+    pub alarm_attempt: i32,
+    #[sea_orm(column_name = "lease_owner")]
+    pub lease_owner: Option<String>,
+    #[sea_orm(column_name = "lease_until")]
+    pub lease_until: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_invoked_at")]
+    pub last_invoked_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "last_error")]
+    pub last_error: Option<String>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use lambda_actor_instances::Entity as LambdaActorInstanceEntity;
+pub use lambda_actor_instances::Model as LambdaActorInstanceModel;
+
 pub mod workflow_definitions {
     use super::*;
 
@@ -6500,6 +6633,205 @@ impl ActiveModelBehavior for ActiveModel {}
 
 pub use web_sessions::Entity as WebSessionsEntity;
 pub use web_sessions::Model as WebSessionsModel;
+
+pub mod principals {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "shared_auth", table_name = "principals")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false, column_name = "shared_user_id")]
+    pub shared_user_id: Uuid,
+    pub email: Option<String>,
+    #[sea_orm(column_name = "email_verified")]
+    pub email_verified: bool,
+    pub phone: Option<String>,
+    #[sea_orm(column_name = "display_name")]
+    pub display_name: Option<String>,
+    pub status: String,
+    pub profile: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "last_seen_at")]
+    pub last_seen_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use principals::Entity as PrincipalsEntity;
+pub use principals::Model as PrincipalsModel;
+
+pub mod provider_identities {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "shared_auth", table_name = "provider_identities")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false, column_name = "provider_identity_id")]
+    pub provider_identity_id: Uuid,
+    #[sea_orm(column_name = "shared_user_id")]
+    pub shared_user_id: Uuid,
+    pub provider: String,
+    #[sea_orm(column_name = "provider_tenant")]
+    pub provider_tenant: String,
+    #[sea_orm(column_name = "provider_subject")]
+    pub provider_subject: String,
+    pub email: Option<String>,
+    #[sea_orm(column_name = "email_verified")]
+    pub email_verified: bool,
+    pub metadata: Json,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "last_seen_at")]
+    pub last_seen_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use provider_identities::Entity as ProviderIdentitiesEntity;
+pub use provider_identities::Model as ProviderIdentitiesModel;
+
+pub mod local_credentials {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "shared_auth", table_name = "local_credentials")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false, column_name = "shared_user_id")]
+    pub shared_user_id: Uuid,
+    #[sea_orm(column_name = "password_hash")]
+    pub password_hash: String,
+    #[sea_orm(column_name = "password_changed_at")]
+    pub password_changed_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "failed_attempts")]
+    pub failed_attempts: i32,
+    #[sea_orm(column_name = "locked_until")]
+    pub locked_until: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use local_credentials::Entity as LocalCredentialsEntity;
+pub use local_credentials::Model as LocalCredentialsModel;
+
+pub mod sessions {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "shared_auth", table_name = "sessions")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false, column_name = "session_id")]
+    pub session_id: Uuid,
+    #[sea_orm(column_name = "shared_user_id")]
+    pub shared_user_id: Uuid,
+    #[sea_orm(column_name = "refresh_token_hash")]
+    pub refresh_token_hash: String,
+    pub provider: String,
+    #[sea_orm(column_name = "provider_tenant")]
+    pub provider_tenant: String,
+    #[sea_orm(column_name = "provider_subject")]
+    pub provider_subject: String,
+    #[sea_orm(column_name = "created_at")]
+    pub created_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "updated_at")]
+    pub updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "last_seen_at")]
+    pub last_seen_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "expires_at")]
+    pub expires_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "revoked_at")]
+    pub revoked_at: Option<DateTimeWithTimeZone>,
+    #[sea_orm(column_name = "rotated_from")]
+    pub rotated_from: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use sessions::Entity as SessionsEntity;
+pub use sessions::Model as SessionsModel;
+
+pub mod roles {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "shared_auth", table_name = "roles")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false, column_name = "role_id")]
+    pub role_id: Uuid,
+    #[sea_orm(column_name = "shared_user_id")]
+    pub shared_user_id: Uuid,
+    #[sea_orm(column_name = "role_name")]
+    pub role_name: String,
+    #[sea_orm(column_name = "granted_at")]
+    pub granted_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "granted_by")]
+    pub granted_by: Option<Uuid>,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use roles::Entity as RolesEntity;
+pub use roles::Model as RolesModel;
+
+pub mod webhook_events {
+    use super::*;
+
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[sea_orm(schema_name = "shared_auth", table_name = "webhook_events")]
+pub struct Model {
+    #[sea_orm(primary_key, auto_increment = false, column_name = "event_id")]
+    pub event_id: Uuid,
+    pub provider: String,
+    #[sea_orm(column_name = "event_type")]
+    pub event_type: String,
+    #[sea_orm(column_name = "received_at")]
+    pub received_at: DateTimeWithTimeZone,
+    #[sea_orm(column_name = "payload_sha256")]
+    pub payload_sha256: String,
+}
+
+#[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+pub enum Relation {}
+
+impl ActiveModelBehavior for ActiveModel {}
+
+}
+
+pub use webhook_events::Entity as WebhookEventsEntity;
+pub use webhook_events::Model as WebhookEventsModel;
 
 pub mod fab_jobs {
     use super::*;

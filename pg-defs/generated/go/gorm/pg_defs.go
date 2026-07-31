@@ -51,6 +51,9 @@ var agentRemoteDevEventEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1
 var agentRemoteDevBreadcrumbKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var mipSolverEventsEventKindPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,80}$`)
 var lambdaFunctionSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
+var lambdaFunctionRevisionDefinitionDigestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var lambdaFunctionAliasNamePattern = regexp.MustCompile(`^[a-z][a-z0-9._-]{0,63}$`)
+var lambdaActorInstanceActorKeyPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$`)
 var workflowDefinitionsSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$`)
 var containerPoolImageRevisionsImageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$`)
 var containerPoolImageRevisionsDockerfileSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -114,6 +117,7 @@ var paymentMethodsLast4Pattern = regexp.MustCompile(`^[0-9]{4}$`)
 var invoicesCurrencyPattern = regexp.MustCompile(`^[a-z]{3}$`)
 var paymentsCurrencyPattern = regexp.MustCompile(`^[a-z]{3}$`)
 var billingWebhookEventsPayloadSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var rolesRoleNamePattern = regexp.MustCompile(`^[a-z][a-z0-9:_-]{0,63}$`)
 
 const AccountsTable = "threefa.accounts"
 const AccountsSelectSQL = `select
@@ -1724,7 +1728,7 @@ const LambdaFunctionSelectSQL = `select
       updated_by::text as updated_by
     from lambda_functions`
 
-var LambdaFunctionRuntimeValues = []string{"nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"}
+var LambdaFunctionRuntimeValues = []string{"nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"}
 var LambdaFunctionContainerBuildStatusValues = []string{"not_requested", "pending", "building", "built", "failed", "skipped"}
 var LambdaFunctionStatusValues = []string{"draft", "active", "paused", "archived"}
 
@@ -1734,7 +1738,7 @@ type LambdaFunctionGorm struct {
 	DisplayName string `gorm:"column:display_name;type:varchar(200);not null" json:"displayName"`
 	Description string `gorm:"column:description;type:text;default:'';not null" json:"description"`
 	Runtime string `gorm:"column:runtime;type:varchar(40);default:'nodejs';not null" json:"runtime"`
-	EntryCommand string `gorm:"column:entry_command;type:text;default:'env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs';not null" json:"entryCommand"`
+	EntryCommand string `gorm:"column:entry_command;type:text;default:'';not null" json:"entryCommand"`
 	FunctionBody string `gorm:"column:function_body;type:text;not null" json:"functionBody"`
 	ReuseKey *string `gorm:"column:reuse_key;type:varchar(200)" json:"reuseKey,omitempty"`
 	IdleTimeoutSeconds int32 `gorm:"column:idle_timeout_seconds;type:integer;default:300;not null" json:"idleTimeoutSeconds"`
@@ -1762,7 +1766,6 @@ func (value LambdaFunctionGorm) Validate() error {
 	if !lambdaFunctionSlugPattern.MatchString(value.Slug) { return errors.New("lambda_functions.slug does not match the required pattern") }
 	if !containsString(LambdaFunctionRuntimeValues, value.Runtime) { return errors.New("unsupported lambda_functions.runtime") }
 	if len([]byte(value.EntryCommand)) > 512 { return errors.New("lambda_functions.entry_command exceeds 512 bytes") }
-	if len([]byte(value.EntryCommand)) < 1 { return errors.New("lambda_functions.entry_command is below 1 bytes") }
 	if len([]byte(value.FunctionBody)) > 262144 { return errors.New("lambda_functions.function_body exceeds 262144 bytes") }
 	if value.IdleTimeoutSeconds < 1 { return errors.New("lambda_functions.idle_timeout_seconds is below the minimum") }
 	if value.IdleTimeoutSeconds > 3600 { return errors.New("lambda_functions.idle_timeout_seconds is above the maximum") }
@@ -1779,6 +1782,174 @@ func (value LambdaFunctionGorm) Validate() error {
 	if !validateJSONString(value.Env) { return errors.New("lambda_functions.env must be valid JSON") }
 	if !validateJSONString(value.Labels) { return errors.New("lambda_functions.labels must be valid JSON") }
 	if !validateJSONString(value.MetaData) { return errors.New("lambda_functions.meta_data must be valid JSON") }
+	return nil
+}
+
+const LambdaFunctionRevisionTable = "lambda_function_revisions"
+const LambdaFunctionRevisionSelectSQL = `select
+      id::text as id,
+      function_id::text as function_id,
+      revision_number,
+      definition_digest,
+      description,
+      runtime,
+      entry_command,
+      function_body,
+      reuse_key,
+      idle_timeout_seconds,
+      max_run_ms,
+      containerized,
+      container_image,
+      container_build_status,
+      container_build_error,
+      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as container_built_at,
+      env,
+      labels,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      created_by::text as created_by
+    from lambda_function_revisions`
+
+var LambdaFunctionRevisionRuntimeValues = []string{"nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"}
+var LambdaFunctionRevisionContainerBuildStatusValues = []string{"not_requested", "pending", "building", "built", "failed", "skipped"}
+
+type LambdaFunctionRevisionGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	FunctionId uuid.UUID `gorm:"column:function_id;type:uuid;not null" json:"functionId"`
+	RevisionNumber int64 `gorm:"column:revision_number;type:bigint;not null" json:"revisionNumber"`
+	DefinitionDigest string `gorm:"column:definition_digest;type:varchar(64);not null" json:"definitionDigest"`
+	Description string `gorm:"column:description;type:text;default:'';not null" json:"description"`
+	Runtime string `gorm:"column:runtime;type:varchar(40);not null" json:"runtime"`
+	EntryCommand string `gorm:"column:entry_command;type:text;default:'';not null" json:"entryCommand"`
+	FunctionBody string `gorm:"column:function_body;type:text;not null" json:"functionBody"`
+	ReuseKey *string `gorm:"column:reuse_key;type:varchar(200)" json:"reuseKey,omitempty"`
+	IdleTimeoutSeconds int32 `gorm:"column:idle_timeout_seconds;type:integer;not null" json:"idleTimeoutSeconds"`
+	MaxRunMs int32 `gorm:"column:max_run_ms;type:integer;not null" json:"maxRunMs"`
+	Containerized bool `gorm:"column:containerized;type:boolean;not null" json:"containerized"`
+	ContainerImage *string `gorm:"column:container_image;type:text" json:"containerImage,omitempty"`
+	ContainerBuildStatus string `gorm:"column:container_build_status;type:varchar(32);not null" json:"containerBuildStatus"`
+	ContainerBuildError *string `gorm:"column:container_build_error;type:text" json:"containerBuildError,omitempty"`
+	ContainerBuiltAt *time.Time `gorm:"column:container_built_at;type:timestamptz" json:"containerBuiltAt,omitempty"`
+	Env datatypes.JSON `gorm:"column:env;type:jsonb;not null" json:"env"`
+	Labels datatypes.JSON `gorm:"column:labels;type:jsonb;not null" json:"labels"`
+	MetaData datatypes.JSON `gorm:"column:meta_data;type:jsonb;not null" json:"metaData"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+}
+
+func (LambdaFunctionRevisionGorm) TableName() string { return LambdaFunctionRevisionTable }
+
+func (value LambdaFunctionRevisionGorm) Validate() error {
+	if value.RevisionNumber < 1 { return errors.New("lambda_function_revisions.revision_number is below the minimum") }
+	if !lambdaFunctionRevisionDefinitionDigestPattern.MatchString(value.DefinitionDigest) { return errors.New("lambda_function_revisions.definition_digest does not match the required pattern") }
+	if len([]byte(value.Description)) > 4096 { return errors.New("lambda_function_revisions.description exceeds 4096 bytes") }
+	if !containsString(LambdaFunctionRevisionRuntimeValues, value.Runtime) { return errors.New("unsupported lambda_function_revisions.runtime") }
+	if len([]byte(value.EntryCommand)) > 512 { return errors.New("lambda_function_revisions.entry_command exceeds 512 bytes") }
+	if len([]byte(value.FunctionBody)) > 262144 { return errors.New("lambda_function_revisions.function_body exceeds 262144 bytes") }
+	if value.ReuseKey != nil {
+		if len([]byte(*value.ReuseKey)) > 200 { return errors.New("lambda_function_revisions.reuse_key exceeds 200 bytes") }
+	}
+	if value.IdleTimeoutSeconds < 1 { return errors.New("lambda_function_revisions.idle_timeout_seconds is below the minimum") }
+	if value.IdleTimeoutSeconds > 3600 { return errors.New("lambda_function_revisions.idle_timeout_seconds is above the maximum") }
+	if value.MaxRunMs < 1000 { return errors.New("lambda_function_revisions.max_run_ms is below the minimum") }
+	if value.MaxRunMs > 300000 { return errors.New("lambda_function_revisions.max_run_ms is above the maximum") }
+	if value.ContainerImage != nil {
+		if len([]byte(*value.ContainerImage)) > 512 { return errors.New("lambda_function_revisions.container_image exceeds 512 bytes") }
+	}
+	if !containsString(LambdaFunctionRevisionContainerBuildStatusValues, value.ContainerBuildStatus) { return errors.New("unsupported lambda_function_revisions.container_build_status") }
+	if value.ContainerBuildError != nil {
+		if len([]byte(*value.ContainerBuildError)) > 8192 { return errors.New("lambda_function_revisions.container_build_error exceeds 8192 bytes") }
+	}
+	if !validateJSONString(value.Env) { return errors.New("lambda_function_revisions.env must be valid JSON") }
+	if !validateJSONString(value.Labels) { return errors.New("lambda_function_revisions.labels must be valid JSON") }
+	if !validateJSONString(value.MetaData) { return errors.New("lambda_function_revisions.meta_data must be valid JSON") }
+	return nil
+}
+
+const LambdaFunctionAliasTable = "lambda_function_aliases"
+const LambdaFunctionAliasSelectSQL = `select
+      id::text as id,
+      function_id::text as function_id,
+      name,
+      description,
+      traffic,
+      routing_version,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from lambda_function_aliases`
+
+type LambdaFunctionAliasGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	FunctionId uuid.UUID `gorm:"column:function_id;type:uuid;not null" json:"functionId"`
+	Name string `gorm:"column:name;type:varchar(64);not null" json:"name"`
+	Description string `gorm:"column:description;type:text;default:'';not null" json:"description"`
+	Traffic datatypes.JSON `gorm:"column:traffic;type:jsonb;not null" json:"traffic"`
+	RoutingVersion int64 `gorm:"column:routing_version;type:bigint;default:1;not null" json:"routingVersion"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	CreatedBy *uuid.UUID `gorm:"column:created_by;type:uuid" json:"createdBy,omitempty"`
+	UpdatedBy *uuid.UUID `gorm:"column:updated_by;type:uuid" json:"updatedBy,omitempty"`
+}
+
+func (LambdaFunctionAliasGorm) TableName() string { return LambdaFunctionAliasTable }
+
+func (value LambdaFunctionAliasGorm) Validate() error {
+	if !lambdaFunctionAliasNamePattern.MatchString(value.Name) { return errors.New("lambda_function_aliases.name does not match the required pattern") }
+	if len([]byte(value.Description)) > 4096 { return errors.New("lambda_function_aliases.description exceeds 4096 bytes") }
+	if !validateJSONString(value.Traffic) { return errors.New("lambda_function_aliases.traffic must be valid JSON") }
+	if value.RoutingVersion < 1 { return errors.New("lambda_function_aliases.routing_version is below the minimum") }
+	return nil
+}
+
+const LambdaActorInstanceTable = "lambda_actor_instances"
+const LambdaActorInstanceSelectSQL = `select
+      id::text as id,
+      function_id::text as function_id,
+      actor_key,
+      state,
+      state_version,
+      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as alarm_at,
+      alarm_attempt,
+      lease_owner,
+      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as lease_until,
+      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_invoked_at,
+      last_error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from lambda_actor_instances`
+
+type LambdaActorInstanceGorm struct {
+	Id uuid.UUID `gorm:"column:id;type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	FunctionId uuid.UUID `gorm:"column:function_id;type:uuid;not null" json:"functionId"`
+	ActorKey string `gorm:"column:actor_key;type:varchar(200);not null" json:"actorKey"`
+	State datatypes.JSON `gorm:"column:state;type:jsonb;default:'{}'::jsonb;not null" json:"state"`
+	StateVersion int64 `gorm:"column:state_version;type:bigint;default:0;not null" json:"stateVersion"`
+	AlarmAt *time.Time `gorm:"column:alarm_at;type:timestamptz" json:"alarmAt,omitempty"`
+	AlarmAttempt int32 `gorm:"column:alarm_attempt;type:integer;default:0;not null" json:"alarmAttempt"`
+	LeaseOwner *string `gorm:"column:lease_owner;type:varchar(200)" json:"leaseOwner,omitempty"`
+	LeaseUntil *time.Time `gorm:"column:lease_until;type:timestamptz" json:"leaseUntil,omitempty"`
+	LastInvokedAt *time.Time `gorm:"column:last_invoked_at;type:timestamptz" json:"lastInvokedAt,omitempty"`
+	LastError *string `gorm:"column:last_error;type:text" json:"lastError,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (LambdaActorInstanceGorm) TableName() string { return LambdaActorInstanceTable }
+
+func (value LambdaActorInstanceGorm) Validate() error {
+	if !lambdaActorInstanceActorKeyPattern.MatchString(value.ActorKey) { return errors.New("lambda_actor_instances.actor_key does not match the required pattern") }
+	if !validateJSONString(value.State) { return errors.New("lambda_actor_instances.state must be valid JSON") }
+	if value.StateVersion < 0 { return errors.New("lambda_actor_instances.state_version is below the minimum") }
+	if value.AlarmAttempt < 0 { return errors.New("lambda_actor_instances.alarm_attempt is below the minimum") }
+	if value.AlarmAttempt > 6 { return errors.New("lambda_actor_instances.alarm_attempt is above the maximum") }
+	if value.LeaseOwner != nil {
+		if len([]byte(*value.LeaseOwner)) > 200 { return errors.New("lambda_actor_instances.lease_owner exceeds 200 bytes") }
+	}
+	if value.LastError != nil {
+		if len([]byte(*value.LastError)) > 8192 { return errors.New("lambda_actor_instances.last_error exceeds 8192 bytes") }
+	}
 	return nil
 }
 
@@ -8003,6 +8174,223 @@ func (WebSessionsGorm) TableName() string { return WebSessionsTable }
 func (value WebSessionsGorm) Validate() error {
 	if len([]byte(value.OwnerEmail)) > 320 { return errors.New("web_sessions.owner_email exceeds 320 bytes") }
 	if len([]byte(value.OwnerEmail)) < 3 { return errors.New("web_sessions.owner_email is below 3 bytes") }
+	return nil
+}
+
+const PrincipalsTable = "shared_auth.principals"
+const PrincipalsSelectSQL = `select
+      shared_user_id::text as shared_user_id,
+      email,
+      email_verified,
+      phone,
+      display_name,
+      status,
+      profile,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at
+    from shared_auth.principals`
+
+var PrincipalsStatusValues = []string{"active", "disabled", "deleted"}
+
+type PrincipalsGorm struct {
+	SharedUserId uuid.UUID `gorm:"column:shared_user_id;type:uuid;primaryKey;default:gen_random_uuid()" json:"sharedUserId"`
+	Email *string `gorm:"column:email;type:text" json:"email,omitempty"`
+	EmailVerified bool `gorm:"column:email_verified;type:boolean;default:false;not null" json:"emailVerified"`
+	Phone *string `gorm:"column:phone;type:text" json:"phone,omitempty"`
+	DisplayName *string `gorm:"column:display_name;type:text" json:"displayName,omitempty"`
+	Status string `gorm:"column:status;type:text;default:'active';not null" json:"status"`
+	Profile datatypes.JSON `gorm:"column:profile;type:jsonb;default:'{}'::jsonb;not null" json:"profile"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	LastSeenAt time.Time `gorm:"column:last_seen_at;type:timestamptz;default:now();not null" json:"lastSeenAt"`
+}
+
+func (PrincipalsGorm) TableName() string { return PrincipalsTable }
+
+func (value PrincipalsGorm) Validate() error {
+	if value.Email != nil {
+		if len([]byte(*value.Email)) > 320 { return errors.New("principals.email exceeds 320 bytes") }
+		if len([]byte(*value.Email)) < 3 { return errors.New("principals.email is below 3 bytes") }
+	}
+	if value.Phone != nil {
+		if len([]byte(*value.Phone)) > 64 { return errors.New("principals.phone exceeds 64 bytes") }
+	}
+	if value.DisplayName != nil {
+		if len([]byte(*value.DisplayName)) > 160 { return errors.New("principals.display_name exceeds 160 bytes") }
+	}
+	if !containsString(PrincipalsStatusValues, value.Status) { return errors.New("unsupported principals.status") }
+	if !validateJSONString(value.Profile) { return errors.New("principals.profile must be valid JSON") }
+	return nil
+}
+
+const ProviderIdentitiesTable = "shared_auth.provider_identities"
+const ProviderIdentitiesSelectSQL = `select
+      provider_identity_id::text as provider_identity_id,
+      shared_user_id::text as shared_user_id,
+      provider,
+      provider_tenant,
+      provider_subject,
+      email,
+      email_verified,
+      metadata,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at
+    from shared_auth.provider_identities`
+
+type ProviderIdentitiesGorm struct {
+	ProviderIdentityId uuid.UUID `gorm:"column:provider_identity_id;type:uuid;primaryKey;default:gen_random_uuid()" json:"providerIdentityId"`
+	SharedUserId uuid.UUID `gorm:"column:shared_user_id;type:uuid;not null" json:"sharedUserId"`
+	Provider string `gorm:"column:provider;type:text;not null" json:"provider"`
+	ProviderTenant string `gorm:"column:provider_tenant;type:text;default:'default';not null" json:"providerTenant"`
+	ProviderSubject string `gorm:"column:provider_subject;type:text;not null" json:"providerSubject"`
+	Email *string `gorm:"column:email;type:text" json:"email,omitempty"`
+	EmailVerified bool `gorm:"column:email_verified;type:boolean;default:false;not null" json:"emailVerified"`
+	Metadata datatypes.JSON `gorm:"column:metadata;type:jsonb;default:'{}'::jsonb;not null" json:"metadata"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	LastSeenAt time.Time `gorm:"column:last_seen_at;type:timestamptz;default:now();not null" json:"lastSeenAt"`
+}
+
+func (ProviderIdentitiesGorm) TableName() string { return ProviderIdentitiesTable }
+
+func (value ProviderIdentitiesGorm) Validate() error {
+	if len([]byte(value.Provider)) > 64 { return errors.New("provider_identities.provider exceeds 64 bytes") }
+	if len([]byte(value.Provider)) < 1 { return errors.New("provider_identities.provider is below 1 bytes") }
+	if len([]byte(value.ProviderTenant)) > 255 { return errors.New("provider_identities.provider_tenant exceeds 255 bytes") }
+	if len([]byte(value.ProviderTenant)) < 1 { return errors.New("provider_identities.provider_tenant is below 1 bytes") }
+	if len([]byte(value.ProviderSubject)) > 512 { return errors.New("provider_identities.provider_subject exceeds 512 bytes") }
+	if len([]byte(value.ProviderSubject)) < 1 { return errors.New("provider_identities.provider_subject is below 1 bytes") }
+	if value.Email != nil {
+		if len([]byte(*value.Email)) > 320 { return errors.New("provider_identities.email exceeds 320 bytes") }
+		if len([]byte(*value.Email)) < 3 { return errors.New("provider_identities.email is below 3 bytes") }
+	}
+	if !validateJSONString(value.Metadata) { return errors.New("provider_identities.metadata must be valid JSON") }
+	return nil
+}
+
+const LocalCredentialsTable = "shared_auth.local_credentials"
+const LocalCredentialsSelectSQL = `select
+      shared_user_id::text as shared_user_id,
+      password_hash,
+      to_char(password_changed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as password_changed_at,
+      failed_attempts,
+      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as locked_until,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from shared_auth.local_credentials`
+
+type LocalCredentialsGorm struct {
+	SharedUserId uuid.UUID `gorm:"column:shared_user_id;type:uuid;primaryKey" json:"sharedUserId"`
+	PasswordHash string `gorm:"column:password_hash;type:text;not null" json:"passwordHash"`
+	PasswordChangedAt time.Time `gorm:"column:password_changed_at;type:timestamptz;default:now();not null" json:"passwordChangedAt"`
+	FailedAttempts int32 `gorm:"column:failed_attempts;type:integer;default:0;not null" json:"failedAttempts"`
+	LockedUntil *time.Time `gorm:"column:locked_until;type:timestamptz" json:"lockedUntil,omitempty"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+}
+
+func (LocalCredentialsGorm) TableName() string { return LocalCredentialsTable }
+
+func (value LocalCredentialsGorm) Validate() error {
+	if len([]byte(value.PasswordHash)) > 512 { return errors.New("local_credentials.password_hash exceeds 512 bytes") }
+	if len([]byte(value.PasswordHash)) < 40 { return errors.New("local_credentials.password_hash is below 40 bytes") }
+	if value.FailedAttempts < 0 { return errors.New("local_credentials.failed_attempts is below the minimum") }
+	return nil
+}
+
+const SessionsTable = "shared_auth.sessions"
+const SessionsSelectSQL = `select
+      session_id::text as session_id,
+      shared_user_id::text as shared_user_id,
+      refresh_token_hash,
+      provider,
+      provider_tenant,
+      provider_subject,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revoked_at,
+      rotated_from::text as rotated_from
+    from shared_auth.sessions`
+
+type SessionsGorm struct {
+	SessionId uuid.UUID `gorm:"column:session_id;type:uuid;primaryKey;default:gen_random_uuid()" json:"sessionId"`
+	SharedUserId uuid.UUID `gorm:"column:shared_user_id;type:uuid;not null" json:"sharedUserId"`
+	RefreshTokenHash string `gorm:"column:refresh_token_hash;type:text;not null" json:"refreshTokenHash"`
+	Provider string `gorm:"column:provider;type:text;not null" json:"provider"`
+	ProviderTenant string `gorm:"column:provider_tenant;type:text;default:'default';not null" json:"providerTenant"`
+	ProviderSubject string `gorm:"column:provider_subject;type:text;not null" json:"providerSubject"`
+	CreatedAt time.Time `gorm:"column:created_at;type:timestamptz;default:now();not null" json:"createdAt"`
+	UpdatedAt time.Time `gorm:"column:updated_at;type:timestamptz;default:now();not null" json:"updatedAt"`
+	LastSeenAt time.Time `gorm:"column:last_seen_at;type:timestamptz;default:now();not null" json:"lastSeenAt"`
+	ExpiresAt time.Time `gorm:"column:expires_at;type:timestamptz;not null" json:"expiresAt"`
+	RevokedAt *time.Time `gorm:"column:revoked_at;type:timestamptz" json:"revokedAt,omitempty"`
+	RotatedFrom *uuid.UUID `gorm:"column:rotated_from;type:uuid" json:"rotatedFrom,omitempty"`
+}
+
+func (SessionsGorm) TableName() string { return SessionsTable }
+
+func (value SessionsGorm) Validate() error {
+	if len([]byte(value.Provider)) > 64 { return errors.New("sessions.provider exceeds 64 bytes") }
+	if len([]byte(value.Provider)) < 1 { return errors.New("sessions.provider is below 1 bytes") }
+	if len([]byte(value.ProviderTenant)) > 255 { return errors.New("sessions.provider_tenant exceeds 255 bytes") }
+	if len([]byte(value.ProviderTenant)) < 1 { return errors.New("sessions.provider_tenant is below 1 bytes") }
+	if len([]byte(value.ProviderSubject)) > 512 { return errors.New("sessions.provider_subject exceeds 512 bytes") }
+	if len([]byte(value.ProviderSubject)) < 1 { return errors.New("sessions.provider_subject is below 1 bytes") }
+	return nil
+}
+
+const RolesTable = "shared_auth.roles"
+const RolesSelectSQL = `select
+      role_id::text as role_id,
+      shared_user_id::text as shared_user_id,
+      role_name,
+      to_char(granted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as granted_at,
+      granted_by::text as granted_by
+    from shared_auth.roles`
+
+type RolesGorm struct {
+	RoleId uuid.UUID `gorm:"column:role_id;type:uuid;primaryKey;default:gen_random_uuid()" json:"roleId"`
+	SharedUserId uuid.UUID `gorm:"column:shared_user_id;type:uuid;not null" json:"sharedUserId"`
+	RoleName string `gorm:"column:role_name;type:text;not null" json:"roleName"`
+	GrantedAt time.Time `gorm:"column:granted_at;type:timestamptz;default:now();not null" json:"grantedAt"`
+	GrantedBy *uuid.UUID `gorm:"column:granted_by;type:uuid" json:"grantedBy,omitempty"`
+}
+
+func (RolesGorm) TableName() string { return RolesTable }
+
+func (value RolesGorm) Validate() error {
+	if !rolesRoleNamePattern.MatchString(value.RoleName) { return errors.New("roles.role_name does not match the required pattern") }
+	return nil
+}
+
+const WebhookEventsTable = "shared_auth.webhook_events"
+const WebhookEventsSelectSQL = `select
+      event_id::text as event_id,
+      provider,
+      event_type,
+      to_char(received_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as received_at,
+      payload_sha256
+    from shared_auth.webhook_events`
+
+type WebhookEventsGorm struct {
+	EventId uuid.UUID `gorm:"column:event_id;type:uuid;primaryKey" json:"eventId"`
+	Provider string `gorm:"column:provider;type:text;not null" json:"provider"`
+	EventType string `gorm:"column:event_type;type:text;not null" json:"eventType"`
+	ReceivedAt time.Time `gorm:"column:received_at;type:timestamptz;default:now();not null" json:"receivedAt"`
+	PayloadSha256 string `gorm:"column:payload_sha256;type:text;not null" json:"payloadSha256"`
+}
+
+func (WebhookEventsGorm) TableName() string { return WebhookEventsTable }
+
+func (value WebhookEventsGorm) Validate() error {
+	if len([]byte(value.Provider)) > 64 { return errors.New("webhook_events.provider exceeds 64 bytes") }
+	if len([]byte(value.Provider)) < 1 { return errors.New("webhook_events.provider is below 1 bytes") }
+	if len([]byte(value.EventType)) > 128 { return errors.New("webhook_events.event_type exceeds 128 bytes") }
+	if len([]byte(value.EventType)) < 1 { return errors.New("webhook_events.event_type is below 1 bytes") }
 	return nil
 }
 

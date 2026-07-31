@@ -596,6 +596,68 @@ object LambdaFunctions : Table("lambda_functions") {
     override val primaryKey = PrimaryKey(id)
 }
 
+// Immutable published snapshots of lambda function code and runtime configuration.
+object LambdaFunctionRevisions : Table("lambda_function_revisions") {
+    val id = uuid("id")
+    val functionId = uuid("function_id")
+    val revisionNumber = long("revision_number")
+    val definitionDigest = varchar("definition_digest", 64)
+    val description = text("description")
+    val runtime = varchar("runtime", 40)
+    val entryCommand = text("entry_command")
+    val functionBody = text("function_body")
+    val reuseKey = varchar("reuse_key", 200).nullable()
+    val idleTimeoutSeconds = integer("idle_timeout_seconds")
+    val maxRunMs = integer("max_run_ms")
+    val containerized = bool("containerized")
+    val containerImage = text("container_image").nullable()
+    val containerBuildStatus = varchar("container_build_status", 32)
+    val containerBuildError = text("container_build_error").nullable()
+    val containerBuiltAt = timestampWithTimeZone("container_built_at").nullable()
+    val env = jsonb<String>("env", { it }, { it })
+    val labels = jsonb<String>("labels", { it }, { it })
+    val metaData = jsonb<String>("meta_data", { it }, { it })
+    val createdAt = timestampWithTimeZone("created_at")
+    val createdBy = uuid("created_by").nullable()
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+// Named weighted routing policies over immutable lambda function revisions.
+object LambdaFunctionAliases : Table("lambda_function_aliases") {
+    val id = uuid("id")
+    val functionId = uuid("function_id")
+    val name = varchar("name", 64)
+    val description = text("description")
+    val traffic = jsonb<String>("traffic", { it }, { it })
+    val routingVersion = long("routing_version")
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+    val createdBy = uuid("created_by").nullable()
+    val updatedBy = uuid("updated_by").nullable()
+
+    override val primaryKey = PrimaryKey(id)
+}
+
+// Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
+object LambdaActorInstances : Table("lambda_actor_instances") {
+    val id = uuid("id")
+    val functionId = uuid("function_id")
+    val actorKey = varchar("actor_key", 200)
+    val state = jsonb<String>("state", { it }, { it })
+    val stateVersion = long("state_version")
+    val alarmAt = timestampWithTimeZone("alarm_at").nullable()
+    val alarmAttempt = integer("alarm_attempt")
+    val leaseOwner = varchar("lease_owner", 200).nullable()
+    val leaseUntil = timestampWithTimeZone("lease_until").nullable()
+    val lastInvokedAt = timestampWithTimeZone("last_invoked_at").nullable()
+    val lastError = text("last_error").nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(id)
+}
+
 object WorkflowDefinitions : Table("workflow_definitions") {
     val id = uuid("id")
     val slug = varchar("slug", 120)
@@ -2871,6 +2933,86 @@ object WebSessions : Table("daedalus.web_sessions") {
     override val primaryKey = PrimaryKey(id)
 }
 
+object Principals : Table("shared_auth.principals") {
+    val sharedUserId = uuid("shared_user_id")
+    val email = text("email").nullable()
+    val emailVerified = bool("email_verified")
+    val phone = text("phone").nullable()
+    val displayName = text("display_name").nullable()
+    val status = text("status")
+    val profile = jsonb<String>("profile", { it }, { it })
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+    val lastSeenAt = timestampWithTimeZone("last_seen_at")
+
+    override val primaryKey = PrimaryKey(sharedUserId)
+}
+
+object ProviderIdentities : Table("shared_auth.provider_identities") {
+    val providerIdentityId = uuid("provider_identity_id")
+    val sharedUserId = uuid("shared_user_id")
+    val provider = text("provider")
+    val providerTenant = text("provider_tenant")
+    val providerSubject = text("provider_subject")
+    val email = text("email").nullable()
+    val emailVerified = bool("email_verified")
+    val metadata = jsonb<String>("metadata", { it }, { it })
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+    val lastSeenAt = timestampWithTimeZone("last_seen_at")
+
+    override val primaryKey = PrimaryKey(providerIdentityId)
+}
+
+object LocalCredentials : Table("shared_auth.local_credentials") {
+    val sharedUserId = uuid("shared_user_id")
+    val passwordHash = text("password_hash")
+    val passwordChangedAt = timestampWithTimeZone("password_changed_at")
+    val failedAttempts = integer("failed_attempts")
+    val lockedUntil = timestampWithTimeZone("locked_until").nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(sharedUserId)
+}
+
+object Sessions : Table("shared_auth.sessions") {
+    val sessionId = uuid("session_id")
+    val sharedUserId = uuid("shared_user_id")
+    val refreshTokenHash = text("refresh_token_hash")
+    val provider = text("provider")
+    val providerTenant = text("provider_tenant")
+    val providerSubject = text("provider_subject")
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+    val lastSeenAt = timestampWithTimeZone("last_seen_at")
+    val expiresAt = timestampWithTimeZone("expires_at")
+    val revokedAt = timestampWithTimeZone("revoked_at").nullable()
+    val rotatedFrom = uuid("rotated_from").nullable()
+
+    override val primaryKey = PrimaryKey(sessionId)
+}
+
+object Roles : Table("shared_auth.roles") {
+    val roleId = uuid("role_id")
+    val sharedUserId = uuid("shared_user_id")
+    val roleName = text("role_name")
+    val grantedAt = timestampWithTimeZone("granted_at")
+    val grantedBy = uuid("granted_by").nullable()
+
+    override val primaryKey = PrimaryKey(roleId)
+}
+
+object WebhookEvents : Table("shared_auth.webhook_events") {
+    val eventId = uuid("event_id")
+    val provider = text("provider")
+    val eventType = text("event_type")
+    val receivedAt = timestampWithTimeZone("received_at")
+    val payloadSha256 = text("payload_sha256")
+
+    override val primaryKey = PrimaryKey(eventId)
+}
+
 object FabJobs : Table("daedalus.fab_jobs") {
     val jobId = text("job_id")
     val requestId = text("request_id")
@@ -3930,6 +4072,112 @@ fun toLambdaFunctionsRow(row: ResultRow): LambdaFunctionsRow = LambdaFunctionsRo
     row[LambdaFunctions.updatedAt],
     row[LambdaFunctions.createdBy],
     row[LambdaFunctions.updatedBy],
+)
+
+data class LambdaFunctionRevisionsRow(
+    val id: UUID,
+    val functionId: UUID,
+    val revisionNumber: Long,
+    val definitionDigest: String,
+    val description: String,
+    val runtime: String,
+    val entryCommand: String,
+    val functionBody: String,
+    val reuseKey: String?,
+    val idleTimeoutSeconds: Int,
+    val maxRunMs: Int,
+    val containerized: Boolean,
+    val containerImage: String?,
+    val containerBuildStatus: String,
+    val containerBuildError: String?,
+    val containerBuiltAt: OffsetDateTime?,
+    val env: String,
+    val labels: String,
+    val metaData: String,
+    val createdAt: OffsetDateTime,
+    val createdBy: UUID?,
+)
+
+fun toLambdaFunctionRevisionsRow(row: ResultRow): LambdaFunctionRevisionsRow = LambdaFunctionRevisionsRow(
+    row[LambdaFunctionRevisions.id],
+    row[LambdaFunctionRevisions.functionId],
+    row[LambdaFunctionRevisions.revisionNumber],
+    row[LambdaFunctionRevisions.definitionDigest],
+    row[LambdaFunctionRevisions.description],
+    row[LambdaFunctionRevisions.runtime],
+    row[LambdaFunctionRevisions.entryCommand],
+    row[LambdaFunctionRevisions.functionBody],
+    row[LambdaFunctionRevisions.reuseKey],
+    row[LambdaFunctionRevisions.idleTimeoutSeconds],
+    row[LambdaFunctionRevisions.maxRunMs],
+    row[LambdaFunctionRevisions.containerized],
+    row[LambdaFunctionRevisions.containerImage],
+    row[LambdaFunctionRevisions.containerBuildStatus],
+    row[LambdaFunctionRevisions.containerBuildError],
+    row[LambdaFunctionRevisions.containerBuiltAt],
+    row[LambdaFunctionRevisions.env],
+    row[LambdaFunctionRevisions.labels],
+    row[LambdaFunctionRevisions.metaData],
+    row[LambdaFunctionRevisions.createdAt],
+    row[LambdaFunctionRevisions.createdBy],
+)
+
+data class LambdaFunctionAliasesRow(
+    val id: UUID,
+    val functionId: UUID,
+    val name: String,
+    val description: String,
+    val traffic: String,
+    val routingVersion: Long,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+    val createdBy: UUID?,
+    val updatedBy: UUID?,
+)
+
+fun toLambdaFunctionAliasesRow(row: ResultRow): LambdaFunctionAliasesRow = LambdaFunctionAliasesRow(
+    row[LambdaFunctionAliases.id],
+    row[LambdaFunctionAliases.functionId],
+    row[LambdaFunctionAliases.name],
+    row[LambdaFunctionAliases.description],
+    row[LambdaFunctionAliases.traffic],
+    row[LambdaFunctionAliases.routingVersion],
+    row[LambdaFunctionAliases.createdAt],
+    row[LambdaFunctionAliases.updatedAt],
+    row[LambdaFunctionAliases.createdBy],
+    row[LambdaFunctionAliases.updatedBy],
+)
+
+data class LambdaActorInstancesRow(
+    val id: UUID,
+    val functionId: UUID,
+    val actorKey: String,
+    val state: String,
+    val stateVersion: Long,
+    val alarmAt: OffsetDateTime?,
+    val alarmAttempt: Int,
+    val leaseOwner: String?,
+    val leaseUntil: OffsetDateTime?,
+    val lastInvokedAt: OffsetDateTime?,
+    val lastError: String?,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toLambdaActorInstancesRow(row: ResultRow): LambdaActorInstancesRow = LambdaActorInstancesRow(
+    row[LambdaActorInstances.id],
+    row[LambdaActorInstances.functionId],
+    row[LambdaActorInstances.actorKey],
+    row[LambdaActorInstances.state],
+    row[LambdaActorInstances.stateVersion],
+    row[LambdaActorInstances.alarmAt],
+    row[LambdaActorInstances.alarmAttempt],
+    row[LambdaActorInstances.leaseOwner],
+    row[LambdaActorInstances.leaseUntil],
+    row[LambdaActorInstances.lastInvokedAt],
+    row[LambdaActorInstances.lastError],
+    row[LambdaActorInstances.createdAt],
+    row[LambdaActorInstances.updatedAt],
 )
 
 data class WorkflowDefinitionsRow(
@@ -7984,6 +8232,142 @@ fun toWebSessionsRow(row: ResultRow): WebSessionsRow = WebSessionsRow(
     row[WebSessions.idleExpiresAt],
     row[WebSessions.absoluteExpiresAt],
     row[WebSessions.revokedAt],
+)
+
+data class PrincipalsRow(
+    val sharedUserId: UUID,
+    val email: String?,
+    val emailVerified: Boolean,
+    val phone: String?,
+    val displayName: String?,
+    val status: String,
+    val profile: String,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+    val lastSeenAt: OffsetDateTime,
+)
+
+fun toPrincipalsRow(row: ResultRow): PrincipalsRow = PrincipalsRow(
+    row[Principals.sharedUserId],
+    row[Principals.email],
+    row[Principals.emailVerified],
+    row[Principals.phone],
+    row[Principals.displayName],
+    row[Principals.status],
+    row[Principals.profile],
+    row[Principals.createdAt],
+    row[Principals.updatedAt],
+    row[Principals.lastSeenAt],
+)
+
+data class ProviderIdentitiesRow(
+    val providerIdentityId: UUID,
+    val sharedUserId: UUID,
+    val provider: String,
+    val providerTenant: String,
+    val providerSubject: String,
+    val email: String?,
+    val emailVerified: Boolean,
+    val metadata: String,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+    val lastSeenAt: OffsetDateTime,
+)
+
+fun toProviderIdentitiesRow(row: ResultRow): ProviderIdentitiesRow = ProviderIdentitiesRow(
+    row[ProviderIdentities.providerIdentityId],
+    row[ProviderIdentities.sharedUserId],
+    row[ProviderIdentities.provider],
+    row[ProviderIdentities.providerTenant],
+    row[ProviderIdentities.providerSubject],
+    row[ProviderIdentities.email],
+    row[ProviderIdentities.emailVerified],
+    row[ProviderIdentities.metadata],
+    row[ProviderIdentities.createdAt],
+    row[ProviderIdentities.updatedAt],
+    row[ProviderIdentities.lastSeenAt],
+)
+
+data class LocalCredentialsRow(
+    val sharedUserId: UUID,
+    val passwordHash: String,
+    val passwordChangedAt: OffsetDateTime,
+    val failedAttempts: Int,
+    val lockedUntil: OffsetDateTime?,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toLocalCredentialsRow(row: ResultRow): LocalCredentialsRow = LocalCredentialsRow(
+    row[LocalCredentials.sharedUserId],
+    row[LocalCredentials.passwordHash],
+    row[LocalCredentials.passwordChangedAt],
+    row[LocalCredentials.failedAttempts],
+    row[LocalCredentials.lockedUntil],
+    row[LocalCredentials.createdAt],
+    row[LocalCredentials.updatedAt],
+)
+
+data class SessionsRow(
+    val sessionId: UUID,
+    val sharedUserId: UUID,
+    val refreshTokenHash: String,
+    val provider: String,
+    val providerTenant: String,
+    val providerSubject: String,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+    val lastSeenAt: OffsetDateTime,
+    val expiresAt: OffsetDateTime,
+    val revokedAt: OffsetDateTime?,
+    val rotatedFrom: UUID?,
+)
+
+fun toSessionsRow(row: ResultRow): SessionsRow = SessionsRow(
+    row[Sessions.sessionId],
+    row[Sessions.sharedUserId],
+    row[Sessions.refreshTokenHash],
+    row[Sessions.provider],
+    row[Sessions.providerTenant],
+    row[Sessions.providerSubject],
+    row[Sessions.createdAt],
+    row[Sessions.updatedAt],
+    row[Sessions.lastSeenAt],
+    row[Sessions.expiresAt],
+    row[Sessions.revokedAt],
+    row[Sessions.rotatedFrom],
+)
+
+data class RolesRow(
+    val roleId: UUID,
+    val sharedUserId: UUID,
+    val roleName: String,
+    val grantedAt: OffsetDateTime,
+    val grantedBy: UUID?,
+)
+
+fun toRolesRow(row: ResultRow): RolesRow = RolesRow(
+    row[Roles.roleId],
+    row[Roles.sharedUserId],
+    row[Roles.roleName],
+    row[Roles.grantedAt],
+    row[Roles.grantedBy],
+)
+
+data class WebhookEventsRow(
+    val eventId: UUID,
+    val provider: String,
+    val eventType: String,
+    val receivedAt: OffsetDateTime,
+    val payloadSha256: String,
+)
+
+fun toWebhookEventsRow(row: ResultRow): WebhookEventsRow = WebhookEventsRow(
+    row[WebhookEvents.eventId],
+    row[WebhookEvents.provider],
+    row[WebhookEvents.eventType],
+    row[WebhookEvents.receivedAt],
+    row[WebhookEvents.payloadSha256],
 )
 
 data class FabJobsRow(

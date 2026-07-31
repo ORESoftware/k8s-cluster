@@ -645,6 +645,71 @@ class LambdaFunction(BaseModel):
         table_name = "lambda_functions"
 
 
+class LambdaFunctionRevision(BaseModel):
+    # Immutable published snapshots of lambda function code and runtime configuration.
+    id = UUIDField(primary_key=True)
+    function_id = UUIDField()
+    revision_number = BigIntegerField()
+    definition_digest = CharField(max_length=64)
+    description = TextField()
+    runtime = CharField(max_length=40)
+    entry_command = TextField()
+    function_body = TextField()
+    reuse_key = CharField(max_length=200, null=True)
+    idle_timeout_seconds = IntegerField()
+    max_run_ms = IntegerField()
+    containerized = BooleanField()
+    container_image = TextField(null=True)
+    container_build_status = CharField(max_length=32)
+    container_build_error = TextField(null=True)
+    container_built_at = DateTimeField(null=True)
+    env = BinaryJSONField()
+    labels = BinaryJSONField()
+    meta_data = BinaryJSONField()
+    created_at = DateTimeField()
+    created_by = UUIDField(null=True)
+
+    class Meta:
+        table_name = "lambda_function_revisions"
+
+
+class LambdaFunctionAlias(BaseModel):
+    # Named weighted routing policies over immutable lambda function revisions.
+    id = UUIDField(primary_key=True)
+    function_id = UUIDField()
+    name = CharField(max_length=64)
+    description = TextField()
+    traffic = BinaryJSONField()
+    routing_version = BigIntegerField()
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+    created_by = UUIDField(null=True)
+    updated_by = UUIDField(null=True)
+
+    class Meta:
+        table_name = "lambda_function_aliases"
+
+
+class LambdaActorInstance(BaseModel):
+    # Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
+    id = UUIDField(primary_key=True)
+    function_id = UUIDField()
+    actor_key = CharField(max_length=200)
+    state = BinaryJSONField()
+    state_version = BigIntegerField()
+    alarm_at = DateTimeField(null=True)
+    alarm_attempt = IntegerField()
+    lease_owner = CharField(max_length=200, null=True)
+    lease_until = DateTimeField(null=True)
+    last_invoked_at = DateTimeField(null=True)
+    last_error = TextField(null=True)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "lambda_actor_instances"
+
+
 class WorkflowDefinitions(BaseModel):
     id = UUIDField(primary_key=True)
     slug = CharField(max_length=120)
@@ -3085,6 +3150,98 @@ class WebSessions(BaseModel):
     class Meta:
         table_name = "web_sessions"
         schema = "daedalus"
+
+
+class Principals(BaseModel):
+    shared_user_id = UUIDField(primary_key=True)
+    email = TextField(null=True)
+    email_verified = BooleanField()
+    phone = TextField(null=True)
+    display_name = TextField(null=True)
+    status = TextField()
+    profile = BinaryJSONField()
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+    last_seen_at = DateTimeField()
+
+    class Meta:
+        table_name = "principals"
+        schema = "shared_auth"
+
+
+class ProviderIdentities(BaseModel):
+    provider_identity_id = UUIDField(primary_key=True)
+    shared_user_id = UUIDField()
+    provider = TextField()
+    provider_tenant = TextField()
+    provider_subject = TextField()
+    email = TextField(null=True)
+    email_verified = BooleanField()
+    metadata = BinaryJSONField()
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+    last_seen_at = DateTimeField()
+
+    class Meta:
+        table_name = "provider_identities"
+        schema = "shared_auth"
+
+
+class LocalCredentials(BaseModel):
+    shared_user_id = UUIDField(primary_key=True)
+    password_hash = TextField()
+    password_changed_at = DateTimeField()
+    failed_attempts = IntegerField()
+    locked_until = DateTimeField(null=True)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "local_credentials"
+        schema = "shared_auth"
+
+
+class Sessions(BaseModel):
+    session_id = UUIDField(primary_key=True)
+    shared_user_id = UUIDField()
+    refresh_token_hash = TextField()
+    provider = TextField()
+    provider_tenant = TextField()
+    provider_subject = TextField()
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+    last_seen_at = DateTimeField()
+    expires_at = DateTimeField()
+    revoked_at = DateTimeField(null=True)
+    rotated_from = UUIDField(null=True)
+
+    class Meta:
+        table_name = "sessions"
+        schema = "shared_auth"
+
+
+class Roles(BaseModel):
+    role_id = UUIDField(primary_key=True)
+    shared_user_id = UUIDField()
+    role_name = TextField()
+    granted_at = DateTimeField()
+    granted_by = UUIDField(null=True)
+
+    class Meta:
+        table_name = "roles"
+        schema = "shared_auth"
+
+
+class WebhookEvents(BaseModel):
+    event_id = UUIDField(primary_key=True)
+    provider = TextField()
+    event_type = TextField()
+    received_at = DateTimeField()
+    payload_sha256 = TextField()
+
+    class Meta:
+        table_name = "webhook_events"
+        schema = "shared_auth"
 
 
 class FabJobs(BaseModel):

@@ -2,6 +2,7 @@
 // script as a subprocess with --parse-only so no catalog query is opened.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
@@ -27,4 +28,12 @@ test("path-traversal --env is rejected before any filesystem or DB access", () =
     assert.equal(result.status, 1, `--env=${JSON.stringify(env)} should exit 1`);
     assert.match(result.stderr, /not a valid environment name/);
   }
+});
+
+test("live routine audit excludes aggregate pg_proc entries", () => {
+  const source = readFileSync(diffScript, "utf8");
+
+  // pg_get_function_identity_arguments() raises on aggregate rows such as
+  // pg_catalog.avg. The contract owns ordinary SQL functions only.
+  assert.match(source, /and proc\.prokind = 'f'/);
 });

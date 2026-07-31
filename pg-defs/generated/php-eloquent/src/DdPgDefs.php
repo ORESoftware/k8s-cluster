@@ -886,7 +886,7 @@ class LambdaFunction extends Model
             'slug' => ['required', 'string', 'max:120', 'regex:/^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$/'],
             'display_name' => ['required', 'string', 'min:1', 'max:200'],
             'description' => ['nullable', 'string'],
-            'runtime' => ['nullable', 'string', 'in:nodejs,javascript,typescript,python3,python,ruby,bash,shell,golang,go,dart,erlang,erl,elixir,ex,java,jvm'],
+            'runtime' => ['nullable', 'string', 'in:nodejs,javascript,typescript,python3,python,ruby,bash,shell,golang,go,dart,erlang,erl,elixir,ex,java,jvm,gleam,gleamlang,rust,rs,browser'],
             'entry_command' => ['nullable', 'string'],
             'function_body' => ['required', 'string', 'min:1'],
             'reuse_key' => ['nullable', 'string', 'max:200'],
@@ -905,6 +905,99 @@ class LambdaFunction extends Model
             'is_soft_deleted' => ['nullable', 'boolean'],
             'created_by' => ['nullable', 'uuid'],
             'updated_by' => ['nullable', 'uuid'],
+        ];
+    }
+}
+
+/** Immutable published snapshots of lambda function code and runtime configuration. */
+class LambdaFunctionRevision extends Model
+{
+    protected $table = 'lambda_function_revisions';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['function_id', 'revision_number', 'definition_digest', 'description', 'runtime', 'entry_command', 'function_body', 'reuse_key', 'idle_timeout_seconds', 'max_run_ms', 'containerized', 'container_image', 'container_build_status', 'container_build_error', 'container_built_at', 'env', 'labels', 'meta_data', 'created_at', 'created_by'];
+    protected $casts = ['revision_number' => 'integer', 'idle_timeout_seconds' => 'integer', 'max_run_ms' => 'integer', 'containerized' => 'boolean', 'container_built_at' => 'datetime', 'env' => 'array', 'labels' => 'array', 'meta_data' => 'array', 'created_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'function_id' => ['required', 'uuid'],
+            'revision_number' => ['required', 'integer', 'min:1'],
+            'definition_digest' => ['required', 'string', 'min:64', 'max:64', 'regex:/^[a-f0-9]{64}$/'],
+            'description' => ['nullable', 'string', 'max:4096'],
+            'runtime' => ['required', 'string', 'in:nodejs,javascript,typescript,python3,python,ruby,bash,shell,golang,go,dart,erlang,erl,elixir,ex,java,jvm,gleam,gleamlang,rust,rs,browser'],
+            'entry_command' => ['nullable', 'string'],
+            'function_body' => ['required', 'string', 'min:1'],
+            'reuse_key' => ['nullable', 'string', 'max:200'],
+            'idle_timeout_seconds' => ['required', 'integer', 'min:1', 'max:3600'],
+            'max_run_ms' => ['required', 'integer', 'min:1000', 'max:300000'],
+            'containerized' => ['required', 'boolean'],
+            'container_image' => ['nullable', 'string'],
+            'container_build_status' => ['required', 'string', 'in:not_requested,pending,building,built,failed,skipped'],
+            'container_build_error' => ['nullable', 'string'],
+            'container_built_at' => ['nullable', 'date'],
+            'env' => ['required', 'array'],
+            'labels' => ['required', 'array'],
+            'meta_data' => ['required', 'array'],
+            'created_by' => ['nullable', 'uuid'],
+        ];
+    }
+}
+
+/** Named weighted routing policies over immutable lambda function revisions. */
+class LambdaFunctionAlias extends Model
+{
+    protected $table = 'lambda_function_aliases';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['function_id', 'name', 'description', 'traffic', 'routing_version', 'created_at', 'updated_at', 'created_by', 'updated_by'];
+    protected $casts = ['traffic' => 'array', 'routing_version' => 'integer', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'function_id' => ['required', 'uuid'],
+            'name' => ['required', 'string', 'min:1', 'max:64', 'regex:/^[a-z][a-z0-9._-]{0,63}$/'],
+            'description' => ['nullable', 'string', 'max:4096'],
+            'traffic' => ['required', 'array'],
+            'routing_version' => ['nullable', 'integer', 'min:1'],
+            'created_by' => ['nullable', 'uuid'],
+            'updated_by' => ['nullable', 'uuid'],
+        ];
+    }
+}
+
+/** Durable state, alarms, and cross-replica execution leases for keyed serverless actors. */
+class LambdaActorInstance extends Model
+{
+    protected $table = 'lambda_actor_instances';
+    protected $primaryKey = 'id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['function_id', 'actor_key', 'state', 'state_version', 'alarm_at', 'alarm_attempt', 'lease_owner', 'lease_until', 'last_invoked_at', 'last_error', 'created_at', 'updated_at'];
+    protected $casts = ['state' => 'array', 'state_version' => 'integer', 'alarm_at' => 'datetime', 'alarm_attempt' => 'integer', 'lease_until' => 'datetime', 'last_invoked_at' => 'datetime', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'function_id' => ['required', 'uuid'],
+            'actor_key' => ['required', 'string', 'min:1', 'max:200', 'regex:/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/'],
+            'state' => ['nullable', 'array'],
+            'state_version' => ['nullable', 'integer', 'min:0'],
+            'alarm_at' => ['nullable', 'date'],
+            'alarm_attempt' => ['nullable', 'integer', 'min:0', 'max:6'],
+            'lease_owner' => ['nullable', 'string', 'max:200'],
+            'lease_until' => ['nullable', 'date'],
+            'last_invoked_at' => ['nullable', 'date'],
+            'last_error' => ['nullable', 'string'],
         ];
     }
 }
@@ -4450,6 +4543,150 @@ class WebSessions extends Model
             'idle_expires_at' => ['required', 'date'],
             'absolute_expires_at' => ['required', 'date'],
             'revoked_at' => ['nullable', 'date'],
+        ];
+    }
+}
+
+class Principals extends Model
+{
+    protected $table = 'shared_auth.principals';
+    protected $primaryKey = 'shared_user_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['email', 'email_verified', 'phone', 'display_name', 'status', 'profile', 'created_at', 'updated_at', 'last_seen_at'];
+    protected $casts = ['email_verified' => 'boolean', 'profile' => 'array', 'created_at' => 'datetime', 'updated_at' => 'datetime', 'last_seen_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'email' => ['nullable', 'string'],
+            'email_verified' => ['nullable', 'boolean'],
+            'phone' => ['nullable', 'string'],
+            'display_name' => ['nullable', 'string'],
+            'status' => ['nullable', 'string', 'in:active,disabled,deleted'],
+            'profile' => ['nullable', 'array'],
+            'last_seen_at' => ['nullable', 'date'],
+        ];
+    }
+}
+
+class ProviderIdentities extends Model
+{
+    protected $table = 'shared_auth.provider_identities';
+    protected $primaryKey = 'provider_identity_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['shared_user_id', 'provider', 'provider_tenant', 'provider_subject', 'email', 'email_verified', 'metadata', 'created_at', 'updated_at', 'last_seen_at'];
+    protected $casts = ['email_verified' => 'boolean', 'metadata' => 'array', 'created_at' => 'datetime', 'updated_at' => 'datetime', 'last_seen_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'shared_user_id' => ['required', 'uuid'],
+            'provider' => ['required', 'string'],
+            'provider_tenant' => ['nullable', 'string'],
+            'provider_subject' => ['required', 'string'],
+            'email' => ['nullable', 'string'],
+            'email_verified' => ['nullable', 'boolean'],
+            'metadata' => ['nullable', 'array'],
+            'last_seen_at' => ['nullable', 'date'],
+        ];
+    }
+}
+
+class LocalCredentials extends Model
+{
+    protected $table = 'shared_auth.local_credentials';
+    protected $primaryKey = 'shared_user_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['password_hash', 'password_changed_at', 'failed_attempts', 'locked_until', 'created_at', 'updated_at'];
+    protected $casts = ['password_changed_at' => 'datetime', 'failed_attempts' => 'integer', 'locked_until' => 'datetime', 'created_at' => 'datetime', 'updated_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'password_hash' => ['required', 'string'],
+            'password_changed_at' => ['nullable', 'date'],
+            'failed_attempts' => ['nullable', 'integer', 'min:0'],
+            'locked_until' => ['nullable', 'date'],
+        ];
+    }
+}
+
+class Sessions extends Model
+{
+    protected $table = 'shared_auth.sessions';
+    protected $primaryKey = 'session_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = true;
+    protected $fillable = ['shared_user_id', 'refresh_token_hash', 'provider', 'provider_tenant', 'provider_subject', 'created_at', 'updated_at', 'last_seen_at', 'expires_at', 'revoked_at', 'rotated_from'];
+    protected $casts = ['created_at' => 'datetime', 'updated_at' => 'datetime', 'last_seen_at' => 'datetime', 'expires_at' => 'datetime', 'revoked_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'shared_user_id' => ['required', 'uuid'],
+            'refresh_token_hash' => ['required', 'string'],
+            'provider' => ['required', 'string'],
+            'provider_tenant' => ['nullable', 'string'],
+            'provider_subject' => ['required', 'string'],
+            'last_seen_at' => ['nullable', 'date'],
+            'expires_at' => ['required', 'date'],
+            'revoked_at' => ['nullable', 'date'],
+            'rotated_from' => ['nullable', 'uuid'],
+        ];
+    }
+}
+
+class Roles extends Model
+{
+    protected $table = 'shared_auth.roles';
+    protected $primaryKey = 'role_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['shared_user_id', 'role_name', 'granted_at', 'granted_by'];
+    protected $casts = ['granted_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'shared_user_id' => ['required', 'uuid'],
+            'role_name' => ['required', 'string', 'regex:/^[a-z][a-z0-9:_-]{0,63}$/'],
+            'granted_at' => ['nullable', 'date'],
+            'granted_by' => ['nullable', 'uuid'],
+        ];
+    }
+}
+
+class WebhookEvents extends Model
+{
+    protected $table = 'shared_auth.webhook_events';
+    protected $primaryKey = 'event_id';
+    public $incrementing = false;
+    protected $keyType = 'string';
+    public $timestamps = false;
+    protected $fillable = ['provider', 'event_type', 'received_at', 'payload_sha256'];
+    protected $casts = ['received_at' => 'datetime'];
+
+    /** @return array<string, array<int, string>> */
+    public static function rules(): array
+    {
+        return [
+            'provider' => ['required', 'string'],
+            'event_type' => ['required', 'string'],
+            'received_at' => ['nullable', 'date'],
+            'payload_sha256' => ['required', 'string'],
         ];
     }
 }

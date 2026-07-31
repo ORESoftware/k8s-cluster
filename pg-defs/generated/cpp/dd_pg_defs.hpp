@@ -2815,7 +2815,7 @@ inline const char* lambda_functions_select_sql = R"SQL(select
       updated_by::text as updated_by
     from lambda_functions)SQL";
 
-enum class LambdaFunctionRuntime { Nodejs, Javascript, Typescript, Python3, Python, Ruby, Bash, Shell, Golang, Go, Dart, Erlang, Erl, Elixir, Ex, Java, Jvm };
+enum class LambdaFunctionRuntime { Nodejs, Javascript, Typescript, Python3, Python, Ruby, Bash, Shell, Golang, Go, Dart, Erlang, Erl, Elixir, Ex, Java, Jvm, Gleam, Gleamlang, Rust, Rs, Browser };
 inline std::string lambda_functions_runtime_to_string(LambdaFunctionRuntime value) {
     switch (value) {
         case LambdaFunctionRuntime::Nodejs: return "nodejs";
@@ -2835,6 +2835,11 @@ inline std::string lambda_functions_runtime_to_string(LambdaFunctionRuntime valu
         case LambdaFunctionRuntime::Ex: return "ex";
         case LambdaFunctionRuntime::Java: return "java";
         case LambdaFunctionRuntime::Jvm: return "jvm";
+        case LambdaFunctionRuntime::Gleam: return "gleam";
+        case LambdaFunctionRuntime::Gleamlang: return "gleamlang";
+        case LambdaFunctionRuntime::Rust: return "rust";
+        case LambdaFunctionRuntime::Rs: return "rs";
+        case LambdaFunctionRuntime::Browser: return "browser";
     }
     return "";
 }
@@ -2856,6 +2861,11 @@ inline std::optional<LambdaFunctionRuntime> parse_lambda_functions_runtime(const
     if (value == "ex") return LambdaFunctionRuntime::Ex;
     if (value == "java") return LambdaFunctionRuntime::Java;
     if (value == "jvm") return LambdaFunctionRuntime::Jvm;
+    if (value == "gleam") return LambdaFunctionRuntime::Gleam;
+    if (value == "gleamlang") return LambdaFunctionRuntime::Gleamlang;
+    if (value == "rust") return LambdaFunctionRuntime::Rust;
+    if (value == "rs") return LambdaFunctionRuntime::Rs;
+    if (value == "browser") return LambdaFunctionRuntime::Browser;
     return std::nullopt;
 }
 
@@ -2983,6 +2993,324 @@ inline std::optional<std::string> validate_lambda_functions_idle_timeout_seconds
 inline std::optional<std::string> validate_lambda_functions_max_run_ms(int32_t value) {
     if (value < 1000) return std::string("lambda_functions.max_run_ms is below the minimum");
     if (value > 300000) return std::string("lambda_functions.max_run_ms is above the maximum");
+    return std::nullopt;
+}
+
+// Immutable published snapshots of lambda function code and runtime configuration.
+inline const char* lambda_function_revisions_table = "lambda_function_revisions";
+inline const std::vector<std::string> lambda_function_revisions_columns = { "id", "function_id", "revision_number", "definition_digest", "description", "runtime", "entry_command", "function_body", "reuse_key", "idle_timeout_seconds", "max_run_ms", "containerized", "container_image", "container_build_status", "container_build_error", "container_built_at", "env", "labels", "meta_data", "created_at", "created_by" };
+inline const char* lambda_function_revisions_select_sql = R"SQL(select
+      id::text as id,
+      function_id::text as function_id,
+      revision_number,
+      definition_digest,
+      description,
+      runtime,
+      entry_command,
+      function_body,
+      reuse_key,
+      idle_timeout_seconds,
+      max_run_ms,
+      containerized,
+      container_image,
+      container_build_status,
+      container_build_error,
+      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as container_built_at,
+      env::text as env_json,
+      labels::text as labels_json,
+      meta_data::text as meta_data_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      created_by::text as created_by
+    from lambda_function_revisions)SQL";
+
+enum class LambdaFunctionRevisionRuntime { Nodejs, Javascript, Typescript, Python3, Python, Ruby, Bash, Shell, Golang, Go, Dart, Erlang, Erl, Elixir, Ex, Java, Jvm, Gleam, Gleamlang, Rust, Rs, Browser };
+inline std::string lambda_function_revisions_runtime_to_string(LambdaFunctionRevisionRuntime value) {
+    switch (value) {
+        case LambdaFunctionRevisionRuntime::Nodejs: return "nodejs";
+        case LambdaFunctionRevisionRuntime::Javascript: return "javascript";
+        case LambdaFunctionRevisionRuntime::Typescript: return "typescript";
+        case LambdaFunctionRevisionRuntime::Python3: return "python3";
+        case LambdaFunctionRevisionRuntime::Python: return "python";
+        case LambdaFunctionRevisionRuntime::Ruby: return "ruby";
+        case LambdaFunctionRevisionRuntime::Bash: return "bash";
+        case LambdaFunctionRevisionRuntime::Shell: return "shell";
+        case LambdaFunctionRevisionRuntime::Golang: return "golang";
+        case LambdaFunctionRevisionRuntime::Go: return "go";
+        case LambdaFunctionRevisionRuntime::Dart: return "dart";
+        case LambdaFunctionRevisionRuntime::Erlang: return "erlang";
+        case LambdaFunctionRevisionRuntime::Erl: return "erl";
+        case LambdaFunctionRevisionRuntime::Elixir: return "elixir";
+        case LambdaFunctionRevisionRuntime::Ex: return "ex";
+        case LambdaFunctionRevisionRuntime::Java: return "java";
+        case LambdaFunctionRevisionRuntime::Jvm: return "jvm";
+        case LambdaFunctionRevisionRuntime::Gleam: return "gleam";
+        case LambdaFunctionRevisionRuntime::Gleamlang: return "gleamlang";
+        case LambdaFunctionRevisionRuntime::Rust: return "rust";
+        case LambdaFunctionRevisionRuntime::Rs: return "rs";
+        case LambdaFunctionRevisionRuntime::Browser: return "browser";
+    }
+    return "";
+}
+inline std::optional<LambdaFunctionRevisionRuntime> parse_lambda_function_revisions_runtime(const std::string& value) {
+    if (value == "nodejs") return LambdaFunctionRevisionRuntime::Nodejs;
+    if (value == "javascript") return LambdaFunctionRevisionRuntime::Javascript;
+    if (value == "typescript") return LambdaFunctionRevisionRuntime::Typescript;
+    if (value == "python3") return LambdaFunctionRevisionRuntime::Python3;
+    if (value == "python") return LambdaFunctionRevisionRuntime::Python;
+    if (value == "ruby") return LambdaFunctionRevisionRuntime::Ruby;
+    if (value == "bash") return LambdaFunctionRevisionRuntime::Bash;
+    if (value == "shell") return LambdaFunctionRevisionRuntime::Shell;
+    if (value == "golang") return LambdaFunctionRevisionRuntime::Golang;
+    if (value == "go") return LambdaFunctionRevisionRuntime::Go;
+    if (value == "dart") return LambdaFunctionRevisionRuntime::Dart;
+    if (value == "erlang") return LambdaFunctionRevisionRuntime::Erlang;
+    if (value == "erl") return LambdaFunctionRevisionRuntime::Erl;
+    if (value == "elixir") return LambdaFunctionRevisionRuntime::Elixir;
+    if (value == "ex") return LambdaFunctionRevisionRuntime::Ex;
+    if (value == "java") return LambdaFunctionRevisionRuntime::Java;
+    if (value == "jvm") return LambdaFunctionRevisionRuntime::Jvm;
+    if (value == "gleam") return LambdaFunctionRevisionRuntime::Gleam;
+    if (value == "gleamlang") return LambdaFunctionRevisionRuntime::Gleamlang;
+    if (value == "rust") return LambdaFunctionRevisionRuntime::Rust;
+    if (value == "rs") return LambdaFunctionRevisionRuntime::Rs;
+    if (value == "browser") return LambdaFunctionRevisionRuntime::Browser;
+    return std::nullopt;
+}
+
+enum class LambdaFunctionRevisionContainerBuildStatus { NotRequested, Pending, Building, Built, Failed, Skipped };
+inline std::string lambda_function_revisions_container_build_status_to_string(LambdaFunctionRevisionContainerBuildStatus value) {
+    switch (value) {
+        case LambdaFunctionRevisionContainerBuildStatus::NotRequested: return "not_requested";
+        case LambdaFunctionRevisionContainerBuildStatus::Pending: return "pending";
+        case LambdaFunctionRevisionContainerBuildStatus::Building: return "building";
+        case LambdaFunctionRevisionContainerBuildStatus::Built: return "built";
+        case LambdaFunctionRevisionContainerBuildStatus::Failed: return "failed";
+        case LambdaFunctionRevisionContainerBuildStatus::Skipped: return "skipped";
+    }
+    return "";
+}
+inline std::optional<LambdaFunctionRevisionContainerBuildStatus> parse_lambda_function_revisions_container_build_status(const std::string& value) {
+    if (value == "not_requested") return LambdaFunctionRevisionContainerBuildStatus::NotRequested;
+    if (value == "pending") return LambdaFunctionRevisionContainerBuildStatus::Pending;
+    if (value == "building") return LambdaFunctionRevisionContainerBuildStatus::Building;
+    if (value == "built") return LambdaFunctionRevisionContainerBuildStatus::Built;
+    if (value == "failed") return LambdaFunctionRevisionContainerBuildStatus::Failed;
+    if (value == "skipped") return LambdaFunctionRevisionContainerBuildStatus::Skipped;
+    return std::nullopt;
+}
+
+struct LambdaFunctionRevisionRow {
+    std::string id;
+    std::string function_id;
+    int64_t revision_number;
+    std::string definition_digest;
+    std::string description;
+    std::string runtime;
+    std::string entry_command;
+    std::string function_body;
+    std::optional<std::string> reuse_key;
+    int32_t idle_timeout_seconds;
+    int32_t max_run_ms;
+    bool containerized;
+    std::optional<std::string> container_image;
+    std::string container_build_status;
+    std::optional<std::string> container_build_error;
+    std::optional<std::string> container_built_at;
+    std::string env;
+    std::string labels;
+    std::string meta_data;
+    std::string created_at;
+    std::optional<std::string> created_by;
+};
+
+inline LambdaFunctionRevisionRow lambda_function_revisions_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    LambdaFunctionRevisionRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.function_id = get(1);
+    row.revision_number = std::stoll(get(2));
+    row.definition_digest = get(3);
+    row.description = get(4);
+    row.runtime = get(5);
+    row.entry_command = get(6);
+    row.function_body = get(7);
+    row.reuse_key = is_null(8) ? std::nullopt : std::optional<std::string>(get(8));
+    row.idle_timeout_seconds = std::stoi(get(9));
+    row.max_run_ms = std::stoi(get(10));
+    row.containerized = (get(11) == "t");
+    row.container_image = is_null(12) ? std::nullopt : std::optional<std::string>(get(12));
+    row.container_build_status = get(13);
+    row.container_build_error = is_null(14) ? std::nullopt : std::optional<std::string>(get(14));
+    row.container_built_at = is_null(15) ? std::nullopt : std::optional<std::string>(get(15));
+    row.env = get(16);
+    row.labels = get(17);
+    row.meta_data = get(18);
+    row.created_at = get(19);
+    row.created_by = is_null(20) ? std::nullopt : std::optional<std::string>(get(20));
+    return row;
+}
+inline std::optional<std::string> validate_lambda_function_revisions_revision_number(int64_t value) {
+    if (value < 1) return std::string("lambda_function_revisions.revision_number is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_function_revisions_definition_digest(const std::string& value) {
+    if (value.size() < 64) return std::string("lambda_function_revisions.definition_digest must be at least 64 characters");
+    if (value.size() > 64) return std::string("lambda_function_revisions.definition_digest must be at most 64 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[a-f0-9]{64}$)RX"))) return std::string("lambda_function_revisions.definition_digest does not match the required pattern");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_function_revisions_description(const std::string& value) {
+    if (value.size() > 4096) return std::string("lambda_function_revisions.description must be at most 4096 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_function_revisions_function_body(const std::string& value) {
+    if (value.size() < 1) return std::string("lambda_function_revisions.function_body must be at least 1 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_function_revisions_reuse_key(const std::string& value) {
+    if (value.size() > 200) return std::string("lambda_function_revisions.reuse_key must be at most 200 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_function_revisions_idle_timeout_seconds(int32_t value) {
+    if (value < 1) return std::string("lambda_function_revisions.idle_timeout_seconds is below the minimum");
+    if (value > 3600) return std::string("lambda_function_revisions.idle_timeout_seconds is above the maximum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_function_revisions_max_run_ms(int32_t value) {
+    if (value < 1000) return std::string("lambda_function_revisions.max_run_ms is below the minimum");
+    if (value > 300000) return std::string("lambda_function_revisions.max_run_ms is above the maximum");
+    return std::nullopt;
+}
+
+// Named weighted routing policies over immutable lambda function revisions.
+inline const char* lambda_function_aliases_table = "lambda_function_aliases";
+inline const std::vector<std::string> lambda_function_aliases_columns = { "id", "function_id", "name", "description", "traffic", "routing_version", "created_at", "updated_at", "created_by", "updated_by" };
+inline const char* lambda_function_aliases_select_sql = R"SQL(select
+      id::text as id,
+      function_id::text as function_id,
+      name,
+      description,
+      traffic::text as traffic_json,
+      routing_version,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from lambda_function_aliases)SQL";
+
+struct LambdaFunctionAliasRow {
+    std::string id;
+    std::string function_id;
+    std::string name;
+    std::string description;
+    std::string traffic;
+    int64_t routing_version;
+    std::string created_at;
+    std::string updated_at;
+    std::optional<std::string> created_by;
+    std::optional<std::string> updated_by;
+};
+
+inline LambdaFunctionAliasRow lambda_function_aliases_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    LambdaFunctionAliasRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.function_id = get(1);
+    row.name = get(2);
+    row.description = get(3);
+    row.traffic = get(4);
+    row.routing_version = std::stoll(get(5));
+    row.created_at = get(6);
+    row.updated_at = get(7);
+    row.created_by = is_null(8) ? std::nullopt : std::optional<std::string>(get(8));
+    row.updated_by = is_null(9) ? std::nullopt : std::optional<std::string>(get(9));
+    return row;
+}
+inline std::optional<std::string> validate_lambda_function_aliases_name(const std::string& value) {
+    if (value.size() < 1) return std::string("lambda_function_aliases.name must be at least 1 characters");
+    if (value.size() > 64) return std::string("lambda_function_aliases.name must be at most 64 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[a-z][a-z0-9._-]{0,63}$)RX"))) return std::string("lambda_function_aliases.name does not match the required pattern");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_function_aliases_description(const std::string& value) {
+    if (value.size() > 4096) return std::string("lambda_function_aliases.description must be at most 4096 characters");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_function_aliases_routing_version(int64_t value) {
+    if (value < 1) return std::string("lambda_function_aliases.routing_version is below the minimum");
+    return std::nullopt;
+}
+
+// Durable state, alarms, and cross-replica execution leases for keyed serverless actors.
+inline const char* lambda_actor_instances_table = "lambda_actor_instances";
+inline const std::vector<std::string> lambda_actor_instances_columns = { "id", "function_id", "actor_key", "state", "state_version", "alarm_at", "alarm_attempt", "lease_owner", "lease_until", "last_invoked_at", "last_error", "created_at", "updated_at" };
+inline const char* lambda_actor_instances_select_sql = R"SQL(select
+      id::text as id,
+      function_id::text as function_id,
+      actor_key,
+      state::text as state_json,
+      state_version,
+      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as alarm_at,
+      alarm_attempt,
+      lease_owner,
+      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as lease_until,
+      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_invoked_at,
+      last_error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from lambda_actor_instances)SQL";
+
+struct LambdaActorInstanceRow {
+    std::string id;
+    std::string function_id;
+    std::string actor_key;
+    std::string state;
+    int64_t state_version;
+    std::optional<std::string> alarm_at;
+    int32_t alarm_attempt;
+    std::optional<std::string> lease_owner;
+    std::optional<std::string> lease_until;
+    std::optional<std::string> last_invoked_at;
+    std::optional<std::string> last_error;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline LambdaActorInstanceRow lambda_actor_instances_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    LambdaActorInstanceRow row;
+    (void)is_null;
+    row.id = get(0);
+    row.function_id = get(1);
+    row.actor_key = get(2);
+    row.state = get(3);
+    row.state_version = std::stoll(get(4));
+    row.alarm_at = is_null(5) ? std::nullopt : std::optional<std::string>(get(5));
+    row.alarm_attempt = std::stoi(get(6));
+    row.lease_owner = is_null(7) ? std::nullopt : std::optional<std::string>(get(7));
+    row.lease_until = is_null(8) ? std::nullopt : std::optional<std::string>(get(8));
+    row.last_invoked_at = is_null(9) ? std::nullopt : std::optional<std::string>(get(9));
+    row.last_error = is_null(10) ? std::nullopt : std::optional<std::string>(get(10));
+    row.created_at = get(11);
+    row.updated_at = get(12);
+    return row;
+}
+inline std::optional<std::string> validate_lambda_actor_instances_actor_key(const std::string& value) {
+    if (value.size() < 1) return std::string("lambda_actor_instances.actor_key must be at least 1 characters");
+    if (value.size() > 200) return std::string("lambda_actor_instances.actor_key must be at most 200 characters");
+    if (!std::regex_match(value, std::regex(R"RX(^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$)RX"))) return std::string("lambda_actor_instances.actor_key does not match the required pattern");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_actor_instances_state_version(int64_t value) {
+    if (value < 0) return std::string("lambda_actor_instances.state_version is below the minimum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_actor_instances_alarm_attempt(int32_t value) {
+    if (value < 0) return std::string("lambda_actor_instances.alarm_attempt is below the minimum");
+    if (value > 6) return std::string("lambda_actor_instances.alarm_attempt is above the maximum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_lambda_actor_instances_lease_owner(const std::string& value) {
+    if (value.size() > 200) return std::string("lambda_actor_instances.lease_owner must be at most 200 characters");
     return std::nullopt;
 }
 
@@ -14674,6 +15002,264 @@ inline WebSessionsRow web_sessions_row_of_row(const std::function<std::string(in
     row.idle_expires_at = get(10);
     row.absolute_expires_at = get(11);
     row.revoked_at = is_null(12) ? std::nullopt : std::optional<std::string>(get(12));
+    return row;
+}
+
+inline const char* principals_table = "shared_auth.principals";
+inline const std::vector<std::string> principals_columns = { "shared_user_id", "email", "email_verified", "phone", "display_name", "status", "profile", "created_at", "updated_at", "last_seen_at" };
+inline const char* principals_select_sql = R"SQL(select
+      shared_user_id::text as shared_user_id,
+      email,
+      email_verified,
+      phone,
+      display_name,
+      status,
+      profile::text as profile_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at
+    from shared_auth.principals)SQL";
+
+enum class PrincipalsStatus { Active, Disabled, Deleted };
+inline std::string principals_status_to_string(PrincipalsStatus value) {
+    switch (value) {
+        case PrincipalsStatus::Active: return "active";
+        case PrincipalsStatus::Disabled: return "disabled";
+        case PrincipalsStatus::Deleted: return "deleted";
+    }
+    return "";
+}
+inline std::optional<PrincipalsStatus> parse_principals_status(const std::string& value) {
+    if (value == "active") return PrincipalsStatus::Active;
+    if (value == "disabled") return PrincipalsStatus::Disabled;
+    if (value == "deleted") return PrincipalsStatus::Deleted;
+    return std::nullopt;
+}
+
+struct PrincipalsRow {
+    std::string shared_user_id;
+    std::optional<std::string> email;
+    bool email_verified;
+    std::optional<std::string> phone;
+    std::optional<std::string> display_name;
+    std::string status;
+    std::string profile;
+    std::string created_at;
+    std::string updated_at;
+    std::string last_seen_at;
+};
+
+inline PrincipalsRow principals_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    PrincipalsRow row;
+    (void)is_null;
+    row.shared_user_id = get(0);
+    row.email = is_null(1) ? std::nullopt : std::optional<std::string>(get(1));
+    row.email_verified = (get(2) == "t");
+    row.phone = is_null(3) ? std::nullopt : std::optional<std::string>(get(3));
+    row.display_name = is_null(4) ? std::nullopt : std::optional<std::string>(get(4));
+    row.status = get(5);
+    row.profile = get(6);
+    row.created_at = get(7);
+    row.updated_at = get(8);
+    row.last_seen_at = get(9);
+    return row;
+}
+
+inline const char* provider_identities_table = "shared_auth.provider_identities";
+inline const std::vector<std::string> provider_identities_columns = { "provider_identity_id", "shared_user_id", "provider", "provider_tenant", "provider_subject", "email", "email_verified", "metadata", "created_at", "updated_at", "last_seen_at" };
+inline const char* provider_identities_select_sql = R"SQL(select
+      provider_identity_id::text as provider_identity_id,
+      shared_user_id::text as shared_user_id,
+      provider,
+      provider_tenant,
+      provider_subject,
+      email,
+      email_verified,
+      metadata::text as metadata_json,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at
+    from shared_auth.provider_identities)SQL";
+
+struct ProviderIdentitiesRow {
+    std::string provider_identity_id;
+    std::string shared_user_id;
+    std::string provider;
+    std::string provider_tenant;
+    std::string provider_subject;
+    std::optional<std::string> email;
+    bool email_verified;
+    std::string metadata;
+    std::string created_at;
+    std::string updated_at;
+    std::string last_seen_at;
+};
+
+inline ProviderIdentitiesRow provider_identities_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    ProviderIdentitiesRow row;
+    (void)is_null;
+    row.provider_identity_id = get(0);
+    row.shared_user_id = get(1);
+    row.provider = get(2);
+    row.provider_tenant = get(3);
+    row.provider_subject = get(4);
+    row.email = is_null(5) ? std::nullopt : std::optional<std::string>(get(5));
+    row.email_verified = (get(6) == "t");
+    row.metadata = get(7);
+    row.created_at = get(8);
+    row.updated_at = get(9);
+    row.last_seen_at = get(10);
+    return row;
+}
+
+inline const char* local_credentials_table = "shared_auth.local_credentials";
+inline const std::vector<std::string> local_credentials_columns = { "shared_user_id", "password_hash", "password_changed_at", "failed_attempts", "locked_until", "created_at", "updated_at" };
+inline const char* local_credentials_select_sql = R"SQL(select
+      shared_user_id::text as shared_user_id,
+      password_hash,
+      to_char(password_changed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as password_changed_at,
+      failed_attempts,
+      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as locked_until,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from shared_auth.local_credentials)SQL";
+
+struct LocalCredentialsRow {
+    std::string shared_user_id;
+    std::string password_hash;
+    std::string password_changed_at;
+    int32_t failed_attempts;
+    std::optional<std::string> locked_until;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline LocalCredentialsRow local_credentials_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    LocalCredentialsRow row;
+    (void)is_null;
+    row.shared_user_id = get(0);
+    row.password_hash = get(1);
+    row.password_changed_at = get(2);
+    row.failed_attempts = std::stoi(get(3));
+    row.locked_until = is_null(4) ? std::nullopt : std::optional<std::string>(get(4));
+    row.created_at = get(5);
+    row.updated_at = get(6);
+    return row;
+}
+inline std::optional<std::string> validate_local_credentials_failed_attempts(int32_t value) {
+    if (value < 0) return std::string("local_credentials.failed_attempts is below the minimum");
+    return std::nullopt;
+}
+
+inline const char* sessions_table = "shared_auth.sessions";
+inline const std::vector<std::string> sessions_columns = { "session_id", "shared_user_id", "refresh_token_hash", "provider", "provider_tenant", "provider_subject", "created_at", "updated_at", "last_seen_at", "expires_at", "revoked_at", "rotated_from" };
+inline const char* sessions_select_sql = R"SQL(select
+      session_id::text as session_id,
+      shared_user_id::text as shared_user_id,
+      refresh_token_hash,
+      provider,
+      provider_tenant,
+      provider_subject,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revoked_at,
+      rotated_from::text as rotated_from
+    from shared_auth.sessions)SQL";
+
+struct SessionsRow {
+    std::string session_id;
+    std::string shared_user_id;
+    std::string refresh_token_hash;
+    std::string provider;
+    std::string provider_tenant;
+    std::string provider_subject;
+    std::string created_at;
+    std::string updated_at;
+    std::string last_seen_at;
+    std::string expires_at;
+    std::optional<std::string> revoked_at;
+    std::optional<std::string> rotated_from;
+};
+
+inline SessionsRow sessions_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    SessionsRow row;
+    (void)is_null;
+    row.session_id = get(0);
+    row.shared_user_id = get(1);
+    row.refresh_token_hash = get(2);
+    row.provider = get(3);
+    row.provider_tenant = get(4);
+    row.provider_subject = get(5);
+    row.created_at = get(6);
+    row.updated_at = get(7);
+    row.last_seen_at = get(8);
+    row.expires_at = get(9);
+    row.revoked_at = is_null(10) ? std::nullopt : std::optional<std::string>(get(10));
+    row.rotated_from = is_null(11) ? std::nullopt : std::optional<std::string>(get(11));
+    return row;
+}
+
+inline const char* roles_table = "shared_auth.roles";
+inline const std::vector<std::string> roles_columns = { "role_id", "shared_user_id", "role_name", "granted_at", "granted_by" };
+inline const char* roles_select_sql = R"SQL(select
+      role_id::text as role_id,
+      shared_user_id::text as shared_user_id,
+      role_name,
+      to_char(granted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as granted_at,
+      granted_by::text as granted_by
+    from shared_auth.roles)SQL";
+
+struct RolesRow {
+    std::string role_id;
+    std::string shared_user_id;
+    std::string role_name;
+    std::string granted_at;
+    std::optional<std::string> granted_by;
+};
+
+inline RolesRow roles_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    RolesRow row;
+    (void)is_null;
+    row.role_id = get(0);
+    row.shared_user_id = get(1);
+    row.role_name = get(2);
+    row.granted_at = get(3);
+    row.granted_by = is_null(4) ? std::nullopt : std::optional<std::string>(get(4));
+    return row;
+}
+inline std::optional<std::string> validate_roles_role_name(const std::string& value) {
+    if (!std::regex_match(value, std::regex(R"RX(^[a-z][a-z0-9:_-]{0,63}$)RX"))) return std::string("roles.role_name does not match the required pattern");
+    return std::nullopt;
+}
+
+inline const char* webhook_events_table = "shared_auth.webhook_events";
+inline const std::vector<std::string> webhook_events_columns = { "event_id", "provider", "event_type", "received_at", "payload_sha256" };
+inline const char* webhook_events_select_sql = R"SQL(select
+      event_id::text as event_id,
+      provider,
+      event_type,
+      to_char(received_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as received_at,
+      payload_sha256
+    from shared_auth.webhook_events)SQL";
+
+struct WebhookEventsRow {
+    std::string event_id;
+    std::string provider;
+    std::string event_type;
+    std::string received_at;
+    std::string payload_sha256;
+};
+
+inline WebhookEventsRow webhook_events_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    WebhookEventsRow row;
+    (void)is_null;
+    row.event_id = get(0);
+    row.provider = get(1);
+    row.event_type = get(2);
+    row.received_at = get(3);
+    row.payload_sha256 = get(4);
     return row;
 }
 

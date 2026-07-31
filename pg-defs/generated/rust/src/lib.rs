@@ -4156,10 +4156,15 @@ pub enum LambdaFunctionRuntime {
     Ex,
     Java,
     Jvm,
+    Gleam,
+    Gleamlang,
+    Rust,
+    Rs,
+    Browser,
 }
 
 impl LambdaFunctionRuntime {
-    pub const VALUES: &'static [&'static str] = &["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"];
+    pub const VALUES: &'static [&'static str] = &["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"];
 
     pub fn as_str(self) -> &'static str {
         match self {
@@ -4180,6 +4185,11 @@ impl LambdaFunctionRuntime {
             Self::Ex => "ex",
             Self::Java => "java",
             Self::Jvm => "jvm",
+            Self::Gleam => "gleam",
+            Self::Gleamlang => "gleamlang",
+            Self::Rust => "rust",
+            Self::Rs => "rs",
+            Self::Browser => "browser",
         }
     }
 }
@@ -4206,6 +4216,11 @@ impl TryFrom<&str> for LambdaFunctionRuntime {
             "ex" => Ok(Self::Ex),
             "java" => Ok(Self::Java),
             "jvm" => Ok(Self::Jvm),
+            "gleam" => Ok(Self::Gleam),
+            "gleamlang" => Ok(Self::Gleamlang),
+            "rust" => Ok(Self::Rust),
+            "rs" => Ok(Self::Rs),
+            "browser" => Ok(Self::Browser),
             _ => Err(format!("unsupported runtime: {value}")),
         }
     }
@@ -4353,7 +4368,7 @@ pub struct LambdaFunctionInsert {
 pub fn validate_lambda_functions_row(value: &LambdaFunctionRow) -> Result<(), String> {
     validate_slug("lambda_functions.slug", &value.slug)?;
     validate_string_length("lambda_functions.display_name", &value.display_name, Some(1), Some(200))?;
-    if !["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"].contains(&(&value.runtime).as_str()) { return Err(format!("unsupported lambda_functions.runtime: {}", &value.runtime)); }
+    if !["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"].contains(&(&value.runtime).as_str()) { return Err(format!("unsupported lambda_functions.runtime: {}", &value.runtime)); }
     if (&value.entry_command).as_bytes().len() > 512 { return Err("lambda_functions.entry_command exceeds 512 bytes".to_string()); }
     validate_string_length("lambda_functions.function_body", &value.function_body, Some(1), None)?;
     if (&value.function_body).as_bytes().len() > 262144 { return Err("lambda_functions.function_body exceeds 262144 bytes".to_string()); }
@@ -4386,7 +4401,7 @@ pub fn validate_lambda_functions_insert(value: &LambdaFunctionInsert) -> Result<
         validate_string_length("lambda_functions.display_name", value, Some(1), Some(200))?;
     }
     if let Some(value) = &value.runtime {
-        if !["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"].contains(&(value).as_str()) { return Err(format!("unsupported lambda_functions.runtime: {}", value)); }
+        if !["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"].contains(&(value).as_str()) { return Err(format!("unsupported lambda_functions.runtime: {}", value)); }
     }
     if let Some(value) = &value.entry_command {
         if (value).as_bytes().len() > 512 { return Err("lambda_functions.entry_command exceeds 512 bytes".to_string()); }
@@ -4426,6 +4441,468 @@ pub fn validate_lambda_functions_insert(value: &LambdaFunctionInsert) -> Result<
     }
     if let Some(value) = &value.meta_data {
         if !(value).is_object() { return Err("lambda_functions.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const LAMBDA_FUNCTION_REVISIONS_TABLE: &str = "lambda_function_revisions";
+pub const LAMBDA_FUNCTION_REVISIONS_COLUMNS: &[&str] = &["id", "function_id", "revision_number", "definition_digest", "description", "runtime", "entry_command", "function_body", "reuse_key", "idle_timeout_seconds", "max_run_ms", "containerized", "container_image", "container_build_status", "container_build_error", "container_built_at", "env", "labels", "meta_data", "created_at", "created_by"];
+pub const LAMBDA_FUNCTION_REVISIONS_SELECT_SQL: &str = r###"select
+      id::text as id,
+      function_id::text as function_id,
+      revision_number,
+      definition_digest,
+      description,
+      runtime,
+      entry_command,
+      function_body,
+      reuse_key,
+      idle_timeout_seconds,
+      max_run_ms,
+      containerized,
+      container_image,
+      container_build_status,
+      container_build_error,
+      to_char(container_built_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as container_built_at,
+      env,
+      labels,
+      meta_data,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      created_by::text as created_by
+    from lambda_function_revisions"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LambdaFunctionRevisionRuntime {
+    Nodejs,
+    Javascript,
+    Typescript,
+    Python3,
+    Python,
+    Ruby,
+    Bash,
+    Shell,
+    Golang,
+    Go,
+    Dart,
+    Erlang,
+    Erl,
+    Elixir,
+    Ex,
+    Java,
+    Jvm,
+    Gleam,
+    Gleamlang,
+    Rust,
+    Rs,
+    Browser,
+}
+
+impl LambdaFunctionRevisionRuntime {
+    pub const VALUES: &'static [&'static str] = &["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Nodejs => "nodejs",
+            Self::Javascript => "javascript",
+            Self::Typescript => "typescript",
+            Self::Python3 => "python3",
+            Self::Python => "python",
+            Self::Ruby => "ruby",
+            Self::Bash => "bash",
+            Self::Shell => "shell",
+            Self::Golang => "golang",
+            Self::Go => "go",
+            Self::Dart => "dart",
+            Self::Erlang => "erlang",
+            Self::Erl => "erl",
+            Self::Elixir => "elixir",
+            Self::Ex => "ex",
+            Self::Java => "java",
+            Self::Jvm => "jvm",
+            Self::Gleam => "gleam",
+            Self::Gleamlang => "gleamlang",
+            Self::Rust => "rust",
+            Self::Rs => "rs",
+            Self::Browser => "browser",
+        }
+    }
+}
+
+impl TryFrom<&str> for LambdaFunctionRevisionRuntime {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "nodejs" => Ok(Self::Nodejs),
+            "javascript" => Ok(Self::Javascript),
+            "typescript" => Ok(Self::Typescript),
+            "python3" => Ok(Self::Python3),
+            "python" => Ok(Self::Python),
+            "ruby" => Ok(Self::Ruby),
+            "bash" => Ok(Self::Bash),
+            "shell" => Ok(Self::Shell),
+            "golang" => Ok(Self::Golang),
+            "go" => Ok(Self::Go),
+            "dart" => Ok(Self::Dart),
+            "erlang" => Ok(Self::Erlang),
+            "erl" => Ok(Self::Erl),
+            "elixir" => Ok(Self::Elixir),
+            "ex" => Ok(Self::Ex),
+            "java" => Ok(Self::Java),
+            "jvm" => Ok(Self::Jvm),
+            "gleam" => Ok(Self::Gleam),
+            "gleamlang" => Ok(Self::Gleamlang),
+            "rust" => Ok(Self::Rust),
+            "rs" => Ok(Self::Rs),
+            "browser" => Ok(Self::Browser),
+            _ => Err(format!("unsupported runtime: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LambdaFunctionRevisionContainerBuildStatus {
+    NotRequested,
+    Pending,
+    Building,
+    Built,
+    Failed,
+    Skipped,
+}
+
+impl LambdaFunctionRevisionContainerBuildStatus {
+    pub const VALUES: &'static [&'static str] = &["not_requested", "pending", "building", "built", "failed", "skipped"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NotRequested => "not_requested",
+            Self::Pending => "pending",
+            Self::Building => "building",
+            Self::Built => "built",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+        }
+    }
+}
+
+impl TryFrom<&str> for LambdaFunctionRevisionContainerBuildStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "not_requested" => Ok(Self::NotRequested),
+            "pending" => Ok(Self::Pending),
+            "building" => Ok(Self::Building),
+            "built" => Ok(Self::Built),
+            "failed" => Ok(Self::Failed),
+            "skipped" => Ok(Self::Skipped),
+            _ => Err(format!("unsupported container_build_status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct LambdaFunctionRevisionRow {
+    pub id: String,
+    pub function_id: String,
+    pub revision_number: i64,
+    pub definition_digest: String,
+    pub description: String,
+    pub runtime: String,
+    pub entry_command: String,
+    pub function_body: String,
+    pub reuse_key: Option<String>,
+    pub idle_timeout_seconds: i32,
+    pub max_run_ms: i32,
+    pub containerized: bool,
+    pub container_image: Option<String>,
+    pub container_build_status: String,
+    pub container_build_error: Option<String>,
+    pub container_built_at: Option<String>,
+    pub env: Value,
+    pub labels: Value,
+    pub meta_data: Value,
+    pub created_at: String,
+    pub created_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LambdaFunctionRevisionInsert {
+    pub id: Option<String>,
+    pub function_id: Option<String>,
+    pub revision_number: Option<i64>,
+    pub definition_digest: Option<String>,
+    pub description: Option<String>,
+    pub runtime: Option<String>,
+    pub entry_command: Option<String>,
+    pub function_body: Option<String>,
+    pub reuse_key: Option<String>,
+    pub idle_timeout_seconds: Option<i32>,
+    pub max_run_ms: Option<i32>,
+    pub containerized: Option<bool>,
+    pub container_image: Option<String>,
+    pub container_build_status: Option<String>,
+    pub container_build_error: Option<String>,
+    pub container_built_at: Option<String>,
+    pub env: Option<Value>,
+    pub labels: Option<Value>,
+    pub meta_data: Option<Value>,
+    pub created_at: Option<String>,
+    pub created_by: Option<String>,
+}
+
+pub fn validate_lambda_function_revisions_row(value: &LambdaFunctionRevisionRow) -> Result<(), String> {
+    if *(&value.revision_number) < 1 { return Err("lambda_function_revisions.revision_number is below the minimum".to_string()); }
+    validate_string_length("lambda_function_revisions.definition_digest", &value.definition_digest, Some(64), Some(64))?;
+    validate_string_length("lambda_function_revisions.description", &value.description, None, Some(4096))?;
+    if (&value.description).as_bytes().len() > 4096 { return Err("lambda_function_revisions.description exceeds 4096 bytes".to_string()); }
+    if !["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"].contains(&(&value.runtime).as_str()) { return Err(format!("unsupported lambda_function_revisions.runtime: {}", &value.runtime)); }
+    if (&value.entry_command).as_bytes().len() > 512 { return Err("lambda_function_revisions.entry_command exceeds 512 bytes".to_string()); }
+    validate_string_length("lambda_function_revisions.function_body", &value.function_body, Some(1), None)?;
+    if (&value.function_body).as_bytes().len() > 262144 { return Err("lambda_function_revisions.function_body exceeds 262144 bytes".to_string()); }
+    if let Some(value) = &value.reuse_key {
+        validate_string_length("lambda_function_revisions.reuse_key", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("lambda_function_revisions.reuse_key exceeds 200 bytes".to_string()); }
+    }
+    if *(&value.idle_timeout_seconds) < 1 { return Err("lambda_function_revisions.idle_timeout_seconds is below the minimum".to_string()); }
+    if *(&value.idle_timeout_seconds) > 3600 { return Err("lambda_function_revisions.idle_timeout_seconds is above the maximum".to_string()); }
+    if *(&value.max_run_ms) < 1000 { return Err("lambda_function_revisions.max_run_ms is below the minimum".to_string()); }
+    if *(&value.max_run_ms) > 300000 { return Err("lambda_function_revisions.max_run_ms is above the maximum".to_string()); }
+    if let Some(value) = &value.container_image {
+        if (value).as_bytes().len() > 512 { return Err("lambda_function_revisions.container_image exceeds 512 bytes".to_string()); }
+    }
+    if !["not_requested", "pending", "building", "built", "failed", "skipped"].contains(&(&value.container_build_status).as_str()) { return Err(format!("unsupported lambda_function_revisions.container_build_status: {}", &value.container_build_status)); }
+    if let Some(value) = &value.container_build_error {
+        if (value).as_bytes().len() > 8192 { return Err("lambda_function_revisions.container_build_error exceeds 8192 bytes".to_string()); }
+    }
+    if !(&value.env).is_object() { return Err("lambda_function_revisions.env must be a JSON object".to_string()); }
+    if !(&value.labels).is_array() { return Err("lambda_function_revisions.labels must be a JSON array".to_string()); }
+    if !(&value.meta_data).is_object() { return Err("lambda_function_revisions.meta_data must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_lambda_function_revisions_insert(value: &LambdaFunctionRevisionInsert) -> Result<(), String> {
+    if let Some(value) = &value.revision_number {
+        if *(value) < 1 { return Err("lambda_function_revisions.revision_number is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.definition_digest {
+        validate_string_length("lambda_function_revisions.definition_digest", value, Some(64), Some(64))?;
+    }
+    if let Some(value) = &value.description {
+        validate_string_length("lambda_function_revisions.description", value, None, Some(4096))?;
+        if (value).as_bytes().len() > 4096 { return Err("lambda_function_revisions.description exceeds 4096 bytes".to_string()); }
+    }
+    if let Some(value) = &value.runtime {
+        if !["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"].contains(&(value).as_str()) { return Err(format!("unsupported lambda_function_revisions.runtime: {}", value)); }
+    }
+    if let Some(value) = &value.entry_command {
+        if (value).as_bytes().len() > 512 { return Err("lambda_function_revisions.entry_command exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.function_body {
+        validate_string_length("lambda_function_revisions.function_body", value, Some(1), None)?;
+        if (value).as_bytes().len() > 262144 { return Err("lambda_function_revisions.function_body exceeds 262144 bytes".to_string()); }
+    }
+    if let Some(value) = &value.reuse_key {
+        validate_string_length("lambda_function_revisions.reuse_key", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("lambda_function_revisions.reuse_key exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.idle_timeout_seconds {
+        if *(value) < 1 { return Err("lambda_function_revisions.idle_timeout_seconds is below the minimum".to_string()); }
+        if *(value) > 3600 { return Err("lambda_function_revisions.idle_timeout_seconds is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.max_run_ms {
+        if *(value) < 1000 { return Err("lambda_function_revisions.max_run_ms is below the minimum".to_string()); }
+        if *(value) > 300000 { return Err("lambda_function_revisions.max_run_ms is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.container_image {
+        if (value).as_bytes().len() > 512 { return Err("lambda_function_revisions.container_image exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.container_build_status {
+        if !["not_requested", "pending", "building", "built", "failed", "skipped"].contains(&(value).as_str()) { return Err(format!("unsupported lambda_function_revisions.container_build_status: {}", value)); }
+    }
+    if let Some(value) = &value.container_build_error {
+        if (value).as_bytes().len() > 8192 { return Err("lambda_function_revisions.container_build_error exceeds 8192 bytes".to_string()); }
+    }
+    if let Some(value) = &value.env {
+        if !(value).is_object() { return Err("lambda_function_revisions.env must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.labels {
+        if !(value).is_array() { return Err("lambda_function_revisions.labels must be a JSON array".to_string()); }
+    }
+    if let Some(value) = &value.meta_data {
+        if !(value).is_object() { return Err("lambda_function_revisions.meta_data must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const LAMBDA_FUNCTION_ALIASES_TABLE: &str = "lambda_function_aliases";
+pub const LAMBDA_FUNCTION_ALIASES_COLUMNS: &[&str] = &["id", "function_id", "name", "description", "traffic", "routing_version", "created_at", "updated_at", "created_by", "updated_by"];
+pub const LAMBDA_FUNCTION_ALIASES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      function_id::text as function_id,
+      name,
+      description,
+      traffic,
+      routing_version,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      created_by::text as created_by,
+      updated_by::text as updated_by
+    from lambda_function_aliases"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct LambdaFunctionAliasRow {
+    pub id: String,
+    pub function_id: String,
+    pub name: String,
+    pub description: String,
+    pub traffic: Value,
+    pub routing_version: i64,
+    pub created_at: String,
+    pub updated_at: String,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LambdaFunctionAliasInsert {
+    pub id: Option<String>,
+    pub function_id: Option<String>,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub traffic: Option<Value>,
+    pub routing_version: Option<i64>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub created_by: Option<String>,
+    pub updated_by: Option<String>,
+}
+
+pub fn validate_lambda_function_aliases_row(value: &LambdaFunctionAliasRow) -> Result<(), String> {
+    validate_string_length("lambda_function_aliases.name", &value.name, Some(1), Some(64))?;
+    validate_string_length("lambda_function_aliases.description", &value.description, None, Some(4096))?;
+    if (&value.description).as_bytes().len() > 4096 { return Err("lambda_function_aliases.description exceeds 4096 bytes".to_string()); }
+    if !(&value.traffic).is_object() { return Err("lambda_function_aliases.traffic must be a JSON object".to_string()); }
+    if *(&value.routing_version) < 1 { return Err("lambda_function_aliases.routing_version is below the minimum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_lambda_function_aliases_insert(value: &LambdaFunctionAliasInsert) -> Result<(), String> {
+    if let Some(value) = &value.name {
+        validate_string_length("lambda_function_aliases.name", value, Some(1), Some(64))?;
+    }
+    if let Some(value) = &value.description {
+        validate_string_length("lambda_function_aliases.description", value, None, Some(4096))?;
+        if (value).as_bytes().len() > 4096 { return Err("lambda_function_aliases.description exceeds 4096 bytes".to_string()); }
+    }
+    if let Some(value) = &value.traffic {
+        if !(value).is_object() { return Err("lambda_function_aliases.traffic must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.routing_version {
+        if *(value) < 1 { return Err("lambda_function_aliases.routing_version is below the minimum".to_string()); }
+    }
+    Ok(())
+}
+
+pub const LAMBDA_ACTOR_INSTANCES_TABLE: &str = "lambda_actor_instances";
+pub const LAMBDA_ACTOR_INSTANCES_COLUMNS: &[&str] = &["id", "function_id", "actor_key", "state", "state_version", "alarm_at", "alarm_attempt", "lease_owner", "lease_until", "last_invoked_at", "last_error", "created_at", "updated_at"];
+pub const LAMBDA_ACTOR_INSTANCES_SELECT_SQL: &str = r###"select
+      id::text as id,
+      function_id::text as function_id,
+      actor_key,
+      state,
+      state_version,
+      to_char(alarm_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as alarm_at,
+      alarm_attempt,
+      lease_owner,
+      to_char(lease_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as lease_until,
+      to_char(last_invoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_invoked_at,
+      last_error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from lambda_actor_instances"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct LambdaActorInstanceRow {
+    pub id: String,
+    pub function_id: String,
+    pub actor_key: String,
+    pub state: Value,
+    pub state_version: i64,
+    pub alarm_at: Option<String>,
+    pub alarm_attempt: i32,
+    pub lease_owner: Option<String>,
+    pub lease_until: Option<String>,
+    pub last_invoked_at: Option<String>,
+    pub last_error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LambdaActorInstanceInsert {
+    pub id: Option<String>,
+    pub function_id: Option<String>,
+    pub actor_key: Option<String>,
+    pub state: Option<Value>,
+    pub state_version: Option<i64>,
+    pub alarm_at: Option<String>,
+    pub alarm_attempt: Option<i32>,
+    pub lease_owner: Option<String>,
+    pub lease_until: Option<String>,
+    pub last_invoked_at: Option<String>,
+    pub last_error: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_lambda_actor_instances_row(value: &LambdaActorInstanceRow) -> Result<(), String> {
+    validate_string_length("lambda_actor_instances.actor_key", &value.actor_key, Some(1), Some(200))?;
+    if !(&value.state).is_object() { return Err("lambda_actor_instances.state must be a JSON object".to_string()); }
+    if *(&value.state_version) < 0 { return Err("lambda_actor_instances.state_version is below the minimum".to_string()); }
+    if *(&value.alarm_attempt) < 0 { return Err("lambda_actor_instances.alarm_attempt is below the minimum".to_string()); }
+    if *(&value.alarm_attempt) > 6 { return Err("lambda_actor_instances.alarm_attempt is above the maximum".to_string()); }
+    if let Some(value) = &value.lease_owner {
+        validate_string_length("lambda_actor_instances.lease_owner", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("lambda_actor_instances.lease_owner exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.last_error {
+        if (value).as_bytes().len() > 8192 { return Err("lambda_actor_instances.last_error exceeds 8192 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_lambda_actor_instances_insert(value: &LambdaActorInstanceInsert) -> Result<(), String> {
+    if let Some(value) = &value.actor_key {
+        validate_string_length("lambda_actor_instances.actor_key", value, Some(1), Some(200))?;
+    }
+    if let Some(value) = &value.state {
+        if !(value).is_object() { return Err("lambda_actor_instances.state must be a JSON object".to_string()); }
+    }
+    if let Some(value) = &value.state_version {
+        if *(value) < 0 { return Err("lambda_actor_instances.state_version is below the minimum".to_string()); }
+    }
+    if let Some(value) = &value.alarm_attempt {
+        if *(value) < 0 { return Err("lambda_actor_instances.alarm_attempt is below the minimum".to_string()); }
+        if *(value) > 6 { return Err("lambda_actor_instances.alarm_attempt is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.lease_owner {
+        validate_string_length("lambda_actor_instances.lease_owner", value, None, Some(200))?;
+        if (value).as_bytes().len() > 200 { return Err("lambda_actor_instances.lease_owner exceeds 200 bytes".to_string()); }
+    }
+    if let Some(value) = &value.last_error {
+        if (value).as_bytes().len() > 8192 { return Err("lambda_actor_instances.last_error exceeds 8192 bytes".to_string()); }
     }
     Ok(())
 }
@@ -22548,6 +23025,409 @@ pub fn validate_web_sessions_row(value: &WebSessionsRow) -> Result<(), String> {
 pub fn validate_web_sessions_insert(value: &WebSessionsInsert) -> Result<(), String> {
     if let Some(value) = &value.owner_email {
         if (value).as_bytes().len() > 320 { return Err("web_sessions.owner_email exceeds 320 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub const PRINCIPALS_TABLE: &str = "shared_auth.principals";
+pub const PRINCIPALS_COLUMNS: &[&str] = &["shared_user_id", "email", "email_verified", "phone", "display_name", "status", "profile", "created_at", "updated_at", "last_seen_at"];
+pub const PRINCIPALS_SELECT_SQL: &str = r###"select
+      shared_user_id::text as shared_user_id,
+      email,
+      email_verified,
+      phone,
+      display_name,
+      status,
+      profile,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at
+    from shared_auth.principals"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PrincipalsStatus {
+    Active,
+    Disabled,
+    Deleted,
+}
+
+impl PrincipalsStatus {
+    pub const VALUES: &'static [&'static str] = &["active", "disabled", "deleted"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Disabled => "disabled",
+            Self::Deleted => "deleted",
+        }
+    }
+}
+
+impl TryFrom<&str> for PrincipalsStatus {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "active" => Ok(Self::Active),
+            "disabled" => Ok(Self::Disabled),
+            "deleted" => Ok(Self::Deleted),
+            _ => Err(format!("unsupported status: {value}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct PrincipalsRow {
+    pub shared_user_id: String,
+    pub email: Option<String>,
+    pub email_verified: bool,
+    pub phone: Option<String>,
+    pub display_name: Option<String>,
+    pub status: String,
+    pub profile: Value,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_seen_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrincipalsInsert {
+    pub shared_user_id: Option<String>,
+    pub email: Option<String>,
+    pub email_verified: Option<bool>,
+    pub phone: Option<String>,
+    pub display_name: Option<String>,
+    pub status: Option<String>,
+    pub profile: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub last_seen_at: Option<String>,
+}
+
+pub fn validate_principals_row(value: &PrincipalsRow) -> Result<(), String> {
+    if let Some(value) = &value.email {
+        if (value).as_bytes().len() > 320 { return Err("principals.email exceeds 320 bytes".to_string()); }
+    }
+    if let Some(value) = &value.phone {
+        if (value).as_bytes().len() > 64 { return Err("principals.phone exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.display_name {
+        if (value).as_bytes().len() > 160 { return Err("principals.display_name exceeds 160 bytes".to_string()); }
+    }
+    if !["active", "disabled", "deleted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported principals.status: {}", &value.status)); }
+    if !(&value.profile).is_object() { return Err("principals.profile must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_principals_insert(value: &PrincipalsInsert) -> Result<(), String> {
+    if let Some(value) = &value.email {
+        if (value).as_bytes().len() > 320 { return Err("principals.email exceeds 320 bytes".to_string()); }
+    }
+    if let Some(value) = &value.phone {
+        if (value).as_bytes().len() > 64 { return Err("principals.phone exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.display_name {
+        if (value).as_bytes().len() > 160 { return Err("principals.display_name exceeds 160 bytes".to_string()); }
+    }
+    if let Some(value) = &value.status {
+        if !["active", "disabled", "deleted"].contains(&(value).as_str()) { return Err(format!("unsupported principals.status: {}", value)); }
+    }
+    if let Some(value) = &value.profile {
+        if !(value).is_object() { return Err("principals.profile must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const PROVIDER_IDENTITIES_TABLE: &str = "shared_auth.provider_identities";
+pub const PROVIDER_IDENTITIES_COLUMNS: &[&str] = &["provider_identity_id", "shared_user_id", "provider", "provider_tenant", "provider_subject", "email", "email_verified", "metadata", "created_at", "updated_at", "last_seen_at"];
+pub const PROVIDER_IDENTITIES_SELECT_SQL: &str = r###"select
+      provider_identity_id::text as provider_identity_id,
+      shared_user_id::text as shared_user_id,
+      provider,
+      provider_tenant,
+      provider_subject,
+      email,
+      email_verified,
+      metadata,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at
+    from shared_auth.provider_identities"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderIdentitiesRow {
+    pub provider_identity_id: String,
+    pub shared_user_id: String,
+    pub provider: String,
+    pub provider_tenant: String,
+    pub provider_subject: String,
+    pub email: Option<String>,
+    pub email_verified: bool,
+    pub metadata: Value,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_seen_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderIdentitiesInsert {
+    pub provider_identity_id: Option<String>,
+    pub shared_user_id: Option<String>,
+    pub provider: Option<String>,
+    pub provider_tenant: Option<String>,
+    pub provider_subject: Option<String>,
+    pub email: Option<String>,
+    pub email_verified: Option<bool>,
+    pub metadata: Option<Value>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub last_seen_at: Option<String>,
+}
+
+pub fn validate_provider_identities_row(value: &ProviderIdentitiesRow) -> Result<(), String> {
+    if (&value.provider).as_bytes().len() > 64 { return Err("provider_identities.provider exceeds 64 bytes".to_string()); }
+    if (&value.provider_tenant).as_bytes().len() > 255 { return Err("provider_identities.provider_tenant exceeds 255 bytes".to_string()); }
+    if (&value.provider_subject).as_bytes().len() > 512 { return Err("provider_identities.provider_subject exceeds 512 bytes".to_string()); }
+    if let Some(value) = &value.email {
+        if (value).as_bytes().len() > 320 { return Err("provider_identities.email exceeds 320 bytes".to_string()); }
+    }
+    if !(&value.metadata).is_object() { return Err("provider_identities.metadata must be a JSON object".to_string()); }
+    Ok(())
+}
+
+pub fn validate_provider_identities_insert(value: &ProviderIdentitiesInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if (value).as_bytes().len() > 64 { return Err("provider_identities.provider exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_tenant {
+        if (value).as_bytes().len() > 255 { return Err("provider_identities.provider_tenant exceeds 255 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_subject {
+        if (value).as_bytes().len() > 512 { return Err("provider_identities.provider_subject exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.email {
+        if (value).as_bytes().len() > 320 { return Err("provider_identities.email exceeds 320 bytes".to_string()); }
+    }
+    if let Some(value) = &value.metadata {
+        if !(value).is_object() { return Err("provider_identities.metadata must be a JSON object".to_string()); }
+    }
+    Ok(())
+}
+
+pub const LOCAL_CREDENTIALS_TABLE: &str = "shared_auth.local_credentials";
+pub const LOCAL_CREDENTIALS_COLUMNS: &[&str] = &["shared_user_id", "password_hash", "password_changed_at", "failed_attempts", "locked_until", "created_at", "updated_at"];
+pub const LOCAL_CREDENTIALS_SELECT_SQL: &str = r###"select
+      shared_user_id::text as shared_user_id,
+      password_hash,
+      to_char(password_changed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as password_changed_at,
+      failed_attempts,
+      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as locked_until,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from shared_auth.local_credentials"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct LocalCredentialsRow {
+    pub shared_user_id: String,
+    pub password_hash: String,
+    pub password_changed_at: String,
+    pub failed_attempts: i32,
+    pub locked_until: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalCredentialsInsert {
+    pub shared_user_id: Option<String>,
+    pub password_hash: Option<String>,
+    pub password_changed_at: Option<String>,
+    pub failed_attempts: Option<i32>,
+    pub locked_until: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_local_credentials_row(value: &LocalCredentialsRow) -> Result<(), String> {
+    if (&value.password_hash).as_bytes().len() > 512 { return Err("local_credentials.password_hash exceeds 512 bytes".to_string()); }
+    if *(&value.failed_attempts) < 0 { return Err("local_credentials.failed_attempts is below the minimum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_local_credentials_insert(value: &LocalCredentialsInsert) -> Result<(), String> {
+    if let Some(value) = &value.password_hash {
+        if (value).as_bytes().len() > 512 { return Err("local_credentials.password_hash exceeds 512 bytes".to_string()); }
+    }
+    if let Some(value) = &value.failed_attempts {
+        if *(value) < 0 { return Err("local_credentials.failed_attempts is below the minimum".to_string()); }
+    }
+    Ok(())
+}
+
+pub const SESSIONS_TABLE: &str = "shared_auth.sessions";
+pub const SESSIONS_COLUMNS: &[&str] = &["session_id", "shared_user_id", "refresh_token_hash", "provider", "provider_tenant", "provider_subject", "created_at", "updated_at", "last_seen_at", "expires_at", "revoked_at", "rotated_from"];
+pub const SESSIONS_SELECT_SQL: &str = r###"select
+      session_id::text as session_id,
+      shared_user_id::text as shared_user_id,
+      refresh_token_hash,
+      provider,
+      provider_tenant,
+      provider_subject,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
+      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revoked_at,
+      rotated_from::text as rotated_from
+    from shared_auth.sessions"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SessionsRow {
+    pub session_id: String,
+    pub shared_user_id: String,
+    pub refresh_token_hash: String,
+    pub provider: String,
+    pub provider_tenant: String,
+    pub provider_subject: String,
+    pub created_at: String,
+    pub updated_at: String,
+    pub last_seen_at: String,
+    pub expires_at: String,
+    pub revoked_at: Option<String>,
+    pub rotated_from: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionsInsert {
+    pub session_id: Option<String>,
+    pub shared_user_id: Option<String>,
+    pub refresh_token_hash: Option<String>,
+    pub provider: Option<String>,
+    pub provider_tenant: Option<String>,
+    pub provider_subject: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+    pub last_seen_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub revoked_at: Option<String>,
+    pub rotated_from: Option<String>,
+}
+
+pub fn validate_sessions_row(value: &SessionsRow) -> Result<(), String> {
+    if (&value.provider).as_bytes().len() > 64 { return Err("sessions.provider exceeds 64 bytes".to_string()); }
+    if (&value.provider_tenant).as_bytes().len() > 255 { return Err("sessions.provider_tenant exceeds 255 bytes".to_string()); }
+    if (&value.provider_subject).as_bytes().len() > 512 { return Err("sessions.provider_subject exceeds 512 bytes".to_string()); }
+    Ok(())
+}
+
+pub fn validate_sessions_insert(value: &SessionsInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if (value).as_bytes().len() > 64 { return Err("sessions.provider exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_tenant {
+        if (value).as_bytes().len() > 255 { return Err("sessions.provider_tenant exceeds 255 bytes".to_string()); }
+    }
+    if let Some(value) = &value.provider_subject {
+        if (value).as_bytes().len() > 512 { return Err("sessions.provider_subject exceeds 512 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub const ROLES_TABLE: &str = "shared_auth.roles";
+pub const ROLES_COLUMNS: &[&str] = &["role_id", "shared_user_id", "role_name", "granted_at", "granted_by"];
+pub const ROLES_SELECT_SQL: &str = r###"select
+      role_id::text as role_id,
+      shared_user_id::text as shared_user_id,
+      role_name,
+      to_char(granted_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as granted_at,
+      granted_by::text as granted_by
+    from shared_auth.roles"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct RolesRow {
+    pub role_id: String,
+    pub shared_user_id: String,
+    pub role_name: String,
+    pub granted_at: String,
+    pub granted_by: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RolesInsert {
+    pub role_id: Option<String>,
+    pub shared_user_id: Option<String>,
+    pub role_name: Option<String>,
+    pub granted_at: Option<String>,
+    pub granted_by: Option<String>,
+}
+
+pub fn validate_roles_row(_value: &RolesRow) -> Result<(), String> {
+    Ok(())
+}
+
+pub fn validate_roles_insert(_value: &RolesInsert) -> Result<(), String> {
+    Ok(())
+}
+
+pub const WEBHOOK_EVENTS_TABLE: &str = "shared_auth.webhook_events";
+pub const WEBHOOK_EVENTS_COLUMNS: &[&str] = &["event_id", "provider", "event_type", "received_at", "payload_sha256"];
+pub const WEBHOOK_EVENTS_SELECT_SQL: &str = r###"select
+      event_id::text as event_id,
+      provider,
+      event_type,
+      to_char(received_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as received_at,
+      payload_sha256
+    from shared_auth.webhook_events"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct WebhookEventsRow {
+    pub event_id: String,
+    pub provider: String,
+    pub event_type: String,
+    pub received_at: String,
+    pub payload_sha256: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WebhookEventsInsert {
+    pub event_id: Option<String>,
+    pub provider: Option<String>,
+    pub event_type: Option<String>,
+    pub received_at: Option<String>,
+    pub payload_sha256: Option<String>,
+}
+
+pub fn validate_webhook_events_row(value: &WebhookEventsRow) -> Result<(), String> {
+    if (&value.provider).as_bytes().len() > 64 { return Err("webhook_events.provider exceeds 64 bytes".to_string()); }
+    if (&value.event_type).as_bytes().len() > 128 { return Err("webhook_events.event_type exceeds 128 bytes".to_string()); }
+    Ok(())
+}
+
+pub fn validate_webhook_events_insert(value: &WebhookEventsInsert) -> Result<(), String> {
+    if let Some(value) = &value.provider {
+        if (value).as_bytes().len() > 64 { return Err("webhook_events.provider exceeds 64 bytes".to_string()); }
+    }
+    if let Some(value) = &value.event_type {
+        if (value).as_bytes().len() > 128 { return Err("webhook_events.event_type exceeds 128 bytes".to_string()); }
     }
     Ok(())
 }

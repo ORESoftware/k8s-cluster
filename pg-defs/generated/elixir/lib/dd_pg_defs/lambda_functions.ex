@@ -17,7 +17,7 @@ defmodule DdPgDefs.LambdaFunctions do
     field :display_name, :string
     field :description, :string, default: ""
     field :runtime, :string, default: "nodejs"
-    field :entry_command, :string, default: "env -i PATH=\"$PATH\" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs"
+    field :entry_command, :string, default: ""
     field :function_body, :string
     field :reuse_key, :string
     field :idle_timeout_seconds, :integer, default: 300
@@ -49,7 +49,7 @@ defmodule DdPgDefs.LambdaFunctions do
     |> validate_format(:slug, ~r/^[a-z0-9][a-z0-9-]{1,118}[a-z0-9]$/)
     |> validate_length(:slug, max: 120)
     |> validate_length(:display_name, min: 1, max: 200)
-    |> validate_inclusion(:runtime, ["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm"])
+    |> validate_inclusion(:runtime, ["nodejs", "javascript", "typescript", "python3", "python", "ruby", "bash", "shell", "golang", "go", "dart", "erlang", "erl", "elixir", "ex", "java", "jvm", "gleam", "gleamlang", "rust", "rs", "browser"])
     |> validate_length(:function_body, min: 1)
     |> validate_length(:reuse_key, max: 200)
     |> validate_number(:idle_timeout_seconds, greater_than_or_equal_to: 1, less_than_or_equal_to: 3600)

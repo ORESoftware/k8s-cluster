@@ -215,6 +215,121 @@ const CODEGEN_METADATA = {
         },
       },
     },
+    lambda_function_revisions: {
+      description: "Immutable published snapshots of lambda function code and runtime configuration.",
+      names: {
+        typescript: "lambdaFunctionRevisions",
+        rust: "LambdaFunctionRevision",
+        gleam: "LambdaFunctionRevision",
+      },
+      columns: {
+        id: {
+          generated: true,
+        },
+        revision_number: {
+          validation: {
+            min: 1,
+          },
+        },
+        definition_digest: {
+          validation: {
+            minLength: 64,
+            maxLength: 64,
+          },
+        },
+        description: {
+          validation: {
+            maxLength: 4096,
+          },
+        },
+        function_body: {
+          validation: {
+            minLength: 1,
+          },
+        },
+        idle_timeout_seconds: {
+          validation: {
+            min: 1,
+            max: 3600,
+          },
+        },
+        max_run_ms: {
+          validation: {
+            min: 1000,
+            max: 300000,
+          },
+        },
+      },
+    },
+    lambda_function_aliases: {
+      description: "Named weighted routing policies over immutable lambda function revisions.",
+      names: {
+        typescript: "lambdaFunctionAliases",
+        rust: "LambdaFunctionAlias",
+        gleam: "LambdaFunctionAlias",
+      },
+      columns: {
+        id: {
+          generated: true,
+        },
+        name: {
+          validation: {
+            minLength: 1,
+            maxLength: 64,
+          },
+        },
+        description: {
+          validation: {
+            maxLength: 4096,
+          },
+        },
+        routing_version: {
+          validation: {
+            min: 1,
+          },
+        },
+      },
+    },
+    lambda_actor_instances: {
+      description: "Durable state, alarms, and cross-replica execution leases for keyed serverless actors.",
+      names: {
+        typescript: "lambdaActorInstances",
+        rust: "LambdaActorInstance",
+        gleam: "LambdaActorInstance",
+      },
+      columns: {
+        id: {
+          generated: true,
+        },
+        actor_key: {
+          validation: {
+            minLength: 1,
+            maxLength: 200,
+          },
+        },
+        state_version: {
+          validation: {
+            min: 0,
+          },
+        },
+        alarm_attempt: {
+          validation: {
+            min: 0,
+            max: 6,
+          },
+        },
+        lease_owner: {
+          validation: {
+            maxLength: 200,
+          },
+        },
+        last_error: {
+          validation: {
+            maxBytes: 8192,
+          },
+        },
+      },
+    },
   },
 };
 

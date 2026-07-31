@@ -797,7 +797,7 @@ class LambdaFunctionTable extends Table {
   TextColumn get displayName => text().named("display_name").withLength(max: 200)();
   TextColumn get description => text().named("description").clientDefault(() => '')();
   TextColumn get runtime => text().named("runtime").clientDefault(() => 'nodejs')();
-  TextColumn get entryCommand => text().named("entry_command").clientDefault(() => 'env -i PATH="\$PATH" NODE_ENV=production NODE_NO_WARNINGS=1 node --permission --allow-net child-runtimes/js-function-runner.mjs')();
+  TextColumn get entryCommand => text().named("entry_command").clientDefault(() => '')();
   TextColumn get functionBody => text().named("function_body")();
   TextColumn get reuseKey => text().named("reuse_key").withLength(max: 200).nullable()();
   IntColumn get idleTimeoutSeconds => integer().named("idle_timeout_seconds").clientDefault(() => 300)();
@@ -817,6 +817,89 @@ class LambdaFunctionTable extends Table {
   DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
   TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
   TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("LambdaFunctionRevisionData")
+class LambdaFunctionRevisionTable extends Table {
+  @override String get tableName => "lambda_function_revisions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get functionId => text().named("function_id").customConstraint("UUID")();
+  Int64Column get revisionNumber => int64().named("revision_number")();
+  TextColumn get definitionDigest => text().named("definition_digest").withLength(max: 64)();
+  TextColumn get description => text().named("description").clientDefault(() => '')();
+  TextColumn get runtime => text().named("runtime")();
+  TextColumn get entryCommand => text().named("entry_command").clientDefault(() => '')();
+  TextColumn get functionBody => text().named("function_body")();
+  TextColumn get reuseKey => text().named("reuse_key").withLength(max: 200).nullable()();
+  IntColumn get idleTimeoutSeconds => integer().named("idle_timeout_seconds")();
+  IntColumn get maxRunMs => integer().named("max_run_ms")();
+  BoolColumn get containerized => boolean().named("containerized")();
+  TextColumn get containerImage => text().named("container_image").nullable()();
+  TextColumn get containerBuildStatus => text().named("container_build_status")();
+  TextColumn get containerBuildError => text().named("container_build_error").nullable()();
+  DateTimeColumn get containerBuiltAt => dateTime().named("container_built_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get env => text().named("env").customConstraint("JSONB")();
+  TextColumn get labels => text().named("labels").customConstraint("JSONB")();
+  TextColumn get metaData => text().named("meta_data").customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("LambdaFunctionAliasData")
+class LambdaFunctionAliasTable extends Table {
+  @override String get tableName => "lambda_function_aliases";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get functionId => text().named("function_id").customConstraint("UUID")();
+  TextColumn get name => text().named("name").withLength(max: 64)();
+  TextColumn get description => text().named("description").clientDefault(() => '')();
+  TextColumn get traffic => text().named("traffic").customConstraint("JSONB")();
+  Int64Column get routingVersion => int64().named("routing_version").clientDefault(() => 1)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get createdBy => text().named("created_by").nullable().customConstraint("UUID")();
+  TextColumn get updatedBy => text().named("updated_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        id,
+  };
+}
+
+@DataClassName("LambdaActorInstanceData")
+class LambdaActorInstanceTable extends Table {
+  @override String get tableName => "lambda_actor_instances";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get id => text().named("id").customConstraint("UUID")();
+  TextColumn get functionId => text().named("function_id").customConstraint("UUID")();
+  TextColumn get actorKey => text().named("actor_key").withLength(max: 200)();
+  TextColumn get state => text().named("state").clientDefault(() => '{}').customConstraint("JSONB")();
+  Int64Column get stateVersion => int64().named("state_version").clientDefault(() => 0)();
+  DateTimeColumn get alarmAt => dateTime().named("alarm_at").nullable().customConstraint("TIMESTAMPTZ")();
+  IntColumn get alarmAttempt => integer().named("alarm_attempt").clientDefault(() => 0)();
+  TextColumn get leaseOwner => text().named("lease_owner").withLength(max: 200).nullable()();
+  DateTimeColumn get leaseUntil => dateTime().named("lease_until").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastInvokedAt => dateTime().named("last_invoked_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get lastError => text().named("last_error").nullable()();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
 
   @override
   Set<Column> get primaryKey => {
@@ -4083,6 +4166,134 @@ class WebSessionsTable extends Table {
   };
 }
 
+@DataClassName("PrincipalsData")
+class PrincipalsTable extends Table {
+  @override String get tableName => "principals";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get sharedUserId => text().named("shared_user_id").customConstraint("UUID")();
+  TextColumn get email => text().named("email").nullable()();
+  BoolColumn get emailVerified => boolean().named("email_verified").clientDefault(() => false)();
+  TextColumn get phone => text().named("phone").nullable()();
+  TextColumn get displayName => text().named("display_name").nullable()();
+  TextColumn get status => text().named("status").clientDefault(() => 'active')();
+  TextColumn get profile => text().named("profile").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastSeenAt => dateTime().named("last_seen_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        sharedUserId,
+  };
+}
+
+@DataClassName("ProviderIdentitiesData")
+class ProviderIdentitiesTable extends Table {
+  @override String get tableName => "provider_identities";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get providerIdentityId => text().named("provider_identity_id").customConstraint("UUID")();
+  TextColumn get sharedUserId => text().named("shared_user_id").customConstraint("UUID")();
+  TextColumn get provider => text().named("provider")();
+  TextColumn get providerTenant => text().named("provider_tenant").clientDefault(() => 'default')();
+  TextColumn get providerSubject => text().named("provider_subject")();
+  TextColumn get email => text().named("email").nullable()();
+  BoolColumn get emailVerified => boolean().named("email_verified").clientDefault(() => false)();
+  TextColumn get metadata => text().named("metadata").clientDefault(() => '{}').customConstraint("JSONB")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastSeenAt => dateTime().named("last_seen_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        providerIdentityId,
+  };
+}
+
+@DataClassName("LocalCredentialsData")
+class LocalCredentialsTable extends Table {
+  @override String get tableName => "local_credentials";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get sharedUserId => text().named("shared_user_id").customConstraint("UUID")();
+  TextColumn get passwordHash => text().named("password_hash")();
+  DateTimeColumn get passwordChangedAt => dateTime().named("password_changed_at").customConstraint("TIMESTAMPTZ")();
+  IntColumn get failedAttempts => integer().named("failed_attempts").clientDefault(() => 0)();
+  DateTimeColumn get lockedUntil => dateTime().named("locked_until").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        sharedUserId,
+  };
+}
+
+@DataClassName("SessionsData")
+class SessionsTable extends Table {
+  @override String get tableName => "sessions";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get sessionId => text().named("session_id").customConstraint("UUID")();
+  TextColumn get sharedUserId => text().named("shared_user_id").customConstraint("UUID")();
+  TextColumn get refreshTokenHash => text().named("refresh_token_hash")();
+  TextColumn get provider => text().named("provider")();
+  TextColumn get providerTenant => text().named("provider_tenant").clientDefault(() => 'default')();
+  TextColumn get providerSubject => text().named("provider_subject")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lastSeenAt => dateTime().named("last_seen_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get expiresAt => dateTime().named("expires_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get revokedAt => dateTime().named("revoked_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get rotatedFrom => text().named("rotated_from").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        sessionId,
+  };
+}
+
+@DataClassName("RolesData")
+class RolesTable extends Table {
+  @override String get tableName => "roles";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get roleId => text().named("role_id").customConstraint("UUID")();
+  TextColumn get sharedUserId => text().named("shared_user_id").customConstraint("UUID")();
+  TextColumn get roleName => text().named("role_name")();
+  DateTimeColumn get grantedAt => dateTime().named("granted_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get grantedBy => text().named("granted_by").nullable().customConstraint("UUID")();
+
+  @override
+  Set<Column> get primaryKey => {
+        roleId,
+  };
+}
+
+@DataClassName("WebhookEventsData")
+class WebhookEventsTable extends Table {
+  @override String get tableName => "webhook_events";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get eventId => text().named("event_id").customConstraint("UUID")();
+  TextColumn get provider => text().named("provider")();
+  TextColumn get eventType => text().named("event_type")();
+  DateTimeColumn get receivedAt => dateTime().named("received_at").customConstraint("TIMESTAMPTZ")();
+  TextColumn get payloadSha256 => text().named("payload_sha256")();
+
+  @override
+  Set<Column> get primaryKey => {
+        eventId,
+  };
+}
+
 @DataClassName("FabJobsData")
 class FabJobsTable extends Table {
   @override String get tableName => "fab_jobs";
@@ -4164,6 +4375,9 @@ const List<Type> registeredDriftTables = <Type>[
   MipSolverJobsTable,
   MipSolverEventsTable,
   LambdaFunctionTable,
+  LambdaFunctionRevisionTable,
+  LambdaFunctionAliasTable,
+  LambdaActorInstanceTable,
   WorkflowDefinitionsTable,
   WorkflowRunsTable,
   WorkflowStepRunsTable,
@@ -4288,6 +4502,12 @@ const List<Type> registeredDriftTables = <Type>[
   FabInstructionsTable,
   FabRunsTable,
   WebSessionsTable,
+  PrincipalsTable,
+  ProviderIdentitiesTable,
+  LocalCredentialsTable,
+  SessionsTable,
+  RolesTable,
+  WebhookEventsTable,
   FabJobsTable,
   FabLearningOutcomesTable,
 ];
