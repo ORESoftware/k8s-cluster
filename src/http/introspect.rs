@@ -108,6 +108,7 @@ pub async fn introspect(
             "email": claims.email,
             "email_verified": claims.email_verified,
             "roles": claims.roles,
+            "aal": claims.aal,
             "amr": claims.amr,
             "acr": claims.acr,
         }))
