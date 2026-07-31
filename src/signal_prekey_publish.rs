@@ -208,7 +208,7 @@ pub async fn publish_prekeys(
     let transaction = db.begin().await?;
 
     let active = transaction
-        .query_one(postgres(
+        .query_one_raw(postgres(
             ACTIVE_DEVICE_SQL,
             vec![request.account_id.into(), request.device_id.into()],
         ))
@@ -223,7 +223,7 @@ pub async fn publish_prekeys(
         SignalStoreError::Validation(SignalProtocolValidationError::InvalidTimestamps)
     })?;
     let existing = transaction
-        .query_one(postgres(
+        .query_one_raw(postgres(
             SELECT_BUNDLE_FOR_UPDATE_SQL,
             vec![request.device_id.into()],
         ))
@@ -254,19 +254,19 @@ pub async fn publish_prekeys(
         }
 
         transaction
-            .query_one(postgres(UPDATE_BUNDLE_SQL, bundle_values))
+            .query_one_raw(postgres(UPDATE_BUNDLE_SQL, bundle_values))
             .await?
             .ok_or(SignalStoreError::RevisionConflict)?;
     } else {
         transaction
-            .query_one(postgres(INSERT_BUNDLE_SQL, bundle_values))
+            .query_one_raw(postgres(INSERT_BUNDLE_SQL, bundle_values))
             .await?
             .ok_or(SignalStoreError::DeviceUnavailable)?;
     }
 
     for prekey in &request.one_time_prekeys {
         let result = transaction
-            .execute(postgres(
+            .execute_raw(postgres(
                 INSERT_FRESH_ONE_TIME_PREKEY_SQL,
                 vec![
                     request.device_id.into(),
@@ -293,7 +293,7 @@ pub async fn publish_prekeys(
         "prekeys_replenished"
     };
     transaction
-        .execute(postgres(
+        .execute_raw(postgres(
             INSERT_PREKEY_EVENT_SQL,
             vec![
                 request.account_id.into(),
@@ -320,7 +320,7 @@ async fn ensure_exact_retry<C: ConnectionTrait>(
     bundle_values: Vec<Value>,
 ) -> Result<(), SignalStoreError> {
     if connection
-        .query_one(postgres(MATCH_BUNDLE_SQL, bundle_values))
+        .query_one_raw(postgres(MATCH_BUNDLE_SQL, bundle_values))
         .await?
         .is_none()
     {
@@ -329,7 +329,7 @@ async fn ensure_exact_retry<C: ConnectionTrait>(
 
     for prekey in &request.one_time_prekeys {
         let matched = connection
-            .query_one(postgres(
+            .query_one_raw(postgres(
                 MATCH_ONE_TIME_PREKEY_SQL,
                 vec![
                     request.device_id.into(),
@@ -350,7 +350,7 @@ async fn current_device_revision<C: ConnectionTrait>(
     account_id: Uuid,
 ) -> Result<u64, SignalStoreError> {
     let row = connection
-        .query_one(postgres(CURRENT_DEVICE_REVISION_SQL, vec![account_id.into()]))
+        .query_one_raw(postgres(CURRENT_DEVICE_REVISION_SQL, vec![account_id.into()]))
         .await?
         .ok_or(SignalStoreError::DeviceUnavailable)?;
     nonnegative_u64(row.try_get("", "signal_device_revision")?)
@@ -361,7 +361,7 @@ async fn bump_device_revision<C: ConnectionTrait>(
     account_id: Uuid,
 ) -> Result<u64, SignalStoreError> {
     let row = connection
-        .query_one(postgres(BUMP_DEVICE_REVISION_SQL, vec![account_id.into()]))
+        .query_one_raw(postgres(BUMP_DEVICE_REVISION_SQL, vec![account_id.into()]))
         .await?
         .ok_or(SignalStoreError::DeviceUnavailable)?;
     nonnegative_u64(row.try_get("", "signal_device_revision")?)
@@ -372,7 +372,7 @@ async fn unclaimed_prekey_count<C: ConnectionTrait>(
     device_id: Uuid,
 ) -> Result<u32, SignalStoreError> {
     let row = connection
-        .query_one(postgres(
+        .query_one_raw(postgres(
             COUNT_UNCLAIMED_PREKEYS_SQL,
             vec![device_id.into()],
         ))

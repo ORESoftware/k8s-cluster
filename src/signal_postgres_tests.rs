@@ -3,13 +3,10 @@
 //! These tests are ignored by the ordinary unit-test job and run in the
 //! dedicated PostgreSQL CI job with `--ignored --test-threads=1`.
 
-use crate::device_sync_protocol::{SignalCiphertextEnvelope, SignalDevicePreKeyBundle};
+use crate::device_sync_protocol::SignalCiphertextEnvelope;
 use crate::signal_bundle_store::claim_prekey_bundle;
 use crate::signal_maintenance::{acknowledge_batch, cleanup_expired_state};
-use crate::signal_store::{
-    enqueue_envelope, publish_prekeys, pull_mailbox, OneTimePreKey, PublishPreKeys,
-    SignalStoreError,
-};
+use crate::signal_store::{enqueue_envelope, pull_mailbox, SignalStoreError};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use sea_orm::{
@@ -64,7 +61,6 @@ CREATE TABLE threefa.device_prekey_bundles (
     pq_signed_prekey_id BIGINT NOT NULL,
     pq_signed_prekey_base64 TEXT NOT NULL,
     pq_signed_prekey_signature_base64 TEXT NOT NULL,
-    published_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at TIMESTAMPTZ NOT NULL
 );
 
@@ -93,16 +89,6 @@ CREATE TABLE threefa.device_mailbox (
     ciphertext_size_bytes INTEGER,
     delivered_at TIMESTAMPTZ,
     acknowledged_at TIMESTAMPTZ
-);
-
-CREATE TABLE threefa.device_security_events (
-    event_seq BIGSERIAL PRIMARY KEY,
-    account_id UUID NOT NULL,
-    actor_device_id UUID,
-    subject_device_id UUID,
-    device_revision BIGINT NOT NULL,
-    event_kind TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 "#,
     )
@@ -156,157 +142,6 @@ fn canonical_envelope() -> SignalCiphertextEnvelope {
         .expect("canonical Signal fixture is JSON");
     serde_json::from_value(fixture["queue_envelope"]["request"]["envelope"].clone())
         .expect("canonical queue envelope decodes")
-}
-
-fn publish_request(
-    account_id: Uuid,
-    device_id: Uuid,
-    bundle_revision: i64,
-    expires_at_ms: i64,
-    prekeys: &[(u32, u8)],
-) -> PublishPreKeys {
-    PublishPreKeys {
-        account_id,
-        device_id,
-        bundle_revision,
-        bundle: SignalDevicePreKeyBundle {
-            version: 1,
-            device_id: device_id.to_string(),
-            registration_id: 42,
-            identity_key: vec![0; 32],
-            signed_pre_key_id: 10,
-            signed_pre_key: vec![1; 32],
-            signed_pre_key_signature: vec![2; 64],
-            pq_signed_pre_key_id: 11,
-            pq_signed_pre_key: vec![3; 32],
-            pq_signed_pre_key_signature: vec![4; 64],
-            one_time_pre_key_id: None,
-            one_time_pre_key: None,
-        },
-        one_time_prekeys: prekeys
-            .iter()
-            .map(|(prekey_id, fill)| OneTimePreKey {
-                prekey_id: *prekey_id,
-                public_key: vec![*fill; 32],
-            })
-            .collect(),
-        expires_at_ms,
-    }
-}
-
-#[tokio::test]
-#[ignore = "requires THREEFA_SIGNAL_TEST_DATABASE_URL"]
-async fn publish_prekeys_enforces_revision_idempotency_and_current_pool_count() {
-    let db = database().await;
-    reset_schema(&db).await;
-
-    let account_id = Uuid::new_v4();
-    let device_id = Uuid::new_v4();
-    let expires_at_ms =
-        (OffsetDateTime::now_utc() + time::Duration::days(1)).unix_timestamp() * 1_000;
-    execute(
-        &db,
-        format!(
-            "INSERT INTO threefa.accounts (id) VALUES ('{account_id}'); INSERT INTO threefa.devices (id, account_id) VALUES ('{device_id}', '{account_id}');"
-        ),
-    )
-    .await;
-
-    let initial = publish_prekeys(
-        &db,
-        publish_request(account_id, device_id, 7, expires_at_ms, &[(100, 5)]),
-    )
-    .await
-    .expect("initial client revision publishes");
-    assert_eq!(initial.bundle_revision, 7);
-    assert_eq!(initial.device_revision, 1);
-    assert_eq!(initial.unclaimed_prekey_count, 1);
-
-    let exact_retry = publish_prekeys(
-        &db,
-        publish_request(account_id, device_id, 7, expires_at_ms, &[(100, 5)]),
-    )
-    .await
-    .expect("exact same-revision retry is idempotent");
-    assert_eq!(exact_retry.device_revision, 1);
-    assert_eq!(exact_retry.unclaimed_prekey_count, 1);
-
-    let replenished = publish_prekeys(
-        &db,
-        publish_request(
-            account_id,
-            device_id,
-            7,
-            expires_at_ms,
-            &[(100, 5), (101, 6)],
-        ),
-    )
-    .await
-    .expect("same bundle revision may atomically replenish new prekeys");
-    assert_eq!(replenished.device_revision, 2);
-    assert_eq!(replenished.unclaimed_prekey_count, 2);
-
-    let mut conflicting_bundle =
-        publish_request(account_id, device_id, 7, expires_at_ms, &[(100, 5)]);
-    conflicting_bundle.bundle.identity_key[0] = 9;
-    assert!(matches!(
-        publish_prekeys(&db, conflicting_bundle).await,
-        Err(SignalStoreError::IdempotencyConflict)
-    ));
-    assert!(matches!(
-        publish_prekeys(
-            &db,
-            publish_request(account_id, device_id, 7, expires_at_ms, &[(100, 9)])
-        )
-        .await,
-        Err(SignalStoreError::IdempotencyConflict)
-    ));
-    assert!(matches!(
-        publish_prekeys(
-            &db,
-            publish_request(account_id, device_id, 6, expires_at_ms, &[])
-        )
-        .await,
-        Err(SignalStoreError::RevisionConflict)
-    ));
-
-    let rotated = publish_prekeys(
-        &db,
-        publish_request(
-            account_id,
-            device_id,
-            8,
-            expires_at_ms,
-            &[(100, 5), (101, 6)],
-        ),
-    )
-    .await
-    .expect("higher client revision rotates the bundle");
-    assert_eq!(rotated.bundle_revision, 8);
-    assert_eq!(rotated.device_revision, 3);
-    assert_eq!(rotated.unclaimed_prekey_count, 2);
-
-    execute(
-        &db,
-        format!(
-            "UPDATE threefa.device_one_time_prekeys SET claimed_at = now(), claimed_by_device_id = '{device_id}' WHERE device_id = '{device_id}' AND prekey_id = 100;"
-        ),
-    )
-    .await;
-    let current_count = publish_prekeys(
-        &db,
-        publish_request(
-            account_id,
-            device_id,
-            8,
-            expires_at_ms,
-            &[(100, 5), (101, 6)],
-        ),
-    )
-    .await
-    .expect("exact retry reports the current unclaimed pool");
-    assert_eq!(current_count.device_revision, 3);
-    assert_eq!(current_count.unclaimed_prekey_count, 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

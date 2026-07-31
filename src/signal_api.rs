@@ -381,8 +381,7 @@ fn map_store_error(error: SignalStoreError) -> ApiError {
             ApiError::Conflict
         }
         SignalStoreError::Database(error) => error.into(),
-        SignalStoreError::InvalidStoredCount
-        | SignalStoreError::InvalidStoredCiphertext(_)
+        SignalStoreError::InvalidStoredCiphertext(_)
         | SignalStoreError::InvalidStoredMessageNumber(_)
         | SignalStoreError::InvalidStoredKind => {
             tracing::error!("invalid Signal state read from database");
