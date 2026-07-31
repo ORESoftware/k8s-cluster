@@ -141,7 +141,6 @@ def assert_invariants(state: State) -> None:
             state.mirror in {MIRROR_NONE, MIRROR_DELETED},
             "deleted segment still has an authoritative mirror",
         )
-<<<<<<< HEAD
         if state.mirror_started and state.mirror == MIRROR_NONE:
             require(
                 state.mirror_copy_fenced,
@@ -178,15 +177,6 @@ def assert_invariants(state: State) -> None:
         require(
             state.status in {DELETE_CLAIMED, DELETED},
             "mirror fence exists outside deletion state",
-=======
-    if state.pinned:
-        require(state.status == UPLOADED, "pinned segment left uploaded state")
-    if state.mirror in {MIRROR_COPYING, MIRRORED, MIRROR_DELETE_CLAIMED}:
-        require(state.verified, "mirror exists for an unverified segment")
-        require(
-            state.status in {UPLOADED, DELETE_CLAIMED},
-            "mirror exists outside uploaded/deletion state",
->>>>>>> origin/agent/formal-methods-20260730-segment-lifecycle
         )
 
 
