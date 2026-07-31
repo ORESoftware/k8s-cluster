@@ -45,12 +45,15 @@ jobs:
             "commands": [
               "set -u",
               "echo root.user=$(id -un)",
-              "for cmd in bash python3 git kubectl aws curl; do path=$(command -v $cmd 2>/dev/null || true); if [ -n \"$path\" ]; then echo root.$cmd=$path; else echo root.$cmd=absent; fi; done",
+              "for cmd in bash python3 git gh kubectl aws curl; do path=$(command -v $cmd 2>/dev/null || true); if [ -n \"$path\" ]; then echo root.$cmd=$path; else echo root.$cmd=absent; fi; done",
+              "if [ -r /root/.config/gh/hosts.yml ]; then echo root.gh_config=readable; else echo root.gh_config=absent; fi",
+              "if command -v gh >/dev/null 2>&1; then if GH_CONFIG_DIR=/root/.config gh auth status --hostname github.com >/dev/null 2>&1; then echo root.gh_auth=valid; else echo root.gh_auth=unavailable; fi; else echo root.gh_auth=no-gh; fi",
+              "find /root /home -maxdepth 5 -type f -path '*/.config/gh/hosts.yml' -printf 'gh.profile=%p owner=%u mode=%m\\n' 2>/dev/null || true",
               "if [ -r /home/ec2-user/.config/gh/hosts.yml ]; then echo ec2.gh_config=root-readable; else echo ec2.gh_config=absent; fi",
               "if [ -r /home/ec2-user/.kube/config ]; then echo ec2.kube_config=root-readable; else echo ec2.kube_config=absent; fi",
               "if command -v kubectl >/dev/null 2>&1; then if kubectl -n default auth can-i get secret/dd-agent-secrets >/dev/null 2>&1; then echo root.kube_secret_access=yes; else echo root.kube_secret_access=no; fi; else echo root.kube_secret_access=no-kubectl; fi",
               "if command -v aws >/dev/null 2>&1; then if aws secretsmanager get-secret-value --secret-id dd/remote-dev/agent-secrets --query SecretString --output text >/dev/null 2>&1; then echo root.secretsmanager_access=yes; else echo root.secretsmanager_access=no; fi; else echo root.secretsmanager_access=no-aws; fi",
-              "sudo -u ec2-user -H bash -lc 'set -u; echo ec2.user=$(id -un); for cmd in bash python3 git kubectl aws curl; do path=$(command -v $cmd 2>/dev/null || true); if [ -n \"$path\" ]; then echo ec2.$cmd=$path; else echo ec2.$cmd=absent; fi; done; if [ -n \"${GH_TOKEN:-}\" ]; then echo ec2.gh_token_env=present; else echo ec2.gh_token_env=absent; fi; if [ -r \"$HOME/.config/gh/hosts.yml\" ]; then echo ec2.gh_config=readable; else echo ec2.gh_config=absent; fi; if [ -r \"$HOME/.kube/config\" ]; then echo ec2.kube_config=readable; else echo ec2.kube_config=absent; fi'"
+              "sudo -u ec2-user -H bash -lc 'set -u; echo ec2.user=$(id -un); for cmd in bash python3 git gh kubectl aws curl; do path=$(command -v $cmd 2>/dev/null || true); if [ -n \"$path\" ]; then echo ec2.$cmd=$path; else echo ec2.$cmd=absent; fi; done; if [ -n \"${GH_TOKEN:-}\" ]; then echo ec2.gh_token_env=present; else echo ec2.gh_token_env=absent; fi; if [ -r \"$HOME/.config/gh/hosts.yml\" ]; then echo ec2.gh_config=readable; else echo ec2.gh_config=absent; fi; if command -v gh >/dev/null 2>&1; then if gh auth status --hostname github.com >/dev/null 2>&1; then echo ec2.gh_auth=valid; else echo ec2.gh_auth=unavailable; fi; else echo ec2.gh_auth=no-gh; fi; if [ -r \"$HOME/.kube/config\" ]; then echo ec2.kube_config=readable; else echo ec2.kube_config=absent; fi'"
             ]
           }
           JSON
