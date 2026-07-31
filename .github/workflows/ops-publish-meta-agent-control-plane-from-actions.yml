@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/ops-publish-meta-agent-control-plane-from-actions.yml
       - scripts/ops/publish_meta_agent_control_plane_from_actions.sh
+      - services/remote-dev/**
   workflow_dispatch:
 
 permissions:
