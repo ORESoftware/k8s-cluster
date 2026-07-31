@@ -1,5 +1,5 @@
 name: Dispatch and observe canonical mcp-rust-libs broker
-run-name: Observe protected-broker canonical MCP publication @ ${{ github.sha }}
+run-name: Retrigger protected-broker canonical MCP publication @ ${{ github.sha }}
 
 on:
   push:
