@@ -1,5 +1,5 @@
 name: Dispatch protected organization repository publisher
-run-name: Dispatch native-region organization publisher @ ${{ github.sha }}
+run-name: Dispatch file-profile recovery publisher @ ${{ github.sha }}
 
 on:
   issue_comment:
