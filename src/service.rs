@@ -268,6 +268,21 @@ const MAX_PERMANENT_SAVE_SEGMENTS: usize = 1000;
 const DEFAULT_RATE_LIMIT_PER_MINUTE: u32 = 240;
 const RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
 
+/// Ceiling on how long a client-facing request may occupy a task. Individual DB
+/// and S3 calls carry their own timeouts, but nothing bounded a handler as a
+/// whole, so a stalled dependency or a slow-reading client could pin a task
+/// indefinitely. Comfortably above the slowest single dependency call
+/// ([`STORAGE_OBJECT_TIMEOUT`], 30s) so a legitimately slow request still
+/// returns its own error rather than a timeout.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(45);
+
+/// The `/internal/*` drain endpoints walk a bounded batch of jobs, each with its
+/// own object-store timeout, so their worst case is legitimately a multiple of
+/// [`STORAGE_OBJECT_TIMEOUT`]. They are authenticated
+/// ([`require_internal_auth`]) and driven by a trusted scheduler rather than by
+/// clients, so they get a much longer ceiling instead of the client one.
+const INTERNAL_REQUEST_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+
 /// SeaORM owns the bounded Postgres pool, rustls transport, parameter binding,
 /// transactions, and row decoding. Schema DDL remains cluster-managed.
 type PgPool = DbClient;
@@ -10091,6 +10106,10 @@ fn app(state: AppState) -> Router {
         // — they go straight to S3 via presigned URLs — so 2 MiB is generous.
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
         .layer(axum::middleware::from_fn(add_security_headers))
+        // Inside the rate limiter, so a throttled request is refused without
+        // starting a timer, and outside the handlers so the ceiling covers all
+        // of them.
+        .layer(axum::middleware::from_fn(request_timeout))
         // Outermost layer (added last → runs first): reject over-budget clients
         // before any handler, DB, or S3 work is done.
         .layer(axum::middleware::from_fn_with_state(
@@ -10246,6 +10265,53 @@ fn client_rate_key(req: &Request, trust_forwarded_for: bool) -> String {
         .get::<ConnectInfo<SocketAddr>>()
         .map(|info| info.0.ip().to_string())
         .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// How long `path` may run, or `None` when it is exempt.
+///
+/// Health and metrics probes are exempt: they already answer from bounded probes
+/// with their own timeouts, and a load balancer's probe must not be the thing
+/// that reports a confusing 504.
+fn request_budget(path: &str) -> Option<Duration> {
+    match path {
+        "/healthz" | "/readyz" | "/metrics" => None,
+        path if path.starts_with("/internal/") => Some(INTERNAL_REQUEST_TIMEOUT),
+        _ => Some(REQUEST_TIMEOUT),
+    }
+}
+
+/// Bounds how long any one request may occupy a task.
+///
+/// Implemented with `tokio::time::timeout` rather than a tower layer to avoid
+/// adding a dependency for it, and to match how the rest of this module bounds
+/// slow work. Dropping the handler future cancels the work it was awaiting.
+///
+/// Health and metrics probes are exempt: they already answer from bounded probes
+/// with their own timeouts, and a load balancer's probe must not be able to
+/// produce a confusing 504.
+async fn request_timeout(req: Request, next: Next) -> Response {
+    let Some(budget) = request_budget(req.uri().path()) else {
+        return next.run(req).await;
+    };
+    // Captured before the request is moved into the handler future.
+    let method = req.method().clone();
+    let route = req.uri().path().to_string();
+    match tokio::time::timeout(budget, next.run(req)).await {
+        Ok(response) => response,
+        Err(_) => {
+            tracing::error!(
+                http.request.method = %method,
+                http.route = %route,
+                timeout_secs = budget.as_secs(),
+                "request exceeded its time budget and was abandoned"
+            );
+            (
+                StatusCode::GATEWAY_TIMEOUT,
+                Json(json!({ "error": "request timed out" })),
+            )
+                .into_response()
+        }
+    }
 }
 
 /// Per-client rate-limit middleware. Health/metrics probes are exempt so a
@@ -10611,6 +10677,36 @@ mod tests {
         assert_eq!(
             user_data_limit(Some(MAX_USER_DATA_LIMIT + 1)),
             MAX_USER_DATA_LIMIT
+        );
+    }
+
+    #[test]
+    fn probes_are_exempt_from_the_request_timeout() {
+        // A probe must never be the thing that reports a 504 to a load balancer.
+        for path in ["/healthz", "/readyz", "/metrics"] {
+            assert_eq!(request_budget(path), None, "{path} should be exempt");
+        }
+    }
+
+    #[test]
+    fn client_routes_are_bounded_and_internal_drains_get_longer() {
+        // Every client-facing route is bounded...
+        assert_eq!(
+            request_budget("/v1/segments/presign"),
+            Some(REQUEST_TIMEOUT)
+        );
+        assert_eq!(request_budget("/"), Some(REQUEST_TIMEOUT));
+
+        // ...while the drain endpoints, which walk a batch of objects each with
+        // its own object-store timeout, would be cut short by that budget.
+        assert_eq!(
+            request_budget("/internal/cloud-copy/drain"),
+            Some(INTERNAL_REQUEST_TIMEOUT)
+        );
+        assert!(INTERNAL_REQUEST_TIMEOUT > REQUEST_TIMEOUT);
+        assert!(
+            REQUEST_TIMEOUT > STORAGE_OBJECT_TIMEOUT,
+            "a single object-store call must be able to finish inside the client budget"
         );
     }
 
