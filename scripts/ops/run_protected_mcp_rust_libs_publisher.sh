@@ -132,8 +132,6 @@ unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
 printf '%s\n' "$encoded_pat" | \
   sudo -u ec2-user -H \
     env \
-      HOME="$ec2_home" \
-      XDG_CONFIG_HOME="$ec2_home/.config" \
       -u CODEX_HOME \
       -u GH_TOKEN \
       -u GITHUB_TOKEN \
@@ -141,6 +139,8 @@ printf '%s\n' "$encoded_pat" | \
       -u GITHUB_REPOSITORY_ADMIN_TOKEN \
       -u GIT_ASKPASS \
       -u GIT_ASKPASS_REQUIRE \
+      HOME="$ec2_home" \
+      XDG_CONFIG_HOME="$ec2_home/.config" \
       bash -c 'exec bash "$1" "$2"' _ "$child_script" "$trusted_sha"
 unset encoded_pat ec2_home
 
