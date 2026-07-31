@@ -221,7 +221,6 @@ source="$carrier/$source_subdirectory"
 for required in \
   Cargo.toml \
   .zpkg.toml \
-  .zpkg.lock \
   .github/workflows/scaffold.yml \
   packages/rust/Cargo.toml \
   packages/typescript/package.json \
