@@ -1,55 +1,28 @@
-# Agent Rules
+# Repository agent instructions
 
-Rules for AI agents (and humans) working in this repository.
+Apply these instructions to this repository and all work beneath it.
 
-## Forbidden — destructive operations
+## Instruction discovery
 
-Never run, script, or suggest any of the following here:
+Resolve `$PWD`, walk upward through every parent to the filesystem root, read every readable lowercase `agents.md` on that chain, and apply them root-to-leaf. Do not search siblings. Deduplicate resolved files, avoid symlink cycles, and report unreadable files.
 
-- `rm` / `rm -rf` on tracked or untracked files (stage removals with `git rm` on a reviewed branch instead)
-- `git rebase` (interactive or otherwise)
-- `git reset` (any mode — `--soft`, `--mixed`, `--hard`)
-- `git push --force` / `--force-with-lease` / `--force-if-includes`
-- `git filter-repo`, `git filter-branch`, BFG, or any history-rewriting tool
-- `git clean`
-- `git checkout -- <path>` / `git restore` that discards uncommitted work
-- deleting branches or tags (local `-D` or remote)
-- amending commits that have been pushed
+## Remote synchronization
 
-## Required workflow
+Before editing, inspect `git status`, the current branch, remotes, and the default branch. Run `git fetch --all --prune` and create the feature branch from the latest remote default branch, not a stale local copy. Fetch again before pushing and incorporate upstream changes with `git merge` or `git pull` on a clean working tree.
 
-- History is append-only. Fix mistakes with a new commit or `git revert` — never by rewriting.
-- Changes land on `main` via feature branches; keep commits small and reviewable.
-- **This repository is the source of truth.** The copy vendored into
-  `ORESoftware/k8s-cluster` (under `remote/deployments/`) is a *secondary* submodule
-  checkout — after merging here, bump the submodule pointer there. Do not edit the
-  vendored copy directly.
+- avoid git rebase in favor of git merge.
+- Never discard remote commits, rewrite shared history, force-push, bypass review, or bypass required CI unless explicitly authorized.
 
-## Build context
+## Semantic conflict resolution
 
-This repo is standalone — no path dependencies on the `k8s-cluster` superproject —
-so CI runs the full `cargo check` + `cargo test` suite (plus hygiene and an
-informational format check). Keep it that way: new dependencies come from
-crates.io, not `../../libs`.
+Resolve Git conflicts by understanding and combining both sides' intent. Do not mechanically choose `ours`, `theirs`, current, or incoming. Produce the conceptually correct merge while preserving compatible behavior, invariants, tests, documentation, configuration, and API contracts. If intentions conflict, make the smallest explicit design decision and document it in the PR.
 
-## Syncing with the remote
+After resolving, reread every affected file from the top, run relevant formatters, linters, tests, and builds, then search the whole worktree for conflict markers:
 
-"Sync with the remote" (or just "sync") is a **two-way** exchange — pull the
-remote's commits down **and** push yours up. It is never push-only, and a clean
-local tree does not by itself mean "synced": you are done only once local and
-the remote hold the same commits.
+```sh
+grep -RInE '^(<<<<<<<|=======|>>>>>>>)' --exclude-dir=.git .
+```
 
-To sync:
+If any marker or suspicious partial resolution remains, repeat the semantic resolution process from the top and rerun validation. A conflict is resolved only when the result is conceptually coherent and verified, not merely accepted by Git.
 
-1. **Commit your work first** (`git add` + `git commit`) so the tree is clean —
-   pull/merge only into a clean tree. `git pull` / `git merge` aborts when an
-   incoming change touches a file you have edited, and even when it doesn't it
-   buries the merge in your uncommitted work. (Can't commit yet? `git stash`,
-   then `git stash pop` after step 3.)
-2. `git fetch --all --prune` — safe any time; it only updates tracking refs.
-3. `git pull` (fetch + merge) — or `git merge` the upstream branch — to
-   integrate the remote's commits.
-4. `git push` to publish yours.
-
-Integrate with **`git merge` / `git pull`**. **Never `git rebase` to sync** — it
-rewrites history and breaks shared branches.
+Keep changes scoped, preserve repository conventions, update tests when behavior changes, and record validation and residual risk in the PR.
