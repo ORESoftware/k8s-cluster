@@ -23,7 +23,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/ai-agent-bridge-revision: 'in-memory-default+http-sse+tcp-jsonl+32-cap+embedding-topics'
+        dd.dev/ai-agent-bridge-revision: 'required-api-auth+current-binary+http-sse+tcp-jsonl'
       labels:
         app: dd-ai-agent-bridge
     spec:
@@ -93,7 +93,7 @@ spec:
               # to `--features postgres` once the ai_agent_bridge schema migration
               # is applied and the DATABASE_URL env below is enabled.
               cargo build --release --locked
-              exec "${CARGO_TARGET_DIR:-target}/release/ai-agent-bridge"
+              exec "${CARGO_TARGET_DIR:-target}/release/fiducia-ai-agent-bridge"
           env:
             - name: HOST
               value: 0.0.0.0
@@ -105,9 +105,17 @@ spec:
               value: json
             - name: RUST_LOG
               value: info,ai_agent_bridge=info,hyper=warn,reqwest=warn
+            # The current Rust config rejects a non-loopback bind unless global
+            # API auth is configured. This key is required; a missing secret must
+            # fail startup rather than expose the agent/channel/workflow APIs.
+            - name: API_AUTH_BEARER
+              valueFrom:
+                secretKeyRef:
+                  name: dd-ai-agent-bridge-secrets
+                  key: inbox_token
             # claude-inbox backward-compat (supersedes the old ai-agent-bridge-rs):
-            # inbox.jsonl lives on the writable tmp mount; the POST /claude bearer
-            # is optional (open when the secret/key is absent).
+            # inbox.jsonl lives on the writable tmp mount. Reuse the required
+            # bridge bearer so the legacy route cannot become an auth bypass.
             - name: AI_AGENT_BRIDGE_DIR
               value: /tmp/claude_bridge
             - name: AI_AGENT_BRIDGE_TOKEN
@@ -115,7 +123,6 @@ spec:
                 secretKeyRef:
                   name: dd-ai-agent-bridge-secrets
                   key: inbox_token
-                  optional: true
             # In-cluster embedder is optional — the built-in deterministic local
             # embedder is used when this is unset. Enable once the endpoint/contract
             # is confirmed:
