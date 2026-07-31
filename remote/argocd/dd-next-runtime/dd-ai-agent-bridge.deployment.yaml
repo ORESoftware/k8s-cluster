@@ -106,10 +106,24 @@ spec:
               value: json
             - name: RUST_LOG
               value: info,ai_agent_bridge=info,hyper=warn,reqwest=warn
-<<<<<<< HEAD
-            # The binary refuses a non-loopback bind without this global bearer.
-            # Reuse the cluster's required server-to-server credential so every
-            # non-health HTTP route and every TCP connection fails closed.
+            # The binary refuses a non-loopback bind without this global bearer,
+            # so every non-health HTTP route and every TCP connection fails closed.
+            #
+            # SECRET SOURCE — this is the merge point of two designs, resolved by
+            # what actually runs. dev pointed this at a dedicated
+            # dd-ai-agent-bridge-secrets/inbox_token, which is the better shape
+            # (least privilege: compromising the bridge should not yield the
+            # cluster-wide server-to-server credential). But that secret was never
+            # created — no ExternalSecret defines it and it is absent from the
+            # cluster — so the deployed pod sat in CreateContainerConfigError for
+            # ~4h across 1083 attempts, with six evicted predecessors.
+            #
+            # Using the credential that exists restores the service now. To finish
+            # dev's intent later: add an ExternalSecret for
+            # dd-ai-agent-bridge-secrets (key inbox_token) backed by a new AWS
+            # Secrets Manager entry, confirm it syncs Ready, and only then flip
+            # both refs below. Do not flip first — a missing secret does not fail
+            # "closed" in any useful sense; it fails to start at all.
             - name: API_AUTH_BEARER
               valueFrom:
                 secretKeyRef:
@@ -124,21 +138,9 @@ spec:
             - name: OTEL_RESOURCE_ATTRIBUTES
               value: service.namespace=default,deployment.environment=remote-dev
             # claude-inbox backward-compat (supersedes the old ai-agent-bridge-rs):
-            # inbox.jsonl lives on the writable tmp mount. Use the same required
-            # bearer as the global API so the legacy route cannot drift open.
-=======
-            # The current Rust config rejects a non-loopback bind unless global
-            # API auth is configured. This key is required; a missing secret must
-            # fail startup rather than expose the agent/channel/workflow APIs.
-            - name: API_AUTH_BEARER
-              valueFrom:
-                secretKeyRef:
-                  name: dd-ai-agent-bridge-secrets
-                  key: inbox_token
-            # claude-inbox backward-compat (supersedes the old ai-agent-bridge-rs):
-            # inbox.jsonl lives on the writable tmp mount. Reuse the required
-            # bridge bearer so the legacy route cannot become an auth bypass.
->>>>>>> origin/dev
+            # inbox.jsonl lives on the writable tmp mount. Reuse the same required
+            # bearer as the global API so the legacy route cannot drift open or
+            # become an auth bypass.
             - name: AI_AGENT_BRIDGE_DIR
               value: /tmp/claude_bridge
             - name: AI_AGENT_BRIDGE_TOKEN
