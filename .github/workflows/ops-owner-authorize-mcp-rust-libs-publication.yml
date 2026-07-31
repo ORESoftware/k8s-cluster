@@ -1,16 +1,15 @@
-name: Owner-authorize canonical mcp-rust-libs publication
-run-name: Owner-authorize canonical mcp-rust-libs publication @ ${{ github.sha }}
+name: Supervise owner-authorized canonical mcp-rust-libs publication
+run-name: Owner-authorize exact canonical mcp-rust-libs publication
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/ops-owner-authorize-mcp-rust-libs-publication.yml
-  workflow_dispatch:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
 
 permissions:
   contents: read
   issues: write
+  pull-requests: write
+  statuses: write
 
 concurrency:
   group: owner-authorized-canonical-mcp-rust-libs-publication
@@ -18,19 +17,69 @@ concurrency:
 
 jobs:
   publish:
-    if: github.repository == 'ORESoftware/k8s-cluster'
+    if: >-
+      github.event.pull_request.draft == true &&
+      github.event.pull_request.user.login == 'ORESoftware' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'agent/mcp-rust-libs-publish-') &&
+      github.event.pull_request.title == 'DO NOT MERGE: publish exact mcp-rust-libs repository'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       COMMENT_TOKEN: ${{ github.token }}
       EXPECTED_LOGIN: ORESoftware
       GH_CONFIG_DIR: ${{ runner.temp }}/mcp-rust-libs-owner-auth
+      REPOSITORY: ${{ github.repository }}
       TRACKING_PR: '326'
+      TRIGGER_PR: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+      TRUSTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
 
     steps:
-      - name: Check out the exact trusted main revision
+      - name: Validate the one-file execution carrier against trusted main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          pull="$(gh api "repos/${REPOSITORY}/pulls/${TRIGGER_PR}")"
+          head_sha="$(jq -er '.head.sha' <<<"$pull")"
+          base_sha="$(jq -er '.base.sha' <<<"$pull")"
+          main_sha="$(gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          test "$head_sha" = "$TARGET_SHA"
+          test "$base_sha" = "$TRUSTED_BASE_SHA"
+          [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$base_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          commits="$(gh api "repos/${REPOSITORY}/pulls/${TRIGGER_PR}/commits?per_page=100")"
+          test "$(jq 'length' <<<"$commits")" -eq 1
+          parent_sha="$(jq -er '.[0].parents[0].sha' <<<"$commits")"
+          test "$parent_sha" = "$base_sha"
+
+          files="$(gh api "repos/${REPOSITORY}/pulls/${TRIGGER_PR}/files?per_page=100")"
+          test "$(jq 'length' <<<"$files")" -eq 1
+          jq -e '
+            .[0].filename == ".github/mcp-rust-libs-publish-trigger" and
+            .[0].status == "added" and
+            .[0].changes == 3
+          ' <<<"$files" >/dev/null
+
+          encoded="$(gh api "repos/${REPOSITORY}/contents/.github/mcp-rust-libs-publish-trigger?ref=${head_sha}" --jq '.content')"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
+          test "$(sed -n 's/^target=//p' <<<"$marker")" = 'ORESoftware/mcp-rust-libs'
+          test "$(sed -n 's/^source=//p' <<<"$marker")" = 'ORESoftware/testing@069b1aa4251658c8348d2eb477ad71369d9b742b:mcp-rust-libs'
+          test "$(sed -n 's/^trusted-main=//p' <<<"$marker")" = "$base_sha"
+
+          comparison="$(gh api "repos/${REPOSITORY}/compare/${base_sha}...${main_sha}")"
+          jq -e '(.status == "ahead" or .status == "identical") and .behind_by == 0' <<<"$comparison" >/dev/null
+
+      - name: Check out the immutable trusted publication source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          repository: ORESoftware/k8s-cluster
+          ref: ${{ env.TRUSTED_BASE_SHA }}
           persist-credentials: false
           fetch-depth: 1
 
@@ -40,7 +89,7 @@ jobs:
           set -Eeuo pipefail
           umask 077
           trusted_sha="$(git rev-parse HEAD)"
-          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          test "$trusted_sha" = "$TRUSTED_BASE_SHA"
           test -f scripts/ops/publish_mcp_rust_libs.sh
           bash -n scripts/ops/publish_mcp_rust_libs.sh
 
@@ -50,10 +99,23 @@ jobs:
           token=''
           : >"$auth_log"
 
-          comment() {
+          comment_tracking() {
             GH_TOKEN="$COMMENT_TOKEN" gh api --method POST \
-              "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_PR}/comments" \
+              "repos/${REPOSITORY}/issues/${TRACKING_PR}/comments" \
               -f body="$1" >/dev/null
+          }
+          comment_trigger() {
+            GH_TOKEN="$COMMENT_TOKEN" gh api --method POST \
+              "repos/${REPOSITORY}/issues/${TRIGGER_PR}/comments" \
+              -f body="$1" >/dev/null
+          }
+          publish_status() {
+            GH_TOKEN="$COMMENT_TOKEN" gh api --method POST \
+              "repos/${REPOSITORY}/statuses/${TARGET_SHA}" \
+              -f state="$1" \
+              -f context='mcp-rust-libs/publication' \
+              -f description="$2" \
+              -f target_url="https://github.com/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >/dev/null
           }
 
           cleanup() {
@@ -67,8 +129,9 @@ jobs:
           }
           trap cleanup EXIT
 
-          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          comment "Owner-authorized canonical mcp-rust-libs publication started from trusted \`${trusted_sha}\`: ${run_url}."
+          run_url="https://github.com/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          comment_tracking "Owner-authorized canonical mcp-rust-libs publication started from trusted \`${trusted_sha}\`: ${run_url}."
+          publish_status pending 'Waiting for ORESoftware device authorization'
 
           (
             env -u GH_TOKEN -u GITHUB_TOKEN \
@@ -99,12 +162,15 @@ jobs:
           if [[ -z "$code" ]]; then
             wait "$auth_pid" 2>/dev/null || true
             auth_pid=''
-            comment "Owner-authorized canonical mcp-rust-libs publication could not obtain a GitHub device code: ${run_url}."
+            publish_status failure 'GitHub CLI did not emit a device code' || true
+            comment_tracking "Owner-authorized canonical mcp-rust-libs publication could not obtain a GitHub device code: ${run_url}."
             sed -E 's/[A-Z0-9]{4}-[A-Z0-9]{4}/[REDACTED-CODE]/g' "$auth_log" >&2 || true
             exit 1
           fi
 
-          comment "Owner authorization required now: open **https://github.com/login/device** and enter **\`${code}\`**. The workflow will accept only account \`ORESoftware\` and will publish the exact reviewed \`ORESoftware/testing@069b1aa4251658c8348d2eb477ad71369d9b742b:mcp-rust-libs\` subtree. Run: ${run_url}."
+          instruction="Owner authorization required now: open **https://github.com/login/device** and enter **\`${code}\`**. The workflow accepts only account \`ORESoftware\` and publishes only the exact reviewed \`ORESoftware/testing@069b1aa4251658c8348d2eb477ad71369d9b742b:mcp-rust-libs\` subtree. Run: ${run_url}."
+          comment_tracking "$instruction"
+          comment_trigger "$instruction"
           echo "::notice title=GitHub device authorization::Open https://github.com/login/device and enter $code"
 
           set +e
@@ -113,7 +179,8 @@ jobs:
           set -e
           auth_pid=''
           if [[ "$auth_rc" -ne 0 ]]; then
-            comment "Owner device authorization failed or expired for canonical mcp-rust-libs publication: ${run_url}."
+            publish_status failure 'Device authorization failed or expired' || true
+            comment_tracking "Owner device authorization failed or expired for canonical mcp-rust-libs publication: ${run_url}."
             sed -E 's/[A-Z0-9]{4}-[A-Z0-9]{4}/[REDACTED-CODE]/g' "$auth_log" >&2 || true
             exit "$auth_rc"
           fi
@@ -121,6 +188,7 @@ jobs:
 
           actual_login="$(env -u GH_TOKEN -u GITHUB_TOKEN gh api user --jq .login)"
           test "$actual_login" = "$EXPECTED_LOGIN"
+          publish_status pending 'Authorized as ORESoftware; publishing reviewed source'
           token="$(env -u GH_TOKEN -u GITHUB_TOKEN gh auth token)"
           test -n "$token"
           [[ "$token" != *[[:space:]]* ]]
@@ -138,4 +206,8 @@ jobs:
             .default_branch == "main"
           ' <<<"$metadata" >/dev/null
           target_id="$(jq -er '.id' <<<"$metadata")"
-          comment "Created and verified public \`ORESoftware/mcp-rust-libs\` (repository id \`${target_id}\`) from the exact reviewed source. Run: ${run_url}."
+          publish_status success 'Created and verified canonical repository and review branch'
+          comment_tracking "Created and verified public \`ORESoftware/mcp-rust-libs\` (repository id \`${target_id}\`) from the exact reviewed source. Run: ${run_url}."
+          comment_trigger "Created and verified public \`ORESoftware/mcp-rust-libs\`; this execution carrier will now be closed without merge."
+          GH_TOKEN="$COMMENT_TOKEN" gh api --method PATCH \
+            "repos/${REPOSITORY}/pulls/${TRIGGER_PR}" -f state=closed >/dev/null
