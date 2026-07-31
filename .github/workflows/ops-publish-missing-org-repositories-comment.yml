@@ -22,7 +22,7 @@ jobs:
       github.actor == 'chatgpt' &&
       github.event.comment.body == 'ops-publish-missing-org-repositories:231:e481ff951e3713913813bc25966745757186bb57'
     runs-on: ubuntu-latest
-    timeout-minutes: 50
+    timeout-minutes: 55
     env:
       TARGET_SHA: e481ff951e3713913813bc25966745757186bb57
       TARGET_BRANCH: agent/critical-org-publish-trigger-main-20260731-v4
@@ -66,8 +66,8 @@ jobs:
       - name: Configure trusted main-ref AWS OIDC credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
 
       - name: Load and mask the protected GitHub publisher
         shell: bash
@@ -96,14 +96,22 @@ jobs:
             echo "$org owner membership verified"
           done
 
-      - name: Publish and verify the fixed 34-repository allowlist
+      - name: Publish, finalize, and verify the fixed 34-repository allowlist
         id: publish
         continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/ops/publish_missing_org_repositories.py
-          python3 scripts/ops/publish_missing_org_repositories.py
+          python3 -m py_compile \
+            scripts/ops/publish_missing_org_repositories.py \
+            scripts/ops/publish_missing_org_repositories_current.py \
+            scripts/ops/finalize_missing_org_repositories.py
+          python3 scripts/ops/publish_missing_org_repositories_current.py
+          python3 scripts/ops/finalize_missing_org_repositories.py \
+            --json-report "$RUNNER_TEMP/critical-org-publication.json" \
+            --markdown-report "$RUNNER_TEMP/critical-org-publication.md" \
+            --close-carriers
+          cat "$RUNNER_TEMP/critical-org-publication.md"
 
       - name: Report exact publication result
         if: always()
