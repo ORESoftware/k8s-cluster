@@ -9,19 +9,21 @@
       "statement": "One accepted refresh atomically consumes the old token and installs exactly one fresh token.",
       "trigger_paths": [
         "src/**",
-        "db/**"
+        "db/**",
+        "tests/auth_state_model.rs",
+        "tests/postgres.rs"
       ],
-      "model": "formal/review-procedure/model.py",
+      "model": "tests/auth_state_model.rs",
       "evidence": [
-        "bounded session model",
-        "database rotation tests"
+        "canonical bounded Rust auth state model",
+        "two-contender PostgreSQL refresh regression"
       ],
       "commands": [
-        "python3 formal/review-procedure/model.py",
+        "cargo test --test auth_state_model --locked",
         "cargo test --all-targets --locked"
       ],
       "assumptions": [
-        "the database transaction is serializable at the application boundary"
+        "the database transaction provides the isolation required by the refresh-consumption update"
       ],
       "bounded": true
     },
@@ -30,41 +32,66 @@
       "kind": "safety",
       "statement": "A consumed or non-current refresh token is rejected without mutating the session.",
       "trigger_paths": [
-        "src/**"
+        "src/**",
+        "tests/auth_state_model.rs",
+        "tests/postgres.rs"
       ],
-      "model": "formal/review-procedure/model.py",
+      "model": "tests/auth_state_model.rs",
       "evidence": [
-        "bounded session model",
-        "replay regression tests"
+        "canonical bounded Rust auth state model",
+        "refresh replay regression tests"
       ],
       "commands": [
-        "python3 formal/review-procedure/model.py",
+        "cargo test --test auth_state_model --locked",
         "cargo test --all-targets --locked"
       ],
       "assumptions": [
-        "token hashes are collision resistant"
+        "token digests preserve equality and collision resistance at the application boundary"
       ],
       "bounded": true
     },
     {
       "id": "AUTH_REVOKE",
       "kind": "safety",
-      "statement": "After logout or administrative revocation no token can reactivate the session.",
+      "statement": "After logout, expiry, or administrative revocation no refresh or access token can reactivate the session.",
       "trigger_paths": [
         "src/**",
-        "db/**"
+        "db/**",
+        "tests/auth_state_model.rs"
       ],
-      "model": "formal/review-procedure/model.py",
+      "model": "tests/auth_state_model.rs",
       "evidence": [
-        "bounded session model",
-        "logout and revocation tests"
+        "canonical bounded Rust auth state model",
+        "logout, expiry, and revocation tests"
       ],
       "commands": [
-        "python3 formal/review-procedure/model.py",
+        "cargo test --test auth_state_model --locked",
         "cargo test --all-targets --locked"
       ],
       "assumptions": [
         "revocation reads observe authoritative PostgreSQL state"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "AUTH_KEY_ROTATION",
+      "kind": "safety",
+      "statement": "Signing-key rotation preserves an explicit overlap window, keeps the active key trusted, and rejects tokens after their signing key is retired.",
+      "trigger_paths": [
+        "src/**",
+        "tests/auth_state_model.rs"
+      ],
+      "model": "tests/auth_state_model.rs",
+      "evidence": [
+        "canonical bounded Rust auth state model",
+        "signing-key overlap and retirement regressions"
+      ],
+      "commands": [
+        "cargo test --test auth_state_model --locked",
+        "cargo test --all-targets --locked"
+      ],
+      "assumptions": [
+        "key identifiers uniquely select the intended verification key"
       ],
       "bounded": true
     },
@@ -93,21 +120,22 @@
     {
       "id": "AUTH_CLAIMS",
       "kind": "refinement",
-      "statement": "Accepted and issued JWTs enforce the configured issuer, audience, algorithm, expiry, not-before, and session provenance.",
+      "statement": "Accepted and issued JWTs enforce the configured issuer, audience, algorithm, expiry, not-before, signing key, and session provenance.",
       "trigger_paths": [
         "src/**"
       ],
       "model": null,
       "evidence": [
-        "JWT boundary tests",
-        "JWKS algorithm allow-list tests"
+        "JWT claim-boundary tests",
+        "JWKS algorithm and key allow-list tests"
       ],
       "commands": [
         "python3 formal/review-procedure/check.py",
         "cargo test --all-targets --locked"
       ],
       "assumptions": [
-        "cryptographic libraries satisfy their documented contracts"
+        "cryptographic libraries satisfy their documented contracts",
+        "JWKS transport supplies authentic configured key material"
       ],
       "bounded": false
     }
