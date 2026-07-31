@@ -147,7 +147,7 @@ class AnalysisResponse(ApiModel):
     recommended_next: str = Field(alias="recommendedNext")
     features: list[dict[str, Any]]
     anomalies: list[dict[str, Any]]
-    reward_estimate: dict[str, Any] = Field(alias="rewardEstimate")
+    reward_estimate: float = Field(alias="rewardEstimate")
     transition_model: list[dict[str, Any]] = Field(alias="transitionModel")
     mdp_telemetry: MdpTelemetryResponse = Field(alias="mdpTelemetry")
     published: PublishedState
