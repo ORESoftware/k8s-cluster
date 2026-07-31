@@ -115,6 +115,8 @@ impl TokenMinter {
             email: context.email,
             email_verified: context.email_verified,
             roles: context.roles,
+            // Derived from the ACR so `aal` and `acr` can never disagree.
+            aal: context.assurance.level(),
             amr: context.assurance.amr.clone(),
             acr: context.assurance.acr.clone(),
         };
