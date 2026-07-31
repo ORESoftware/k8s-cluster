@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 65
     env:
-      PUBLISH_WORKFLOW: ops-publish-sealed-hypesiege-streempilot.yml
+      PUBLISH_WORKFLOW: ops-publish-missing-org-repositories-dispatch.yml
       PUBLICATION_PR: '270'
       MARKER_PATH: docs/ops/triggers/hypesiege-streempilot-publication-2026-07-31.json
       EXPECTED_COORDINATOR_SHA: e125b9c7c0be1d625abad3ff276311639d52585e
@@ -76,6 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           dispatcher_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          request_id="den-877-pr-${TRIGGER_PR}-dispatcher-${GITHUB_RUN_ID}"
           before="$(
             gh run list \
               --repo "$GITHUB_REPOSITORY" \
@@ -96,7 +97,8 @@ jobs:
 
           gh workflow run "$PUBLISH_WORKFLOW" \
             --repo "$GITHUB_REPOSITORY" \
-            --ref main
+            --ref main \
+            -f request_id="$request_id"
 
           run_id=''
           for _ in $(seq 1 60); do
@@ -122,10 +124,10 @@ jobs:
           echo "run_url=$run_url" >> "$GITHUB_OUTPUT"
           gh pr comment "$TRIGGER_PR" \
             --repo "$GITHUB_REPOSITORY" \
-            --body "Sealed fleet publisher dispatched as ${run_url}" >/dev/null || true
+            --body "Protected repository publisher dispatched as ${run_url}" >/dev/null || true
           gh pr comment "$PUBLICATION_PR" \
             --repo "$GITHUB_REPOSITORY" \
-            --body "Sealed fleet publisher dispatched as ${run_url}" >/dev/null || true
+            --body "Protected repository publisher dispatched as ${run_url}" >/dev/null || true
 
       - name: Follow the exact publisher run to completion
         env:
@@ -151,9 +153,9 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$DISPATCH_OUTCOME" = success && -n "$RUN_ID" && "$JOB_RESULT" = success ]]; then
-            body="Sealed HypeSiege/StreemPilot publisher completed successfully: ${RUN_URL}"
+            body="Protected organization repository publisher completed successfully: ${RUN_URL}"
           else
-            body="Sealed HypeSiege/StreemPilot publisher did not complete successfully. Dispatch=${DISPATCH_OUTCOME}; job=${JOB_RESULT}; run=${RUN_URL:-unavailable}"
+            body="Protected organization repository publisher did not complete successfully. Dispatch=${DISPATCH_OUTCOME}; job=${JOB_RESULT}; run=${RUN_URL:-unavailable}"
           fi
           gh pr comment "$TRIGGER_PR" \
             --repo "$GITHUB_REPOSITORY" \
