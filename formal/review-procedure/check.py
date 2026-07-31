@@ -149,11 +149,7 @@ def validate_document(document: object) -> tuple[str, int]:
         model = item.get("model")
         if model is not None:
             model_path = require_safe_repo_path(model, f"{obligation_id}.model")
-<<<<<<< HEAD
             require_existing_repo_file(model_path, f"{obligation_id}.model")
-=======
-            require((ROOT / model_path).is_file(), f"model file is missing: {model_path}")
->>>>>>> origin/agent/formal-methods-20260730-segment-lifecycle
         if bounded:
             require(model is not None, f"{obligation_id} is bounded but does not name a model")
 
