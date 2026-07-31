@@ -2,7 +2,7 @@ name: Execute corrected full critical organization fleet publication
 run-name: Owner-authorize and publish fleet from exact carrier sync
 
 on:
-  pull_request_target:
+  pull_request:
     types: [synchronize]
     branches: [main]
 
