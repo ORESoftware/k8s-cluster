@@ -23,10 +23,6 @@ jobs:
     env:
       COORDINATOR_SHA: e125b9c7c0be1d625abad3ff276311639d52585e
       EXPECTED_GENERATOR_SHA256: a57b00961ee57ae09bf3bb2e2d09afbdd1ddbbbde832b027802f82a1fc5dfa84
-      SOURCE_ROOT: ${{ runner.temp }}/hypesiege-streempilot-fleet
-      GENERATED_MANIFEST: ${{ runner.temp }}/hypesiege-streempilot-manifest.json
-      REPORT_JSON: ${{ runner.temp }}/hypesiege-streempilot-publication.json
-      REPORT_MARKDOWN: ${{ runner.temp }}/hypesiege-streempilot-publication.md
 
     steps:
       - name: Check out the trusted default branch revision
@@ -35,6 +31,17 @@ jobs:
           ref: main
           fetch-depth: 1
           persist-credentials: false
+
+      - name: Initialize publication runtime paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            printf 'SOURCE_ROOT=%s\n' "$RUNNER_TEMP/hypesiege-streempilot-fleet"
+            printf 'GENERATED_MANIFEST=%s\n' "$RUNNER_TEMP/hypesiege-streempilot-manifest.json"
+            printf 'REPORT_JSON=%s\n' "$RUNNER_TEMP/hypesiege-streempilot-publication.json"
+            printf 'REPORT_MARKDOWN=%s\n' "$RUNNER_TEMP/hypesiege-streempilot-publication.md"
+          } >> "$GITHUB_ENV"
 
       - name: Configure short-lived AWS credentials from trusted main
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
@@ -275,7 +282,7 @@ jobs:
         with:
           name: hypesiege-streempilot-publication
           path: |
-            ${{ env.REPORT_MARKDOWN }}
-            ${{ env.REPORT_JSON }}
+            ${{ runner.temp }}/hypesiege-streempilot-publication.md
+            ${{ runner.temp }}/hypesiege-streempilot-publication.json
           if-no-files-found: error
           retention-days: 14
