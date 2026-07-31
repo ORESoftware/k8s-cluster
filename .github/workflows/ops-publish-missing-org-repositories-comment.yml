@@ -9,6 +9,7 @@ permissions:
   contents: read
   id-token: write
   issues: write
+  pull-requests: read
   statuses: write
 
 jobs:
@@ -43,18 +44,24 @@ jobs:
 
           pr="$(gh api "repos/${REPOSITORY}/pulls/${pr_number}")"
           test "$(jq -r '.state' <<<"$pr")" = open
+          test "$(jq -r '.draft' <<<"$pr")" = true
           test "$(jq -r '.title' <<<"$pr")" = \
             'DO NOT MERGE: supervised trusted repository publication'
           test "$(jq -r '.user.login' <<<"$pr")" = ORESoftware
           test "$(jq -r '.head.repo.full_name' <<<"$pr")" = "$REPOSITORY"
           test "$(jq -r '.head.sha' <<<"$pr")" = "$target_sha"
           test "$(jq -r '.base.ref' <<<"$pr")" = main
+          test "$(jq -r '.commits' <<<"$pr")" = 1
           head_ref="$(jq -r '.head.ref' <<<"$pr")"
           [[ "$head_ref" == agent/critical-org-publish-trigger-main-* ]]
 
           trusted_main="$(gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
           [[ "$trusted_main" =~ ^[0-9a-f]{40}$ ]]
           test "$(jq -r '.base.sha' <<<"$pr")" = "$trusted_main"
+
+          commit="$(gh api "repos/${REPOSITORY}/commits/${target_sha}")"
+          test "$(jq '.parents | length' <<<"$commit")" = 1
+          test "$(jq -r '.parents[0].sha' <<<"$commit")" = "$trusted_main"
 
           mapfile -t changed_files < <(
             gh api --paginate \
