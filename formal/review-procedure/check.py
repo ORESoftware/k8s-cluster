@@ -60,10 +60,7 @@ def require_string_list(
 
 def require_safe_repo_path(value: object, label: str) -> PurePosixPath:
     raw = require_string(value, label)
-<<<<<<< HEAD
     require("\\" not in raw, f"{label} must use POSIX separators")
-=======
->>>>>>> origin/agent/formal-methods-20260730-segment-lifecycle
     path = PurePosixPath(raw)
     require(not path.is_absolute(), f"{label} must be repository-relative")
     require(".." not in path.parts, f"{label} must not traverse outside the repository")
