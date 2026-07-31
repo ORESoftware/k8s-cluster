@@ -1,0 +1,288 @@
+name: Repair canonical MCP publisher root Kubernetes boundary
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/repair-mcp-rust-libs-root-kube-boundary.yml
+      - .github/workflows/ops-publish-mcp-rust-libs.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-mcp-rust-libs-root-kube-boundary-${{ github.event.pull_request.head.ref }}
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/fix-mcp-publisher-root-kube-boundary-20260731'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the exact repair branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Reconcile privileged secret read with unprivileged publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PYTHON'
+          from pathlib import Path
+
+          path = Path('.github/workflows/ops-publish-mcp-rust-libs.yml')
+          text = path.read_text(encoding='utf-8')
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one match, found {count}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              '''          cat > "$remote_script" <<'REMOTE_SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          trusted_sha="${1:?trusted k8s-cluster SHA required}"
+''',
+              '''          cat > "$remote_script" <<'REMOTE_SCRIPT'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+
+          stage=bootstrap
+          report_error() {
+            status=$?
+            trap - ERR
+            printf 'publisher-stage-failed=%s exit=%s\\n' "$stage" "$status" >&2
+            exit "$status"
+          }
+          trap report_error ERR
+
+          trusted_sha="${1:?trusted k8s-cluster SHA required}"
+''',
+              'remote error-stage prelude',
+          )
+
+          replace_once(
+              '''          test -z "${CODEX_HOME:-}"
+          work="$(mktemp -d /tmp/mcp-rust-libs-publisher.XXXXXX)"
+          export CODEX_HOME="$work/codex-home"
+          install -d -m 700 "$CODEX_HOME"
+''',
+              '''          test -z "${CODEX_HOME:-}"
+          stage=prepare-disposable-state
+          work="$(mktemp -d /tmp/mcp-rust-libs-publisher.XXXXXX)"
+          export CODEX_HOME="$work/codex-home"
+          install -d -m 700 "$CODEX_HOME"
+          case "$CODEX_HOME" in
+            "$work"/*) ;;
+            *) echo 'disposable CODEX_HOME escaped the temporary worktree' >&2; exit 1 ;;
+          esac
+''',
+              'disposable state boundary',
+          )
+
+          replace_once(
+              '''            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN \\
+              GIT_ASKPASS GIT_USERNAME GIT_TERMINAL_PROMPT \\
+              GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM CODEX_HOME
+''',
+              '''            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN \\
+              GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_USERNAME GIT_TERMINAL_PROMPT \\
+              GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM CODEX_HOME
+''',
+              'credential cleanup',
+          )
+
+          replace_once(
+              '''          command -v kubectl >/dev/null
+          encoded_pat="$(kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}')"
+          test -n "$encoded_pat"
+          GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
+          unset encoded_pat
+          test -n "$GH_TOKEN"
+          export GH_TOKEN
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
+
+          api_helper="$work/github_api.py"
+''',
+              '''          stage=receive-cluster-credential
+          IFS= read -r encoded_pat
+          test -n "$encoded_pat"
+          GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
+          unset encoded_pat
+          test -n "$GH_TOKEN"
+          [[ "$GH_TOKEN" != *$'\\n'* && "$GH_TOKEN" != *$'\\r'* ]]
+          export GH_TOKEN
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
+
+          stage=verify-github-identity
+          api_helper="$work/github_api.py"
+''',
+              'root-to-user credential handoff',
+          )
+
+          replace_once(
+              '''          actual_login="$(python3 "$api_helper" user)"
+          test "$actual_login" = "$expected_login"
+          python3 "$api_helper" ensure-repository
+
+          askpass="$work/git-askpass.sh"
+''',
+              '''          actual_login="$(python3 "$api_helper" user)"
+          test "$actual_login" = "$expected_login"
+
+          stage=configure-git-authentication
+          askpass="$work/git-askpass.sh"
+''',
+              'defer target mutation until source validation',
+          )
+
+          replace_once(
+              '''          export GIT_ASKPASS="$askpass"
+          export GIT_USERNAME='x-access-token'
+''',
+              '''          export GIT_ASKPASS="$askpass"
+          export GIT_ASKPASS_REQUIRE=force
+          export GIT_USERNAME='x-access-token'
+''',
+              'force askpass transport',
+          )
+
+          replace_once(
+              '''          carrier="$work/carrier"
+          git clone --filter=blob:none --no-checkout \\
+''',
+              '''          stage=checkout-reviewed-source
+          carrier="$work/carrier"
+          git clone --filter=blob:none --no-checkout \\
+''',
+              'source checkout stage',
+          )
+
+          replace_once(
+              '''          (
+            cd "$source"
+            python3 scripts/regenerate-generated.py --check
+''',
+              '''          stage=validate-reviewed-source
+          (
+            cd "$source"
+            python3 scripts/regenerate-generated.py --check
+''',
+              'source validation stage',
+          )
+
+          replace_once(
+              '''            python3 scripts/update-source-manifest.py --check
+          )
+
+          baseline="$work/baseline"
+''',
+              '''            python3 scripts/update-source-manifest.py --check
+          )
+
+          stage=ensure-target-repository
+          python3 "$api_helper" ensure-repository
+
+          stage=prepare-target-review-gate
+          baseline="$work/baseline"
+''',
+              'validated mutation boundary',
+          )
+
+          replace_once(
+              '''          target="$work/target"
+          git clone --depth=1 --branch main "https://github.com/${target_repository}.git" "$target"
+''',
+              '''          stage=publish-reviewed-source-branch
+          target="$work/target"
+          git clone --depth=1 --branch main "https://github.com/${target_repository}.git" "$target"
+''',
+              'target publication stage',
+          )
+
+          replace_once(
+              '''          pr_number="$(python3 "$api_helper" ensure-pr "$target_branch" "$expected_head" "$pr_body")"
+          test "$(python3 "$api_helper" get-ref "heads/${target_branch}")" = "$expected_head"
+          echo "PUBLISHED $target_repository PR#$pr_number head=$expected_head source_tree=$source_tree trusted_k8s=$trusted_sha"
+''',
+              '''          stage=ensure-target-pull-request
+          pr_number="$(python3 "$api_helper" ensure-pr "$target_branch" "$expected_head" "$pr_body")"
+          test "$(python3 "$api_helper" get-ref "heads/${target_branch}")" = "$expected_head"
+          stage=complete
+          echo "PUBLISHED $target_repository PR#$pr_number head=$expected_head source_tree=$source_tree trusted_k8s=$trusted_sha"
+''',
+              'target PR stage',
+          )
+
+          old_remote = r'''          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-mcp-rust-libs.sh && chown ec2-user:ec2-user /tmp/publish-mcp-rust-libs.sh && chmod 700 /tmp/publish-mcp-rust-libs.sh && sudo -u ec2-user -H bash -lc 'unset CODEX_HOME; exec bash /tmp/publish-mcp-rust-libs.sh \\\"\\$1\\\"' _ '$trusted_sha'; status=\\$?; rm -f /tmp/publish-mcp-rust-libs.sh; exit \\$status"
+'''
+          new_remote = r'''          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-mcp-rust-libs.sh && chown ec2-user:ec2-user /tmp/publish-mcp-rust-libs.sh && chmod 700 /tmp/publish-mcp-rust-libs.sh; status=0; if ! command -v kubectl >/dev/null; then echo 'publisher-stage-failed=locate-root-kubectl' >&2; status=127; elif ! test -r /etc/kubernetes/admin.conf; then echo 'publisher-stage-failed=read-admin-kubeconfig' >&2; status=1; elif ! encoded_pat=\\$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}'); then echo 'publisher-stage-failed=read-cluster-credential' >&2; status=1; elif test -z \\\"\\$encoded_pat\\\"; then echo 'publisher-stage-failed=empty-cluster-credential' >&2; status=1; else printf '%s\\n' \\\"\\$encoded_pat\\\" | sudo -u ec2-user -H bash -lc 'unset CODEX_HOME; exec bash /tmp/publish-mcp-rust-libs.sh \\\"\\$1\\\"' _ '$trusted_sha'; status=\\$?; fi; unset encoded_pat; rm -f /tmp/publish-mcp-rust-libs.sh; exit \\$status"
+'''
+          replace_once(old_remote, new_remote, 'root Kubernetes credential reader')
+
+          path.write_text(text, encoding='utf-8')
+
+          outer_marker = '        run: |\n'
+          outer_start = text.index(outer_marker) + len(outer_marker)
+          outer_lines = []
+          for line in text[outer_start:].splitlines():
+              if not line:
+                  outer_lines.append('')
+              elif line.startswith('          '):
+                  outer_lines.append(line[10:])
+              else:
+                  break
+          outer = '\n'.join(outer_lines) + '\n'
+          Path('/tmp/mcp-rust-libs-publisher-outer.sh').write_text(outer, encoding='utf-8')
+
+          remote_begin_marker = "cat > \"$remote_script\" <<'REMOTE_SCRIPT'\n"
+          remote_begin = outer.index(remote_begin_marker) + len(remote_begin_marker)
+          remote_end = outer.index('\nREMOTE_SCRIPT\n', remote_begin)
+          remote = outer[remote_begin:remote_end] + '\n'
+          Path('/tmp/mcp-rust-libs-publisher-remote.sh').write_text(remote, encoding='utf-8')
+
+          python_begin_marker = "cat > \"$api_helper\" <<'PYTHON'\n"
+          python_begin = remote.index(python_begin_marker) + len(python_begin_marker)
+          python_end = remote.index('\nPYTHON\n', python_begin)
+          embedded_python = remote[python_begin:python_end] + '\n'
+          Path('/tmp/mcp-rust-libs-publisher-api.py').write_text(embedded_python, encoding='utf-8')
+
+          if 'command -v kubectl' in remote:
+              raise SystemExit('unprivileged remote script still requires kubectl')
+          if 'IFS= read -r encoded_pat' not in remote:
+              raise SystemExit('remote credential stdin handoff is absent')
+          if 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl' not in outer:
+              raise SystemExit('root admin kubeconfig secret read is absent')
+          if outer.index('python3 "$api_helper" ensure-repository') < outer.index('python3 scripts/update-source-manifest.py --check'):
+              raise SystemExit('target mutation still precedes source validation')
+          PYTHON
+
+          bash -n /tmp/mcp-rust-libs-publisher-outer.sh
+          bash -n /tmp/mcp-rust-libs-publisher-remote.sh
+          python3 -m py_compile /tmp/mcp-rust-libs-publisher-api.py
+          git diff --check -- .github/workflows/ops-publish-mcp-rust-libs.yml
+
+      - name: Commit the reviewed boundary repair once
+        shell: bash
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- .github/workflows/ops-publish-mcp-rust-libs.yml; then
+            echo 'publisher boundary already repaired'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/ops-publish-mcp-rust-libs.yml
+          git commit -m 'fix(ops): split root Kubernetes read from unprivileged MCP publication'
+          git push origin "HEAD:${HEAD_BRANCH}"
