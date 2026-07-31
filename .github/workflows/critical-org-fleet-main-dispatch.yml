@@ -116,14 +116,18 @@ jobs:
                 run_id="$candidate"
                 break
               fi
-            done < <(jq -r '.workflow_runs[].id' <<<"$last_runs")
+            done < <(
+              jq -r --arg request_id "$request_id" \
+                '.workflow_runs[] | select(.display_title | contains($request_id)) | .id' \
+                <<<"$last_runs"
+            )
             [[ "$run_id" =~ ^[0-9]+$ ]] && break
             sleep 2
           done
 
           if [[ ! "$run_id" =~ ^[0-9]+$ ]]; then
             recent="$(jq -r '.workflow_runs[:10][] | [.id,.status,.conclusion,.display_title] | @tsv' <<<"$last_runs" 2>/dev/null || true)"
-            fail 'dispatch accepted but no new publisher v2 run appeared' "$recent"
+            fail 'dispatch accepted but no exact publisher v2 run appeared' "Request: ${request_id}\n${recent}"
           fi
 
           run_url="https://github.com/${repository}/actions/runs/${run_id}"
