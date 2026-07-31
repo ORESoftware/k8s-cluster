@@ -78,7 +78,7 @@ test('AI bridge alerts cover target health, saturation, shedding, leases, and de
   );
   assert.match(
     prometheus,
-    /ai_agent_bridge_dependency_configured\{dependency="control_plane"\} == 1/,
+    /ai_agent_bridge_dependency_configured\{dependency="control_plane"\} == 1\s+and on\(\)\s+sum\(increase\(ai_agent_bridge_control_plane_requests_total/,
   );
 });
 
