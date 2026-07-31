@@ -88,3 +88,32 @@ pub fn mint_for_session(
         assurance: AuthenticationAssurance::refresh_token(),
     })
 }
+
+/// Mint an access-only token for the same active session after an MFA/passkey
+/// challenge succeeds. No refresh token is issued, so a later refresh drops
+/// back to base assurance rather than extending the step-up indefinitely.
+///
+/// `claims` must come from a token this server already verified — the caller
+/// carries the prior `amr` forward so the new token records the whole chain.
+pub fn mint_step_up(
+    state: &AppState,
+    claims: &OreClaims,
+    method: &str,
+) -> Result<MintedToken, AuthError> {
+    let session_id = claims
+        .sid
+        .as_deref()
+        .ok_or(AuthError::Unauthorized)
+        .and_then(|raw| Uuid::parse_str(raw).map_err(|_| AuthError::Unauthorized))?;
+    state.minter.mint(MintContext {
+        shared_user_id: claims.sub.clone(),
+        session_id: Some(session_id),
+        provider: claims.provider.clone(),
+        provider_tenant: claims.provider_tenant.clone(),
+        provider_subject: claims.provider_subject.clone(),
+        email: claims.email.clone(),
+        email_verified: claims.email_verified,
+        roles: claims.roles.clone(),
+        assurance: AuthenticationAssurance::step_up(&claims.amr, method),
+    })
+}
