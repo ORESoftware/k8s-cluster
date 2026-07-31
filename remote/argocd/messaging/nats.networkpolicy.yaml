@@ -21,7 +21,9 @@ spec:
       app: dd-nats
   policyTypes:
     - Ingress
+    - Egress
   ingress:
+    # NATS clients currently run only in these GitOps-managed namespaces.
     - from:
         - namespaceSelector:
             matchLabels:
@@ -44,16 +46,24 @@ spec:
       ports:
         - protocol: TCP
           port: 4222
+    # Host-network pool workers originate from the EC2 VPC rather than a pod
+    # identity. Keep their exception on the client port only.
+    - from:
+        - ipBlock:
+            cidr: 172.31.0.0/16
+      ports:
+        - protocol: TCP
+          port: 4222
+    # KEDA reads only the :8222 monitoring endpoint for nats-jetstream scalers.
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: keda
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: observability
       ports:
         - protocol: TCP
           port: 8222
+    # The monitoring endpoint has no NATS-native authentication. Only the
+    # observability namespace and the three read-only proxy/tooling pods need it.
     - from:
         - namespaceSelector:
             matchLabels:
@@ -61,3 +71,31 @@ spec:
       ports:
         - protocol: TCP
           port: 7777
+        - protocol: TCP
+          port: 8222
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+          podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+          podSelector:
+            matchLabels:
+              app: dd-cluster-mcp-rs
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+          podSelector:
+            matchLabels:
+              app: dd-gleam-mcp-server
+      ports:
+        - protocol: TCP
+          port: 7777
+        - protocol: TCP
+          port: 8222
+  # The server and its exporter sidecar make no off-pod connections.
+  egress: []

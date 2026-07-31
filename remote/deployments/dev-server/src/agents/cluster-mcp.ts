@@ -29,6 +29,13 @@ export function clusterMcpConnectTimeoutMs(env: Record<string, string | undefine
   return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 30_000) : 3000;
 }
 
+export function clusterMcpAuthHeadersFromEnv(
+  env: Record<string, string | undefined>,
+): Record<string, string> | undefined {
+  const secret = env.AGENT_MCP_AUTH_SECRET?.trim();
+  return secret ? { 'x-server-auth': secret } : undefined;
+}
+
 export function clusterMcpPromptSection(url: string | null | undefined): string {
   if (!url) {
     return '';

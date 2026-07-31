@@ -24,6 +24,9 @@ test('nats messaging app is gitops-managed and exposes client plus metrics ports
   const app = await readRepoFile('remote/argocd/apps/dd-messaging.application.yaml');
   const config = await readRepoFile('remote/argocd/messaging/nats.configmap.yaml');
   const deployment = await readRepoFile('remote/argocd/messaging/nats.deployment.yaml');
+  const kustomization = await readRepoFile('remote/argocd/messaging/kustomization.yaml');
+  const networkPolicy = await readRepoFile('remote/argocd/messaging/nats.networkpolicy.yaml');
+  const pdb = await readRepoFile('remote/argocd/messaging/nats.pdb.yaml');
   const service = await readRepoFile('remote/argocd/messaging/nats.service.yaml');
 
   assert.match(app, /name:\s*dd-messaging/);
@@ -32,8 +35,31 @@ test('nats messaging app is gitops-managed and exposes client plus metrics ports
   assert.match(config, /server_name:\s*dd-nats/);
   assert.match(config, /port:\s*4222/);
   assert.match(config, /http:\s*8222/);
+  assert.match(config, /max_connections:\s*4096/);
+  assert.match(config, /max_subscriptions:\s*8192/);
+  assert.match(config, /max_control_line:\s*4KB/);
+  assert.match(config, /max_payload:\s*1MB/);
+  assert.match(config, /max_pending:\s*16MB/);
+  assert.match(config, /ping_max:\s*2/);
+  assert.match(config, /max_mem_store:\s*512MB/);
   assert.match(deployment, /image:\s*nats:2\.11\.17-alpine/);
   assert.match(deployment, /image:\s*natsio\/prometheus-nats-exporter:0\.19\.2/);
+  assert.match(deployment, /priorityClassName:\s*system-cluster-critical/);
+  assert.match(deployment, /enableServiceLinks:\s*false/);
+  assert.match(
+    deployment,
+    /name:\s*prepare-nats-data[\s\S]*chown -R 1000:1000 \/data[\s\S]*add:[\s\S]*-\s*CHOWN/,
+  );
+  assert.match(
+    deployment,
+    /name:\s*nats[\s\S]*readOnlyRootFilesystem:\s*true[\s\S]*runAsNonRoot:\s*true[\s\S]*runAsUser:\s*1000/,
+  );
+  assert.match(
+    deployment,
+    /name:\s*prometheus-exporter[\s\S]*readOnlyRootFilesystem:\s*true[\s\S]*runAsNonRoot:\s*true[\s\S]*runAsUser:\s*65532/,
+  );
+  assert.match(deployment, /name:\s*config[\s\S]*mountPath:\s*\/etc\/nats[\s\S]*readOnly:\s*true/);
+  assert.match(deployment, /startupProbe:[\s\S]*path:\s*\/healthz/);
   assert.match(deployment, /args:\s*[\s\S]*-\s*-varz/);
   assert.match(deployment, /args:\s*[\s\S]*-\s*-connz/);
   assert.match(deployment, /args:\s*[\s\S]*-\s*-routez/);
@@ -43,6 +69,21 @@ test('nats messaging app is gitops-managed and exposes client plus metrics ports
   assert.match(service, /name:\s*client[\s\S]*port:\s*4222/);
   assert.match(service, /name:\s*monitor[\s\S]*port:\s*8222/);
   assert.match(service, /name:\s*metrics[\s\S]*port:\s*7777/);
+  assert.match(kustomization, /nats\.networkpolicy\.yaml/);
+  assert.match(kustomization, /nats\.pdb\.yaml/);
+  assert.match(networkPolicy, /kind:\s*NetworkPolicy/);
+  assert.match(networkPolicy, /kubernetes\.io\/metadata\.name:\s*default/);
+  assert.match(networkPolicy, /kubernetes\.io\/metadata\.name:\s*ai-ml/);
+  assert.match(networkPolicy, /kubernetes\.io\/metadata\.name:\s*daedalus/);
+  assert.match(networkPolicy, /app:\s*dd-remote-gateway/);
+  assert.match(networkPolicy, /app:\s*dd-cluster-mcp-rs/);
+  assert.match(networkPolicy, /app:\s*dd-gleam-mcp-server/);
+  assert.match(networkPolicy, /port:\s*4222/);
+  assert.match(networkPolicy, /port:\s*8222/);
+  assert.match(networkPolicy, /port:\s*7777/);
+  assert.match(networkPolicy, /egress:\s*\[\]/);
+  assert.match(pdb, /kind:\s*PodDisruptionBudget/);
+  assert.match(pdb, /minAvailable:\s*1/);
 });
 
 test('observability stack scrapes nats exporter and dashboards nats metrics', async () => {

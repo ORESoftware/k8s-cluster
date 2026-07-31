@@ -17,6 +17,7 @@ import { createRequire } from 'node:module';
 import {
   CLUSTER_MCP_SERVER_NAME,
   CLUSTER_MCP_TOOL_NAMES,
+  clusterMcpAuthHeadersFromEnv,
   clusterMcpUrlFromEnv,
 } from './cluster-mcp.js';
 import type { AgentRunOpts, AgentRunner } from './types.js';
@@ -107,6 +108,7 @@ function claudeMcpServers(env: Record<string, string>): Record<string, unknown> 
     [CLUSTER_MCP_SERVER_NAME]: {
       type: 'http',
       url,
+      headers: clusterMcpAuthHeadersFromEnv(env),
       alwaysLoad: true,
       tools: CLUSTER_MCP_TOOL_NAMES.map((name) => ({
         name,

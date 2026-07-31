@@ -34,8 +34,8 @@ data:
       1 "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
     }
 
-    # Dedicated read-only MCP bearer token. Scoped to /mcp and /cluster-mcp
-    # only (enforced in those location blocks) so local IDE MCP clients
+    # Dedicated read-only MCP bearer token. Scoped to the three MCP routes
+    # (enforced in those location blocks) so local IDE MCP clients
     # (Cursor, VS Code, Codex) authenticate with a narrow, revocable
     # credential instead of the master operator cookie value. Sourced from the
     # dd-mcp-gateway-token secret (AWS dd/remote-dev/mcp-gateway-token). The
@@ -905,6 +905,7 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         # Never forward the MCP bearer token to the read-only upstream pod.
         proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /cluster-mcp;
@@ -925,6 +926,7 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         # Never forward the MCP bearer token to the read-only upstream pod.
         proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /cluster-mcp;
@@ -945,6 +947,7 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         # Never forward the MCP bearer token to the read-only upstream pod.
         proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /mcp;
@@ -964,6 +967,7 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         # Never forward the MCP bearer token to the read-only upstream pod.
         proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /mcp;

@@ -240,6 +240,8 @@ resources:
   # Built in-pod from the remote/deployments/ai-agent-bridge submodule; synced on
   # both AWS and Hetzner via the dd-next-runtime app.
   - dd-ai-agent-bridge.deployment.yaml
+  - dd-ai-agent-bridge.networkpolicy.yaml
+  - dd-ai-agent-bridge.pdb.yaml
   - dd-ai-agent-bridge.service.yaml
   # t2v-v2t: voice-to-text / text-to-voice / translation. Two separately
   # deployed binaries built in-pod from the remote/deployments/t2v-v2t.rs
