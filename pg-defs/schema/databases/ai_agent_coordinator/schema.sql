@@ -9,8 +9,9 @@
 -- with this file as --source and --schemas ai_agent_coordinator. Never apply
 -- this file directly to a live database and never migrate at application boot.
 --
--- Rust consumers use hand-written SeaORM entities in ai-agent-coordinator.rs.
--- These entities are runtime adapters only; this file is the schema authority.
+-- Rust consumers use hand-written SeaORM entities or schema-qualified SeaORM
+-- statements in ai-agent-coordinator.rs. Those are runtime adapters only; this
+-- file is the schema authority.
 
 create schema if not exists ai_agent_coordinator;
 
@@ -113,3 +114,164 @@ create index if not exists linear_mutations_status_idx
 
 create index if not exists linear_mutations_job_id_idx
   on ai_agent_coordinator.linear_mutations (job_id);
+
+-- Read-only inbox scan cursors and redacted source health.
+create table if not exists ai_agent_coordinator.email_attention_sources (
+  source_id text primary key,
+  provider text not null,
+  cursor text,
+  last_success_at timestamptz,
+  last_error text,
+  last_error_at timestamptz,
+  updated_at timestamptz not null default now(),
+  constraint email_attention_sources_source_id_chk
+    check (source_id ~ '^[A-Za-z0-9._-]{1,64}$'),
+  constraint email_attention_sources_provider_chk
+    check (provider in ('gmail', 'outlook')),
+  constraint email_attention_sources_cursor_chk
+    check (cursor is null or char_length(cursor) between 1 and 4096),
+  constraint email_attention_sources_last_error_chk
+    check (last_error is null or char_length(last_error) <= 512)
+);
+
+-- Durable outbox. The payload contains only the bounded user-visible digest and
+-- is replaced with {"redacted":true} after confirmed delivery.
+create table if not exists ai_agent_coordinator.email_attention_deliveries (
+  idempotency_key text primary key,
+  payload_json jsonb not null,
+  status text not null default 'pending',
+  attempts bigint not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  delivered_at timestamptz,
+  last_error text,
+  constraint email_attention_deliveries_key_chk
+    check (char_length(idempotency_key) between 1 and 256),
+  constraint email_attention_deliveries_status_chk
+    check (status in ('pending', 'delivered')),
+  constraint email_attention_deliveries_attempts_chk
+    check (attempts >= 0),
+  constraint email_attention_deliveries_last_error_chk
+    check (last_error is null or char_length(last_error) <= 512)
+);
+
+create index if not exists email_attention_deliveries_pending_idx
+  on ai_agent_coordinator.email_attention_deliveries
+  (status, created_at)
+  where status = 'pending';
+
+-- Message/thread identity, material-change fingerprint, and suppression state.
+-- Sender, subject, snippets, bodies, attachments, and raw mailbox addresses do
+-- not belong in this table.
+create table if not exists ai_agent_coordinator.email_attention_items (
+  source_id text not null,
+  stable_id text not null,
+  current_fingerprint text not null,
+  current_bucket text not null,
+  deadline_at timestamptz,
+  last_seen_at timestamptz not null,
+  last_emitted_fingerprint text,
+  last_emitted_at timestamptz,
+  pending_delivery_key text,
+  primary key (source_id, stable_id),
+  constraint email_attention_items_source_id_fk
+    foreign key (source_id)
+    references ai_agent_coordinator.email_attention_sources (source_id)
+    on delete cascade,
+  constraint email_attention_items_pending_delivery_fk
+    foreign key (pending_delivery_key)
+    references ai_agent_coordinator.email_attention_deliveries (idempotency_key)
+    on delete set null,
+  constraint email_attention_items_stable_id_chk
+    check (char_length(stable_id) between 1 and 512),
+  constraint email_attention_items_current_fingerprint_chk
+    check (current_fingerprint ~ '^[0-9a-f]{64}$'),
+  constraint email_attention_items_last_emitted_fingerprint_chk
+    check (
+      last_emitted_fingerprint is null
+      or last_emitted_fingerprint ~ '^[0-9a-f]{64}$'
+    ),
+  constraint email_attention_items_bucket_chk
+    check (current_bucket in ('urgent', 'needs_reply_soon')),
+  constraint email_attention_items_emitted_pair_chk
+    check (
+      (last_emitted_fingerprint is null and last_emitted_at is null)
+      or (last_emitted_fingerprint is not null and last_emitted_at is not null)
+    )
+);
+
+create index if not exists email_attention_items_pending_idx
+  on ai_agent_coordinator.email_attention_items (pending_delivery_key)
+  where pending_delivery_key is not null;
+
+create index if not exists email_attention_items_deadline_idx
+  on ai_agent_coordinator.email_attention_items (deadline_at)
+  where deadline_at is not null;
+
+-- Exact fingerprints carried by each outbox delivery. This decouples a
+-- delivered historical fingerprint from any newer material change observed
+-- for the same message before the delivery completes.
+create table if not exists ai_agent_coordinator.email_attention_delivery_items (
+  idempotency_key text not null,
+  source_id text not null,
+  stable_id text not null,
+  fingerprint text not null,
+  primary key (idempotency_key, source_id, stable_id),
+  constraint email_attention_delivery_items_delivery_fk
+    foreign key (idempotency_key)
+    references ai_agent_coordinator.email_attention_deliveries (idempotency_key)
+    on delete cascade,
+  constraint email_attention_delivery_items_item_fk
+    foreign key (source_id, stable_id)
+    references ai_agent_coordinator.email_attention_items (source_id, stable_id)
+    on delete cascade,
+  constraint email_attention_delivery_items_fingerprint_chk
+    check (fingerprint ~ '^[0-9a-f]{64}$')
+);
+
+-- Aggregate run history; no message body or snippet content is retained.
+create table if not exists ai_agent_coordinator.email_attention_runs (
+  run_id text primary key,
+  mode text not null,
+  started_at timestamptz not null,
+  finished_at timestamptz not null,
+  scan_status text not null,
+  notification_status text not null,
+  attention_item_count bigint not null,
+  source_success_count bigint not null,
+  source_failure_count bigint not null,
+  error text,
+  constraint email_attention_runs_mode_chk
+    check (mode in ('scheduled', 'manual_test')),
+  constraint email_attention_runs_scan_status_chk
+    check (scan_status in ('success', 'partial', 'failed')),
+  constraint email_attention_runs_counts_chk
+    check (
+      attention_item_count >= 0
+      and source_success_count >= 0
+      and source_failure_count >= 0
+    ),
+  constraint email_attention_runs_error_chk
+    check (error is null or char_length(error) <= 512),
+  constraint email_attention_runs_time_chk
+    check (finished_at >= started_at)
+);
+
+create index if not exists email_attention_runs_finished_idx
+  on ai_agent_coordinator.email_attention_runs (finished_at desc);
+
+-- Compare-and-swap lease used to keep multiple coordinator replicas from
+-- running the same scheduled scan concurrently.
+create table if not exists ai_agent_coordinator.email_attention_leases (
+  name text primary key,
+  holder text not null,
+  expires_at timestamptz not null,
+  updated_at timestamptz not null default now(),
+  constraint email_attention_leases_name_chk
+    check (char_length(name) between 1 and 128),
+  constraint email_attention_leases_holder_chk
+    check (char_length(holder) between 1 and 128)
+);
+
+create index if not exists email_attention_leases_expiry_idx
+  on ai_agent_coordinator.email_attention_leases (expires_at);
