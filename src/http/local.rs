@@ -44,6 +44,9 @@ pub struct SessionResponse {
     shared_user_id: String,
     provider: String,
     roles: Vec<String>,
+    amr: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    acr: Option<String>,
 }
 
 pub async fn register(
@@ -131,6 +134,8 @@ pub async fn refresh(
         shared_user_id: session.identity.shared_user_id.to_string(),
         provider: session.identity.provider,
         roles: session.identity.roles,
+        amr: access.amr,
+        acr: access.acr,
     }))
 }
 
@@ -189,6 +194,8 @@ pub(crate) async fn response_from_issued_with_assurance(
         shared_user_id,
         provider,
         roles,
+        amr: issued.access.amr,
+        acr: issued.access.acr,
     })
 }
 
