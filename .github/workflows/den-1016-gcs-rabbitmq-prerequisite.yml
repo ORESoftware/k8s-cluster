@@ -7,8 +7,10 @@ on:
     paths:
       - '.github/workflows/den-1016-gcs-rabbitmq-prerequisite.yml'
       - 'remote/deployments/gcs/k8s/ec2/gcs-rabbitmq.externalsecret.yaml'
+      - 'remote/deployments/gcs/k8s/ec2/gcs-rabbitmq.deployment.yaml'
       - 'remote/deployments/gcs/k8s/ec2/kustomization.yaml'
       - 'remote/argocd/observability/gcs-rabbitmq-management.externalsecret.yaml'
+      - 'remote/argocd/observability/k8s-resource-exporter.deployment.yaml'
       - 'remote/argocd/observability/kustomization.yaml'
   push:
     branches:
@@ -16,8 +18,10 @@ on:
     paths:
       - '.github/workflows/den-1016-gcs-rabbitmq-prerequisite.yml'
       - 'remote/deployments/gcs/k8s/ec2/gcs-rabbitmq.externalsecret.yaml'
+      - 'remote/deployments/gcs/k8s/ec2/gcs-rabbitmq.deployment.yaml'
       - 'remote/deployments/gcs/k8s/ec2/kustomization.yaml'
       - 'remote/argocd/observability/gcs-rabbitmq-management.externalsecret.yaml'
+      - 'remote/argocd/observability/k8s-resource-exporter.deployment.yaml'
       - 'remote/argocd/observability/kustomization.yaml'
   workflow_dispatch: {}
 
@@ -50,13 +54,19 @@ jobs:
           grep -Fq '::add-mask::' "$workflow"
           grep -Fq 'automation/gcs-rabbitmq-secret-status' "$workflow"
           grep -Fq 'dd/remote-dev/gcs-rabbitmq' "$workflow"
-          ! grep -Fq 'set -x' "$workflow"
+          if grep -Fq 'set -x' "$workflow"; then
+            echo 'Shell tracing is forbidden in the secret prerequisite workflow.' >&2
+            exit 1
+          fi
           grep -Fq 'gcs-rabbitmq.externalsecret.yaml' remote/deployments/gcs/k8s/ec2/kustomization.yaml
           grep -Fq 'gcs-rabbitmq-management.externalsecret.yaml' remote/argocd/observability/kustomization.yaml
-          ! grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' \
+          if grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' \
             .github/workflows/den-1016-gcs-rabbitmq-prerequisite.yml \
             remote/deployments/gcs/k8s/ec2 \
-            remote/argocd/observability
+            remote/argocd/observability; then
+            echo 'Conflict markers are forbidden in staged security resources.' >&2
+            exit 1
+          fi
 
   stage:
     name: provision secret and prove ExternalSecret readiness
@@ -102,6 +112,13 @@ jobs:
           SECRET_ID: dd/remote-dev/gcs-rabbitmq
         run: |
           set -euo pipefail
+          payload_file=''
+          cleanup_payload_file() {
+            if [ -n "$payload_file" ]; then
+              rm -f "$payload_file"
+            fi
+          }
+          trap cleanup_payload_file EXIT
 
           validate_payload() {
             jq -e '
@@ -138,12 +155,17 @@ jobs:
                   RABBITMQ_ERLANG_COOKIE: $cookie
                 }'
             )"
+            payload_file="$(mktemp "$RUNNER_TEMP/gcs-rabbitmq-secret.XXXXXX.json")"
+            chmod 600 "$payload_file"
+            printf '%s' "$payload" >"$payload_file"
             aws secretsmanager create-secret \
               --name "$SECRET_ID" \
               --description 'GCS RabbitMQ credentials managed for External Secrets Operator' \
-              --secret-string "$payload" \
+              --secret-string "file://$payload_file" \
               --tags Key=managed-by,Value=k8s-cluster Key=linear-issue,Value=DEN-1016 \
               >/dev/null
+            rm -f "$payload_file"
+            payload_file=''
             unset broker_password erlang_cookie payload
             payload="$(
               aws secretsmanager get-secret-value \
