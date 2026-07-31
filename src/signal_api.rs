@@ -126,7 +126,6 @@ pub(crate) async fn publish_prekeys_handler(
                 })
                 .collect(),
             expires_at_ms,
-<<<<<<< HEAD
         },
     )
     .await
@@ -137,51 +136,6 @@ pub(crate) async fn publish_prekeys_handler(
         device_revision: published.device_revision,
         unclaimed_prekey_count: published.unclaimed_prekey_count,
     }))
-=======
-        })
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct PublishPreKeysResponse {
-    bundle_revision: u64,
-    device_revision: u64,
-    unclaimed_prekey_count: u32,
-}
-
-impl TryFrom<signal_store::PublishedPreKeys> for PublishPreKeysResponse {
-    type Error = ApiError;
-
-    fn try_from(published: signal_store::PublishedPreKeys) -> Result<Self, Self::Error> {
-        Ok(Self {
-            bundle_revision: published
-                .bundle_revision
-                .try_into()
-                .map_err(|_| ApiError::Internal)?,
-            device_revision: published
-                .device_revision
-                .try_into()
-                .map_err(|_| ApiError::Internal)?,
-            unclaimed_prekey_count: published
-                .unclaimed_prekey_count
-                .try_into()
-                .map_err(|_| ApiError::Internal)?,
-        })
-    }
-}
-
-pub(crate) async fn publish_prekeys_handler(
-    State(state): State<AppState>,
-    who: AuthedDevice,
-    JsonBody(request): JsonBody<PublishPreKeysRequest>,
-) -> Result<Json<PublishPreKeysResponse>, ApiError> {
-    let request = request.into_store_request(who)?;
-    let published = signal_store::publish_prekeys(state.database(), request)
-        .await
-        .map_err(map_store_error)?;
-    Ok(Json(published.try_into()?))
->>>>>>> den-536-publish-prekey-parity
 }
 
 #[derive(Debug, Serialize)]
