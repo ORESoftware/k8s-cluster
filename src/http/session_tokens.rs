@@ -41,8 +41,18 @@ pub(super) async fn issue_with_assurance(
         let refresh = RefreshToken::generate();
         let expires_at = chrono::Utc::now().fixed_offset()
             + TimeDelta::seconds(state.config.sessions.refresh_ttl_secs as i64);
+        // The session row keeps the assurance that was actually proven, so it
+        // stays available for audit even though refresh deliberately mints at
+        // base assurance rather than replaying it.
         let session = db
-            .create_session(identity, &refresh.hash, expires_at, None)
+            .create_session(
+                identity,
+                &refresh.hash,
+                expires_at,
+                None,
+                assurance.level(),
+                &assurance.amr,
+            )
             .await?;
         (
             session.identity,
