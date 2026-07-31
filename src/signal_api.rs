@@ -42,11 +42,7 @@ pub(crate) fn routes() -> Router<AppState> {
         )
 }
 
-<<<<<<< HEAD
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
-=======
-#[derive(Debug, Deserialize, Serialize)]
->>>>>>> den-536-publish-prekey-parity
 #[serde(deny_unknown_fields)]
 pub(crate) struct OneTimePreKeyRequest {
     prekey_id: u32,
