@@ -1,0 +1,47 @@
+name: Dispatch canonical mcp-rust-libs publisher once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-dispatch-mcp-rust-libs-publisher-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: dispatch-canonical-mcp-rust-libs-publisher
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch the reviewed trusted-main publisher
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          response="$(mktemp)"
+          trap 'rm -f "$response"' EXIT
+          status="$(
+            curl --silent --show-error \
+              --output "$response" \
+              --write-out '%{http_code}' \
+              --request POST \
+              --header 'Accept: application/vnd.github+json' \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/ops-publish-mcp-rust-libs.yml/dispatches" \
+              --data '{"ref":"main"}'
+          )"
+          if [[ "$status" != 204 ]]; then
+            echo "publisher dispatch failed with HTTP ${status}" >&2
+            cat "$response" >&2
+            exit 1
+          fi
+          echo 'Canonical mcp-rust-libs publisher dispatched from trusted main.'
