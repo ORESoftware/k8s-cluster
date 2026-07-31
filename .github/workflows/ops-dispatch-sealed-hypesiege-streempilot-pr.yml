@@ -1,39 +1,41 @@
-name: Dispatch sealed fleet from exact trigger PR
-run-name: Dispatch sealed fleet from PR #${{ github.event.pull_request.number }}
+name: Dispatch protected fleet from exact trigger PR
+run-name: Dispatch protected fleet from PR #${{ github.event.pull_request.number }}
 
 on:
   pull_request:
     branches:
       - main
-    types: [opened, reopened, synchronize]
+    types: [opened, reopened, synchronize, ready_for_review]
 
 permissions:
   actions: write
   contents: read
   issues: write
   pull-requests: write
+  statuses: write
 
 concurrency:
-  group: ops-dispatch-sealed-hypesiege-streempilot-${{ github.run_id }}
-  cancel-in-progress: false
+  group: ops-dispatch-protected-hypesiege-streempilot-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   dispatch:
     if: >-
       github.actor == 'ORESoftware' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'ops/trigger-sealed-hypesiege-streempilot-20260731' &&
-      github.event.pull_request.title == 'ops(DEN-877): trigger sealed fleet publication'
+      github.event.pull_request.head.ref == 'agent/critical-org-publish-trigger-main-20260731-v11' &&
+      github.event.pull_request.title == 'DO NOT MERGE: registered protected-profile publication v11'
     runs-on: ubuntu-24.04
-    timeout-minutes: 65
+    timeout-minutes: 70
     env:
-      PUBLISH_WORKFLOW: ops-publish-missing-org-repositories-v2.yml
-      PUBLICATION_PR: '270'
-      MARKER_PATH: docs/ops/triggers/hypesiege-streempilot-publication-2026-07-31.json
-      EXPECTED_COORDINATOR_SHA: e125b9c7c0be1d625abad3ff276311639d52585e
+      PUBLISH_WORKFLOW: ops-publish-missing-org-repositories-gh-profile.yml
+      PUBLICATION_PR: '291'
+      MARKER_PATH: .github/critical-org-publish-trigger-main
+      EXPECTED_MARKER: publish=protected-gh-profile-v1
 
     steps:
-      - name: Validate the exact one-file trigger contract
+      - name: Validate the exact carrier and dispatch the protected publisher
+        id: dispatch
         env:
           GH_TOKEN: ${{ github.token }}
           TRIGGER_PR: ${{ github.event.pull_request.number }}
@@ -41,124 +43,142 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          files="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRIGGER_PR}/files?per_page=100")"
-          test "$(jq 'length' <<<"$files")" = 1
-          test "$(jq -r '.[0].filename' <<<"$files")" = "$MARKER_PATH"
-          test "$(jq -r '.[0].status' <<<"$files")" = added
+
+          comment() {
+            local body=$1
+            gh pr comment "$TRIGGER_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+            if [[ "$PUBLICATION_PR" != "$TRIGGER_PR" ]]; then
+              gh pr comment "$PUBLICATION_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+            fi
+          }
+
+          fail() {
+            local description=$1
+            local details=${2:-No additional diagnostic was returned.}
+            comment "Protected fleet dispatcher failed before repository mutation: **${description}**\n\n\`\`\`text\n${details:0:2500}\n\`\`\`"
+            exit 1
+          }
+
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || fail 'invalid carrier head SHA' "$HEAD_SHA"
+
+          files="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRIGGER_PR}/files?per_page=100" 2>&1)" || \
+            fail 'unable to read carrier files' "$files"
+          [[ "$(jq 'length' <<<"$files")" == 1 ]] || \
+            fail 'carrier must change exactly one file' "$(jq -r '.[].filename' <<<"$files")"
+          [[ "$(jq -r '.[0].filename' <<<"$files")" == "$MARKER_PATH" ]] || \
+            fail 'carrier path is outside the approved marker' "$(jq -r '.[0].filename' <<<"$files")"
+          [[ "$(jq -r '.[0].status' <<<"$files")" == added ]] || \
+            fail 'carrier marker must be newly added' "$(jq -r '.[0].status' <<<"$files")"
 
           encoded="$(
             gh api "repos/${GITHUB_REPOSITORY}/contents/${MARKER_PATH}?ref=${HEAD_SHA}" \
-              --jq .content
-          )"
-          printf '%s' "$encoded" | base64 --decode > "$RUNNER_TEMP/trigger.json"
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
+              --jq .content 2>&1
+          )" || fail 'unable to read carrier marker' "$encoded"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode 2>/dev/null)" || \
+            fail 'carrier marker is not valid base64 content'
+          [[ "$marker" == "$EXPECTED_MARKER" ]] || \
+            fail 'carrier marker content is not approved' "$marker"
 
-          payload = json.loads(Path(os.environ['RUNNER_TEMP'], 'trigger.json').read_text())
-          assert payload == {
-              'schema_version': 1,
-              'operation': 'publish-sealed-hypesiege-streempilot-fleet',
-              'publication_pr': 270,
-              'coordinator_sha': os.environ['EXPECTED_COORDINATOR_SHA'],
-              'repository_count': 32,
-              'organization_counts': {'hypesiege': 15, 'StreemPilot': 17},
-          }
-          PY
+          workflow="$(
+            gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${PUBLISH_WORKFLOW}" 2>&1
+          )" || fail 'protected publisher workflow is not registered' "$workflow"
+          [[ "$(jq -r '.state' <<<"$workflow")" == active ]] || \
+            fail 'protected publisher workflow is not active' "$workflow"
 
-      - name: Dispatch the trusted-main publisher and capture its run ID
-        id: dispatch
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TRIGGER_PR: ${{ github.event.pull_request.number }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          dispatcher_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          request_id="den-877-pr-${TRIGGER_PR}-dispatcher-${GITHUB_RUN_ID}"
-          before="$(
-            gh run list \
-              --repo "$GITHUB_REPOSITORY" \
-              --workflow "$PUBLISH_WORKFLOW" \
-              --event workflow_dispatch \
-              --branch main \
-              --limit 1 \
-              --json databaseId \
-              --jq '.[0].databaseId // empty'
-          )"
+          runs_endpoint="repos/${GITHUB_REPOSITORY}/actions/workflows/${PUBLISH_WORKFLOW}/runs?branch=main&event=workflow_dispatch&per_page=100"
+          before="$RUNNER_TEMP/before-run-ids.txt"
+          before_runs="$(gh api "$runs_endpoint" 2>&1)" || \
+            fail 'unable to snapshot protected publisher runs' "$before_runs"
+          jq -r '.workflow_runs[].id' <<<"$before_runs" | sort -n > "$before"
 
-          gh workflow run "$PUBLISH_WORKFLOW" \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref main \
-            -f request_id="$request_id"
+          dispatch_response="$(
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${PUBLISH_WORKFLOW}/dispatches" \
+              -f ref=main 2>&1
+          )" || fail 'workflow dispatch API rejected the request' "$dispatch_response"
 
           run_id=''
-          for _ in $(seq 1 60); do
-            candidate="$(
-              gh run list \
-                --repo "$GITHUB_REPOSITORY" \
-                --workflow "$PUBLISH_WORKFLOW" \
-                --event workflow_dispatch \
-                --branch main \
-                --limit 1 \
-                --json databaseId \
-                --jq '.[0].databaseId // empty'
-            )"
-            if [[ -n "$candidate" && "$candidate" != "$before" ]]; then
-              run_id="$candidate"
-              break
-            fi
+          last_runs=''
+          for _ in $(seq 1 90); do
+            last_runs="$(gh api "$runs_endpoint" 2>&1)" || \
+              fail 'unable to list publisher runs after dispatch' "$last_runs"
+            while IFS= read -r candidate; do
+              [[ "$candidate" =~ ^[0-9]+$ ]] || continue
+              if ! grep -Fxq "$candidate" "$before"; then
+                run_id="$candidate"
+                break
+              fi
+            done < <(jq -r '.workflow_runs[].id' <<<"$last_runs")
+            [[ "$run_id" =~ ^[0-9]+$ ]] && break
             sleep 2
           done
-          test -n "$run_id"
+
+          if [[ ! "$run_id" =~ ^[0-9]+$ ]]; then
+            recent="$(
+              jq -r '.workflow_runs[:10][] | [.id,.status,.conclusion,.display_title] | @tsv' \
+                <<<"$last_runs" 2>/dev/null || true
+            )"
+            fail 'dispatch was accepted but no new publisher run appeared' "$recent"
+          fi
+
           run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
           echo "run_url=$run_url" >> "$GITHUB_OUTPUT"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state=pending \
+            -f context='ops/protected-fleet-publication' \
+            -f description="protected publisher run ${run_id} is executing" \
+            -f target_url="$run_url" >/dev/null || true
+          comment "Validated exact one-file carrier and dispatched protected publisher: ${run_url}"
 
-          gh pr comment "$TRIGGER_PR" \
-            --repo "$GITHUB_REPOSITORY" \
-            --body "Validated exact trigger; dispatcher ${dispatcher_url}; publisher ${run_url}" \
-            >/dev/null || true
-          gh pr comment "$PUBLICATION_PR" \
-            --repo "$GITHUB_REPOSITORY" \
-            --body "Trusted trigger PR #${TRIGGER_PR} dispatched sealed fleet publisher ${run_url} from ${dispatcher_url}" \
-            >/dev/null || true
-
-      - name: Follow the exact publisher run to completion
+      - name: Follow the exact protected publisher run
+        id: follow
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ steps.dispatch.outputs.run_id }}
         shell: bash
         run: |
           set -euo pipefail
-          gh run watch "$RUN_ID" \
-            --repo "$GITHUB_REPOSITORY" \
-            --exit-status
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]]
+          status=queued
+          conclusion=''
+          for _ in $(seq 1 240); do
+            current="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}")"
+            status="$(jq -r '.status' <<<"$current")"
+            conclusion="$(jq -r '.conclusion // empty' <<<"$current")"
+            attempt="$(jq -r '.run_attempt' <<<"$current")"
+            echo "publisher run=${RUN_ID} attempt=${attempt} status=${status} conclusion=${conclusion:-pending}"
+            [[ "$status" == completed ]] && break
+            sleep 15
+          done
+          [[ "$status" == completed ]]
+          [[ "$conclusion" == success ]]
 
-      - name: Report the exact publisher result
+      - name: Report the exact protected publisher result
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           TRIGGER_PR: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
           RUN_URL: ${{ steps.dispatch.outputs.run_url }}
           DISPATCH_OUTCOME: ${{ steps.dispatch.outcome }}
-          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
-          JOB_RESULT: ${{ job.status }}
+          FOLLOW_OUTCOME: ${{ steps.follow.outcome }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$DISPATCH_OUTCOME" = success && -n "$RUN_ID" && "$JOB_RESULT" = success ]]; then
-            body="Protected organization repository publisher completed successfully: ${RUN_URL}"
+          if [[ "$DISPATCH_OUTCOME" == success && "$FOLLOW_OUTCOME" == success && -n "$RUN_ID" ]]; then
+            state=success
+            body="Protected organization repository publisher completed successfully: ${RUN_URL}. Direct remote inventory and exact-SHA audit are now required."
           else
-            body="Protected organization repository publisher did not complete successfully. Dispatch=${DISPATCH_OUTCOME}; job=${JOB_RESULT}; run=${RUN_URL:-unavailable}"
+            state=failure
+            body="Protected organization repository publisher did not complete successfully. Dispatch=${DISPATCH_OUTCOME}; follow=${FOLLOW_OUTCOME}; run=${RUN_URL:-unavailable}."
           fi
-          gh pr comment "$TRIGGER_PR" \
-            --repo "$GITHUB_REPOSITORY" \
-            --body "$body" >/dev/null || true
-          gh pr comment "$PUBLICATION_PR" \
-            --repo "$GITHUB_REPOSITORY" \
-            --body "$body" >/dev/null || true
-          test "$DISPATCH_OUTCOME" = success
-          test -n "$RUN_ID"
-          test "$JOB_RESULT" = success
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${HEAD_SHA}" \
+            -f state="$state" \
+            -f context='ops/protected-fleet-publication' \
+            -f description="publisher ${FOLLOW_OUTCOME:-not-run}" \
+            ${RUN_URL:+-f target_url="$RUN_URL"} >/dev/null || true
+          gh pr comment "$TRIGGER_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+          gh pr comment "$PUBLICATION_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+          [[ "$state" == success ]]
