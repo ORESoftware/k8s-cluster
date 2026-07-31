@@ -53,10 +53,11 @@ jobs:
           readonly source_repository='ORESoftware/testing'
           readonly source_sha='069b1aa4251658c8348d2eb477ad71369d9b742b'
           readonly source_subdirectory='mcp-rust-libs'
-          readonly source_manifest_sha256='288e6c5db4d6dfad4dce9bc069e3c1f19bd7ea35134ae68d8a138bed6d9b5bf6'
+          readonly source_manifest_sha256='b9ba89f29dca3e5020430d3a5d35967e523d3e94db9168a91cdf24a9bd5f2a33'
           readonly target_repository='ORESoftware/mcp-rust-libs'
           readonly target_branch='bootstrap/semantic-polyglot-20260731'
-          readonly baseline_timestamp='2026-07-31T13:30:00Z'
+          readonly legacy_timestamp='2026-07-31T13:30:00Z'
+          readonly gate_timestamp='2026-07-31T13:32:00Z'
           work="$(mktemp -d /tmp/mcp-rust-libs-publisher.XXXXXX)"
 
           cleanup() {
@@ -84,6 +85,9 @@ jobs:
             Cargo.toml \
             .zpkg.toml \
             .github/workflows/scaffold.yml \
+            LICENSE-MIT \
+            LICENSE-APACHE \
+            README.md \
             packages/rust/Cargo.toml \
             packages/typescript/package.json \
             packages/dart/pubspec.yaml \
@@ -144,13 +148,40 @@ jobs:
           Canonical polyglot MCP commons repository. The reviewed implementation is introduced through the bootstrap pull request.
           README
           git -C "$baseline" add README.md
-          GIT_AUTHOR_DATE="$baseline_timestamp" GIT_COMMITTER_DATE="$baseline_timestamp" \
+          GIT_AUTHOR_DATE="$legacy_timestamp" GIT_COMMITTER_DATE="$legacy_timestamp" \
             git -C "$baseline" commit -m 'chore: initialize canonical repository'
-          expected_main="$(git -C "$baseline" rev-parse HEAD)"
-          expected_main_tree="$(git -C "$baseline" rev-parse 'HEAD^{tree}')"
+          legacy_main="$(git -C "$baseline" rev-parse HEAD)"
+          legacy_tree="$(git -C "$baseline" rev-parse 'HEAD^{tree}')"
+
+          mkdir -p "$baseline/.github/workflows"
+          cp "$source/README.md" "$baseline/README.md"
+          cp "$source/LICENSE-MIT" "$baseline/LICENSE-MIT"
+          cp "$source/LICENSE-APACHE" "$baseline/LICENSE-APACHE"
+          python3 - "$source/.github/workflows/scaffold.yml" "$baseline/.github/workflows/scaffold.yml" <<'PY'
+          from pathlib import Path
+          import sys
+
+          source_path = Path(sys.argv[1])
+          target_path = Path(sys.argv[2])
+          text = source_path.read_text(encoding="utf-8")
+          current = "on:\n  pull_request:\n  push:\n    branches: [main]\n  workflow_dispatch:\n"
+          bootstrap = "on:\n  pull_request:\n  workflow_dispatch:\n"
+          if current not in text:
+              raise SystemExit("target CI trigger block changed unexpectedly")
+          target_path.write_text(text.replace(current, bootstrap, 1), encoding="utf-8")
+          PY
+          git -C "$baseline" add README.md LICENSE-MIT LICENSE-APACHE .github/workflows/scaffold.yml
+          GIT_AUTHOR_DATE="$gate_timestamp" GIT_COMMITTER_DATE="$gate_timestamp" \
+            git -C "$baseline" commit -m 'ci: establish canonical bootstrap validation gate'
+          gated_main="$(git -C "$baseline" rev-parse HEAD)"
+          gated_tree="$(git -C "$baseline" rev-parse 'HEAD^{tree}')"
+
           remote_main="$(gh api "repos/$target_repository/git/ref/heads/main" --jq .object.sha 2>/dev/null || true)"
+          git -C "$baseline" remote add origin "https://github.com/${target_repository}.git"
           if test -z "$remote_main"; then
-            git -C "$baseline" remote add origin "https://github.com/${target_repository}.git"
+            git -C "$baseline" push origin HEAD:refs/heads/main
+            remote_main="$(gh api "repos/$target_repository/git/ref/heads/main" --jq .object.sha)"
+          elif test "$remote_main" = "$legacy_main"; then
             git -C "$baseline" push origin HEAD:refs/heads/main
             remote_main="$(gh api "repos/$target_repository/git/ref/heads/main" --jq .object.sha)"
           fi
@@ -160,14 +191,26 @@ jobs:
           git -C "$work/target" config user.name 'ORESoftware publication automation'
           git -C "$work/target" config user.email 'bot@oresoftware.dev'
           git -C "$work/target" fetch origin main
+          remote_main="$(git -C "$work/target" rev-parse origin/main)"
           main_tree="$(git -C "$work/target" rev-parse 'origin/main^{tree}')"
           if test "$main_tree" = "$source_tree"; then
             echo "ALREADY_PUBLISHED $target_repository main=$remote_main source_tree=$source_tree"
             exit 0
           fi
-          if test "$remote_main" != "$expected_main" || test "$main_tree" != "$expected_main_tree"; then
-            echo "Refusing unexpected $target_repository/main state: commit=$remote_main tree=$main_tree" >&2
-            exit 1
+
+          if test "$main_tree" != "$gated_tree"; then
+            main_snapshot="$work/main-snapshot"
+            mkdir -p "$main_snapshot"
+            git -C "$work/target" archive origin/main | tar -x -C "$main_snapshot"
+            mapfile -t top_level < <(find "$main_snapshot" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)
+            expected_top_level=(.github LICENSE-APACHE LICENSE-MIT README.md)
+            test "${top_level[*]}" = "${expected_top_level[*]}"
+            cmp "$main_snapshot/README.md" "$source/README.md"
+            cmp "$main_snapshot/LICENSE-MIT" "$source/LICENSE-MIT"
+            cmp "$main_snapshot/LICENSE-APACHE" "$source/LICENSE-APACHE"
+            if ! cmp "$main_snapshot/.github/workflows/scaffold.yml" "$source/.github/workflows/scaffold.yml"; then
+              cmp "$main_snapshot/.github/workflows/scaffold.yml" "$baseline/.github/workflows/scaffold.yml"
+            fi
           fi
 
           if git -C "$work/target" ls-remote --exit-code --heads origin "$target_branch" >/dev/null 2>&1; then
@@ -219,7 +262,7 @@ jobs:
             --jq '{number,state,isDraft,headRefOid,url}'
           test "$(gh pr view "$pr_number" --repo "$target_repository" --json headRefOid --jq .headRefOid)" = \
             "$head_sha"
-          echo "PUBLISHED $target_repository PR#$pr_number head=$head_sha source_tree=$source_tree"
+          echo "PUBLISHED $target_repository PR#$pr_number head=$head_sha source_tree=$source_tree main=$remote_main"
           REMOTE_SCRIPT
 
           chmod 700 "$remote_script"
