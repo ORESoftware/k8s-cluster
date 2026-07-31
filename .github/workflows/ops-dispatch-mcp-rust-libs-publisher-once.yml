@@ -1,4 +1,4 @@
-name: Dispatch and observe owner-authorized Meta Agents publication
+name: Publish exact Meta Agents repository with owner authorization
 run-name: Create and verify meta-agent-control-plane.rs @ ${{ github.sha }}
 
 on:
@@ -10,75 +10,196 @@ on:
 
 permissions:
   contents: read
-  actions: write
   issues: write
   pull-requests: write
+  statuses: write
 
 concurrency:
-  group: observe-owner-authorized-meta-agents-publication
+  group: direct-owner-authorized-meta-agents-publication
   cancel-in-progress: false
 
 jobs:
-  observe:
+  publish:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 30
+    env:
+      TRACKING_PR: '434'
+      GH_CONFIG_DIR: ${{ runner.temp }}/meta-agent-owner-auth
+      COMMENT_TOKEN: ${{ github.token }}
+      EXPECTED_LOGIN: ORESoftware
+      TARGET_REPOSITORY: meta-agents-demo/meta-agent-control-plane.rs
+      SOURCE_CARRIER_SHA: 55ee15c190b7cfa4e075f6984c7cb551acd4b9d3
+      BUNDLE_SHA256: 1ddaa03743b864348162149b7d2d2e2dce7eab585cf092ea14547c647fcec031
+      PUBLISHER_SHA256: e2fe6eaa622db02a54f83e27a822f64ad4b54971c883f97bbda4ac0a4db5d278
+      EXPECTED_MAIN: 4d6ec3ad0ec7b688f0e777129eee7e0f0d999df1
+      EXPECTED_FEATURE: 789d48039da232faed985d4f8de176959f117e08
+      FEATURE_REF: agent/den-1057-meta-agent-control-plane
+
     steps:
-      - name: Dispatch and observe exact owner-authorized publisher run
+      - name: Validate the execution tracking PR
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TRACKING_PR: '434'
-          PUBLISHER_WORKFLOW: ops-supervise-exact-meta-agent-publication.yml
         run: |
           set -Eeuo pipefail
-          repository="$GITHUB_REPOSITORY"
-          trusted_sha="$(gh api "repos/${repository}/commits/main" --jq .sha)"
-          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRACKING_PR}")"
+          test "$(jq -r .state <<<"$pull")" = open
+          test "$(jq -r .draft <<<"$pull")" = true
+          test "$(jq -r .user.login <<<"$pull")" = ORESoftware
+          test "$(jq -r .base.ref <<<"$pull")" = main
+          test "$(jq -r .title <<<"$pull")" = 'DO NOT MERGE: publish exact Meta Agents repository'
 
-          before="$(
-            gh run list --repo "$repository" --workflow "$PUBLISHER_WORKFLOW" \
-              --event workflow_dispatch --limit 100 --json databaseId \
-              | jq '[.[].databaseId]'
-          )"
-          gh workflow run "$PUBLISHER_WORKFLOW" --repo "$repository" --ref main \
-            -f tracking_pr="$TRACKING_PR"
+      - name: Check out the immutable reviewed publication source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/k8s-cluster
+          ref: ${{ env.SOURCE_CARRIER_SHA }}
+          path: source
+          persist-credentials: false
 
-          run=''
-          for _ in $(seq 1 120); do
-            candidates="$(
-              gh run list --repo "$repository" --workflow "$PUBLISHER_WORKFLOW" \
-                --event workflow_dispatch --limit 50 \
-                --json databaseId,headSha,createdAt,status,conclusion,url
-            )"
-            run="$(
-              jq -c --argjson before "$before" --arg sha "$trusted_sha" \
-                '[.[] | select(.headSha == $sha and ((.databaseId as $id | $before | index($id)) == null))] | sort_by(.createdAt) | last // empty' \
-                <<<"$candidates"
-            )"
-            test -n "$run" && break
-            sleep 2
+      - name: Obtain owner authorization, create repository, and verify exact refs
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          mkdir -p "$GH_CONFIG_DIR"
+          auth_log="$RUNNER_TEMP/meta-agent-owner-auth.log"
+          auth_pid=""
+          : >"$auth_log"
+
+          cleanup() {
+            if [[ -n "$auth_pid" ]] && kill -0 "$auth_pid" 2>/dev/null; then
+              kill "$auth_pid" 2>/dev/null || true
+              wait "$auth_pid" 2>/dev/null || true
+            fi
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN token
+            rm -f "$auth_log"
+            rm -rf "$GH_CONFIG_DIR" "$RUNNER_TEMP/meta-agent-publication"
+          }
+          trap cleanup EXIT
+
+          publish_status() {
+            local state="$1"
+            local description="$2"
+            local context="${3:-meta-agents-demo/publication}"
+            GH_TOKEN="$COMMENT_TOKEN" gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+              -f state="$state" \
+              -f context="$context" \
+              -f description="$description" \
+              -f target_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >/dev/null
+          }
+
+          (
+            env -u GH_TOKEN -u GITHUB_TOKEN \
+              GH_PROMPT_DISABLED=1 \
+              NO_COLOR=1 \
+              BROWSER=/bin/false \
+              gh auth login \
+                --hostname github.com \
+                --git-protocol https \
+                --web \
+                --scopes repo,read:org \
+                --insecure-storage
+          ) >"$auth_log" 2>&1 &
+          auth_pid=$!
+
+          code=""
+          for _ in $(seq 1 45); do
+            code="$(tr -d '\r' <"$auth_log" | grep -Eo '[A-Z0-9]{4}-[A-Z0-9]{4}' | head -n1 || true)"
+            if [[ -n "$code" ]]; then
+              break
+            fi
+            if ! kill -0 "$auth_pid" 2>/dev/null; then
+              break
+            fi
+            sleep 1
           done
-          test -n "$run"
-          run_id="$(jq -r .databaseId <<<"$run")"
-          run_url="$(jq -r .url <<<"$run")"
-          [[ "$run_id" =~ ^[0-9]+$ ]]
 
-          gh pr comment "$TRACKING_PR" --repo "$repository" --body \
-            "Owner-authorized Meta Agents publisher dispatched from trusted main \`${trusted_sha}\`: ${run_url}" >/dev/null || true
-
-          status=0
-          gh run watch "$run_id" --repo "$repository" --exit-status || status=$?
-          detail="$(gh run view "$run_id" --repo "$repository" --json headSha,status,conclusion,url)"
-          test "$(jq -r .headSha <<<"$detail")" = "$trusted_sha"
-
-          target='not-created'
-          main_ref='unavailable'
-          feature_ref='unavailable'
-          if metadata="$(gh api repos/meta-agents-demo/meta-agent-control-plane.rs 2>/dev/null)"; then
-            target="$(jq -r '"owner=" + .owner.login + " visibility=" + .visibility + " default_branch=" + .default_branch + " id=" + (.id|tostring)' <<<"$metadata")"
-            main_ref="$(gh api repos/meta-agents-demo/meta-agent-control-plane.rs/git/ref/heads/main --jq .object.sha 2>/dev/null || true)"
-            feature_ref="$(gh api repos/meta-agents-demo/meta-agent-control-plane.rs/git/ref/heads/agent/den-1057-meta-agent-control-plane --jq .object.sha 2>/dev/null || true)"
+          if [[ -z "$code" ]]; then
+            wait "$auth_pid" 2>/dev/null || true
+            auth_pid=""
+            publish_status failure "GitHub CLI did not emit a device code" || true
+            sed -E 's/[A-Z0-9]{4}-[A-Z0-9]{4}/[REDACTED-CODE]/g' "$auth_log" >&2 || true
+            exit 1
           fi
-          body="Owner-authorized Meta Agents publisher completed: ${run_url}\n\n- trusted main: \`${trusted_sha}\`\n- conclusion: \`$(jq -r '.conclusion // ""' <<<"$detail")\`\n- target: \`${target}\`\n- remote main: \`${main_ref}\`\n- remote feature: \`${feature_ref}\`"
-          gh pr comment "$TRACKING_PR" --repo "$repository" --body "$body" >/dev/null || true
-          exit "$status"
+
+          code_context="meta-agents-demo/device-auth/$code"
+          publish_status pending "Authorize at github.com/login/device" "$code_context"
+          GH_TOKEN="$COMMENT_TOKEN" gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body \
+            "Owner authorization required now: open **https://github.com/login/device** and enter **\`$code\`**. The workflow accepts only account \`ORESoftware\` with active admin membership in \`meta-agents-demo\`. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          echo "::notice title=GitHub device authorization::Open https://github.com/login/device and enter $code"
+
+          set +e
+          wait "$auth_pid"
+          auth_rc=$?
+          set -e
+          auth_pid=""
+          if [[ "$auth_rc" -ne 0 ]]; then
+            publish_status failure "Device authorization failed or expired" "$code_context" || true
+            GH_TOKEN="$COMMENT_TOKEN" gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body \
+              "Owner device authorization failed or expired. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >/dev/null || true
+            sed -E 's/[A-Z0-9]{4}-[A-Z0-9]{4}/[REDACTED-CODE]/g' "$auth_log" >&2 || true
+            exit "$auth_rc"
+          fi
+          rm -f "$auth_log"
+
+          actual_login="$(env -u GH_TOKEN -u GITHUB_TOKEN gh api user --jq .login)"
+          test "$actual_login" = "$EXPECTED_LOGIN"
+          membership="$(env -u GH_TOKEN -u GITHUB_TOKEN gh api user/memberships/orgs/meta-agents-demo)"
+          test "$(jq -er .role <<<"$membership")" = admin
+          test "$(jq -er .state <<<"$membership")" = active
+          unset membership
+          publish_status success "Authorized as ORESoftware org owner" "$code_context"
+          publish_status pending "Creating repository and pushing exact Git refs"
+
+          work="$RUNNER_TEMP/meta-agent-publication"
+          mkdir -p "$work"
+          bundle="$work/meta-agent-control-plane-den-1057.bundle"
+          cat source/scripts/critical-org-fleet/assets/meta.part* | base64 --decode >"$bundle"
+          printf '%s  %s\n' "$BUNDLE_SHA256" "$bundle" | sha256sum --check --strict
+          test "$(git bundle list-heads "$bundle" | wc -l)" -eq 2
+
+          publisher="source/scripts/critical-org-fleet/publish_meta_control_plane.py"
+          printf '%s  %s\n' "$PUBLISHER_SHA256" "$publisher" | sha256sum --check --strict
+          python3 -m py_compile "$publisher"
+
+          token="$(env -u GH_TOKEN -u GITHUB_TOKEN gh auth token)"
+          test -n "$token"
+          echo "::add-mask::$token"
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$token"
+          export GIT_TERMINAL_PROMPT=0
+          python3 "$publisher" "$bundle"
+
+          TARGET="$TARGET_REPOSITORY" MAIN="$EXPECTED_MAIN" FEATURE="$EXPECTED_FEATURE" FEATURE_REF="$FEATURE_REF" \
+          env -u GH_TOKEN -u GITHUB_TOKEN python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          target = os.environ['TARGET']
+          expected = {'main': os.environ['MAIN'], os.environ['FEATURE_REF']: os.environ['FEATURE']}
+          repo = json.loads(subprocess.run(
+              ['gh', 'repo', 'view', target, '--json', 'nameWithOwner,visibility,defaultBranchRef,url'],
+              check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+          ).stdout)
+          if repo['nameWithOwner'].lower() != target.lower() or repo['visibility'] != 'PUBLIC':
+              raise SystemExit(f'unexpected repository metadata: {repo!r}')
+          if (repo.get('defaultBranchRef') or {}).get('name') != 'main':
+              raise SystemExit(f'unexpected default branch: {repo!r}')
+          for branch, expected_sha in expected.items():
+              observed = subprocess.run(
+                  ['gh', 'api', f'repos/{target}/git/ref/heads/{branch}', '--jq', '.object.sha'],
+                  check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+              ).stdout.strip()
+              if observed != expected_sha:
+                  raise SystemExit(f'{branch}: {observed} != {expected_sha}')
+          print(json.dumps({'repository': target, 'refs': expected}, sort_keys=True))
+          PY
+
+          unset GITHUB_REPOSITORY_ADMIN_TOKEN token
+          publish_status success "Created and verified exact main and feature refs"
+          GH_TOKEN="$COMMENT_TOKEN" gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body \
+            "Created and verified \`meta-agents-demo/meta-agent-control-plane.rs\`: \`main\` \`$EXPECTED_MAIN\`; \`$FEATURE_REF\` \`$EXPECTED_FEATURE\`. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          GH_TOKEN="$COMMENT_TOKEN" gh api --method PATCH \
+            "repos/${GITHUB_REPOSITORY}/pulls/${TRACKING_PR}" -f state=closed >/dev/null
