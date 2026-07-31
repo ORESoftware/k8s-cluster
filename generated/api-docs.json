@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dd-sound-recorder-rs",
   "language": "rust",
-  "routeCount": 30,
+  "routeCount": 41,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 23
+    "user-generated": 34
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -59,6 +59,23 @@
       "purpose": "Machine-readable generated API route metadata.",
       "handlers": [
         "api_docs_json"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/mobile/v1/account",
+      "methods": [
+        "DELETE"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "delete_account"
       ],
       "sourceFiles": [
         "remote/deployments/dd-sound-recorder-rs/src/main.rs"
@@ -185,21 +202,55 @@
       "notes": ""
     },
     {
-      "path": "/api/mobile/v1/account",
+      "path": "/api/mobile/v1/devices/:install_id/revoke",
       "methods": [
-        "DELETE"
+        "POST"
       ],
       "routeType": "user-generated",
       "implementation": "code-first",
       "auth": "service-defined",
-      "purpose": "Deletes the signed-in Supabase Auth user and Sonus Auris backend account metadata.",
+      "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
-        "delete_account"
+        "revoke_device"
       ],
       "sourceFiles": [
         "remote/deployments/dd-sound-recorder-rs/src/main.rs"
       ],
-      "notes": "Requires x-supabase-auth and server-side SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY."
+      "notes": ""
+    },
+    {
+      "path": "/api/mobile/v1/devices/heartbeat",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "heartbeat_device"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/mobile/v1/devices/presence",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "device_presence_upgrade"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
     },
     {
       "path": "/api/mobile/v1/devices/register",
@@ -226,7 +277,7 @@
       "routeType": "user-generated",
       "implementation": "code-first",
       "auth": "service-defined",
-      "purpose": "Records the device transfer gate (pause + reason, network policy, battery) so server-managed cloud copies defer while the device pauses cloud streaming.",
+      "purpose": "Custom code-first route derived from the service router.",
       "handlers": [
         "update_transfer_state"
       ],
@@ -372,6 +423,76 @@
       "notes": ""
     },
     {
+      "path": "/api/v1/data/acoustic-events",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "list_acoustic_events"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/v1/data/devices",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "list_devices"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/v1/data/user-consents",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "list_user_consents"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/v1/data/user-settings",
+      "methods": [
+        "GET",
+        "PUT"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "get_user_settings",
+        "update_user_settings"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/docs/api",
       "methods": [
         "GET"
@@ -474,6 +595,23 @@
       "notes": ""
     },
     {
+      "path": "/internal/storage-mirror/drain",
+      "methods": [
+        "POST"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "mirror_drain"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
       "path": "/listen/:alert_id",
       "methods": [
         "GET"
@@ -501,6 +639,40 @@
       "purpose": "Prometheus metrics.",
       "handlers": [
         "metrics"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/oauth/callback",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "cloud_oauth_callback"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-sound-recorder-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/oauth/manual-callback",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "cloud_oauth_manual_callback"
       ],
       "sourceFiles": [
         "remote/deployments/dd-sound-recorder-rs/src/main.rs"

@@ -66,7 +66,10 @@ use aws_sdk_s3::{
     types::{Delete, ObjectIdentifier, ServerSideEncryption},
 };
 use axum::{
-    extract::{ConnectInfo, DefaultBodyLimit, MatchedPath, Path, Query, Request, State},
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        ConnectInfo, DefaultBodyLimit, MatchedPath, Path, Query, Request, State,
+    },
     http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode},
     middleware::Next,
     response::{Html, IntoResponse, Redirect, Response},
@@ -78,21 +81,22 @@ use base64::{
     Engine as _,
 };
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use futures_util::{SinkExt, StreamExt};
 #[cfg(test)]
 use jsonwebtoken::Algorithm;
 use once_cell::sync::Lazy;
 use prometheus::{Encoder, IntCounter, IntCounterVec, IntGauge, Opts, TextEncoder};
 use rand::{rngs::OsRng, RngCore};
-use reqwest::multipart::{Form, Part};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sonus_auris_interfaces::{
-    AcousticEvent, UserConsent, UserSettings, ACOUSTIC_EVENTS_COLUMNS, ACOUSTIC_EVENTS_TABLE,
+    AcousticEvent, DeviceRecord, UserConsent, UserSettings, ACOUSTIC_EVENTS_COLUMNS,
+    ACOUSTIC_EVENTS_TABLE, CLOUD_CONNECTIONS_TABLE, DEVICES_COLUMNS, DEVICES_TABLE,
     USER_CONSENTS_COLUMNS, USER_CONSENTS_TABLE, USER_SETTINGS_CLOUD_PROVIDER_VALUES,
     USER_SETTINGS_COLUMNS, USER_SETTINGS_PREFERRED_USE_CASE_VALUES, USER_SETTINGS_TABLE,
 };
-use tokio::sync::{Mutex as AsyncMutex, RwLock};
+use tokio::sync::{broadcast, Mutex as AsyncMutex, RwLock};
 use tracing::{error, field, info, warn, Instrument};
 use uuid::Uuid;
 
@@ -225,6 +229,9 @@ const MAX_CAPTURE_CLOCK_SKEW_SECONDS: i64 = 300;
 const DEFAULT_OAUTH_STATE_TTL_SECONDS: u64 = 600;
 const DEFAULT_CLOUD_COPY_BATCH_SIZE: i64 = 25;
 const MAX_CLOUD_COPY_BATCH_SIZE: i64 = 100;
+const DEFAULT_CLOUD_PROJECTION_BATCH_SIZE: i64 = 25;
+const MAX_CLOUD_PROJECTION_BATCH_SIZE: i64 = 100;
+const CLOUD_PROJECTION_CLAIM_LEASE: &str = "2 minutes";
 /// How long a device's reported transfer pause is honored before the drain
 /// resumes its server-managed copies. A live paused client re-affirms well
 /// within this window; a vanished one stops blocking after it (server copies
@@ -233,11 +240,24 @@ const TRANSFER_PAUSE_LEASE: &str = "6 hours";
 const DEFAULT_CLOUD_COPY_MAX_ATTEMPTS: i32 = 3;
 const DEFAULT_CLOUD_COPY_MAX_BYTES: i64 = 25 * 1024 * 1024;
 const MAX_CLOUD_COPY_MAX_BYTES: i64 = 200 * 1024 * 1024;
+// Google requires resumable-upload chunks to be multiples of 256 KiB. Eight
+// MiB keeps each provider request bounded while remaining efficient for the
+// normal 1-minute recording segments.
+const GOOGLE_RESUMABLE_CHUNK_BYTES: usize = 8 * 1024 * 1024;
+const DROPBOX_SINGLE_UPLOAD_MAX_BYTES: usize = 150 * 1024 * 1024;
+const DROPBOX_SESSION_CHUNK_BYTES: usize = 8 * 1024 * 1024;
+const CLOUD_PROVIDER_UPLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 const DEFAULT_CLOUD_BACKFILL_SEGMENTS: i64 = 240;
 const MAX_CLOUD_BACKFILL_SEGMENTS: i64 = 1000;
 const GOOGLE_DRIVE_SCOPE: &str = "https://www.googleapis.com/auth/drive.file";
 const MICROSOFT_ONEDRIVE_SCOPE: &str = "offline_access Files.ReadWrite.AppFolder";
+const DROPBOX_SCOPE: &str = "files.content.write";
+const GOOGLE_TOKEN_REVOCATION_URL: &str = "https://oauth2.googleapis.com/revoke";
+const DROPBOX_TOKEN_REVOCATION_URL: &str = "https://api.dropboxapi.com/2/auth/token/revoke";
+const PROVIDER_REVOCATION_TIMEOUT: Duration = Duration::from_secs(5);
 const SUPABASE_DEFAULT_AUDIENCE: &str = "authenticated";
+const SHARED_AUTH_INTROSPECTION_TIMEOUT: Duration = Duration::from_secs(5);
+const SHARED_AUTH_INTROSPECTION_MAX_BYTES: usize = 64 * 1024;
 const DEFAULT_USE_CASE: &str = "security";
 const SUPPORTED_USE_CASES: &[&str] = &["security", "music", "meeting", "voice_note", "ambient"];
 const MAX_PERMANENT_SAVE_SEGMENTS: usize = 1000;
@@ -267,6 +287,67 @@ struct AppState {
     pg_pool: Option<PgPool>,
     storage_history_cache: Arc<RwLock<Option<(Instant, bool)>>>,
     storage_history_refresh_lock: Arc<AsyncMutex<()>>,
+    device_presence: Arc<DevicePresenceHub>,
+}
+
+#[derive(Default)]
+struct DevicePresenceHub {
+    accounts: RwLock<HashMap<String, HashMap<String, usize>>>,
+    senders: RwLock<HashMap<String, broadcast::Sender<Vec<String>>>>,
+}
+
+impl DevicePresenceHub {
+    async fn join(&self, account_id: &str, device_id: &str) -> broadcast::Receiver<Vec<String>> {
+        {
+            let mut accounts = self.accounts.write().await;
+            let devices = accounts.entry(account_id.to_string()).or_default();
+            *devices.entry(device_id.to_string()).or_default() += 1;
+        }
+        let sender = self.sender(account_id).await;
+        let receiver = sender.subscribe();
+        self.publish(account_id, &sender).await;
+        receiver
+    }
+
+    async fn leave(&self, account_id: &str, device_id: &str) {
+        {
+            let mut accounts = self.accounts.write().await;
+            if let Some(devices) = accounts.get_mut(account_id) {
+                if let Some(count) = devices.get_mut(device_id) {
+                    *count = count.saturating_sub(1);
+                    if *count == 0 {
+                        devices.remove(device_id);
+                    }
+                }
+                if devices.is_empty() {
+                    accounts.remove(account_id);
+                }
+            }
+        }
+        let sender = self.sender(account_id).await;
+        self.publish(account_id, &sender).await;
+    }
+
+    async fn sender(&self, account_id: &str) -> broadcast::Sender<Vec<String>> {
+        if let Some(sender) = self.senders.read().await.get(account_id).cloned() {
+            return sender;
+        }
+        let mut senders = self.senders.write().await;
+        senders
+            .entry(account_id.to_string())
+            .or_insert_with(|| broadcast::channel(32).0)
+            .clone()
+    }
+
+    async fn publish(&self, account_id: &str, sender: &broadcast::Sender<Vec<String>>) {
+        let accounts = self.accounts.read().await;
+        let mut online = accounts
+            .get(account_id)
+            .map(|devices| devices.keys().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        online.sort();
+        let _ = sender.send(online);
+    }
 }
 
 #[derive(Clone)]
@@ -309,6 +390,7 @@ struct Config {
     cloud_backfill_segments: i64,
     google_oauth: OAuthProviderConfig,
     microsoft_oauth: OAuthProviderConfig,
+    dropbox_oauth: OAuthProviderConfig,
     /// Exact OAuth `redirectUri` values the backend will initiate a cloud-link
     /// flow with. Empty = accept any https / loopback-http URI (the OAuth
     /// provider still enforces its own registered-redirect allow-list). When
@@ -317,6 +399,7 @@ struct Config {
     oauth_redirect_allowlist: Vec<String>,
     google_drive_upload_url: String,
     microsoft_graph_base_url: String,
+    dropbox_upload_url: String,
     public_base_url: Option<String>,
     alert_email_to: String,
     alert_email_webhook_url: Option<String>,
@@ -332,6 +415,7 @@ struct Config {
     /// anonymous-only development can explicitly opt out.
     require_supabase: bool,
     supabase: SupabaseConfig,
+    shared_auth: SharedAuthConfig,
 }
 
 #[derive(Clone, Default)]
@@ -395,6 +479,43 @@ impl SupabaseConfig {
 
     fn auth_health_url(&self) -> Option<String> {
         self.url.as_ref().map(|url| format!("{url}/auth/v1/health"))
+    }
+}
+
+#[derive(Clone)]
+struct SharedAuthConfig {
+    /// Root URL of shared-auth-server. The request path is always appended by
+    /// this backend so configuration cannot redirect introspection elsewhere.
+    base_url: Option<String>,
+    /// Service credential accepted by shared-auth's `/auth/introspect`.
+    introspect_secret: Option<String>,
+    /// Minimum authentication assurance accepted for device enrollment.
+    required_aal: u8,
+    validation_errors: Vec<String>,
+}
+
+impl Default for SharedAuthConfig {
+    fn default() -> Self {
+        Self {
+            base_url: None,
+            introspect_secret: None,
+            required_aal: 2,
+            validation_errors: Vec::new(),
+        }
+    }
+}
+
+impl SharedAuthConfig {
+    fn is_enabled(&self) -> bool {
+        self.validation_errors.is_empty()
+            && self.base_url.is_some()
+            && self.introspect_secret.is_some()
+    }
+
+    fn introspect_url(&self) -> Option<String> {
+        self.base_url
+            .as_ref()
+            .map(|url| format!("{url}/auth/introspect"))
     }
 }
 
@@ -488,6 +609,7 @@ struct SealedTokenEnvelope {
 enum ServiceError {
     BadRequest(String),
     Unauthorized,
+    MfaRequired,
     NotFound(String),
     Conflict(String),
     Unavailable(String),
@@ -502,6 +624,11 @@ impl IntoResponse for ServiceError {
                 StatusCode::UNAUTHORIZED,
                 "unauthorized",
                 "authentication required".to_string(),
+            ),
+            ServiceError::MfaRequired => (
+                StatusCode::FORBIDDEN,
+                "mfa_required",
+                "a verified second factor is required".to_string(),
             ),
             ServiceError::NotFound(message) => (StatusCode::NOT_FOUND, "not_found", message),
             ServiceError::Conflict(message) => (StatusCode::CONFLICT, "conflict", message),
@@ -533,7 +660,37 @@ impl IntoResponse for ServiceError {
 struct DeviceAuth {
     account_id: String,
     device_id: String,
+    install_id: String,
     retention_hours: i32,
+}
+
+#[derive(Clone, Debug)]
+struct SharedAuthIdentity {
+    subject: String,
+    email: Option<String>,
+}
+
+impl SharedAuthIdentity {
+    fn external_subject(&self) -> String {
+        format!("shared-auth:{}", self.subject)
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct SharedAuthIntrospection {
+    active: bool,
+    #[serde(default)]
+    sub: Option<String>,
+    #[serde(default)]
+    email: Option<String>,
+    #[serde(default)]
+    email_verified: bool,
+    #[serde(default = "default_auth_assurance_level")]
+    aal: u8,
+}
+
+fn default_auth_assurance_level() -> u8 {
+    1
 }
 
 #[derive(Serialize)]
@@ -557,11 +714,14 @@ struct HealthResponse {
     cloud_token_sealer_configured: bool,
     google_drive_configured: bool,
     microsoft_onedrive_configured: bool,
+    dropbox_configured: bool,
     supabase_configured: bool,
     supabase_data_api_configured: bool,
     supabase_accounts_configured: bool,
     supabase_ready: Option<bool>,
     supabase_required: bool,
+    shared_auth_configured: bool,
+    shared_auth_required_aal: u8,
     retention_hours: i32,
     mirror_configured: bool,
     mirror_ready: Option<bool>,
@@ -806,6 +966,27 @@ struct RegisterDeviceResponse {
     device_id: String,
     device_token: String,
     policy: MobilePolicy,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceHeartbeatResponse {
+    ok: bool,
+    device_id: String,
+    server_time: DateTime<Utc>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RevokeDeviceResponse {
+    ok: bool,
+    install_id: String,
+    backend_tokens_revoked: usize,
+}
+
+#[derive(Deserialize)]
+struct SupabaseVisibleDevice {
+    user_id: String,
 }
 
 #[derive(Serialize)]
@@ -1170,6 +1351,16 @@ struct CompleteCloudLinkRequest {
     meta_data: Option<Value>,
 }
 
+/// OAuth query returned by Google, Microsoft, or Dropbox to the hosted
+/// callback registered for the Sonus Auris provider clients.
+#[derive(Debug, Default, Deserialize)]
+struct CloudOAuthCallbackQuery {
+    code: Option<String>,
+    state: Option<String>,
+    error: Option<String>,
+    error_description: Option<String>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CompleteCloudLinkResponse {
@@ -1208,6 +1399,8 @@ struct RevokeCloudConnectionResponse {
     ok: bool,
     connection_id: String,
     status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    provider_authorization_revoked: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -1279,6 +1472,22 @@ struct DrainCloudCopyResponse {
     results: Vec<CloudCopyDrainResult>,
 }
 
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DrainCloudConnectionProjectionsRequest {
+    max_items: Option<i64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DrainCloudConnectionProjectionsResponse {
+    ok: bool,
+    attempted: usize,
+    completed: usize,
+    failed: usize,
+    skipped: usize,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CloudCopyDrainResult {
@@ -1286,6 +1495,13 @@ struct CloudCopyDrainResult {
     provider: String,
     status: String,
     message: Option<String>,
+}
+
+struct CloudConnectionProjectionClaim {
+    seq: i64,
+    attempts: i32,
+    external_subject: String,
+    connection: CloudConnectionRecord,
 }
 
 struct SessionPolicy {
@@ -1459,6 +1675,100 @@ fn validate_service_url(value: &str, root_path_only: bool) -> bool {
         && url.query().is_none()
         && url.fragment().is_none()
         && (!root_path_only || matches!(url.path(), "" | "/"))
+}
+
+fn validate_shared_auth_url(value: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(value.trim()) else {
+        return false;
+    };
+    let host = url.host_str().unwrap_or_default();
+    let internal_http_host = matches!(host, "localhost" | "127.0.0.1" | "::1")
+        || host.ends_with(".svc")
+        || host.ends_with(".svc.cluster.local")
+        || (!host.is_empty()
+            && !host.contains('.')
+            && host
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-'));
+    (matches!(url.scheme(), "https") || (url.scheme() == "http" && internal_http_host))
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && matches!(url.path(), "" | "/")
+}
+
+fn optional_service_url_from_env(
+    names: &[&str],
+    validation_errors: &mut Vec<String>,
+) -> Option<String> {
+    let value = first_env(names)?;
+    if validate_service_url(&value, false) {
+        Some(value)
+    } else {
+        validation_errors.push(format!(
+            "{} must be HTTPS (or loopback HTTP) without credentials, query, or fragment",
+            names[0]
+        ));
+        None
+    }
+}
+
+fn shared_auth_config_from_env() -> SharedAuthConfig {
+    let mut validation_errors = Vec::new();
+    let mut base_url = first_env(&["SOUND_RECORDER_SHARED_AUTH_BASE_URL"])
+        .map(|url| url.trim_end_matches('/').to_string());
+    if base_url
+        .as_deref()
+        .is_some_and(|url| !validate_shared_auth_url(url))
+    {
+        validation_errors.push(
+            "SOUND_RECORDER_SHARED_AUTH_BASE_URL must be HTTPS, loopback HTTP, or an in-cluster HTTP service root without credentials, query, or fragment"
+                .to_string(),
+        );
+        base_url = None;
+    }
+    let introspect_secret = first_env(&["SOUND_RECORDER_SHARED_AUTH_INTROSPECT_SECRET"]);
+    if introspect_secret
+        .as_ref()
+        .is_some_and(|secret| secret.len() < 32)
+    {
+        validation_errors.push(
+            "SOUND_RECORDER_SHARED_AUTH_INTROSPECT_SECRET must contain at least 32 bytes"
+                .to_string(),
+        );
+    }
+    if base_url.is_some() != introspect_secret.is_some() {
+        validation_errors.push(
+            "SOUND_RECORDER_SHARED_AUTH_BASE_URL and SOUND_RECORDER_SHARED_AUTH_INTROSPECT_SECRET must be configured together"
+                .to_string(),
+        );
+    }
+    let required_aal = match first_env(&["SOUND_RECORDER_SHARED_AUTH_REQUIRED_AAL"]) {
+        Some(value) => match value.parse::<u8>() {
+            Ok(value @ 1..=2) => value,
+            _ => {
+                validation_errors
+                    .push("SOUND_RECORDER_SHARED_AUTH_REQUIRED_AAL must be 1 or 2".to_string());
+                2
+            }
+        },
+        None => 2,
+    };
+    SharedAuthConfig {
+        base_url,
+        introspect_secret,
+        required_aal,
+        validation_errors,
+    }
+}
+
+fn service_url_from_env(
+    names: &[&str],
+    default: &str,
+    validation_errors: &mut Vec<String>,
+) -> String {
+    optional_service_url_from_env(names, validation_errors).unwrap_or_else(|| default.to_string())
 }
 
 fn urls_have_same_origin(left: &str, right: &str) -> bool {
@@ -2061,7 +2371,7 @@ fn config_from_env() -> Config {
     );
     let require_supabase = env_bool(
         "SOUND_RECORDER_REQUIRE_SUPABASE",
-        true,
+        false,
         &mut validation_errors,
     );
     let mirror_readiness_required = env_bool(
@@ -2071,6 +2381,57 @@ fn config_from_env() -> Config {
     );
     let s3 = s3_storage_config_from_env();
     let mirror = mirror_storage_config_from_env(&s3);
+    let google_oauth = OAuthProviderConfig {
+        client_id: first_env(&["SOUND_RECORDER_GOOGLE_CLIENT_ID"]),
+        client_secret: first_env(&["SOUND_RECORDER_GOOGLE_CLIENT_SECRET"]),
+        authorization_url: optional_service_url_from_env(
+            &["SOUND_RECORDER_GOOGLE_AUTHORIZATION_URL"],
+            &mut validation_errors,
+        ),
+        token_url: optional_service_url_from_env(
+            &["SOUND_RECORDER_GOOGLE_TOKEN_URL"],
+            &mut validation_errors,
+        ),
+    };
+    let microsoft_oauth = OAuthProviderConfig {
+        client_id: first_env(&["SOUND_RECORDER_MICROSOFT_CLIENT_ID"]),
+        client_secret: first_env(&["SOUND_RECORDER_MICROSOFT_CLIENT_SECRET"]),
+        authorization_url: optional_service_url_from_env(
+            &["SOUND_RECORDER_MICROSOFT_AUTHORIZATION_URL"],
+            &mut validation_errors,
+        ),
+        token_url: optional_service_url_from_env(
+            &["SOUND_RECORDER_MICROSOFT_TOKEN_URL"],
+            &mut validation_errors,
+        ),
+    };
+    let dropbox_oauth = OAuthProviderConfig {
+        client_id: first_env(&["SOUND_RECORDER_DROPBOX_CLIENT_ID"]),
+        client_secret: first_env(&["SOUND_RECORDER_DROPBOX_CLIENT_SECRET"]),
+        authorization_url: optional_service_url_from_env(
+            &["SOUND_RECORDER_DROPBOX_AUTHORIZATION_URL"],
+            &mut validation_errors,
+        ),
+        token_url: optional_service_url_from_env(
+            &["SOUND_RECORDER_DROPBOX_TOKEN_URL"],
+            &mut validation_errors,
+        ),
+    };
+    let google_drive_upload_url = service_url_from_env(
+        &["SOUND_RECORDER_GOOGLE_DRIVE_UPLOAD_URL"],
+        "https://www.googleapis.com/upload/drive/v3/files",
+        &mut validation_errors,
+    );
+    let microsoft_graph_base_url = service_url_from_env(
+        &["SOUND_RECORDER_MICROSOFT_GRAPH_BASE_URL"],
+        "https://graph.microsoft.com/v1.0",
+        &mut validation_errors,
+    );
+    let dropbox_upload_url = service_url_from_env(
+        &["SOUND_RECORDER_DROPBOX_UPLOAD_URL"],
+        "https://content.dropboxapi.com/2/files/upload",
+        &mut validation_errors,
+    );
 
     Config {
         validation_errors,
@@ -2151,18 +2512,9 @@ fn config_from_env() -> Config {
             0,
             MAX_CLOUD_BACKFILL_SEGMENTS,
         ),
-        google_oauth: OAuthProviderConfig {
-            client_id: first_env(&["SOUND_RECORDER_GOOGLE_CLIENT_ID"]),
-            client_secret: first_env(&["SOUND_RECORDER_GOOGLE_CLIENT_SECRET"]),
-            authorization_url: first_env(&["SOUND_RECORDER_GOOGLE_AUTHORIZATION_URL"]),
-            token_url: first_env(&["SOUND_RECORDER_GOOGLE_TOKEN_URL"]),
-        },
-        microsoft_oauth: OAuthProviderConfig {
-            client_id: first_env(&["SOUND_RECORDER_MICROSOFT_CLIENT_ID"]),
-            client_secret: first_env(&["SOUND_RECORDER_MICROSOFT_CLIENT_SECRET"]),
-            authorization_url: first_env(&["SOUND_RECORDER_MICROSOFT_AUTHORIZATION_URL"]),
-            token_url: first_env(&["SOUND_RECORDER_MICROSOFT_TOKEN_URL"]),
-        },
+        google_oauth,
+        microsoft_oauth,
+        dropbox_oauth,
         oauth_redirect_allowlist: first_env(&["SOUND_RECORDER_OAUTH_REDIRECT_ALLOWLIST"])
             .map(|raw| {
                 raw.split(',')
@@ -2171,10 +2523,9 @@ fn config_from_env() -> Config {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default(),
-        google_drive_upload_url: first_env(&["SOUND_RECORDER_GOOGLE_DRIVE_UPLOAD_URL"])
-            .unwrap_or_else(|| "https://www.googleapis.com/upload/drive/v3/files".to_string()),
-        microsoft_graph_base_url: first_env(&["SOUND_RECORDER_MICROSOFT_GRAPH_BASE_URL"])
-            .unwrap_or_else(|| "https://graph.microsoft.com/v1.0".to_string()),
+        google_drive_upload_url,
+        microsoft_graph_base_url,
+        dropbox_upload_url,
         public_base_url: first_env(&["SOUND_RECORDER_PUBLIC_BASE_URL"]),
         // No hardcoded default recipient: a baked-in personal address would receive
         // every deployment's alert audio links if the operator forgot to set this.
@@ -2193,6 +2544,7 @@ fn config_from_env() -> Config {
         rate_limit_trust_forwarded_for,
         require_supabase,
         supabase: supabase_config_from_env(),
+        shared_auth: shared_auth_config_from_env(),
     }
 }
 
@@ -2328,6 +2680,9 @@ async fn state_from_config(config: Config) -> AppState {
     for error in &config.supabase.validation_errors {
         warn!(error, "Supabase configuration is invalid");
     }
+    for error in &config.shared_auth.validation_errors {
+        warn!(error, "shared-auth configuration is invalid");
+    }
     // Fail-closed diagnostic: a key without a pinned issuer would accept tokens
     // from *any* Supabase project (`aud` is "authenticated" everywhere), so
     // is_enabled() refuses to build a verifier. Say so loudly, because the
@@ -2382,6 +2737,7 @@ async fn state_from_config(config: Config) -> AppState {
         pg_pool,
         storage_history_cache: Arc::new(RwLock::new(None)),
         storage_history_refresh_lock: Arc::new(AsyncMutex::new(())),
+        device_presence: Arc::new(DevicePresenceHub::default()),
     }
 }
 
@@ -2404,6 +2760,9 @@ enum CloudProvider {
     GoogleDrive,
     MicrosoftOneDrive,
     AppleICloud,
+    Dropbox,
+    AmazonS3,
+    CloudflareR2,
 }
 
 impl CloudProvider {
@@ -2412,8 +2771,11 @@ impl CloudProvider {
             "google_drive" | "googledrive" | "google" => Ok(Self::GoogleDrive),
             "microsoft_onedrive" | "onedrive" | "microsoft" => Ok(Self::MicrosoftOneDrive),
             "apple_icloud" | "icloud" | "apple" => Ok(Self::AppleICloud),
+            "dropbox" | "drop_box" => Ok(Self::Dropbox),
+            "amazon_s3" | "aws_s3" | "s3" => Ok(Self::AmazonS3),
+            "cloudflare_r2" | "r2" => Ok(Self::CloudflareR2),
             _ => Err(ServiceError::BadRequest(
-                "provider must be google_drive, microsoft_onedrive, or apple_icloud".to_string(),
+                "provider must be google_drive, microsoft_onedrive, apple_icloud, dropbox, amazon_s3, or cloudflare_r2".to_string(),
             )),
         }
     }
@@ -2423,13 +2785,16 @@ impl CloudProvider {
             Self::GoogleDrive => "google_drive",
             Self::MicrosoftOneDrive => "microsoft_onedrive",
             Self::AppleICloud => "apple_icloud",
+            Self::Dropbox => "dropbox",
+            Self::AmazonS3 => "amazon_s3",
+            Self::CloudflareR2 => "cloudflare_r2",
         }
     }
 
     fn link_mode(self) -> &'static str {
         match self {
-            Self::AppleICloud => "client_managed",
-            Self::GoogleDrive | Self::MicrosoftOneDrive => "server_oauth",
+            Self::AppleICloud | Self::AmazonS3 | Self::CloudflareR2 => "client_managed",
+            Self::GoogleDrive | Self::MicrosoftOneDrive | Self::Dropbox => "server_oauth",
         }
     }
 
@@ -2437,7 +2802,8 @@ impl CloudProvider {
         match self {
             Self::GoogleDrive => Some(GOOGLE_DRIVE_SCOPE),
             Self::MicrosoftOneDrive => Some(MICROSOFT_ONEDRIVE_SCOPE),
-            Self::AppleICloud => None,
+            Self::AppleICloud | Self::AmazonS3 | Self::CloudflareR2 => None,
+            Self::Dropbox => Some(DROPBOX_SCOPE),
         }
     }
 
@@ -2445,7 +2811,8 @@ impl CloudProvider {
         match self {
             Self::GoogleDrive => Some(&config.google_oauth),
             Self::MicrosoftOneDrive => Some(&config.microsoft_oauth),
-            Self::AppleICloud => None,
+            Self::AppleICloud | Self::AmazonS3 | Self::CloudflareR2 => None,
+            Self::Dropbox => Some(&config.dropbox_oauth),
         }
     }
 
@@ -2453,9 +2820,10 @@ impl CloudProvider {
         match self {
             Self::GoogleDrive => Some("https://accounts.google.com/o/oauth2/v2/auth"),
             Self::MicrosoftOneDrive => {
-                Some("https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize")
+                Some("https://login.microsoftonline.com/common/oauth2/v2.0/authorize")
             }
-            Self::AppleICloud => None,
+            Self::AppleICloud | Self::AmazonS3 | Self::CloudflareR2 => None,
+            Self::Dropbox => Some("https://www.dropbox.com/oauth2/authorize"),
         }
     }
 
@@ -2463,14 +2831,26 @@ impl CloudProvider {
         match self {
             Self::GoogleDrive => Some("https://oauth2.googleapis.com/token"),
             Self::MicrosoftOneDrive => {
-                Some("https://login.microsoftonline.com/consumers/oauth2/v2.0/token")
+                Some("https://login.microsoftonline.com/common/oauth2/v2.0/token")
             }
-            Self::AppleICloud => None,
+            Self::AppleICloud | Self::AmazonS3 | Self::CloudflareR2 => None,
+            Self::Dropbox => Some("https://api.dropboxapi.com/oauth2/token"),
         }
     }
 
     fn is_server_managed(self) -> bool {
-        matches!(self, Self::GoogleDrive | Self::MicrosoftOneDrive)
+        matches!(
+            self,
+            Self::GoogleDrive | Self::MicrosoftOneDrive | Self::Dropbox
+        )
+    }
+
+    fn is_client_managed(self) -> bool {
+        !self.is_server_managed()
+    }
+
+    fn supports_copy_jobs(self) -> bool {
+        !matches!(self, Self::AmazonS3 | Self::CloudflareR2)
     }
 }
 
@@ -2744,6 +3124,94 @@ fn supabase_token(headers: &HeaderMap) -> Option<&str> {
         .filter(|value| !value.is_empty())
 }
 
+/// Shared-auth is kept separate from the device bearer token and the optional
+/// Supabase token. The header accepts either a raw JWT or `Bearer <JWT>`.
+fn shared_auth_token(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get("x-shared-auth")
+        .and_then(|value| value.to_str().ok())
+        .map(|value| strip_bearer_scheme(value).unwrap_or(value))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+async fn introspect_shared_auth(
+    state: &AppState,
+    token: &str,
+) -> Result<SharedAuthIdentity, ServiceError> {
+    if token.len() > 16 * 1024 {
+        return Err(ServiceError::Unauthorized);
+    }
+    let config = &state.config.shared_auth;
+    let url = config.introspect_url().ok_or_else(|| {
+        ServiceError::Unavailable("shared-auth introspection is not configured".to_string())
+    })?;
+    let secret = config.introspect_secret.as_deref().ok_or_else(|| {
+        ServiceError::Unavailable("shared-auth introspection is not configured".to_string())
+    })?;
+    let request = state
+        .http
+        .post(url)
+        .bearer_auth(secret)
+        .json(&json!({ "token": token }))
+        .send();
+    let response = tokio::time::timeout(SHARED_AUTH_INTROSPECTION_TIMEOUT, request)
+        .await
+        .map_err(|_| ServiceError::Unavailable("shared-auth introspection timed out".to_string()))?
+        .map_err(|_| {
+            ServiceError::Unavailable("shared-auth introspection is unavailable".to_string())
+        })?;
+    if !response.status().is_success() {
+        warn!(
+            status = response.status().as_u16(),
+            "shared-auth introspection rejected the service request"
+        );
+        return Err(ServiceError::Unavailable(
+            "shared-auth introspection is unavailable".to_string(),
+        ));
+    }
+    if response
+        .content_length()
+        .is_some_and(|length| length > SHARED_AUTH_INTROSPECTION_MAX_BYTES as u64)
+    {
+        return Err(ServiceError::Unavailable(
+            "shared-auth introspection response is invalid".to_string(),
+        ));
+    }
+    let body = response.bytes().await.map_err(|_| {
+        ServiceError::Unavailable("shared-auth introspection response is invalid".to_string())
+    })?;
+    if body.len() > SHARED_AUTH_INTROSPECTION_MAX_BYTES {
+        return Err(ServiceError::Unavailable(
+            "shared-auth introspection response is invalid".to_string(),
+        ));
+    }
+    let introspection: SharedAuthIntrospection = serde_json::from_slice(&body).map_err(|_| {
+        ServiceError::Unavailable("shared-auth introspection response is invalid".to_string())
+    })?;
+    if !introspection.active {
+        return Err(ServiceError::Unauthorized);
+    }
+    if introspection.aal < config.required_aal {
+        return Err(ServiceError::MfaRequired);
+    }
+    let subject = introspection
+        .sub
+        .as_deref()
+        .and_then(|subject| Uuid::parse_str(subject).ok())
+        .ok_or_else(|| {
+            ServiceError::Unavailable("shared-auth introspection response is invalid".to_string())
+        })?
+        .to_string();
+    let email = introspection
+        .email_verified
+        .then_some(introspection.email)
+        .flatten()
+        .map(|email| email.trim().to_string())
+        .filter(|email| !email.is_empty() && email.len() <= 320);
+    Ok(SharedAuthIdentity { subject, email })
+}
+
 fn internal_token(headers: &HeaderMap) -> Option<&str> {
     headers
         .get("x-server-auth")
@@ -2820,11 +3288,14 @@ fn validate_uuid(value: &str, field: &str) -> Result<String, ServiceError> {
 
 fn normalize_platform(value: &str) -> Result<String, ServiceError> {
     let platform = value.trim().to_ascii_lowercase();
-    if matches!(platform.as_str(), "ios" | "android") {
+    if matches!(
+        platform.as_str(),
+        "ios" | "android" | "macos" | "windows" | "linux"
+    ) {
         Ok(platform)
     } else {
         Err(ServiceError::BadRequest(
-            "platform must be ios or android".to_string(),
+            "platform must be ios, android, macos, windows, or linux".to_string(),
         ))
     }
 }
@@ -3046,6 +3517,77 @@ fn validate_folder_path(value: Option<String>) -> Result<String, ServiceError> {
     } else {
         Ok(path)
     }
+}
+
+/// Builds the custom-scheme redirect consumed by `flutter_web_auth_2`. Query
+/// pairs are encoded by `Url`, so provider-controlled errors and codes can
+/// never inject response headers or alter the callback target.
+fn cloud_oauth_app_callback(query: CloudOAuthCallbackQuery) -> Result<String, ServiceError> {
+    let state = validate_nonempty(query.state.as_deref().unwrap_or(""), "state", 160)?;
+    let mut target = reqwest::Url::parse("sonusauris://oauth/callback")
+        .map_err(|_| ServiceError::Internal("OAuth app callback is invalid".to_string()))?;
+    {
+        let mut params = target.query_pairs_mut();
+        params.append_pair("state", &state);
+        if let Some(error) = clean_string(query.error, 160) {
+            params.append_pair("error", &error);
+            if let Some(description) = clean_string(query.error_description, 500) {
+                params.append_pair("error_description", &description);
+            }
+        } else {
+            let code = validate_nonempty(query.code.as_deref().unwrap_or(""), "code", 4096)?;
+            params.append_pair("code", &code);
+        }
+    }
+    Ok(target.to_string())
+}
+
+async fn cloud_oauth_callback(
+    Query(query): Query<CloudOAuthCallbackQuery>,
+) -> Result<Redirect, ServiceError> {
+    let target = cloud_oauth_app_callback(query)?;
+    record_request("GET", "/oauth/callback", StatusCode::TEMPORARY_REDIRECT);
+    Ok(Redirect::temporary(&target))
+}
+
+/// Browser-only OAuth completion for Windows/Linux desktop builds. Those
+/// platforms do not have flutter_web_auth_2's native callback session, so the
+/// page displays the short-lived provider code for an explicit paste back into
+/// Sonus Auris. The state remains held by the app and is verified again when
+/// `/oauth/complete` consumes the pending database row.
+fn cloud_oauth_manual_page(query: CloudOAuthCallbackQuery) -> Result<String, ServiceError> {
+    validate_nonempty(query.state.as_deref().unwrap_or(""), "state", 160)?;
+    let body = if let Some(error) = clean_string(query.error, 160) {
+        let description = clean_string(query.error_description, 500)
+            .unwrap_or_else(|| "The provider did not authorize this connection.".to_string());
+        format!(
+            "<h1>Connection not authorized</h1><p>{}</p><p>Error: <code>{}</code></p>",
+            html_escape(&description),
+            html_escape(&error)
+        )
+    } else {
+        let code = validate_nonempty(query.code.as_deref().unwrap_or(""), "code", 4096)?;
+        format!(
+            "<h1>Return to Sonus Auris</h1>\
+             <p>Copy this one-time authorization code and paste it into the Connections window.</p>\
+             <textarea readonly rows=\"6\" cols=\"72\" aria-label=\"One-time authorization code\">{}</textarea>\
+             <p>Close this browser tab after Sonus Auris confirms the connection. Never send this code to another person.</p>",
+            html_escape(&code)
+        )
+    };
+    Ok(format!(
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
+         <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+         <title>Sonus Auris cloud connection</title></head><body><main>{body}</main></body></html>"
+    ))
+}
+
+async fn cloud_oauth_manual_callback(
+    Query(query): Query<CloudOAuthCallbackQuery>,
+) -> Result<Html<String>, ServiceError> {
+    let page = cloud_oauth_manual_page(query)?;
+    record_request("GET", "/oauth/manual-callback", StatusCode::OK);
+    Ok(Html(page))
 }
 
 fn validate_provider_account_id(value: Option<String>) -> Result<Option<String>, ServiceError> {
@@ -3282,6 +3824,7 @@ fn authorization_url(
     oauth: &OAuthProviderConfig,
     redirect_uri: &str,
     state: &str,
+    code_challenge: Option<&str>,
 ) -> Result<String, ServiceError> {
     let client_id = oauth.client_id.as_deref().ok_or_else(|| {
         ServiceError::Unavailable(format!(
@@ -3304,6 +3847,10 @@ fn authorization_url(
         ("scope", scope.to_string()),
         ("state", state.to_string()),
     ];
+    if let Some(challenge) = code_challenge {
+        params.push(("code_challenge", challenge.to_string()));
+        params.push(("code_challenge_method", "S256".to_string()));
+    }
     match provider {
         CloudProvider::GoogleDrive => {
             params.push(("access_type", "offline".to_string()));
@@ -3312,7 +3859,10 @@ fn authorization_url(
         CloudProvider::MicrosoftOneDrive => {
             params.push(("response_mode", "query".to_string()));
         }
-        CloudProvider::AppleICloud => {}
+        CloudProvider::AppleICloud | CloudProvider::AmazonS3 | CloudProvider::CloudflareR2 => {}
+        CloudProvider::Dropbox => {
+            params.push(("token_access_type", "offline".to_string()));
+        }
     }
     let query = params
         .into_iter()
@@ -3334,6 +3884,7 @@ fn policy(config: &Config, retention_hours: i32) -> MobilePolicy {
             CloudProvider::GoogleDrive.as_str(),
             CloudProvider::MicrosoftOneDrive.as_str(),
             CloudProvider::AppleICloud.as_str(),
+            CloudProvider::Dropbox.as_str(),
         ],
         supported_use_cases: SUPPORTED_USE_CASES.to_vec(),
     }
@@ -3370,6 +3921,9 @@ fn require_internal_auth(config: &Config, headers: &HeaderMap) -> Result<(), Ser
 /// How much we trust the caller of device registration, which decides whose
 /// account a device may attach to.
 enum RegistrationTrust {
+    /// A shared-auth access token introspected against the RDS-backed authority.
+    /// The account key uses shared-auth's stable UUID and never a client claim.
+    SharedAuth(SharedAuthIdentity),
     /// A Supabase access token verified server-side. The account is keyed to the
     /// verified `sub`, so it cannot be spoofed by the client.
     Supabase(SupabaseIdentity),
@@ -3386,6 +3940,16 @@ async fn authorize_registration(
     state: &AppState,
     headers: &HeaderMap,
 ) -> Result<RegistrationTrust, ServiceError> {
+    if let Some(token) = shared_auth_token(headers) {
+        if !state.config.shared_auth.is_enabled() {
+            return Err(ServiceError::Unavailable(
+                "shared-auth introspection is not configured".to_string(),
+            ));
+        }
+        return Ok(RegistrationTrust::SharedAuth(
+            introspect_shared_auth(state, token).await?,
+        ));
+    }
     if let Some(verifier) = &state.supabase {
         if let Some(token) = supabase_token(headers) {
             let identity = verifier.verify(&state.http, token).await?;
@@ -3403,7 +3967,7 @@ async fn authorize_registration(
         Ok(RegistrationTrust::Public)
     } else {
         Err(ServiceError::Unavailable(
-            "device registration is disabled until a Supabase token, SOUND_RECORDER_REGISTRATION_BEARER, or SOUND_RECORDER_ALLOW_PUBLIC_DEVICE_REGISTRATION is configured".to_string(),
+            "device registration is disabled until a shared-auth or Supabase token, SOUND_RECORDER_REGISTRATION_BEARER, or SOUND_RECORDER_ALLOW_PUBLIC_DEVICE_REGISTRATION is configured".to_string(),
         ))
     }
 }
@@ -3453,7 +4017,8 @@ async fn authenticate_device(
     let client = db_conn(state).await?;
     let row = client
         .query_opt(
-            "select d.id::text as device_id, d.account_id::text as account_id, a.retention_hours
+            "select d.id::text as device_id, d.install_id, d.account_id::text as account_id,
+                    a.retention_hours
              from sound_recorder_devices d
              join sound_recorder_accounts a on a.id = d.account_id
              where d.token_hash = $1 and d.status = 'active' and a.status = 'active'",
@@ -3466,6 +4031,7 @@ async fn authenticate_device(
     };
     let auth = DeviceAuth {
         device_id: row.get("device_id"),
+        install_id: row.get("install_id"),
         account_id: row.get("account_id"),
         retention_hours: row.get("retention_hours"),
     };
@@ -3578,6 +4144,10 @@ fn resolve_registration_subject(
     install_id: &str,
 ) -> Result<(Option<String>, Option<String>), ServiceError> {
     match trust {
+        RegistrationTrust::SharedAuth(identity) => Ok((
+            Some(identity.external_subject()),
+            identity.email.clone().or_else(|| req.display_name.clone()),
+        )),
         RegistrationTrust::Supabase(identity) => Ok((
             Some(identity.external_subject()),
             identity.email.clone().or_else(|| req.display_name.clone()),
@@ -3652,9 +4222,11 @@ async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
         configuration_valid: state.config.validation_errors.is_empty()
             && state.config.s3.validation_errors.is_empty()
             && state.config.mirror.validation_errors.is_empty()
-            && state.config.supabase.validation_errors.is_empty(),
+            && state.config.supabase.validation_errors.is_empty()
+            && state.config.shared_auth.validation_errors.is_empty(),
         token_pepper_configured: state.config.token_pepper_configured,
-        registration_configured: state.supabase.is_some()
+        registration_configured: state.config.shared_auth.is_enabled()
+            || state.supabase.is_some()
             || state.config.registration_bearer.is_some()
             || state.config.allow_public_device_registration,
         server_auth_configured: state.config.server_auth_secret.is_some(),
@@ -3663,11 +4235,15 @@ async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
             && state.config.google_oauth.client_secret.is_some(),
         microsoft_onedrive_configured: state.config.microsoft_oauth.client_id.is_some()
             && state.config.microsoft_oauth.client_secret.is_some(),
+        dropbox_configured: state.config.dropbox_oauth.client_id.is_some()
+            && state.config.dropbox_oauth.client_secret.is_some(),
         supabase_configured: state.supabase.is_some(),
         supabase_data_api_configured: state.config.supabase.is_data_api_enabled(),
         supabase_accounts_configured: state.config.supabase.account_features_configured(),
         supabase_ready: None,
         supabase_required: state.config.require_supabase,
+        shared_auth_configured: state.config.shared_auth.is_enabled(),
+        shared_auth_required_aal: state.config.shared_auth.required_aal,
         retention_hours: state.config.default_retention_hours,
         mirror_configured: state.mirror.is_some() && state.config.mirror.is_configured(),
         mirror_ready: None,
@@ -3947,7 +4523,8 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
         supabase_probe,
         mirror_is_ready(&state)
     );
-    let registration_configured = state.supabase.is_some()
+    let registration_configured = state.config.shared_auth.is_enabled()
+        || state.supabase.is_some()
         || state.config.registration_bearer.is_some()
         || state.config.allow_public_device_registration;
     let supabase_accounts_configured = state.config.supabase.account_features_configured();
@@ -3997,7 +4574,8 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
             configuration_valid: state.config.validation_errors.is_empty()
                 && state.config.s3.validation_errors.is_empty()
                 && state.config.mirror.validation_errors.is_empty()
-                && state.config.supabase.validation_errors.is_empty(),
+                && state.config.supabase.validation_errors.is_empty()
+                && state.config.shared_auth.validation_errors.is_empty(),
             token_pepper_configured: state.config.token_pepper_configured,
             registration_configured,
             server_auth_configured: state.config.server_auth_secret.is_some(),
@@ -4006,11 +4584,15 @@ async fn readyz(State(state): State<AppState>) -> impl IntoResponse {
                 && state.config.google_oauth.client_secret.is_some(),
             microsoft_onedrive_configured: state.config.microsoft_oauth.client_id.is_some()
                 && state.config.microsoft_oauth.client_secret.is_some(),
+            dropbox_configured: state.config.dropbox_oauth.client_id.is_some()
+                && state.config.dropbox_oauth.client_secret.is_some(),
             supabase_configured: state.supabase.is_some(),
             supabase_data_api_configured: state.config.supabase.is_data_api_enabled(),
             supabase_accounts_configured,
             supabase_ready,
             supabase_required: state.config.require_supabase,
+            shared_auth_configured: state.config.shared_auth.is_enabled(),
+            shared_auth_required_aal: state.config.shared_auth.required_aal,
             retention_hours: state.config.default_retention_hours,
             mirror_configured: state.mirror.is_some() && state.config.mirror.is_configured(),
             mirror_ready,
@@ -4242,6 +4824,25 @@ async fn list_user_consents(
     Ok(Json(UserDataList { count, data }))
 }
 
+async fn list_devices(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<UserDataQuery>,
+) -> Result<Json<UserDataList<DeviceRecord>>, ServiceError> {
+    let data = fetch_supabase_rows(
+        &state,
+        &headers,
+        DEVICES_TABLE,
+        DEVICES_COLUMNS,
+        "last_seen_at.desc",
+        user_data_limit(query.limit),
+    )
+    .await?;
+    let count = data.len();
+    record_request("GET", "/api/v1/data/devices", StatusCode::OK);
+    Ok(Json(UserDataList { count, data }))
+}
+
 async fn get_user_settings(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -4433,6 +5034,254 @@ async fn register_device(
         device_token: token,
         policy: policy(&state.config, retention_hours),
     }))
+}
+
+async fn heartbeat_device(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<Json<DeviceHeartbeatResponse>, ServiceError> {
+    // authenticate_device refreshes last_seen_at in the same database as token
+    // revocation, so this is the durable fallback when Supabase Presence is
+    // disconnected or the app is background-throttled.
+    let (auth, _client) = authenticate_device(&state, &headers).await?;
+    record_request("POST", "/api/mobile/v1/devices/heartbeat", StatusCode::OK);
+    Ok(Json(DeviceHeartbeatResponse {
+        ok: true,
+        device_id: auth.device_id,
+        server_time: Utc::now(),
+    }))
+}
+
+/// Revokes every Rust API token issued for a Supabase-visible install.
+///
+/// Authorization is deliberately delegated to the caller's Supabase RLS view:
+/// the device owner can see their own row, and an account-group owner can see
+/// member rows after the group migration. The returned row's `user_id` is then
+/// bound to the namespaced backend account before any token is touched, so an
+/// arbitrary install ID can never revoke a device outside that visible group.
+async fn revoke_device(
+    State(state): State<AppState>,
+    Path(raw_install_id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<RevokeDeviceResponse>, ServiceError> {
+    let install_id = validate_nonempty(&raw_install_id, "installId", 160)?;
+    if install_id.chars().any(char::is_control) {
+        return Err(ServiceError::BadRequest(
+            "installId contains invalid characters".to_string(),
+        ));
+    }
+
+    let context = supabase_data_context(&state, &headers).await?;
+    let response = state
+        .http
+        .get(format!("{}/rest/v1/devices", context.base_url))
+        .header("apikey", &context.publishable_key)
+        .bearer_auth(&context.token)
+        .query(&[
+            ("select", "user_id"),
+            ("device_id", &format!("eq.{install_id}")),
+            ("limit", "1"),
+        ])
+        .send()
+        .await
+        .map_err(|_| {
+            ServiceError::Unavailable(
+                "Supabase device authorization could not be completed".to_string(),
+            )
+        })?;
+    let status = response.status();
+    if matches!(status, StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) {
+        return Err(ServiceError::Unauthorized);
+    }
+    if !status.is_success() {
+        return Err(ServiceError::Unavailable(format!(
+            "Supabase device authorization failed with {status}"
+        )));
+    }
+    let visible = response
+        .json::<Vec<SupabaseVisibleDevice>>()
+        .await
+        .map_err(|_| {
+            ServiceError::Internal(
+                "Supabase returned an invalid device authorization payload".to_string(),
+            )
+        })?
+        .into_iter()
+        .next()
+        .ok_or_else(|| ServiceError::NotFound("device not found".to_string()))?;
+
+    let external_subject = format!("supabase:{}", visible.user_id);
+    let invalid_token_hash = hash_secret(&new_device_token(), &state.config.token_pepper);
+    let client = db_conn(&state).await?;
+    let rows = client
+        .query(
+            "update sound_recorder_devices device
+             set status = 'revoked',
+                 token_hash = $3,
+                 token_last4 = 'none',
+                 updated_at = now()
+             from sound_recorder_accounts account
+             where device.account_id = account.id
+               and account.external_subject = $1
+               and device.install_id = $2
+               and device.status = 'active'
+             returning device.id::text as device_id,
+                       device.account_id::text as account_id",
+            &[&external_subject, &install_id, &invalid_token_hash],
+        )
+        .await
+        .map_err(db_error)?;
+    for row in &rows {
+        let device_id: String = row.get("device_id");
+        let account_id: String = row.get("account_id");
+        audit_event(
+            &client,
+            Some(&account_id),
+            Some(&device_id),
+            "sound_recorder.device.revoked",
+            json!({"installId": install_id, "source": "supabase_device_registry"}),
+        )
+        .await;
+    }
+
+    record_request(
+        "POST",
+        "/api/mobile/v1/devices/:install_id/revoke",
+        StatusCode::OK,
+    );
+    Ok(Json(RevokeDeviceResponse {
+        ok: true,
+        install_id,
+        backend_tokens_revoked: rows.len(),
+    }))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DevicePresenceAuthenticate {
+    #[serde(rename = "type")]
+    message_type: String,
+    device_token: String,
+}
+
+async fn device_presence_upgrade(
+    State(state): State<AppState>,
+    upgrade: WebSocketUpgrade,
+) -> impl IntoResponse {
+    upgrade.on_upgrade(move |socket| device_presence_socket(state, socket))
+}
+
+async fn device_presence_socket(state: AppState, mut socket: WebSocket) {
+    let auth_frame = match tokio::time::timeout(Duration::from_secs(10), socket.recv()).await {
+        Ok(Some(Ok(Message::Text(text)))) if text.len() <= 2048 => text,
+        _ => return,
+    };
+    let request = match serde_json::from_str::<DevicePresenceAuthenticate>(&auth_frame) {
+        Ok(request)
+            if request.message_type == "authenticate"
+                && request.device_token.len() >= 20
+                && request.device_token.len() <= 1024 =>
+        {
+            request
+        }
+        _ => return,
+    };
+    let mut headers = HeaderMap::new();
+    let authorization = match HeaderValue::from_str(&format!("Bearer {}", request.device_token)) {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+    headers.insert(header::AUTHORIZATION, authorization);
+    let (auth, client) = match authenticate_device(&state, &headers).await {
+        Ok(result) => result,
+        Err(_) => return,
+    };
+
+    let mut presence_updates = state
+        .device_presence
+        .join(&auth.account_id, &auth.install_id)
+        .await;
+    let (mut sender, mut receiver) = socket.split();
+    if sender
+        .send(Message::Text(
+            json!({"type": "ready", "deviceId": auth.install_id}).to_string(),
+        ))
+        .await
+        .is_err()
+    {
+        state
+            .device_presence
+            .leave(&auth.account_id, &auth.install_id)
+            .await;
+        return;
+    }
+
+    // Re-check the durable row frequently enough that an owner revocation also
+    // disconnects an already-open fallback socket promptly. The client sends a
+    // 25-second heartbeat too, so normal traffic usually notices first.
+    let mut durable_heartbeat = tokio::time::interval(Duration::from_secs(30));
+    durable_heartbeat.tick().await;
+    loop {
+        tokio::select! {
+            message = receiver.next() => {
+                match message {
+                    Some(Ok(Message::Text(text))) if text.len() <= 1024 => {
+                        if let Ok(value) = serde_json::from_str::<Value>(&text) {
+                            if value.get("type").and_then(Value::as_str) == Some("heartbeat") {
+                                let result = client.execute(
+                                    "update sound_recorder_devices
+                                     set last_seen_at = now(), updated_at = now()
+                                     where id = $1::uuid and status = 'active'",
+                                    &[&auth.device_id],
+                                ).await;
+                                if !matches!(result, Ok(1)) {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Ping(payload))) => {
+                        if sender.send(Message::Pong(payload)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
+                    _ => {}
+                }
+            }
+            update = presence_updates.recv() => {
+                match update {
+                    Ok(online_device_ids) => {
+                        let frame = json!({
+                            "type": "presence",
+                            "onlineDeviceIds": online_device_ids,
+                            "serverTime": Utc::now(),
+                        }).to_string();
+                        if sender.send(Message::Text(frame)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            _ = durable_heartbeat.tick() => {
+                let result = client.execute(
+                    "update sound_recorder_devices
+                     set last_seen_at = now(), updated_at = now()
+                     where id = $1::uuid and status = 'active'",
+                    &[&auth.device_id],
+                ).await;
+                if !matches!(result, Ok(1)) {
+                    break;
+                }
+            }
+        }
+    }
+    state
+        .device_presence
+        .leave(&auth.account_id, &auth.install_id)
+        .await;
 }
 
 async fn delete_account_storage_objects(
@@ -6123,6 +6972,7 @@ async fn start_cloud_link(
     let display_name = clean_string(req.display_name, 160);
     let meta_data = validate_meta(req.meta_data)?;
     let state_token = new_oauth_state();
+    let pkce = provider.is_server_managed().then(new_oauth_pkce);
     let state_hash = oauth_state_hash(&state.config, &state_token);
     let expires_at = Utc::now()
         .checked_add_signed(chrono_duration_from_std(state.config.oauth_state_ttl)?)
@@ -6146,6 +6996,7 @@ async fn start_cloud_link(
                 &json!({
                     "rootFolderId": root_folder_id,
                     "displayName": display_name,
+                    "codeVerifier": pkce.as_ref().map(|value| value.verifier.as_str()),
                     "clientMeta": meta_data
                 }),
             ],
@@ -6158,6 +7009,7 @@ async fn start_cloud_link(
             oauth,
             &redirect_uri,
             &state_token,
+            pkce.as_ref().map(|value| value.challenge.as_str()),
         )?)
     } else {
         None
@@ -6187,7 +7039,7 @@ async fn start_cloud_link(
         authorization_url,
         expires_at,
         required_scope: provider.required_scope(),
-        client_managed: provider == CloudProvider::AppleICloud,
+        client_managed: provider.is_client_managed(),
     }))
 }
 
@@ -6201,16 +7053,23 @@ async fn complete_cloud_link(
     let supabase_token_set = supabase_provider_token_set(&req);
     let state_token = validate_nonempty(&req.state, "state", 160)?;
     let state_hash = oauth_state_hash(&state.config, &state_token);
+    // Atomically claim the state before exchanging the provider code. A plain
+    // SELECT followed by a later UPDATE lets two concurrent completion
+    // requests both observe `pending`; this transition guarantees exactly one
+    // request can cross the trust boundary. Failed exchanges intentionally burn
+    // the state, requiring a fresh authorization rather than making a captured
+    // code/state pair replayable.
     let state_row = client
         .query_opt(
-            "select id::text, redirect_uri, folder_path, meta_data
-             from sound_recorder_oauth_states
+            "update sound_recorder_oauth_states
+             set status = 'processing', updated_at = now()
              where account_id = $1::uuid
                and device_id = $2::uuid
                and provider = $3
                and state_hash = $4
                and status = 'pending'
-               and expires_at > now()",
+               and expires_at > now()
+             returning id::text, redirect_uri, folder_path, meta_data",
             &[
                 &auth.account_id,
                 &auth.device_id,
@@ -6233,6 +7092,11 @@ async fn complete_cloud_link(
         }
     }
     let state_meta: Value = state_row.get("meta_data");
+    let code_verifier = state_meta
+        .get("codeVerifier")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     let folder_path = validate_folder_path(
         req.folder_path
             .or_else(|| state_row.get::<Option<String>>("folder_path")),
@@ -6269,8 +7133,14 @@ async fn complete_cloud_link(
                 "authorizationCode",
                 4096,
             )?;
-            exchange_authorization_code(&state, provider, &authorization_code, &redirect_uri)
-                .await?
+            exchange_authorization_code(
+                &state,
+                provider,
+                &authorization_code,
+                &redirect_uri,
+                code_verifier,
+            )
+            .await?
         };
         let plaintext = serde_json::to_vec(&token_set)
             .map_err(|_| ServiceError::Internal("cloud token encode failed".to_string()))?;
@@ -6279,7 +7149,7 @@ async fn complete_cloud_link(
     } else {
         if !req.client_managed_acknowledged.unwrap_or(false) {
             return Err(ServiceError::BadRequest(
-                "clientManagedAcknowledged must be true for apple_icloud links".to_string(),
+                "clientManagedAcknowledged must be true for client-managed links".to_string(),
             ));
         }
         (None, None, None)
@@ -6303,7 +7173,7 @@ async fn complete_cloud_link(
         .execute(
             "update sound_recorder_oauth_states
              set status = 'consumed', consumed_at = now(), updated_at = now()
-             where id = $1::uuid",
+             where id = $1::uuid and status = 'processing'",
             &[&oauth_state_id],
         )
         .await
@@ -6356,6 +7226,24 @@ async fn revoke_cloud_connection(
 ) -> Result<Json<RevokeCloudConnectionResponse>, ServiceError> {
     let (auth, client) = authenticate_device(&state, &headers).await?;
     let connection_id = validate_uuid(&connection_id, "connectionId")?;
+    let connection_row = client
+        .query_opt(
+            "select id::text, account_id::text, provider, link_mode, status, display_name,
+                    provider_account_id, root_folder_id, folder_path, token_ciphertext,
+                    token_nonce, token_aad, token_version, token_expires_at, last_sync_at,
+                    created_at, updated_at
+             from sound_recorder_cloud_connections
+             where id = $1::uuid and account_id = $2::uuid and status <> 'revoked'",
+            &[&connection_id, &auth.account_id],
+        )
+        .await
+        .map_err(db_error)?;
+    let Some(connection_row) = connection_row else {
+        return Err(ServiceError::NotFound(
+            "cloud connection not found".to_string(),
+        ));
+    };
+    let connection = cloud_connection_record_from_row(&connection_row);
     let updated = client
         .execute(
             "update sound_recorder_cloud_connections
@@ -6376,6 +7264,12 @@ async fn revoke_cloud_connection(
             "cloud connection not found".to_string(),
         ));
     }
+    // Local authority is removed first. The in-memory row still carries the
+    // sealed token for a bounded upstream revocation attempt, but a slow or
+    // unavailable provider can no longer race new copy jobs or keep the
+    // Sonus-side connection active.
+    let provider_authorization_revoked =
+        revoke_provider_authorization(&state, &connection, None).await;
     client
         .execute(
             "update sound_recorder_cloud_copy_jobs
@@ -6390,7 +7284,11 @@ async fn revoke_cloud_connection(
         Some(&auth.account_id),
         Some(&auth.device_id),
         "sound_recorder.cloud_link.revoked",
-        json!({ "connectionId": connection_id }),
+        json!({
+            "connectionId": connection_id,
+            "provider": connection.provider,
+            "providerAuthorizationRevoked": provider_authorization_revoked
+        }),
     )
     .await;
     record_request(
@@ -6402,6 +7300,7 @@ async fn revoke_cloud_connection(
         ok: true,
         connection_id,
         status: "revoked".to_string(),
+        provider_authorization_revoked,
     }))
 }
 
@@ -6524,6 +7423,16 @@ async fn complete_client_cloud_copy_job(
             "client-managed cloud copy job not found".to_string(),
         ));
     };
+    let connection_id: String = row.get("connection_id");
+    client
+        .execute(
+            "update sound_recorder_cloud_connections
+             set last_sync_at = now(), updated_at = now()
+             where id = $1::uuid and account_id = $2::uuid and status = 'active'",
+            &[&connection_id, &auth.account_id],
+        )
+        .await
+        .map_err(db_error)?;
     audit_event(
         &client,
         Some(&auth.account_id),
@@ -6680,6 +7589,248 @@ async fn drain_cloud_copy_jobs(
     }))
 }
 
+fn supabase_user_id_from_external_subject(external_subject: &str) -> Option<String> {
+    external_subject
+        .strip_prefix("supabase:")
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .map(|value| value.to_string())
+}
+
+fn cloud_connection_projection_payload(user_id: &str, connection: &CloudConnectionRecord) -> Value {
+    json!({
+        "id": connection.id,
+        "user_id": user_id,
+        "provider": connection.provider,
+        "link_mode": connection.link_mode,
+        "status": connection.status,
+        "display_name": connection.display_name,
+        "folder_path": connection.folder_path,
+        "token_expires_at": connection.token_expires_at,
+        "last_sync_at": connection.last_sync_at,
+        "created_at": connection.created_at,
+        "updated_at": connection.updated_at,
+    })
+}
+
+async fn claim_cloud_connection_projections(
+    client: &DbClient,
+    limit: i64,
+) -> Result<Vec<CloudConnectionProjectionClaim>, ServiceError> {
+    let rows = client
+        .query(
+            "with candidates as (
+               select outbox.seq
+               from sound_recorder_cloud_connection_projection_outbox outbox
+               where outbox.processed_at is null
+                 and outbox.available_at <= now()
+                 and (outbox.locked_until is null or outbox.locked_until < now())
+               order by outbox.available_at asc, outbox.seq asc
+               for update skip locked
+               limit $1
+             ),
+             claimed as (
+               update sound_recorder_cloud_connection_projection_outbox outbox
+               set attempts = least(outbox.attempts + 1, 50),
+                   locked_until = now() + $2::interval,
+                   updated_at = now()
+               from candidates
+               where outbox.seq = candidates.seq
+               returning outbox.seq, outbox.connection_id, outbox.attempts
+             )
+             select claimed.seq, claimed.attempts, account.external_subject,
+                    connection.id::text, connection.account_id::text,
+                    connection.provider, connection.link_mode, connection.status,
+                    connection.display_name, connection.provider_account_id,
+                    connection.root_folder_id, connection.folder_path,
+                    connection.token_ciphertext, connection.token_nonce,
+                    connection.token_aad, connection.token_version,
+                    connection.token_expires_at, connection.last_sync_at,
+                    connection.created_at, connection.updated_at
+             from claimed
+             join sound_recorder_cloud_connections connection
+               on connection.id = claimed.connection_id
+             join sound_recorder_accounts account
+               on account.id = connection.account_id
+             order by claimed.seq asc",
+            &[&limit, &CLOUD_PROJECTION_CLAIM_LEASE],
+        )
+        .await
+        .map_err(db_error)?;
+    Ok(rows
+        .iter()
+        .map(|row| CloudConnectionProjectionClaim {
+            seq: row.get("seq"),
+            attempts: row.get("attempts"),
+            external_subject: row
+                .get::<Option<String>>("external_subject")
+                .unwrap_or_default(),
+            connection: cloud_connection_record_from_row(row),
+        })
+        .collect())
+}
+
+async fn write_cloud_connection_projection(
+    state: &AppState,
+    claim: &CloudConnectionProjectionClaim,
+) -> Result<bool, ServiceError> {
+    let Some(user_id) = supabase_user_id_from_external_subject(&claim.external_subject) else {
+        return Ok(false);
+    };
+    let base_url = state.config.supabase.url.as_deref().ok_or_else(|| {
+        ServiceError::Unavailable(
+            "SOUND_RECORDER_SUPABASE_URL is required for cloud connection projection".to_string(),
+        )
+    })?;
+    let service_role_key = state
+        .config
+        .supabase
+        .service_role_key
+        .as_deref()
+        .ok_or_else(|| {
+            ServiceError::Unavailable(
+                "SOUND_RECORDER_SUPABASE_SERVICE_ROLE_KEY is required for cloud connection projection"
+                    .to_string(),
+            )
+        })?;
+    let payload = cloud_connection_projection_payload(&user_id, &claim.connection);
+    let request = state
+        .http
+        .post(format!(
+            "{}/rest/v1/{CLOUD_CONNECTIONS_TABLE}?on_conflict=id",
+            base_url.trim_end_matches('/')
+        ))
+        .header("apikey", service_role_key)
+        .bearer_auth(service_role_key)
+        .header("prefer", "resolution=merge-duplicates,return=minimal")
+        .json(&payload)
+        .send();
+    let response = tokio::time::timeout(SUPABASE_PROBE_TIMEOUT, request)
+        .await
+        .map_err(|_| {
+            ServiceError::Unavailable("Supabase cloud connection projection timed out".to_string())
+        })?
+        .map_err(|error| {
+            warn!(
+                error = %error,
+                connection_id = claim.connection.id,
+                "Supabase cloud connection projection request failed"
+            );
+            ServiceError::Unavailable("Supabase cloud connection projection failed".to_string())
+        })?;
+    if response.status().is_success() {
+        Ok(true)
+    } else {
+        warn!(
+            status = response.status().as_u16(),
+            connection_id = claim.connection.id,
+            "Supabase cloud connection projection returned non-success"
+        );
+        Err(ServiceError::Unavailable(format!(
+            "Supabase cloud connection projection failed with status {}",
+            response.status().as_u16()
+        )))
+    }
+}
+
+async fn mark_cloud_connection_projection_success(
+    client: &DbClient,
+    claim: &CloudConnectionProjectionClaim,
+) -> Result<bool, ServiceError> {
+    client
+        .execute(
+            "update sound_recorder_cloud_connection_projection_outbox
+             set processed_at = now(),
+                 locked_until = null,
+                 last_error = null,
+                 updated_at = now()
+             where seq = $1 and attempts = $2 and processed_at is null",
+            &[&claim.seq, &claim.attempts],
+        )
+        .await
+        .map(|updated| updated > 0)
+        .map_err(db_error)
+}
+
+fn cloud_projection_retry_at(attempts: i32) -> DateTime<Utc> {
+    let exponent = (attempts.saturating_sub(1) as u32).min(6);
+    let seconds = 60_i64.saturating_mul(1_i64 << exponent).min(3600);
+    Utc::now() + ChronoDuration::seconds(seconds)
+}
+
+async fn mark_cloud_connection_projection_error(
+    client: &DbClient,
+    claim: &CloudConnectionProjectionClaim,
+    message: &str,
+) -> Result<bool, ServiceError> {
+    let available_at = cloud_projection_retry_at(claim.attempts);
+    let last_error = message.chars().take(500).collect::<String>();
+    client
+        .execute(
+            "update sound_recorder_cloud_connection_projection_outbox
+             set available_at = $3,
+                 locked_until = null,
+                 last_error = $4,
+                 updated_at = now()
+             where seq = $1 and attempts = $2 and processed_at is null",
+            &[&claim.seq, &claim.attempts, &available_at, &last_error],
+        )
+        .await
+        .map(|updated| updated > 0)
+        .map_err(db_error)
+}
+
+async fn drain_cloud_connection_projections(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<DrainCloudConnectionProjectionsRequest>,
+) -> Result<Json<DrainCloudConnectionProjectionsResponse>, ServiceError> {
+    require_internal_auth(&state.config, &headers)?;
+    let client = db_conn(&state).await?;
+    let limit = req
+        .max_items
+        .unwrap_or(DEFAULT_CLOUD_PROJECTION_BATCH_SIZE)
+        .clamp(1, MAX_CLOUD_PROJECTION_BATCH_SIZE);
+    let claims = claim_cloud_connection_projections(&client, limit).await?;
+    let mut completed = 0usize;
+    let mut failed = 0usize;
+    let mut skipped = 0usize;
+    for claim in &claims {
+        match write_cloud_connection_projection(&state, claim).await {
+            Ok(written) => {
+                if mark_cloud_connection_projection_success(&client, claim).await? {
+                    if written {
+                        completed += 1;
+                    } else {
+                        skipped += 1;
+                    }
+                } else {
+                    skipped += 1;
+                }
+            }
+            Err(error) => {
+                let message = service_error_message(&error);
+                if mark_cloud_connection_projection_error(&client, claim, &message).await? {
+                    failed += 1;
+                } else {
+                    skipped += 1;
+                }
+            }
+        }
+    }
+    record_request(
+        "POST",
+        "/internal/cloud-connection-projections/drain",
+        StatusCode::OK,
+    );
+    Ok(Json(DrainCloudConnectionProjectionsResponse {
+        ok: true,
+        attempted: claims.len(),
+        completed,
+        failed,
+        skipped,
+    }))
+}
+
 fn service_error_message(error: &ServiceError) -> String {
     let message = match error {
         ServiceError::BadRequest(message)
@@ -6688,6 +7839,7 @@ fn service_error_message(error: &ServiceError) -> String {
         | ServiceError::Unavailable(message)
         | ServiceError::Internal(message) => message.as_str(),
         ServiceError::Unauthorized => "unauthorized",
+        ServiceError::MfaRequired => "mfa required",
     };
     message.chars().take(500).collect()
 }
@@ -6769,9 +7921,12 @@ async fn process_cloud_copy_job(
         CloudProvider::MicrosoftOneDrive => {
             upload_to_microsoft_onedrive(state, &item.segment, &item.job, bytes, &token_set).await
         }
-        CloudProvider::AppleICloud => Err(ServiceError::BadRequest(
-            "apple_icloud is client managed".to_string(),
-        )),
+        CloudProvider::Dropbox => {
+            upload_to_dropbox(state, &item.segment, &item.job, bytes, &token_set).await
+        }
+        CloudProvider::AppleICloud | CloudProvider::AmazonS3 | CloudProvider::CloudflareR2 => Err(
+            ServiceError::BadRequest(format!("{} is client managed", provider.as_str())),
+        ),
     }
 }
 
@@ -6821,6 +7976,32 @@ async fn upload_to_google_drive(
     bytes: Vec<u8>,
     token_set: &CloudTokenSet,
 ) -> Result<String, ServiceError> {
+    upload_to_google_drive_in_chunks(
+        state,
+        connection,
+        segment,
+        job,
+        bytes,
+        token_set,
+        GOOGLE_RESUMABLE_CHUNK_BYTES,
+    )
+    .await
+}
+
+async fn upload_to_google_drive_in_chunks(
+    state: &AppState,
+    connection: &CloudConnectionRecord,
+    segment: &SegmentResponse,
+    job: &CloudCopyJobRecord,
+    bytes: Vec<u8>,
+    token_set: &CloudTokenSet,
+    chunk_bytes: usize,
+) -> Result<String, ServiceError> {
+    if bytes.is_empty() || chunk_bytes == 0 {
+        return Err(ServiceError::BadRequest(
+            "Google Drive upload requires non-empty content".to_string(),
+        ));
+    }
     let file_name = google_drive_file_name(&job.destination_key);
     let mut metadata = json!({
         "name": file_name,
@@ -6829,31 +8010,91 @@ async fn upload_to_google_drive(
     if let Some(root_folder_id) = &connection.root_folder_id {
         metadata["parents"] = json!([root_folder_id]);
     }
-    let metadata_part = Part::text(metadata.to_string())
-        .mime_str("application/json")
-        .map_err(|_| ServiceError::Internal("invalid metadata mime".to_string()))?;
-    let file_part = Part::bytes(bytes)
-        .file_name(file_name)
-        .mime_str(&segment.content_type)
-        .map_err(|_| ServiceError::BadRequest("invalid segment content type".to_string()))?;
-    let form = Form::new()
-        .part("metadata", metadata_part)
-        .part("file", file_part);
     let url = append_query(
         &state.config.google_drive_upload_url,
-        "uploadType=multipart&fields=id,name,webViewLink",
+        "uploadType=resumable&fields=id,name,webViewLink",
     );
-    let response = state
+    let start_response = state
         .http
         .post(url)
         .bearer_auth(&token_set.access_token)
-        .multipart(form)
+        .header("content-type", "application/json; charset=UTF-8")
+        .header("x-upload-content-type", segment.content_type.as_str())
+        .header("x-upload-content-length", bytes.len())
+        .body(metadata.to_string())
+        .timeout(CLOUD_PROVIDER_UPLOAD_TIMEOUT)
         .send()
         .await
         .map_err(|err| {
-            error!(error = %err, segment_id = segment.id, "Google Drive upload request failed");
-            ServiceError::Unavailable("Google Drive upload failed".to_string())
+            error!(error = %err, segment_id = segment.id, "Google Drive resumable session request failed");
+            ServiceError::Unavailable("Google Drive upload session failed".to_string())
         })?;
+    let start_status = start_response.status();
+    if !start_status.is_success() {
+        let body = start_response.text().await.unwrap_or_default();
+        error!(status = start_status.as_u16(), body = %body.chars().take(200).collect::<String>(), "Google Drive upload session failed");
+        return Err(ServiceError::Unavailable(format!(
+            "Google Drive upload session failed with status {}",
+            start_status.as_u16()
+        )));
+    }
+    let upload_url = start_response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| {
+            ServiceError::Unavailable(
+                "Google Drive upload session returned no location".to_string(),
+            )
+        })?
+        .to_string();
+    if !is_safe_public_url(&upload_url) {
+        return Err(ServiceError::Unavailable(
+            "Google Drive upload session returned an unsafe location".to_string(),
+        ));
+    }
+
+    let total = bytes.len();
+    let mut offset = 0usize;
+    let mut final_response = None;
+    while offset < total {
+        let end = offset.saturating_add(chunk_bytes).min(total);
+        let response = state
+            .http
+            .put(&upload_url)
+            .header("content-type", segment.content_type.as_str())
+            .header("content-length", end - offset)
+            .header(
+                "content-range",
+                format!("bytes {}-{}/{}", offset, end - 1, total),
+            )
+            .body(bytes[offset..end].to_vec())
+            .timeout(CLOUD_PROVIDER_UPLOAD_TIMEOUT)
+            .send()
+            .await
+            .map_err(|err| {
+                error!(error = %err, segment_id = segment.id, offset, "Google Drive resumable chunk failed");
+                ServiceError::Unavailable("Google Drive upload failed".to_string())
+            })?;
+        if end < total {
+            if response.status().as_u16() != 308 {
+                let status = response.status();
+                let body = response.text().await.unwrap_or_default();
+                error!(status = status.as_u16(), body = %body.chars().take(200).collect::<String>(), "Google Drive resumable chunk was not accepted");
+                return Err(ServiceError::Unavailable(format!(
+                    "Google Drive upload failed with status {}",
+                    status.as_u16()
+                )));
+            }
+        } else {
+            final_response = Some(response);
+        }
+        offset = end;
+    }
+
+    let response = final_response.ok_or_else(|| {
+        ServiceError::Internal("Google Drive upload produced no final response".to_string())
+    })?;
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
@@ -6894,6 +8135,7 @@ async fn upload_to_microsoft_onedrive(
         .bearer_auth(&token_set.access_token)
         .header("content-type", segment.content_type.as_str())
         .body(bytes)
+        .timeout(CLOUD_PROVIDER_UPLOAD_TIMEOUT)
         .send()
         .await
         .map_err(|err| {
@@ -6923,6 +8165,204 @@ async fn upload_to_microsoft_onedrive(
                 "Microsoft OneDrive upload did not return a file id".to_string(),
             )
         })
+}
+
+async fn upload_to_dropbox(
+    state: &AppState,
+    segment: &SegmentResponse,
+    job: &CloudCopyJobRecord,
+    bytes: Vec<u8>,
+    token_set: &CloudTokenSet,
+) -> Result<String, ServiceError> {
+    if bytes.len() > DROPBOX_SINGLE_UPLOAD_MAX_BYTES {
+        return upload_to_dropbox_session(
+            state,
+            segment,
+            job,
+            bytes,
+            token_set,
+            DROPBOX_SESSION_CHUNK_BYTES,
+        )
+        .await;
+    }
+    let path = format!(
+        "/{}",
+        job.destination_key
+            .trim()
+            .trim_start_matches('/')
+            .replace('\\', "_")
+    );
+    let api_arg = json!({
+        "path": path,
+        "mode": "overwrite",
+        "autorename": false,
+        "mute": true,
+        "strict_conflict": false
+    });
+    let response = state
+        .http
+        .post(&state.config.dropbox_upload_url)
+        .bearer_auth(&token_set.access_token)
+        .header("Dropbox-API-Arg", api_arg.to_string())
+        .header("content-type", "application/octet-stream")
+        .body(bytes)
+        .timeout(CLOUD_PROVIDER_UPLOAD_TIMEOUT)
+        .send()
+        .await
+        .map_err(|err| {
+            error!(error = %err, segment_id = segment.id, "Dropbox upload request failed");
+            ServiceError::Unavailable("Dropbox upload failed".to_string())
+        })?;
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        error!(status = status.as_u16(), body = %body.chars().take(200).collect::<String>(), "Dropbox upload failed");
+        return Err(ServiceError::Unavailable(format!(
+            "Dropbox upload failed with status {}",
+            status.as_u16()
+        )));
+    }
+    let value = response.json::<Value>().await.map_err(|err| {
+        error!(error = %err, "Dropbox upload response decode failed");
+        ServiceError::Unavailable("Dropbox upload response was invalid".to_string())
+    })?;
+    value
+        .get("id")
+        .or_else(|| value.get("path_display"))
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+        .ok_or_else(|| {
+            ServiceError::Unavailable("Dropbox upload did not return a file id".to_string())
+        })
+}
+
+fn dropbox_session_endpoint(upload_url: &str, operation: &str) -> Result<String, ServiceError> {
+    let suffix = "/files/upload";
+    let base = upload_url.strip_suffix(suffix).ok_or_else(|| {
+        ServiceError::Unavailable("Dropbox upload URL must end with /files/upload".to_string())
+    })?;
+    Ok(format!("{base}/files/upload_session/{operation}"))
+}
+
+async fn upload_to_dropbox_session(
+    state: &AppState,
+    segment: &SegmentResponse,
+    job: &CloudCopyJobRecord,
+    bytes: Vec<u8>,
+    token_set: &CloudTokenSet,
+    chunk_bytes: usize,
+) -> Result<String, ServiceError> {
+    if bytes.is_empty() || chunk_bytes == 0 {
+        return Err(ServiceError::BadRequest(
+            "Dropbox upload requires non-empty content".to_string(),
+        ));
+    }
+    let start_url = dropbox_session_endpoint(&state.config.dropbox_upload_url, "start")?;
+    let append_url = dropbox_session_endpoint(&state.config.dropbox_upload_url, "append_v2")?;
+    let finish_url = dropbox_session_endpoint(&state.config.dropbox_upload_url, "finish")?;
+    let start_response = state
+        .http
+        .post(start_url)
+        .bearer_auth(&token_set.access_token)
+        .header("Dropbox-API-Arg", json!({"close": false}).to_string())
+        .header("content-type", "application/octet-stream")
+        .body(Vec::<u8>::new())
+        .timeout(CLOUD_PROVIDER_UPLOAD_TIMEOUT)
+        .send()
+        .await
+        .map_err(|err| {
+            error!(error = %err, segment_id = segment.id, "Dropbox upload session request failed");
+            ServiceError::Unavailable("Dropbox upload session failed".to_string())
+        })?;
+    let start_status = start_response.status();
+    if !start_status.is_success() {
+        return Err(ServiceError::Unavailable(format!(
+            "Dropbox upload session failed with status {}",
+            start_status.as_u16()
+        )));
+    }
+    let start_body = start_response.json::<Value>().await.map_err(|_| {
+        ServiceError::Unavailable("Dropbox upload session response was invalid".to_string())
+    })?;
+    let session_id = start_body
+        .get("session_id")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            ServiceError::Unavailable("Dropbox upload session returned no session id".to_string())
+        })?;
+    let path = format!(
+        "/{}",
+        job.destination_key
+            .trim()
+            .trim_start_matches('/')
+            .replace('\\', "_")
+    );
+    let commit = json!({
+        "path": path,
+        "mode": "overwrite",
+        "autorename": false,
+        "mute": true,
+        "strict_conflict": false
+    });
+    let total = bytes.len();
+    let mut offset = 0usize;
+    while offset < total {
+        let end = offset.saturating_add(chunk_bytes).min(total);
+        let final_chunk = end == total;
+        let cursor = json!({"session_id": session_id, "offset": offset});
+        let (url, api_arg) = if final_chunk {
+            (
+                finish_url.as_str(),
+                json!({"cursor": cursor, "commit": commit.clone()}),
+            )
+        } else {
+            (
+                append_url.as_str(),
+                json!({"cursor": cursor, "close": false}),
+            )
+        };
+        let response = state
+            .http
+            .post(url)
+            .bearer_auth(&token_set.access_token)
+            .header("Dropbox-API-Arg", api_arg.to_string())
+            .header("content-type", "application/octet-stream")
+            .body(bytes[offset..end].to_vec())
+            .timeout(CLOUD_PROVIDER_UPLOAD_TIMEOUT)
+            .send()
+            .await
+            .map_err(|err| {
+                error!(error = %err, segment_id = segment.id, offset, "Dropbox upload session chunk failed");
+                ServiceError::Unavailable("Dropbox upload failed".to_string())
+            })?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            error!(status = status.as_u16(), body = %body.chars().take(200).collect::<String>(), "Dropbox upload session chunk failed");
+            return Err(ServiceError::Unavailable(format!(
+                "Dropbox upload failed with status {}",
+                status.as_u16()
+            )));
+        }
+        if final_chunk {
+            let value = response.json::<Value>().await.map_err(|_| {
+                ServiceError::Unavailable("Dropbox upload response was invalid".to_string())
+            })?;
+            return value
+                .get("id")
+                .or_else(|| value.get("path_display"))
+                .and_then(Value::as_str)
+                .map(ToString::to_string)
+                .ok_or_else(|| {
+                    ServiceError::Unavailable("Dropbox upload did not return a file id".to_string())
+                });
+        }
+        offset = end;
+    }
+    Err(ServiceError::Internal(
+        "Dropbox upload produced no final response".to_string(),
+    ))
 }
 
 async fn mark_cloud_copy_job_success(
@@ -7909,6 +9349,27 @@ fn new_oauth_state() -> String {
     format!("sr_oauth_{}", URL_SAFE_NO_PAD.encode(bytes))
 }
 
+#[derive(Debug)]
+struct OAuthPkce {
+    verifier: String,
+    challenge: String,
+}
+
+/// Generates an RFC 7636 verifier/challenge pair. The verifier stays in the
+/// short-lived, account/device-bound OAuth state row; only its S256 challenge
+/// is sent through the browser. This prevents a stolen authorization code from
+/// being redeemed without the server-held verifier.
+fn new_oauth_pkce() -> OAuthPkce {
+    let mut bytes = [0u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    let verifier = URL_SAFE_NO_PAD.encode(bytes);
+    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    OAuthPkce {
+        verifier,
+        challenge,
+    }
+}
+
 fn oauth_state_hash(state: &Config, token: &str) -> String {
     hash_secret(token, &state.token_pepper)
 }
@@ -7994,6 +9455,102 @@ fn sealed_envelope_from_connection(
     })
 }
 
+/// Best-effort upstream grant revocation. `None` means the provider has no
+/// app-scoped revocation endpoint (OneDrive) or is client-managed (iCloud).
+/// `Some(false)` never blocks local disconnect: the sealed credentials are
+/// still erased immediately after this bounded attempt.
+async fn revoke_provider_authorization(
+    state: &AppState,
+    connection: &CloudConnectionRecord,
+    endpoint_override: Option<&str>,
+) -> Option<bool> {
+    let provider = CloudProvider::parse(&connection.provider).ok()?;
+    if !matches!(
+        provider,
+        CloudProvider::GoogleDrive | CloudProvider::Dropbox
+    ) {
+        return None;
+    }
+    let sealer = match state.cloud_sealer.as_ref() {
+        Some(sealer) => sealer,
+        None => return Some(false),
+    };
+    let envelope = match sealed_envelope_from_connection(connection) {
+        Ok(envelope) => envelope,
+        Err(_) => return Some(false),
+    };
+    let plaintext = match sealer.unseal(&connection.account_id, provider, &envelope) {
+        Ok(plaintext) => plaintext,
+        Err(_) => return Some(false),
+    };
+    let mut token_set = match serde_json::from_slice::<CloudTokenSet>(&plaintext) {
+        Ok(token_set) => token_set,
+        Err(_) => return Some(false),
+    };
+
+    if provider == CloudProvider::Dropbox
+        && token_set
+            .expires_at
+            .is_some_and(|expiry| expiry <= Utc::now() + ChronoDuration::seconds(90))
+    {
+        if let Ok(refreshed) = refresh_access_token(state, provider, &token_set).await {
+            token_set = refreshed;
+        }
+    }
+
+    let endpoint = endpoint_override.unwrap_or(match provider {
+        CloudProvider::GoogleDrive => GOOGLE_TOKEN_REVOCATION_URL,
+        CloudProvider::Dropbox => DROPBOX_TOKEN_REVOCATION_URL,
+        CloudProvider::MicrosoftOneDrive
+        | CloudProvider::AppleICloud
+        | CloudProvider::AmazonS3
+        | CloudProvider::CloudflareR2 => return None,
+    });
+    let request = match provider {
+        CloudProvider::GoogleDrive => {
+            let token = token_set
+                .refresh_token
+                .as_deref()
+                .unwrap_or(&token_set.access_token);
+            state.http.post(endpoint).form(&[("token", token)])
+        }
+        CloudProvider::Dropbox => state
+            .http
+            .post(endpoint)
+            .bearer_auth(&token_set.access_token),
+        CloudProvider::MicrosoftOneDrive
+        | CloudProvider::AppleICloud
+        | CloudProvider::AmazonS3
+        | CloudProvider::CloudflareR2 => return None,
+    };
+    match tokio::time::timeout(PROVIDER_REVOCATION_TIMEOUT, request.send()).await {
+        Ok(Ok(response)) if response.status().is_success() => Some(true),
+        Ok(Ok(response)) => {
+            warn!(
+                provider = provider.as_str(),
+                status = response.status().as_u16(),
+                "cloud provider authorization revocation returned non-success"
+            );
+            Some(false)
+        }
+        Ok(Err(error)) => {
+            warn!(
+                provider = provider.as_str(),
+                error = %error,
+                "cloud provider authorization revocation failed"
+            );
+            Some(false)
+        }
+        Err(_) => {
+            warn!(
+                provider = provider.as_str(),
+                "cloud provider authorization revocation timed out"
+            );
+            Some(false)
+        }
+    }
+}
+
 fn destination_key(folder_path: &str, segment: &SegmentResponse) -> String {
     let file_name = segment
         .storage_key
@@ -8011,7 +9568,7 @@ fn destination_key(folder_path: &str, segment: &SegmentResponse) -> String {
 }
 
 fn initial_cloud_copy_status(provider: CloudProvider) -> &'static str {
-    if provider == CloudProvider::AppleICloud {
+    if provider.is_client_managed() {
         "waiting_client"
     } else {
         "pending"
@@ -8023,6 +9580,7 @@ async fn exchange_authorization_code(
     provider: CloudProvider,
     code: &str,
     redirect_uri: &str,
+    code_verifier: Option<&str>,
 ) -> Result<CloudTokenSet, ServiceError> {
     let oauth = provider.oauth_config(&state.config).ok_or_else(|| {
         ServiceError::BadRequest("provider does not use server OAuth".to_string())
@@ -8046,13 +9604,16 @@ async fn exchange_authorization_code(
         .ok_or_else(|| {
             ServiceError::BadRequest("provider does not use server OAuth".to_string())
         })?;
-    let params = [
+    let mut params = vec![
         ("client_id", client_id),
         ("client_secret", client_secret),
         ("code", code),
         ("redirect_uri", redirect_uri),
         ("grant_type", "authorization_code"),
     ];
+    if let Some(verifier) = code_verifier {
+        params.push(("code_verifier", verifier));
+    }
     let response = state
         .http
         .post(endpoint)
@@ -8338,6 +9899,9 @@ async fn enqueue_cloud_copy_job_for_segment(
     segment: &SegmentResponse,
 ) -> Result<u64, ServiceError> {
     let provider = CloudProvider::parse(&connection.provider)?;
+    if !provider.supports_copy_jobs() {
+        return Ok(0);
+    }
     let status = initial_cloud_copy_status(provider);
     let destination_key = destination_key(&connection.folder_path, segment);
     let job_id = Uuid::new_v4().to_string();
@@ -8427,17 +9991,29 @@ fn app(state: AppState) -> Router {
     Router::new()
         .route("/", get(home))
         .route("/privacy", get(privacy))
+        .route("/oauth/callback", get(cloud_oauth_callback))
+        .route("/oauth/manual-callback", get(cloud_oauth_manual_callback))
         .route("/listen/:alert_id", get(listen_alert))
         .route("/download/ios", get(download_ios))
         .route("/download/android", get(download_android))
         .route("/api/v1/data/acoustic-events", get(list_acoustic_events))
         .route("/api/v1/data/user-consents", get(list_user_consents))
+        .route("/api/v1/data/devices", get(list_devices))
         .route(
             "/api/v1/data/user-settings",
             get(get_user_settings).put(update_user_settings),
         )
         .route("/api/mobile/v1/account", delete(delete_account))
         .route("/api/mobile/v1/devices/register", post(register_device))
+        .route("/api/mobile/v1/devices/heartbeat", post(heartbeat_device))
+        .route(
+            "/api/mobile/v1/devices/:install_id/revoke",
+            post(revoke_device),
+        )
+        .route(
+            "/api/mobile/v1/devices/presence",
+            get(device_presence_upgrade),
+        )
         .route(
             "/api/mobile/v1/devices/transfer-state",
             post(update_transfer_state),
@@ -8498,6 +10074,10 @@ fn app(state: AppState) -> Router {
         )
         .route("/internal/retention/sweep", post(retention_sweep))
         .route("/internal/cloud-copy/drain", post(drain_cloud_copy_jobs))
+        .route(
+            "/internal/cloud-connection-projections/drain",
+            post(drain_cloud_connection_projections),
+        )
         .route("/internal/storage-mirror/drain", post(mirror_drain))
         .route("/healthz", get(healthz))
         .route("/readyz", get(readyz))
@@ -8730,7 +10310,8 @@ pub async fn run() {
     if !config.token_pepper_configured {
         warn!("SOUND_RECORDER_DEVICE_TOKEN_PEPPER is not configured; device tokens will not survive process restart");
     }
-    if !config.supabase.is_enabled()
+    if !config.shared_auth.is_enabled()
+        && !config.supabase.is_enabled()
         && config.registration_bearer.is_none()
         && !config.allow_public_device_registration
     {
@@ -8812,6 +10393,27 @@ mod tests {
         }
     }
 
+    fn read_http_request(stream: &mut std::net::TcpStream) -> Vec<u8> {
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let mut request = Vec::new();
+        let mut buf = [0u8; 4096];
+        loop {
+            match stream.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    request.extend_from_slice(&buf[..n]);
+                    if request_has_full_body(&request) {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+        request
+    }
+
     fn spawn_json_server(
         body: &'static str,
     ) -> (String, mpsc::Receiver<String>, thread::JoinHandle<()>) {
@@ -8820,23 +10422,7 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let handle = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            stream
-                .set_read_timeout(Some(Duration::from_secs(2)))
-                .unwrap();
-            let mut request = Vec::new();
-            let mut buf = [0u8; 4096];
-            loop {
-                match stream.read(&mut buf) {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        request.extend_from_slice(&buf[..n]);
-                        if request_has_full_body(&request) {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
+            let request = read_http_request(&mut stream);
             tx.send(String::from_utf8_lossy(&request).to_string())
                 .unwrap();
             let response = format!(
@@ -8845,6 +10431,71 @@ mod tests {
                 body
             );
             stream.write_all(response.as_bytes()).unwrap();
+        });
+        (format!("http://{addr}"), rx, handle)
+    }
+
+    fn spawn_google_resumable_server(
+        body: &'static str,
+        upload_chunks: usize,
+    ) -> (String, mpsc::Receiver<Vec<String>>, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (tx, rx) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            let mut requests = Vec::with_capacity(upload_chunks + 1);
+            for index in 0..=upload_chunks {
+                let (mut stream, _) = listener.accept().unwrap();
+                let request = read_http_request(&mut stream);
+                requests.push(String::from_utf8_lossy(&request).to_string());
+                let response = if index == 0 {
+                    format!(
+                        "HTTP/1.1 200 OK\r\nlocation: http://{addr}/resumable/session-1\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+                    )
+                } else if index < upload_chunks {
+                    "HTTP/1.1 308 Resume Incomplete\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+                        .to_string()
+                } else {
+                    format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    )
+                };
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+            tx.send(requests).unwrap();
+        });
+        (format!("http://{addr}"), rx, handle)
+    }
+
+    fn spawn_dropbox_session_server(
+        upload_chunks: usize,
+    ) -> (String, mpsc::Receiver<Vec<String>>, thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (tx, rx) = mpsc::channel();
+        let handle = thread::spawn(move || {
+            let mut requests = Vec::with_capacity(upload_chunks + 1);
+            for index in 0..=upload_chunks {
+                let (mut stream, _) = listener.accept().unwrap();
+                let request = read_http_request(&mut stream);
+                requests.push(String::from_utf8_lossy(&request).to_string());
+                let body = if index == 0 {
+                    r#"{"session_id":"dropbox-session-1"}"#
+                } else if index < upload_chunks {
+                    "{}"
+                } else {
+                    r#"{"id":"id:dropbox-session-file-1"}"#
+                };
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+            tx.send(requests).unwrap();
         });
         (format!("http://{addr}"), rx, handle)
     }
@@ -8932,9 +10583,16 @@ mod tests {
                 authorization_url: None,
                 token_url: None,
             },
+            dropbox_oauth: OAuthProviderConfig {
+                client_id: Some("dropbox-client".to_string()),
+                client_secret: Some("dropbox-secret".to_string()),
+                authorization_url: None,
+                token_url: None,
+            },
             oauth_redirect_allowlist: Vec::new(),
             google_drive_upload_url: "https://www.googleapis.com/upload/drive/v3/files".to_string(),
             microsoft_graph_base_url: "https://graph.microsoft.com/v1.0".to_string(),
+            dropbox_upload_url: "https://content.dropboxapi.com/2/files/upload".to_string(),
             public_base_url: Some("https://sound.example".to_string()),
             alert_email_to: "alerts@sound.example".to_string(),
             alert_email_webhook_url: None,
@@ -8942,6 +10600,7 @@ mod tests {
             rate_limit_trust_forwarded_for: true,
             require_supabase: false,
             supabase: SupabaseConfig::default(),
+            shared_auth: SharedAuthConfig::default(),
         }
     }
 
@@ -8997,6 +10656,7 @@ mod tests {
             pg_pool: None,
             storage_history_cache: Arc::new(RwLock::new(None)),
             storage_history_refresh_lock: Arc::new(AsyncMutex::new(())),
+            device_presence: Arc::new(DevicePresenceHub::default()),
         }
     }
 
@@ -9082,6 +10742,260 @@ mod tests {
             CloudProvider::parse("icloud").unwrap().link_mode(),
             "client_managed"
         );
+        assert_eq!(
+            CloudProvider::parse("drop_box").unwrap().as_str(),
+            "dropbox"
+        );
+        assert_eq!(CloudProvider::parse("s3").unwrap().as_str(), "amazon_s3");
+        assert_eq!(
+            CloudProvider::parse("r2").unwrap().as_str(),
+            "cloudflare_r2"
+        );
+        assert!(!CloudProvider::AmazonS3.supports_copy_jobs());
+        assert!(!CloudProvider::CloudflareR2.supports_copy_jobs());
+    }
+
+    #[test]
+    fn desktop_platforms_register_with_the_backend() {
+        for platform in ["ios", "android", "macos", "windows", "linux"] {
+            assert_eq!(normalize_platform(platform).unwrap(), platform);
+        }
+        assert!(normalize_platform("web").is_err());
+    }
+
+    #[test]
+    fn cloud_projection_contains_status_but_never_credentials_or_provider_subjects() {
+        let connection = test_connection(CloudProvider::GoogleDrive);
+        let user_id = Uuid::new_v4().to_string();
+        let payload = cloud_connection_projection_payload(&user_id, &connection);
+        let object = payload.as_object().unwrap();
+
+        assert_eq!(
+            object.get("user_id").and_then(Value::as_str),
+            Some(user_id.as_str())
+        );
+        assert_eq!(
+            object.get("provider").and_then(Value::as_str),
+            Some("google_drive")
+        );
+        for forbidden in [
+            "provider_account_id",
+            "root_folder_id",
+            "oauth_scope",
+            "token_ciphertext",
+            "token_nonce",
+            "token_aad",
+            "token_version",
+            "meta_data",
+            "access_key_id",
+            "secret_access_key",
+        ] {
+            assert!(
+                !object.contains_key(forbidden),
+                "projection leaked {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_namespaced_supabase_subjects_project_to_supabase_users() {
+        let user_id = Uuid::new_v4().to_string();
+        assert_eq!(
+            supabase_user_id_from_external_subject(&format!("supabase:{user_id}")),
+            Some(user_id)
+        );
+        assert!(supabase_user_id_from_external_subject("anonymous:abc").is_none());
+        assert!(supabase_user_id_from_external_subject("supabase:not-a-uuid").is_none());
+    }
+
+    #[test]
+    fn cloud_oauth_pkce_is_url_safe_and_matches_its_verifier() {
+        let pkce = new_oauth_pkce();
+
+        assert_eq!(pkce.verifier.len(), 43);
+        assert_eq!(pkce.challenge.len(), 43);
+        assert!(pkce
+            .verifier
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')));
+        assert_eq!(
+            pkce.challenge,
+            URL_SAFE_NO_PAD.encode(Sha256::digest(pkce.verifier.as_bytes()))
+        );
+    }
+
+    #[test]
+    fn provider_authorization_urls_request_offline_access_and_pkce() {
+        let config = test_config();
+        let redirect_uri = "https://api.sonusauris.app/oauth/callback";
+        let challenge = "test-pkce-challenge";
+
+        let google = reqwest::Url::parse(
+            &authorization_url(
+                CloudProvider::GoogleDrive,
+                &config.google_oauth,
+                redirect_uri,
+                "google-state",
+                Some(challenge),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let google_query = google.query_pairs().collect::<HashMap<_, _>>();
+        assert_eq!(
+            google_query.get("access_type").map(|v| v.as_ref()),
+            Some("offline")
+        );
+        assert_eq!(
+            google_query.get("prompt").map(|v| v.as_ref()),
+            Some("consent")
+        );
+        assert_eq!(
+            google_query
+                .get("code_challenge_method")
+                .map(|v| v.as_ref()),
+            Some("S256")
+        );
+        assert_eq!(
+            google_query.get("code_challenge").map(|v| v.as_ref()),
+            Some(challenge)
+        );
+
+        let microsoft = reqwest::Url::parse(
+            &authorization_url(
+                CloudProvider::MicrosoftOneDrive,
+                &config.microsoft_oauth,
+                redirect_uri,
+                "microsoft-state",
+                Some(challenge),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(microsoft.host_str(), Some("login.microsoftonline.com"));
+        assert!(microsoft.path().starts_with("/common/"));
+        let microsoft_query = microsoft.query_pairs().collect::<HashMap<_, _>>();
+        assert!(microsoft_query
+            .get("scope")
+            .is_some_and(|scope| scope.contains("offline_access")));
+        assert!(microsoft_query
+            .get("scope")
+            .is_some_and(|scope| scope.contains("Files.ReadWrite.AppFolder")));
+
+        let dropbox = reqwest::Url::parse(
+            &authorization_url(
+                CloudProvider::Dropbox,
+                &config.dropbox_oauth,
+                redirect_uri,
+                "dropbox-state",
+                Some(challenge),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let dropbox_query = dropbox.query_pairs().collect::<HashMap<_, _>>();
+        assert_eq!(
+            dropbox_query.get("token_access_type").map(|v| v.as_ref()),
+            Some("offline")
+        );
+        assert_eq!(
+            dropbox_query.get("code_challenge").map(|v| v.as_ref()),
+            Some(challenge)
+        );
+    }
+
+    #[tokio::test]
+    async fn authorization_code_exchange_proves_the_pkce_verifier() {
+        let (base_url, rx, handle) = spawn_json_server(
+            r#"{"access_token":"linked-access","refresh_token":"linked-refresh","expires_in":3600,"token_type":"Bearer"}"#,
+        );
+        let mut config = test_config();
+        config.google_oauth.token_url = Some(format!("{base_url}/oauth/token"));
+        let state = test_state(config);
+
+        let tokens = exchange_authorization_code(
+            &state,
+            CloudProvider::GoogleDrive,
+            "provider-code",
+            "https://api.sonusauris.app/oauth/callback",
+            Some("server-held-verifier"),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(tokens.access_token, "linked-access");
+        assert_eq!(tokens.refresh_token.as_deref(), Some("linked-refresh"));
+        let request = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        handle.join().unwrap();
+        assert!(request.starts_with("POST /oauth/token HTTP/1.1"));
+        assert!(request.contains("code=provider-code"));
+        assert!(request.contains("code_verifier=server-held-verifier"));
+        assert!(request.contains("grant_type=authorization_code"));
+    }
+
+    fn seal_test_connection(
+        state: &mut AppState,
+        provider: CloudProvider,
+    ) -> CloudConnectionRecord {
+        let sealer = CloudTokenSealer::from_base64_key(&BASE64_STANDARD.encode([7u8; 32])).unwrap();
+        let mut connection = test_connection(provider);
+        let sealed = sealer
+            .seal(
+                &connection.account_id,
+                provider,
+                &serde_json::to_vec(&test_token_set()).unwrap(),
+            )
+            .unwrap();
+        connection.token_ciphertext = Some(sealed.ciphertext_b64);
+        connection.token_nonce = Some(sealed.nonce_b64);
+        connection.token_aad = Some(sealed.aad_tag);
+        connection.token_version = Some(sealed.version);
+        state.cloud_sealer = Some(sealer);
+        connection
+    }
+
+    #[tokio::test]
+    async fn disconnect_revokes_google_and_dropbox_authorizations_upstream() {
+        let (google_url, google_rx, google_handle) = spawn_json_server("{}");
+        let mut google_state = test_state(test_config());
+        let google_connection = seal_test_connection(&mut google_state, CloudProvider::GoogleDrive);
+
+        assert_eq!(
+            revoke_provider_authorization(&google_state, &google_connection, Some(&google_url),)
+                .await,
+            Some(true)
+        );
+        let google_request = google_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        google_handle.join().unwrap();
+        assert!(google_request.starts_with("POST / HTTP/1.1"));
+        assert!(google_request.contains("token=test-refresh-token"));
+
+        let (dropbox_url, dropbox_rx, dropbox_handle) = spawn_json_server("{}");
+        let mut dropbox_state = test_state(test_config());
+        let dropbox_connection = seal_test_connection(&mut dropbox_state, CloudProvider::Dropbox);
+
+        assert_eq!(
+            revoke_provider_authorization(&dropbox_state, &dropbox_connection, Some(&dropbox_url),)
+                .await,
+            Some(true)
+        );
+        let dropbox_request = dropbox_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        dropbox_handle.join().unwrap();
+        assert!(dropbox_request.starts_with("POST / HTTP/1.1"));
+        assert!(dropbox_request
+            .to_ascii_lowercase()
+            .contains("authorization: bearer test-access-token"));
+    }
+
+    #[tokio::test]
+    async fn onedrive_disconnect_is_local_without_revoking_all_microsoft_sessions() {
+        let state = test_state(test_config());
+        let connection = test_connection(CloudProvider::MicrosoftOneDrive);
+
+        assert_eq!(
+            revoke_provider_authorization(&state, &connection, None).await,
+            None
+        );
     }
 
     #[test]
@@ -9111,8 +11025,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn google_drive_upload_hits_configured_endpoint() {
-        let (base_url, rx, handle) = spawn_json_server(r#"{"id":"google-file-1"}"#);
+    async fn google_drive_upload_uses_a_resumable_session_and_byte_ranges() {
+        let (base_url, rx, handle) = spawn_google_resumable_server(r#"{"id":"google-file-1"}"#, 2);
         let mut config = test_config();
         config.google_drive_upload_url = format!("{base_url}/upload/drive/v3/files");
         let state = test_state(config);
@@ -9123,27 +11037,54 @@ mod tests {
             CloudProvider::GoogleDrive,
             "sound-recorder/device=dev/session=s/segment-0000000001.m4a",
         );
-        let file_id = upload_to_google_drive(
+        let file_id = upload_to_google_drive_in_chunks(
             &state,
             &connection,
             &segment,
             &job,
             b"ping".to_vec(),
             &test_token_set(),
+            3,
         )
         .await
         .unwrap();
         assert_eq!(file_id, "google-file-1");
-        let request = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let requests = rx.recv_timeout(Duration::from_secs(2)).unwrap();
         handle.join().unwrap();
-        let request_lower = request.to_ascii_lowercase();
-        assert!(request.starts_with(
-            "POST /upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink HTTP/1.1"
+        assert_eq!(requests.len(), 3);
+        let start = &requests[0];
+        let start_lower = start.to_ascii_lowercase();
+        assert!(start.starts_with(
+            "POST /upload/drive/v3/files?uploadType=resumable&fields=id,name,webViewLink HTTP/1.1"
         ));
-        assert!(request_lower.contains("authorization: bearer test-access-token"));
-        assert!(request.contains("drive-root-folder"));
-        assert!(request.contains("sound-recorder__device=dev__session=s__segment-0000000001.m4a"));
-        assert!(request.contains("ping"));
+        assert!(start_lower.contains("authorization: bearer test-access-token"));
+        assert!(start_lower.contains("x-upload-content-length: 4"));
+        assert!(start.contains("drive-root-folder"));
+        assert!(start.contains("sound-recorder__device=dev__session=s__segment-0000000001.m4a"));
+
+        let first_chunk = &requests[1];
+        let second_chunk = &requests[2];
+        assert!(first_chunk.starts_with("PUT /resumable/session-1 HTTP/1.1"));
+        assert!(first_chunk
+            .to_ascii_lowercase()
+            .contains("content-range: bytes 0-2/4"));
+        assert!(first_chunk.ends_with("pin"));
+        assert!(second_chunk.starts_with("PUT /resumable/session-1 HTTP/1.1"));
+        assert!(second_chunk
+            .to_ascii_lowercase()
+            .contains("content-range: bytes 3-3/4"));
+        assert!(second_chunk.ends_with("g"));
+        assert!(
+            !first_chunk
+                .to_ascii_lowercase()
+                .contains("authorization: bearer"),
+            "the bearer token must not be forwarded to the session URL"
+        );
+    }
+
+    #[test]
+    fn google_resumable_chunks_satisfy_the_provider_alignment() {
+        assert_eq!(GOOGLE_RESUMABLE_CHUNK_BYTES % (256 * 1024), 0);
     }
 
     #[tokio::test]
@@ -9176,6 +11117,74 @@ mod tests {
         assert!(request_lower.contains("authorization: bearer test-access-token"));
         assert!(request_lower.contains("content-type: audio/m4a"));
         assert!(request.contains("ping"));
+    }
+
+    #[tokio::test]
+    async fn dropbox_upload_hits_configured_endpoint() {
+        let (base_url, rx, handle) = spawn_json_server(
+            r#"{"id":"id:dropbox-file-1","path_display":"/sound-recorder/a.m4a"}"#,
+        );
+        let mut config = test_config();
+        config.dropbox_upload_url = format!("{base_url}/2/files/upload");
+        let state = test_state(config);
+        let segment = test_segment();
+        let job = test_job(CloudProvider::Dropbox, "sound-recorder/a.m4a");
+        let file_id =
+            upload_to_dropbox(&state, &segment, &job, b"ping".to_vec(), &test_token_set())
+                .await
+                .unwrap();
+        assert_eq!(file_id, "id:dropbox-file-1");
+        let request = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        handle.join().unwrap();
+        let request_lower = request.to_ascii_lowercase();
+        assert!(request.starts_with("POST /2/files/upload HTTP/1.1"));
+        assert!(request_lower.contains("authorization: bearer test-access-token"));
+        assert!(request_lower.contains("dropbox-api-arg:"));
+        assert!(
+            request.contains("\\/sound-recorder\\/a.m4a")
+                || request.contains("/sound-recorder/a.m4a")
+        );
+        assert!(request.contains("ping"));
+    }
+
+    #[tokio::test]
+    async fn dropbox_large_upload_uses_a_chunked_session() {
+        let (base_url, rx, handle) = spawn_dropbox_session_server(2);
+        let mut config = test_config();
+        config.dropbox_upload_url = format!("{base_url}/2/files/upload");
+        let state = test_state(config);
+        let segment = test_segment();
+        let job = test_job(CloudProvider::Dropbox, "sound-recorder/a.m4a");
+        let file_id = upload_to_dropbox_session(
+            &state,
+            &segment,
+            &job,
+            b"ping".to_vec(),
+            &test_token_set(),
+            3,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(file_id, "id:dropbox-session-file-1");
+        let requests = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        handle.join().unwrap();
+        assert_eq!(requests.len(), 3);
+        assert!(requests[0].starts_with("POST /2/files/upload_session/start HTTP/1.1"));
+        assert!(requests[0].contains("\"close\":false"));
+        assert!(requests[1].starts_with("POST /2/files/upload_session/append_v2 HTTP/1.1"));
+        assert!(requests[1].contains("\"offset\":0"));
+        assert!(requests[1].ends_with("pin"));
+        assert!(requests[2].starts_with("POST /2/files/upload_session/finish HTTP/1.1"));
+        assert!(requests[2].contains("\"offset\":3"));
+        assert!(requests[2].contains("\"path\":\"/sound-recorder/a.m4a\""));
+        assert!(requests[2].ends_with("g"));
+    }
+
+    #[test]
+    fn dropbox_switches_to_sessions_above_the_single_call_limit() {
+        assert!(DROPBOX_SINGLE_UPLOAD_MAX_BYTES < MAX_CLOUD_COPY_MAX_BYTES as usize);
+        assert_eq!(DROPBOX_SESSION_CHUNK_BYTES % (4 * 1024 * 1024), 0);
     }
 
     #[test]
@@ -9229,6 +11238,78 @@ mod tests {
     }
 
     #[test]
+    fn shared_auth_identity_is_namespaced() {
+        let identity = SharedAuthIdentity {
+            subject: "7bbbfce1-d3b0-41e3-ab93-2e4f4e62ba89".to_string(),
+            email: Some("a@b.co".to_string()),
+        };
+        assert_eq!(
+            identity.external_subject(),
+            "shared-auth:7bbbfce1-d3b0-41e3-ab93-2e4f4e62ba89"
+        );
+    }
+
+    #[test]
+    fn shared_auth_url_accepts_https_and_cluster_http_only() {
+        assert!(validate_shared_auth_url("https://auth.oresoftware.dev"));
+        assert!(validate_shared_auth_url(
+            "http://dd-shared-auth.dd.svc.cluster.local:8120"
+        ));
+        assert!(validate_shared_auth_url("http://127.0.0.1:8120"));
+        for invalid in [
+            "http://auth.example.com",
+            "https://user:pass@auth.example.com",
+            "https://auth.example.com/path",
+            "https://auth.example.com?redirect=elsewhere",
+        ] {
+            assert!(!validate_shared_auth_url(invalid), "{invalid}");
+        }
+    }
+
+    #[tokio::test]
+    async fn shared_auth_introspection_requires_active_aal2_identity() {
+        let body = r#"{"active":true,"sub":"7bbbfce1-d3b0-41e3-ab93-2e4f4e62ba89","email":"verified@example.com","email_verified":true,"aal":2}"#;
+        let (base_url, requests, handle) = spawn_json_server(body);
+        let mut config = test_config();
+        config.shared_auth = SharedAuthConfig {
+            base_url: Some(base_url),
+            introspect_secret: Some("shared-auth-test-introspection-secret-32-bytes".to_string()),
+            required_aal: 2,
+            validation_errors: Vec::new(),
+        };
+        let state = test_state(config);
+        let identity = introspect_shared_auth(&state, "signed.shared.auth-token")
+            .await
+            .unwrap();
+        assert_eq!(identity.subject, "7bbbfce1-d3b0-41e3-ab93-2e4f4e62ba89");
+        assert_eq!(identity.email.as_deref(), Some("verified@example.com"));
+        let request = requests.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(request.starts_with("POST /auth/introspect HTTP/1.1"));
+        assert!(request.lines().any(|line| {
+            line.eq_ignore_ascii_case(
+                "authorization: Bearer shared-auth-test-introspection-secret-32-bytes",
+            )
+        }));
+        assert!(request.contains(r#""token":"signed.shared.auth-token""#));
+        handle.join().unwrap();
+
+        let aal1 = r#"{"active":true,"sub":"7bbbfce1-d3b0-41e3-ab93-2e4f4e62ba89","email_verified":true,"aal":1}"#;
+        let (base_url, _requests, handle) = spawn_json_server(aal1);
+        let mut config = test_config();
+        config.shared_auth = SharedAuthConfig {
+            base_url: Some(base_url),
+            introspect_secret: Some("shared-auth-test-introspection-secret-32-bytes".to_string()),
+            required_aal: 2,
+            validation_errors: Vec::new(),
+        };
+        assert!(matches!(
+            introspect_shared_auth(&test_state(config), "signed.shared.auth-token").await,
+            Err(ServiceError::MfaRequired)
+        ));
+        handle.join().unwrap();
+    }
+
+    #[test]
     fn public_registration_ignores_client_subject() {
         // The takeover fix: an unauthenticated caller cannot claim another
         // account by asserting its externalSubject.
@@ -9248,6 +11329,22 @@ mod tests {
         let (subject, display_name) =
             resolve_registration_subject(&trust, &req, "install-123").unwrap();
         assert_eq!(subject.as_deref(), Some("supabase:real-user"));
+        assert_eq!(display_name.as_deref(), Some("real@user.co"));
+    }
+
+    #[test]
+    fn shared_auth_registration_uses_verified_subject() {
+        let req = registration_request(Some("shared-auth:victim"));
+        let trust = RegistrationTrust::SharedAuth(SharedAuthIdentity {
+            subject: "7bbbfce1-d3b0-41e3-ab93-2e4f4e62ba89".to_string(),
+            email: Some("real@user.co".to_string()),
+        });
+        let (subject, display_name) =
+            resolve_registration_subject(&trust, &req, "install-123").unwrap();
+        assert_eq!(
+            subject.as_deref(),
+            Some("shared-auth:7bbbfce1-d3b0-41e3-ab93-2e4f4e62ba89")
+        );
         assert_eq!(display_name.as_deref(), Some("real@user.co"));
     }
 
@@ -9370,6 +11467,83 @@ mod tests {
         .is_err());
         // iCloud is client-managed and bypasses the URL allow-list entirely.
         assert!(validate_redirect_uri(CloudProvider::AppleICloud, None, &allow).is_ok());
+    }
+
+    #[test]
+    fn hosted_oauth_callback_returns_encoded_code_and_state_to_the_app() {
+        let target = cloud_oauth_app_callback(CloudOAuthCallbackQuery {
+            code: Some("code with + & ?".to_string()),
+            state: Some("sr_oauth_state".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        let uri = reqwest::Url::parse(&target).unwrap();
+
+        assert_eq!(uri.scheme(), "sonusauris");
+        assert_eq!(uri.host_str(), Some("oauth"));
+        assert_eq!(uri.path(), "/callback");
+        let params = uri.query_pairs().collect::<HashMap<_, _>>();
+        assert_eq!(
+            params.get("state").map(|value| value.as_ref()),
+            Some("sr_oauth_state")
+        );
+        assert_eq!(
+            params.get("code").map(|value| value.as_ref()),
+            Some("code with + & ?")
+        );
+    }
+
+    #[test]
+    fn hosted_oauth_callback_forwards_provider_errors_without_a_code() {
+        let target = cloud_oauth_app_callback(CloudOAuthCallbackQuery {
+            state: Some("sr_oauth_state".to_string()),
+            error: Some("access_denied".to_string()),
+            error_description: Some("The user cancelled.".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        let uri = reqwest::Url::parse(&target).unwrap();
+        let params = uri.query_pairs().collect::<HashMap<_, _>>();
+
+        assert_eq!(
+            params.get("error").map(|value| value.as_ref()),
+            Some("access_denied")
+        );
+        assert_eq!(
+            params.get("error_description").map(|value| value.as_ref()),
+            Some("The user cancelled.")
+        );
+        assert!(!params.contains_key("code"));
+    }
+
+    #[test]
+    fn manual_oauth_callback_displays_only_escaped_one_time_code() {
+        let page = cloud_oauth_manual_page(CloudOAuthCallbackQuery {
+            code: Some("<code>&secret".to_string()),
+            state: Some("sr_oauth_state".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+
+        assert!(page.contains("&lt;code&gt;&amp;secret"));
+        assert!(!page.contains("<code>&secret"));
+        assert!(!page.contains("sr_oauth_state"));
+        assert!(page.contains("Never send this code to another person"));
+    }
+
+    #[test]
+    fn manual_oauth_callback_surfaces_denial_without_rendering_a_code_field() {
+        let page = cloud_oauth_manual_page(CloudOAuthCallbackQuery {
+            state: Some("sr_oauth_state".to_string()),
+            error: Some("access_denied".to_string()),
+            error_description: Some("<cancelled>".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+
+        assert!(page.contains("&lt;cancelled&gt;"));
+        assert!(page.contains("access_denied"));
+        assert!(!page.contains("<textarea"));
     }
 
     #[test]
