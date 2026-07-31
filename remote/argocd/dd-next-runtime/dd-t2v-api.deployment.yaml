@@ -190,6 +190,19 @@ spec:
             # Ceiling on concurrent upstream LLM calls (excess -> 503).
             - name: T2V_MAX_INFLIGHT_LLM
               value: '32'
+            # Vapi live-translator assistant config (returned on assistant-request).
+            # VAPI_SERVER_URL is this pod's public /vapi/webhook: when set, it is
+            # put on the assistant's server block so Vapi routes tool-calls +
+            # status + end-of-call back here and echoes VAPI_WEBHOOK_SECRET as
+            # x-vapi-secret. Leave unset to rely on the Vapi phone-number server.
+            - name: VAPI_SERVER_URL
+              value: https://remote.dancingdragons.cc/t2v/vapi/webhook
+            - name: VAPI_MODEL
+              value: gpt-4o
+            - name: VAPI_VOICE_PROVIDER
+              value: openai
+            - name: VAPI_VOICE_ID
+              value: alloy
           ports:
             - name: http
               containerPort: 8130
