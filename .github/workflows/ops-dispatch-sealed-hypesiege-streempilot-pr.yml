@@ -89,10 +89,10 @@ jobs:
 
           gh pr comment "$TRIGGER_PR" \
             --repo "$GITHUB_REPOSITORY" \
-            --body "Validated exact trigger; dispatcher run: ${dispatcher_url}" >/dev/null
+            --body "Validated exact trigger; dispatcher run: ${dispatcher_url}" >/dev/null || true
           gh pr comment "$PUBLICATION_PR" \
             --repo "$GITHUB_REPOSITORY" \
-            --body "Trusted trigger PR #${TRIGGER_PR} validated; dispatcher run: ${dispatcher_url}" >/dev/null
+            --body "Trusted trigger PR #${TRIGGER_PR} validated; dispatcher run: ${dispatcher_url}" >/dev/null || true
 
           gh workflow run "$PUBLISH_WORKFLOW" \
             --repo "$GITHUB_REPOSITORY" \
@@ -122,10 +122,10 @@ jobs:
           echo "run_url=$run_url" >> "$GITHUB_OUTPUT"
           gh pr comment "$TRIGGER_PR" \
             --repo "$GITHUB_REPOSITORY" \
-            --body "Sealed fleet publisher dispatched as ${run_url}" >/dev/null
+            --body "Sealed fleet publisher dispatched as ${run_url}" >/dev/null || true
           gh pr comment "$PUBLICATION_PR" \
             --repo "$GITHUB_REPOSITORY" \
-            --body "Sealed fleet publisher dispatched as ${run_url}" >/dev/null
+            --body "Sealed fleet publisher dispatched as ${run_url}" >/dev/null || true
 
       - name: Follow the exact publisher run to completion
         env:
