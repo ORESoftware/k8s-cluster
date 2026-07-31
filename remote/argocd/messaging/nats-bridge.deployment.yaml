@@ -81,8 +81,15 @@ spec:
             # the bridge. Widen deliberately, per subject family, never to "dd.".
             - name: BRIDGE_SUBJECT_PREFIXES
               value: 'dd.vapi.tasks.,vxl.'
+            # Work-queue tasks must never silently downgrade to core NATS.
+            - name: BRIDGE_DURABLE_SUBJECT_PREFIXES
+              value: 'dd.vapi.tasks.'
             - name: BRIDGE_MAX_BODY_BYTES
               value: '262144'
+            - name: BRIDGE_MAX_IN_FLIGHT
+              value: '64'
+            - name: BRIDGE_PUBLISH_TIMEOUT_MS
+              value: '5000'
             - name: BRIDGE_TOKEN
               valueFrom:
                 secretKeyRef:
