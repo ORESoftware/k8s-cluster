@@ -12,7 +12,7 @@ permissions:
 
 concurrency:
   group: den-675-clean-observability-integration
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   materialize-validate-and-clean:
@@ -44,21 +44,29 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
+          def replace_region(
+              source: str,
+              start_marker: str,
+              end_marker: str,
+              replacement: str,
+              required_fragments: tuple[str, ...],
+              label: str,
+          ) -> str:
+              start = source.find(start_marker)
+              if start < 0:
+                  raise SystemExit(f'missing {label} start marker')
+              end = source.find(end_marker, start)
+              if end < 0:
+                  raise SystemExit(f'missing {label} end marker')
+              current = source[start:end]
+              for fragment in required_fragments:
+                  if current.count(fragment) != 1:
+                      raise SystemExit(f'unexpected {label} fragment count: {fragment}')
+              return source[:start] + replacement + source[end:]
+
           config_path = Path('remote/argocd/observability/prometheus.configmap.yaml')
           config = config_path.read_text(encoding='utf-8')
 
-          broken_jobs = '''      # DEN-675 Shared Auth control-plane metrics remain cluster-internal.
-                - job_name: dd-shared-auth
-                  metrics_path: /metrics
-                  static_configs:
-          - targets:
-              - dd-shared-auth.shared-auth.svc.cluster.local:8120
-                - job_name: dd-shared-auth-nats-bridge
-                  metrics_path: /metrics
-                  static_configs:
-          - targets:
-              - dd-shared-auth-nats-bridge.shared-auth.svc.cluster.local:8121
-          '''
           fixed_jobs = '''      # DEN-675 Shared Auth control-plane metrics remain cluster-internal.
                 - job_name: dd-shared-auth
                   metrics_path: /metrics
@@ -71,73 +79,96 @@ jobs:
                     - targets:
                         - dd-shared-auth-nats-bridge.shared-auth.svc.cluster.local:8121
           '''
-          if config.count(broken_jobs) != 1:
-              raise SystemExit('unexpected Shared Auth scrape-job source shape')
-          config = config.replace(broken_jobs, fixed_jobs)
+          config = replace_region(
+              config,
+              '      # DEN-675 Shared Auth control-plane metrics remain cluster-internal.\n',
+              '      # fiducia data-plane raft metrics.',
+              fixed_jobs,
+              (
+                  '- job_name: dd-shared-auth\n',
+                  '- job_name: dd-shared-auth-nats-bridge\n',
+                  'dd-shared-auth.shared-auth.svc.cluster.local:8120',
+                  'dd-shared-auth-nats-bridge.shared-auth.svc.cluster.local:8121',
+              ),
+              'Shared Auth scrape block',
+          )
 
-          broken_rules = '''          - alert: SharedAuthServerTargetMissing
-            expr: absent(up{job="dd-shared-auth"})
-            for: 2m
-            labels:
-              severity: warning
-              service: dd-shared-auth
-            annotations:
-              summary: Shared Auth scrape target is missing
-              description: "Prometheus has no cluster-internal target for the Shared Auth API."
-          - alert: SharedAuthBridgeTargetMissing
-            expr: absent(up{job="dd-shared-auth-nats-bridge"})
-            for: 2m
-            labels:
-              severity: warning
-              service: dd-shared-auth-nats-bridge
-            annotations:
-              summary: Shared Auth NATS bridge scrape target is missing
-              description: "Prometheus has no cluster-internal target for the Shared Auth NATS bridge."
-          - alert: SharedAuthMetricsTargetDown
-            expr: up{job=~"dd-shared-auth|dd-shared-auth-nats-bridge"} == 0
-            for: 2m
-            labels:
-              severity: warning
-              service: shared-auth
-            annotations:
-              summary: "Shared Auth metrics target {{ $labels.job }} is down"
-              description: "Prometheus cannot scrape the cluster-internal /metrics endpoint for {{ $labels.job }}."
-          - alert: SharedAuthVerificationFailuresHigh
-            expr: increase(shared_auth_verify_failures_total[10m]) > 100
-            for: 5m
-            labels:
-              severity: warning
-              service: dd-shared-auth
-            annotations:
-              summary: Shared Auth verification failures are unusually high
-              description: "More than 100 token-verification failures occurred in ten minutes and the condition persisted for five minutes."
-          - alert: SharedAuthBridgePublishFailuresHigh
-            expr: sum(increase(shared_auth_bridge_publishes_total{outcome="failed"}[10m])) > 10
-            for: 5m
-            labels:
-              severity: warning
-              service: dd-shared-auth-nats-bridge
-            annotations:
-              summary: Shared Auth bridge publish failures are high
-              description: "More than ten internal HTTP-to-NATS failures occurred in ten minutes. Client rejections are intentionally excluded."
-          - alert: SharedAuthBridgeDeliveryFailuresHigh
-            expr: sum(increase(shared_auth_bridge_deliveries_total{outcome="failed"}[10m])) > 5
-            for: 5m
-            labels:
-              severity: warning
-              service: dd-shared-auth-nats-bridge
-            annotations:
-              summary: Shared Auth bridge delivery failures are high
-              description: "More than five NATS-to-webhook delivery failures occurred in ten minutes."
+          fixed_rules = '''          - alert: SharedAuthServerTargetMissing
+                    expr: absent(up{job="dd-shared-auth"})
+                    for: 2m
+                    labels:
+                      severity: warning
+                      service: dd-shared-auth
+                    annotations:
+                      summary: Shared Auth scrape target is missing
+                      description: "Prometheus has no cluster-internal target for the Shared Auth API."
+                  - alert: SharedAuthBridgeTargetMissing
+                    expr: absent(up{job="dd-shared-auth-nats-bridge"})
+                    for: 2m
+                    labels:
+                      severity: warning
+                      service: dd-shared-auth-nats-bridge
+                    annotations:
+                      summary: Shared Auth NATS bridge scrape target is missing
+                      description: "Prometheus has no cluster-internal target for the Shared Auth NATS bridge."
+                  - alert: SharedAuthMetricsTargetDown
+                    expr: up{job=~"dd-shared-auth|dd-shared-auth-nats-bridge"} == 0
+                    for: 2m
+                    labels:
+                      severity: warning
+                      service: shared-auth
+                    annotations:
+                      summary: "Shared Auth metrics target {{ $labels.job }} is down"
+                      description: "Prometheus cannot scrape the cluster-internal /metrics endpoint for {{ $labels.job }}."
+                  - alert: SharedAuthVerificationFailuresHigh
+                    expr: increase(shared_auth_verify_failures_total[10m]) > 100
+                    for: 5m
+                    labels:
+                      severity: warning
+                      service: dd-shared-auth
+                    annotations:
+                      summary: Shared Auth verification failures are unusually high
+                      description: "More than 100 token-verification failures occurred in ten minutes and the condition persisted for five minutes."
+                  - alert: SharedAuthBridgePublishFailuresHigh
+                    expr: sum(increase(shared_auth_bridge_publishes_total{outcome="failed"}[10m])) > 10
+                    for: 5m
+                    labels:
+                      severity: warning
+                      service: dd-shared-auth-nats-bridge
+                    annotations:
+                      summary: Shared Auth bridge publish failures are high
+                      description: "More than ten internal HTTP-to-NATS failures occurred in ten minutes. Client rejections are intentionally excluded."
+                  - alert: SharedAuthBridgeDeliveryFailuresHigh
+                    expr: sum(increase(shared_auth_bridge_deliveries_total{outcome="failed"}[10m])) > 5
+                    for: 5m
+                    labels:
+                      severity: warning
+                      service: dd-shared-auth-nats-bridge
+                    annotations:
+                      summary: Shared Auth bridge delivery failures are high
+                      description: "More than five NATS-to-webhook delivery failures occurred in ten minutes."
           '''
-          fixed_rules = broken_rules
-          if config.count(broken_rules) != 1:
-              raise SystemExit('unexpected Shared Auth alert-rule source shape')
-          config = config.replace(broken_rules, fixed_rules)
+          alert_names = (
+              'SharedAuthServerTargetMissing',
+              'SharedAuthBridgeTargetMissing',
+              'SharedAuthMetricsTargetDown',
+              'SharedAuthVerificationFailuresHigh',
+              'SharedAuthBridgePublishFailuresHigh',
+              'SharedAuthBridgeDeliveryFailuresHigh',
+          )
+          config = replace_region(
+              config,
+              '          - alert: SharedAuthServerTargetMissing\n',
+              '          - alert: BenefactorBackendTargetMissing\n',
+              fixed_rules,
+              tuple(f'alert: {name}' for name in alert_names),
+              'Shared Auth alert block',
+          )
           config_path.write_text(config, encoding='utf-8')
 
           test_path = Path('remote/tests/general/prometheus-application-scrape.test.ts')
           test_source = test_path.read_text(encoding='utf-8')
+
           old_target_assertion = '''  assert.ok(block.includes(`- ${target}`), `${job} must scrape ${target}`);
           '''
           new_target_assertion = '''  assert.ok(
@@ -173,6 +204,14 @@ jobs:
           test_source = test_source.replace(old_revisions, new_revisions)
           test_source = test_source.replace('});\n\n\ntest("Fiducia', '});\n\ntest("Fiducia')
           test_path.write_text(test_source, encoding='utf-8')
+
+          rollout_path = Path('docs/observability/prometheus-application-rollout.yaml')
+          rollout = rollout_path.read_text(encoding='utf-8')
+          rollout = rollout.replace(
+              'publicly accessible\n\n\n  - project: github.com/shared-auth',
+              'publicly accessible\n\n  - project: github.com/shared-auth',
+          )
+          rollout_path.write_text(rollout, encoding='utf-8')
           PY
 
       - name: Parse both embedded Prometheus YAML documents
@@ -190,6 +229,7 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
+
       - name: Run focused scrape and rollout contracts
         working-directory: remote/tests
         shell: bash
