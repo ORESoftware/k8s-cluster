@@ -186,7 +186,7 @@ jobs:
           git diff --check
           ! grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' src generated Cargo.toml
 
-      - name: Remove every migration carrier and commit product files only
+      - name: Commit product files without workflow-scoped paths
         run: |
           set -euo pipefail
           git checkout origin/main -- .github/workflows/ci.yml
@@ -194,6 +194,8 @@ jobs:
           rm -f \
             .github/workflows/apply-code-first-openapi.yml \
             .github/workflows/fix-openapi-schema-count.yml \
+            .github/workflows/fix-den-600-finalizer.yml \
+            .github/workflows/openapi-contract.yml \
             scripts/apply_code_first_openapi.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -202,6 +204,8 @@ jobs:
           for carrier in \
             .github/workflows/apply-code-first-openapi.yml \
             .github/workflows/fix-openapi-schema-count.yml \
+            .github/workflows/fix-den-600-finalizer.yml \
+            .github/workflows/openapi-contract.yml \
             scripts/apply_code_first_openapi.py; do
             test ! -e "$carrier"
           done
