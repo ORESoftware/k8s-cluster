@@ -50,16 +50,17 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
 
-          source_repository='ORESoftware/testing'
-          source_sha='143c7ea1fd23fc24aed0b575d81df475ce067391'
-          source_subdirectory='mcp-rust-libs'
-          source_manifest_sha256='288e6c5db4d6dfad4dce9bc069e3c1f19bd7ea35134ae68d8a138bed6d9b5bf6'
-          target_repository='ORESoftware/mcp-rust-libs'
-          target_branch='bootstrap/semantic-polyglot-20260731'
+          readonly source_repository='ORESoftware/testing'
+          readonly source_sha='069b1aa4251658c8348d2eb477ad71369d9b742b'
+          readonly source_subdirectory='mcp-rust-libs'
+          readonly source_manifest_sha256='288e6c5db4d6dfad4dce9bc069e3c1f19bd7ea35134ae68d8a138bed6d9b5bf6'
+          readonly target_repository='ORESoftware/mcp-rust-libs'
+          readonly target_branch='bootstrap/semantic-polyglot-20260731'
+          readonly baseline_timestamp='2026-07-31T13:30:00Z'
           work="$(mktemp -d /tmp/mcp-rust-libs-publisher.XXXXXX)"
 
           cleanup() {
-            unset GH_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
             rm -rf "$work"
           }
           trap cleanup EXIT
@@ -79,7 +80,18 @@ jobs:
           test "$(git -C "$work/carrier" rev-parse HEAD)" = "$source_sha"
 
           source="$work/carrier/$source_subdirectory"
-          test -d "$source"
+          for required in \
+            Cargo.toml \
+            .zpkg.toml \
+            .github/workflows/scaffold.yml \
+            packages/rust/Cargo.toml \
+            packages/typescript/package.json \
+            packages/dart/pubspec.yaml \
+            packages/gleam/gleam.toml \
+            reports/polyglot-api-repair-complete.txt \
+            reports/source-files.sha256; do
+            test -f "$source/$required"
+          done
           test "$(sha256sum "$source/reports/source-files.sha256" | awk '{print $1}')" = \
             "$source_manifest_sha256"
           source_tree="$(git -C "$work/carrier" rev-parse "${source_sha}:${source_subdirectory}")"
@@ -92,24 +104,27 @@ jobs:
             python3 scripts/check-scaffold.py
             python3 tooling/conformance/run.py
             python3 scripts/update-source-manifest.py --check
+            sh scripts/verify-zed-package.sh "$source"
           )
 
+          description='Shared Rust, TypeScript, Dart, and Gleam MCP runtime, contracts, safety, telemetry, schema generation, and conformance libraries'
           if ! gh api "repos/$target_repository" >/dev/null 2>&1; then
             gh api --method POST user/repos \
               -f name=mcp-rust-libs \
-              -f description='Shared Rust, TypeScript, Dart, and Gleam MCP runtime, contracts, safety, telemetry, schema generation, and conformance libraries' \
+              -f description="$description" \
               -F private=false \
               -F has_issues=true \
               -F has_projects=false \
               -F has_wiki=false \
-              -F auto_init=true >/dev/null
+              -F auto_init=false >/dev/null
             echo "CREATED $target_repository"
           fi
 
           test "$(gh api "repos/$target_repository" --jq '.owner.login + ":" + .visibility')" = \
             'ORESoftware:public'
           gh api --method PATCH "repos/$target_repository" \
-            -f description='Shared Rust, TypeScript, Dart, and Gleam MCP runtime, contracts, safety, telemetry, schema generation, and conformance libraries' \
+            -f description="$description" \
+            -F private=false \
             -F has_issues=true \
             -F has_projects=false \
             -F has_wiki=false \
@@ -118,9 +133,42 @@ jobs:
             -F allow_rebase_merge=false \
             -F delete_branch_on_merge=true >/dev/null
 
+          baseline="$work/baseline"
+          mkdir -p "$baseline"
+          git -C "$baseline" init -b main
+          git -C "$baseline" config user.name 'ORESoftware publication automation'
+          git -C "$baseline" config user.email 'bot@oresoftware.dev'
+          cat > "$baseline/README.md" <<'README'
+          # mcp-rust-libs
+
+          Canonical polyglot MCP commons repository. The reviewed implementation is introduced through the bootstrap pull request.
+          README
+          git -C "$baseline" add README.md
+          GIT_AUTHOR_DATE="$baseline_timestamp" GIT_COMMITTER_DATE="$baseline_timestamp" \
+            git -C "$baseline" commit -m 'chore: initialize canonical repository'
+          expected_main="$(git -C "$baseline" rev-parse HEAD)"
+          expected_main_tree="$(git -C "$baseline" rev-parse 'HEAD^{tree}')"
+          remote_main="$(gh api "repos/$target_repository/git/ref/heads/main" --jq .object.sha 2>/dev/null || true)"
+          if test -z "$remote_main"; then
+            git -C "$baseline" remote add origin "https://github.com/${target_repository}.git"
+            git -C "$baseline" push origin HEAD:refs/heads/main
+            remote_main="$(gh api "repos/$target_repository/git/ref/heads/main" --jq .object.sha)"
+          fi
+          gh api --method PATCH "repos/$target_repository" -f default_branch=main >/dev/null
+
           git clone "https://github.com/${target_repository}.git" "$work/target"
           git -C "$work/target" config user.name 'ORESoftware publication automation'
           git -C "$work/target" config user.email 'bot@oresoftware.dev'
+          git -C "$work/target" fetch origin main
+          main_tree="$(git -C "$work/target" rev-parse 'origin/main^{tree}')"
+          if test "$main_tree" = "$source_tree"; then
+            echo "ALREADY_PUBLISHED $target_repository main=$remote_main source_tree=$source_tree"
+            exit 0
+          fi
+          if test "$remote_main" != "$expected_main" || test "$main_tree" != "$expected_main_tree"; then
+            echo "Refusing unexpected $target_repository/main state: commit=$remote_main tree=$main_tree" >&2
+            exit 1
+          fi
 
           if git -C "$work/target" ls-remote --exit-code --heads origin "$target_branch" >/dev/null 2>&1; then
             git -C "$work/target" fetch origin "$target_branch"
@@ -139,24 +187,31 @@ jobs:
           fi
 
           head_sha="$(git -C "$work/target" rev-parse HEAD)"
-          pr_number="$(
-            gh pr list \
-              --repo "$target_repository" \
-              --head "$target_branch" \
-              --state all \
-              --json number,state,mergedAt,headRefOid \
-              --jq 'if length == 0 then "" elif length == 1 then .[0].number else error("multiple bootstrap pull requests") end'
-          )"
-          if test -z "$pr_number"; then
+          pr_json="$(gh pr list \
+            --repo "$target_repository" \
+            --head "$target_branch" \
+            --base main \
+            --state all \
+            --json number,state,mergedAt,headRefOid,url)"
+          pr_count="$(jq 'length' <<<"$pr_json")"
+          test "$pr_count" -le 1
+          if test "$pr_count" -eq 0; then
             pr_url="$(
               gh pr create \
                 --repo "$target_repository" \
                 --base main \
                 --head "$target_branch" \
                 --title 'Bootstrap shared polyglot MCP libraries' \
-                --body "Promotes only the reviewed \`${source_subdirectory}/\` subtree from \`${source_repository}@${source_sha}\` to repository root. The semantic merge preserves the hardened Rust runtime/config/telemetry/HTTP/safety/testkit implementation and layers the reconciled TypeScript/Zod, Dart, Gleam, JSON Schema, deterministic generation, fixtures, and four-target Zed package layout around it. Product tools, authorization, mutations, credentials, endpoint ownership, and business schemas remain in their owning MCP repositories. Source manifest SHA-256: \`${source_manifest_sha256}\`. Linear: DEN-319, DEN-957, DEN-959, DEN-967, DEN-968, DEN-969, DEN-970, DEN-972."
+                --body "Promotes only the reviewed \`${source_subdirectory}/\` subtree from \`${source_repository}@${source_sha}\` to repository root. The semantic merge preserves the hardened Rust runtime/config/telemetry/HTTP/safety/testkit implementation and layers TypeScript/Zod, Dart, Gleam, JSON Schema, deterministic generation, fixtures, and four-target Zed packaging around it. Product tools, authorization, mutations, credentials, endpoint ownership, and business schemas remain in their owning MCP repositories. Source manifest SHA-256: \`${source_manifest_sha256}\`. Linear: DEN-319, DEN-957, DEN-959, DEN-967, DEN-968, DEN-969, DEN-970, DEN-972, DEN-1186."
             )"
             pr_number="${pr_url##*/}"
+          else
+            pr_number="$(jq -r '.[0].number' <<<"$pr_json")"
+            pr_state="$(jq -r '.[0].state' <<<"$pr_json")"
+            merged_at="$(jq -r '.[0].mergedAt // ""' <<<"$pr_json")"
+            if test "$pr_state" = CLOSED && test -z "$merged_at"; then
+              gh pr reopen "$pr_number" --repo "$target_repository"
+            fi
           fi
 
           gh pr view "$pr_number" --repo "$target_repository" \
@@ -170,7 +225,7 @@ jobs:
           chmod 700 "$remote_script"
 
           encoded="$(base64 --wrap=0 "$remote_script")"
-          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-mcp-rust-libs.sh && chmod 700 /tmp/publish-mcp-rust-libs.sh && sudo -u ec2-user -H bash /tmp/publish-mcp-rust-libs.sh; status=\$?; rm -f /tmp/publish-mcp-rust-libs.sh; exit \$status"
+          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-mcp-rust-libs.sh && chown ec2-user:ec2-user /tmp/publish-mcp-rust-libs.sh && chmod 700 /tmp/publish-mcp-rust-libs.sh && sudo -u ec2-user -H bash /tmp/publish-mcp-rust-libs.sh; status=\$?; rm -f /tmp/publish-mcp-rust-libs.sh; exit \$status"
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
