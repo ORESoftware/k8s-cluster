@@ -111,6 +111,12 @@ pub fn mint_for_session(
 ///
 /// `claims` must come from a token this server already verified — the caller
 /// carries the prior `amr` forward so the new token records the whole chain.
+///
+// Not yet routed: the step-up challenge endpoint lands with the MFA platform
+// work. `mfa.rs` currently issues a fresh session via
+// `response_from_issued_with_assurance` instead of re-minting for the existing
+// session, which is what this does.
+#[allow(dead_code)]
 pub fn mint_step_up(
     state: &AppState,
     claims: &OreClaims,
