@@ -1,0 +1,128 @@
+name: Publish Memebank bootstrap
+
+on:
+  push:
+    branches:
+      - ops/publish-memebank-2026-07-30
+    paths:
+      - .bootstrap/memebank/preflight-trigger
+      - .bootstrap/memebank/publish-trigger
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-memebank-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: contains(github.event.head_commit.modified, '.bootstrap/memebank/preflight-trigger') || contains(github.event.head_commit.added, '.bootstrap/memebank/preflight-trigger')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
+    steps:
+      - name: Verify the repository-administration credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo '::error::REMOTE_DEV_GH_PAT is not configured for this repository'
+            exit 78
+          fi
+          authenticated_login="$(gh api user --jq .login)"
+          org_login="$(gh api orgs/memebank --jq .login)"
+          membership="$(gh api user/memberships/orgs/memebank --jq '.state + ":" + .role')"
+          test "$org_login" = memebank
+          test "$membership" = active:admin
+          echo "Authenticated GitHub identity: $authenticated_login"
+          echo "Memebank membership: $membership"
+
+  publish:
+    if: contains(github.event.head_commit.modified, '.bootstrap/memebank/publish-trigger') || contains(github.event.head_commit.added, '.bootstrap/memebank/publish-trigger')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ secrets.REMOTE_DEV_GH_PAT }}
+      OWNER: memebank
+      ARCHIVE_SHA256: 78f13c20bc2b33b8e4170904c51ae3829cb011d0661e8ced0848ed7ef91e77bd
+    steps:
+      - name: Check out the sealed bootstrap payload
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Verify credential and archive integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo '::error::REMOTE_DEV_GH_PAT is not configured for this repository'
+            exit 78
+          fi
+          test "$(gh api orgs/$OWNER --jq .login)" = "$OWNER"
+          test "$(gh api user/memberships/orgs/$OWNER --jq '.state + ":" + .role')" = active:admin
+          base64 --decode .bootstrap/memebank/memebank-bootstrap.tar.gz.b64 > /tmp/memebank-bootstrap.tar.gz
+          printf '%s  %s\n' "$ARCHIVE_SHA256" /tmp/memebank-bootstrap.tar.gz | sha256sum --check --strict
+          mkdir -p /tmp/memebank-publish
+          tar -xzf /tmp/memebank-bootstrap.tar.gz -C /tmp/memebank-publish
+          test -x /tmp/memebank-publish/memebank-bootstrap/publish-to-github.sh
+          test -x /tmp/memebank-publish/memebank-bootstrap/validate-all.sh
+
+      - name: Validate sealed repositories without exposing credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=/tmp/memebank-publish/memebank-bootstrap
+          REQUIRE_CLEAN_GIT=1 bash "$root/validate-all.sh"
+          expected=(
+            mb-interfaces
+            mb-clients
+            memebank-api-server.rs
+            memebank-media-worker.rs
+            memebank-web-server.rs
+            memebank-flutter
+            mb-cli
+            mb-infra
+            memebank.github.io
+            memebank-monorepo
+          )
+          for repo in "${expected[@]}"; do
+            test -d "$root/$repo/.git"
+            test "$(git -C "$root/$repo" branch --show-current)" = main
+            git -C "$root/$repo" diff --check
+            git -C "$root/$repo" fsck --strict
+          done
+
+      - name: Create repositories and push sealed main branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          root=/tmp/memebank-publish/memebank-bootstrap
+          git config --global user.name 'memebank-bootstrap-bot'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          gh auth setup-git
+          MEMEBANK_REPO_VISIBILITY=public bash "$root/publish-to-github.sh" "$OWNER"
+
+      - name: Verify published commit identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          declare -A expected=(
+            [memebank-monorepo]=ebc8f5e0df007893890eede2a5c4b8722438c20c
+            [memebank-flutter]=ef5a1a86fdca6a3d5e12a2b9d4df1e2555d216da
+            [memebank-api-server.rs]=77283ca5d9bfd665a9c252ee8f0d5eecd6bf5a00
+            [memebank-web-server.rs]=a5f67c86cd0e3bcefbd190da3e8d291119af5f56
+            [memebank-media-worker.rs]=ee0422582ff4beebedf40b02b7fd2c324d856b68
+            [mb-interfaces]=5c1a7a85855a95c281a05089e43ce1bcd0615172
+            [mb-clients]=b1310e3a00c2168f9bca2fc1a59ac0b6faec2767
+            [mb-cli]=b5cbe797fa05f52f1a8c6f87bf811d88d4ab54c4
+            [mb-infra]=7c068b24ebc3dce9a1874aa1c8328504e85010ec
+            [memebank.github.io]=cadba1f33077f8a82803661386a0149ed1ed9b8c
+          )
+          for repo in "${!expected[@]}"; do
+            actual="$(gh api "repos/$OWNER/$repo/commits/main" --jq .sha)"
+            test "$actual" = "${expected[$repo]}"
+            echo "$OWNER/$repo -> $actual"
+          done
