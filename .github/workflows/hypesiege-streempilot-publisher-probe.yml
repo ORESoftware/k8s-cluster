@@ -1,6 +1,11 @@
 name: Probe HypeSiege and StreemPilot protected publisher
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/hypesiege-streempilot-publisher-probe.yml
   pull_request:
     branches:
       - main
