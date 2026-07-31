@@ -49,21 +49,23 @@
     {
       "id": "SEG_ERASE",
       "kind": "safety",
-      "statement": "A segment is marked erased only after primary and every known mirror object are deleted or confirmed absent.",
+      "statement": "A segment is marked erased only after primary and every known or in-flight mirror is deleted, confirmed absent, or durably fenced against late publication.",
       "trigger_paths": [
         "src/**"
       ],
       "model": "formal/review-procedure/model.py",
       "evidence": [
         "bounded lifecycle model",
-        "primary/mirror failure matrix tests"
+        "primary/mirror failure matrix tests",
+        "late mirror completion rejection with durable generation or lease fencing"
       ],
       "commands": [
         "python3 formal/review-procedure/model.py",
         "cargo test --all-targets --locked"
       ],
       "assumptions": [
-        "storage inventory metadata names every authoritative copy"
+        "storage inventory metadata names every authoritative copy",
+        "mirror abandonment writes a durable generation or lease fence before final erasure and mirror publication validates that fence atomically"
       ],
       "bounded": true
     },
@@ -101,7 +103,8 @@
       "evidence": [
         "bounded idempotent retry transitions",
         "retry tests with stable request/claim identity",
-        "database uniqueness constraints"
+        "database uniqueness constraints",
+        "late mirror publication rejection after abandonment and final erasure"
       ],
       "commands": [
         "python3 formal/review-procedure/check.py",
@@ -109,7 +112,8 @@
         "cargo test --all-targets --locked"
       ],
       "assumptions": [
-        "request identifiers and claim leases remain stable across transport retry"
+        "request identifiers and claim leases remain stable across transport retry",
+        "a fenced mirror generation cannot publish after abandonment or final erasure"
       ],
       "bounded": true
     }
