@@ -79,14 +79,8 @@ spec:
               value: /etc/nats-bridge/routes.json
             - name: BRIDGE_CLIENTS_FILE
               value: /var/run/secrets/nats-bridge/clients.json
-            # 64, not the 128 that DEN-440 introduced on main. Both branches added
-            # this key independently five minutes apart on 2026-07-30; only the
-            # dev side (04cd1e15) shipped the bridge/DLQ resilience suite
-            # (.github/workflows/nats-messaging-resilience.yml) that the number was
-            # measured against. DEN-440's 128 came from unrelated HTTP-ingress
-            # hardening with no recorded basis, and this is a backpressure ceiling
-            # where guessing high is the dangerous direction.
-            # Widen only with measured broker and pod headroom.
+            # Preserve the bounded pressure limit proven by the bridge/DLQ
+            # resilience suite; widen only with measured broker and pod headroom.
             - name: BRIDGE_MAX_IN_FLIGHT
               value: '64'
             - name: BRIDGE_PUBLISH_TIMEOUT_MS
