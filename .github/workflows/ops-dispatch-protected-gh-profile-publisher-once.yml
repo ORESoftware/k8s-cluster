@@ -1,5 +1,5 @@
 name: Dispatch protected gh-profile publisher once
-run-name: Dispatch protected gh-profile publisher once @ ${{ github.sha }}
+run-name: Activate registered protected gh-profile publisher @ ${{ github.sha }}
 
 on:
   push:
