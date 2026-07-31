@@ -165,7 +165,9 @@ spec:
               path: /healthz
               port: http
             periodSeconds: 5
-            failureThreshold: 60
+            # Cold in-pod build now runs in an isolated /tmp target (no shared
+            # cache), so give it room: 360*5s = 30 min before startup-kill.
+            failureThreshold: 360
           readinessProbe:
             httpGet:
               path: /readyz
