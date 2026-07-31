@@ -1,11 +1,6 @@
 name: Probe HypeSiege and StreemPilot protected publisher
 
 on:
-  push:
-    branches:
-      - agent/hypesiege-streempilot-publisher-probe-20260731
-    paths:
-      - .github/workflows/hypesiege-streempilot-publisher-probe.yml
   pull_request:
     branches:
       - main
@@ -18,7 +13,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: hypesiege-streempilot-publisher-probe
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
