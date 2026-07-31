@@ -1,0 +1,102 @@
+name: preflight remote-dev GitHub publication identity
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/workflows/remote-dev-gh-pat-preflight.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify target-organization repository creation capability
+        shell: bash
+        env:
+          REMOTE_DEV_GH_PAT: ${{ secrets.REMOTE_DEV_GH_PAT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${REMOTE_DEV_GH_PAT:-}" ]]; then
+            echo '::error::REMOTE_DEV_GH_PAT is unavailable.'
+            exit 78
+          fi
+          printf '::add-mask::%s\n' "$REMOTE_DEV_GH_PAT"
+
+          query_file="${RUNNER_TEMP}/query.json"
+          response_file="${RUNNER_TEMP}/response.json"
+          cat > "$query_file" <<'JSON'
+          {
+            "query": "query { viewer { login } hypesiege: organization(login: \"hypesiege\") { viewerIsAMember viewerCanAdminister viewerCanCreateRepositories } streempilot: organization(login: \"streempilot\") { viewerIsAMember viewerCanAdminister viewerCanCreateRepositories } }"
+          }
+          JSON
+          status="$(curl --silent --show-error \
+            --request POST \
+            --output "$response_file" \
+            --write-out '%{http_code}' \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer ${REMOTE_DEV_GH_PAT}" \
+            --header 'X-GitHub-Api-Version: 2026-03-10' \
+            --header 'Content-Type: application/json' \
+            --data-binary "@${query_file}" \
+            https://api.github.com/graphql)"
+          if [[ "$status" != 200 ]]; then
+            echo "::error::GitHub GraphQL preflight returned HTTP ${status}."
+            exit 78
+          fi
+
+          python3 - "$response_file" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          payload = json.loads(pathlib.Path(sys.argv[1]).read_text())
+          if payload.get('errors'):
+              raise SystemExit('GraphQL capability query returned errors')
+          data = payload.get('data') or {}
+          viewer = data.get('viewer') or {}
+          if not viewer.get('login'):
+              raise SystemExit('token did not resolve an authenticated viewer')
+          print(f"authenticated_viewer={viewer['login']}")
+          for org in ('hypesiege', 'streempilot'):
+              capability = data.get(org)
+              if not capability:
+                  raise SystemExit(f'{org}: organization unavailable to token')
+              member = capability.get('viewerIsAMember') is True
+              can_create = capability.get('viewerCanCreateRepositories') is True
+              can_admin = capability.get('viewerCanAdminister') is True
+              print(f'{org}: member={str(member).lower()} can_create_repositories={str(can_create).lower()} can_administer={str(can_admin).lower()}')
+              if not member or not can_create:
+                  raise SystemExit(f'{org}: token viewer cannot create repositories')
+          PY
+
+          headers="${RUNNER_TEMP}/headers.txt"
+          curl --fail --silent --show-error \
+            --dump-header "$headers" \
+            --output /dev/null \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer ${REMOTE_DEV_GH_PAT}" \
+            --header 'X-GitHub-Api-Version: 2026-03-10' \
+            https://api.github.com/user
+          python3 - "$headers" <<'PY'
+          import pathlib
+          import sys
+
+          scopes = ''
+          for line in pathlib.Path(sys.argv[1]).read_text(errors='replace').splitlines():
+              if line.lower().startswith('x-oauth-scopes:'):
+                  scopes = line.split(':', 1)[1].strip().lower()
+                  break
+          if scopes:
+              values = {scope.strip() for scope in scopes.split(',') if scope.strip()}
+              public_write = 'repo' in values or 'public_repo' in values
+              print(f'classic_pat_public_repository_scope={str(public_write).lower()}')
+              if not public_write:
+                  raise SystemExit('classic PAT lacks repo/public_repo scope')
+          else:
+              print('classic_pat_scope_header=absent')
+          PY
