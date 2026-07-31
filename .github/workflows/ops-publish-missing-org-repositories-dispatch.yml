@@ -2,6 +2,12 @@ name: Publish missing organization repositories (dispatch)
 run-name: Publish missing organization repositories (${{ inputs.request_id }})
 
 on:
+  workflow_call:
+    inputs:
+      request_id:
+        description: Immutable request correlation identifier
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       request_id:
@@ -52,49 +58,139 @@ jobs:
           cat > "$remote_script" <<'REMOTE_EOF'
           #!/usr/bin/env bash
           set -Eeuo pipefail
+          umask 077
 
-          stage=bootstrap
-          report_error() {
-            status=$?
+          stage=initialization
+          report_failure() {
+            local rc=$?
             trap - ERR
-            printf 'publisher-stage-failed=%s exit=%s\n' "$stage" "$status" >&2
-            exit "$status"
+            printf 'publisher-stage=%s status=failed rc=%s\n' "$stage" "$rc" >&2
+            exit "$rc"
           }
-          trap report_error ERR
+          trap report_failure ERR
 
           trusted_sha="${1:?trusted SHA required}"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
-          test -z "${CODEX_HOME:-}"
 
-          stage=prepare-disposable-state
+          for inherited in \
+            CODEX_HOME \
+            GH_TOKEN \
+            GITHUB_TOKEN \
+            GITHUB_REPOSITORY_ADMIN_TOKEN \
+            GIT_ASKPASS
+          do
+            if test -n "${!inherited:-}"; then
+              printf 'publisher-stage=%s status=failed reason=inherited-%s\n' \
+                "$stage" "$inherited" >&2
+              exit 64
+            fi
+          done
+
           work="$(mktemp -d /tmp/critical-org-publisher.XXXXXX)"
           export CODEX_HOME="$work/codex-home"
           install -d -m 700 "$CODEX_HOME"
-          case "$CODEX_HOME" in
-            "$work"/*) ;;
-            *) echo 'disposable CODEX_HOME escaped the temporary worktree' >&2; exit 1 ;;
-          esac
+
           cleanup() {
-            unset GH_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN CODEX_HOME
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            unset CODEX_HOME credential_source
             unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+            unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
             rm -rf "$work"
           }
           trap cleanup EXIT
 
-          stage=receive-cluster-credential
-          IFS= read -r encoded_pat
-          test -n "$encoded_pat"
-          GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
-          unset encoded_pat
-          test -n "$GH_TOKEN"
-          [[ "$GH_TOKEN" != *$'\n'* && "$GH_TOKEN" != *$'\r'* ]]
+          stage=credential-discovery
+          credential_source=
+          GH_TOKEN=
+          if command -v aws >/dev/null 2>&1; then
+            if GH_TOKEN="$(
+              aws secretsmanager get-secret-value \
+                --region "${AWS_REGION:-us-east-1}" \
+                --secret-id dd/remote-dev/agent-secrets \
+                --query SecretString \
+                --output text 2>/dev/null \
+                | python3 -c '
+          import json
+          import sys
+
+          try:
+              payload = json.load(sys.stdin)
+          except (json.JSONDecodeError, OSError):
+              raise SystemExit(65)
+          value = payload.get("GH_PAT")
+          if not isinstance(value, str) or not value:
+              raise SystemExit(65)
+          sys.stdout.write(value)
+          ' 2>/dev/null
+            )" && test -n "$GH_TOKEN"; then
+              credential_source=aws-secrets-manager
+            else
+              unset GH_TOKEN
+              GH_TOKEN=
+            fi
+          fi
+
+          if test -z "$GH_TOKEN"; then
+            stage=credential-kubernetes
+            if ! command -v kubectl >/dev/null 2>&1; then
+              printf 'publisher-stage=%s status=failed reason=no-supported-credential-source\n' \
+                "$stage" >&2
+              exit 69
+            fi
+            encoded_pat="$(
+              kubectl -n default get secret dd-agent-secrets \
+                -o jsonpath='{.data.GH_PAT}'
+            )"
+            if test -z "$encoded_pat"; then
+              printf 'publisher-stage=%s status=failed reason=missing-or-empty-gh-pat\n' \
+                "$stage" >&2
+              exit 65
+            fi
+            if ! GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode 2>/dev/null)" ||
+              test -z "$GH_TOKEN"; then
+              printf 'publisher-stage=%s status=failed reason=invalid-gh-pat-encoding\n' \
+                "$stage" >&2
+              exit 65
+            fi
+            unset encoded_pat
+            credential_source=kubernetes-secret
+          fi
+
+          case "$GH_TOKEN" in
+            *$'\n'*|*$'\r'*)
+              printf 'publisher-stage=%s status=failed reason=invalid-gh-pat-bytes\n' \
+                "$stage" >&2
+              exit 65
+              ;;
+          esac
           export GH_TOKEN
           export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
+          printf 'publisher-stage=credential-ready source=%s\n' "$credential_source"
 
-          stage=verify-github-identity
+          stage=git-credential-transport
+          git_askpass="$work/git-askpass.sh"
+          cat > "$git_askpass" <<'ASKPASS_EOF'
+          #!/usr/bin/env sh
+          case "${1:-}" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) printf '%s\n' "${GH_TOKEN:?GH_TOKEN is required}" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS_EOF
+          chmod 700 "$git_askpass"
+          export GIT_ASKPASS="$git_askpass"
+          export GIT_ASKPASS_REQUIRE=force
+          export GIT_TERMINAL_PROMPT=0
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=credential.helper
+          export GIT_CONFIG_VALUE_0=
+          printf 'publisher-stage=%s status=ready\n' "$stage"
+
+          stage=github-identity-and-ownership
           python3 - <<'PY'
           import json
           import os
+          import urllib.error
           import urllib.request
 
           token = os.environ["GH_TOKEN"]
@@ -110,8 +206,14 @@ jobs:
                   "https://api.github.com" + path,
                   headers=headers,
               )
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  return json.load(response)
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  error.read(4096)
+                  raise SystemExit(
+                      f"GitHub preflight failed for {path}: HTTP {error.code}"
+                  ) from error
 
           identity = get("/user")
           if identity.get("login") != "ORESoftware":
@@ -137,53 +239,46 @@ jobs:
                   )
               print(f"{organization} owner membership verified")
           PY
+          printf 'publisher-stage=%s status=passed\n' "$stage"
 
-          stage=configure-git-authentication
-          askpass="$work/git-askpass.sh"
-          cat > "$askpass" <<'ASKPASS_EOF'
-          #!/usr/bin/env bash
-          case "${1:-}" in
-            *Username*) printf '%s\n' x-access-token ;;
-            *Password*) printf '%s\n' "${GH_TOKEN:?}" ;;
-            *) exit 1 ;;
-          esac
-          ASKPASS_EOF
-          chmod 700 "$askpass"
-          export GIT_ASKPASS="$askpass"
-          export GIT_ASKPASS_REQUIRE=force
-          export GIT_TERMINAL_PROMPT=0
-
-          stage=checkout-trusted-main
+          stage=trusted-publisher-source
+          git ls-remote --exit-code \
+            https://github.com/ORESoftware/k8s-cluster.git \
+            refs/heads/main >/dev/null
           git clone --filter=blob:none --no-checkout \
             https://github.com/ORESoftware/k8s-cluster.git \
             "$work/k8s-cluster"
           git -C "$work/k8s-cluster" fetch --depth=1 origin "$trusted_sha"
           git -C "$work/k8s-cluster" checkout --detach "$trusted_sha"
           test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
+          printf 'publisher-stage=%s status=passed sha=%s\n' "$stage" "$trusted_sha"
 
-          stage=compile-publisher
+          stage=publisher-static-validation
           python3 -m py_compile \
             "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories.py" \
             "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py" \
             "$work/k8s-cluster/scripts/ops/finalize_missing_org_repositories.py"
+          printf 'publisher-stage=%s status=passed\n' "$stage"
 
-          stage=publish-repositories
+          stage=bounded-repository-publication
           python3 "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py"
+          printf 'publisher-stage=%s status=passed\n' "$stage"
 
-          stage=finalize-and-verify
+          stage=publication-finalization
           python3 "$work/k8s-cluster/scripts/ops/finalize_missing_org_repositories.py" \
             --json-report "$work/critical-org-publication.json" \
             --markdown-report "$work/critical-org-publication.md" \
             --close-carriers
-
-          stage=report-completion
           cat "$work/critical-org-publication.md"
+          printf 'publisher-stage=%s status=passed\n' "$stage"
+
           stage=complete
+          printf 'publisher-stage=%s status=success\n' "$stage"
           REMOTE_EOF
           chmod 700 "$remote_script"
 
           encoded="$(base64 --wrap=0 "$remote_script")"
-          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-repositories.sh && chown ec2-user:ec2-user /tmp/publish-critical-org-repositories.sh && chmod 700 /tmp/publish-critical-org-repositories.sh; status=0; if ! command -v kubectl >/dev/null; then echo 'publisher-stage-failed=locate-root-kubectl' >&2; status=127; elif ! test -r /etc/kubernetes/admin.conf; then echo 'publisher-stage-failed=read-admin-kubeconfig' >&2; status=1; elif ! encoded_pat=\$(KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}'); then echo 'publisher-stage-failed=read-cluster-credential' >&2; status=1; elif test -z \"\$encoded_pat\"; then echo 'publisher-stage-failed=empty-cluster-credential' >&2; status=1; else printf '%s\n' \"\$encoded_pat\" | sudo -u ec2-user -H bash -lc 'unset CODEX_HOME; exec bash /tmp/publish-critical-org-repositories.sh \"\$1\"' _ '$trusted_sha'; status=\$?; fi; unset encoded_pat; rm -f /tmp/publish-critical-org-repositories.sh; exit \$status"
+          remote_command="remote_log=/tmp/publish-critical-org-repositories.log; printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-repositories.sh; setup_status=\$?; if test \$setup_status -ne 0; then echo 'FAILED stage=remote-script-transfer' >&2; rm -f /tmp/publish-critical-org-repositories.sh \"\$remote_log\"; exit \$setup_status; fi; chown ec2-user:ec2-user /tmp/publish-critical-org-repositories.sh && chmod 700 /tmp/publish-critical-org-repositories.sh; setup_status=\$?; if test \$setup_status -ne 0; then echo 'FAILED stage=remote-script-ownership' >&2; rm -f /tmp/publish-critical-org-repositories.sh \"\$remote_log\"; exit \$setup_status; fi; sudo -u ec2-user -H bash -lc 'source /tmp/publish-critical-org-repositories.sh \"\$1\"' _ '$trusted_sha' >\"\$remote_log\" 2>&1; status=\$?; tail -c 20000 \"\$remote_log\"; rm -f /tmp/publish-critical-org-repositories.sh \"\$remote_log\"; exit \$status"
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
