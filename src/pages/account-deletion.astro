@@ -1,10 +1,6 @@
 ---
+import { publisher } from "../data/publisher";
 import Legal from "../layouts/Legal.astro";
-
-// Keep this address in sync with privacy.astro. Google Play requires this page
-// to be reachable WITHOUT logging in or reinstalling the app.
-const CONTACT_EMAIL = "<privacy@yourdomain>";
-const NEEDS_FILL = CONTACT_EMAIL.startsWith("<");
 ---
 
 <Legal
@@ -13,27 +9,21 @@ const NEEDS_FILL = CONTACT_EMAIL.startsWith("<");
 >
   <h1>Delete your Sonus Auris account and data</h1>
 
-  {NEEDS_FILL && (
-    <p class="todo">
-      <strong>Before publishing:</strong> replace the contact-email placeholder in
-      <code>src/pages/account-deletion.astro</code>, and enter this page's URL in the
-      Play Console "Data deletion" field and the App Store privacy section.
-    </p>
-  )}
-
   <p>
     You can delete your account directly in the app: open <strong>Settings → Delete
     account</strong>. This confirms with you, deletes your account and Sonus Auris
-    backend data (including encrypted backups), and wipes on-device recordings,
-    keys, and tokens.
+    backend data (including encrypted backups), and wipes app-private on-device
+    recordings, keys, and tokens.
   </p>
 
   <p>
     To request deletion <strong>without the app</strong>, email
-    <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> from the address
-    associated with your account (or include the device/account ID shown in the
-    app's Settings) with the subject "Delete my account". We will verify the request
-    and complete deletion, normally within 30 days.
+    <a href={`mailto:${publisher.contactEmail}?subject=Delete%20my%20Sonus%20Auris%20account`}>
+      {publisher.contactEmail}
+    </a>
+    from the address associated with your account (or include the device/account ID
+    shown in the app's Settings) with the subject "Delete my account". We will verify
+    the request and complete deletion, normally within 30 days.
   </p>
 
   <h2>What gets deleted vs. retained</h2>
@@ -51,8 +41,18 @@ const NEEDS_FILL = CONTACT_EMAIL.startsWith("<");
         <td>Deleted</td>
       </tr>
       <tr>
-        <td>On-device recordings, keys, tokens</td>
+        <td>App-private on-device recordings, keys, tokens</td>
         <td>Wiped by in-app deletion; a web/email request cannot remotely erase a device</td>
+      </tr>
+      <tr>
+        <td>
+          Local copies you deliberately exported through the system share sheet or a
+          user-selected desktop destination
+        </td>
+        <td>
+          Outside Sonus Auris app storage and automatic retention; you control these
+          copies and must delete them from the destination you selected
+        </td>
       </tr>
       <tr>
         <td>Clips you backed up to <strong>your own</strong> storage (S3/Drive/OneDrive/iCloud)</td>
@@ -65,8 +65,16 @@ const NEEDS_FILL = CONTACT_EMAIL.startsWith("<");
     </tbody>
   </table>
 
+  <p>
+    Exporting a local copy does not delay deletion of the app-private recording and
+    does not make the exported destination part of your Sonus Auris account.
+  </p>
+
   <p>Target: complete deletion within 30 days of a verified request.</p>
 
   <h2>Questions</h2>
-  <p>Contact <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.</p>
+  <p>
+    Contact <a href={`mailto:${publisher.contactEmail}`}>{publisher.contactEmail}</a>
+    or write to {publisher.name}, {publisher.postalAddress}.
+  </p>
 </Legal>

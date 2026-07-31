@@ -45,12 +45,39 @@ npm run build    # outputs to ./dist
 npm run preview  # preview the production build
 ```
 
-Desktop alpha buttons are enabled at build time. Use
+## Release links
+
+The site is static and never proxies installer bytes. Mobile store URLs and
+desktop installer URLs are injected at build time:
+
+```sh
+cp .env.example .env
+# Set PUBLIC_APP_STORE_URL / PUBLIC_PLAY_STORE_URL after listings are public.
+# Set PUBLIC_DOWNLOAD_BASE_URL to the Cloudflare R2 custom domain.
+npm run build
+```
+
+`PUBLIC_DOWNLOAD_BASE_URL` expands to these stable aliases:
+
+- `latest/sonus-auris-windows-x64.exe`
+- `latest/sonus-auris-macos-universal.dmg`
+- `latest/sonus-auris-linux-x86_64.deb`
+
+A per-platform `PUBLIC_DOWNLOAD_*_URL` overrides its alias. The release pipeline
+must upload immutable, versioned objects first, then replace the `/latest`
+aliases with `Cache-Control: no-store`. Large binaries go directly from the R2
+custom domain to the user; the Rust server may expose release metadata or issue
+redirects, but it must not become a bandwidth proxy for public installers.
+
+### Desktop alpha builds
+
+Separate from the stable per-OS installers above, `DesktopDownloads.astro`
+gates the pre-release desktop clients, split by runtime. Set
 `PUBLIC_RUST_DESKTOP_DOWNLOAD_BASE_URL` and
-`PUBLIC_FLUTTER_DESKTOP_DOWNLOAD_BASE_URL` for the stable R2 alpha prefixes, or
-`PUBLIC_DESKTOP_TESTERS_URL` for a restricted
-Google Drive folder while R2 is being activated. If neither is set, the site
-shows an honest non-clickable “Downloads opening soon” state.
+`PUBLIC_FLUTTER_DESKTOP_DOWNLOAD_BASE_URL` to the stable R2 alpha prefixes, or
+`PUBLIC_DESKTOP_TESTERS_URL` to a restricted Google Drive folder while R2 is
+being activated. If none is set, the site shows an honest non-clickable
+“Downloads opening soon” state rather than a dead link.
 
 ## Structure
 
@@ -72,7 +99,7 @@ src/
     NoSpooks.astro          # tongue-in-cheek "no spooks" / warrant-canary band
     Footer.astro            # link columns + Partners row
     Partners.astro          # neutral capability badges (footer)
-    StoreButtons.astro      # App Store + Google Play badges
+    StoreButtons.astro      # mobile stores + optional desktop installers
     Logo.astro
   pages/
     index.astro             # single-page marketing assembly
@@ -86,17 +113,34 @@ Each directory also has its own `README.md` describing what lives there.
 
 ## Things to wire up before launch
 
-- `StoreButtons.astro` — replace `APPLE_URL` / `GOOGLE_URL` with real listings.
-- GitHub links point to `github.com/sonus-auris/sonus-auris` — update if the
-  org/repo name differs.
-- `astro.config.mjs` `site` — set to the real production domain.
-- `Partners.astro` — the footer row now shows **neutral capability badges**
-  (Sound matching, Sleep & snore, Music capture, Clear audio), NOT third-party
+Still open:
+
+- Configure the store listing and download URLs in the site deployment
+  environment — `PUBLIC_APP_STORE_URL`, `PUBLIC_PLAY_STORE_URL`, and
+  `PUBLIC_DOWNLOAD_{BASE,WINDOWS,MACOS,LINUX}_URL`, all read by
+  `StoreButtons.astro`. Never link to unsigned or unreviewed artifacts.
+
+Standing rules, not tasks:
+
+- `Partners.astro` — the footer row shows **neutral capability badges** (Sound
+  matching, Sleep & snore, Music capture, Clear audio), NOT third-party
   endorsements. Do not reintroduce real organisation/brand names without written
   permission — that would imply an affiliation Sonus Auris does not have.
-- Legal pages (`privacy.astro`, `account-deletion.astro`) have placeholder
-  legal-entity name, contact email, and postal address to fill before store
-  submission; a visible "Before publishing" banner shows while placeholders remain.
+- The publisher identity that the legal pages render lives in one place,
+  `src/data/publisher.ts`. Keep it accurate: App Review and the Play Console
+  both check that a privacy policy names a real controller and a reachable
+  contact.
+
+Already done (this section previously said otherwise):
+
+- Legal-entity name, contact email, and postal address are filled in via
+  `src/data/publisher.ts`, and the "Before publishing" banner is gone. The
+  `tests/site/legal.test.mjs` release gate in `sonus-auris-e2e` no longer has
+  placeholders to find — verified against the built `dist/` HTML.
+- `astro.config.mjs` `site` resolves to the production domain
+  (`requestedSite || productionSite`), overridable per build.
+- GitHub links point at `github.com/sonus-auris/sonus-auris-ui.dart`, which
+  exists; the old note here named a repo that does not.
 
 ## Theme
 

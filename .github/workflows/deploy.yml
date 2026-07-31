@@ -3,24 +3,46 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
-  # Allow manually re-running the deploy from the Actions tab.
   workflow_dispatch:
 
-# Default the GITHUB_TOKEN to read-only; each job asks for what it needs.
 permissions:
   contents: read
 
-# Only one Pages deploy at a time; let an in-progress run finish.
+env:
+  SONUS_AURIS_SITE_URL: https://sonusauris.app
+  SONUS_AURIS_SITE_BASE: /
+
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  build:
+  verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify the exact production-root static site before publication
+        run: npm run check
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
       - name: Build with Astro
         uses: withastro/action@e84f40bd8d2caa9e768ec82ad30dd81f0b280853 # v6.1.2
         env:
@@ -29,15 +51,11 @@ jobs:
           PUBLIC_DESKTOP_TESTERS_URL: ${{ vars.PUBLIC_DESKTOP_TESTERS_URL }}
         with:
           node-version: 22
-        # Reads astro.config.mjs (site + base) and uploads the build as the
-        # Pages artifact using Astro 7's supported Node release line. The action
-        # detects package-lock.json and enables setup-node's npm cache plus an
-        # Astro asset cache internally, so no extra caching steps are needed.
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    # Only the deploy job needs the Pages/OIDC grants.
+    timeout-minutes: 10
     permissions:
       pages: write
       id-token: write

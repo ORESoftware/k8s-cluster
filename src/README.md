@@ -26,6 +26,8 @@ JavaScript** (the only animation is inline SVG/CSS).
 
 - Internal links and public-asset URLs are prefixed with `import.meta.env.BASE_URL`
   because the site is served from a GitHub Pages subpath (`/sonus-auris-site.web`).
-- Several files carry `<LEGAL ENTITY NAME>` / `<privacy@yourdomain>` placeholders
-  and hard-coded store/GitHub URLs that must be filled in before launch — see the
-  root `README.md` "Things to wire up before launch".
+- The publisher identity the legal pages render (`pages/privacy.astro`,
+  `pages/account-deletion.astro`) comes from `data/publisher.ts` — one frozen
+  object, no placeholders. Store listing and download URLs are still supplied by
+  the deployment environment; see the root `README.md` "Things to wire up before
+  launch".

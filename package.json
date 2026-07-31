@@ -11,6 +11,8 @@
     "dev": "astro dev",
     "start": "astro dev",
     "build": "astro build",
+    "check:agents": "node scripts/validate-agent-instructions.mjs",
+    "check": "npm run check:agents && npm run build && node scripts/verify-build.mjs && node --test tests/*.test.mjs && node scripts/verify-deployment-provenance.mjs",
     "preview": "astro preview",
     "astro": "astro"
   },
