@@ -48,14 +48,19 @@ jobs:
         shell: bash
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+          PUBLISHER_AWS_REGION: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
         run: |
           set -euo pipefail
           test -n "${INSTANCE_ID:-}"
+          test -n "${PUBLISHER_AWS_REGION:-}"
+          [[ "$PUBLISHER_AWS_REGION" =~ ^[a-z0-9-]+$ ]]
 
           trusted_sha="$(git rev-parse HEAD)"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
-          remote_script="$RUNNER_TEMP/publish-critical-org-repositories.sh"
-          cat > "$remote_script" <<'REMOTE_EOF'
+          publisher_script="$RUNNER_TEMP/publish-critical-org-repositories.sh"
+          root_script="$RUNNER_TEMP/publish-critical-org-repositories-root.sh"
+
+          cat > "$publisher_script" <<'PUBLISHER_EOF'
           #!/usr/bin/env bash
           set -Eeuo pipefail
           umask 077
@@ -70,14 +75,20 @@ jobs:
           trap report_failure ERR
 
           trusted_sha="${1:?trusted SHA required}"
+          credential_source="${2:?credential source required}"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          case "$credential_source" in
+            aws-secrets-manager|kubernetes-secret) ;;
+            *) echo 'publisher-stage=initialization status=failed reason=invalid-credential-source' >&2; exit 64 ;;
+          esac
 
           for inherited in \
             CODEX_HOME \
             GH_TOKEN \
             GITHUB_TOKEN \
             GITHUB_REPOSITORY_ADMIN_TOKEN \
-            GIT_ASKPASS
+            GIT_ASKPASS \
+            GIT_ASKPASS_REQUIRE
           do
             if test -n "${!inherited:-}"; then
               printf 'publisher-stage=%s status=failed reason=inherited-%s\n' \
@@ -86,9 +97,14 @@ jobs:
             fi
           done
 
+          stage=prepare-disposable-state
           work="$(mktemp -d /tmp/critical-org-publisher.XXXXXX)"
           export CODEX_HOME="$work/codex-home"
           install -d -m 700 "$CODEX_HOME"
+          case "$CODEX_HOME" in
+            "$work"/*) ;;
+            *) echo 'publisher-stage=prepare-disposable-state status=failed reason=escaped-worktree' >&2; exit 1 ;;
+          esac
 
           cleanup() {
             unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
@@ -99,70 +115,13 @@ jobs:
           }
           trap cleanup EXIT
 
-          stage=credential-discovery
-          credential_source=
-          GH_TOKEN=
-          if command -v aws >/dev/null 2>&1; then
-            if GH_TOKEN="$(
-              aws secretsmanager get-secret-value \
-                --region "${AWS_REGION:-us-east-1}" \
-                --secret-id dd/remote-dev/agent-secrets \
-                --query SecretString \
-                --output text 2>/dev/null \
-                | python3 -c '
-          import json
-          import sys
-
-          try:
-              payload = json.load(sys.stdin)
-          except (json.JSONDecodeError, OSError):
-              raise SystemExit(65)
-          value = payload.get("GH_PAT")
-          if not isinstance(value, str) or not value:
-              raise SystemExit(65)
-          sys.stdout.write(value)
-          ' 2>/dev/null
-            )" && test -n "$GH_TOKEN"; then
-              credential_source=aws-secrets-manager
-            else
-              unset GH_TOKEN
-              GH_TOKEN=
-            fi
-          fi
-
-          if test -z "$GH_TOKEN"; then
-            stage=credential-kubernetes
-            if ! command -v kubectl >/dev/null 2>&1; then
-              printf 'publisher-stage=%s status=failed reason=no-supported-credential-source\n' \
-                "$stage" >&2
-              exit 69
-            fi
-            encoded_pat="$(
-              kubectl -n default get secret dd-agent-secrets \
-                -o jsonpath='{.data.GH_PAT}'
-            )"
-            if test -z "$encoded_pat"; then
-              printf 'publisher-stage=%s status=failed reason=missing-or-empty-gh-pat\n' \
-                "$stage" >&2
-              exit 65
-            fi
-            if ! GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode 2>/dev/null)" ||
-              test -z "$GH_TOKEN"; then
-              printf 'publisher-stage=%s status=failed reason=invalid-gh-pat-encoding\n' \
-                "$stage" >&2
-              exit 65
-            fi
-            unset encoded_pat
-            credential_source=kubernetes-secret
-          fi
-
-          case "$GH_TOKEN" in
-            *$'\n'*|*$'\r'*)
-              printf 'publisher-stage=%s status=failed reason=invalid-gh-pat-bytes\n' \
-                "$stage" >&2
-              exit 65
-              ;;
-          esac
+          stage=receive-protected-credential
+          IFS= read -r encoded_pat
+          test -n "$encoded_pat"
+          GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode 2>/dev/null)"
+          unset encoded_pat
+          test -n "$GH_TOKEN"
+          [[ "$GH_TOKEN" != *$'\n'* && "$GH_TOKEN" != *$'\r'* ]]
           export GH_TOKEN
           export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
           printf 'publisher-stage=credential-ready source=%s\n' "$credential_source"
@@ -274,11 +233,94 @@ jobs:
 
           stage=complete
           printf 'publisher-stage=%s status=success\n' "$stage"
-          REMOTE_EOF
-          chmod 700 "$remote_script"
+          PUBLISHER_EOF
 
-          encoded="$(base64 --wrap=0 "$remote_script")"
-          remote_command="remote_log=/tmp/publish-critical-org-repositories.log; printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-repositories.sh; setup_status=\$?; if test \$setup_status -ne 0; then echo 'FAILED stage=remote-script-transfer' >&2; rm -f /tmp/publish-critical-org-repositories.sh \"\$remote_log\"; exit \$setup_status; fi; chown ec2-user:ec2-user /tmp/publish-critical-org-repositories.sh && chmod 700 /tmp/publish-critical-org-repositories.sh; setup_status=\$?; if test \$setup_status -ne 0; then echo 'FAILED stage=remote-script-ownership' >&2; rm -f /tmp/publish-critical-org-repositories.sh \"\$remote_log\"; exit \$setup_status; fi; sudo -u ec2-user -H bash -lc 'source /tmp/publish-critical-org-repositories.sh \"\$1\"' _ '$trusted_sha' >\"\$remote_log\" 2>&1; status=\$?; tail -c 20000 \"\$remote_log\"; rm -f /tmp/publish-critical-org-repositories.sh \"\$remote_log\"; exit \$status"
+          cat > "$root_script" <<'ROOT_EOF'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          umask 077
+
+          trusted_sha="${1:?trusted SHA required}"
+          region="${2:?AWS region required}"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$region" =~ ^[a-z0-9-]+$ ]]
+
+          publisher_path=/tmp/publish-critical-org-repositories.sh
+          root_path=/tmp/publish-critical-org-repositories-root.sh
+          remote_log=/tmp/publish-critical-org-repositories.log
+          encoded_pat=
+          credential_source=
+
+          cleanup() {
+            unset encoded_pat raw_pat credential_source
+            rm -f "$publisher_path" "$root_path" "$remote_log"
+          }
+          trap cleanup EXIT
+
+          if command -v aws >/dev/null 2>&1; then
+            raw_pat="$(
+              aws secretsmanager get-secret-value \
+                --region "$region" \
+                --secret-id dd/remote-dev/agent-secrets \
+                --query SecretString \
+                --output text 2>/dev/null \
+                | python3 -c '
+          import json
+          import sys
+
+          try:
+              payload = json.load(sys.stdin)
+          except (json.JSONDecodeError, OSError):
+              raise SystemExit(65)
+          value = payload.get("GH_PAT")
+          if not isinstance(value, str) or not value:
+              raise SystemExit(65)
+          sys.stdout.write(value)
+          ' 2>/dev/null
+            )" || raw_pat=
+            if test -n "$raw_pat" &&
+              [[ "$raw_pat" != *$'\n'* && "$raw_pat" != *$'\r'* ]]; then
+              encoded_pat="$(printf '%s' "$raw_pat" | base64 --wrap=0)"
+              credential_source=aws-secrets-manager
+            fi
+            unset raw_pat
+          fi
+
+          if test -z "$encoded_pat"; then
+            if ! command -v kubectl >/dev/null 2>&1; then
+              echo 'publisher-stage=credential-root status=failed reason=no-root-kubectl' >&2
+              exit 127
+            fi
+            if ! test -r /etc/kubernetes/admin.conf; then
+              echo 'publisher-stage=credential-root status=failed reason=unreadable-admin-kubeconfig' >&2
+              exit 1
+            fi
+            if ! encoded_pat="$(
+              KUBECONFIG=/etc/kubernetes/admin.conf \
+                kubectl -n default get secret dd-agent-secrets \
+                -o jsonpath='{.data.GH_PAT}'
+            )"; then
+              echo 'publisher-stage=credential-root status=failed reason=kubernetes-secret-read' >&2
+              exit 1
+            fi
+            test -n "$encoded_pat"
+            credential_source=kubernetes-secret
+          fi
+
+          printf 'publisher-stage=credential-root status=ready source=%s\n' "$credential_source"
+          printf '%s\n' "$encoded_pat" |
+            sudo -u ec2-user -H bash -lc \
+              'unset CODEX_HOME GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT; exec bash /tmp/publish-critical-org-repositories.sh "$1" "$2"' \
+              _ "$trusted_sha" "$credential_source" >"$remote_log" 2>&1
+          status=$?
+          tail -c 20000 "$remote_log"
+          exit "$status"
+          ROOT_EOF
+
+          chmod 700 "$publisher_script" "$root_script"
+          encoded_publisher="$(base64 --wrap=0 "$publisher_script")"
+          encoded_root="$(base64 --wrap=0 "$root_script")"
+          remote_command="printf '%s' '$encoded_publisher' | base64 --decode > /tmp/publish-critical-org-repositories.sh && printf '%s' '$encoded_root' | base64 --decode > /tmp/publish-critical-org-repositories-root.sh && chown ec2-user:ec2-user /tmp/publish-critical-org-repositories.sh && chmod 700 /tmp/publish-critical-org-repositories.sh /tmp/publish-critical-org-repositories-root.sh && bash /tmp/publish-critical-org-repositories-root.sh '$trusted_sha' '$PUBLISHER_AWS_REGION'"
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
