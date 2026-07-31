@@ -63,23 +63,22 @@ jobs:
 
           path = Path("remote/nats-bridge/src/main.rs")
           source = path.read_text(encoding="utf-8")
-          old = """    if let Some(t) = &bridge_token {
-              if t.len() < 16 {
-                  eprintln!(\"Fatal: BRIDGE_TOKEN must be at least 16 characters\");
-                  std::process::exit(1);
-              }
-          }
-          """
-          new = """    if let Some(t) = &bridge_token
-              && t.len() < 16
-          {
-              eprintln!(\"Fatal: BRIDGE_TOKEN must be at least 16 characters\");
-              std::process::exit(1);
-          }
-          """
-          # Normalize the Python source indentation introduced by this YAML block.
-          old = old.replace("\n          ", "\n")
-          new = new.replace("\n          ", "\n")
+          old = (
+              "    if let Some(t) = &bridge_token {\n"
+              "        if t.len() < 16 {\n"
+              "            eprintln!(\"Fatal: BRIDGE_TOKEN must be at least 16 characters\");\n"
+              "            std::process::exit(1);\n"
+              "        }\n"
+              "    }\n"
+          )
+          new = (
+              "    if let Some(t) = &bridge_token\n"
+              "        && t.len() < 16\n"
+              "    {\n"
+              "        eprintln!(\"Fatal: BRIDGE_TOKEN must be at least 16 characters\");\n"
+              "        std::process::exit(1);\n"
+              "    }\n"
+          )
           occurrences = source.count(old)
           if occurrences != 1:
               raise SystemExit(
