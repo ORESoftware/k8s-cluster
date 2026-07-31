@@ -29,7 +29,7 @@ jobs:
       PR_NUMBER: ${{ github.event.pull_request.number }}
       MARKER_PATH: .github/critical-org-publish-trigger-main
     steps:
-      - name: Dispatch and supervise the trusted protected-profile publisher
+      - name: Dispatch and supervise the trusted protected-host publisher v2
         shell: bash
         run: |
           set -euo pipefail
@@ -75,19 +75,23 @@ jobs:
               | tr -d '\n' \
               | base64 --decode
           )"
-          [[ "$marker" == 'publish=protected-gh-profile-v1' ]] || \
+          [[ "$marker" == 'publish=protected-host-v2' ]] || \
             report_error 'carrier marker content is not approved' "$marker"
 
-          workflow_file='ops-publish-missing-org-repositories-gh-profile.yml'
+          workflow_file='ops-publish-missing-org-repositories-v2.yml'
           runs_endpoint="repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_file}/runs?branch=main&event=workflow_dispatch&per_page=100"
 
           if ! before_runs="$(gh api "$runs_endpoint" 2>&1)"; then
-            report_error 'dispatchable protected-profile workflow is not registered' "$before_runs"
+            report_error 'dispatchable protected-host v2 workflow is not registered' "$before_runs"
           fi
           before_ids="$(jq -r '.workflow_runs[].id' <<<"$before_runs")"
 
+          request_id="carrier-${PR_NUMBER}-${TARGET_SHA}"
           payload="$RUNNER_TEMP/dispatch.json"
-          jq -nc --arg ref main '{ref:$ref}' > "$payload"
+          jq -nc \
+            --arg ref main \
+            --arg request_id "$request_id" \
+            '{ref:$ref,inputs:{request_id:$request_id}}' > "$payload"
           if ! dispatch_output="$(gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_file}/dispatches" \
             --input "$payload" 2>&1)"; then
@@ -122,10 +126,10 @@ jobs:
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state=pending \
             -f context='ops/missing-repository-publication' \
-            -f description="publisher run ${run_id} is executing on trusted main" \
+            -f description="publisher v2 run ${run_id} is executing on trusted main" \
             -f target_url="$run_url" >/dev/null
           gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --body "Trusted protected-profile publisher dispatched: ${run_url}" >/dev/null || true
+            --body "Trusted protected-host publisher v2 dispatched: ${run_url}" >/dev/null || true
 
           status='queued'
           conclusion=''
@@ -146,19 +150,19 @@ jobs:
             gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
               -f state=error \
               -f context='ops/missing-repository-publication' \
-              -f description='publisher supervision timed out' \
+              -f description='publisher v2 supervision timed out' \
               -f target_url="$run_url" >/dev/null
             gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
-              --body "Publisher supervision timed out: ${run_url}" >/dev/null || true
+              --body "Publisher v2 supervision timed out: ${run_url}" >/dev/null || true
             exit 1
           fi
 
           if [[ "$conclusion" == success ]]; then
             state=success
-            description='protected publisher succeeded; direct remote audit pending'
+            description='protected publisher v2 succeeded; direct remote audit pending'
           else
             state=failure
-            description="repository publication ${conclusion:-failed}"
+            description="repository publication v2 ${conclusion:-failed}"
           fi
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state="$state" \
@@ -166,5 +170,5 @@ jobs:
             -f description="$description" \
             -f target_url="$run_url" >/dev/null
           gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --body "Publisher completed with **${conclusion:-unknown}**: ${run_url}" >/dev/null || true
+            --body "Publisher v2 completed with **${conclusion:-unknown}**: ${run_url}" >/dev/null || true
           test "$conclusion" = success
