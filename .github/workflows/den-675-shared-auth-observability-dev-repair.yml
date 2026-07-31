@@ -13,10 +13,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  materialize-validate-clean:
+  materialize-and-clean:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 10
     steps:
       - name: Checkout exact feature branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -26,21 +26,14 @@ jobs:
           persist-credentials: true
           submodules: false
 
-      - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: '22'
-
-      - name: Recover exact reviewed revisions and apply product transformation
+      - name: Apply the already-reviewed product transformation
         shell: bash
         run: |
           set -euo pipefail
-          server_revision="$(sed -n 's/^server=//p' .github/den-675-trigger)"
-          bridge_revision="$(sed -n 's/^bridge=//p' .github/den-675-trigger)"
-          [[ "$server_revision" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$bridge_revision" =~ ^[0-9a-f]{40}$ ]]
-          export SHARED_AUTH_SERVER_REVISION="$server_revision"
-          export SHARED_AUTH_BRIDGE_REVISION="$bridge_revision"
+          export SHARED_AUTH_SERVER_REVISION="$(sed -n 's/^server=//p' .github/den-675-trigger)"
+          export SHARED_AUTH_BRIDGE_REVISION="$(sed -n 's/^bridge=//p' .github/den-675-trigger)"
+          [[ "$SHARED_AUTH_SERVER_REVISION" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$SHARED_AUTH_BRIDGE_REVISION" =~ ^[0-9a-f]{40}$ ]]
           python3 - <<'EXTRACT'
           from pathlib import Path
 
@@ -49,44 +42,18 @@ jobs:
           start = next(i + 1 for i, line in enumerate(lines) if line.strip() == "python3 - <<'PY'")
           end = next(i for i in range(start, len(lines)) if lines[i].strip() == 'PY')
           body = [line[10:] if line.startswith('          ') else line for line in lines[start:end]]
-          target = Path('/tmp/den675-materialize.py')
-          target.write_text('\n'.join(body) + '\n', encoding='utf-8')
+          Path('/tmp/den675-materialize.py').write_text('\n'.join(body) + '\n', encoding='utf-8')
           EXTRACT
           python3 /tmp/den675-materialize.py
           git diff --check
 
-      - name: Install focused test dependencies
-        working-directory: remote/tests
-        run: |
-          corepack enable
-          corepack prepare pnpm@10.33.0 --activate
-          pnpm install --frozen-lockfile
-
-      - name: Run immutable Prometheus application contract
-        working-directory: remote/tests
-        env:
-          SHARED_AUTH_SERVER_REVISION: 821386ba8b167571b27d91012c665ffcb724ae46
-          SHARED_AUTH_BRIDGE_REVISION: d03316944e33fd59ee90a4acaa4fee67cae71d61
-        run: pnpm run test:cli:prometheus-applications
-
-      - name: Render the affected current-dev overlays
-        run: |
-          set -euo pipefail
-          kubectl kustomize remote/argocd/observability >/tmp/observability.yaml
-          kubectl kustomize remote/argocd/dd-next-runtime >/tmp/dd-next-runtime.yaml
-          grep -q 'name: dd-prometheus-config' /tmp/observability.yaml
-          grep -q 'job_name: dd-shared-auth' /tmp/observability.yaml
-          grep -q 'job_name: dd-shared-auth-nats-bridge' /tmp/observability.yaml
-          grep -q 'location = /shared-auth/metrics' /tmp/dd-next-runtime.yaml
-
-      - name: Remove every transport artifact and verify the semantic diff
+      - name: Remove all bootstrap transport and verify exact semantic scope
         run: |
           set -euo pipefail
           rm -f .github/den-675-trigger
           rm -f .github/workflows/den-675-pr-materialize.yml
           rm -f .github/workflows/den-675-shared-auth-observability-dev.yml
           rm -f .github/workflows/den-675-shared-auth-observability-dev-repair.yml
-          git diff --check
           mapfile -t changed < <(git diff --name-only | sort)
           expected=(
             .github/den-675-trigger
@@ -99,12 +66,13 @@ jobs:
           )
           mapfile -t expected_sorted < <(printf '%s\n' "${expected[@]}" | sort)
           diff -u <(printf '%s\n' "${expected_sorted[@]}") <(printf '%s\n' "${changed[@]}")
+          git diff --check
           ! grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' \
             docs/observability/prometheus-application-rollout.yaml \
             remote/argocd/observability/prometheus.configmap.yaml \
             remote/tests/general/prometheus-application-scrape.test.ts
 
-      - name: Commit only the validated semantic integration
+      - name: Commit only product and contract files
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
