@@ -84,7 +84,11 @@ test('gateway rejects anonymous direct dev-server control-plane aliases', () => 
     const location = nginxLocation(gateway, route);
     assert.match(location, /if \(\$dd_gateway_auth_ok = 0\)/);
     assert.match(location, /return 401;/);
-    assert.match(location, /proxy_pass http:\/\/dd-dev-server-api:8080/);
+    assert.match(
+      location,
+      /set \$dd_up_\d+ dd-dev-server-api\.default\.svc\.cluster\.local:8080;/,
+    );
+    assert.match(location, /proxy_pass http:\/\/\$dd_up_\d+;/);
   }
 });
 
