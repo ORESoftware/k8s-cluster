@@ -1,0 +1,122 @@
+name: Apply coordinated Axum 0.8 and tower-governor 0.8 migration
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-axum08-tower-governor08.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'src/app.rs'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-axum08-tower-governor08
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: >-
+      github.repository == 'ORESoftware/3fa-backend.rs' &&
+      (github.event_name != 'pull_request' || github.head_ref == 'agent/axum08-tower-governor08')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: threefa_signal_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      THREEFA_SIGNAL_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/threefa_signal_test
+    steps:
+      - name: Checkout writable replacement branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: agent/axum08-tower-governor08
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Migrate the HTTP and rate-limit type family together
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          manifest = Path('Cargo.toml')
+          source = manifest.read_text()
+          before = 'axum = "0.7"'
+          after = 'axum = "0.8"'
+          if source.count(before) != 1:
+              raise SystemExit('expected one direct Axum 0.7 dependency')
+          manifest.write_text(source.replace(before, after))
+
+          app = Path('src/app.rs')
+          source = app.read_text()
+          replacements = {
+              '.route_layer(GovernorLayer { config: governor });':
+                  '.route_layer(GovernorLayer::new(governor));',
+              '.route_layer(GovernorLayer {\n            config: Arc::clone(&authed_governor),\n        });':
+                  '.route_layer(GovernorLayer::new(Arc::clone(&authed_governor)));',
+              '.route_layer(GovernorLayer {\n                config: authed_governor,\n            })':
+                  '.route_layer(GovernorLayer::new(authed_governor))',
+          }
+          expected = [1, 2, 1]
+          counts = [source.count(before) for before in replacements]
+          if counts != expected:
+              raise SystemExit(f'unexpected GovernorLayer migration counts: {counts}')
+          for before, after in replacements.items():
+              source = source.replace(before, after)
+          app.write_text(source)
+          PY
+          cargo update -p axum@0.7.9 --precise 0.8.9
+
+      - name: Validate routing, rate limits, Signal transactions, and container contract
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo check --locked
+          cargo test --locked
+          cargo test --locked signal_postgres_tests -- --ignored --test-threads=1
+          python3 scripts/check_sensitive_debug.py
+          docker build -f deploy/Dockerfile -t threefa-backend:axum08-test .
+          git diff --check
+
+      - name: Prove one Axum family and bounded semantic changes
+        run: |
+          set -euo pipefail
+          cargo tree -i axum@0.8.9
+          if cargo tree -i axum@0.7.9 >/tmp/axum07.txt 2>&1; then
+            cat /tmp/axum07.txt >&2
+            echo 'Axum 0.7 still resolves after the coordinated migration' >&2
+            exit 1
+          fi
+          grep -q '^axum = "0.8"$' Cargo.toml
+          grep -q '^tower_governor = "0.8"$' Cargo.toml
+          test "$(git status --short | awk '{print $2}' | sort)" = $'Cargo.lock\nCargo.toml\nsrc/app.rs'
+          ! grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' src/app.rs Cargo.toml
+
+      - name: Remove one-shot workflow and commit product files
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/apply-axum08-tower-governor08.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          test "$(git diff --cached --name-only | sort)" = $'Cargo.lock\nCargo.toml\nsrc/app.rs'
+          git commit -m 'build: migrate Axum and tower-governor together'
+          git push origin HEAD:agent/axum08-tower-governor08
