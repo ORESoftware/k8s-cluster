@@ -104,10 +104,10 @@ impl TokenMinter {
         let expires_at = now.saturating_add(self.ttl_secs);
         let is_supabase = context.provider == "supabase";
 
-        context.amr.retain(|method| valid_reference(method));
-        context.amr.sort_unstable();
-        context.amr.dedup();
-        context.amr.truncate(16);
+        context.auth_methods.retain(|method| valid_reference(method));
+        context.auth_methods.sort_unstable();
+        context.auth_methods.dedup();
+        context.auth_methods.truncate(16);
         let acr = context
             .acr
             .filter(|value| !value.is_empty() && value.len() <= 255);
