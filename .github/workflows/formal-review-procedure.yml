@@ -34,7 +34,7 @@ concurrency:
 jobs:
   obligations:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -44,5 +44,8 @@ jobs:
       - name: Validate formal obligation register
         run: python3 formal/review-procedure/check.py
 
-      - name: Exhaust bounded domain model
-        run: python3 formal/review-procedure/model.py
+      - name: Install repository Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Exhaust canonical bounded auth state model
+        run: cargo +stable test --test auth_state_model --locked
