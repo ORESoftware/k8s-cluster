@@ -340,12 +340,8 @@ async fn run_translate_tool(state: &AppState, args: &Value) -> Result<Value, Str
     let row = run_translation(state, text, target_lang, source_lang, provider)
         .await
         .map_err(|e| e.message)?;
-    Ok(json!({
-        "ok": true,
-        "translatedText": row.translated_text,
-        "targetLang": row.target_lang,
-        "provider": row.provider,
-    }))
+    // The bare translation — Vapi reads this string straight back to the caller.
+    Ok(row.translated_text)
 }
 
 /// The live-translator assistant config returned for `assistant-request`.
