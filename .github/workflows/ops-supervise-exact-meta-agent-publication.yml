@@ -39,7 +39,7 @@ jobs:
       PR_NUMBER: ${{ github.event_name == 'workflow_dispatch' && inputs.tracking_pr || github.event.pull_request.number }}
       REPOSITORY: ${{ github.repository }}
       TARGET_SHA: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.pull_request.head.sha }}
-      GH_CONFIG_DIR: ${{ runner.temp }}/meta-agent-owner-auth
+      GH_CONFIG_DIR: /tmp/meta-agent-owner-auth
       COMMENT_TOKEN: ${{ github.token }}
       EXPECTED_LOGIN: ORESoftware
       SOURCE_CARRIER_SHA: 55ee15c190b7cfa4e075f6984c7cb551acd4b9d3
