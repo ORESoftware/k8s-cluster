@@ -120,12 +120,10 @@ pub fn mint_step_up(
 
 /// Base (unelevated) assurance for `identity`.
 ///
-/// The numeric `auth_level`/`auth_methods` pair and the OIDC `acr`/`amr` pair
-/// describe the same assurance from two vocabularies, so they are always set
-/// together and must not drift: level 1 pairs with [`ACR_BASE`], and the single
-/// base method is both the sole `auth_methods` entry and the sole `amr` entry.
+/// `auth_level` and `acr` describe the same assurance in two vocabularies, so
+/// they are always set together and must not drift: level 1 pairs with
+/// [`ACR_BASE`].
 fn base_context(identity: &AuthenticatedIdentity, session_id: Option<Uuid>) -> MintContext {
-    let method = base_method(&identity.provider).to_string();
     MintContext {
         shared_user_id: identity.shared_user_id.to_string(),
         session_id,
@@ -133,11 +131,10 @@ fn base_context(identity: &AuthenticatedIdentity, session_id: Option<Uuid>) -> M
         provider_tenant: identity.provider_tenant.clone(),
         provider_subject: identity.provider_subject.clone(),
         auth_level: 1,
-        auth_methods: vec![method.clone()],
+        auth_methods: vec![base_method(&identity.provider).to_string()],
         email: identity.email.clone(),
         email_verified: identity.email_verified,
         roles: identity.roles.clone(),
-        amr: vec![method],
         acr: Some(ACR_BASE.to_string()),
     }
 }
