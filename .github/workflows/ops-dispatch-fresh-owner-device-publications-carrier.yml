@@ -1,0 +1,38 @@
+name: Dispatch fresh owner-device repository publications
+run-name: Dispatch fresh Meta Agents and 32-repository fleet authorization windows
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+    paths:
+      - .github/workflows/ops-dispatch-fresh-owner-device-publications-carrier.yml
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: dispatch-fresh-owner-device-publications
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'ops/den-319-dispatch-fresh-owner-device-publications-20260731'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch trusted-main owner-device workflows
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          repository="$GITHUB_REPOSITORY"
+          gh workflow run ops-owner-device-create-meta-agent-repo.yml \
+            --repo "$repository" --ref main
+          gh workflow run ops-owner-device-publish-hypesiege-streempilot.yml \
+            --repo "$repository" --ref main
+          echo 'Dispatched fresh trusted-main owner authorization windows for Meta Agents and the 32-repository HypeSiege/StreemPilot fleet.'
