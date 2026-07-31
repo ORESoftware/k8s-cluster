@@ -1,0 +1,86 @@
+name: DEN-830 regenerate stale NATS bindings
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/den-830-regenerate-nats.yml'
+      - 'nats/subject-defs/**'
+      - 'pg-defs/schema/schema.sql'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-830-regenerate-nats
+  cancel-in-progress: false
+
+jobs:
+  regenerate-validate-clean:
+    if: >-
+      github.repository == 'ORESoftware/k8s-libs-and-shared-defs' &&
+      (github.event_name != 'pull_request' || github.head_ref == 'agent/den-830-email-attention-schema')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact writable PR branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: agent/den-830-email-attention-schema
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Setup Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Regenerate only the stale schema-owned NATS output
+        run: |
+          set -euo pipefail
+          node nats/subject-defs/src/generate.mjs
+          node nats/subject-defs/src/generate.mjs --check
+
+      - name: Run the complete generator contract suite
+        run: |
+          set -euo pipefail
+          node pg-defs/src/generate.mjs --check
+          node nats/subject-defs/src/generate.mjs --check
+          node interfaces/redis/src/generate.mjs --check
+          node interfaces/shared/src/generate.mjs --check
+          node --test \
+            pg-defs/src/*.test.mjs \
+            nats/subject-defs/src/*.test.mjs \
+            interfaces/redis/src/*.test.mjs \
+            interfaces/shared/src/*.test.mjs
+          node interfaces/shared/src/validate-examples.mjs
+          node pg-defs/src/diff.mjs --parse-only
+
+      - name: Verify bounded semantic change set
+        run: |
+          set -euo pipefail
+          git diff --check
+          changed="$(git status --short | awk '{print $2}' | sort)"
+          expected='nats/subject-defs/generated/rust/src/lib.rs'
+          test "$changed" = "$expected" || {
+            echo 'Unexpected generator changes:' >&2
+            printf '%s\n' "$changed" >&2
+            exit 1
+          }
+          ! grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' \
+            pg-defs/schema/schema.sql \
+            nats/subject-defs/generated/rust/src/lib.rs
+
+      - name: Remove one-shot workflow and commit generated source
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/den-830-regenerate-nats.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'chore(DEN-830): regenerate NATS Rust bindings'
+          git push origin HEAD:agent/den-830-email-attention-schema
