@@ -1,34 +1,42 @@
-//! API bearer auth + outbound URL safety helpers.
+//! API authentication, per-tenant authorization, and outbound URL safety.
 //!
 //! ### Auth model (read this first)
 //!
-//! The billing API has historically trusted the path `tenant_id` and
-//! relied on an upstream gateway (`dd-remote-auth`) for proof of
-//! ownership. This module adds an **in-process** floor so the service
-//! remains safe even when the gateway is bypassed (port-forward,
-//! cluster-internal access, misconfigured ingress, …).
+//! There are two kinds of caller, and they are not interchangeable.
 //!
-//! When [`Config::api_auth_bearer`] is set:
-//!   * Every `/v1/...` request — including the OAuth `/start`,
-//!     `/callback`, and Plaid `link-token` / `exchange` flows —
-//!     must present `Authorization: Bearer <token>`.
-//!   * `Authorization: Bearer <token>` is compared in constant time.
-//!   * Webhooks (`/v1/webhooks/*`) and the public verification
-//!     endpoint (`/v1/verify/...`) are **exempt** — they have their
-//!     own auth model (provider signatures and "the data is public",
-//!     respectively).
-//!   * Health endpoints and `/admin` are also exempt; admin has its
-//!     own bearer in [`super::super::admin::security`].
+//! **1. Service callers** present the shared
+//! [`BILLING_API_AUTH_BEARER`](Config::api_auth_bearer) token. That token is a
+//! single process-wide secret: it proves *something authorized is calling* and
+//! nothing else. It carries no user, and no tenant. Treat it as a
+//! service-to-service credential only — it must never reach an end user or a
+//! client application.
 //!
-//! When [`Config::api_auth_bearer`] is **unset**, this middleware is a
-//! no-op for dev friction. We log a single WARN at boot so operators
-//! notice. Production manifests inject the bearer via SealedSecrets.
+//! **2. User callers** present a Supabase access token, verified per-request by
+//! [`crate::supabase_auth`]: real signature checking against the project's
+//! JWKS, with `iss`/`aud`/`exp`/`nbf` pinned.
 //!
-//! Per-tenant scoping (giving each tenant its own short-lived token) is
-//! intentionally **out of scope** here: the in-process floor only
-//! enforces caller authenticity. Tenant-ownership checks belong to the
-//! gateway, and to the per-handler `state.tenants.by_id(...)` calls
-//! that already prove the tenant exists.
+//! ### The IDOR this closes
+//!
+//! Historically only kind (1) existed. Every tenant-scoped route takes the
+//! tenant from the URL — `/v1/tenants/{tenant_id}/...` — and the service simply
+//! trusted it, delegating ownership entirely to an upstream gateway
+//! (`dd-remote-auth`). So any holder of the one shared token could read or
+//! mutate *any* tenant's ledger, connections, and scheduled jobs by editing a
+//! path segment, and nothing in this process would object. Anything that
+//! bypassed the gateway — a port-forward, cluster-internal access, a
+//! misconfigured ingress — inherited the whole estate.
+//!
+//! [`authorize_tenant`] is the fix: after authentication, the caller must be
+//! provably entitled to *the tenant named in the path*, in-process, or the
+//! request gets a 403. See [`TenantScope`] for how the tenant is extracted and
+//! [`Principal`] for what each caller kind is allowed.
+//!
+//! ### Exemptions
+//!
+//! Webhooks (`/v1/webhooks/*`) and public verification (`/v1/verify/*`) have
+//! their own auth models — provider signatures, and "the data is deliberately
+//! public" respectively. Health endpoints are unauthenticated for probes, and
+//! `/admin` has its own bearer in [`crate::admin::security`].
 
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -37,21 +45,139 @@ use axum::extract::{Request, State};
 use axum::http::{HeaderValue, StatusCode, Uri, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
+use uuid::Uuid;
 
 use crate::config::Config;
+use crate::supabase_auth::{AuthError, SupabaseIdentity, SupabaseVerifier, bearer_token};
 
-/// Per-request auth knobs. Built once at boot from
-/// [`Config::api_auth_bearer`] and shared via `Arc` so the middleware
-/// closure doesn't carry the full `AppState`.
-#[derive(Clone, Debug)]
+/// Who is making this request, once authenticated.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Principal {
+    /// Presented the shared `BILLING_API_AUTH_BEARER`. Authentic, but
+    /// anonymous and tenant-less.
+    Service,
+    /// Presented a Supabase access token that verified.
+    User(Box<SupabaseIdentity>),
+}
+
+/// What tenant, if any, a request path is scoped to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TenantScope {
+    /// Not a tenant-scoped route (`POST /v1/tenants`, `/v1/oauth/...`, …).
+    None,
+    /// `/v1/tenants/{tenant_id}/...` with a well-formed id.
+    Tenant(Uuid),
+    /// `/v1/tenants/<something>/...` where `<something>` is not a UUID.
+    ///
+    /// Kept distinct from [`TenantScope::None`] on purpose. Collapsing the two
+    /// would mean a caller could skip the entitlement check simply by sending a
+    /// tenant id we cannot parse, which is exactly the bypass this whole module
+    /// exists to prevent.
+    Unparseable,
+}
+
+/// Extract the tenant a request is scoped to from its path.
+///
+/// This reads the raw path rather than axum's `Path` extractor because the
+/// decision has to be made in middleware, before any handler runs, and must
+/// hold for every current *and future* `/v1/tenants/{tenant_id}/...` route
+/// without anyone remembering to opt in.
+pub fn tenant_scope_of(uri: &Uri) -> TenantScope {
+    let Some(rest) = uri.path().strip_prefix("/v1/tenants/") else {
+        // Includes bare `/v1/tenants` (tenant *creation*, which has no tenant
+        // to be scoped to).
+        return TenantScope::None;
+    };
+    let segment = rest.split('/').next().unwrap_or("");
+    if segment.is_empty() {
+        return TenantScope::None;
+    }
+    match Uuid::parse_str(segment) {
+        Ok(id) => TenantScope::Tenant(id),
+        Err(_) => TenantScope::Unparseable,
+    }
+}
+
+/// The per-tenant authorization decision.
+///
+/// Separated from the middleware so it can be tested exhaustively without
+/// standing up a router, and so the rule lives in exactly one readable place.
+pub fn authorize_tenant(
+    principal: &Principal,
+    scope: TenantScope,
+    require_user_jwt: bool,
+) -> Result<(), StatusCode> {
+    match scope {
+        // Not tenant-scoped: authentication alone is the whole check.
+        TenantScope::None => Ok(()),
+        // A tenant-scoped route whose tenant we cannot even name. Refuse
+        // rather than fall through to the unscoped branch.
+        TenantScope::Unparseable => Err(StatusCode::FORBIDDEN),
+        TenantScope::Tenant(tenant_id) => match principal {
+            Principal::User(identity) => {
+                if identity.is_entitled_to(tenant_id) {
+                    Ok(())
+                } else {
+                    // The IDOR, closed: a real, fully-verified user asking for
+                    // a tenant that is not theirs.
+                    tracing::warn!(
+                        auth.subject = %identity.subject,
+                        tenant.id = %tenant_id,
+                        "rejected cross-tenant request: caller is not entitled to this tenant"
+                    );
+                    Err(StatusCode::FORBIDDEN)
+                }
+            }
+            Principal::Service => {
+                if require_user_jwt {
+                    tracing::warn!(
+                        tenant.id = %tenant_id,
+                        "rejected service-bearer request to a tenant-scoped route: \
+                         BILLING_TENANT_ROUTES_REQUIRE_USER_JWT is on, so this route \
+                         needs a per-user Supabase token"
+                    );
+                    Err(StatusCode::FORBIDDEN)
+                } else {
+                    // Migration window only. The shared token names no tenant,
+                    // so this branch is the pre-fix behaviour and is exactly
+                    // what BILLING_TENANT_ROUTES_REQUIRE_USER_JWT=true removes.
+                    Ok(())
+                }
+            }
+        },
+    }
+}
+
+/// Per-request auth state. Built once at boot and shared via `Arc` so the
+/// middleware closure doesn't carry the full `AppState`.
+#[derive(Clone)]
 pub struct ApiAuth {
+    /// Shared service-to-service bearer. See [`Config::api_auth_bearer`].
     pub bearer: Option<String>,
+    /// Per-user Supabase verifier. `None` when Supabase is not configured.
+    pub supabase: Option<Arc<SupabaseVerifier>>,
+    /// See [`Config::tenant_routes_require_user_jwt`].
+    pub require_user_jwt: bool,
+}
+
+// `bearer` is a credential; keep it off the Debug surface, matching the
+// redaction discipline `Config` follows.
+impl std::fmt::Debug for ApiAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ApiAuth")
+            .field("bearer", &self.bearer.as_ref().map(|_| "<redacted>"))
+            .field("supabase_enabled", &self.supabase.is_some())
+            .field("require_user_jwt", &self.require_user_jwt)
+            .finish()
+    }
 }
 
 impl ApiAuth {
     pub fn from_config(cfg: &Config) -> Arc<Self> {
         Arc::new(Self {
             bearer: cfg.api_auth_bearer.clone(),
+            supabase: SupabaseVerifier::from_config(&cfg.supabase).map(Arc::new),
+            require_user_jwt: cfg.tenant_routes_require_user_jwt,
         })
     }
 }
@@ -103,33 +229,94 @@ pub fn is_exempt_path(uri: &Uri) -> bool {
     false
 }
 
-/// Axum middleware: enforce the bearer when one is configured.
-pub async fn require_api_auth(
-    State(auth): State<Arc<ApiAuth>>,
-    req: Request,
-    next: Next,
-) -> Response {
-    let Some(expected) = auth.bearer.as_deref() else {
-        return next.run(req).await;
-    };
-    if is_exempt_path(req.uri()) {
-        return next.run(req).await;
-    }
-    let provided = req
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|h| h.strip_prefix("Bearer "))
-        .unwrap_or("");
-    if !provided.is_empty() && const_time_eq(provided.as_bytes(), expected.as_bytes()) {
-        return next.run(req).await;
-    }
+fn unauthorized() -> Response {
     let mut resp = (StatusCode::UNAUTHORIZED, "api authentication required\n").into_response();
     resp.headers_mut().insert(
         header::WWW_AUTHENTICATE,
         HeaderValue::from_static("Bearer realm=\"billing-api\""),
     );
     resp
+}
+
+/// Authenticate the caller, then authorize them for the tenant in the path.
+///
+/// The two steps are deliberately distinct: step one establishes *who*, step
+/// two establishes *what they may touch*. Conflating them is how the original
+/// IDOR happened — the service knew the caller was authentic and inferred,
+/// wrongly, that this made the request legitimate.
+pub async fn require_api_auth(
+    State(auth): State<Arc<ApiAuth>>,
+    mut req: Request,
+    next: Next,
+) -> Response {
+    if is_exempt_path(req.uri()) {
+        return next.run(req).await;
+    }
+
+    // Fully-open dev mode: no service bearer and no Supabase. `Config::from_env`
+    // refuses to boot into this state unless BILLING_ALLOW_INSECURE_DEV=1.
+    if auth.bearer.is_none() && auth.supabase.is_none() {
+        return next.run(req).await;
+    }
+
+    let presented = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok());
+
+    // The same header carries both credential kinds, so try the cheap
+    // constant-time comparison first and fall back to JWT verification. A
+    // Supabase token can never be mistaken for the service bearer: the compare
+    // is over the entire string.
+    //
+    // The service-bearer match stays byte-exact on the `Bearer ` prefix,
+    // unchanged from before per-user auth existed. The JWT path uses the
+    // RFC 7235 case-insensitive parser instead, because real Supabase client
+    // SDKs differ in how they spell the scheme — and unlike the shared secret,
+    // a JWT's authenticity does not rest on the header being byte-identical.
+    let service_match = match (auth.bearer.as_deref(), presented) {
+        (Some(expected), Some(raw)) => raw
+            .strip_prefix("Bearer ")
+            .is_some_and(|t| !t.is_empty() && const_time_eq(t.as_bytes(), expected.as_bytes())),
+        _ => false,
+    };
+
+    let principal = if service_match {
+        Principal::Service
+    } else if let (Some(verifier), Some(token)) = (auth.supabase.as_ref(), bearer_token(presented))
+    {
+        match verifier.verify(token).await {
+            Ok(identity) => Principal::User(Box::new(identity)),
+            Err(AuthError::Unauthorized) => return unauthorized(),
+            Err(AuthError::Unavailable(message)) => {
+                // We could not reach Supabase. That is our failure, not the
+                // caller's — a 401 here would tell a legitimate user their
+                // credentials are bad and invite them to re-login pointlessly.
+                tracing::error!(error = %message, "Supabase verification unavailable");
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "authentication temporarily unavailable\n",
+                )
+                    .into_response();
+            }
+        }
+    } else {
+        return unauthorized();
+    };
+
+    if let Err(status) = authorize_tenant(
+        &principal,
+        tenant_scope_of(req.uri()),
+        auth.require_user_jwt,
+    ) {
+        return (status, "not entitled to this tenant\n").into_response();
+    }
+
+    // Hand the verified principal to the handlers. Anything needing the acting
+    // user (audit trails, narrowing a query) reads it from here rather than
+    // re-parsing the token.
+    req.extensions_mut().insert(principal);
+    next.run(req).await
 }
 
 // --- Outbound URL safety helpers --------------------------------------------
@@ -361,6 +548,12 @@ mod tests {
     fn auth_arc(bearer: Option<&str>) -> Arc<ApiAuth> {
         Arc::new(ApiAuth {
             bearer: bearer.map(str::to_string),
+            // These tests cover the static service-bearer behaviour, which must
+            // be unchanged by the addition of per-user auth. The Supabase and
+            // per-tenant paths have their own tests below and in
+            // `crate::supabase_auth`.
+            supabase: None,
+            require_user_jwt: false,
         })
     }
 
@@ -495,5 +688,249 @@ mod tests {
             status_of(app, "POST", "/v1/tenants", Some("Bearer ")).await,
             StatusCode::UNAUTHORIZED
         );
+    }
+
+    // --- Tenant scope extraction ---------------------------------------------
+
+    const TENANT_A: &str = "11111111-1111-4111-8111-111111111111";
+    const TENANT_B: &str = "22222222-2222-4222-8222-222222222222";
+
+    fn uuid_a() -> Uuid {
+        Uuid::parse_str(TENANT_A).unwrap()
+    }
+
+    fn uuid_b() -> Uuid {
+        Uuid::parse_str(TENANT_B).unwrap()
+    }
+
+    fn scope(path: &str) -> TenantScope {
+        tenant_scope_of(&path.parse::<Uri>().unwrap())
+    }
+
+    #[test]
+    fn tenant_scope_is_extracted_from_every_tenant_route_shape() {
+        for path in [
+            "/v1/tenants/11111111-1111-4111-8111-111111111111",
+            "/v1/tenants/11111111-1111-4111-8111-111111111111/users",
+            "/v1/tenants/11111111-1111-4111-8111-111111111111/connections",
+            "/v1/tenants/11111111-1111-4111-8111-111111111111/scheduled-jobs/7/runs",
+            "/v1/tenants/11111111-1111-4111-8111-111111111111/locks/some-resource/renew",
+            "/v1/tenants/11111111-1111-4111-8111-111111111111/customers/by-email/a@b.com/billing-state",
+        ] {
+            assert_eq!(scope(path), TenantScope::Tenant(uuid_a()), "{path}");
+        }
+    }
+
+    #[test]
+    fn non_tenant_routes_have_no_scope() {
+        // `POST /v1/tenants` creates a tenant, so there is no tenant to be
+        // scoped to; it stays a service-to-service provisioning call.
+        for path in [
+            "/v1/tenants",
+            "/v1/tenants/",
+            "/v1/oauth/stripe/start",
+            "/v1/plaid/link-token",
+            "/healthz",
+        ] {
+            assert_eq!(scope(path), TenantScope::None, "{path}");
+        }
+    }
+
+    #[test]
+    fn an_unparseable_tenant_id_is_not_treated_as_unscoped() {
+        // Otherwise "send a tenant id we can't parse" would be a free bypass of
+        // the entitlement check.
+        for path in [
+            "/v1/tenants/not-a-uuid/users",
+            "/v1/tenants/../../etc/passwd",
+            "/v1/tenants/%2e%2e/users",
+            "/v1/tenants/11111111-1111-4111-8111-11111111111/users", // one digit short
+        ] {
+            assert_eq!(scope(path), TenantScope::Unparseable, "{path}");
+        }
+    }
+
+    // --- The IDOR fix: per-tenant authorization ------------------------------
+
+    fn user_of(tenants: &[Uuid]) -> Principal {
+        Principal::User(Box::new(SupabaseIdentity {
+            subject: "user-abc".into(),
+            email: Some("operator@example.com".into()),
+            role: Some("authenticated".into()),
+            tenant_ids: tenants.to_vec(),
+        }))
+    }
+
+    #[test]
+    fn a_user_may_reach_their_own_tenant() {
+        assert_eq!(
+            authorize_tenant(&user_of(&[uuid_a()]), TenantScope::Tenant(uuid_a()), true),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn a_user_may_not_reach_another_tenant() {
+        // This is the IDOR. Before this change, a caller holding a valid
+        // credential could swap the path segment and operate on any tenant.
+        assert_eq!(
+            authorize_tenant(&user_of(&[uuid_a()]), TenantScope::Tenant(uuid_b()), true),
+            Err(StatusCode::FORBIDDEN)
+        );
+    }
+
+    #[test]
+    fn a_user_with_no_tenant_claims_reaches_nothing() {
+        assert_eq!(
+            authorize_tenant(&user_of(&[]), TenantScope::Tenant(uuid_a()), true),
+            Err(StatusCode::FORBIDDEN)
+        );
+    }
+
+    #[test]
+    fn a_multi_tenant_user_reaches_exactly_their_tenants() {
+        let principal = user_of(&[uuid_a(), uuid_b()]);
+        assert_eq!(
+            authorize_tenant(&principal, TenantScope::Tenant(uuid_a()), true),
+            Ok(())
+        );
+        assert_eq!(
+            authorize_tenant(&principal, TenantScope::Tenant(uuid_b()), true),
+            Ok(())
+        );
+        let other = Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap();
+        assert_eq!(
+            authorize_tenant(&principal, TenantScope::Tenant(other), true),
+            Err(StatusCode::FORBIDDEN)
+        );
+    }
+
+    #[test]
+    fn the_service_bearer_is_refused_on_tenant_routes_once_user_jwts_are_required() {
+        assert_eq!(
+            authorize_tenant(&Principal::Service, TenantScope::Tenant(uuid_a()), true),
+            Err(StatusCode::FORBIDDEN)
+        );
+    }
+
+    #[test]
+    fn the_service_bearer_still_works_on_tenant_routes_during_the_migration_window() {
+        // BILLING_TENANT_ROUTES_REQUIRE_USER_JWT=false — the documented, WARN-ing
+        // escape hatch that keeps existing callers working while they migrate.
+        assert_eq!(
+            authorize_tenant(&Principal::Service, TenantScope::Tenant(uuid_a()), false),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn the_service_bearer_always_works_on_unscoped_routes() {
+        // Tenant *creation* and the OAuth/Plaid handshakes are provisioning
+        // calls with no tenant in the path; requiring a user token there would
+        // break them for no security gain.
+        for require in [true, false] {
+            assert_eq!(
+                authorize_tenant(&Principal::Service, TenantScope::None, require),
+                Ok(())
+            );
+        }
+    }
+
+    #[test]
+    fn an_unparseable_tenant_is_refused_for_every_principal() {
+        for require in [true, false] {
+            assert_eq!(
+                authorize_tenant(&Principal::Service, TenantScope::Unparseable, require),
+                Err(StatusCode::FORBIDDEN)
+            );
+            assert_eq!(
+                authorize_tenant(&user_of(&[uuid_a()]), TenantScope::Unparseable, require),
+                Err(StatusCode::FORBIDDEN)
+            );
+        }
+    }
+
+    // --- End-to-end through the middleware -----------------------------------
+
+    fn tenant_router(auth: Arc<ApiAuth>) -> Router {
+        Router::new()
+            .route("/v1/tenants", post(|| async { "ok-create" }))
+            .route(
+                "/v1/tenants/{tenant_id}/connections",
+                get(|| async { "ok-conn" }),
+            )
+            .layer(axum::middleware::from_fn_with_state(
+                auth.clone(),
+                require_api_auth,
+            ))
+            .with_state(auth)
+    }
+
+    #[tokio::test]
+    async fn service_bearer_is_blocked_from_tenant_routes_end_to_end() {
+        let auth = Arc::new(ApiAuth {
+            bearer: Some("service-token".into()),
+            supabase: None,
+            require_user_jwt: true,
+        });
+        let app = tenant_router(auth);
+
+        // Unscoped provisioning route: still fine.
+        assert_eq!(
+            status_of(
+                app.clone(),
+                "POST",
+                "/v1/tenants",
+                Some("Bearer service-token")
+            )
+            .await,
+            StatusCode::OK
+        );
+        // Tenant-scoped route: refused, because the shared token names no tenant.
+        assert_eq!(
+            status_of(
+                app,
+                "GET",
+                &format!("/v1/tenants/{TENANT_A}/connections"),
+                Some("Bearer service-token")
+            )
+            .await,
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unverifiable_token_is_still_unauthorized_not_forbidden() {
+        // A bad credential must read as 401 (who are you?), never 403 (I know
+        // who you are and you may not) — the two say very different things to
+        // a caller and to an audit log.
+        let auth = Arc::new(ApiAuth {
+            bearer: Some("service-token".into()),
+            supabase: None,
+            require_user_jwt: true,
+        });
+        let app = tenant_router(auth);
+        assert_eq!(
+            status_of(
+                app,
+                "GET",
+                &format!("/v1/tenants/{TENANT_A}/connections"),
+                Some("Bearer wrong-token")
+            )
+            .await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[test]
+    fn the_debug_surface_never_prints_the_service_bearer() {
+        let auth = ApiAuth {
+            bearer: Some("super-secret-bearer".into()),
+            supabase: None,
+            require_user_jwt: true,
+        };
+        let rendered = format!("{auth:?}");
+        assert!(!rendered.contains("super-secret-bearer"));
+        assert!(rendered.contains("<redacted>"));
     }
 }
