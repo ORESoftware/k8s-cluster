@@ -49,7 +49,7 @@ pre-committed `out/`. `dd-des-rs` runs the **real Rust engine** in-process.
   a player; `?format=json` returns the artifact). Validated, panic-isolated, and
   serialized behind the same lock as the simulations.
 - `GET  /streaming` — the JSONL **streaming-solver** contracts (`lp`, `milp`,
-  `mdp`, `pomdp`, `soccer-planner`): iterative solvers fed a JSONL command
+  `mdp`, `pomdp`): iterative solvers fed a JSONL command
   stream.
 - `POST /streaming/<name>` — stream JSONL commands (one per line) to a solver;
   responds with a JSONL stream of result frames.
