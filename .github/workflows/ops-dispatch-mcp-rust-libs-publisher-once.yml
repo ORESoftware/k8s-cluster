@@ -19,7 +19,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: dispatch-exact-meta-agents-owner-publication
+  group: dispatch-exact-meta-agents-owner-publication-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
