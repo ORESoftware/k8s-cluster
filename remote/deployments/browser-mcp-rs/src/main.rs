@@ -168,7 +168,16 @@ fn config_from_env() -> Config {
             65_000,
             120_000,
         )),
-        require_auth: env_bool("BROWSER_MCP_REQUIRE_AUTH", false),
+        // Fail closed. This service is publicly routed at /browser-mcp and is
+        // write-capable — browser_act drives a real browser. Defaulting to
+        // false meant any deployment path that forgot the env var served
+        // unauthenticated write access, and nothing downstream would notice:
+        // validate_config hard-errors on a missing SERVER_AUTH_SECRET or
+        // allowlist but never checked this. The production manifest already
+        // sets it to true, so this only changes what an *unconfigured* process
+        // does. The documented no-auth compatibility mode still works, it just
+        // has to be asked for explicitly now.
+        require_auth: env_bool("BROWSER_MCP_REQUIRE_AUTH", true),
         allowed_domains,
         workflow_allowlists,
         default_workflow: env_string("BROWSER_MCP_DEFAULT_WORKFLOW", "default"),
@@ -1063,6 +1072,15 @@ async fn main() {
         }
         Some(Arc::new(service))
     } else {
+        // Loud on purpose: this is the one configuration in which a public,
+        // write-capable browser endpoint answers anonymous callers. It is
+        // supported for isolated local runs only, and it should never be
+        // reachable from an edge.
+        eprintln!(
+            "WARNING: BROWSER_MCP_REQUIRE_AUTH=false — MCP is serving \
+             UNAUTHENTICATED write-capable browser control. Local/disposable \
+             use only; never expose this process publicly."
+        );
         None
     };
     let state = AppState {
