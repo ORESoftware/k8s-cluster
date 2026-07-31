@@ -87,3 +87,5 @@ jobs:
             --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
             --output json
           test "$status" = Success
+
+# Triggered explicitly after creation so GitHub registers this branch workflow.
