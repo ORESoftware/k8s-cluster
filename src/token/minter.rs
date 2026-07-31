@@ -9,6 +9,7 @@ use p256::SecretKey;
 use crate::config::SigningConfig;
 use crate::error::AuthError;
 
+use super::assurance::AuthenticationAssurance;
 use super::claims::OreClaims;
 use super::jwks::PublicJwks;
 
@@ -29,6 +30,8 @@ pub struct TokenMinter {
 pub struct MintedToken {
     pub token: String,
     pub expires_at: u64,
+    pub amr: Vec<String>,
+    pub acr: Option<String>,
 }
 
 pub struct MintContext {
@@ -40,6 +43,7 @@ pub struct MintContext {
     pub email: Option<String>,
     pub email_verified: bool,
     pub roles: Vec<String>,
+    pub assurance: AuthenticationAssurance,
 }
 
 impl TokenMinter {
@@ -111,12 +115,19 @@ impl TokenMinter {
             email: context.email,
             email_verified: context.email_verified,
             roles: context.roles,
+            amr: context.assurance.amr.clone(),
+            acr: context.assurance.acr.clone(),
         };
         let token = encode(&self.header, &claims, &self.encoding_key).map_err(|err| {
             tracing::error!(error = %err, "token signing failed");
             AuthError::Internal
         })?;
-        Ok(MintedToken { token, expires_at })
+        Ok(MintedToken {
+            token,
+            expires_at,
+            amr: context.assurance.amr,
+            acr: context.assurance.acr,
+        })
     }
 }
 
@@ -131,6 +142,7 @@ fn now_secs() -> u64 {
 mod tests {
     use super::*;
     use crate::config::SigningConfig;
+    use crate::token::{AuthenticationAssurance, ACR_LOA1};
 
     use p256::pkcs8::{EncodePrivateKey, LineEnding};
 
@@ -169,6 +181,7 @@ mod tests {
                 email: Some("a@b.co".into()),
                 email_verified: true,
                 roles: vec!["user".into()],
+                assurance: AuthenticationAssurance::local_password(),
             })
             .unwrap();
         let claims = m.verify(&minted.token).unwrap();
@@ -179,6 +192,10 @@ mod tests {
         assert_eq!(claims.roles, vec!["user"]);
         assert_eq!(claims.email.as_deref(), Some("a@b.co"));
         assert!(claims.email_verified);
+        assert_eq!(claims.amr, vec!["pwd"]);
+        assert_eq!(claims.acr.as_deref(), Some(ACR_LOA1));
+        assert_eq!(minted.amr, vec!["pwd"]);
+        assert_eq!(minted.acr.as_deref(), Some(ACR_LOA1));
         assert!(claims.exp > claims.iat);
     }
 
@@ -195,6 +212,7 @@ mod tests {
                 email: None,
                 email_verified: false,
                 roles: vec![],
+                assurance: AuthenticationAssurance::local_password(),
             })
             .unwrap();
         let mut bad = minted.token.clone();

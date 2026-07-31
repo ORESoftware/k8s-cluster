@@ -5,10 +5,12 @@
 //! verification. That is the whole point of centralizing: one verifier to audit,
 //! one key to rotate.
 
+mod assurance;
 mod claims;
 mod jwks;
 mod minter;
 
+pub use assurance::{AuthenticationAssurance, ACR_LOA1, ACR_LOA2};
 pub use claims::OreClaims;
 pub use jwks::PublicJwks;
 pub use minter::{MintContext, MintedToken, TokenMinter};
