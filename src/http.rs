@@ -330,10 +330,7 @@ mod tests {
     async fn metrics_route_is_prometheus_and_content_free() {
         let s = state();
         s.metrics.publishes.with_label_values(&["ok"]).inc();
-        s.metrics
-            .deliveries
-            .with_label_values(&["shared-auth.events.identity", "ok"])
-            .inc();
+        s.metrics.deliveries.with_label_values(&["ok"]).inc();
         let app = router(s);
         let response = app
             .oneshot(
@@ -357,6 +354,7 @@ mod tests {
             "email=",
             "identity=",
             "jwt=",
+            "subject=",
             "token=",
             "token_prefix=",
             "url=",
