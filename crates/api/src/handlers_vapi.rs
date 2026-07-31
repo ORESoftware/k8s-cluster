@@ -289,18 +289,25 @@ async fn handle_tool_calls(state: &AppState, message: &Value) -> Response {
             "translate_text" => run_translate_tool(state, &call.arguments).await,
             other => Err(format!("unknown tool '{other}'")),
         };
-        let result_value = match result {
-            Ok(v) => v,
+        // Vapi's ToolCallResult carries a STRING `result` (read back to the
+        // model) or a STRING `error`. Returning a JSON object here would not be
+        // spoken back; for a voice translator the useful result is the bare
+        // translated text.
+        match result {
+            Ok(text) => results.push(json!({
+                "toolCallId": call.id,
+                "name": call.name,
+                "result": text,
+            })),
             Err(e) => {
                 Metrics::bump(&state.metrics.errors_total);
-                json!({ "ok": false, "error": e })
+                results.push(json!({
+                    "toolCallId": call.id,
+                    "name": call.name,
+                    "error": e,
+                }));
             }
-        };
-        results.push(json!({
-            "toolCallId": call.id,
-            "name": call.name,
-            "result": result_value,
-        }));
+        }
     }
 
     json_response(StatusCode::OK, json!({ "results": results }))
