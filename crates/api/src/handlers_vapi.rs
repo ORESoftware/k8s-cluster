@@ -313,7 +313,7 @@ async fn handle_tool_calls(state: &AppState, message: &Value) -> Response {
     json_response(StatusCode::OK, json!({ "results": results }))
 }
 
-async fn run_translate_tool(state: &AppState, args: &Value) -> Result<Value, String> {
+async fn run_translate_tool(state: &AppState, args: &Value) -> Result<String, String> {
     let text = args
         .get("text")
         .and_then(Value::as_str)
