@@ -53,6 +53,14 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
 
+          stage=bootstrap
+          report_failure() {
+            status=$?
+            printf 'FAILED stage=%s status=%s\n' "$stage" "$status" >&2
+            exit "$status"
+          }
+          trap report_failure ERR
+
           trusted_sha="${1:?trusted SHA required}"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
           work="$(mktemp -d /tmp/critical-org-publisher.XXXXXX)"
@@ -60,12 +68,16 @@ jobs:
           export CODEX_HOME="$work/codex-home"
           install -d -m 700 "$CODEX_HOME"
           cleanup() {
-            unset GH_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN CODEX_HOME
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN CODEX_HOME
             rm -rf "$work"
           }
           trap cleanup EXIT
 
+          stage=protected-kubernetes-client
           command -v kubectl >/dev/null
+          printf 'PASSED stage=%s\n' "$stage"
+
+          stage=protected-github-credential-read
           encoded_pat="$(kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}')"
           test -n "$encoded_pat"
           GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
@@ -73,10 +85,13 @@ jobs:
           test -n "$GH_TOKEN"
           export GH_TOKEN
           export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
+          printf 'PASSED stage=%s\n' "$stage"
 
+          stage=github-identity-and-ownership
           python3 - <<'PY'
           import json
           import os
+          import urllib.error
           import urllib.request
 
           token = os.environ["GH_TOKEN"]
@@ -92,8 +107,14 @@ jobs:
                   "https://api.github.com" + path,
                   headers=headers,
               )
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  return json.load(response)
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  error.read(4096)
+                  raise SystemExit(
+                      f"GitHub preflight failed for {path}: HTTP {error.code}"
+                  ) from error
 
           identity = get("/user")
           if identity.get("login") != "ORESoftware":
@@ -119,32 +140,40 @@ jobs:
                   )
               print(f"{organization} owner membership verified")
           PY
+          printf 'PASSED stage=%s\n' "$stage"
 
+          stage=trusted-publisher-source
           git clone --filter=blob:none --no-checkout \
             https://github.com/ORESoftware/k8s-cluster.git \
             "$work/k8s-cluster"
           git -C "$work/k8s-cluster" fetch --depth=1 origin "$trusted_sha"
           git -C "$work/k8s-cluster" checkout --detach "$trusted_sha"
           test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
+          printf 'PASSED stage=%s sha=%s\n' "$stage" "$trusted_sha"
 
+          stage=publisher-static-validation
           python3 -m py_compile \
             "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories.py" \
             "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py" \
             "$work/k8s-cluster/scripts/ops/finalize_missing_org_repositories.py"
+          printf 'PASSED stage=%s\n' "$stage"
 
+          stage=bounded-repository-publication
           python3 "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py"
+          printf 'PASSED stage=%s\n' "$stage"
 
+          stage=publication-finalization
           python3 "$work/k8s-cluster/scripts/ops/finalize_missing_org_repositories.py" \
             --json-report "$work/critical-org-publication.json" \
             --markdown-report "$work/critical-org-publication.md" \
             --close-carriers
-
           cat "$work/critical-org-publication.md"
+          printf 'PASSED stage=%s\n' "$stage"
           REMOTE_EOF
           chmod 700 "$remote_script"
 
           encoded="$(base64 --wrap=0 "$remote_script")"
-          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-repositories.sh && chown ec2-user:ec2-user /tmp/publish-critical-org-repositories.sh && chmod 700 /tmp/publish-critical-org-repositories.sh && sudo -u ec2-user -H bash -lc 'unset CODEX_HOME; bash /tmp/publish-critical-org-repositories.sh \"\$1\"' _ '$trusted_sha'; status=\$?; rm -f /tmp/publish-critical-org-repositories.sh; exit \$status"
+          remote_command="remote_log=/tmp/publish-critical-org-repositories.log; printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-repositories.sh; setup_status=\$?; if test \$setup_status -ne 0; then echo 'FAILED stage=remote-script-transfer' >&2; rm -f /tmp/publish-critical-org-repositories.sh \"\$remote_log\"; exit \$setup_status; fi; chown ec2-user:ec2-user /tmp/publish-critical-org-repositories.sh && chmod 700 /tmp/publish-critical-org-repositories.sh; setup_status=\$?; if test \$setup_status -ne 0; then echo 'FAILED stage=remote-script-ownership' >&2; rm -f /tmp/publish-critical-org-repositories.sh \"\$remote_log\"; exit \$setup_status; fi; sudo -u ec2-user -H bash -lc 'unset CODEX_HOME; bash /tmp/publish-critical-org-repositories.sh \"\$1\"' _ '$trusted_sha' >\"\$remote_log\" 2>&1; status=\$?; cat \"\$remote_log\"; rm -f /tmp/publish-critical-org-repositories.sh \"\$remote_log\"; exit \$status"
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
