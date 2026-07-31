@@ -12,6 +12,7 @@ DEN-466 is being delivered in reviewable stages so the executable contract can b
 - `src/export_openapi.py` emits deterministic public and internal OpenAPI 3.1 artifacts without starting NATS, runtime-config registration, telemetry exporters, or other background work.
 - The public artifact prunes internal paths, service-auth metadata, and internal-only schemas.
 - CI proves runtime route/OpenAPI parity, deterministic bytes, local `$ref` resolution, public/internal separation, authentication, validation errors, and docs alias equality.
+- Runtime response validation confirms `rewardEstimate` is a scalar confidence/reward value, while `transitionModel` remains the structured transition collection.
 
 ## Generated NATS dependency in contract-only CI
 
