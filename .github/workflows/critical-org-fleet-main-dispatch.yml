@@ -1,0 +1,111 @@
+name: Critical target organization fleet trusted supervisor
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - main
+    paths:
+      - '.github/critical-org-publish-trigger-main'
+
+permissions:
+  actions: write
+  contents: read
+  statuses: write
+
+concurrency:
+  group: critical-target-org-publish-supervisor-20260731
+  cancel-in-progress: false
+
+jobs:
+  supervise:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/critical-org-publish-trigger-main-20260731'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Rerun and supervise the protected main-branch publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          workflow_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows?per_page=100" \
+            --jq '.workflows[] | select(.path == ".github/workflows/ops-publish-missing-organization-repositories.yml") | .id' \
+            | head -n1)"
+          test -n "$workflow_id" || {
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+              -f state=error \
+              -f context='ops/missing-repository-publication' \
+              -f description='publisher workflow is not registered' >/dev/null
+            exit 1
+          }
+
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_id}/runs?branch=main&event=push&per_page=10")"
+          run_id="$(jq -r '.workflow_runs[0].id // empty' <<<"$run_json")"
+          test -n "$run_id" || {
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+              -f state=error \
+              -f context='ops/missing-repository-publication' \
+              -f description='publisher has no main-branch push run' >/dev/null
+            exit 1
+          }
+
+          initial_attempt="$(jq -r '.workflow_runs[0].run_attempt' <<<"$run_json")"
+          status="$(jq -r '.workflow_runs[0].status' <<<"$run_json")"
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
+
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state=pending \
+            -f context='ops/missing-repository-publication' \
+            -f description="publisher run ${run_id} is being supervised" \
+            -f target_url="$run_url" >/dev/null
+
+          if [[ "$status" == completed ]]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/rerun" >/dev/null
+            for _ in $(seq 1 40); do
+              sleep 3
+              current="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}")"
+              attempt="$(jq -r '.run_attempt' <<<"$current")"
+              status="$(jq -r '.status' <<<"$current")"
+              if (( attempt > initial_attempt )) || [[ "$status" != completed ]]; then
+                break
+              fi
+            done
+          fi
+
+          for _ in $(seq 1 180); do
+            current="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}")"
+            status="$(jq -r '.status' <<<"$current")"
+            conclusion="$(jq -r '.conclusion // ""' <<<"$current")"
+            attempt="$(jq -r '.run_attempt' <<<"$current")"
+            echo "publisher run=${run_id} attempt=${attempt} status=${status} conclusion=${conclusion:-pending}"
+            if [[ "$status" == completed ]]; then
+              break
+            fi
+            sleep 15
+          done
+
+          if [[ "$status" != completed ]]; then
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+              -f state=error \
+              -f context='ops/missing-repository-publication' \
+              -f description='publisher supervision timed out' \
+              -f target_url="$run_url" >/dev/null
+            exit 1
+          fi
+
+          if [[ "$conclusion" == success ]]; then
+            state=success
+            description='all repository publication steps passed'
+          else
+            state=failure
+            description="repository publication ${conclusion:-failed}"
+          fi
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+            -f state="$state" \
+            -f context='ops/missing-repository-publication' \
+            -f description="$description" \
+            -f target_url="$run_url" >/dev/null
+          test "$conclusion" = success
