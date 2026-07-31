@@ -23,10 +23,14 @@ spec:
     metadata:
       annotations:
         dd.dev/sonus-auris-site-revision: '2f94949c6a36533cec3cfe36022f7f9da50648de'
+        prometheus.io/scrape: 'true'
+        prometheus.io/path: '/metrics'
+        prometheus.io/port: '9113'
       labels:
         app: dd-sonus-auris-site
     spec:
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 20
       securityContext:
         fsGroup: 101
@@ -35,8 +39,13 @@ spec:
         - name: build-sonus-auris-site
           image: docker.io/library/node:22-bookworm
           imagePullPolicy: IfNotPresent
+          # apt-get + npm build need root and a writable rootfs, so this stays a
+          # root init container; RuntimeDefault seccomp is the part that costs
+          # nothing here.
           securityContext:
             allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           command:
             - /bin/bash
             - -lc
@@ -52,7 +61,12 @@ spec:
               git clone --depth 1 --no-checkout "${SONUS_AURIS_SITE_GIT_URL}" "${source_dir}"
               git -C "${source_dir}" fetch --depth 1 origin "${SONUS_AURIS_SITE_GIT_REF}"
               git -C "${source_dir}" switch --detach FETCH_HEAD
-              echo "[dd-sonus-auris-site] source: ${SONUS_AURIS_SITE_GIT_URL}@${SONUS_AURIS_SITE_GIT_REF} ($(git -C "${source_dir}" rev-parse --short HEAD))"
+              actual_ref="$(git -C "${source_dir}" rev-parse HEAD)"
+              if [ "$actual_ref" != "$SONUS_AURIS_SITE_GIT_REF" ]; then
+                echo "[dd-sonus-auris-site] FATAL: expected $SONUS_AURIS_SITE_GIT_REF, fetched $actual_ref" >&2
+                exit 1
+              fi
+              echo "[dd-sonus-auris-site] source: ${SONUS_AURIS_SITE_GIT_URL}@${actual_ref}"
 
               cd "${source_dir}"
               node -e 'const fs = require("fs"); const p = "src/styles/global.css"; fs.writeFileSync(p, fs.readFileSync(p, "utf8").replaceAll("/sonus-auris-site.web/", "/sonus-auris/"));'
@@ -135,6 +149,56 @@ spec:
               mountPath: /var/run
             - name: nginx-tmp
               mountPath: /tmp
+        - name: nginx-prometheus-exporter
+          image: docker.io/nginx/nginx-prometheus-exporter:1.5.1@sha256:9f6d963bb2b19d706d401cc3e2c3ea8de2f1c471b96a2156ca45e76f650b1625
+          imagePullPolicy: IfNotPresent
+          args:
+            - --nginx.scrape-uri=http://127.0.0.1:8080/stub_status
+            - --web.listen-address=:9113
+            - --log.format=json
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1001
+            runAsGroup: 1001
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - name: metrics
+              containerPort: 9113
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          startupProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
       volumes:
         - name: build-work
           emptyDir: {}

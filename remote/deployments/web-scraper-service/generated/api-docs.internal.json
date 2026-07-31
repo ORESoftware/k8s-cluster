@@ -435,7 +435,7 @@
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "node",
   "x-dd-operation-count": 14,
-  "x-dd-route-count": 13,
+  "x-dd-route-count": 14,
   "x-dd-service": "web-scraper-service",
   "x-dd-standard-docs-routes": [
     "/docs/api",

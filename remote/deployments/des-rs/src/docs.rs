@@ -149,7 +149,7 @@ pub(crate) fn build_descriptor() -> ServiceDescriptor {
         .endpoint(
             "GET",
             "/streaming",
-            "List JSONL streaming-solver contracts (lp, milp/mip/ip, mdp, pomdp, soccer-planner).",
+            "List JSONL streaming-solver contracts (lp, milp/mip/ip, mdp, pomdp).",
             EndpointKind::Service,
         )
         .endpoint(

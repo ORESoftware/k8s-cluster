@@ -607,7 +607,7 @@
       "service": "apostille-services-server-rs",
       "language": "rust",
       "specPath": "remote/deployments/apostille-services-server-rs/generated/api-docs.internal.json",
-      "specSha256": "dfeac6eebca4c66f0e85bd57bca72600a812b434481cf6f0cfa15b98940a04c7",
+      "specSha256": "e67ed55a239c1e95157ec26533759043fda9a640b038daa546a0d87214fe1607",
       "operationCount": 24,
       "operations": [
         {
@@ -1210,7 +1210,7 @@
       "service": "auth-server-rs",
       "language": "rust",
       "specPath": "remote/deployments/auth-server-rs/generated/api-docs.internal.json",
-      "specSha256": "14adf8fe75d7c823c2e3961470796465b3f40fca756ecdbcc1302e9bacbde62e",
+      "specSha256": "c5cffdd23e9ef15634c38f3a198d2ca3f5eddf39607953963497d5fad462b76f",
       "operationCount": 13,
       "operations": [
         {
@@ -2542,7 +2542,7 @@
       "service": "build-server-rs",
       "language": "rust",
       "specPath": "remote/deployments/build-server-rs/generated/api-docs.internal.json",
-      "specSha256": "3869d59bdba2b05b85870b4afa56461c0406881f8d65a7cd76228c5d5a6345d3",
+      "specSha256": "9b0f9331f11a9db4761b35a8f8c6d4042f1ce2727c726d770964022ab0dda061",
       "operationCount": 19,
       "operations": [
         {
@@ -3025,7 +3025,7 @@
       "service": "cluster-mcp-rs",
       "language": "rust",
       "specPath": "remote/deployments/cluster-mcp-rs/generated/api-docs.internal.json",
-      "specSha256": "db5ef568f188f48df30d670be3460aa36f7d298b0d9f5fbc8da1b3b81b3560da",
+      "specSha256": "70080c07d711e93d43fc001cc01849e646c56200aefe2d7a29749c1e4baa0787",
       "operationCount": 15,
       "operations": [
         {
@@ -5217,7 +5217,7 @@
       "service": "dataset-labeling-rs",
       "language": "rust",
       "specPath": "remote/deployments/dataset-labeling-rs/generated/api-docs.internal.json",
-      "specSha256": "555c99f4160e5acaf81ab231b9799b527528ad6f3d756e0415113a740d4d4bd1",
+      "specSha256": "2610ae7ad9497147f0ee25a9edff4c277bff3ce2ea72767fb1a36af78df5a1a0",
       "operationCount": 18,
       "operations": [
         {
@@ -5658,7 +5658,7 @@
       "service": "dd-benefactor-marketing-rs",
       "language": "rust",
       "specPath": "remote/deployments/dd-benefactor-marketing-rs/generated/api-docs.internal.json",
-      "specSha256": "a83a4d7d82ef754c3e6cc9b781274590725a1a008ac6b06eef8cd1a1a64eb09b",
+      "specSha256": "a5d535272ecf8e3ff13ffb856f2b59c8c11824dac5f2fdcdbe928f89aeb445fd",
       "operationCount": 76,
       "operations": [
         {
@@ -7761,7 +7761,7 @@
       "service": "dd-compliance-rs",
       "language": "rust",
       "specPath": "remote/deployments/dd-compliance-rs/generated/api-docs.internal.json",
-      "specSha256": "92d06450a9a1dcafe124d8af3e5ca33c400341d49f759090dc5b138258e9d7f4",
+      "specSha256": "9a400921d2e0c8d3fc935070014fda3dfbc6dd4388a10c85c652fecc31bfed79",
       "operationCount": 37,
       "operations": [
         {
@@ -9303,7 +9303,7 @@
       "service": "dd-embeddings-rs",
       "language": "rust",
       "specPath": "remote/deployments/dd-embeddings-rs/generated/api-docs.internal.json",
-      "specSha256": "e92a8be01827d9e70ac2a6c4a38a6b83f71678dd052a9d5cad31c160280bf66d",
+      "specSha256": "64d7f1b5084dacb29c61ae509ca3750cc77adcec5683bcfb277e15d170f32023",
       "operationCount": 23,
       "operations": [
         {
@@ -9334,7 +9334,7 @@
               "content": []
             }
           ],
-          "contractSha256": "5afa367f8ec0dbb531f7d317309bb79e9e1b7a3870bc90f70091867323750f75"
+          "contractSha256": "83f8544a4274e600d6bb61fb4f51861845924a78dc2b0243688bf02dd7b53ec7"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9364,7 +9364,7 @@
               "content": []
             }
           ],
-          "contractSha256": "e51604d6b6fa2deebdc27b77a86878d8a70bcdc4ee7525105aed9dbd5e8efd42"
+          "contractSha256": "16d168df7ff75a2b28d7f385b20067ef37973d9e601b6eebbc9f39a2ac9701aa"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9388,7 +9388,7 @@
               "content": []
             }
           ],
-          "contractSha256": "d72a6c360831d5f976044ee2e48974fdd415246bd040e3d3c24491be2fe97fa3"
+          "contractSha256": "9056c040f926e742e0212d04d9fb36cd526f1a6d58fa3b77f560a150790b9223"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9412,7 +9412,7 @@
               "content": []
             }
           ],
-          "contractSha256": "06670a121852fed6e88bb30a616e1700db926ad4841cdbca7e28d919ef0b98f9"
+          "contractSha256": "027c24c51274f9b4966b07102a7bb3fd32ad7d128a3d936d3aa2b3209da33d91"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9436,7 +9436,7 @@
               "content": []
             }
           ],
-          "contractSha256": "427db96d24e114b61c57cdc7ee145b0adaa5caaca255f535dd641a0ae82cd733"
+          "contractSha256": "b1ebf60738a5e77e8341422309106c1ea93888e54118cbdc237eb3de0687ccea"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9460,7 +9460,7 @@
               "content": []
             }
           ],
-          "contractSha256": "fc37d6288326e97d6bdf5ed4d08ff9026f43fed96abfa25d966368311821067f"
+          "contractSha256": "68972b9ee95e83c210d474308f782eaf58b37d4ac735d575e61e74444cbad71f"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9484,7 +9484,7 @@
               "content": []
             }
           ],
-          "contractSha256": "daeb3d2101f0ea760a55e50655da0d062ac93d3663388fefa45e077e9ca90aa4"
+          "contractSha256": "107b13b21699da3874ec56cf135ef7eb63a27e5090720ce3bb513dc94ab736b5"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9508,7 +9508,7 @@
               "content": []
             }
           ],
-          "contractSha256": "d7293488c687f9b62afa92eb4a8cb9fed129695434b9e586fd10e3074d128e5a"
+          "contractSha256": "efaa588bf05a18561e103ed7b24342736fd4fff72d3aa7cccad125b3cd09d375"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9532,7 +9532,7 @@
               "content": []
             }
           ],
-          "contractSha256": "9d7279921dadbdf9cd9f61eca7e9f505b50ad91440599e7f0d968049b02898a1"
+          "contractSha256": "7f997dea95625f27769b0e183bbd9ddd6e4780e97f2b9347f21c639c651ab94b"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9556,7 +9556,7 @@
               "content": []
             }
           ],
-          "contractSha256": "49a5a4ae100b41cdfc00ddbb83014769653ac50133508ced7202ccacde4e419a"
+          "contractSha256": "4301d5b57bfda5123f2522dd3f160a467e5678c1beb6dbfffa4595f2aa91f29b"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9580,7 +9580,7 @@
               "content": []
             }
           ],
-          "contractSha256": "c8731de7dbfb938e7cd4bab6e53b8540471c02e098e1a07e866c22cacf995562"
+          "contractSha256": "450f83f4b726f587cdd72aa2cdc294bef3d2d3068b738325ac30d98180ee9c89"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9604,7 +9604,7 @@
               "content": []
             }
           ],
-          "contractSha256": "1dc791f40a5797eaed2911a67a3ee9c344159e3382f467b45827a94009ce09bb"
+          "contractSha256": "3ebb403df53d228e19b545fbce60bf4459e876f7933ee8f9edf22eed72de0604"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9628,7 +9628,7 @@
               "content": []
             }
           ],
-          "contractSha256": "476e7b3bb5c13ef389f8257b4e4ef51b87857a8c50851b4a68086fc321c3ff06"
+          "contractSha256": "ebc3f7f5008f0e1fa09d3438bc52c38987449037c78ec264bfc9b7c25dd3a79c"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9652,7 +9652,7 @@
               "content": []
             }
           ],
-          "contractSha256": "4b2ef63d1fb8f8d5f1592a272858f1cc75912f8ce52c562d25eaf1dfa6d9c878"
+          "contractSha256": "909559e9779d897277fbc99f67a4a4ca805d1a5968b2ac6c6c3fbd081bb4a43d"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9676,7 +9676,7 @@
               "content": []
             }
           ],
-          "contractSha256": "bdc689f1b159d90be9c2d25d19ef4274ec56e238faf39652ef3390322b39c404"
+          "contractSha256": "b4aeefccb31c9969c9bb666d2b4914a20fa1bbbc2cbe66694ab7d80c49075c3f"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9700,7 +9700,7 @@
               "content": []
             }
           ],
-          "contractSha256": "57a247552051d9284dc192c89bb1e1528b5b59b2288758ad0557e78812c5c698"
+          "contractSha256": "35fb0656259f04242e577221330f7c5366181e8c8473b3b3e538eb74fef0eac6"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9724,7 +9724,7 @@
               "content": []
             }
           ],
-          "contractSha256": "db474ba5c48975ec57f8f117cb62984ac85dfdf0dd0c9888a219fc82d6cb5383"
+          "contractSha256": "fd8656bc208910beaffd844e662fec6e879b34d61bdb6b3bf3afbaa3aa755ea6"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9748,7 +9748,7 @@
               "content": []
             }
           ],
-          "contractSha256": "ce2f08df71ec5e4d987c4fc754b0f55644c33ba8aaf66d5f235d503f7d81b78e"
+          "contractSha256": "fe846dc6dec75fd38277f0a46c4c576554e696e430b3d893df5dd382bc3c6bd2"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9772,7 +9772,7 @@
               "content": []
             }
           ],
-          "contractSha256": "238a47c35ff7df4f0362337bd29964ce9a460b032b3bc93a1cf96d3f68e33a1d"
+          "contractSha256": "6c02814a7f6ce9589215ce123b5017f2fed67b63dd977a966e14deb04254ee7c"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9796,7 +9796,7 @@
               "content": []
             }
           ],
-          "contractSha256": "6086f8ac4f2b7ca9d97da9eb6dd38514866cafbe2bd921c64cadb30c41fe5ac3"
+          "contractSha256": "af51ff4322085ec0ba053bb33ce737d5317a2b8b384e185ee4f8f25311eb9254"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9820,7 +9820,7 @@
               "content": []
             }
           ],
-          "contractSha256": "2a338fea398daafa8e4f2e003defd8c2ccea0e6b2b89477b15e1fcdf460b1222"
+          "contractSha256": "5e266b4e6a872b23afd6367e1a0f0e9ed5de8e341ec05dafad619fe2a3001156"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9844,7 +9844,7 @@
               "content": []
             }
           ],
-          "contractSha256": "7b58453c265a43d000748b5eee0891e609dc6db76be1a4e1ebb8231c08759226"
+          "contractSha256": "e36708ec48cffa4f9926cbfb6a4941c5ed36450393119abe89d2870448943305"
         },
         {
           "service": "dd-embeddings-rs",
@@ -9868,7 +9868,7 @@
               "content": []
             }
           ],
-          "contractSha256": "d393f0a943c0d56a3189c46b49c22243afd7fff306b201ae84e661314a026128"
+          "contractSha256": "96278946916413cf6005fa456d5975ec988dbe65a41b2b077e357cacc19633d2"
         }
       ]
     },
@@ -10341,7 +10341,7 @@
       "service": "dd-git-rs",
       "language": "rust",
       "specPath": "remote/deployments/dd-git-rs/generated/api-docs.internal.json",
-      "specSha256": "f545d2f785d32c1119cd777aaa7efee60cc41b24ebb1d81b0c01128497160c6e",
+      "specSha256": "5a3b97e96429063f5e7c15dd0594e3129db06a96b0e8411889e66c7dc8372d01",
       "operationCount": 17,
       "operations": [
         {
@@ -12020,7 +12020,7 @@
       "service": "dev-server",
       "language": "node",
       "specPath": "remote/deployments/dev-server/generated/api-docs.internal.json",
-      "specSha256": "a56386c6539b1682453f2faeaccd3e891b52997800301783d7e50e6b48a5ba4b",
+      "specSha256": "3066a5c99ad6920cd3d7d669c9819a268997472c0481ae2b89efbb6a40314df0",
       "operationCount": 20,
       "operations": [
         {
@@ -13304,7 +13304,7 @@
       "service": "formal-methods-server-rs",
       "language": "rust",
       "specPath": "remote/deployments/formal-methods-server-rs/generated/api-docs.internal.json",
-      "specSha256": "3767bf42fa26c9bb5d4918c3ef225bdf797cf3902fcdd0b4edacc705867c5f5a",
+      "specSha256": "5176451ba3c12b1ec4c92831371c29495422a8539d36f57ae6ceb696519bec61",
       "operationCount": 16,
       "operations": [
         {
@@ -13725,8 +13725,8 @@
       "service": "formal-methods-service-rs",
       "language": "rust",
       "specPath": "remote/deployments/formal-methods-service-rs/generated/api-docs.internal.json",
-      "specSha256": "6abbc6d8a55edc0aaa1b4f1107d3e45a2fd837e4c2610b80b69f7ff6cf6632bd",
-      "operationCount": 10,
+      "specSha256": "8113b4aaa85a45c2ac5ea36b604d30ca189cd80443bba64dff4030a8d87086e0",
+      "operationCount": 11,
       "operations": [
         {
           "service": "formal-methods-service-rs",
@@ -13750,7 +13750,7 @@
               "content": []
             }
           ],
-          "contractSha256": "14f22d2bc88beb0f62cfc17c217bac6c7710f1c5dc5be60c4c3bbaf51ded4b1a"
+          "contractSha256": "4c5723cb5636a907369dbedb38c59f8cc4d82d620f2c054bd26d46db026366c2"
         },
         {
           "service": "formal-methods-service-rs",
@@ -13774,7 +13774,7 @@
               "content": []
             }
           ],
-          "contractSha256": "e6312608f561ed74c2288d5be2cd9df984e57ce4c9f024499c07505c29a96b3a"
+          "contractSha256": "16e384b21dcaea70f45059f1901ecf5ed77a390ee768b17ebdb18e0bd407177c"
         },
         {
           "service": "formal-methods-service-rs",
@@ -13798,7 +13798,7 @@
               "content": []
             }
           ],
-          "contractSha256": "066a5c966fe90b7f68e587f4289a44386cc3bfbfe52b3264444a9cc6f1fb4732"
+          "contractSha256": "78f7d89558882058da4e505f9a6fd2e945e4b3497a5f62c159f302c2b7e9e837"
         },
         {
           "service": "formal-methods-service-rs",
@@ -13809,7 +13809,7 @@
           "summary": "Custom code-first route derived from the service router.",
           "visibility": "internal",
           "routeType": "user-generated",
-          "auth": "service-defined",
+          "auth": "cluster-network-policy",
           "pathParameters": [],
           "queryParameters": [],
           "requestBody": {
@@ -13822,7 +13822,7 @@
               "content": []
             }
           ],
-          "contractSha256": "8eb397c155656f38a7435ea11d40d3ab59f3f15ea8b4b661f0a3899a147f17bb"
+          "contractSha256": "eec142a8718470ea209de69508e182767de239bd049ab27730aec6447066ff52"
         },
         {
           "service": "formal-methods-service-rs",
@@ -13830,10 +13830,10 @@
           "operationId": "formal_methods_service_rs_get_internal_runtime_config_481742439553",
           "method": "GET",
           "path": "/internal/runtime-config",
-          "summary": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+          "summary": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
           "visibility": "internal",
           "routeType": "runtime-config",
-          "auth": "service-defined",
+          "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
           "pathParameters": [],
           "queryParameters": [],
           "requestBody": {
@@ -13846,7 +13846,7 @@
               "content": []
             }
           ],
-          "contractSha256": "545c7b8778deef02f42492559f915dab3aa7d2051a796f7a28da1562a720f693"
+          "contractSha256": "381d5f489c135cc743ee8504cb5a745161997edfa38b3c4180f56d2d98498617"
         },
         {
           "service": "formal-methods-service-rs",
@@ -13855,6 +13855,30 @@
           "method": "GET",
           "path": "/metrics",
           "summary": "Prometheus metrics.",
+          "visibility": "internal",
+          "routeType": "service",
+          "auth": "cluster-network-policy",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "21975b370d841f158349aee3c930afa4bf2bc134df041464328c2caf915c3d2b"
+        },
+        {
+          "service": "formal-methods-service-rs",
+          "serviceLanguage": "rust",
+          "operationId": "formal_methods_service_rs_get_openapi_json_c11fbd46dde8",
+          "method": "GET",
+          "path": "/openapi.json",
+          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -13870,7 +13894,7 @@
               "content": []
             }
           ],
-          "contractSha256": "bc606b1e1575ec89cdf86739eda1a50b7171350f52a581420ca0775a60f67249"
+          "contractSha256": "12a1eec8fb1dccc971f4233ea39c4bffc64bfc5d65444a8fdb9fe85d02abed2d"
         },
         {
           "service": "formal-methods-service-rs",
@@ -13881,7 +13905,7 @@
           "summary": "Custom code-first route derived from the service router.",
           "visibility": "internal",
           "routeType": "user-generated",
-          "auth": "service-defined",
+          "auth": "cluster-network-policy",
           "pathParameters": [],
           "queryParameters": [],
           "requestBody": {
@@ -13894,7 +13918,7 @@
               "content": []
             }
           ],
-          "contractSha256": "ff7458daa377a9d0ec4dd34bc56479e2e95fb5b1d254791421247bb17a583a76"
+          "contractSha256": "7f8ef31fcbe7461f77bddfefbbc0d447a283d10d1e942f9d1de218e0fc9f0845"
         },
         {
           "service": "formal-methods-service-rs",
@@ -13902,7 +13926,7 @@
           "operationId": "formal_methods_service_rs_post_internal_runtime_config_reset_9c67bded3147",
           "method": "POST",
           "path": "/internal/runtime-config/reset",
-          "summary": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+          "summary": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
           "visibility": "internal",
           "routeType": "runtime-config",
           "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
@@ -13918,7 +13942,7 @@
               "content": []
             }
           ],
-          "contractSha256": "ca0cb103aec825a856810547fd26266fa82cbd4e5143e77602f6398ed971eda4"
+          "contractSha256": "d6464de29c5b1a291ff2212fba3616ea34c1874327d178aeb5b791a6a3770603"
         },
         {
           "service": "formal-methods-service-rs",
@@ -13926,7 +13950,7 @@
           "operationId": "formal_methods_service_rs_post_internal_update_runtime_config_de2d66c20e67",
           "method": "POST",
           "path": "/internal/update-runtime-config",
-          "summary": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+          "summary": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
           "visibility": "internal",
           "routeType": "runtime-config",
           "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
@@ -13942,7 +13966,7 @@
               "content": []
             }
           ],
-          "contractSha256": "7765dde3abd172cd19265a9741ec16375e0596383532ef1cb476ab3b1d00c759"
+          "contractSha256": "0f8fad2adb9d9ec8db0718e4a9905248b1a01505efa5f2eaa76d394f8b8daf9b"
         },
         {
           "service": "formal-methods-service-rs",
@@ -13953,7 +13977,7 @@
           "summary": "Custom code-first route derived from the service router.",
           "visibility": "internal",
           "routeType": "user-generated",
-          "auth": "service-defined",
+          "auth": "github-webhook-signature",
           "pathParameters": [],
           "queryParameters": [],
           "requestBody": {
@@ -13966,7 +13990,7 @@
               "content": []
             }
           ],
-          "contractSha256": "d26170d9e2adc6f21b4068b6bc221efdbbb44cf9ca427444339263627e6abc36"
+          "contractSha256": "8565001daf2397e0e3ef554b97c8f1d4013a78b8d4f92a781430e60b5aaf7f1c"
         }
       ]
     },
@@ -14535,7 +14559,7 @@
       "service": "gleam-mcp-server",
       "language": "gleam",
       "specPath": "remote/deployments/gleam-mcp-server/generated/api-docs.internal.json",
-      "specSha256": "48976dd49b9761ab1f1dd0af666116af4265645afc4927b72b8c571a566d00f6",
+      "specSha256": "6fd3836cede5ffdfd5071daca822e5c443e4fcd33eae7187863510b2fd96c3b8",
       "operationCount": 14,
       "operations": [
         {
@@ -14880,8 +14904,8 @@
       "service": "gleamlang-presence-server",
       "language": "gleam",
       "specPath": "remote/deployments/gleamlang-presence-server/generated/api-docs.internal.json",
-      "specSha256": "fe0cfe26de51fecc3ca4559dc1af466f5bb5e66998da5cc11be797a12c9f9d5d",
-      "operationCount": 16,
+      "specSha256": "b4d3165d67b7b8da6f5fe6d54cb9769bc9615318e0e3cf01685fd136d2ad428a",
+      "operationCount": 17,
       "operations": [
         {
           "service": "gleamlang-presence-server",
@@ -14889,10 +14913,10 @@
           "operationId": "gleamlang_presence_server_delete_conv_conv_id_members_user_id_e80911a1a01b",
           "method": "DELETE",
           "path": "/conv/{conv_id}/members/{user_id}",
-          "summary": "Add user to conv (PG + cache + cluster broadcast).",
+          "summary": "Remove a conversation member",
           "visibility": "internal",
           "routeType": "user-generated",
-          "auth": "service-defined",
+          "auth": "cluster-network-policy",
           "pathParameters": [
             {
               "name": "conv_id",
@@ -14916,7 +14940,7 @@
               "content": []
             }
           ],
-          "contractSha256": "4a681dcd77bf779ccfb677e41c585d25eb337855b11f52f649dddf1bd9321b4a"
+          "contractSha256": "5f881ba38f9c0ceca2759aaab8e50aa35a89819f92d50e501f3d9e625fd1aeef"
         },
         {
           "service": "gleamlang-presence-server",
@@ -14924,7 +14948,7 @@
           "operationId": "gleamlang_presence_server_get_23af72802f06",
           "method": "GET",
           "path": "/",
-          "summary": "Help text.",
+          "summary": "Presence service help",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -14940,7 +14964,7 @@
               "content": []
             }
           ],
-          "contractSha256": "b596be33a8416ac1e1b219140d918fbb1f1ba50ba73340ade6482defda162771"
+          "contractSha256": "eaea3179e807d60df3e8692d1ed27d4edf9a4665ef4c4ab3d6222ab4093a8e39"
         },
         {
           "service": "gleamlang-presence-server",
@@ -14948,7 +14972,7 @@
           "operationId": "gleamlang_presence_server_get_api_docs_7955b2b65374",
           "method": "GET",
           "path": "/api/docs",
-          "summary": "Human-readable generated API documentation.",
+          "summary": "Interactive API reference",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -14964,7 +14988,7 @@
               "content": []
             }
           ],
-          "contractSha256": "433dd16d8ea4445330fc9299b0b2ae39cce684750545557e8904413e901f7568"
+          "contractSha256": "8ce2497c74e1cdfd94f75d8f72bf005cf43fcf53a507373993a95b136c83daa8"
         },
         {
           "service": "gleamlang-presence-server",
@@ -14972,7 +14996,7 @@
           "operationId": "gleamlang_presence_server_get_api_docs_json_33894b4d682c",
           "method": "GET",
           "path": "/api/docs.json",
-          "summary": "Machine-readable OpenAPI 3.1 contract generated from the runtime route implementation.",
+          "summary": "Public OpenAPI contract alias",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -14988,7 +15012,7 @@
               "content": []
             }
           ],
-          "contractSha256": "ab7fff20c2c3de2a83c211efd95cdee398dcb28b27ed50115f4772dcb1c860d7"
+          "contractSha256": "15b697f66041cd15cd059ae4d9cecf2514759272b59d144d8da5e846ffb94d21"
         },
         {
           "service": "gleamlang-presence-server",
@@ -14996,10 +15020,10 @@
           "operationId": "gleamlang_presence_server_get_conv_conv_id_members_3d199fbe158f",
           "method": "GET",
           "path": "/conv/{conv_id}/members",
-          "summary": "List members (PG-backed).",
+          "summary": "List conversation members",
           "visibility": "internal",
           "routeType": "user-generated",
-          "auth": "service-defined",
+          "auth": "cluster-network-policy",
           "pathParameters": [
             {
               "name": "conv_id",
@@ -15018,7 +15042,7 @@
               "content": []
             }
           ],
-          "contractSha256": "0bff42ea034e2f1499c00aebc410ff81e7b05c14539a6a76eb427b7153137604"
+          "contractSha256": "c2447596f9f0e51cc0ec83ced1fcf31960def975c81280a85a23081f972f40f3"
         },
         {
           "service": "gleamlang-presence-server",
@@ -15026,7 +15050,7 @@
           "operationId": "gleamlang_presence_server_get_docs_api_dfad3d725db1",
           "method": "GET",
           "path": "/docs/api",
-          "summary": "Human-readable generated API documentation.",
+          "summary": "Interactive API reference alias",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -15042,7 +15066,7 @@
               "content": []
             }
           ],
-          "contractSha256": "cb15bcec055d730a8c81b48eda9bcc485effbf150db49be401824be08829fdbd"
+          "contractSha256": "607c53fbc24f4257200457c9aed024449522c26920aa9be9300d79180935360f"
         },
         {
           "service": "gleamlang-presence-server",
@@ -15050,7 +15074,79 @@
           "operationId": "gleamlang_presence_server_get_healthz_65610a4485ce",
           "method": "GET",
           "path": "/healthz",
-          "summary": "JSON health check.",
+          "summary": "Presence process health",
+          "visibility": "internal",
+          "routeType": "service",
+          "auth": "cluster-network-policy",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "a437cda1f06a26a6b7be5b387aa2c1f69e9203fc1b13edf97aa652eb282a7abc"
+        },
+        {
+          "service": "gleamlang-presence-server",
+          "serviceLanguage": "gleam",
+          "operationId": "gleamlang_presence_server_get_internal_runtime_config_4dacd8e07f00",
+          "method": "GET",
+          "path": "/internal/runtime-config",
+          "summary": "Get applied runtime configuration",
+          "visibility": "internal",
+          "routeType": "runtime-config",
+          "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "42601c9417b5c55a39eddc43ba2fa13c52a17bcb69d80251e47bc52b357c092d"
+        },
+        {
+          "service": "gleamlang-presence-server",
+          "serviceLanguage": "gleam",
+          "operationId": "gleamlang_presence_server_get_nodes_20dcc24257a3",
+          "method": "GET",
+          "path": "/nodes",
+          "summary": "List connected BEAM nodes",
+          "visibility": "internal",
+          "routeType": "service",
+          "auth": "cluster-network-policy",
+          "pathParameters": [],
+          "queryParameters": [],
+          "requestBody": {
+            "required": false,
+            "content": []
+          },
+          "responses": [
+            {
+              "status": "default",
+              "content": []
+            }
+          ],
+          "contractSha256": "ed4952b94ff05de2525462aea399f0a4db0cc12154fe87aed6872abb09cd5405"
+        },
+        {
+          "service": "gleamlang-presence-server",
+          "serviceLanguage": "gleam",
+          "operationId": "gleamlang_presence_server_get_openapi_json_3b3a44f2453e",
+          "method": "GET",
+          "path": "/openapi.json",
+          "summary": "Public OpenAPI contract",
           "visibility": "public",
           "routeType": "service",
           "auth": "public",
@@ -15066,55 +15162,7 @@
               "content": []
             }
           ],
-          "contractSha256": "72e9bfc02dd1b3fc3f46985d5f08813ca29a5bd565bc12ff326c1a3b15980eff"
-        },
-        {
-          "service": "gleamlang-presence-server",
-          "serviceLanguage": "gleam",
-          "operationId": "gleamlang_presence_server_get_internal_runtime_config_4dacd8e07f00",
-          "method": "GET",
-          "path": "/internal/runtime-config",
-          "summary": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
-          "visibility": "internal",
-          "routeType": "runtime-config",
-          "auth": "service-defined",
-          "pathParameters": [],
-          "queryParameters": [],
-          "requestBody": {
-            "required": false,
-            "content": []
-          },
-          "responses": [
-            {
-              "status": "default",
-              "content": []
-            }
-          ],
-          "contractSha256": "d2864cf8ba84dc1c8cc3d8bbdaf5312b02fed466ffd42da30919e2526572cd93"
-        },
-        {
-          "service": "gleamlang-presence-server",
-          "serviceLanguage": "gleam",
-          "operationId": "gleamlang_presence_server_get_nodes_20dcc24257a3",
-          "method": "GET",
-          "path": "/nodes",
-          "summary": "Plain text list of connected BEAM peers.",
-          "visibility": "internal",
-          "routeType": "user-generated",
-          "auth": "service-defined",
-          "pathParameters": [],
-          "queryParameters": [],
-          "requestBody": {
-            "required": false,
-            "content": []
-          },
-          "responses": [
-            {
-              "status": "default",
-              "content": []
-            }
-          ],
-          "contractSha256": "c80fd494aba85cb5e8f724a6bc30cccc75714b67cabbaf447478778ed6448007"
+          "contractSha256": "26124614b3671af324597aa03754cb2bdd5e6039ab0891fa4d824cbe5f8c600c"
         },
         {
           "service": "gleamlang-presence-server",
@@ -15122,23 +15170,12 @@
           "operationId": "gleamlang_presence_server_get_ws_001e441dcc2a",
           "method": "GET",
           "path": "/ws",
-          "summary": "Custom code-first route derived from the service router.",
+          "summary": "Open a presence WebSocket",
           "visibility": "internal",
           "routeType": "user-generated",
-          "auth": "service-defined",
+          "auth": "cluster-network-policy",
           "pathParameters": [],
-          "queryParameters": [
-            {
-              "name": "conv",
-              "required": false,
-              "schemaSha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
-            },
-            {
-              "name": "user",
-              "required": false,
-              "schemaSha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
-            }
-          ],
+          "queryParameters": [],
           "requestBody": {
             "required": false,
             "content": []
@@ -15149,7 +15186,7 @@
               "content": []
             }
           ],
-          "contractSha256": "9a8b87aa1bb8965bed43f75b7fd971bff797cacde3cae8cb6d2f5413f8b87e5c"
+          "contractSha256": "166c0db1a7dedf0af1f74e256f658fc66d20263c3d05a10d32a0a05b04ce7502"
         },
         {
           "service": "gleamlang-presence-server",
@@ -15157,10 +15194,10 @@
           "operationId": "gleamlang_presence_server_post_conv_conv_id_broadcast_bdefd4562386",
           "method": "POST",
           "path": "/conv/{conv_id}/broadcast",
-          "summary": "Body is broadcast to every conv-scoped",
+          "summary": "Broadcast to a conversation",
           "visibility": "internal",
           "routeType": "user-generated",
-          "auth": "service-defined",
+          "auth": "cluster-network-policy",
           "pathParameters": [
             {
               "name": "conv_id",
@@ -15179,7 +15216,7 @@
               "content": []
             }
           ],
-          "contractSha256": "1e60a38dd99f57ad170864c40b60ebeb3993ecfd823c46ee35f3b226ab2d2905"
+          "contractSha256": "f962d8603526ed059e7e4229ec9ca220a576b1c1070cf4192d7056de0bcce656"
         },
         {
           "service": "gleamlang-presence-server",
@@ -15187,10 +15224,10 @@
           "operationId": "gleamlang_presence_server_post_conv_conv_id_members_user_id_d9864dcea2d6",
           "method": "POST",
           "path": "/conv/{conv_id}/members/{user_id}",
-          "summary": "Add user to conv (PG + cache + cluster broadcast).",
+          "summary": "Add a conversation member",
           "visibility": "internal",
           "routeType": "user-generated",
-          "auth": "service-defined",
+          "auth": "cluster-network-policy",
           "pathParameters": [
             {
               "name": "conv_id",
@@ -15214,7 +15251,7 @@
               "content": []
             }
           ],
-          "contractSha256": "e646c8f82a098fff807b49271769178e3193f8557f9a765834efb09193f2cf24"
+          "contractSha256": "ed90ce11fe5d08e4fe8414ddd12ff0c250d0652f13d971bcfa23d43d3da7bbba"
         },
         {
           "service": "gleamlang-presence-server",
@@ -15222,7 +15259,7 @@
           "operationId": "gleamlang_presence_server_post_internal_runtime_config_reset_53253a07d9c1",
           "method": "POST",
           "path": "/internal/runtime-config/reset",
-          "summary": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+          "summary": "Reset runtime configuration",
           "visibility": "internal",
           "routeType": "runtime-config",
           "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
@@ -15238,7 +15275,7 @@
               "content": []
             }
           ],
-          "contractSha256": "c8df751805d6642a194f45aeeec644c1649b6e634d22766ff655c8b81d0c341f"
+          "contractSha256": "2e3805608d271d0383f6bcacca889e39aea86c4ced82b8b326f596343bef6c46"
         },
         {
           "service": "gleamlang-presence-server",
@@ -15246,7 +15283,7 @@
           "operationId": "gleamlang_presence_server_post_internal_update_runtime_config_ece284ea25ab",
           "method": "POST",
           "path": "/internal/update-runtime-config",
-          "summary": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+          "summary": "Apply runtime configuration",
           "visibility": "internal",
           "routeType": "runtime-config",
           "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
@@ -15262,7 +15299,7 @@
               "content": []
             }
           ],
-          "contractSha256": "7249659962d72db492542842bf41b299514b3352a0a3762408523e46e684410e"
+          "contractSha256": "d8e7032be43230481dee2530f768e512f3341661a074aa00da07659a0db04c69"
         },
         {
           "service": "gleamlang-presence-server",
@@ -15270,10 +15307,10 @@
           "operationId": "gleamlang_presence_server_post_user_user_id_broadcast_b2d312d610ce",
           "method": "POST",
           "path": "/user/{user_id}/broadcast",
-          "summary": "Body is broadcast to every user-scoped ws",
+          "summary": "Broadcast to a user",
           "visibility": "internal",
           "routeType": "user-generated",
-          "auth": "service-defined",
+          "auth": "cluster-network-policy",
           "pathParameters": [
             {
               "name": "user_id",
@@ -15292,7 +15329,7 @@
               "content": []
             }
           ],
-          "contractSha256": "b6549cedbbca6eb3fcb5510c16c0354936ba6a40b4f149c45989604d5cf21f5b"
+          "contractSha256": "30b7b04fd324512b81cf8565eda9c45546f118097c196a645af9a234cddaa982"
         },
         {
           "service": "gleamlang-presence-server",
@@ -15300,10 +15337,10 @@
           "operationId": "gleamlang_presence_server_post_user_user_id_devices_device_id_logout_031ce93d07d6",
           "method": "POST",
           "path": "/user/{user_id}/devices/{device_id}/logout",
-          "summary": "Closes every ws (user- and conv-scoped) of",
+          "summary": "Log out one user device",
           "visibility": "internal",
           "routeType": "user-generated",
-          "auth": "service-defined",
+          "auth": "cluster-network-policy",
           "pathParameters": [
             {
               "name": "device_id",
@@ -15327,7 +15364,7 @@
               "content": []
             }
           ],
-          "contractSha256": "eb06ed048e62c5cfc6b8dc0f47f2afaee42061e461846944cf2afaf4453015de"
+          "contractSha256": "65420b7b021504cbb6c9048b0c0ca2814142df4de1ad9d95c29d9c4a1c709732"
         }
       ]
     },
@@ -15791,7 +15828,7 @@
       "service": "gleamlang-ws-server",
       "language": "gleam",
       "specPath": "remote/deployments/gleamlang-ws-server/generated/api-docs.internal.json",
-      "specSha256": "4d9d743efe15072aa186b0273bd48609794a1cea8c9327aaca34a7dc298198bf",
+      "specSha256": "2ae5d1a1efedcc0123a68079ec01232777786f19c4f7b0f994f59319d33a14f7",
       "operationCount": 20,
       "operations": [
         {
@@ -15800,7 +15837,7 @@
           "operationId": "gleamlang_ws_server_delete_conv_conv_id_members_user_id_b6ac08eefa32",
           "method": "DELETE",
           "path": "/conv/{conv_id}/members/{user_id}",
-          "summary": "Add user to conv (PG + cache + cluster broadcast).",
+          "summary": "Remove user from conv.",
           "visibility": "internal",
           "routeType": "user-generated",
           "auth": "service-defined",
@@ -15827,7 +15864,7 @@
               "content": []
             }
           ],
-          "contractSha256": "f2137c59a4426fdcc0aa8505e7e28a400472d7f7088781604d6c41a010be67f8"
+          "contractSha256": "3428ce8188e32ee768ec94f3271adecc864e171b236bb8fec98b507238985db4"
         },
         {
           "service": "gleamlang-ws-server",
@@ -16111,7 +16148,7 @@
           "operationId": "gleamlang_ws_server_get_ws_52d0f72e30bf",
           "method": "GET",
           "path": "/ws",
-          "summary": "Custom code-first route derived from the service router.",
+          "summary": "Route variants for GET /ws",
           "visibility": "internal",
           "routeType": "user-generated",
           "auth": "service-defined",
@@ -16138,7 +16175,7 @@
               "content": []
             }
           ],
-          "contractSha256": "15343ecd70ce524181eef7ad21a61a5d0eda4191bc73cd49f9fb4b9930b961aa"
+          "contractSha256": "735b984aff437237409166325abb2a021ce62d84be0b4fda3a9928e894e2447e"
         },
         {
           "service": "gleamlang-ws-server",
@@ -18286,7 +18323,7 @@
       "service": "rest-api-rs",
       "language": "rust",
       "specPath": "remote/deployments/rest-api-rs/generated/api-docs.internal.json",
-      "specSha256": "0df63cc1d7ba5caf5b484ae4c7813626b123bb9a5ab4ad1e7c5a9f70a208fd05",
+      "specSha256": "d115eb163ee5bae5cce70feae98caf72ba172251e2ecddc2661db3987bf4935e",
       "operationCount": 58,
       "operations": [
         {
@@ -19950,7 +19987,7 @@
       "service": "runtime-config-rs",
       "language": "rust",
       "specPath": "remote/deployments/runtime-config-rs/generated/api-docs.internal.json",
-      "specSha256": "ab6b87b4e72537079637300f035e72bf801a049a347e9938d41e3a5548403d6a",
+      "specSha256": "8c3038ad97ac25ba4888947e9f13235f8a454da522844e91aaf97293fe203f81",
       "operationCount": 21,
       "operations": [
         {
@@ -20938,7 +20975,7 @@
       "service": "spark-pipeline-server",
       "language": "java",
       "specPath": "remote/deployments/spark-pipeline-server/generated/api-docs.internal.json",
-      "specSha256": "98ca56dfe08d1df7a13731b9520d66f14d7c23af9f89594808a4e9bb2cfeaf4c",
+      "specSha256": "3baf78430dfed2056cbcad369dee6f250335752bfc6a6ca8eb885b7ec1ba28d7",
       "operationCount": 10,
       "operations": [
         {
@@ -21107,7 +21144,7 @@
               "content": []
             }
           ],
-          "contractSha256": "5bba3e223323eda6cd480ffaa4edbbc6c46941ddf4927f5233d3bc172d4e87ea"
+          "contractSha256": "96894c6bc6d12d4763468aa56ffa34e5ba7435af05e027a5d8b81a7a7a7b3c68"
         },
         {
           "service": "spark-pipeline-server",
@@ -21185,7 +21222,7 @@
               "content": []
             }
           ],
-          "contractSha256": "87a56efb84c253d94597f3d61cd10c8fa5f274216d459af9f62588a923623f50"
+          "contractSha256": "3b1108d41d578d284a4f132625583df496f985ef5faa7d45caa0461505321157"
         }
       ]
     },
@@ -21514,7 +21551,7 @@
       "service": "wal-gateway-rs",
       "language": "rust",
       "specPath": "remote/deployments/wal-gateway-rs/generated/api-docs.internal.json",
-      "specSha256": "b657ae5fca262c6e37abfb93c20a11029f07552283e119d2cb85566622ec455a",
+      "specSha256": "b22a995c2fc190f833ae6e41f6d042828fbced9ccb57797244d5d492cff97eb4",
       "operationCount": 11,
       "operations": [
         {
@@ -21539,7 +21576,7 @@
               "content": []
             }
           ],
-          "contractSha256": "8f4ed2db80a608edee36bd1f7d77fc4948626ba0febe04c3e1fa95a620f57c2e"
+          "contractSha256": "4e2bf48d6f6342a30286c1d0a47cb085dd18a8b720936ae65ff8e0b269d86c46"
         },
         {
           "service": "wal-gateway-rs",
@@ -21563,7 +21600,7 @@
               "content": []
             }
           ],
-          "contractSha256": "05c3afebd67006a793aaa234b7fd3eacfd949aa0c34c3677c9ebf42afd0f0050"
+          "contractSha256": "02bff8eb385c5d0c43b41157572fb6d88653f424fdeeaefeb8f96daa8b54ae2a"
         },
         {
           "service": "wal-gateway-rs",
@@ -21587,7 +21624,7 @@
               "content": []
             }
           ],
-          "contractSha256": "641924988daedaed0ba7ca8fa76771712e8b3e71ae56f400cf816ca8fec3921c"
+          "contractSha256": "9c0a1e0e83399c9fab06d89407f30fe09a597217a4143d941e9149ba0dede478"
         },
         {
           "service": "wal-gateway-rs",
@@ -21611,7 +21648,7 @@
               "content": []
             }
           ],
-          "contractSha256": "b5edade458f680248f36c91904571c97601118daf147c95f3fc20d0acc2f3a28"
+          "contractSha256": "5339fccd107c9c73346daa1ec6f22be824bd60131d2fa03d8f321a2e525b365f"
         },
         {
           "service": "wal-gateway-rs",
@@ -21635,7 +21672,7 @@
               "content": []
             }
           ],
-          "contractSha256": "816bd3169765d836f2382f2dab5b786fece47ec0d9e1b739ef29c320e6e2aac7"
+          "contractSha256": "dc78a61d6d3dbda8ef3e522fb9a39997141db7e0db6491b3b9b91efe9d30c0ed"
         },
         {
           "service": "wal-gateway-rs",
@@ -21643,10 +21680,10 @@
           "operationId": "wal_gateway_rs_get_internal_runtime_config_ca78bae643ba",
           "method": "GET",
           "path": "/internal/runtime-config",
-          "summary": "Subscriber surface: returns the runtime-config snapshot this process currently has applied. Mounted by the shared dd-runtime-config-client helper.",
+          "summary": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
           "visibility": "internal",
           "routeType": "runtime-config",
-          "auth": "service-defined",
+          "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
           "pathParameters": [],
           "queryParameters": [],
           "requestBody": {
@@ -21659,7 +21696,7 @@
               "content": []
             }
           ],
-          "contractSha256": "4f58abd8a89e7d0193ac981f4f78ac14fbeb13ef153b6c2a14faadb1b5f36f98"
+          "contractSha256": "d5f6e2afa1927fd48e9307703f6e65b80c8ef7d317e328ec7392ff064cbcd949"
         },
         {
           "service": "wal-gateway-rs",
@@ -21683,7 +21720,7 @@
               "content": []
             }
           ],
-          "contractSha256": "ca8abdf4738adfc2b9c08f2e86f9cd34e6a94e48870d4ae63c74ca74c8a6cf4d"
+          "contractSha256": "1cc38040a75aef40b98c58556bedde7c3a521870dedb53a6eea8197f27b0f1ea"
         },
         {
           "service": "wal-gateway-rs",
@@ -21707,7 +21744,7 @@
               "content": []
             }
           ],
-          "contractSha256": "97321e74cd044d7aa1aa492246d912dcd5dd26ec48fdfbb9da69bec0318385a9"
+          "contractSha256": "f4efe4505110f943c337f08ce55e3fa32f77b73a84b7af2a8e38a5ba0db14d5c"
         },
         {
           "service": "wal-gateway-rs",
@@ -21731,7 +21768,7 @@
               "content": []
             }
           ],
-          "contractSha256": "785f0c075054f1ae6754de3d9b240975fa951b92a401eba4ed192043c06077b0"
+          "contractSha256": "f5b5d9dedbf6620b044312463fba6db44297639a5f62e751bcc8b66a1a0cc769"
         },
         {
           "service": "wal-gateway-rs",
@@ -21739,7 +21776,7 @@
           "operationId": "wal_gateway_rs_post_internal_runtime_config_reset_3e5d0dfb3573",
           "method": "POST",
           "path": "/internal/runtime-config/reset",
-          "summary": "Subscriber surface: drops all runtime-config overrides from this process, returning it to its boot-time env defaults.",
+          "summary": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
           "visibility": "internal",
           "routeType": "runtime-config",
           "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
@@ -21755,7 +21792,7 @@
               "content": []
             }
           ],
-          "contractSha256": "e9f582095b98ae1e39df01bfb0312806b428694a86524f5fa1e23e72d7cf40e2"
+          "contractSha256": "7004cf276f541cb0e8a54eba1a86462d9412d5be6da349dbb2e69e5ba6e383c9"
         },
         {
           "service": "wal-gateway-rs",
@@ -21763,7 +21800,7 @@
           "operationId": "wal_gateway_rs_post_internal_update_runtime_config_6a8eb6b7f41d",
           "method": "POST",
           "path": "/internal/update-runtime-config",
-          "summary": "Subscriber surface: dd-runtime-config pushes a RuntimeConfigApplyRequest payload here every 5 min (cron) and on admin demand; the helper swaps the in-memory snapshot atomically.",
+          "summary": "dd-runtime-config subscriber surface. Auto-mounted by the shared receiver helper (see remote/libs/runtime-config-client-rs).",
           "visibility": "internal",
           "routeType": "runtime-config",
           "auth": "X-Server-Auth (RUNTIME_CONFIG_SERVER_SECRET)",
@@ -21779,7 +21816,7 @@
               "content": []
             }
           ],
-          "contractSha256": "df66cb0f5a72f8222405df4dd2b5213aa49916878cc3598fa6852690f0898b76"
+          "contractSha256": "e5775bf234757c1eaaa5c7aab6b10ffd20267f1c3bc8c3f6d5a7dcdbed51f3ce"
         }
       ]
     },
@@ -22960,7 +22997,7 @@
       "service": "web-scraper-service",
       "language": "node",
       "specPath": "remote/deployments/web-scraper-service/generated/api-docs.internal.json",
-      "specSha256": "b2f9da32a09ea28bd6279f3fa1a027e0f22618a412a81cb4ca964837d1ca5c54",
+      "specSha256": "c0747e66d884ed96815c057d36ab5b3c719dc48cb0a7eaf605e9cc46ed27dcbb",
       "operationCount": 14,
       "operations": [
         {
@@ -24318,6 +24355,6 @@
     }
   ],
   "serviceCount": 44,
-  "operationCount": 941,
-  "catalogSha256": "99f0be62a7df7015cc0245308db52ebad595fa5f0c4969275bb7a241c6acea25"
+  "operationCount": 943,
+  "catalogSha256": "ae1ce6bfb16657296304863f0dde0395858173c3acd113fcfa93b11dc43e1288"
 }

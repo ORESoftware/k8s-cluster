@@ -143,7 +143,10 @@ and `/healthz` are anonymous. Before relying on it, confirm:
 The binary also supports `BROWSER_MCP_REQUIRE_AUTH=false` for isolated local or
 disposable compatibility tests. That mode advertises `{"type":"noauth"}` in
 `tools/list`; it must not be used on the public AWS or Hetzner write-capable
-edges.
+edges. It has to be asked for explicitly — the in-code default is `true`, so a
+deployment that simply forgets to set this variable stays authenticated rather
+than silently serving anonymous write-capable browser control. Starting in that
+mode prints a warning on stderr.
 
 ## Endpoints
 
@@ -171,7 +174,7 @@ Public URLs:
 | `PORT`                               | `8092`                                                 | Bind port.                                             |
 | `BROWSER_MCP_WORKER_URL`             | `http://dd-web-scraper.default.svc.cluster.local:8097` | Private browser worker.                                |
 | `SERVER_AUTH_SECRET`                 | —                                                      | Required worker credential.                            |
-| `BROWSER_MCP_REQUIRE_AUTH`           | `false` in code; `true` in production                  | Enable OAuth-protected MCP access.                     |
+| `BROWSER_MCP_REQUIRE_AUTH`           | `true` (fail closed)                                   | Enable OAuth-protected MCP access.                     |
 | `BROWSER_MCP_PUBLIC_BASE_URLS`       | —                                                      | Trusted public MCP resource/issuer URLs.               |
 | `BROWSER_MCP_OAUTH_SIGNING_SECRET`   | —                                                      | Required 32+ byte token/signature key.                 |
 | `BROWSER_MCP_OAUTH_OPERATOR_SECRET`  | —                                                      | Required 20+ byte human consent secret.                |

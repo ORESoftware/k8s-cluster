@@ -572,7 +572,7 @@ A finding has this shape:
 | `FORMAL_METHODS_WORK_ROOT`                 | `/var/lib/dd-formal-methods-server/jobs`      | Per-job working dir, holds the clone + log.              |
 | `FORMAL_METHODS_GIT_BIN`                   | `git`                                         | Git binary used for shallow clone.                       |
 | `FORMAL_METHODS_Z3_BIN`                    | `z3`                                          | Z3 binary; piped SMT-LIB v2.                             |
-| `FORMAL_METHODS_ALLOWED_REPO_PREFIXES`     | _empty_ (allow-all)                           | CSV allowlist of repo URL prefixes.                      |
+| `FORMAL_METHODS_ALLOWED_REPO_PREFIXES`     | GitHub HTTPS/SSH prefixes                     | CSV allowlist of repo URL prefixes; prefix boundaries are enforced. |
 | `FORMAL_METHODS_ALLOWED_EXTENSIONS`        | `rs,go,ts,tsx,js,jsx,mjs,cjs,py,...`          | Extensions scanned by `WalkDir`.                         |
 | `FORMAL_METHODS_MAX_CONCURRENT`            | `2`                                           | Job semaphore.                                           |
 | `FORMAL_METHODS_JOB_TIMEOUT_SECONDS`       | `900`                                         | Per-job wall-clock budget for `git clone` / `git fetch`. |

@@ -6,6 +6,10 @@ metadata:
   labels:
     app.kubernetes.io/name: canonical-web-server
     app.kubernetes.io/component: web
+  annotations:
+    prometheus.io/scrape: 'true'
+    prometheus.io/path: '/metrics'
+    prometheus.io/port: '8081'
 spec:
   type: ClusterIP
   selector:

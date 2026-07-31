@@ -38,6 +38,28 @@ test('the live workflow uses OIDC and keeps the operator secret inside AWS', () 
   assert.doesNotMatch(live, /curl[^\n]*(?:--insecure|-k)\b/);
 });
 
+test('live verification classifies prerequisites without disclosing their values', () => {
+  const live = workflow.slice(workflow.indexOf('  live:'), workflow.indexOf('  publish:'));
+  assert.match(live, /name: Check live verification prerequisites/);
+  assert.match(live, /id: preflight/);
+  for (const phase of [
+    'aws_role_not_configured',
+    'aws_ssm_instance_not_configured',
+    'preflight_internal_error',
+    'aws_oidc_assume_role_failed',
+    'ssm_or_live_verifier_failed',
+  ]) {
+    assert.ok(live.includes(phase), `missing bounded failure phase: ${phase}`);
+  }
+  assert.match(live, /if: steps\.preflight\.outputs\.ready == 'true'/);
+  assert.match(
+    live,
+    /if: steps\.preflight\.outputs\.ready == 'true' && steps\.aws\.outcome == 'success'/,
+  );
+  assert.doesNotMatch(live, /echo[^\n]*(?:ROLE_TO_ASSUME|INSTANCE_ID)/);
+  assert.doesNotMatch(live, /jq[^\n]*(?:ROLE_TO_ASSUME|INSTANCE_ID)/);
+});
+
 test('both canonical public edges receive the full repository verifier', () => {
   assert.match(workflow, /https:\/\/98\.90\.186\.114\/browser-mcp/);
   assert.match(workflow, /https:\/\/hello\.95-217-171-250\.sslip\.io\/browser-mcp/);
@@ -57,6 +79,7 @@ test('the live job always creates and uploads a sanitized result', () => {
   const live = workflow.slice(workflow.indexOf('  live:'), workflow.indexOf('  publish:'));
   assert.match(live, /Initialize sanitized result/);
   assert.match(live, /workflow_precondition_failed/);
+  assert.match(live, /failure_phase/);
   assert.match(live, /aws_outcome/);
   assert.match(live, /smoke_outcome/);
   assert.match(live, /actions\/upload-artifact@v7/);
@@ -74,6 +97,7 @@ test('credential-free publisher writes only the sanitized result branch', () => 
   assert.match(publish, /actions\/download-artifact@v8/);
   assert.match(publish, /automation\/browser-mcp-verification-results/);
   assert.match(publish, /browser-mcp\/latest\.json/);
+  assert.match(publish, /\.failure_phase/);
   assert.match(publish, /Validate result contains no credentials/);
   assert.doesNotMatch(publish, /HEAD:main/);
 });

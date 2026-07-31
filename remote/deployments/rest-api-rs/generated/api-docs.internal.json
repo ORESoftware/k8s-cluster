@@ -1565,6 +1565,66 @@
       }
     },
     "/internal/db/schemas/{schema}/tables/{table}/rows/{id}": {
+      "delete": {
+        "operationId": "rest_api_rs_delete_internal_db_schemas_schema_tables_table_rows_id_0c23f8aa0195",
+        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
+        "description": "Internal operator database inspection route. Not part of the public REST contract.",
+        "tags": [
+          "internal-db"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "schema",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "table",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret",
+        "x-dd-handlers": [
+          "delete_row_explicit_schema",
+          "get_row_explicit_schema",
+          "update_row_explicit_schema"
+        ],
+        "x-dd-implementation": "internal-operator",
+        "x-dd-route-type": "internal-db",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/db_routes.rs"
+        ],
+        "x-dd-source-path": "/internal/db/schemas/:schema/tables/:table/rows/:id",
+        "x-dd-source-paths": [
+          "/internal/db/schemas/:schema/tables/:table/rows/:id"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      },
       "get": {
         "operationId": "rest_api_rs_get_internal_db_schemas_schema_tables_table_rows_id_46dbb5d1cb44",
         "summary": "Internal operator database inspection route. Not part of the public REST contract.",
@@ -1627,66 +1687,6 @@
       },
       "patch": {
         "operationId": "rest_api_rs_patch_internal_db_schemas_schema_tables_table_rows_id_ea516bfdee45",
-        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
-        "description": "Internal operator database inspection route. Not part of the public REST contract.",
-        "tags": [
-          "internal-db"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "schema",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "table",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "operator secret",
-        "x-dd-handlers": [
-          "delete_row_explicit_schema",
-          "get_row_explicit_schema",
-          "update_row_explicit_schema"
-        ],
-        "x-dd-implementation": "internal-operator",
-        "x-dd-route-type": "internal-db",
-        "x-dd-source-files": [
-          "remote/deployments/rest-api-rs/src/db_routes.rs"
-        ],
-        "x-dd-source-path": "/internal/db/schemas/:schema/tables/:table/rows/:id",
-        "x-dd-source-paths": [
-          "/internal/db/schemas/:schema/tables/:table/rows/:id"
-        ],
-        "x-dd-visibility": "internal",
-        "security": [
-          {
-            "operatorSecret": []
-          }
-        ]
-      },
-      "delete": {
-        "operationId": "rest_api_rs_delete_internal_db_schemas_schema_tables_table_rows_id_0c23f8aa0195",
         "summary": "Internal operator database inspection route. Not part of the public REST contract.",
         "description": "Internal operator database inspection route. Not part of the public REST contract.",
         "tags": [
@@ -1914,6 +1914,58 @@
       }
     },
     "/internal/db/tables/{table}/rows/{id}": {
+      "delete": {
+        "operationId": "rest_api_rs_delete_internal_db_tables_table_rows_id_d33cb0c41cc9",
+        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
+        "description": "Internal operator database inspection route. Not part of the public REST contract.",
+        "tags": [
+          "internal-db"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "table",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "Response produced by the registered service handler."
+          }
+        },
+        "x-dd-auth": "operator secret",
+        "x-dd-handlers": [
+          "delete_row_default_schema",
+          "get_row_default_schema",
+          "update_row_default_schema"
+        ],
+        "x-dd-implementation": "internal-operator",
+        "x-dd-route-type": "internal-db",
+        "x-dd-source-files": [
+          "remote/deployments/rest-api-rs/src/db_routes.rs"
+        ],
+        "x-dd-source-path": "/internal/db/tables/:table/rows/:id",
+        "x-dd-source-paths": [
+          "/internal/db/tables/:table/rows/:id"
+        ],
+        "x-dd-visibility": "internal",
+        "security": [
+          {
+            "operatorSecret": []
+          }
+        ]
+      },
       "get": {
         "operationId": "rest_api_rs_get_internal_db_tables_table_rows_id_79a7548157f6",
         "summary": "Internal operator database inspection route. Not part of the public REST contract.",
@@ -1968,58 +2020,6 @@
       },
       "patch": {
         "operationId": "rest_api_rs_patch_internal_db_tables_table_rows_id_3edeb2f4d1c1",
-        "summary": "Internal operator database inspection route. Not part of the public REST contract.",
-        "description": "Internal operator database inspection route. Not part of the public REST contract.",
-        "tags": [
-          "internal-db"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "table",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": "Response produced by the registered service handler."
-          }
-        },
-        "x-dd-auth": "operator secret",
-        "x-dd-handlers": [
-          "delete_row_default_schema",
-          "get_row_default_schema",
-          "update_row_default_schema"
-        ],
-        "x-dd-implementation": "internal-operator",
-        "x-dd-route-type": "internal-db",
-        "x-dd-source-files": [
-          "remote/deployments/rest-api-rs/src/db_routes.rs"
-        ],
-        "x-dd-source-path": "/internal/db/tables/:table/rows/:id",
-        "x-dd-source-paths": [
-          "/internal/db/tables/:table/rows/:id"
-        ],
-        "x-dd-visibility": "internal",
-        "security": [
-          {
-            "operatorSecret": []
-          }
-        ]
-      },
-      "delete": {
-        "operationId": "rest_api_rs_delete_internal_db_tables_table_rows_id_d33cb0c41cc9",
         "summary": "Internal operator database inspection route. Not part of the public REST contract.",
         "description": "Internal operator database inspection route. Not part of the public REST contract.",
         "tags": [
@@ -2296,7 +2296,7 @@
   "x-dd-generated-by": "remote/tools/generate-api-docs.mjs",
   "x-dd-language": "rust",
   "x-dd-operation-count": 58,
-  "x-dd-route-count": 47,
+  "x-dd-route-count": 58,
   "x-dd-service": "rest-api-rs",
   "x-dd-standard-docs-routes": [
     "/docs/api",

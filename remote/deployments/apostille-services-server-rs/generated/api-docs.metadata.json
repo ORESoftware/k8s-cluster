@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "apostille-services-server-rs",
   "language": "rust",
-  "routeCount": 23,
+  "routeCount": 24,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 16
+    "user-generated": 17
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -68,7 +68,24 @@
     {
       "path": "/cases",
       "methods": [
-        "GET",
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_case",
+        "list_cases"
+      ],
+      "sourceFiles": [
+        "remote/deployments/apostille-services-server-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/cases",
+      "methods": [
         "POST"
       ],
       "routeType": "user-generated",

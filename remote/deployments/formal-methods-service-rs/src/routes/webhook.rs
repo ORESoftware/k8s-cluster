@@ -10,15 +10,14 @@ use std::time::Duration;
 
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::IntoResponse;
 use axum::Json;
 use bytes::Bytes;
-use serde_json::json;
+use serde::Serialize;
 use tracing::{info, info_span, warn, Instrument};
 use uuid::Uuid;
 
 use crate::analysis::workspace::CheckoutSpec;
-use crate::error::AppError;
+use crate::error::{AppError, ErrorResponse};
 use crate::github::client::CommitStatusState;
 use crate::github::{PullRequestAction, PullRequestEvent};
 use crate::signature::verify_github_signature;
@@ -28,11 +27,95 @@ const SIG_HEADER: &str = "x-hub-signature-256";
 const EVENT_HEADER: &str = "x-github-event";
 const DELIVERY_HEADER: &str = "x-github-delivery";
 
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct WebhookResponse {
+    pub status: String,
+    pub delivery: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub files_checked: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub analysis_id: Option<String>,
+}
+
+impl WebhookResponse {
+    fn new(status: &str, delivery: String) -> Self {
+        Self {
+            status: status.to_string(),
+            delivery,
+            reason: None,
+            event: None,
+            action: None,
+            repo: None,
+            files_checked: None,
+            analysis_id: None,
+        }
+    }
+
+    fn reason(mut self, reason: &str) -> Self {
+        self.reason = Some(reason.to_string());
+        self
+    }
+
+    fn event(mut self, event: String) -> Self {
+        self.event = Some(event);
+        self
+    }
+
+    fn action(mut self, action: &str) -> Self {
+        self.action = Some(action.to_string());
+        self
+    }
+
+    fn repo(mut self, repo: String) -> Self {
+        self.repo = Some(repo);
+        self
+    }
+
+    fn files_checked(mut self, files_checked: usize) -> Self {
+        self.files_checked = Some(files_checked);
+        self
+    }
+
+    fn analysis_id(mut self, analysis_id: String) -> Self {
+        self.analysis_id = Some(analysis_id);
+        self
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/webhook/github",
+    operation_id = "receiveGitHubFormalMethodsWebhook",
+    tag = "webhooks",
+    request_body = PullRequestEvent,
+    params(
+        ("x-hub-signature-256" = String, Header, description = "GitHub HMAC-SHA256 signature in `sha256=<hex>` format"),
+        ("x-github-event" = String, Header, description = "GitHub event name; `ping` and `pull_request` have explicit behavior"),
+        ("x-github-delivery" = Option<String>, Header, description = "GitHub delivery identifier used for bounded deduplication")
+    ),
+    security(("github_webhook_signature" = [])),
+    responses(
+        (status = 200, description = "GitHub ping acknowledged", body = WebhookResponse),
+        (status = 202, description = "Event ignored, deduplicated, skipped, or accepted for asynchronous analysis", body = WebhookResponse),
+        (status = 400, description = "Required header or pull-request payload is malformed", body = ErrorResponse),
+        (status = 401, description = "HMAC signature is missing or invalid", body = ErrorResponse),
+        (status = 413, description = "Request body exceeds the 8 MiB ingress limit", body = String, content_type = "text/plain"),
+        (status = 500, description = "Internal webhook dispatch failure", body = ErrorResponse)
+    )
+)]
 pub async fn github(
     State(state): State<AppState>,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<(StatusCode, Json<WebhookResponse>), AppError> {
     let signature = required_header(&headers, SIG_HEADER)?;
     let event = required_header(&headers, EVENT_HEADER)?;
     let delivery = headers
@@ -52,22 +135,18 @@ pub async fn github(
 
     if event == "ping" {
         info!(delivery, "received ping");
-        return Ok((
-            StatusCode::OK,
-            Json(json!({ "status": "pong", "delivery": delivery })),
-        ));
+        return Ok((StatusCode::OK, Json(WebhookResponse::new("pong", delivery))));
     }
 
     if event != "pull_request" {
         info!(event = %event, delivery, "ignoring unsupported event");
         return Ok((
             StatusCode::ACCEPTED,
-            Json(json!({
-                "status": "ignored",
-                "reason": "unsupported_event",
-                "event": event,
-                "delivery": delivery,
-            })),
+            Json(
+                WebhookResponse::new("ignored", delivery)
+                    .reason("unsupported_event")
+                    .event(event),
+            ),
         ));
     }
 
@@ -83,12 +162,11 @@ pub async fn github(
         );
         return Ok((
             StatusCode::ACCEPTED,
-            Json(json!({
-                "status": "ignored",
-                "reason": "action_not_analyzable",
-                "action": action_as_str(payload.action),
-                "delivery": delivery,
-            })),
+            Json(
+                WebhookResponse::new("ignored", delivery)
+                    .reason("action_not_analyzable")
+                    .action(action_as_str(payload.action)),
+            ),
         ));
     }
 
@@ -102,12 +180,11 @@ pub async fn github(
         );
         return Ok((
             StatusCode::ACCEPTED,
-            Json(json!({
-                "status": "ignored",
-                "reason": "repo_not_allowed",
-                "repo": payload.repository.full_name,
-                "delivery": delivery,
-            })),
+            Json(
+                WebhookResponse::new("ignored", delivery)
+                    .reason("repo_not_allowed")
+                    .repo(payload.repository.full_name),
+            ),
         ));
     }
 
@@ -118,18 +195,13 @@ pub async fn github(
         info!(delivery, pr = payload.number, "ignoring draft pull_request");
         return Ok((
             StatusCode::ACCEPTED,
-            Json(json!({
-                "status": "ignored",
-                "reason": "draft",
-                "delivery": delivery,
-            })),
+            Json(WebhookResponse::new("ignored", delivery).reason("draft")),
         ));
     }
 
     // Dedupe on X-GitHub-Delivery so GitHub's automatic retries do not
     // duplicate analyses. The "unknown" sentinel is intentionally never
-    // deduped: missing the header (e.g. hand-rolled tooling) should still
-    // run.
+    // deduped: missing the header (e.g. hand-rolled tooling) should still run.
     if delivery != "unknown" {
         let mut guard = state
             .delivery_dedupe
@@ -141,10 +213,7 @@ pub async fn github(
             info!(delivery, pr = payload.number, "duplicate delivery ignored");
             return Ok((
                 StatusCode::ACCEPTED,
-                Json(json!({
-                    "status": "duplicate",
-                    "delivery": delivery,
-                })),
+                Json(WebhookResponse::new("duplicate", delivery)),
             ));
         }
     }
@@ -194,12 +263,11 @@ pub async fn github(
                     );
                     return Ok((
                         StatusCode::ACCEPTED,
-                        Json(json!({
-                            "status": "skipped",
-                            "reason": "no_contract_changes",
-                            "delivery": delivery,
-                            "files_checked": files.len(),
-                        })),
+                        Json(
+                            WebhookResponse::new("skipped", delivery)
+                                .reason("no_contract_changes")
+                                .files_checked(files.len()),
+                        ),
                     ));
                 }
                 if truncated {
@@ -233,11 +301,7 @@ pub async fn github(
 
     Ok((
         StatusCode::ACCEPTED,
-        Json(json!({
-            "status": "accepted",
-            "analysis_id": analysis_id,
-            "delivery": delivery,
-        })),
+        Json(WebhookResponse::new("accepted", delivery).analysis_id(analysis_id)),
     ))
 }
 
@@ -247,16 +311,31 @@ async fn spawn_analysis(state: AppState, event: PullRequestEvent, analysis_id: S
     let status_context = state.config.status_context.clone();
     let span_id = analysis_id.clone();
 
-    let clone_url = event
+    let clone_repository = event
         .pull_request
         .head
         .repo
         .as_ref()
-        .and_then(|r| r.clone_url.clone())
-        .or_else(|| event.repository.clone_url.clone())
-        .unwrap_or_else(|| format!("https://github.com/{}.git", event.repository.full_name));
-
-    let clone_url = state.github.authenticated_clone_url(&clone_url);
+        .unwrap_or(&event.repository);
+    let public_clone_url = clone_repository
+        .clone_url
+        .clone()
+        .unwrap_or_else(|| format!("https://github.com/{}.git", clone_repository.full_name));
+    let clone_url = match state
+        .github
+        .authenticated_clone_url(&public_clone_url, &clone_repository.full_name)
+    {
+        Ok(url) => url,
+        Err(error) => {
+            warn!(
+                analysis_id,
+                error = %error,
+                repo = %clone_repository.full_name,
+                "rejecting unsafe clone URL"
+            );
+            return;
+        }
+    };
     let head_sha = event.pull_request.head.sha.clone();
     let head_ref = event.pull_request.head.ref_name.clone();
     let repo_full_name = event.repository.full_name.clone();
@@ -384,5 +463,20 @@ fn action_as_str(action: PullRequestAction) -> &'static str {
         PullRequestAction::Dequeued => "dequeued",
         PullRequestAction::Enqueued => "enqueued",
         PullRequestAction::Other => "other",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn response_omits_inapplicable_fields() {
+        let value = serde_json::to_value(WebhookResponse::new("pong", "delivery".to_string()))
+            .expect("serialize webhook response");
+        assert_eq!(value["status"], "pong");
+        assert_eq!(value["delivery"], "delivery");
+        assert!(value.get("reason").is_none());
+        assert!(value.get("analysis_id").is_none());
     }
 }

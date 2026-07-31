@@ -3,10 +3,10 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "dd-git-rs",
   "language": "rust",
-  "routeCount": 15,
+  "routeCount": 17,
   "routeTypeCounts": {
     "service": 7,
-    "user-generated": 8
+    "user-generated": 10
   },
   "standardDocsRoutes": [
     "/docs/api",
@@ -68,7 +68,24 @@
     {
       "path": "/api/v1/repos",
       "methods": [
-        "GET",
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_repo",
+        "list_repos"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-git-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/v1/repos",
+      "methods": [
         "POST"
       ],
       "routeType": "user-generated",
@@ -87,8 +104,25 @@
     {
       "path": "/api/v1/repos/:id",
       "methods": [
-        "GET",
         "DELETE"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "delete_repo",
+        "get_repo"
+      ],
+      "sourceFiles": [
+        "remote/deployments/dd-git-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/v1/repos/:id",
+      "methods": [
+        "GET"
       ],
       "routeType": "user-generated",
       "implementation": "code-first",

@@ -34,8 +34,8 @@ data:
       1 "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
     }
 
-    # Dedicated read-only MCP bearer token. Scoped to /mcp and /cluster-mcp
-    # only (enforced in those location blocks) so local IDE MCP clients
+    # Dedicated read-only MCP bearer token. Scoped to the three MCP routes
+    # (enforced in those location blocks) so local IDE MCP clients
     # (Cursor, VS Code, Codex) authenticate with a narrow, revocable
     # credential instead of the master operator cookie value. Sourced from the
     # dd-mcp-gateway-token secret (AWS dd/remote-dev/mcp-gateway-token). The
@@ -905,6 +905,7 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         # Never forward the MCP bearer token to the read-only upstream pod.
         proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /cluster-mcp;
@@ -925,6 +926,7 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         # Never forward the MCP bearer token to the read-only upstream pod.
         proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /cluster-mcp;
@@ -945,6 +947,7 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         # Never forward the MCP bearer token to the read-only upstream pod.
         proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /mcp;
@@ -964,6 +967,7 @@ data:
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Auth $dd_gateway_auth_header;
+        proxy_set_header X-Server-Auth "${DD_REMOTE_DEV_SERVER_AUTH_VALUE}";
         # Never forward the MCP bearer token to the read-only upstream pod.
         proxy_set_header Authorization "";
         proxy_set_header X-Forwarded-Prefix /mcp;
@@ -1748,6 +1752,12 @@ data:
         proxy_pass http://dd-akrion-web-server-rs.default.svc.cluster.local:8127;
       }
 
+      # Keep Akrion process metrics on the in-cluster Service even for
+      # authenticated gateway users.
+      location ^~ /akrion-sim/metrics {
+        return 404;
+      }
+
       location /akrion-sim/ {
         if ($dd_gateway_auth_ok = 0) {
           return 401;
@@ -2280,6 +2290,16 @@ data:
         return 302 /canonical/;
       }
 
+      # Prometheus exposition is an in-cluster operational surface. Keep both
+      # the exact endpoint and path variants out of the public marketing proxy.
+      location = /canonical/metrics {
+        return 404;
+      }
+
+      location ^~ /canonical/metrics/ {
+        return 404;
+      }
+
       location /canonical/ {
         if ($request_method !~ ^(GET|HEAD)$) {
           return 405;
@@ -2650,7 +2670,19 @@ data:
         return 200 '{"service":"dd-chron-service","kind":"planned deployment","namespace":"default","httpService":false,"notes":"Cron/at style scheduler should expose an authenticated status and control API when promoted from templates."}';
       }
 
+      # /tasks, /status and /agents are the dd-dev-server-api control plane
+      # (list/create agent tasks). They were the only dev-server routes without
+      # the operator gate, unlike their /agents/tasks, /agents/threads and
+      # /dd-thread/* siblings. dd-dev-server-api fail-closes on a missing
+      # X-Server-Auth, and the gateway only forwards a non-empty
+      # $dd_dev_server_auth_header when $dd_gateway_auth_ok = 1 — so every
+      # caller that works today is already authenticated and the gate is a
+      # no-op for them. It stops unauthenticated traffic from reaching the
+      # control plane at all instead of relying on the backend to reject it.
       location /tasks {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -2661,6 +2693,9 @@ data:
       }
 
       location /status {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -2671,6 +2706,9 @@ data:
       }
 
       location /agents {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -2843,6 +2881,12 @@ data:
       # endpoint churn; variable upstreams require an explicit DNS resolver.
       resolver kube-dns.kube-system.svc.cluster.local valid=10s ipv6=off;
       resolver_timeout 2s;
+
+      # Prometheus scrapes the ClusterIP Service directly. Do not publish
+      # process/request telemetry on the customer-facing Fiducia origin.
+      location ^~ /metrics {
+        return 404;
+      }
 
       location / {
         proxy_http_version 1.1;

@@ -3,11 +3,11 @@
   "generatedBy": "remote/tools/generate-api-docs.mjs",
   "service": "rest-api-rs",
   "language": "rust",
-  "routeCount": 47,
+  "routeCount": 58,
   "routeTypeCounts": {
-    "user-generated": 26,
+    "user-generated": 31,
     "service": 8,
-    "internal-db": 10,
+    "internal-db": 16,
     "runtime-config": 3
   },
   "standardDocsRoutes": [
@@ -36,7 +36,24 @@
     {
       "path": "/api/agents/git-repos",
       "methods": [
-        "GET",
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "known_git_repos",
+        "save_known_git_repo"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/agents/git-repos",
+      "methods": [
         "POST"
       ],
       "routeType": "user-generated",
@@ -395,7 +412,24 @@
     {
       "path": "/api/graphql",
       "methods": [
-        "GET",
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "GraphQL endpoint for typed remote REST API queries, guarded subservice calls, and the optional GraphiQL IDE on GET.",
+      "handlers": [
+        "api_graphiql",
+        "graphql_handler"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/graphql_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/graphql",
+      "methods": [
         "POST"
       ],
       "routeType": "user-generated",
@@ -431,7 +465,24 @@
     {
       "path": "/api/lambdas/functions",
       "methods": [
-        "GET",
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "create_lambda_function",
+        "lambda_functions"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/lambdas/functions",
+      "methods": [
         "POST"
       ],
       "routeType": "user-generated",
@@ -450,7 +501,24 @@
     {
       "path": "/api/lambdas/functions/:id",
       "methods": [
-        "GET",
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "Custom code-first route derived from the service router.",
+      "handlers": [
+        "lambda_function",
+        "update_lambda_function"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/main.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/api/lambdas/functions/:id",
+      "methods": [
         "PATCH"
       ],
       "routeType": "user-generated",
@@ -503,7 +571,24 @@
     {
       "path": "/graphql",
       "methods": [
-        "GET",
+        "GET"
+      ],
+      "routeType": "user-generated",
+      "implementation": "code-first",
+      "auth": "service-defined",
+      "purpose": "GraphQL endpoint for typed remote REST API queries, guarded subservice calls, and the optional GraphiQL IDE on GET.",
+      "handlers": [
+        "graphiql",
+        "graphql_handler"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/graphql_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/graphql",
+      "methods": [
         "POST"
       ],
       "routeType": "user-generated",
@@ -624,7 +709,24 @@
     {
       "path": "/internal/db/schemas/:schema/tables/:table/rows",
       "methods": [
-        "GET",
+        "GET"
+      ],
+      "routeType": "internal-db",
+      "implementation": "internal-operator",
+      "auth": "operator secret",
+      "purpose": "Internal operator database inspection route. Not part of the public REST contract.",
+      "handlers": [
+        "insert_row_explicit_schema",
+        "list_rows_explicit_schema"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/db_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/db/schemas/:schema/tables/:table/rows",
+      "methods": [
         "POST"
       ],
       "routeType": "internal-db",
@@ -643,9 +745,45 @@
     {
       "path": "/internal/db/schemas/:schema/tables/:table/rows/:id",
       "methods": [
-        "GET",
-        "PATCH",
         "DELETE"
+      ],
+      "routeType": "internal-db",
+      "implementation": "internal-operator",
+      "auth": "operator secret",
+      "purpose": "Internal operator database inspection route. Not part of the public REST contract.",
+      "handlers": [
+        "delete_row_explicit_schema",
+        "get_row_explicit_schema",
+        "update_row_explicit_schema"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/db_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/db/schemas/:schema/tables/:table/rows/:id",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "internal-db",
+      "implementation": "internal-operator",
+      "auth": "operator secret",
+      "purpose": "Internal operator database inspection route. Not part of the public REST contract.",
+      "handlers": [
+        "delete_row_explicit_schema",
+        "get_row_explicit_schema",
+        "update_row_explicit_schema"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/db_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/db/schemas/:schema/tables/:table/rows/:id",
+      "methods": [
+        "PATCH"
       ],
       "routeType": "internal-db",
       "implementation": "internal-operator",
@@ -698,7 +836,24 @@
     {
       "path": "/internal/db/tables/:table/rows",
       "methods": [
-        "GET",
+        "GET"
+      ],
+      "routeType": "internal-db",
+      "implementation": "internal-operator",
+      "auth": "operator secret",
+      "purpose": "Internal operator database inspection route. Not part of the public REST contract.",
+      "handlers": [
+        "insert_row_default_schema",
+        "list_rows_default_schema"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/db_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/db/tables/:table/rows",
+      "methods": [
         "POST"
       ],
       "routeType": "internal-db",
@@ -717,9 +872,45 @@
     {
       "path": "/internal/db/tables/:table/rows/:id",
       "methods": [
-        "GET",
-        "PATCH",
         "DELETE"
+      ],
+      "routeType": "internal-db",
+      "implementation": "internal-operator",
+      "auth": "operator secret",
+      "purpose": "Internal operator database inspection route. Not part of the public REST contract.",
+      "handlers": [
+        "delete_row_default_schema",
+        "get_row_default_schema",
+        "update_row_default_schema"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/db_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/db/tables/:table/rows/:id",
+      "methods": [
+        "GET"
+      ],
+      "routeType": "internal-db",
+      "implementation": "internal-operator",
+      "auth": "operator secret",
+      "purpose": "Internal operator database inspection route. Not part of the public REST contract.",
+      "handlers": [
+        "delete_row_default_schema",
+        "get_row_default_schema",
+        "update_row_default_schema"
+      ],
+      "sourceFiles": [
+        "remote/deployments/rest-api-rs/src/db_routes.rs"
+      ],
+      "notes": ""
+    },
+    {
+      "path": "/internal/db/tables/:table/rows/:id",
+      "methods": [
+        "PATCH"
       ],
       "routeType": "internal-db",
       "implementation": "internal-operator",

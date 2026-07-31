@@ -17,14 +17,59 @@ spec:
       labels:
         app: dd-nats
     spec:
+      priorityClassName: system-cluster-critical
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      initContainers:
+        # The official NATS image defaults to uid 0 and hostPath directories are
+        # created root-owned. Restrict root to this short ownership handoff so
+        # the long-running broker can use an unprivileged uid.
+        - name: prepare-nats-data
+          image: nats:2.11.17-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - -ec
+            - chown -R 1000:1000 /data
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsUser: 0
+            runAsGroup: 0
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - CHOWN
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+              ephemeral-storage: 1Mi
+            limits:
+              cpu: 100m
+              memory: 32Mi
+              ephemeral-storage: 16Mi
+          volumeMounts:
+            - name: data
+              mountPath: /data
       containers:
         - name: nats
           image: nats:2.11.17-alpine
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
             capabilities:
               drop:
                 - ALL
@@ -48,6 +93,13 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 2
             failureThreshold: 6
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8222
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 30
           livenessProbe:
             httpGet:
               path: /healthz
@@ -60,12 +112,15 @@ spec:
             requests:
               cpu: 100m
               memory: 128Mi
+              ephemeral-storage: 16Mi
             limits:
               cpu: "1"
               memory: 1Gi
+              ephemeral-storage: 256Mi
           volumeMounts:
             - name: config
               mountPath: /etc/nats
+              readOnly: true
             - name: data
               mountPath: /data
         - name: prometheus-exporter
@@ -73,6 +128,11 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
             capabilities:
               drop:
                 - ALL
@@ -96,13 +156,23 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 2
             failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: 7777
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
           resources:
             requests:
               cpu: 50m
               memory: 64Mi
+              ephemeral-storage: 1Mi
             limits:
               cpu: 500m
               memory: 256Mi
+              ephemeral-storage: 32Mi
       volumes:
         - name: config
           configMap:
