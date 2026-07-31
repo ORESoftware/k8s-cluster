@@ -26,3 +26,13 @@ grep -RInE '^(<<<<<<<|=======|>>>>>>>)' --exclude-dir=.git .
 If any marker or suspicious partial resolution remains, repeat the semantic resolution process from the top and rerun validation. A conflict is resolved only when the result is conceptually coherent and verified, not merely accepted by Git.
 
 Keep changes scoped, preserve repository conventions, update tests when behavior changes, and record validation and residual risk in the PR.
+## Repository-specific rules
+
+- **This repository is the source of truth.** The copy vendored into
+  `ORESoftware/k8s-cluster` (under `remote/deployments/`) is a *secondary* submodule
+  checkout — after merging here, bump the submodule pointer there. Do not edit the
+  vendored copy directly.
+- This repo is standalone — no path dependencies on the `k8s-cluster` superproject —
+  so CI runs the full `cargo check` + `cargo test` suite (plus hygiene and an
+  informational format check). Keep it that way: new dependencies come from
+  crates.io, not `../../libs`.
