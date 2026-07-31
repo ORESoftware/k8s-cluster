@@ -1,5 +1,5 @@
 name: Dispatch corrected missing-organization publisher once
-run-name: Retrigger corrected missing-organization publisher for Meta Agents
+run-name: Retrigger corrected publisher after explicit repository-context fix
 
 on:
   push:
