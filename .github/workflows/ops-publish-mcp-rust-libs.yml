@@ -1,0 +1,210 @@
+name: Publish canonical mcp-rust-libs repository
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-publish-mcp-rust-libs.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: canonical-mcp-rust-libs-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the exact trusted main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Configure trusted main-ref AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: canonical-mcp-rust-libs-publisher
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Create the canonical repository and bootstrap pull request
+        shell: bash
+        env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
+        run: |
+          set -euo pipefail
+          test -n "${INSTANCE_ID:-}"
+
+          trusted_sha="$(git rev-parse HEAD)"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          remote_script="$RUNNER_TEMP/publish-mcp-rust-libs.sh"
+          cat > "$remote_script" <<'REMOTE_SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          source_repository='ORESoftware/testing'
+          source_sha='143c7ea1fd23fc24aed0b575d81df475ce067391'
+          source_subdirectory='mcp-rust-libs'
+          source_manifest_sha256='288e6c5db4d6dfad4dce9bc069e3c1f19bd7ea35134ae68d8a138bed6d9b5bf6'
+          target_repository='ORESoftware/mcp-rust-libs'
+          target_branch='bootstrap/semantic-polyglot-20260731'
+          work="$(mktemp -d /tmp/mcp-rust-libs-publisher.XXXXXX)"
+
+          cleanup() {
+            unset GH_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            rm -rf "$work"
+          }
+          trap cleanup EXIT
+
+          test "$(gh api user --jq .login)" = ORESoftware
+          gh auth setup-git
+          GH_TOKEN="$(gh auth token)"
+          test -n "$GH_TOKEN"
+          export GH_TOKEN
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
+
+          git clone --filter=blob:none --no-checkout \
+            "https://github.com/${source_repository}.git" \
+            "$work/carrier"
+          git -C "$work/carrier" fetch --depth=1 origin "$source_sha"
+          git -C "$work/carrier" checkout --detach "$source_sha"
+          test "$(git -C "$work/carrier" rev-parse HEAD)" = "$source_sha"
+
+          source="$work/carrier/$source_subdirectory"
+          test -d "$source"
+          test "$(sha256sum "$source/reports/source-files.sha256" | awk '{print $1}')" = \
+            "$source_manifest_sha256"
+          source_tree="$(git -C "$work/carrier" rev-parse "${source_sha}:${source_subdirectory}")"
+          [[ "$source_tree" =~ ^[0-9a-f]{40}$ ]]
+
+          (
+            cd "$source"
+            python3 scripts/regenerate-generated.py --check
+            python3 scripts/static-source-checks.py
+            python3 scripts/check-scaffold.py
+            python3 tooling/conformance/run.py
+            python3 scripts/update-source-manifest.py --check
+          )
+
+          if ! gh api "repos/$target_repository" >/dev/null 2>&1; then
+            gh api --method POST user/repos \
+              -f name=mcp-rust-libs \
+              -f description='Shared Rust, TypeScript, Dart, and Gleam MCP runtime, contracts, safety, telemetry, schema generation, and conformance libraries' \
+              -F private=false \
+              -F has_issues=true \
+              -F has_projects=false \
+              -F has_wiki=false \
+              -F auto_init=true >/dev/null
+            echo "CREATED $target_repository"
+          fi
+
+          test "$(gh api "repos/$target_repository" --jq '.owner.login + ":" + .visibility')" = \
+            'ORESoftware:public'
+          gh api --method PATCH "repos/$target_repository" \
+            -f description='Shared Rust, TypeScript, Dart, and Gleam MCP runtime, contracts, safety, telemetry, schema generation, and conformance libraries' \
+            -F has_issues=true \
+            -F has_projects=false \
+            -F has_wiki=false \
+            -F allow_squash_merge=true \
+            -F allow_merge_commit=true \
+            -F allow_rebase_merge=false \
+            -F delete_branch_on_merge=true >/dev/null
+
+          git clone "https://github.com/${target_repository}.git" "$work/target"
+          git -C "$work/target" config user.name 'ORESoftware publication automation'
+          git -C "$work/target" config user.email 'bot@oresoftware.dev'
+
+          if git -C "$work/target" ls-remote --exit-code --heads origin "$target_branch" >/dev/null 2>&1; then
+            git -C "$work/target" fetch origin "$target_branch"
+            git -C "$work/target" checkout -B "$target_branch" "origin/$target_branch"
+            test "$(git -C "$work/target" rev-parse 'HEAD^{tree}')" = "$source_tree"
+          else
+            git -C "$work/target" checkout -b "$target_branch" origin/main
+            find "$work/target" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+            cp -a "$source"/. "$work/target"/
+            git -C "$work/target" add -A
+            git -C "$work/target" commit \
+              -m 'feat: bootstrap shared polyglot MCP libraries' \
+              -m "Promote the reviewed ${source_repository}@${source_sha} subtree to the canonical repository root."
+            test "$(git -C "$work/target" rev-parse 'HEAD^{tree}')" = "$source_tree"
+            git -C "$work/target" push --set-upstream origin "$target_branch"
+          fi
+
+          head_sha="$(git -C "$work/target" rev-parse HEAD)"
+          pr_number="$(
+            gh pr list \
+              --repo "$target_repository" \
+              --head "$target_branch" \
+              --state all \
+              --json number,state,mergedAt,headRefOid \
+              --jq 'if length == 0 then "" elif length == 1 then .[0].number else error("multiple bootstrap pull requests") end'
+          )"
+          if test -z "$pr_number"; then
+            pr_url="$(
+              gh pr create \
+                --repo "$target_repository" \
+                --base main \
+                --head "$target_branch" \
+                --title 'Bootstrap shared polyglot MCP libraries' \
+                --body "Promotes only the reviewed \`${source_subdirectory}/\` subtree from \`${source_repository}@${source_sha}\` to repository root. The semantic merge preserves the hardened Rust runtime/config/telemetry/HTTP/safety/testkit implementation and layers the reconciled TypeScript/Zod, Dart, Gleam, JSON Schema, deterministic generation, fixtures, and four-target Zed package layout around it. Product tools, authorization, mutations, credentials, endpoint ownership, and business schemas remain in their owning MCP repositories. Source manifest SHA-256: \`${source_manifest_sha256}\`. Linear: DEN-319, DEN-957, DEN-959, DEN-967, DEN-968, DEN-969, DEN-970, DEN-972."
+            )"
+            pr_number="${pr_url##*/}"
+          fi
+
+          gh pr view "$pr_number" --repo "$target_repository" \
+            --json number,state,isDraft,headRefOid,url \
+            --jq '{number,state,isDraft,headRefOid,url}'
+          test "$(gh pr view "$pr_number" --repo "$target_repository" --json headRefOid --jq .headRefOid)" = \
+            "$head_sha"
+          echo "PUBLISHED $target_repository PR#$pr_number head=$head_sha source_tree=$source_tree"
+          REMOTE_SCRIPT
+
+          chmod 700 "$remote_script"
+
+          encoded="$(base64 --wrap=0 "$remote_script")"
+          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-mcp-rust-libs.sh && chmod 700 /tmp/publish-mcp-rust-libs.sh && sudo -u ec2-user -H bash /tmp/publish-mcp-rust-libs.sh; status=\$?; rm -f /tmp/publish-mcp-rust-libs.sh; exit \$status"
+          parameters="$RUNNER_TEMP/ssm-parameters.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "Publish canonical mcp-rust-libs from k8s-cluster $trusted_sha" \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
+          )"
+          echo "ssm_command_id=$command_id"
+
+          status=Pending
+          for _ in $(seq 1 480); do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling)
+                break
+                ;;
+            esac
+            sleep 3
+          done
+
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+            --output json
+          test "$status" = Success
