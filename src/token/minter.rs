@@ -37,12 +37,17 @@ pub struct MintContext {
     pub provider: String,
     pub provider_tenant: String,
     pub provider_subject: String,
+    /// Assurance level, minted as the `aal` claim.
     pub auth_level: u8,
+    /// Authentication Methods References, minted as the `amr` claim. This is
+    /// the single source for methods — two branches previously carried a
+    /// parallel `amr` field, which duplicated this one.
     pub auth_methods: Vec<String>,
     pub email: Option<String>,
     pub email_verified: bool,
     pub roles: Vec<String>,
-    pub amr: Vec<String>,
+    /// Authentication Context Class Reference, kept consistent with
+    /// `auth_level` by the callers in `http::session_tokens`.
     pub acr: Option<String>,
 }
 
