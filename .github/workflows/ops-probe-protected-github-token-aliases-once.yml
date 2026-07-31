@@ -1,5 +1,5 @@
 name: Probe protected GitHub token aliases once
-run-name: Final trusted-main token-alias evidence execution @ ${{ github.sha }}
+run-name: Observed trusted-main token-alias evidence execution @ ${{ github.sha }}
 
 on:
   push:
