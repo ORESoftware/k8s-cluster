@@ -1,4 +1,5 @@
 name: Apply protected gh-profile fallback to MCP publisher once
+run-name: Retrigger protected gh-profile MCP fallback @ ${{ github.sha }}
 
 on:
   push:
