@@ -1,5 +1,5 @@
-name: Dispatch and observe canonical mcp-rust-libs direct publisher
-run-name: Dispatch direct canonical mcp-rust-libs publication v2 @ ${{ github.sha }}
+name: Publish canonical mcp-rust-libs with configured AWS region
+run-name: Publish canonical mcp-rust-libs with configured region @ ${{ github.sha }}
 
 on:
   push:
@@ -10,116 +10,176 @@ on:
 
 permissions:
   contents: read
-  actions: write
+  id-token: write
   pull-requests: write
 
 concurrency:
-  group: dispatch-canonical-mcp-rust-libs-publisher
+  group: publish-canonical-mcp-rust-libs-region-correct
   cancel-in-progress: false
 
 jobs:
-  dispatch:
-    runs-on: ubuntu-latest
-    timeout-minutes: 70
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
     steps:
-      - name: Dispatch, observe, and report the exact trusted-main direct publisher run
+      - name: Check out exact trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Configure trusted AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: region-correct-mcp-rust-libs-publisher
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Execute the reviewed publisher with the configured region
         shell: bash
         env:
+          INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
           GH_TOKEN: ${{ github.token }}
           TRACKING_PR: '326'
-          PUBLISHER_WORKFLOW: ops-fix-and-run-mcp-rust-libs-publisher-once.yml
         run: |
           set -euo pipefail
-          repository="$GITHUB_REPOSITORY"
-          trusted_sha="$(gh api "repos/${repository}/commits/main" --jq .sha)"
+          test -n "${INSTANCE_ID:-}"
+          trusted_sha="$(git rev-parse HEAD)"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
-
-          before_json="$(
-            gh run list \
-              --repo "$repository" \
-              --workflow "$PUBLISHER_WORKFLOW" \
-              --event workflow_dispatch \
-              --limit 100 \
-              --json databaseId \
-              | jq '[.[].databaseId]'
-          )"
-
-          gh workflow run "$PUBLISHER_WORKFLOW" --repo "$repository" --ref main
-
-          run_json=''
-          for _ in $(seq 1 120); do
-            candidates="$(
-              gh run list \
-                --repo "$repository" \
-                --workflow "$PUBLISHER_WORKFLOW" \
-                --event workflow_dispatch \
-                --limit 50 \
-                --json databaseId,headSha,createdAt,status,conclusion,url
-            )"
-            run_json="$(
-              jq -c \
-                --argjson before "$before_json" \
-                --arg sha "$trusted_sha" \
-                '[.[] | select(.headSha == $sha and ((.databaseId as $id | $before | index($id)) == null))] | sort_by(.createdAt) | last // empty' \
-                <<<"$candidates"
-            )"
-            if test -n "$run_json"; then
-              break
-            fi
-            sleep 2
-          done
-          test -n "$run_json"
-
-          run_id="$(jq -r .databaseId <<<"$run_json")"
-          run_url="$(jq -r .url <<<"$run_json")"
-          [[ "$run_id" =~ ^[0-9]+$ ]]
-          test -n "$run_url"
+          publisher_region="${AWS_REGION:?configured AWS region is required}"
+          [[ "$publisher_region" =~ ^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$ ]]
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
           gh pr comment "$TRACKING_PR" \
-            --repo "$repository" \
-            --body "Direct canonical MCP publisher dispatched from trusted main \`${trusted_sha}\`: ${run_url}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body "Region-correct canonical MCP publication started from \`${trusted_sha}\` in the configured AWS region: ${run_url}" \
             >/dev/null || true
 
-          watch_status=0
-          gh run watch "$run_id" --repo "$repository" --exit-status || watch_status=$?
+          launcher="$RUNNER_TEMP/launch-region-correct-mcp-publisher.sh"
+          cat > "$launcher" <<'LAUNCHER'
+          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          umask 077
 
-          detail="$(gh run view "$run_id" --repo "$repository" --json databaseId,headSha,status,conclusion,url,name)"
-          test "$(jq -r .headSha <<<"$detail")" = "$trusted_sha"
+          trusted_sha="${1:?trusted k8s-cluster SHA required}"
+          publisher_region="${2:?configured AWS region required}"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$publisher_region" =~ ^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$ ]]
 
-          log_file="$(mktemp)"
-          body_file="$(mktemp)"
-          trap 'rm -f "$log_file" "$body_file"' EXIT
-          gh run view "$run_id" --repo "$repository" --log >"$log_file" 2>/dev/null || true
+          work="$(mktemp -d /tmp/region-correct-mcp-publisher.XXXXXX)"
+          cleanup() {
+            rm -rf "$work" /tmp/region-correct-direct-mcp-publisher.sh
+          }
+          trap cleanup EXIT
 
-          markers="$(
-            grep -Eo \
-              'publisher-stage-failed=[A-Za-z0-9._-]+ exit=[0-9]+|publisher-stage=[A-Za-z0-9._-]+ status=[A-Za-z0-9._-]+ source=[^[:space:]]+|CREATED ORESoftware/mcp-rust-libs|PUBLISHED ORESoftware/mcp-rust-libs PR#[0-9]+ head=[0-9a-f]{40} source_tree=[0-9a-f]{40} trusted_k8s=[0-9a-f]{40}|ALREADY_PUBLISHED ORESoftware/mcp-rust-libs main=[0-9a-f]{40} source_tree=[0-9a-f]{40} trusted_k8s=[0-9a-f]{40}' \
-              "$log_file" \
-              | tail -n 30 \
-              | sort -u \
-              || true
+          git init "$work/k8s-cluster"
+          git -C "$work/k8s-cluster" remote add origin https://github.com/ORESoftware/k8s-cluster.git
+          git -C "$work/k8s-cluster" fetch --depth=1 origin "$trusted_sha"
+          git -C "$work/k8s-cluster" checkout --detach FETCH_HEAD
+          test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
+
+          workflow="$work/k8s-cluster/.github/workflows/ops-fix-and-run-mcp-rust-libs-publisher-once.yml"
+          output=/tmp/region-correct-direct-mcp-publisher.sh
+          python3 - "$workflow" "$output" <<'PYTHON'
+          from pathlib import Path
+          import sys
+          import textwrap
+
+          workflow_path = Path(sys.argv[1])
+          output_path = Path(sys.argv[2])
+          text = workflow_path.read_text(encoding="utf-8")
+          start_marker = "          cat > \"$remote_script\" <<'REMOTE_SCRIPT'\n"
+          end_marker = "\n          REMOTE_SCRIPT\n"
+          if text.count(start_marker) != 1:
+              raise SystemExit("reviewed remote publisher start marker is not unique")
+          start = text.index(start_marker) + len(start_marker)
+          end = text.index(end_marker, start)
+          remote = textwrap.dedent(text[start:end]) + "\n"
+
+          identity = (
+              'trusted_sha="${1:?trusted k8s-cluster SHA required}"\n'
+              '[[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]\n'
+          )
+          replacement = identity + (
+              'publisher_region="${2:?configured AWS region required}"\n'
+              '[[ "$publisher_region" =~ ^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$ ]]\n'
+          )
+          if remote.count(identity) != 1:
+              raise SystemExit("reviewed publisher identity prelude drifted")
+          remote = remote.replace(identity, replacement, 1)
+
+          old_region = "--region us-east-1"
+          if remote.count(old_region) != 1:
+              raise SystemExit("legacy hardcoded Secrets Manager region is not unique")
+          remote = remote.replace(old_region, '--region "$publisher_region"', 1)
+          if old_region in remote:
+              raise SystemExit("legacy hardcoded region remains")
+          output_path.write_text(remote, encoding="utf-8")
+          PYTHON
+
+          chmod 700 "$output"
+          bash -n "$output"
+          exec bash "$output" "$trusted_sha" "$publisher_region"
+          LAUNCHER
+          chmod 700 "$launcher"
+
+          encoded="$(base64 --wrap=0 "$launcher")"
+          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/launch-region-correct-mcp-publisher.sh && chmod 700 /tmp/launch-region-correct-mcp-publisher.sh && bash /tmp/launch-region-correct-mcp-publisher.sh '$trusted_sha' '$publisher_region'; status=\$?; rm -f /tmp/launch-region-correct-mcp-publisher.sh; exit \$status"
+          parameters="$RUNNER_TEMP/region-correct-mcp-publisher.json"
+          jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
+
+          command_id="$(
+            aws ssm send-command \
+              --instance-ids "$INSTANCE_ID" \
+              --document-name AWS-RunShellScript \
+              --comment "Publish mcp-rust-libs ${trusted_sha:0:12}" \
+              --parameters "file://$parameters" \
+              --query 'Command.CommandId' \
+              --output text
           )"
+          echo "ssm_command_id=$command_id"
 
-          target_summary='not-created'
-          if target="$(gh api repos/ORESoftware/mcp-rust-libs 2>/dev/null)"; then
-            target_summary="$(jq -r '"owner=" + .owner.login + " visibility=" + .visibility + " default_branch=" + .default_branch + " id=" + (.id|tostring)' <<<"$target")"
+          status=Pending
+          for _ in $(seq 1 900); do
+            status="$(
+              aws ssm get-command-invocation \
+                --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" \
+                --query Status \
+                --output text 2>/dev/null || true
+            )"
+            case "$status" in
+              Success|Failed|Cancelled|TimedOut|Cancelling) break ;;
+            esac
+            sleep 3
+          done
+
+          invocation="$(
+            aws ssm get-command-invocation \
+              --command-id "$command_id" \
+              --instance-id "$INSTANCE_ID" \
+              --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' \
+              --output json
+          )"
+          printf '%s\n' "$invocation"
+
+          diagnostic="$(
+            jq -r '.Stdout + .Stderr' <<<"$invocation" \
+              | grep -E 'publisher-stage|CREATED ORESoftware/mcp-rust-libs|PUBLISHED ORESoftware/mcp-rust-libs|ALREADY_PUBLISHED ORESoftware/mcp-rust-libs' \
+              | tail -n 40 || true
+          )"
+          if test "$status" = Success; then
+            gh pr comment "$TRACKING_PR" \
+              --repo "$GITHUB_REPOSITORY" \
+              --body "Region-correct canonical MCP publication succeeded: ${run_url}\n\n\`\`\`text\n${diagnostic}\n\`\`\`" \
+              >/dev/null || true
+          else
+            gh pr comment "$TRACKING_PR" \
+              --repo "$GITHUB_REPOSITORY" \
+              --body "Region-correct canonical MCP publication failed: ${run_url}\n\n\`\`\`text\n${diagnostic}\n\`\`\`" \
+              >/dev/null || true
+            exit 1
           fi
-
-          {
-            echo "Direct canonical MCP publisher run: ${run_url}"
-            echo
-            echo "- trusted main: \`${trusted_sha}\`"
-            echo "- status: \`$(jq -r .status <<<"$detail")\`"
-            echo "- conclusion: \`$(jq -r '.conclusion // ""' <<<"$detail")\`"
-            echo "- target: \`${target_summary}\`"
-            if test -n "$markers"; then
-              echo
-              echo 'Sanitized publisher markers:'
-              echo '```text'
-              printf '%s\n' "$markers"
-              echo '```'
-            fi
-          } >"$body_file"
-
-          gh pr comment "$TRACKING_PR" --repo "$repository" --body-file "$body_file" >/dev/null || true
-          exit "$watch_status"
