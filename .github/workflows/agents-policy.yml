@@ -1,0 +1,19 @@
+name: agents policy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agents-policy-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    uses: zed-pkg/zed-monorepo/.github/workflows/agents-policy-reusable.yml@fb2417b1a976459e3de740f788916d3d91d3669e
+    with:
+      policy_ref: fb2417b1a976459e3de740f788916d3d91d3669e
