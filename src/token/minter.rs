@@ -126,7 +126,6 @@ impl TokenMinter {
             email: context.email,
             email_verified: context.email_verified,
             roles: context.roles,
-            amr: context.amr,
             acr,
         };
         let token = encode(&self.header, &claims, &self.encoding_key).map_err(|err| {
