@@ -31,27 +31,3 @@ jobs:
           context: .
           push: false
           tags: push-notification-server:test
-
-  den-600-source-policy-debug:
-    name: DEN-600 exact Utoipa source policy
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.head_ref == 'agent/code-first-openapi-routes'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - name: Checkout exact branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: agent/code-first-openapi-routes
-          persist-credentials: false
-          show-progress: false
-
-      - name: Check exact git-source policy with debug output
-        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
-        with:
-          rust-version: '1.88.0'
-          command: check
-          arguments: --all-features
-          command-arguments: sources
-          log-level: debug
