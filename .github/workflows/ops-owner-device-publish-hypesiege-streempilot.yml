@@ -71,11 +71,11 @@ jobs:
           interval="$(jq -er '.interval | select(type == "number" and . > 0)' "$response")"
           [[ "$user_code" =~ ^[A-Z0-9]{4}-[A-Z0-9]{4}$ ]]
 
+          echo "::notice title=GitHub owner authorization::Open ${verification_uri} and enter ${user_code}"
           body="**Authorize the 32-repository HypeSiege/StreemPilot publication now:** open ${verification_uri} and enter **\`${user_code}\`**. This code expires in about $((expires_in / 60)) minutes. The workflow accepts only GitHub account \`${EXPECTED_LOGIN}\` with active admin access to both organizations. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           GH_TOKEN="$COMMENT_TOKEN" gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_ISSUE}/comments" \
-            -f body="$body" >/dev/null
-          echo "::notice title=GitHub owner authorization::Open ${verification_uri} and enter ${user_code}"
+            -f body="$body" >/dev/null || true
 
           elapsed=0
           access_token=''
@@ -256,4 +256,4 @@ jobs:
           body="Created and directly verified all **32/32** reviewed repositories: **HypeSiege 15/15**, **StreemPilot 17/17**; exact visibility, default branches, and main SHAs match the schema-v2 ledger. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           GH_TOKEN="$COMMENT_TOKEN" gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_ISSUE}/comments" \
-            -f body="$body" >/dev/null
+            -f body="$body" >/dev/null || true
