@@ -1,0 +1,67 @@
+name: Fix OpenAPI schema count
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/fix-openapi-schema-count.yml'
+      - 'scripts/apply_code_first_openapi.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fix-push-openapi-schema-count
+  cancel-in-progress: true
+
+jobs:
+  patch:
+    if: >-
+      github.repository == 'ORESoftware/push-notification-server.rs' &&
+      (github.event_name != 'pull_request' || github.head_ref == 'agent/code-first-openapi-routes')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact writable branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/code-first-openapi-routes
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Correct the per-contract schema threshold
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/apply_code_first_openapi.py')
+          source = path.read_text()
+          before = '''for path in ["src/contracts.rs", "src/contact/contracts.rs"]:
+    replace_once(path, "use serde_json::Value;", "use serde_json::Value;\\nuse utoipa::ToSchema;", "ToSchema import")
+    replace_all(path, "Serialize, Deserialize", "Serialize, Deserialize, ToSchema", 8, "wire schema derives")
+'''
+          after = '''for path, minimum in [("src/contracts.rs", 9), ("src/contact/contracts.rs", 7)]:
+    replace_once(path, "use serde_json::Value;", "use serde_json::Value;\\nuse utoipa::ToSchema;", "ToSchema import")
+    replace_all(path, "Serialize, Deserialize", "Serialize, Deserialize, ToSchema", minimum, "wire schema derives")
+'''
+          if source.count(before) != 1:
+              raise SystemExit('expected exactly one shared DTO schema loop')
+          path.write_text(source.replace(before, after, 1))
+          PY
+          python3 -m py_compile scripts/apply_code_first_openapi.py
+          git diff --check
+
+      - name: Remove repair carrier and commit
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/fix-openapi-schema-count.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'fix(DEN-600): use exact DTO schema counts'
+          git push origin HEAD:agent/code-first-openapi-routes
