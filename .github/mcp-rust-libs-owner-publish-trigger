@@ -1,3 +1,0 @@
-target=ORESoftware/mcp-rust-libs
-source=ORESoftware/testing@069b1aa4251658c8348d2eb477ad71369d9b742b:mcp-rust-libs
-trusted-main=d94667636ebf66ac9423617e7cc0e7b88e11d4ed
