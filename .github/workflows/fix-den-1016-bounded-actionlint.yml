@@ -84,3 +84,5 @@ jobs:
           git diff --cached --check
           git commit -m 'ci(DEN-1016): make workflow validation network independent'
           git push origin HEAD:agent/den-1016-audit-current-dev
+
+# retriggered after the previous materializer cancellation
