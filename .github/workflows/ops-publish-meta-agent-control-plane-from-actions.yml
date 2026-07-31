@@ -13,6 +13,8 @@ on:
 permissions:
   contents: read
   id-token: write
+  issues: write
+  pull-requests: write
 
 concurrency:
   group: publish-exact-meta-agent-control-plane
@@ -24,6 +26,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out exact trusted main and pinned publication history
+        id: checkout
+        continue-on-error: true
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
@@ -31,6 +35,9 @@ jobs:
           persist-credentials: false
 
       - name: Configure short-lived AWS credentials
+        id: aws
+        if: steps.checkout.outcome == 'success'
+        continue-on-error: true
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
@@ -40,6 +47,9 @@ jobs:
           mask-aws-account-id: true
 
       - name: Select and mask one proven repository-administration credential
+        id: credential
+        if: steps.aws.outcome == 'success'
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -66,6 +76,12 @@ jobs:
               raise SystemExit("protected credential bundle is not a JSON object")
 
           name_pattern = re.compile(r"(?:github|gh|token|pat)", re.IGNORECASE)
+          preferred_aliases = (
+              "GH_PAT",
+              "GITHUB_REPOSITORY_ADMIN_TOKEN",
+              "ORG_GITOPS_TOKEN",
+              "GITHUB_TOKEN",
+          )
 
           def get(token: str, path: str):
               request = urllib.request.Request(
@@ -83,36 +99,49 @@ jobs:
               except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, json.JSONDecodeError):
                   return None, None
 
-          valid: dict[str, list[str]] = {}
-          for name in sorted(payload):
-              if not name_pattern.search(name):
-                  continue
-              token = payload.get(name)
+          def valid_owner_token(token: object) -> bool:
               if not isinstance(token, str) or not token or any(ch.isspace() for ch in token):
-                  continue
+                  return False
               user_status, user = get(token, "/user")
               if user_status != 200 or not isinstance(user, dict) or user.get("login") != "ORESoftware":
-                  continue
+                  return False
               member_status, membership = get(token, "/user/memberships/orgs/meta-agents-demo")
-              if (
-                  member_status != 200
-                  or not isinstance(membership, dict)
-                  or membership.get("role") != "admin"
-                  or membership.get("state") != "active"
-              ):
-                  continue
-              valid.setdefault(token, []).append(name)
+              return bool(
+                  member_status == 200
+                  and isinstance(membership, dict)
+                  and membership.get("role") == "admin"
+                  and membership.get("state") == "active"
+              )
+
+          selected_token = None
+          selected_aliases: list[str] = []
+          for alias in preferred_aliases:
+              token = payload.get(alias)
+              if valid_owner_token(token):
+                  selected_token = token
+                  selected_aliases = sorted(
+                      name for name, value in payload.items() if value == token
+                  )
+                  break
+
+          if selected_token is None:
+              valid: dict[str, list[str]] = {}
+              for name in sorted(payload):
+                  if not name_pattern.search(name):
+                      continue
+                  token = payload.get(name)
+                  if valid_owner_token(token):
+                      valid.setdefault(token, []).append(name)
+              if len(valid) != 1:
+                  raise SystemExit(
+                      f"expected one unambiguous ORESoftware Meta Agents admin credential; found {len(valid)}"
+                  )
+              selected_token, selected_aliases = next(iter(valid.items()))
 
           payload.clear()
           secret_path.unlink(missing_ok=True)
-          if len(valid) != 1:
-              raise SystemExit(
-                  f"expected exactly one unique ORESoftware Meta Agents admin credential; found {len(valid)}"
-              )
-          token, aliases = next(iter(valid.items()))
-          token_path.write_text(token, encoding="utf-8")
-          alias_path.write_text(",".join(aliases), encoding="utf-8")
-          valid.clear()
+          token_path.write_text(selected_token, encoding="utf-8")
+          alias_path.write_text(",".join(selected_aliases), encoding="utf-8")
           PY
 
           token="$(cat "$token_file")"
@@ -127,6 +156,9 @@ jobs:
           unset token aliases
 
       - name: Reverify exact actor and organization administration before mutation
+        id: preflight
+        if: steps.credential.outcome == 'success'
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -137,8 +169,28 @@ jobs:
           unset membership
 
       - name: Materialize, publish, and verify the exact reviewed Git bundle
+        id: publication
+        if: steps.preflight.outcome == 'success'
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
           chmod 700 scripts/ops/publish_meta_agent_control_plane_from_actions.sh
           exec scripts/ops/publish_meta_agent_control_plane_from_actions.sh
+
+      - name: Report exact publication outcome
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKOUT_OUTCOME: ${{ steps.checkout.outcome }}
+          AWS_OUTCOME: ${{ steps.aws.outcome }}
+          CREDENTIAL_OUTCOME: ${{ steps.credential.outcome }}
+          PREFLIGHT_OUTCOME: ${{ steps.preflight.outcome }}
+          PUBLICATION_OUTCOME: ${{ steps.publication.outcome }}
+        run: |
+          set -euo pipefail
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body="Exact Meta Agents publication outcomes: checkout=\`${CHECKOUT_OUTCOME:-skipped}\`, aws=\`${AWS_OUTCOME:-skipped}\`, credential=\`${CREDENTIAL_OUTCOME:-skipped}\`, preflight=\`${PREFLIGHT_OUTCOME:-skipped}\`, publication=\`${PUBLICATION_OUTCOME:-skipped}\`. ${run_url}"
+          gh pr comment 421 --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+          test "$PUBLICATION_OUTCOME" = success
