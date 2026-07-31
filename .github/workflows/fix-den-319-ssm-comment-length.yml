@@ -1,0 +1,44 @@
+name: Fix DEN-319 SSM comment length
+
+on:
+  push:
+    branches:
+      - fix/den-319-ssm-comment-length
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/den-319-ssm-comment-length
+          fetch-depth: 0
+      - name: Shorten bounded SSM metadata and remove this helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/ops-publish-missing-org-repositories-gh-profile.yml')
+          text = path.read_text(encoding='utf-8')
+          old = '--comment "Publish reviewed organization fleet from $trusted_sha via protected gh profile"'
+          new = '--comment "Publish org fleet ${trusted_sha:0:12} via gh profile"'
+          if text.count(old) != 1:
+              raise SystemExit('expected exactly one overlong SSM comment')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          Path('.github/workflows/fix-den-319-ssm-comment-length.yml').unlink()
+          PY
+          git diff --check
+      - name: Commit exact repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(DEN-319): bound SSM publisher comment length'
+          git push origin HEAD:fix/den-319-ssm-comment-length
