@@ -13,7 +13,7 @@ permissions:
 
 concurrency:
   group: apply-den-1016-audit-current-dev
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   merge-validate-clean:
@@ -174,10 +174,7 @@ jobs:
               grep -v 'apply-den-1016-audit-current-dev.yml' || true
           )
           if [ "${#workflows[@]}" -gt 0 ]; then
-            docker run --rm \
-              -v "$PWD:/repo" \
-              -w /repo \
-              rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            go run github.com/rhysd/actionlint/cmd/actionlint@03d0035246f3e81f36aed592ffb4bebf33a03106 \
               "${workflows[@]}"
           fi
           python3 - <<'PY'
