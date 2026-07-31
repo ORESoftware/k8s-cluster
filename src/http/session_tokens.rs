@@ -59,7 +59,6 @@ pub async fn issue_with_assurance(
             }
             .to_string(),
         ),
-        amr: auth_methods.clone(),
         auth_level,
         auth_methods,
         ..base_context(&identity, session_id)
