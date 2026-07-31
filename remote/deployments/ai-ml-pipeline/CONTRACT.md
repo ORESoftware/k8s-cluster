@@ -13,6 +13,10 @@ DEN-466 is being delivered in reviewable stages so the executable contract can b
 - The public artifact prunes internal paths, service-auth metadata, and internal-only schemas.
 - CI proves runtime route/OpenAPI parity, deterministic bytes, local `$ref` resolution, public/internal separation, authentication, validation errors, and docs alias equality.
 
+## Generated NATS dependency in contract-only CI
+
+Production continues to import `dd_nats_subject_defs` from the generated source-of-truth package under `remote/libs/nats/subject-defs/generated/python`. A normal pull-request checkout may not materialize that separate library gitlink, so the focused contract workflow prepends `tests/shims` to `PYTHONPATH`. The shim contains only the six deployed NATS subject/queue defaults, is asserted by the tests, and is never copied into the runtime image.
+
 ## Local validation
 
 ```bash
@@ -20,11 +24,11 @@ cd remote/deployments/ai-ml-pipeline
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -r requirements-dev.txt
-PYTHONPATH=src python -m pytest -q tests/test_api_contract.py
-PYTHONPATH=src python src/export_openapi.py --check
+PYTHONPATH=tests/shims:src python -m pytest -q tests/test_api_contract.py
+PYTHONPATH=tests/shims:src python src/export_openapi.py --check
 ```
 
-To run the native adapter locally:
+To run the native adapter locally with the generated package available:
 
 ```bash
 export SERVER_AUTH_SECRET='local-development-secret'
