@@ -114,7 +114,16 @@ spec:
               # to `--features postgres` once the ai_agent_bridge schema migration
               # is applied and the DATABASE_URL env below is enabled.
               cargo build --release --locked
-              exec "${CARGO_TARGET_DIR:-target}/release/fiducia-ai-agent-bridge"
+              built="${CARGO_TARGET_DIR:-target}/release/${bin_name}"
+              # Fail with the actual cause rather than bash's bare "No such file or
+              # directory", which is what the 2026-07-31 stale-source outage looked
+              # like from the logs.
+              if [ ! -x "${built}" ]; then
+                echo "[dd-ai-agent-bridge] FATAL: cargo did not produce ${built}" >&2
+                echo "[dd-ai-agent-bridge] binaries present: $(ls "${CARGO_TARGET_DIR:-target}/release/" 2>/dev/null | grep -v '\.d$' | tr '\n' ' ')" >&2
+                exit 1
+              fi
+              exec "${built}"
           env:
             - name: HOST
               value: 0.0.0.0
