@@ -20,7 +20,7 @@ sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 FLEET_SOURCE_REPOSITORY = "ORESoftware/ai-agent-coordinator.rs"
-FLEET_SOURCE_SHA = "2aa80887bca1ce454c83a88f2d45488e4d43a3d8"
+FLEET_SOURCE_SHA = "5d9a0c2cb44dff607bc3953954ce4b9af08e5789"
 FLEET_GENERATOR_SHA256 = (
     "a57b00961ee57ae09bf3bb2e2d09afbdd1ddbbbde832b027802f82a1fc5dfa84"
 )
@@ -176,8 +176,14 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
         fail("reconstructed fleet does not exactly match the checked-in schema-v2 ledger")
     if generated_manifest.get("generator_sha256") != FLEET_GENERATOR_SHA256:
         fail("reviewed fleet generator identity changed")
+    if generated_manifest.get("schema_version") != 2:
+        fail("reviewed fleet manifest must use schema version 2")
     if generated_manifest.get("repository_count") != 32:
         fail("reviewed fleet must contain exactly 32 repositories")
+    if generated_manifest.get("total_tracked_files") != 888:
+        fail("reviewed fleet tracked-file total changed")
+    if generated_manifest.get("total_gitlinks") != 30:
+        fail("reviewed fleet gitlink total changed")
     if generated_manifest.get("organizations") != {
         "hypesiege": 15,
         "streempilot": 17,
