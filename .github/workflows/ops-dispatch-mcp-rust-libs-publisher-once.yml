@@ -1,5 +1,5 @@
 name: Dispatch exact Meta Agents owner publication now
-run-name: Retrigger meta-agents-demo repository creation @ ${{ github.sha }}
+run-name: Dispatch owner-authorized meta-agent-control-plane.rs publication @ ${{ github.sha }}
 
 on:
   push:
