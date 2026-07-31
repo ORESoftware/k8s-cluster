@@ -19,6 +19,8 @@ defmodule DdPgDefs.Sessions do
     field :provider, :string
     field :provider_tenant, :string, default: "default"
     field :provider_subject, :string
+    field :auth_level, :string, default: 1
+    field :auth_methods, {:array, :map}, default: []
     field :last_seen_at, :utc_datetime_usec
     field :expires_at, :utc_datetime_usec
     field :revoked_at, :utc_datetime_usec
@@ -27,12 +29,13 @@ defmodule DdPgDefs.Sessions do
   end
 
   @required_fields ~w(shared_user_id refresh_token_hash provider provider_subject expires_at)a
-  @optional_fields ~w(provider_tenant last_seen_at revoked_at rotated_from)a
+  @optional_fields ~w(provider_tenant auth_level auth_methods last_seen_at revoked_at rotated_from)a
 
   @doc "Builds an Ecto changeset enforcing every constraint exposed in schema.sql."
   def changeset(struct, attrs) do
     struct
     |> cast(attrs, @required_fields ++ @optional_fields)
     |> validate_required(@required_fields)
+    |> validate_inclusion(:auth_level, ["1", "2"])
   end
 end

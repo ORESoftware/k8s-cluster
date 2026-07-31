@@ -1,0 +1,11 @@
+{
+  "name": "@dd/supabase-defs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Catalogued, project-specific Supabase schema contracts.",
+  "scripts": {
+    "check": "node src/check.mjs",
+    "test": "node --test src/*.test.mjs"
+  }
+}

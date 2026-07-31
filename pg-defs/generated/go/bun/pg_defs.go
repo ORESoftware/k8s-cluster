@@ -117,6 +117,7 @@ var paymentMethodsLast4Pattern = regexp.MustCompile(`^[0-9]{4}$`)
 var invoicesCurrencyPattern = regexp.MustCompile(`^[a-z]{3}$`)
 var paymentsCurrencyPattern = regexp.MustCompile(`^[a-z]{3}$`)
 var billingWebhookEventsPayloadSha256Pattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
+var mfaSmsChallengesPhoneE164Pattern = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
 var rolesRoleNamePattern = regexp.MustCompile(`^[a-z][a-z0-9:_-]{0,63}$`)
 
 const AccountsTable = "threefa.accounts"
@@ -511,7 +512,7 @@ const SoundRecorderDevicesSelectSQL = `select
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_devices`
 
-var SoundRecorderDevicesPlatformValues = []string{"ios", "android"}
+var SoundRecorderDevicesPlatformValues = []string{"ios", "android", "macos", "windows", "linux"}
 var SoundRecorderDevicesStatusValues = []string{"active", "revoked", "lost", "replaced", "deleted"}
 var SoundRecorderDevicesTransferPauseReasonValues = []string{"low_battery", "network_constraint", "offline", "manual"}
 var SoundRecorderDevicesNetworkPolicyValues = []string{"any", "wifi_only", "cellular_only"}
@@ -848,7 +849,7 @@ const SoundRecorderOauthStatesSelectSQL = `select
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_oauth_states`
 
-var SoundRecorderOauthStatesProviderValues = []string{"google_drive", "microsoft_onedrive", "apple_icloud"}
+var SoundRecorderOauthStatesProviderValues = []string{"google_drive", "microsoft_onedrive", "apple_icloud", "dropbox"}
 var SoundRecorderOauthStatesStatusValues = []string{"pending", "consumed", "expired", "revoked"}
 
 type SoundRecorderOauthStatesBun struct {
@@ -907,7 +908,7 @@ const SoundRecorderCloudConnectionsSelectSQL = `select
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_cloud_connections`
 
-var SoundRecorderCloudConnectionsProviderValues = []string{"google_drive", "microsoft_onedrive", "apple_icloud"}
+var SoundRecorderCloudConnectionsProviderValues = []string{"google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"}
 var SoundRecorderCloudConnectionsLinkModeValues = []string{"server_oauth", "client_managed"}
 var SoundRecorderCloudConnectionsStatusValues = []string{"active", "paused", "revoked", "failed"}
 
@@ -964,6 +965,42 @@ func (value SoundRecorderCloudConnectionsBun) Validate() error {
 	return nil
 }
 
+const SoundRecorderCloudConnectionProjectionOutboxTable = "sound_recorder_cloud_connection_projection_outbox"
+const SoundRecorderCloudConnectionProjectionOutboxSelectSQL = `select
+      seq,
+      connection_id::text as connection_id,
+      attempts,
+      to_char(available_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as available_at,
+      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as locked_until,
+      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as processed_at,
+      last_error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_cloud_connection_projection_outbox`
+
+type SoundRecorderCloudConnectionProjectionOutboxBun struct {
+	bun.BaseModel `bun:"table:sound_recorder_cloud_connection_projection_outbox"`
+	Seq int64 `bun:"seq,type:bigserial,pk" json:"seq"`
+	ConnectionId uuid.UUID `bun:"connection_id,type:uuid" json:"connectionId"`
+	Attempts int32 `bun:"attempts,type:integer,default:0" json:"attempts"`
+	AvailableAt time.Time `bun:"available_at,type:timestamptz,default:now()" json:"availableAt"`
+	LockedUntil *time.Time `bun:"locked_until,type:timestamptz,nullzero" json:"lockedUntil,omitempty"`
+	ProcessedAt *time.Time `bun:"processed_at,type:timestamptz,nullzero" json:"processedAt,omitempty"`
+	LastError *string `bun:"last_error,type:varchar(500),nullzero" json:"lastError,omitempty"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
+}
+
+func (value SoundRecorderCloudConnectionProjectionOutboxBun) Validate() error {
+	if value.Attempts < 0 { return errors.New("sound_recorder_cloud_connection_projection_outbox.attempts is below the minimum") }
+	if value.Attempts > 50 { return errors.New("sound_recorder_cloud_connection_projection_outbox.attempts is above the maximum") }
+	if value.LastError != nil {
+		if len([]byte(*value.LastError)) > 500 { return errors.New("sound_recorder_cloud_connection_projection_outbox.last_error exceeds 500 bytes") }
+		if len([]byte(*value.LastError)) < 1 { return errors.New("sound_recorder_cloud_connection_projection_outbox.last_error is below 1 bytes") }
+	}
+	return nil
+}
+
 const SoundRecorderCloudCopyJobsTable = "sound_recorder_cloud_copy_jobs"
 const SoundRecorderCloudCopyJobsSelectSQL = `select
       id::text as id,
@@ -984,7 +1021,7 @@ const SoundRecorderCloudCopyJobsSelectSQL = `select
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_cloud_copy_jobs`
 
-var SoundRecorderCloudCopyJobsProviderValues = []string{"google_drive", "microsoft_onedrive", "apple_icloud"}
+var SoundRecorderCloudCopyJobsProviderValues = []string{"google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"}
 var SoundRecorderCloudCopyJobsStatusValues = []string{"pending", "running", "waiting_client", "completed", "failed", "skipped"}
 
 type SoundRecorderCloudCopyJobsBun struct {
@@ -8147,6 +8184,8 @@ const SessionsSelectSQL = `select
       provider,
       provider_tenant,
       provider_subject,
+      auth_level,
+      auth_methods,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
       to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
@@ -8154,6 +8193,8 @@ const SessionsSelectSQL = `select
       to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revoked_at,
       rotated_from::text as rotated_from
     from shared_auth.sessions`
+
+var SessionsAuthLevelValues = []string{"1", "2"}
 
 type SessionsBun struct {
 	bun.BaseModel `bun:"table:shared_auth.sessions"`
@@ -8163,6 +8204,8 @@ type SessionsBun struct {
 	Provider string `bun:"provider,type:text" json:"provider"`
 	ProviderTenant string `bun:"provider_tenant,type:text,default:'default'" json:"providerTenant"`
 	ProviderSubject string `bun:"provider_subject,type:text" json:"providerSubject"`
+	AuthLevel string `bun:"auth_level,type:smallint,default:1" json:"authLevel"`
+	AuthMethods json.RawMessage `bun:"auth_methods,type:jsonb,default:'[]'::jsonb" json:"authMethods"`
 	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
 	UpdatedAt time.Time `bun:"updated_at,type:timestamptz,default:now()" json:"updatedAt"`
 	LastSeenAt time.Time `bun:"last_seen_at,type:timestamptz,default:now()" json:"lastSeenAt"`
@@ -8178,6 +8221,63 @@ func (value SessionsBun) Validate() error {
 	if len([]byte(value.ProviderTenant)) < 1 { return errors.New("sessions.provider_tenant is below 1 bytes") }
 	if len([]byte(value.ProviderSubject)) > 512 { return errors.New("sessions.provider_subject exceeds 512 bytes") }
 	if len([]byte(value.ProviderSubject)) < 1 { return errors.New("sessions.provider_subject is below 1 bytes") }
+	if !containsString(SessionsAuthLevelValues, value.AuthLevel) { return errors.New("unsupported sessions.auth_level") }
+	if !validateRawJSON(value.AuthMethods) { return errors.New("sessions.auth_methods must be valid JSON") }
+	return nil
+}
+
+const MagicLinkTokensTable = "shared_auth.magic_link_tokens"
+const MagicLinkTokensSelectSQL = `select
+      token_hash,
+      otp_hash,
+      shared_user_id::text as shared_user_id,
+      identifier_hash,
+      failed_attempts,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as consumed_at
+    from shared_auth.magic_link_tokens`
+
+type MagicLinkTokensBun struct {
+	bun.BaseModel `bun:"table:shared_auth.magic_link_tokens"`
+	TokenHash string `bun:"token_hash,type:text,pk" json:"tokenHash"`
+	OtpHash string `bun:"otp_hash,type:text" json:"otpHash"`
+	SharedUserId uuid.UUID `bun:"shared_user_id,type:uuid" json:"sharedUserId"`
+	IdentifierHash string `bun:"identifier_hash,type:text" json:"identifierHash"`
+	FailedAttempts int32 `bun:"failed_attempts,type:integer,default:0" json:"failedAttempts"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	ExpiresAt time.Time `bun:"expires_at,type:timestamptz" json:"expiresAt"`
+	ConsumedAt *time.Time `bun:"consumed_at,type:timestamptz,nullzero" json:"consumedAt,omitempty"`
+}
+
+func (value MagicLinkTokensBun) Validate() error {
+	if value.FailedAttempts < 0 { return errors.New("magic_link_tokens.failed_attempts is below the minimum") }
+	if value.FailedAttempts > 5 { return errors.New("magic_link_tokens.failed_attempts is above the maximum") }
+	return nil
+}
+
+const MfaSmsChallengesTable = "shared_auth.mfa_sms_challenges"
+const MfaSmsChallengesSelectSQL = `select
+      challenge_id::text as challenge_id,
+      shared_user_id::text as shared_user_id,
+      phone_e164,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(verified_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as verified_at
+    from shared_auth.mfa_sms_challenges`
+
+type MfaSmsChallengesBun struct {
+	bun.BaseModel `bun:"table:shared_auth.mfa_sms_challenges"`
+	ChallengeId uuid.UUID `bun:"challenge_id,type:uuid,pk,default:gen_random_uuid()" json:"challengeId"`
+	SharedUserId uuid.UUID `bun:"shared_user_id,type:uuid" json:"sharedUserId"`
+	PhoneE164 string `bun:"phone_e164,type:text" json:"phoneE164"`
+	CreatedAt time.Time `bun:"created_at,type:timestamptz,default:now()" json:"createdAt"`
+	ExpiresAt time.Time `bun:"expires_at,type:timestamptz" json:"expiresAt"`
+	VerifiedAt *time.Time `bun:"verified_at,type:timestamptz,nullzero" json:"verifiedAt,omitempty"`
+}
+
+func (value MfaSmsChallengesBun) Validate() error {
+	if !mfaSmsChallengesPhoneE164Pattern.MatchString(value.PhoneE164) { return errors.New("mfa_sms_challenges.phone_e164 does not match the required pattern") }
 	return nil
 }
 

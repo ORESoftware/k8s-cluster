@@ -30,7 +30,7 @@ func (SoundRecorderCloudConnections) Fields() []ent.Field {
 		field.UUID("id", uuid.UUID{}).StorageKey("id"),
 		field.UUID("account_id", uuid.UUID{}).StorageKey("account_id"),
 		field.UUID("created_by_device_id", uuid.UUID{}).Optional().Nillable().StorageKey("created_by_device_id"),
-		field.Enum("provider").Values("google_drive", "microsoft_onedrive", "apple_icloud").StorageKey("provider"),
+		field.Enum("provider").Values("google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2").StorageKey("provider"),
 		field.Enum("link_mode").Values("server_oauth", "client_managed").StorageKey("link_mode"),
 		field.Enum("status").Values("active", "paused", "revoked", "failed").StorageKey("status"),
 		field.String("display_name").MaxLen(160).Optional().Nillable().StorageKey("display_name"),

@@ -409,6 +409,26 @@ class SoundRecorderCloudConnectionsTable extends Table {
   };
 }
 
+@DataClassName("SoundRecorderCloudConnectionProjectionOutboxData")
+class SoundRecorderCloudConnectionProjectionOutboxTable extends Table {
+  @override String get tableName => "sound_recorder_cloud_connection_projection_outbox";
+
+  Int64Column get seq => int64().named("seq").customConstraint("BIGSERIAL")();
+  TextColumn get connectionId => text().named("connection_id").customConstraint("UUID REFERENCES sound_recorder_cloud_connections (id)")();
+  IntColumn get attempts => integer().named("attempts").clientDefault(() => 0)();
+  DateTimeColumn get availableAt => dateTime().named("available_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get lockedUntil => dateTime().named("locked_until").nullable().customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get processedAt => dateTime().named("processed_at").nullable().customConstraint("TIMESTAMPTZ")();
+  TextColumn get lastError => text().named("last_error").withLength(max: 500).nullable()();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        seq,
+  };
+}
+
 @DataClassName("SoundRecorderCloudCopyJobsData")
 class SoundRecorderCloudCopyJobsTable extends Table {
   @override String get tableName => "sound_recorder_cloud_copy_jobs";
@@ -4245,6 +4265,8 @@ class SessionsTable extends Table {
   TextColumn get provider => text().named("provider")();
   TextColumn get providerTenant => text().named("provider_tenant").clientDefault(() => 'default')();
   TextColumn get providerSubject => text().named("provider_subject")();
+  TextColumn get authLevel => text().named("auth_level")();
+  TextColumn get authMethods => text().named("auth_methods").clientDefault(() => '[]').customConstraint("JSONB")();
   DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
   DateTimeColumn get updatedAt => dateTime().named("updated_at").customConstraint("TIMESTAMPTZ")();
   DateTimeColumn get lastSeenAt => dateTime().named("last_seen_at").customConstraint("TIMESTAMPTZ")();
@@ -4255,6 +4277,46 @@ class SessionsTable extends Table {
   @override
   Set<Column> get primaryKey => {
         sessionId,
+  };
+}
+
+@DataClassName("MagicLinkTokensData")
+class MagicLinkTokensTable extends Table {
+  @override String get tableName => "magic_link_tokens";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get tokenHash => text().named("token_hash")();
+  TextColumn get otpHash => text().named("otp_hash")();
+  TextColumn get sharedUserId => text().named("shared_user_id").customConstraint("UUID")();
+  TextColumn get identifierHash => text().named("identifier_hash")();
+  IntColumn get failedAttempts => integer().named("failed_attempts").clientDefault(() => 0)();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get expiresAt => dateTime().named("expires_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get consumedAt => dateTime().named("consumed_at").nullable().customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        tokenHash,
+  };
+}
+
+@DataClassName("MfaSmsChallengesData")
+class MfaSmsChallengesTable extends Table {
+  @override String get tableName => "mfa_sms_challenges";
+
+  @override bool get withoutRowId => true;
+
+  TextColumn get challengeId => text().named("challenge_id").customConstraint("UUID")();
+  TextColumn get sharedUserId => text().named("shared_user_id").customConstraint("UUID")();
+  TextColumn get phoneE164 => text().named("phone_e164")();
+  DateTimeColumn get createdAt => dateTime().named("created_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get expiresAt => dateTime().named("expires_at").customConstraint("TIMESTAMPTZ")();
+  DateTimeColumn get verifiedAt => dateTime().named("verified_at").nullable().customConstraint("TIMESTAMPTZ")();
+
+  @override
+  Set<Column> get primaryKey => {
+        challengeId,
   };
 }
 
@@ -4359,6 +4421,7 @@ const List<Type> registeredDriftTables = <Type>[
   SoundRecorderAuditEventsTable,
   SoundRecorderOauthStatesTable,
   SoundRecorderCloudConnectionsTable,
+  SoundRecorderCloudConnectionProjectionOutboxTable,
   SoundRecorderCloudCopyJobsTable,
   ContainerPoolConfigsTable,
   KnownGitRepoTable,
@@ -4506,6 +4569,8 @@ const List<Type> registeredDriftTables = <Type>[
   ProviderIdentitiesTable,
   LocalCredentialsTable,
   SessionsTable,
+  MagicLinkTokensTable,
+  MfaSmsChallengesTable,
   RolesTable,
   WebhookEventsTable,
   FabJobsTable,

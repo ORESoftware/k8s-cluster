@@ -328,6 +328,21 @@ class SoundRecorderCloudConnections(BaseModel):
         table_name = "sound_recorder_cloud_connections"
 
 
+class SoundRecorderCloudConnectionProjectionOutbox(BaseModel):
+    seq = BigAutoField(primary_key=True)
+    connection_id = UUIDField()
+    attempts = IntegerField()
+    available_at = DateTimeField()
+    locked_until = DateTimeField(null=True)
+    processed_at = DateTimeField(null=True)
+    last_error = CharField(max_length=500, null=True)
+    created_at = DateTimeField()
+    updated_at = DateTimeField()
+
+    class Meta:
+        table_name = "sound_recorder_cloud_connection_projection_outbox"
+
+
 class SoundRecorderCloudCopyJobs(BaseModel):
     id = UUIDField(primary_key=True)
     account_id = UUIDField()
@@ -3208,6 +3223,8 @@ class Sessions(BaseModel):
     provider = TextField()
     provider_tenant = TextField()
     provider_subject = TextField()
+    auth_level = TextField()
+    auth_methods = BinaryJSONField()
     created_at = DateTimeField()
     updated_at = DateTimeField()
     last_seen_at = DateTimeField()
@@ -3217,6 +3234,34 @@ class Sessions(BaseModel):
 
     class Meta:
         table_name = "sessions"
+        schema = "shared_auth"
+
+
+class MagicLinkTokens(BaseModel):
+    token_hash = TextField(primary_key=True)
+    otp_hash = TextField()
+    shared_user_id = UUIDField()
+    identifier_hash = TextField()
+    failed_attempts = IntegerField()
+    created_at = DateTimeField()
+    expires_at = DateTimeField()
+    consumed_at = DateTimeField(null=True)
+
+    class Meta:
+        table_name = "magic_link_tokens"
+        schema = "shared_auth"
+
+
+class MfaSmsChallenges(BaseModel):
+    challenge_id = UUIDField(primary_key=True)
+    shared_user_id = UUIDField()
+    phone_e164 = TextField()
+    created_at = DateTimeField()
+    expires_at = DateTimeField()
+    verified_at = DateTimeField(null=True)
+
+    class Meta:
+        table_name = "mfa_sms_challenges"
         schema = "shared_auth"
 
 

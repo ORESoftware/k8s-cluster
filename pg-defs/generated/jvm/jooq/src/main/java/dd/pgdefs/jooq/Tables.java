@@ -278,6 +278,18 @@ public final class Tables {
     public static final Field<OffsetDateTime> SOUND_RECORDER_CLOUD_CONNECTIONS_CREATED_AT = DSL.field(DSL.name("sound_recorder_cloud_connections", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<OffsetDateTime> SOUND_RECORDER_CLOUD_CONNECTIONS_UPDATED_AT = DSL.field(DSL.name("sound_recorder_cloud_connections", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
 
+    public static final Name SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_NAME = DSL.name("sound_recorder_cloud_connection_projection_outbox");
+    public static final Table<org.jooq.Record> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX = DSL.table(SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_NAME);
+    public static final Field<Long> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_SEQ = DSL.field(DSL.name("sound_recorder_cloud_connection_projection_outbox", "seq"), SQLDataType.BIGINT);
+    public static final Field<UUID> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_CONNECTION_ID = DSL.field(DSL.name("sound_recorder_cloud_connection_projection_outbox", "connection_id"), SQLDataType.UUID);
+    public static final Field<Integer> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_ATTEMPTS = DSL.field(DSL.name("sound_recorder_cloud_connection_projection_outbox", "attempts"), SQLDataType.INTEGER);
+    public static final Field<OffsetDateTime> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_AVAILABLE_AT = DSL.field(DSL.name("sound_recorder_cloud_connection_projection_outbox", "available_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_LOCKED_UNTIL = DSL.field(DSL.name("sound_recorder_cloud_connection_projection_outbox", "locked_until"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_PROCESSED_AT = DSL.field(DSL.name("sound_recorder_cloud_connection_projection_outbox", "processed_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<String> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_LAST_ERROR = DSL.field(DSL.name("sound_recorder_cloud_connection_projection_outbox", "last_error"), SQLDataType.VARCHAR(500));
+    public static final Field<OffsetDateTime> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_CREATED_AT = DSL.field(DSL.name("sound_recorder_cloud_connection_projection_outbox", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_UPDATED_AT = DSL.field(DSL.name("sound_recorder_cloud_connection_projection_outbox", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
     public static final Name SOUND_RECORDER_CLOUD_COPY_JOBS_NAME = DSL.name("sound_recorder_cloud_copy_jobs");
     public static final Table<org.jooq.Record> SOUND_RECORDER_CLOUD_COPY_JOBS = DSL.table(SOUND_RECORDER_CLOUD_COPY_JOBS_NAME);
     public static final Field<UUID> SOUND_RECORDER_CLOUD_COPY_JOBS_ID = DSL.field(DSL.name("sound_recorder_cloud_copy_jobs", "id"), SQLDataType.UUID);
@@ -2664,12 +2676,34 @@ public final class Tables {
     public static final Field<String> SESSIONS_PROVIDER = DSL.field(DSL.name("shared_auth", "sessions", "provider"), SQLDataType.CLOB);
     public static final Field<String> SESSIONS_PROVIDER_TENANT = DSL.field(DSL.name("shared_auth", "sessions", "provider_tenant"), SQLDataType.CLOB);
     public static final Field<String> SESSIONS_PROVIDER_SUBJECT = DSL.field(DSL.name("shared_auth", "sessions", "provider_subject"), SQLDataType.CLOB);
+    public static final Field<String> SESSIONS_AUTH_LEVEL = DSL.field(DSL.name("shared_auth", "sessions", "auth_level"), SQLDataType.INTEGER);
+    public static final Field<JSONB> SESSIONS_AUTH_METHODS = DSL.field(DSL.name("shared_auth", "sessions", "auth_methods"), SQLDataType.JSONB);
     public static final Field<OffsetDateTime> SESSIONS_CREATED_AT = DSL.field(DSL.name("shared_auth", "sessions", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<OffsetDateTime> SESSIONS_UPDATED_AT = DSL.field(DSL.name("shared_auth", "sessions", "updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<OffsetDateTime> SESSIONS_LAST_SEEN_AT = DSL.field(DSL.name("shared_auth", "sessions", "last_seen_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<OffsetDateTime> SESSIONS_EXPIRES_AT = DSL.field(DSL.name("shared_auth", "sessions", "expires_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<OffsetDateTime> SESSIONS_REVOKED_AT = DSL.field(DSL.name("shared_auth", "sessions", "revoked_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
     public static final Field<UUID> SESSIONS_ROTATED_FROM = DSL.field(DSL.name("shared_auth", "sessions", "rotated_from"), SQLDataType.UUID);
+
+    public static final Name MAGIC_LINK_TOKENS_NAME = DSL.name("shared_auth", "magic_link_tokens");
+    public static final Table<org.jooq.Record> MAGIC_LINK_TOKENS = DSL.table(MAGIC_LINK_TOKENS_NAME);
+    public static final Field<String> MAGIC_LINK_TOKENS_TOKEN_HASH = DSL.field(DSL.name("shared_auth", "magic_link_tokens", "token_hash"), SQLDataType.CLOB);
+    public static final Field<String> MAGIC_LINK_TOKENS_OTP_HASH = DSL.field(DSL.name("shared_auth", "magic_link_tokens", "otp_hash"), SQLDataType.CLOB);
+    public static final Field<UUID> MAGIC_LINK_TOKENS_SHARED_USER_ID = DSL.field(DSL.name("shared_auth", "magic_link_tokens", "shared_user_id"), SQLDataType.UUID);
+    public static final Field<String> MAGIC_LINK_TOKENS_IDENTIFIER_HASH = DSL.field(DSL.name("shared_auth", "magic_link_tokens", "identifier_hash"), SQLDataType.CLOB);
+    public static final Field<Integer> MAGIC_LINK_TOKENS_FAILED_ATTEMPTS = DSL.field(DSL.name("shared_auth", "magic_link_tokens", "failed_attempts"), SQLDataType.INTEGER);
+    public static final Field<OffsetDateTime> MAGIC_LINK_TOKENS_CREATED_AT = DSL.field(DSL.name("shared_auth", "magic_link_tokens", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> MAGIC_LINK_TOKENS_EXPIRES_AT = DSL.field(DSL.name("shared_auth", "magic_link_tokens", "expires_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> MAGIC_LINK_TOKENS_CONSUMED_AT = DSL.field(DSL.name("shared_auth", "magic_link_tokens", "consumed_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+
+    public static final Name MFA_SMS_CHALLENGES_NAME = DSL.name("shared_auth", "mfa_sms_challenges");
+    public static final Table<org.jooq.Record> MFA_SMS_CHALLENGES = DSL.table(MFA_SMS_CHALLENGES_NAME);
+    public static final Field<UUID> MFA_SMS_CHALLENGES_CHALLENGE_ID = DSL.field(DSL.name("shared_auth", "mfa_sms_challenges", "challenge_id"), SQLDataType.UUID);
+    public static final Field<UUID> MFA_SMS_CHALLENGES_SHARED_USER_ID = DSL.field(DSL.name("shared_auth", "mfa_sms_challenges", "shared_user_id"), SQLDataType.UUID);
+    public static final Field<String> MFA_SMS_CHALLENGES_PHONE_E164 = DSL.field(DSL.name("shared_auth", "mfa_sms_challenges", "phone_e164"), SQLDataType.CLOB);
+    public static final Field<OffsetDateTime> MFA_SMS_CHALLENGES_CREATED_AT = DSL.field(DSL.name("shared_auth", "mfa_sms_challenges", "created_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> MFA_SMS_CHALLENGES_EXPIRES_AT = DSL.field(DSL.name("shared_auth", "mfa_sms_challenges", "expires_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
+    public static final Field<OffsetDateTime> MFA_SMS_CHALLENGES_VERIFIED_AT = DSL.field(DSL.name("shared_auth", "mfa_sms_challenges", "verified_at"), SQLDataType.TIMESTAMPWITHTIMEZONE);
 
     public static final Name ROLES_NAME = DSL.name("shared_auth", "roles");
     public static final Table<org.jooq.Record> ROLES = DSL.table(ROLES_NAME);

@@ -118,7 +118,7 @@ export function defineDdModels(sequelize: Sequelize) {
   const SoundRecorderDevices = sequelize.define("SoundRecorderDevices", {
     id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
     account_id: { type: DataTypes.UUID, allowNull: false },
-    platform: { type: DataTypes.STRING(24), allowNull: false, validate: { isIn: [["ios", "android"]] } },
+    platform: { type: DataTypes.STRING(24), allowNull: false, validate: { isIn: [["ios", "android", "macos", "windows", "linux"]] } },
     status: { type: DataTypes.STRING(32), allowNull: false, defaultValue: "active", validate: { isIn: [["active", "revoked", "lost", "replaced", "deleted"]] } },
     install_id: { type: DataTypes.STRING(160), allowNull: false, validate: { len: [0, 160] } },
     device_label: { type: DataTypes.STRING(160), allowNull: true, validate: { len: [0, 160] } },
@@ -224,7 +224,7 @@ export function defineDdModels(sequelize: Sequelize) {
     id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
     account_id: { type: DataTypes.UUID, allowNull: false },
     device_id: { type: DataTypes.UUID, allowNull: false },
-    provider: { type: DataTypes.STRING(32), allowNull: false, validate: { isIn: [["google_drive", "microsoft_onedrive", "apple_icloud"]] } },
+    provider: { type: DataTypes.STRING(32), allowNull: false, validate: { isIn: [["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox"]] } },
     state_hash: { type: DataTypes.STRING(64), allowNull: false, validate: { len: [0, 64], is: new RegExp("^[a-f0-9]{64}$") } },
     redirect_uri: { type: DataTypes.STRING(512), allowNull: false, validate: { len: [0, 512] } },
     folder_path: { type: DataTypes.STRING(512), allowNull: true, validate: { len: [0, 512] } },
@@ -240,7 +240,7 @@ export function defineDdModels(sequelize: Sequelize) {
     id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
     account_id: { type: DataTypes.UUID, allowNull: false },
     created_by_device_id: { type: DataTypes.UUID, allowNull: true },
-    provider: { type: DataTypes.STRING(32), allowNull: false, validate: { isIn: [["google_drive", "microsoft_onedrive", "apple_icloud"]] } },
+    provider: { type: DataTypes.STRING(32), allowNull: false, validate: { isIn: [["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"]] } },
     link_mode: { type: DataTypes.STRING(32), allowNull: false, defaultValue: "server_oauth", validate: { isIn: [["server_oauth", "client_managed"]] } },
     status: { type: DataTypes.STRING(32), allowNull: false, defaultValue: "active", validate: { isIn: [["active", "paused", "revoked", "failed"]] } },
     display_name: { type: DataTypes.STRING(160), allowNull: true, validate: { len: [0, 160] } },
@@ -260,12 +260,24 @@ export function defineDdModels(sequelize: Sequelize) {
     updated_at: { type: DataTypes.DATE, allowNull: false },
   }, { tableName: "sound_recorder_cloud_connections", timestamps: false, freezeTableName: true });
 
+  const SoundRecorderCloudConnectionProjectionOutbox = sequelize.define("SoundRecorderCloudConnectionProjectionOutbox", {
+    seq: { type: DataTypes.BIGINT, allowNull: false, primaryKey: true },
+    connection_id: { type: DataTypes.UUID, allowNull: false },
+    attempts: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0, validate: { min: 0, max: 50 } },
+    available_at: { type: DataTypes.DATE, allowNull: false },
+    locked_until: { type: DataTypes.DATE, allowNull: true },
+    processed_at: { type: DataTypes.DATE, allowNull: true },
+    last_error: { type: DataTypes.STRING(500), allowNull: true, validate: { len: [0, 500] } },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    updated_at: { type: DataTypes.DATE, allowNull: false },
+  }, { tableName: "sound_recorder_cloud_connection_projection_outbox", timestamps: false, freezeTableName: true });
+
   const SoundRecorderCloudCopyJobs = sequelize.define("SoundRecorderCloudCopyJobs", {
     id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
     account_id: { type: DataTypes.UUID, allowNull: false },
     connection_id: { type: DataTypes.UUID, allowNull: false },
     segment_id: { type: DataTypes.UUID, allowNull: false },
-    provider: { type: DataTypes.STRING(32), allowNull: false, validate: { isIn: [["google_drive", "microsoft_onedrive", "apple_icloud"]] } },
+    provider: { type: DataTypes.STRING(32), allowNull: false, validate: { isIn: [["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"]] } },
     status: { type: DataTypes.STRING(32), allowNull: false, defaultValue: "pending", validate: { isIn: [["pending", "running", "waiting_client", "completed", "failed", "skipped"]] } },
     destination_key: { type: DataTypes.STRING(2048), allowNull: false, validate: { len: [0, 2048] } },
     provider_file_id: { type: DataTypes.STRING(512), allowNull: true, validate: { len: [0, 512] } },
@@ -2656,6 +2668,8 @@ export function defineDdModels(sequelize: Sequelize) {
     provider: { type: DataTypes.TEXT, allowNull: false },
     provider_tenant: { type: DataTypes.TEXT, allowNull: false, defaultValue: "default" },
     provider_subject: { type: DataTypes.TEXT, allowNull: false },
+    auth_level: { type: DataTypes.TEXT, allowNull: false, defaultValue: 1, validate: { isIn: [["1", "2"]] } },
+    auth_methods: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
     created_at: { type: DataTypes.DATE, allowNull: false },
     updated_at: { type: DataTypes.DATE, allowNull: false },
     last_seen_at: { type: DataTypes.DATE, allowNull: false },
@@ -2663,6 +2677,26 @@ export function defineDdModels(sequelize: Sequelize) {
     revoked_at: { type: DataTypes.DATE, allowNull: true },
     rotated_from: { type: DataTypes.UUID, allowNull: true },
   }, { tableName: "sessions", schema: "shared_auth", timestamps: false, freezeTableName: true });
+
+  const MagicLinkTokens = sequelize.define("MagicLinkTokens", {
+    token_hash: { type: DataTypes.TEXT, allowNull: false, primaryKey: true },
+    otp_hash: { type: DataTypes.TEXT, allowNull: false },
+    shared_user_id: { type: DataTypes.UUID, allowNull: false },
+    identifier_hash: { type: DataTypes.TEXT, allowNull: false },
+    failed_attempts: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0, validate: { min: 0, max: 5 } },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    expires_at: { type: DataTypes.DATE, allowNull: false },
+    consumed_at: { type: DataTypes.DATE, allowNull: true },
+  }, { tableName: "magic_link_tokens", schema: "shared_auth", timestamps: false, freezeTableName: true });
+
+  const MfaSmsChallenges = sequelize.define("MfaSmsChallenges", {
+    challenge_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
+    shared_user_id: { type: DataTypes.UUID, allowNull: false },
+    phone_e164: { type: DataTypes.TEXT, allowNull: false, validate: { is: new RegExp("^\\+[1-9][0-9]{7,14}$") } },
+    created_at: { type: DataTypes.DATE, allowNull: false },
+    expires_at: { type: DataTypes.DATE, allowNull: false },
+    verified_at: { type: DataTypes.DATE, allowNull: true },
+  }, { tableName: "mfa_sms_challenges", schema: "shared_auth", timestamps: false, freezeTableName: true });
 
   const Roles = sequelize.define("Roles", {
     role_id: { type: DataTypes.UUID, allowNull: false, primaryKey: true, defaultValue: DataTypes.UUIDV4 },
@@ -2707,5 +2741,5 @@ export function defineDdModels(sequelize: Sequelize) {
     created_at: { type: DataTypes.DATE, allowNull: false },
   }, { tableName: "fab_learning_outcomes", schema: "daedalus", timestamps: false, freezeTableName: true });
 
-  return { Accounts, Devices, VaultBlobs, AppConfig, VapiPhoneCallEvents, MusicSongs, MusicSongVotes, SoundRecorderAccounts, SoundRecorderDevices, SoundRecorderUploadSessions, SoundRecorderSegments, SoundRecorderEvidenceExports, SoundRecorderAuditEvents, SoundRecorderOauthStates, SoundRecorderCloudConnections, SoundRecorderCloudCopyJobs, ContainerPoolConfigs, KnownGitRepo, AgentContextBlobs, AgentContextEmbeddings, AgentRemoteDevThread, AgentRemoteDevTask, AgentRemoteDevEvent, AgentRemoteDevBreadcrumb, AgentRemoteDevArtifact, AgentRemoteDevRuntimeLock, MipSolverSessions, MipSolverSolves, MipSolverJobs, MipSolverEvents, LambdaFunction, LambdaFunctionRevision, LambdaFunctionAlias, LambdaActorInstance, WorkflowDefinitions, WorkflowRuns, WorkflowStepRuns, ContainerPoolImageRevisions, ContainerPoolBuildRuns, PresenceConvs, PresenceConvMembers, PresenceUsers, PresenceEvents, PresenceConsumerCheckpoints, DesSoccerLearningExperiments, DesSoccerLearningPolicyVersions, DesSoccerLearningPolicyEntries, DesSoccerLearningJobs, DesSoccerLearningRuns, DesSoccerLearningRunDeltas, DesSoccerLearningMergeEvents, DesSoccerTournaments, DesSoccerTournamentMatches, DesSoccerTournamentTeamBrains, DesSoccerLearningSetPlayRuns, DesSoccerLearningSetPlayRestartMix, DesSoccerLearningSetPlayEpisodeMetrics, DesSoccerLearningNeuralRunMetrics, DesSoccerLearningPassMetrics, DesFelElevatorLearningRuns, DesFelElevatorPolicyStates, DesFelElevatorDispatchDecisions, DesFelElevatorPomdpBeliefs, BenefactorMarketingClients, BenefactorMarketingContacts, BenefactorMarketingServicePackages, BenefactorMarketingContracts, BenefactorMarketingInvoices, BenefactorMarketingIntegrations, BenefactorMarketingLeads, BenefactorMarketingEnrichmentJobs, BenefactorMarketingCampaigns, BenefactorMarketingCampaignChannels, BenefactorMarketingCampaignExperiments, BenefactorMarketingAutomationWorkflows, BenefactorMarketingAutomationEvents, BenefactorMarketingReports, BenefactorMarketingAttributionEvents, BenefactorMarketingOpportunities, BenefactorMarketingContentAssets, BenefactorMarketingProjectTasks, BenefactorMarketingClientApprovals, BenefactorMarketingTickets, BenefactorMarketingMeetings, BenefactorMarketingTeamAllocations, BenefactorMarketingIntegrationSyncRuns, BenefactorMarketingOutreachSequences, BenefactorMarketingOutreachSteps, BenefactorMarketingOutreachEnrollments, BenefactorMarketingOutreachTouchpoints, BenefactorMarketingProspectResearchBriefs, BenefactorMarketingConversionEvents, BenefactorMarketingPortalMembers, BenefactorMarketingSharedDocuments, BenefactorMarketingCollaborationComments, BenefactorMarketingNotifications, BenefactorMarketingTimeEntries, BenefactorMarketingVendorCosts, BenefactorMarketingCommissionEntries, BenefactorMarketingBudgetForecasts, BenefactorMarketingCallInsights, UsaccUsers, UsaccCases, UsaccCaseParticipants, UsaccCaseStages, UsaccElections, UsaccVotes, UsaccEscrowAccounts, UsaccLedgerEntries, UsaccContractOperations, UsaccSimulationRuns, UsaccAuditEvents, BenefactorLeads, BenefactorLeadsDomains, BenefactorSearchLocations, BenefactorScrapeQueries, BenefactorDomainSearchTracking, BenefactorIcps, BenefactorLeadsThrottling, BenefactorLeadsReminders, VcsRepositories, VcsRefs, VcsOperations, Agents, Channels, Messages, ChannelMembers, SharedContext, SyncClock, SyncTombstones, Orgs, Projects, Users, OrgMembers, ProjectMembers, ApiKeys, MtlsClientCerts, CustomerPreferences, CustomerSessions, AuditLog, CustomerNotifications, SyncIdempotencyKeys, BillingCustomers, PaymentMethods, BillingSubscriptions, Invoices, Payments, BillingWebhookEvents, Transcriptions, Syntheses, Translations, VapiCalls, VapiEvents, FabPlans, FabDesigns, FabInstructions, FabRuns, WebSessions, Principals, ProviderIdentities, LocalCredentials, Sessions, Roles, WebhookEvents, FabJobs, FabLearningOutcomes };
+  return { Accounts, Devices, VaultBlobs, AppConfig, VapiPhoneCallEvents, MusicSongs, MusicSongVotes, SoundRecorderAccounts, SoundRecorderDevices, SoundRecorderUploadSessions, SoundRecorderSegments, SoundRecorderEvidenceExports, SoundRecorderAuditEvents, SoundRecorderOauthStates, SoundRecorderCloudConnections, SoundRecorderCloudConnectionProjectionOutbox, SoundRecorderCloudCopyJobs, ContainerPoolConfigs, KnownGitRepo, AgentContextBlobs, AgentContextEmbeddings, AgentRemoteDevThread, AgentRemoteDevTask, AgentRemoteDevEvent, AgentRemoteDevBreadcrumb, AgentRemoteDevArtifact, AgentRemoteDevRuntimeLock, MipSolverSessions, MipSolverSolves, MipSolverJobs, MipSolverEvents, LambdaFunction, LambdaFunctionRevision, LambdaFunctionAlias, LambdaActorInstance, WorkflowDefinitions, WorkflowRuns, WorkflowStepRuns, ContainerPoolImageRevisions, ContainerPoolBuildRuns, PresenceConvs, PresenceConvMembers, PresenceUsers, PresenceEvents, PresenceConsumerCheckpoints, DesSoccerLearningExperiments, DesSoccerLearningPolicyVersions, DesSoccerLearningPolicyEntries, DesSoccerLearningJobs, DesSoccerLearningRuns, DesSoccerLearningRunDeltas, DesSoccerLearningMergeEvents, DesSoccerTournaments, DesSoccerTournamentMatches, DesSoccerTournamentTeamBrains, DesSoccerLearningSetPlayRuns, DesSoccerLearningSetPlayRestartMix, DesSoccerLearningSetPlayEpisodeMetrics, DesSoccerLearningNeuralRunMetrics, DesSoccerLearningPassMetrics, DesFelElevatorLearningRuns, DesFelElevatorPolicyStates, DesFelElevatorDispatchDecisions, DesFelElevatorPomdpBeliefs, BenefactorMarketingClients, BenefactorMarketingContacts, BenefactorMarketingServicePackages, BenefactorMarketingContracts, BenefactorMarketingInvoices, BenefactorMarketingIntegrations, BenefactorMarketingLeads, BenefactorMarketingEnrichmentJobs, BenefactorMarketingCampaigns, BenefactorMarketingCampaignChannels, BenefactorMarketingCampaignExperiments, BenefactorMarketingAutomationWorkflows, BenefactorMarketingAutomationEvents, BenefactorMarketingReports, BenefactorMarketingAttributionEvents, BenefactorMarketingOpportunities, BenefactorMarketingContentAssets, BenefactorMarketingProjectTasks, BenefactorMarketingClientApprovals, BenefactorMarketingTickets, BenefactorMarketingMeetings, BenefactorMarketingTeamAllocations, BenefactorMarketingIntegrationSyncRuns, BenefactorMarketingOutreachSequences, BenefactorMarketingOutreachSteps, BenefactorMarketingOutreachEnrollments, BenefactorMarketingOutreachTouchpoints, BenefactorMarketingProspectResearchBriefs, BenefactorMarketingConversionEvents, BenefactorMarketingPortalMembers, BenefactorMarketingSharedDocuments, BenefactorMarketingCollaborationComments, BenefactorMarketingNotifications, BenefactorMarketingTimeEntries, BenefactorMarketingVendorCosts, BenefactorMarketingCommissionEntries, BenefactorMarketingBudgetForecasts, BenefactorMarketingCallInsights, UsaccUsers, UsaccCases, UsaccCaseParticipants, UsaccCaseStages, UsaccElections, UsaccVotes, UsaccEscrowAccounts, UsaccLedgerEntries, UsaccContractOperations, UsaccSimulationRuns, UsaccAuditEvents, BenefactorLeads, BenefactorLeadsDomains, BenefactorSearchLocations, BenefactorScrapeQueries, BenefactorDomainSearchTracking, BenefactorIcps, BenefactorLeadsThrottling, BenefactorLeadsReminders, VcsRepositories, VcsRefs, VcsOperations, Agents, Channels, Messages, ChannelMembers, SharedContext, SyncClock, SyncTombstones, Orgs, Projects, Users, OrgMembers, ProjectMembers, ApiKeys, MtlsClientCerts, CustomerPreferences, CustomerSessions, AuditLog, CustomerNotifications, SyncIdempotencyKeys, BillingCustomers, PaymentMethods, BillingSubscriptions, Invoices, Payments, BillingWebhookEvents, Transcriptions, Syntheses, Translations, VapiCalls, VapiEvents, FabPlans, FabDesigns, FabInstructions, FabRuns, WebSessions, Principals, ProviderIdentities, LocalCredentials, Sessions, MagicLinkTokens, MfaSmsChallenges, Roles, WebhookEvents, FabJobs, FabLearningOutcomes };
 }

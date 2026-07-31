@@ -496,17 +496,23 @@ let sound_recorder_devices_columns = ["id"; "account_id"; "platform"; "status"; 
 
 let sound_recorder_devices_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      platform,\n      status,\n      install_id,\n      device_label,\n      app_version,\n      os_version,\n      token_hash,\n      token_last4,\n      consent_version,\n      to_char(consent_accepted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consent_accepted_at,\n      recording_indicator_acknowledged,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      transfer_paused,\n      transfer_pause_reason,\n      network_policy,\n      battery_level,\n      charging,\n      to_char(transfer_state_updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as transfer_state_updated_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_devices"
 
-type sound_recorder_devices_platform = [ `Ios | `Android ]
+type sound_recorder_devices_platform = [ `Ios | `Android | `Macos | `Windows | `Linux ]
 
 let sound_recorder_devices_platform_to_string (value : sound_recorder_devices_platform) : string =
   match value with
   | `Ios -> "ios"
   | `Android -> "android"
+  | `Macos -> "macos"
+  | `Windows -> "windows"
+  | `Linux -> "linux"
 
 let parse_sound_recorder_devices_platform (value : string) : (sound_recorder_devices_platform, string) result =
   match value with
   | "ios" -> Ok `Ios
   | "android" -> Ok `Android
+  | "macos" -> Ok `Macos
+  | "windows" -> Ok `Windows
+  | "linux" -> Ok `Linux
   | _ -> Error ("unsupported sound_recorder_devices.platform: " ^ value)
 
 type sound_recorder_devices_status = [ `Active | `Revoked | `Lost | `Replaced | `Deleted ]
@@ -1018,19 +1024,21 @@ let sound_recorder_oauth_states_columns = ["id"; "account_id"; "device_id"; "pro
 
 let sound_recorder_oauth_states_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      provider,\n      state_hash,\n      redirect_uri,\n      folder_path,\n      status,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consumed_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_oauth_states"
 
-type sound_recorder_oauth_states_provider = [ `GoogleDrive | `MicrosoftOnedrive | `AppleIcloud ]
+type sound_recorder_oauth_states_provider = [ `GoogleDrive | `MicrosoftOnedrive | `AppleIcloud | `Dropbox ]
 
 let sound_recorder_oauth_states_provider_to_string (value : sound_recorder_oauth_states_provider) : string =
   match value with
   | `GoogleDrive -> "google_drive"
   | `MicrosoftOnedrive -> "microsoft_onedrive"
   | `AppleIcloud -> "apple_icloud"
+  | `Dropbox -> "dropbox"
 
 let parse_sound_recorder_oauth_states_provider (value : string) : (sound_recorder_oauth_states_provider, string) result =
   match value with
   | "google_drive" -> Ok `GoogleDrive
   | "microsoft_onedrive" -> Ok `MicrosoftOnedrive
   | "apple_icloud" -> Ok `AppleIcloud
+  | "dropbox" -> Ok `Dropbox
   | _ -> Error ("unsupported sound_recorder_oauth_states.provider: " ^ value)
 
 type sound_recorder_oauth_states_status = [ `Pending | `Consumed | `Expired | `Revoked ]
@@ -1101,19 +1109,25 @@ let sound_recorder_cloud_connections_columns = ["id"; "account_id"; "created_by_
 
 let sound_recorder_cloud_connections_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      created_by_device_id::text as created_by_device_id,\n      provider,\n      link_mode,\n      status,\n      display_name,\n      provider_account_id,\n      provider_subject_hash,\n      root_folder_id,\n      folder_path,\n      oauth_scope,\n      token_ciphertext,\n      token_nonce,\n      token_aad,\n      token_version,\n      to_char(token_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as token_expires_at,\n      to_char(last_sync_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_sync_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_connections"
 
-type sound_recorder_cloud_connections_provider = [ `GoogleDrive | `MicrosoftOnedrive | `AppleIcloud ]
+type sound_recorder_cloud_connections_provider = [ `GoogleDrive | `MicrosoftOnedrive | `AppleIcloud | `Dropbox | `AmazonS3 | `CloudflareR2 ]
 
 let sound_recorder_cloud_connections_provider_to_string (value : sound_recorder_cloud_connections_provider) : string =
   match value with
   | `GoogleDrive -> "google_drive"
   | `MicrosoftOnedrive -> "microsoft_onedrive"
   | `AppleIcloud -> "apple_icloud"
+  | `Dropbox -> "dropbox"
+  | `AmazonS3 -> "amazon_s3"
+  | `CloudflareR2 -> "cloudflare_r2"
 
 let parse_sound_recorder_cloud_connections_provider (value : string) : (sound_recorder_cloud_connections_provider, string) result =
   match value with
   | "google_drive" -> Ok `GoogleDrive
   | "microsoft_onedrive" -> Ok `MicrosoftOnedrive
   | "apple_icloud" -> Ok `AppleIcloud
+  | "dropbox" -> Ok `Dropbox
+  | "amazon_s3" -> Ok `AmazonS3
+  | "cloudflare_r2" -> Ok `CloudflareR2
   | _ -> Error ("unsupported sound_recorder_cloud_connections.provider: " ^ value)
 
 type sound_recorder_cloud_connections_link_mode = [ `ServerOauth | `ClientManaged ]
@@ -1227,25 +1241,71 @@ let validate_sound_recorder_cloud_connections_token_version (value : int) : (int
   if value < 1 then Error "sound_recorder_cloud_connections.token_version is below the minimum"
   else Ok value
 
+let sound_recorder_cloud_connection_projection_outbox_table = "sound_recorder_cloud_connection_projection_outbox"
+
+let sound_recorder_cloud_connection_projection_outbox_columns = ["seq"; "connection_id"; "attempts"; "available_at"; "locked_until"; "processed_at"; "last_error"; "created_at"; "updated_at"]
+
+let sound_recorder_cloud_connection_projection_outbox_select_sql = "select\n      seq,\n      connection_id::text as connection_id,\n      attempts,\n      to_char(available_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as available_at,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as processed_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_connection_projection_outbox"
+
+type sound_recorder_cloud_connection_projection_outbox_row = {
+  sound_recorder_cloud_connection_projection_outbox_seq : int64;
+  sound_recorder_cloud_connection_projection_outbox_connection_id : string;
+  sound_recorder_cloud_connection_projection_outbox_attempts : int;
+  sound_recorder_cloud_connection_projection_outbox_available_at : string;
+  sound_recorder_cloud_connection_projection_outbox_locked_until : string option;
+  sound_recorder_cloud_connection_projection_outbox_processed_at : string option;
+  sound_recorder_cloud_connection_projection_outbox_last_error : string option;
+  sound_recorder_cloud_connection_projection_outbox_created_at : string;
+  sound_recorder_cloud_connection_projection_outbox_updated_at : string;
+}
+
+let sound_recorder_cloud_connection_projection_outbox_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : sound_recorder_cloud_connection_projection_outbox_row =
+  {
+    sound_recorder_cloud_connection_projection_outbox_seq = Int64.of_string (get 0);
+    sound_recorder_cloud_connection_projection_outbox_connection_id = get 1;
+    sound_recorder_cloud_connection_projection_outbox_attempts = int_of_string (get 2);
+    sound_recorder_cloud_connection_projection_outbox_available_at = get 3;
+    sound_recorder_cloud_connection_projection_outbox_locked_until = (if is_null 4 then None else Some (get 4));
+    sound_recorder_cloud_connection_projection_outbox_processed_at = (if is_null 5 then None else Some (get 5));
+    sound_recorder_cloud_connection_projection_outbox_last_error = (if is_null 6 then None else Some (get 6));
+    sound_recorder_cloud_connection_projection_outbox_created_at = get 7;
+    sound_recorder_cloud_connection_projection_outbox_updated_at = get 8;
+  }
+
+let validate_sound_recorder_cloud_connection_projection_outbox_attempts (value : int) : (int, string) result =
+  if value < 0 then Error "sound_recorder_cloud_connection_projection_outbox.attempts is below the minimum"
+  else if value > 50 then Error "sound_recorder_cloud_connection_projection_outbox.attempts is above the maximum"
+  else Ok value
+
+let validate_sound_recorder_cloud_connection_projection_outbox_last_error (value : string) : (string, string) result =
+  if String.length value > 500 then Error "sound_recorder_cloud_connection_projection_outbox.last_error must be at most 500 characters"
+  else Ok value
+
 let sound_recorder_cloud_copy_jobs_table = "sound_recorder_cloud_copy_jobs"
 
 let sound_recorder_cloud_copy_jobs_columns = ["id"; "account_id"; "connection_id"; "segment_id"; "provider"; "status"; "destination_key"; "provider_file_id"; "attempts"; "locked_until"; "started_at"; "completed_at"; "last_error"; "meta_data"; "created_at"; "updated_at"]
 
 let sound_recorder_cloud_copy_jobs_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      connection_id::text as connection_id,\n      segment_id::text as segment_id,\n      provider,\n      status,\n      destination_key,\n      provider_file_id,\n      attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as completed_at,\n      last_error,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_copy_jobs"
 
-type sound_recorder_cloud_copy_jobs_provider = [ `GoogleDrive | `MicrosoftOnedrive | `AppleIcloud ]
+type sound_recorder_cloud_copy_jobs_provider = [ `GoogleDrive | `MicrosoftOnedrive | `AppleIcloud | `Dropbox | `AmazonS3 | `CloudflareR2 ]
 
 let sound_recorder_cloud_copy_jobs_provider_to_string (value : sound_recorder_cloud_copy_jobs_provider) : string =
   match value with
   | `GoogleDrive -> "google_drive"
   | `MicrosoftOnedrive -> "microsoft_onedrive"
   | `AppleIcloud -> "apple_icloud"
+  | `Dropbox -> "dropbox"
+  | `AmazonS3 -> "amazon_s3"
+  | `CloudflareR2 -> "cloudflare_r2"
 
 let parse_sound_recorder_cloud_copy_jobs_provider (value : string) : (sound_recorder_cloud_copy_jobs_provider, string) result =
   match value with
   | "google_drive" -> Ok `GoogleDrive
   | "microsoft_onedrive" -> Ok `MicrosoftOnedrive
   | "apple_icloud" -> Ok `AppleIcloud
+  | "dropbox" -> Ok `Dropbox
+  | "amazon_s3" -> Ok `AmazonS3
+  | "cloudflare_r2" -> Ok `CloudflareR2
   | _ -> Error ("unsupported sound_recorder_cloud_copy_jobs.provider: " ^ value)
 
 type sound_recorder_cloud_copy_jobs_status = [ `Pending | `Running | `WaitingClient | `Completed | `Failed | `Skipped ]
@@ -12509,9 +12569,22 @@ let validate_local_credentials_failed_attempts (value : int) : (int, string) res
 
 let sessions_table = "shared_auth.sessions"
 
-let sessions_columns = ["session_id"; "shared_user_id"; "refresh_token_hash"; "provider"; "provider_tenant"; "provider_subject"; "created_at"; "updated_at"; "last_seen_at"; "expires_at"; "revoked_at"; "rotated_from"]
+let sessions_columns = ["session_id"; "shared_user_id"; "refresh_token_hash"; "provider"; "provider_tenant"; "provider_subject"; "auth_level"; "auth_methods"; "created_at"; "updated_at"; "last_seen_at"; "expires_at"; "revoked_at"; "rotated_from"]
 
-let sessions_select_sql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+let sessions_select_sql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      auth_level,\n      auth_methods::text as auth_methods_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+
+type sessions_auth_level = [ `1 | `2 ]
+
+let sessions_auth_level_to_string (value : sessions_auth_level) : string =
+  match value with
+  | `1 -> "1"
+  | `2 -> "2"
+
+let parse_sessions_auth_level (value : string) : (sessions_auth_level, string) result =
+  match value with
+  | "1" -> Ok `1
+  | "2" -> Ok `2
+  | _ -> Error ("unsupported sessions.auth_level: " ^ value)
 
 type sessions_row = {
   sessions_session_id : string;
@@ -12520,6 +12593,8 @@ type sessions_row = {
   sessions_provider : string;
   sessions_provider_tenant : string;
   sessions_provider_subject : string;
+  sessions_auth_level : string;
+  sessions_auth_methods : string;
   sessions_created_at : string;
   sessions_updated_at : string;
   sessions_last_seen_at : string;
@@ -12536,12 +12611,73 @@ let sessions_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : sessio
     sessions_provider = get 3;
     sessions_provider_tenant = get 4;
     sessions_provider_subject = get 5;
-    sessions_created_at = get 6;
-    sessions_updated_at = get 7;
-    sessions_last_seen_at = get 8;
-    sessions_expires_at = get 9;
-    sessions_revoked_at = (if is_null 10 then None else Some (get 10));
-    sessions_rotated_from = (if is_null 11 then None else Some (get 11));
+    sessions_auth_level = get 6;
+    sessions_auth_methods = get 7;
+    sessions_created_at = get 8;
+    sessions_updated_at = get 9;
+    sessions_last_seen_at = get 10;
+    sessions_expires_at = get 11;
+    sessions_revoked_at = (if is_null 12 then None else Some (get 12));
+    sessions_rotated_from = (if is_null 13 then None else Some (get 13));
+  }
+
+let magic_link_tokens_table = "shared_auth.magic_link_tokens"
+
+let magic_link_tokens_columns = ["token_hash"; "otp_hash"; "shared_user_id"; "identifier_hash"; "failed_attempts"; "created_at"; "expires_at"; "consumed_at"]
+
+let magic_link_tokens_select_sql = "select\n      token_hash,\n      otp_hash,\n      shared_user_id::text as shared_user_id,\n      identifier_hash,\n      failed_attempts,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consumed_at\n    from shared_auth.magic_link_tokens"
+
+type magic_link_tokens_row = {
+  magic_link_tokens_token_hash : string;
+  magic_link_tokens_otp_hash : string;
+  magic_link_tokens_shared_user_id : string;
+  magic_link_tokens_identifier_hash : string;
+  magic_link_tokens_failed_attempts : int;
+  magic_link_tokens_created_at : string;
+  magic_link_tokens_expires_at : string;
+  magic_link_tokens_consumed_at : string option;
+}
+
+let magic_link_tokens_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : magic_link_tokens_row =
+  {
+    magic_link_tokens_token_hash = get 0;
+    magic_link_tokens_otp_hash = get 1;
+    magic_link_tokens_shared_user_id = get 2;
+    magic_link_tokens_identifier_hash = get 3;
+    magic_link_tokens_failed_attempts = int_of_string (get 4);
+    magic_link_tokens_created_at = get 5;
+    magic_link_tokens_expires_at = get 6;
+    magic_link_tokens_consumed_at = (if is_null 7 then None else Some (get 7));
+  }
+
+let validate_magic_link_tokens_failed_attempts (value : int) : (int, string) result =
+  if value < 0 then Error "magic_link_tokens.failed_attempts is below the minimum"
+  else if value > 5 then Error "magic_link_tokens.failed_attempts is above the maximum"
+  else Ok value
+
+let mfa_sms_challenges_table = "shared_auth.mfa_sms_challenges"
+
+let mfa_sms_challenges_columns = ["challenge_id"; "shared_user_id"; "phone_e164"; "created_at"; "expires_at"; "verified_at"]
+
+let mfa_sms_challenges_select_sql = "select\n      challenge_id::text as challenge_id,\n      shared_user_id::text as shared_user_id,\n      phone_e164,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(verified_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as verified_at\n    from shared_auth.mfa_sms_challenges"
+
+type mfa_sms_challenges_row = {
+  mfa_sms_challenges_challenge_id : string;
+  mfa_sms_challenges_shared_user_id : string;
+  mfa_sms_challenges_phone_e164 : string;
+  mfa_sms_challenges_created_at : string;
+  mfa_sms_challenges_expires_at : string;
+  mfa_sms_challenges_verified_at : string option;
+}
+
+let mfa_sms_challenges_row_of_row ~(get : int -> string) ~(is_null : int -> bool) : mfa_sms_challenges_row =
+  {
+    mfa_sms_challenges_challenge_id = get 0;
+    mfa_sms_challenges_shared_user_id = get 1;
+    mfa_sms_challenges_phone_e164 = get 2;
+    mfa_sms_challenges_created_at = get 3;
+    mfa_sms_challenges_expires_at = get 4;
+    mfa_sms_challenges_verified_at = (if is_null 5 then None else Some (get 5));
   }
 
 let roles_table = "shared_auth.roles"

@@ -162,7 +162,7 @@ class SoundRecorderAccounts(models.Model):
 class SoundRecorderDevices(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     account_id = models.UUIDField()
-    platform = models.CharField(max_length=24, choices=[("ios", "ios"), ("android", "android")])
+    platform = models.CharField(max_length=24, choices=[("ios", "ios"), ("android", "android"), ("macos", "macos"), ("windows", "windows"), ("linux", "linux")])
     status = models.CharField(max_length=32, choices=[("active", "active"), ("revoked", "revoked"), ("lost", "lost"), ("replaced", "replaced"), ("deleted", "deleted")], default="active")
     install_id = models.CharField(max_length=160)
     device_label = models.CharField(max_length=160, null=True, blank=True)
@@ -293,7 +293,7 @@ class SoundRecorderOauthStates(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     account_id = models.UUIDField()
     device_id = models.UUIDField()
-    provider = models.CharField(max_length=32, choices=[("google_drive", "google_drive"), ("microsoft_onedrive", "microsoft_onedrive"), ("apple_icloud", "apple_icloud")])
+    provider = models.CharField(max_length=32, choices=[("google_drive", "google_drive"), ("microsoft_onedrive", "microsoft_onedrive"), ("apple_icloud", "apple_icloud"), ("dropbox", "dropbox")])
     state_hash = models.CharField(max_length=64, validators=[RegexValidator(regex="^[a-f0-9]{64}$")])
     redirect_uri = models.CharField(max_length=512)
     folder_path = models.CharField(max_length=512, null=True, blank=True)
@@ -314,7 +314,7 @@ class SoundRecorderCloudConnections(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     account_id = models.UUIDField()
     created_by_device_id = models.UUIDField(null=True, blank=True)
-    provider = models.CharField(max_length=32, choices=[("google_drive", "google_drive"), ("microsoft_onedrive", "microsoft_onedrive"), ("apple_icloud", "apple_icloud")])
+    provider = models.CharField(max_length=32, choices=[("google_drive", "google_drive"), ("microsoft_onedrive", "microsoft_onedrive"), ("apple_icloud", "apple_icloud"), ("dropbox", "dropbox"), ("amazon_s3", "amazon_s3"), ("cloudflare_r2", "cloudflare_r2")])
     link_mode = models.CharField(max_length=32, choices=[("server_oauth", "server_oauth"), ("client_managed", "client_managed")], default="server_oauth")
     status = models.CharField(max_length=32, choices=[("active", "active"), ("paused", "paused"), ("revoked", "revoked"), ("failed", "failed")], default="active")
     display_name = models.CharField(max_length=160, null=True, blank=True)
@@ -339,12 +339,29 @@ class SoundRecorderCloudConnections(models.Model):
         db_table = "sound_recorder_cloud_connections"
 
 
+class SoundRecorderCloudConnectionProjectionOutbox(models.Model):
+    seq = models.BigAutoField(primary_key=True)
+    connection_id = models.UUIDField()
+    attempts = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(50)])
+    available_at = models.DateTimeField()
+    locked_until = models.DateTimeField(null=True, blank=True)
+    processed_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=500, null=True, blank=True)
+    created_at = models.DateTimeField()
+    updated_at = models.DateTimeField()
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "sound_recorder_cloud_connection_projection_outbox"
+
+
 class SoundRecorderCloudCopyJobs(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     account_id = models.UUIDField()
     connection_id = models.UUIDField()
     segment_id = models.UUIDField()
-    provider = models.CharField(max_length=32, choices=[("google_drive", "google_drive"), ("microsoft_onedrive", "microsoft_onedrive"), ("apple_icloud", "apple_icloud")])
+    provider = models.CharField(max_length=32, choices=[("google_drive", "google_drive"), ("microsoft_onedrive", "microsoft_onedrive"), ("apple_icloud", "apple_icloud"), ("dropbox", "dropbox"), ("amazon_s3", "amazon_s3"), ("cloudflare_r2", "cloudflare_r2")])
     status = models.CharField(max_length=32, choices=[("pending", "pending"), ("running", "running"), ("waiting_client", "waiting_client"), ("completed", "completed"), ("failed", "failed"), ("skipped", "skipped")], default="pending")
     destination_key = models.CharField(max_length=2048)
     provider_file_id = models.CharField(max_length=512, null=True, blank=True)
@@ -3465,6 +3482,8 @@ class Sessions(models.Model):
     provider = models.TextField()
     provider_tenant = models.TextField(default="default")
     provider_subject = models.TextField()
+    auth_level = models.TextField(choices=[("1", "1"), ("2", "2")], default=1)
+    auth_methods = models.JSONField(default=list)
     created_at = models.DateTimeField()
     updated_at = models.DateTimeField()
     last_seen_at = models.DateTimeField()
@@ -3476,6 +3495,36 @@ class Sessions(models.Model):
         managed = False
         app_label = "dd_pg_defs"
         db_table = "shared_auth\".\"sessions"
+
+
+class MagicLinkTokens(models.Model):
+    token_hash = models.TextField(primary_key=True)
+    otp_hash = models.TextField()
+    shared_user_id = models.UUIDField()
+    identifier_hash = models.TextField()
+    failed_attempts = models.IntegerField(default=0, validators=[MinValueValidator(0), MaxValueValidator(5)])
+    created_at = models.DateTimeField()
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "shared_auth\".\"magic_link_tokens"
+
+
+class MfaSmsChallenges(models.Model):
+    challenge_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    shared_user_id = models.UUIDField()
+    phone_e164 = models.TextField(validators=[RegexValidator(regex="^\\+[1-9][0-9]{7,14}$")])
+    created_at = models.DateTimeField()
+    expires_at = models.DateTimeField()
+    verified_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        app_label = "dd_pg_defs"
+        db_table = "shared_auth\".\"mfa_sms_challenges"
 
 
 class Roles(models.Model):

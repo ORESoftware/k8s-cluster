@@ -564,17 +564,26 @@ pub const sound_recorder_devices_select_sql: []const u8 = "select\n      id::tex
 pub const SoundRecorderDevicesPlatform = enum {
     ios,
     android,
+    macos,
+    windows,
+    linux,
 
     pub fn toString(self: SoundRecorderDevicesPlatform) []const u8 {
         return switch (self) {
             .ios => "ios",
             .android => "android",
+            .macos => "macos",
+            .windows => "windows",
+            .linux => "linux",
         };
     }
 
     pub fn parse(value: []const u8) ?SoundRecorderDevicesPlatform {
         if (std.mem.eql(u8, value, "ios")) return .ios;
         if (std.mem.eql(u8, value, "android")) return .android;
+        if (std.mem.eql(u8, value, "macos")) return .macos;
+        if (std.mem.eql(u8, value, "windows")) return .windows;
+        if (std.mem.eql(u8, value, "linux")) return .linux;
         return null;
     }
 };
@@ -1174,12 +1183,14 @@ pub const SoundRecorderOauthStatesProvider = enum {
     google_drive,
     microsoft_onedrive,
     apple_icloud,
+    dropbox,
 
     pub fn toString(self: SoundRecorderOauthStatesProvider) []const u8 {
         return switch (self) {
             .google_drive => "google_drive",
             .microsoft_onedrive => "microsoft_onedrive",
             .apple_icloud => "apple_icloud",
+            .dropbox => "dropbox",
         };
     }
 
@@ -1187,6 +1198,7 @@ pub const SoundRecorderOauthStatesProvider = enum {
         if (std.mem.eql(u8, value, "google_drive")) return .google_drive;
         if (std.mem.eql(u8, value, "microsoft_onedrive")) return .microsoft_onedrive;
         if (std.mem.eql(u8, value, "apple_icloud")) return .apple_icloud;
+        if (std.mem.eql(u8, value, "dropbox")) return .dropbox;
         return null;
     }
 };
@@ -1272,12 +1284,18 @@ pub const SoundRecorderCloudConnectionsProvider = enum {
     google_drive,
     microsoft_onedrive,
     apple_icloud,
+    dropbox,
+    amazon_s3,
+    cloudflare_r2,
 
     pub fn toString(self: SoundRecorderCloudConnectionsProvider) []const u8 {
         return switch (self) {
             .google_drive => "google_drive",
             .microsoft_onedrive => "microsoft_onedrive",
             .apple_icloud => "apple_icloud",
+            .dropbox => "dropbox",
+            .amazon_s3 => "amazon_s3",
+            .cloudflare_r2 => "cloudflare_r2",
         };
     }
 
@@ -1285,6 +1303,9 @@ pub const SoundRecorderCloudConnectionsProvider = enum {
         if (std.mem.eql(u8, value, "google_drive")) return .google_drive;
         if (std.mem.eql(u8, value, "microsoft_onedrive")) return .microsoft_onedrive;
         if (std.mem.eql(u8, value, "apple_icloud")) return .apple_icloud;
+        if (std.mem.eql(u8, value, "dropbox")) return .dropbox;
+        if (std.mem.eql(u8, value, "amazon_s3")) return .amazon_s3;
+        if (std.mem.eql(u8, value, "cloudflare_r2")) return .cloudflare_r2;
         return null;
     }
 };
@@ -1421,6 +1442,47 @@ pub fn validateSoundRecorderCloudConnectionsTokenVersion(value: i32) ?[]const u8
     return null;
 }
 
+pub const sound_recorder_cloud_connection_projection_outbox_table: []const u8 = "sound_recorder_cloud_connection_projection_outbox";
+pub const sound_recorder_cloud_connection_projection_outbox_columns = [_][]const u8{ "seq", "connection_id", "attempts", "available_at", "locked_until", "processed_at", "last_error", "created_at", "updated_at" };
+pub const sound_recorder_cloud_connection_projection_outbox_select_sql: []const u8 = "select\n      seq,\n      connection_id::text as connection_id,\n      attempts,\n      to_char(available_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as available_at,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as processed_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_connection_projection_outbox";
+
+pub const SoundRecorderCloudConnectionProjectionOutboxRow = struct {
+    seq: i64,
+    connection_id: []const u8,
+    attempts: i32,
+    available_at: []const u8,
+    locked_until: ?[]const u8,
+    processed_at: ?[]const u8,
+    last_error: ?[]const u8,
+    created_at: []const u8,
+    updated_at: []const u8,
+
+    pub fn fromRow(reader: RowReader) SoundRecorderCloudConnectionProjectionOutboxRow {
+        return SoundRecorderCloudConnectionProjectionOutboxRow{
+            .seq = reader.int(0),
+            .connection_id = reader.text(1),
+            .attempts = @as(i32, @intCast(reader.int(2))),
+            .available_at = reader.text(3),
+            .locked_until = if (reader.is_null(4)) null else reader.text(4),
+            .processed_at = if (reader.is_null(5)) null else reader.text(5),
+            .last_error = if (reader.is_null(6)) null else reader.text(6),
+            .created_at = reader.text(7),
+            .updated_at = reader.text(8),
+        };
+    }
+};
+
+pub fn validateSoundRecorderCloudConnectionProjectionOutboxAttempts(value: i32) ?[]const u8 {
+    if (value < 0) return "sound_recorder_cloud_connection_projection_outbox.attempts is below the minimum";
+    if (value > 50) return "sound_recorder_cloud_connection_projection_outbox.attempts is above the maximum";
+    return null;
+}
+
+pub fn validateSoundRecorderCloudConnectionProjectionOutboxLastError(value: []const u8) ?[]const u8 {
+    if (value.len > 500) return "sound_recorder_cloud_connection_projection_outbox.last_error must be at most 500 characters";
+    return null;
+}
+
 pub const sound_recorder_cloud_copy_jobs_table: []const u8 = "sound_recorder_cloud_copy_jobs";
 pub const sound_recorder_cloud_copy_jobs_columns = [_][]const u8{ "id", "account_id", "connection_id", "segment_id", "provider", "status", "destination_key", "provider_file_id", "attempts", "locked_until", "started_at", "completed_at", "last_error", "meta_data", "created_at", "updated_at" };
 pub const sound_recorder_cloud_copy_jobs_select_sql: []const u8 = "select\n      id::text as id,\n      account_id::text as account_id,\n      connection_id::text as connection_id,\n      segment_id::text as segment_id,\n      provider,\n      status,\n      destination_key,\n      provider_file_id,\n      attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as completed_at,\n      last_error,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_copy_jobs";
@@ -1429,12 +1491,18 @@ pub const SoundRecorderCloudCopyJobsProvider = enum {
     google_drive,
     microsoft_onedrive,
     apple_icloud,
+    dropbox,
+    amazon_s3,
+    cloudflare_r2,
 
     pub fn toString(self: SoundRecorderCloudCopyJobsProvider) []const u8 {
         return switch (self) {
             .google_drive => "google_drive",
             .microsoft_onedrive => "microsoft_onedrive",
             .apple_icloud => "apple_icloud",
+            .dropbox => "dropbox",
+            .amazon_s3 => "amazon_s3",
+            .cloudflare_r2 => "cloudflare_r2",
         };
     }
 
@@ -1442,6 +1510,9 @@ pub const SoundRecorderCloudCopyJobsProvider = enum {
         if (std.mem.eql(u8, value, "google_drive")) return .google_drive;
         if (std.mem.eql(u8, value, "microsoft_onedrive")) return .microsoft_onedrive;
         if (std.mem.eql(u8, value, "apple_icloud")) return .apple_icloud;
+        if (std.mem.eql(u8, value, "dropbox")) return .dropbox;
+        if (std.mem.eql(u8, value, "amazon_s3")) return .amazon_s3;
+        if (std.mem.eql(u8, value, "cloudflare_r2")) return .cloudflare_r2;
         return null;
     }
 };
@@ -14522,8 +14593,26 @@ pub fn validateLocalCredentialsFailedAttempts(value: i32) ?[]const u8 {
 }
 
 pub const sessions_table: []const u8 = "shared_auth.sessions";
-pub const sessions_columns = [_][]const u8{ "session_id", "shared_user_id", "refresh_token_hash", "provider", "provider_tenant", "provider_subject", "created_at", "updated_at", "last_seen_at", "expires_at", "revoked_at", "rotated_from" };
-pub const sessions_select_sql: []const u8 = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions";
+pub const sessions_columns = [_][]const u8{ "session_id", "shared_user_id", "refresh_token_hash", "provider", "provider_tenant", "provider_subject", "auth_level", "auth_methods", "created_at", "updated_at", "last_seen_at", "expires_at", "revoked_at", "rotated_from" };
+pub const sessions_select_sql: []const u8 = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      auth_level,\n      auth_methods::text as auth_methods_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions";
+
+pub const SessionsAuthLevel = enum {
+    @"1",
+    @"2",
+
+    pub fn toString(self: SessionsAuthLevel) []const u8 {
+        return switch (self) {
+            .@"1" => "1",
+            .@"2" => "2",
+        };
+    }
+
+    pub fn parse(value: []const u8) ?SessionsAuthLevel {
+        if (std.mem.eql(u8, value, "1")) return .@"1";
+        if (std.mem.eql(u8, value, "2")) return .@"2";
+        return null;
+    }
+};
 
 pub const SessionsRow = struct {
     session_id: []const u8,
@@ -14532,6 +14621,8 @@ pub const SessionsRow = struct {
     provider: []const u8,
     provider_tenant: []const u8,
     provider_subject: []const u8,
+    auth_level: []const u8,
+    auth_methods: []const u8,
     created_at: []const u8,
     updated_at: []const u8,
     last_seen_at: []const u8,
@@ -14547,12 +14638,72 @@ pub const SessionsRow = struct {
             .provider = reader.text(3),
             .provider_tenant = reader.text(4),
             .provider_subject = reader.text(5),
-            .created_at = reader.text(6),
-            .updated_at = reader.text(7),
-            .last_seen_at = reader.text(8),
-            .expires_at = reader.text(9),
-            .revoked_at = if (reader.is_null(10)) null else reader.text(10),
-            .rotated_from = if (reader.is_null(11)) null else reader.text(11),
+            .auth_level = reader.text(6),
+            .auth_methods = reader.text(7),
+            .created_at = reader.text(8),
+            .updated_at = reader.text(9),
+            .last_seen_at = reader.text(10),
+            .expires_at = reader.text(11),
+            .revoked_at = if (reader.is_null(12)) null else reader.text(12),
+            .rotated_from = if (reader.is_null(13)) null else reader.text(13),
+        };
+    }
+};
+
+pub const magic_link_tokens_table: []const u8 = "shared_auth.magic_link_tokens";
+pub const magic_link_tokens_columns = [_][]const u8{ "token_hash", "otp_hash", "shared_user_id", "identifier_hash", "failed_attempts", "created_at", "expires_at", "consumed_at" };
+pub const magic_link_tokens_select_sql: []const u8 = "select\n      token_hash,\n      otp_hash,\n      shared_user_id::text as shared_user_id,\n      identifier_hash,\n      failed_attempts,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consumed_at\n    from shared_auth.magic_link_tokens";
+
+pub const MagicLinkTokensRow = struct {
+    token_hash: []const u8,
+    otp_hash: []const u8,
+    shared_user_id: []const u8,
+    identifier_hash: []const u8,
+    failed_attempts: i32,
+    created_at: []const u8,
+    expires_at: []const u8,
+    consumed_at: ?[]const u8,
+
+    pub fn fromRow(reader: RowReader) MagicLinkTokensRow {
+        return MagicLinkTokensRow{
+            .token_hash = reader.text(0),
+            .otp_hash = reader.text(1),
+            .shared_user_id = reader.text(2),
+            .identifier_hash = reader.text(3),
+            .failed_attempts = @as(i32, @intCast(reader.int(4))),
+            .created_at = reader.text(5),
+            .expires_at = reader.text(6),
+            .consumed_at = if (reader.is_null(7)) null else reader.text(7),
+        };
+    }
+};
+
+pub fn validateMagicLinkTokensFailedAttempts(value: i32) ?[]const u8 {
+    if (value < 0) return "magic_link_tokens.failed_attempts is below the minimum";
+    if (value > 5) return "magic_link_tokens.failed_attempts is above the maximum";
+    return null;
+}
+
+pub const mfa_sms_challenges_table: []const u8 = "shared_auth.mfa_sms_challenges";
+pub const mfa_sms_challenges_columns = [_][]const u8{ "challenge_id", "shared_user_id", "phone_e164", "created_at", "expires_at", "verified_at" };
+pub const mfa_sms_challenges_select_sql: []const u8 = "select\n      challenge_id::text as challenge_id,\n      shared_user_id::text as shared_user_id,\n      phone_e164,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(verified_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as verified_at\n    from shared_auth.mfa_sms_challenges";
+
+pub const MfaSmsChallengesRow = struct {
+    challenge_id: []const u8,
+    shared_user_id: []const u8,
+    phone_e164: []const u8,
+    created_at: []const u8,
+    expires_at: []const u8,
+    verified_at: ?[]const u8,
+
+    pub fn fromRow(reader: RowReader) MfaSmsChallengesRow {
+        return MfaSmsChallengesRow{
+            .challenge_id = reader.text(0),
+            .shared_user_id = reader.text(1),
+            .phone_e164 = reader.text(2),
+            .created_at = reader.text(3),
+            .expires_at = reader.text(4),
+            .verified_at = if (reader.is_null(5)) null else reader.text(5),
         };
     }
 };

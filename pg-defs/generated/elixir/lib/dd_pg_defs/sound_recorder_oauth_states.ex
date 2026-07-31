@@ -34,7 +34,7 @@ defmodule DdPgDefs.SoundRecorderOauthStates do
     struct
     |> cast(attrs, @required_fields ++ @optional_fields)
     |> validate_required(@required_fields)
-    |> validate_inclusion(:provider, ["google_drive", "microsoft_onedrive", "apple_icloud"])
+    |> validate_inclusion(:provider, ["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox"])
     |> validate_format(:state_hash, ~r/^[a-f0-9]{64}$/)
     |> validate_length(:state_hash, max: 64)
     |> validate_length(:redirect_uri, max: 512)

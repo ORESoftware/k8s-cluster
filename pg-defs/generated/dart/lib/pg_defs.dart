@@ -705,7 +705,7 @@ class SoundRecorderAccountsRow {
 const soundRecorderDevicesTable = "sound_recorder_devices";
 const soundRecorderDevicesSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      platform,\n      status,\n      install_id,\n      device_label,\n      app_version,\n      os_version,\n      token_hash,\n      token_last4,\n      consent_version,\n      to_char(consent_accepted_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consent_accepted_at,\n      recording_indicator_acknowledged,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      transfer_paused,\n      transfer_pause_reason,\n      network_policy,\n      battery_level,\n      charging,\n      to_char(transfer_state_updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as transfer_state_updated_at,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_devices";
 
-const soundRecorderDevicesPlatformValues = <String>["ios", "android"];
+const soundRecorderDevicesPlatformValues = <String>["ios", "android", "macos", "windows", "linux"];
 const soundRecorderDevicesStatusValues = <String>["active", "revoked", "lost", "replaced", "deleted"];
 const soundRecorderDevicesTransferPauseReasonValues = <String>["low_battery", "network_constraint", "offline", "manual"];
 const soundRecorderDevicesNetworkPolicyValues = <String>["any", "wifi_only", "cellular_only"];
@@ -1372,7 +1372,7 @@ class SoundRecorderAuditEventsRow {
 const soundRecorderOauthStatesTable = "sound_recorder_oauth_states";
 const soundRecorderOauthStatesSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      device_id::text as device_id,\n      provider,\n      state_hash,\n      redirect_uri,\n      folder_path,\n      status,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consumed_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_oauth_states";
 
-const soundRecorderOauthStatesProviderValues = <String>["google_drive", "microsoft_onedrive", "apple_icloud"];
+const soundRecorderOauthStatesProviderValues = <String>["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox"];
 const soundRecorderOauthStatesStatusValues = <String>["pending", "consumed", "expired", "revoked"];
 
 class SoundRecorderOauthStatesRow {
@@ -1470,7 +1470,7 @@ class SoundRecorderOauthStatesRow {
 const soundRecorderCloudConnectionsTable = "sound_recorder_cloud_connections";
 const soundRecorderCloudConnectionsSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      created_by_device_id::text as created_by_device_id,\n      provider,\n      link_mode,\n      status,\n      display_name,\n      provider_account_id,\n      provider_subject_hash,\n      root_folder_id,\n      folder_path,\n      oauth_scope,\n      token_ciphertext,\n      token_nonce,\n      token_aad,\n      token_version,\n      to_char(token_expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as token_expires_at,\n      to_char(last_sync_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_sync_at,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_connections";
 
-const soundRecorderCloudConnectionsProviderValues = <String>["google_drive", "microsoft_onedrive", "apple_icloud"];
+const soundRecorderCloudConnectionsProviderValues = <String>["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"];
 const soundRecorderCloudConnectionsLinkModeValues = <String>["server_oauth", "client_managed"];
 const soundRecorderCloudConnectionsStatusValues = <String>["active", "paused", "revoked", "failed"];
 
@@ -1616,10 +1616,80 @@ class SoundRecorderCloudConnectionsRow {
   }
 }
 
+const soundRecorderCloudConnectionProjectionOutboxTable = "sound_recorder_cloud_connection_projection_outbox";
+const soundRecorderCloudConnectionProjectionOutboxSelectSql = "select\n      seq,\n      connection_id::text as connection_id,\n      attempts,\n      to_char(available_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as available_at,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as processed_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_connection_projection_outbox";
+
+class SoundRecorderCloudConnectionProjectionOutboxRow {
+  const SoundRecorderCloudConnectionProjectionOutboxRow({
+    required this.seq,
+    required this.connectionId,
+    required this.attempts,
+    required this.availableAt,
+    this.lockedUntil,
+    this.processedAt,
+    this.lastError,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  final int seq;
+  final String connectionId;
+  final int attempts;
+  final String availableAt;
+  final String? lockedUntil;
+  final String? processedAt;
+  final String? lastError;
+  final String createdAt;
+  final String updatedAt;
+
+  factory SoundRecorderCloudConnectionProjectionOutboxRow.fromJson(Map<String, Object?> json) {
+    return SoundRecorderCloudConnectionProjectionOutboxRow(
+      seq: _readRequiredInt(json, "seq"),
+      connectionId: _readRequiredString(json, "connectionId"),
+      attempts: _readRequiredInt(json, "attempts"),
+      availableAt: _readRequiredString(json, "availableAt"),
+      lockedUntil: _readOptionalString(json, "lockedUntil"),
+      processedAt: _readOptionalString(json, "processedAt"),
+      lastError: _readOptionalString(json, "lastError"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      updatedAt: _readRequiredString(json, "updatedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "seq": seq,
+    "connectionId": connectionId,
+    "attempts": attempts,
+    "availableAt": availableAt,
+    "lockedUntil": lockedUntil,
+    "processedAt": processedAt,
+    "lastError": lastError,
+    "createdAt": createdAt,
+    "updatedAt": updatedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (attempts < 0) {
+      errors.add("sound_recorder_cloud_connection_projection_outbox.attempts is below the minimum");
+    }
+    if (attempts > 50) {
+      errors.add("sound_recorder_cloud_connection_projection_outbox.attempts is above the maximum");
+    }
+    if (lastError != null && utf8.encode(lastError!).length > 500) {
+      errors.add("sound_recorder_cloud_connection_projection_outbox.last_error exceeds 500 bytes");
+    }
+    if (lastError != null && utf8.encode(lastError!).length < 1) {
+      errors.add("sound_recorder_cloud_connection_projection_outbox.last_error is below 1 bytes");
+    }
+    return errors;
+  }
+}
+
 const soundRecorderCloudCopyJobsTable = "sound_recorder_cloud_copy_jobs";
 const soundRecorderCloudCopyJobsSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      connection_id::text as connection_id,\n      segment_id::text as segment_id,\n      provider,\n      status,\n      destination_key,\n      provider_file_id,\n      attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as completed_at,\n      last_error,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_copy_jobs";
 
-const soundRecorderCloudCopyJobsProviderValues = <String>["google_drive", "microsoft_onedrive", "apple_icloud"];
+const soundRecorderCloudCopyJobsProviderValues = <String>["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"];
 const soundRecorderCloudCopyJobsStatusValues = <String>["pending", "running", "waiting_client", "completed", "failed", "skipped"];
 
 class SoundRecorderCloudCopyJobsRow {
@@ -15084,7 +15154,9 @@ class LocalCredentialsRow {
 }
 
 const sessionsTable = "shared_auth.sessions";
-const sessionsSelectSql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions";
+const sessionsSelectSql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      auth_level,\n      auth_methods::text as auth_methods_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions";
+
+const sessionsAuthLevelValues = <String>["1", "2"];
 
 class SessionsRow {
   const SessionsRow({
@@ -15094,6 +15166,8 @@ class SessionsRow {
     required this.provider,
     required this.providerTenant,
     required this.providerSubject,
+    required this.authLevel,
+    required this.authMethods,
     required this.createdAt,
     required this.updatedAt,
     required this.lastSeenAt,
@@ -15108,6 +15182,8 @@ class SessionsRow {
   final String provider;
   final String providerTenant;
   final String providerSubject;
+  final String authLevel;
+  final List<Object?> authMethods;
   final String createdAt;
   final String updatedAt;
   final String lastSeenAt;
@@ -15123,6 +15199,8 @@ class SessionsRow {
       provider: _readRequiredString(json, "provider"),
       providerTenant: _readRequiredString(json, "providerTenant"),
       providerSubject: _readRequiredString(json, "providerSubject"),
+      authLevel: _readRequiredString(json, "authLevel"),
+      authMethods: _readRequiredArray(json, "authMethods"),
       createdAt: _readRequiredString(json, "createdAt"),
       updatedAt: _readRequiredString(json, "updatedAt"),
       lastSeenAt: _readRequiredString(json, "lastSeenAt"),
@@ -15139,6 +15217,8 @@ class SessionsRow {
     "provider": provider,
     "providerTenant": providerTenant,
     "providerSubject": providerSubject,
+    "authLevel": authLevel,
+    "authMethods": authMethods,
     "createdAt": createdAt,
     "updatedAt": updatedAt,
     "lastSeenAt": lastSeenAt,
@@ -15166,6 +15246,118 @@ class SessionsRow {
     }
     if (utf8.encode(providerSubject).length < 1) {
       errors.add("sessions.provider_subject is below 1 bytes");
+    }
+    if (!sessionsAuthLevelValues.contains(authLevel)) {
+      errors.add("unsupported sessions.auth_level");
+    }
+    return errors;
+  }
+}
+
+const magicLinkTokensTable = "shared_auth.magic_link_tokens";
+const magicLinkTokensSelectSql = "select\n      token_hash,\n      otp_hash,\n      shared_user_id::text as shared_user_id,\n      identifier_hash,\n      failed_attempts,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consumed_at\n    from shared_auth.magic_link_tokens";
+
+class MagicLinkTokensRow {
+  const MagicLinkTokensRow({
+    required this.tokenHash,
+    required this.otpHash,
+    required this.sharedUserId,
+    required this.identifierHash,
+    required this.failedAttempts,
+    required this.createdAt,
+    required this.expiresAt,
+    this.consumedAt,
+  });
+
+  final String tokenHash;
+  final String otpHash;
+  final String sharedUserId;
+  final String identifierHash;
+  final int failedAttempts;
+  final String createdAt;
+  final String expiresAt;
+  final String? consumedAt;
+
+  factory MagicLinkTokensRow.fromJson(Map<String, Object?> json) {
+    return MagicLinkTokensRow(
+      tokenHash: _readRequiredString(json, "tokenHash"),
+      otpHash: _readRequiredString(json, "otpHash"),
+      sharedUserId: _readRequiredString(json, "sharedUserId"),
+      identifierHash: _readRequiredString(json, "identifierHash"),
+      failedAttempts: _readRequiredInt(json, "failedAttempts"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      expiresAt: _readRequiredString(json, "expiresAt"),
+      consumedAt: _readOptionalString(json, "consumedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "tokenHash": tokenHash,
+    "otpHash": otpHash,
+    "sharedUserId": sharedUserId,
+    "identifierHash": identifierHash,
+    "failedAttempts": failedAttempts,
+    "createdAt": createdAt,
+    "expiresAt": expiresAt,
+    "consumedAt": consumedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (failedAttempts < 0) {
+      errors.add("magic_link_tokens.failed_attempts is below the minimum");
+    }
+    if (failedAttempts > 5) {
+      errors.add("magic_link_tokens.failed_attempts is above the maximum");
+    }
+    return errors;
+  }
+}
+
+const mfaSmsChallengesTable = "shared_auth.mfa_sms_challenges";
+const mfaSmsChallengesSelectSql = "select\n      challenge_id::text as challenge_id,\n      shared_user_id::text as shared_user_id,\n      phone_e164,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(verified_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as verified_at\n    from shared_auth.mfa_sms_challenges";
+
+class MfaSmsChallengesRow {
+  const MfaSmsChallengesRow({
+    required this.challengeId,
+    required this.sharedUserId,
+    required this.phoneE164,
+    required this.createdAt,
+    required this.expiresAt,
+    this.verifiedAt,
+  });
+
+  final String challengeId;
+  final String sharedUserId;
+  final String phoneE164;
+  final String createdAt;
+  final String expiresAt;
+  final String? verifiedAt;
+
+  factory MfaSmsChallengesRow.fromJson(Map<String, Object?> json) {
+    return MfaSmsChallengesRow(
+      challengeId: _readRequiredString(json, "challengeId"),
+      sharedUserId: _readRequiredString(json, "sharedUserId"),
+      phoneE164: _readRequiredString(json, "phoneE164"),
+      createdAt: _readRequiredString(json, "createdAt"),
+      expiresAt: _readRequiredString(json, "expiresAt"),
+      verifiedAt: _readOptionalString(json, "verifiedAt"),
+    );
+  }
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    "challengeId": challengeId,
+    "sharedUserId": sharedUserId,
+    "phoneE164": phoneE164,
+    "createdAt": createdAt,
+    "expiresAt": expiresAt,
+    "verifiedAt": verifiedAt,
+  };
+
+  List<String> validate() {
+    final errors = <String>[];
+    if (!RegExp(r'^\+[1-9][0-9]{7,14}$').hasMatch(phoneE164)) {
+      errors.add("mfa_sms_challenges.phone_e164 does not match the required pattern");
     }
     return errors;
   }

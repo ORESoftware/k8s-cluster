@@ -640,17 +640,23 @@ inline const char* sound_recorder_devices_select_sql = R"SQL(select
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_devices)SQL";
 
-enum class SoundRecorderDevicesPlatform { Ios, Android };
+enum class SoundRecorderDevicesPlatform { Ios, Android, Macos, Windows, Linux };
 inline std::string sound_recorder_devices_platform_to_string(SoundRecorderDevicesPlatform value) {
     switch (value) {
         case SoundRecorderDevicesPlatform::Ios: return "ios";
         case SoundRecorderDevicesPlatform::Android: return "android";
+        case SoundRecorderDevicesPlatform::Macos: return "macos";
+        case SoundRecorderDevicesPlatform::Windows: return "windows";
+        case SoundRecorderDevicesPlatform::Linux: return "linux";
     }
     return "";
 }
 inline std::optional<SoundRecorderDevicesPlatform> parse_sound_recorder_devices_platform(const std::string& value) {
     if (value == "ios") return SoundRecorderDevicesPlatform::Ios;
     if (value == "android") return SoundRecorderDevicesPlatform::Android;
+    if (value == "macos") return SoundRecorderDevicesPlatform::Macos;
+    if (value == "windows") return SoundRecorderDevicesPlatform::Windows;
+    if (value == "linux") return SoundRecorderDevicesPlatform::Linux;
     return std::nullopt;
 }
 
@@ -1265,12 +1271,13 @@ inline const char* sound_recorder_oauth_states_select_sql = R"SQL(select
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_oauth_states)SQL";
 
-enum class SoundRecorderOauthStatesProvider { GoogleDrive, MicrosoftOnedrive, AppleIcloud };
+enum class SoundRecorderOauthStatesProvider { GoogleDrive, MicrosoftOnedrive, AppleIcloud, Dropbox };
 inline std::string sound_recorder_oauth_states_provider_to_string(SoundRecorderOauthStatesProvider value) {
     switch (value) {
         case SoundRecorderOauthStatesProvider::GoogleDrive: return "google_drive";
         case SoundRecorderOauthStatesProvider::MicrosoftOnedrive: return "microsoft_onedrive";
         case SoundRecorderOauthStatesProvider::AppleIcloud: return "apple_icloud";
+        case SoundRecorderOauthStatesProvider::Dropbox: return "dropbox";
     }
     return "";
 }
@@ -1278,6 +1285,7 @@ inline std::optional<SoundRecorderOauthStatesProvider> parse_sound_recorder_oaut
     if (value == "google_drive") return SoundRecorderOauthStatesProvider::GoogleDrive;
     if (value == "microsoft_onedrive") return SoundRecorderOauthStatesProvider::MicrosoftOnedrive;
     if (value == "apple_icloud") return SoundRecorderOauthStatesProvider::AppleIcloud;
+    if (value == "dropbox") return SoundRecorderOauthStatesProvider::Dropbox;
     return std::nullopt;
 }
 
@@ -1373,12 +1381,15 @@ inline const char* sound_recorder_cloud_connections_select_sql = R"SQL(select
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_cloud_connections)SQL";
 
-enum class SoundRecorderCloudConnectionsProvider { GoogleDrive, MicrosoftOnedrive, AppleIcloud };
+enum class SoundRecorderCloudConnectionsProvider { GoogleDrive, MicrosoftOnedrive, AppleIcloud, Dropbox, AmazonS3, CloudflareR2 };
 inline std::string sound_recorder_cloud_connections_provider_to_string(SoundRecorderCloudConnectionsProvider value) {
     switch (value) {
         case SoundRecorderCloudConnectionsProvider::GoogleDrive: return "google_drive";
         case SoundRecorderCloudConnectionsProvider::MicrosoftOnedrive: return "microsoft_onedrive";
         case SoundRecorderCloudConnectionsProvider::AppleIcloud: return "apple_icloud";
+        case SoundRecorderCloudConnectionsProvider::Dropbox: return "dropbox";
+        case SoundRecorderCloudConnectionsProvider::AmazonS3: return "amazon_s3";
+        case SoundRecorderCloudConnectionsProvider::CloudflareR2: return "cloudflare_r2";
     }
     return "";
 }
@@ -1386,6 +1397,9 @@ inline std::optional<SoundRecorderCloudConnectionsProvider> parse_sound_recorder
     if (value == "google_drive") return SoundRecorderCloudConnectionsProvider::GoogleDrive;
     if (value == "microsoft_onedrive") return SoundRecorderCloudConnectionsProvider::MicrosoftOnedrive;
     if (value == "apple_icloud") return SoundRecorderCloudConnectionsProvider::AppleIcloud;
+    if (value == "dropbox") return SoundRecorderCloudConnectionsProvider::Dropbox;
+    if (value == "amazon_s3") return SoundRecorderCloudConnectionsProvider::AmazonS3;
+    if (value == "cloudflare_r2") return SoundRecorderCloudConnectionsProvider::CloudflareR2;
     return std::nullopt;
 }
 
@@ -1505,6 +1519,56 @@ inline std::optional<std::string> validate_sound_recorder_cloud_connections_toke
     return std::nullopt;
 }
 
+inline const char* sound_recorder_cloud_connection_projection_outbox_table = "sound_recorder_cloud_connection_projection_outbox";
+inline const std::vector<std::string> sound_recorder_cloud_connection_projection_outbox_columns = { "seq", "connection_id", "attempts", "available_at", "locked_until", "processed_at", "last_error", "created_at", "updated_at" };
+inline const char* sound_recorder_cloud_connection_projection_outbox_select_sql = R"SQL(select
+      seq,
+      connection_id::text as connection_id,
+      attempts,
+      to_char(available_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as available_at,
+      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as locked_until,
+      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as processed_at,
+      last_error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_cloud_connection_projection_outbox)SQL";
+
+struct SoundRecorderCloudConnectionProjectionOutboxRow {
+    int64_t seq;
+    std::string connection_id;
+    int32_t attempts;
+    std::string available_at;
+    std::optional<std::string> locked_until;
+    std::optional<std::string> processed_at;
+    std::optional<std::string> last_error;
+    std::string created_at;
+    std::string updated_at;
+};
+
+inline SoundRecorderCloudConnectionProjectionOutboxRow sound_recorder_cloud_connection_projection_outbox_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    SoundRecorderCloudConnectionProjectionOutboxRow row;
+    (void)is_null;
+    row.seq = std::stoll(get(0));
+    row.connection_id = get(1);
+    row.attempts = std::stoi(get(2));
+    row.available_at = get(3);
+    row.locked_until = is_null(4) ? std::nullopt : std::optional<std::string>(get(4));
+    row.processed_at = is_null(5) ? std::nullopt : std::optional<std::string>(get(5));
+    row.last_error = is_null(6) ? std::nullopt : std::optional<std::string>(get(6));
+    row.created_at = get(7);
+    row.updated_at = get(8);
+    return row;
+}
+inline std::optional<std::string> validate_sound_recorder_cloud_connection_projection_outbox_attempts(int32_t value) {
+    if (value < 0) return std::string("sound_recorder_cloud_connection_projection_outbox.attempts is below the minimum");
+    if (value > 50) return std::string("sound_recorder_cloud_connection_projection_outbox.attempts is above the maximum");
+    return std::nullopt;
+}
+inline std::optional<std::string> validate_sound_recorder_cloud_connection_projection_outbox_last_error(const std::string& value) {
+    if (value.size() > 500) return std::string("sound_recorder_cloud_connection_projection_outbox.last_error must be at most 500 characters");
+    return std::nullopt;
+}
+
 inline const char* sound_recorder_cloud_copy_jobs_table = "sound_recorder_cloud_copy_jobs";
 inline const std::vector<std::string> sound_recorder_cloud_copy_jobs_columns = { "id", "account_id", "connection_id", "segment_id", "provider", "status", "destination_key", "provider_file_id", "attempts", "locked_until", "started_at", "completed_at", "last_error", "meta_data", "created_at", "updated_at" };
 inline const char* sound_recorder_cloud_copy_jobs_select_sql = R"SQL(select
@@ -1526,12 +1590,15 @@ inline const char* sound_recorder_cloud_copy_jobs_select_sql = R"SQL(select
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
     from sound_recorder_cloud_copy_jobs)SQL";
 
-enum class SoundRecorderCloudCopyJobsProvider { GoogleDrive, MicrosoftOnedrive, AppleIcloud };
+enum class SoundRecorderCloudCopyJobsProvider { GoogleDrive, MicrosoftOnedrive, AppleIcloud, Dropbox, AmazonS3, CloudflareR2 };
 inline std::string sound_recorder_cloud_copy_jobs_provider_to_string(SoundRecorderCloudCopyJobsProvider value) {
     switch (value) {
         case SoundRecorderCloudCopyJobsProvider::GoogleDrive: return "google_drive";
         case SoundRecorderCloudCopyJobsProvider::MicrosoftOnedrive: return "microsoft_onedrive";
         case SoundRecorderCloudCopyJobsProvider::AppleIcloud: return "apple_icloud";
+        case SoundRecorderCloudCopyJobsProvider::Dropbox: return "dropbox";
+        case SoundRecorderCloudCopyJobsProvider::AmazonS3: return "amazon_s3";
+        case SoundRecorderCloudCopyJobsProvider::CloudflareR2: return "cloudflare_r2";
     }
     return "";
 }
@@ -1539,6 +1606,9 @@ inline std::optional<SoundRecorderCloudCopyJobsProvider> parse_sound_recorder_cl
     if (value == "google_drive") return SoundRecorderCloudCopyJobsProvider::GoogleDrive;
     if (value == "microsoft_onedrive") return SoundRecorderCloudCopyJobsProvider::MicrosoftOnedrive;
     if (value == "apple_icloud") return SoundRecorderCloudCopyJobsProvider::AppleIcloud;
+    if (value == "dropbox") return SoundRecorderCloudCopyJobsProvider::Dropbox;
+    if (value == "amazon_s3") return SoundRecorderCloudCopyJobsProvider::AmazonS3;
+    if (value == "cloudflare_r2") return SoundRecorderCloudCopyJobsProvider::CloudflareR2;
     return std::nullopt;
 }
 
@@ -15152,7 +15222,7 @@ inline std::optional<std::string> validate_local_credentials_failed_attempts(int
 }
 
 inline const char* sessions_table = "shared_auth.sessions";
-inline const std::vector<std::string> sessions_columns = { "session_id", "shared_user_id", "refresh_token_hash", "provider", "provider_tenant", "provider_subject", "created_at", "updated_at", "last_seen_at", "expires_at", "revoked_at", "rotated_from" };
+inline const std::vector<std::string> sessions_columns = { "session_id", "shared_user_id", "refresh_token_hash", "provider", "provider_tenant", "provider_subject", "auth_level", "auth_methods", "created_at", "updated_at", "last_seen_at", "expires_at", "revoked_at", "rotated_from" };
 inline const char* sessions_select_sql = R"SQL(select
       session_id::text as session_id,
       shared_user_id::text as shared_user_id,
@@ -15160,6 +15230,8 @@ inline const char* sessions_select_sql = R"SQL(select
       provider,
       provider_tenant,
       provider_subject,
+      auth_level,
+      auth_methods::text as auth_methods_json,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
       to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
@@ -15168,6 +15240,20 @@ inline const char* sessions_select_sql = R"SQL(select
       rotated_from::text as rotated_from
     from shared_auth.sessions)SQL";
 
+enum class SessionsAuthLevel { 1, 2 };
+inline std::string sessions_auth_level_to_string(SessionsAuthLevel value) {
+    switch (value) {
+        case SessionsAuthLevel::1: return "1";
+        case SessionsAuthLevel::2: return "2";
+    }
+    return "";
+}
+inline std::optional<SessionsAuthLevel> parse_sessions_auth_level(const std::string& value) {
+    if (value == "1") return SessionsAuthLevel::1;
+    if (value == "2") return SessionsAuthLevel::2;
+    return std::nullopt;
+}
+
 struct SessionsRow {
     std::string session_id;
     std::string shared_user_id;
@@ -15175,6 +15261,8 @@ struct SessionsRow {
     std::string provider;
     std::string provider_tenant;
     std::string provider_subject;
+    std::string auth_level;
+    std::string auth_methods;
     std::string created_at;
     std::string updated_at;
     std::string last_seen_at;
@@ -15192,13 +15280,94 @@ inline SessionsRow sessions_row_of_row(const std::function<std::string(int)>& ge
     row.provider = get(3);
     row.provider_tenant = get(4);
     row.provider_subject = get(5);
-    row.created_at = get(6);
-    row.updated_at = get(7);
-    row.last_seen_at = get(8);
-    row.expires_at = get(9);
-    row.revoked_at = is_null(10) ? std::nullopt : std::optional<std::string>(get(10));
-    row.rotated_from = is_null(11) ? std::nullopt : std::optional<std::string>(get(11));
+    row.auth_level = get(6);
+    row.auth_methods = get(7);
+    row.created_at = get(8);
+    row.updated_at = get(9);
+    row.last_seen_at = get(10);
+    row.expires_at = get(11);
+    row.revoked_at = is_null(12) ? std::nullopt : std::optional<std::string>(get(12));
+    row.rotated_from = is_null(13) ? std::nullopt : std::optional<std::string>(get(13));
     return row;
+}
+
+inline const char* magic_link_tokens_table = "shared_auth.magic_link_tokens";
+inline const std::vector<std::string> magic_link_tokens_columns = { "token_hash", "otp_hash", "shared_user_id", "identifier_hash", "failed_attempts", "created_at", "expires_at", "consumed_at" };
+inline const char* magic_link_tokens_select_sql = R"SQL(select
+      token_hash,
+      otp_hash,
+      shared_user_id::text as shared_user_id,
+      identifier_hash,
+      failed_attempts,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as consumed_at
+    from shared_auth.magic_link_tokens)SQL";
+
+struct MagicLinkTokensRow {
+    std::string token_hash;
+    std::string otp_hash;
+    std::string shared_user_id;
+    std::string identifier_hash;
+    int32_t failed_attempts;
+    std::string created_at;
+    std::string expires_at;
+    std::optional<std::string> consumed_at;
+};
+
+inline MagicLinkTokensRow magic_link_tokens_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    MagicLinkTokensRow row;
+    (void)is_null;
+    row.token_hash = get(0);
+    row.otp_hash = get(1);
+    row.shared_user_id = get(2);
+    row.identifier_hash = get(3);
+    row.failed_attempts = std::stoi(get(4));
+    row.created_at = get(5);
+    row.expires_at = get(6);
+    row.consumed_at = is_null(7) ? std::nullopt : std::optional<std::string>(get(7));
+    return row;
+}
+inline std::optional<std::string> validate_magic_link_tokens_failed_attempts(int32_t value) {
+    if (value < 0) return std::string("magic_link_tokens.failed_attempts is below the minimum");
+    if (value > 5) return std::string("magic_link_tokens.failed_attempts is above the maximum");
+    return std::nullopt;
+}
+
+inline const char* mfa_sms_challenges_table = "shared_auth.mfa_sms_challenges";
+inline const std::vector<std::string> mfa_sms_challenges_columns = { "challenge_id", "shared_user_id", "phone_e164", "created_at", "expires_at", "verified_at" };
+inline const char* mfa_sms_challenges_select_sql = R"SQL(select
+      challenge_id::text as challenge_id,
+      shared_user_id::text as shared_user_id,
+      phone_e164,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(verified_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as verified_at
+    from shared_auth.mfa_sms_challenges)SQL";
+
+struct MfaSmsChallengesRow {
+    std::string challenge_id;
+    std::string shared_user_id;
+    std::string phone_e164;
+    std::string created_at;
+    std::string expires_at;
+    std::optional<std::string> verified_at;
+};
+
+inline MfaSmsChallengesRow mfa_sms_challenges_row_of_row(const std::function<std::string(int)>& get, const std::function<bool(int)>& is_null) {
+    MfaSmsChallengesRow row;
+    (void)is_null;
+    row.challenge_id = get(0);
+    row.shared_user_id = get(1);
+    row.phone_e164 = get(2);
+    row.created_at = get(3);
+    row.expires_at = get(4);
+    row.verified_at = is_null(5) ? std::nullopt : std::optional<std::string>(get(5));
+    return row;
+}
+inline std::optional<std::string> validate_mfa_sms_challenges_phone_e164(const std::string& value) {
+    if (!std::regex_match(value, std::regex(R"RX(^\+[1-9][0-9]{7,14}$)RX"))) return std::string("mfa_sms_challenges.phone_e164 does not match the required pattern");
+    return std::nullopt;
 }
 
 inline const char* roles_table = "shared_auth.roles";

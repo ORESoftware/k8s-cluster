@@ -412,7 +412,7 @@ public class SoundRecorderDevices
     [Required]
     [Column("platform")]
     [MaxLength(24)]
-    [RegularExpression(@"^(ios|android)$")]
+    [RegularExpression(@"^(ios|android|macos|windows|linux)$")]
     public string Platform { get; set; } = null!;
 
     [Required]
@@ -796,7 +796,7 @@ public class SoundRecorderOauthStates
     [Required]
     [Column("provider")]
     [MaxLength(32)]
-    [RegularExpression(@"^(google_drive|microsoft_onedrive|apple_icloud)$")]
+    [RegularExpression(@"^(google_drive|microsoft_onedrive|apple_icloud|dropbox)$")]
     public string Provider { get; set; } = null!;
 
     [Required]
@@ -854,7 +854,7 @@ public class SoundRecorderCloudConnections
     [Required]
     [Column("provider")]
     [MaxLength(32)]
-    [RegularExpression(@"^(google_drive|microsoft_onedrive|apple_icloud)$")]
+    [RegularExpression(@"^(google_drive|microsoft_onedrive|apple_icloud|dropbox|amazon_s3|cloudflare_r2)$")]
     public string Provider { get; set; } = null!;
 
     [Required]
@@ -926,6 +926,41 @@ public class SoundRecorderCloudConnections
     public DateTimeOffset UpdatedAt { get; set; }
 }
 
+[Table("sound_recorder_cloud_connection_projection_outbox")]
+public class SoundRecorderCloudConnectionProjectionOutbox
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("seq")]
+    public long Seq { get; set; }
+
+    [Column("connection_id")]
+    public Guid ConnectionId { get; set; }
+
+    [Column("attempts")]
+    [Range(0, 50)]
+    public int Attempts { get; set; }
+
+    [Column("available_at")]
+    public DateTimeOffset AvailableAt { get; set; }
+
+    [Column("locked_until")]
+    public DateTimeOffset? LockedUntil { get; set; }
+
+    [Column("processed_at")]
+    public DateTimeOffset? ProcessedAt { get; set; }
+
+    [Column("last_error")]
+    [MaxLength(500)]
+    public string? LastError { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("updated_at")]
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
 [Table("sound_recorder_cloud_copy_jobs")]
 public class SoundRecorderCloudCopyJobs
 {
@@ -946,7 +981,7 @@ public class SoundRecorderCloudCopyJobs
     [Required]
     [Column("provider")]
     [MaxLength(32)]
-    [RegularExpression(@"^(google_drive|microsoft_onedrive|apple_icloud)$")]
+    [RegularExpression(@"^(google_drive|microsoft_onedrive|apple_icloud|dropbox|amazon_s3|cloudflare_r2)$")]
     public string Provider { get; set; } = null!;
 
     [Required]
@@ -9186,6 +9221,15 @@ public class Sessions
     [Column("provider_subject")]
     public string ProviderSubject { get; set; } = null!;
 
+    [Required]
+    [Column("auth_level")]
+    [RegularExpression(@"^(1|2)$")]
+    public string AuthLevel { get; set; } = null!;
+
+    [Required]
+    [Column("auth_methods", TypeName = "jsonb")]
+    public string AuthMethods { get; set; } = null!;
+
     [Column("created_at")]
     public DateTimeOffset CreatedAt { get; set; }
 
@@ -9203,6 +9247,65 @@ public class Sessions
 
     [Column("rotated_from")]
     public Guid? RotatedFrom { get; set; }
+}
+
+[Table("magic_link_tokens", Schema = "shared_auth")]
+public class MagicLinkTokens
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("token_hash")]
+    public string TokenHash { get; set; } = null!;
+
+    [Required]
+    [Column("otp_hash")]
+    public string OtpHash { get; set; } = null!;
+
+    [Column("shared_user_id")]
+    public Guid SharedUserId { get; set; }
+
+    [Required]
+    [Column("identifier_hash")]
+    public string IdentifierHash { get; set; } = null!;
+
+    [Column("failed_attempts")]
+    [Range(0, 5)]
+    public int FailedAttempts { get; set; }
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("expires_at")]
+    public DateTimeOffset ExpiresAt { get; set; }
+
+    [Column("consumed_at")]
+    public DateTimeOffset? ConsumedAt { get; set; }
+}
+
+[Table("mfa_sms_challenges", Schema = "shared_auth")]
+public class MfaSmsChallenges
+{
+    [Key]
+    [DatabaseGenerated(DatabaseGeneratedOption.Identity)]
+    [Column("challenge_id")]
+    public Guid ChallengeId { get; set; }
+
+    [Column("shared_user_id")]
+    public Guid SharedUserId { get; set; }
+
+    [Required]
+    [Column("phone_e164")]
+    [RegularExpression(@"^\+[1-9][0-9]{7,14}$")]
+    public string PhoneE164 { get; set; } = null!;
+
+    [Column("created_at")]
+    public DateTimeOffset CreatedAt { get; set; }
+
+    [Column("expires_at")]
+    public DateTimeOffset ExpiresAt { get; set; }
+
+    [Column("verified_at")]
+    public DateTimeOffset? VerifiedAt { get; set; }
 }
 
 [Table("roles", Schema = "shared_auth")]
@@ -9371,6 +9474,8 @@ public class DdPgDefsContext : DbContext
     public DbSet<SoundRecorderOauthStates> SoundRecorderOauthStatesSet => Set<SoundRecorderOauthStates>();
 
     public DbSet<SoundRecorderCloudConnections> SoundRecorderCloudConnectionsSet => Set<SoundRecorderCloudConnections>();
+
+    public DbSet<SoundRecorderCloudConnectionProjectionOutbox> SoundRecorderCloudConnectionProjectionOutboxSet => Set<SoundRecorderCloudConnectionProjectionOutbox>();
 
     public DbSet<SoundRecorderCloudCopyJobs> SoundRecorderCloudCopyJobsSet => Set<SoundRecorderCloudCopyJobs>();
 
@@ -9665,6 +9770,10 @@ public class DdPgDefsContext : DbContext
     public DbSet<LocalCredentials> LocalCredentialsSet => Set<LocalCredentials>();
 
     public DbSet<Sessions> SessionsSet => Set<Sessions>();
+
+    public DbSet<MagicLinkTokens> MagicLinkTokensSet => Set<MagicLinkTokens>();
+
+    public DbSet<MfaSmsChallenges> MfaSmsChallengesSet => Set<MfaSmsChallenges>();
 
     public DbSet<Roles> RolesSet => Set<Roles>();
 

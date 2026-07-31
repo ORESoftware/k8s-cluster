@@ -895,15 +895,21 @@ pub const SOUND_RECORDER_DEVICES_SELECT_SQL: &str = r###"select
 pub enum SoundRecorderDevicesPlatform {
     Ios,
     Android,
+    Macos,
+    Windows,
+    Linux,
 }
 
 impl SoundRecorderDevicesPlatform {
-    pub const VALUES: &'static [&'static str] = &["ios", "android"];
+    pub const VALUES: &'static [&'static str] = &["ios", "android", "macos", "windows", "linux"];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Ios => "ios",
             Self::Android => "android",
+            Self::Macos => "macos",
+            Self::Windows => "windows",
+            Self::Linux => "linux",
         }
     }
 }
@@ -915,6 +921,9 @@ impl TryFrom<&str> for SoundRecorderDevicesPlatform {
         match value {
             "ios" => Ok(Self::Ios),
             "android" => Ok(Self::Android),
+            "macos" => Ok(Self::Macos),
+            "windows" => Ok(Self::Windows),
+            "linux" => Ok(Self::Linux),
             _ => Err(format!("unsupported platform: {value}")),
         }
     }
@@ -1084,7 +1093,7 @@ pub struct SoundRecorderDevicesInsert {
 }
 
 pub fn validate_sound_recorder_devices_row(value: &SoundRecorderDevicesRow) -> Result<(), String> {
-    if !["ios", "android"].contains(&(&value.platform).as_str()) { return Err(format!("unsupported sound_recorder_devices.platform: {}", &value.platform)); }
+    if !["ios", "android", "macos", "windows", "linux"].contains(&(&value.platform).as_str()) { return Err(format!("unsupported sound_recorder_devices.platform: {}", &value.platform)); }
     if !["active", "revoked", "lost", "replaced", "deleted"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_devices.status: {}", &value.status)); }
     validate_string_length("sound_recorder_devices.install_id", &value.install_id, None, Some(160))?;
     if (&value.install_id).as_bytes().len() > 160 { return Err("sound_recorder_devices.install_id exceeds 160 bytes".to_string()); }
@@ -1116,7 +1125,7 @@ pub fn validate_sound_recorder_devices_row(value: &SoundRecorderDevicesRow) -> R
 
 pub fn validate_sound_recorder_devices_insert(value: &SoundRecorderDevicesInsert) -> Result<(), String> {
     if let Some(value) = &value.platform {
-        if !["ios", "android"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_devices.platform: {}", value)); }
+        if !["ios", "android", "macos", "windows", "linux"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_devices.platform: {}", value)); }
     }
     if let Some(value) = &value.status {
         if !["active", "revoked", "lost", "replaced", "deleted"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_devices.status: {}", value)); }
@@ -1863,16 +1872,18 @@ pub enum SoundRecorderOauthStatesProvider {
     GoogleDrive,
     MicrosoftOnedrive,
     AppleIcloud,
+    Dropbox,
 }
 
 impl SoundRecorderOauthStatesProvider {
-    pub const VALUES: &'static [&'static str] = &["google_drive", "microsoft_onedrive", "apple_icloud"];
+    pub const VALUES: &'static [&'static str] = &["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox"];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Self::GoogleDrive => "google_drive",
             Self::MicrosoftOnedrive => "microsoft_onedrive",
             Self::AppleIcloud => "apple_icloud",
+            Self::Dropbox => "dropbox",
         }
     }
 }
@@ -1885,6 +1896,7 @@ impl TryFrom<&str> for SoundRecorderOauthStatesProvider {
             "google_drive" => Ok(Self::GoogleDrive),
             "microsoft_onedrive" => Ok(Self::MicrosoftOnedrive),
             "apple_icloud" => Ok(Self::AppleIcloud),
+            "dropbox" => Ok(Self::Dropbox),
             _ => Err(format!("unsupported provider: {value}")),
         }
     }
@@ -1964,7 +1976,7 @@ pub struct SoundRecorderOauthStatesInsert {
 }
 
 pub fn validate_sound_recorder_oauth_states_row(value: &SoundRecorderOauthStatesRow) -> Result<(), String> {
-    if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.provider: {}", &value.provider)); }
+    if !["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.provider: {}", &value.provider)); }
     validate_string_length("sound_recorder_oauth_states.state_hash", &value.state_hash, None, Some(64))?;
     validate_string_length("sound_recorder_oauth_states.redirect_uri", &value.redirect_uri, None, Some(512))?;
     if (&value.redirect_uri).as_bytes().len() > 512 { return Err("sound_recorder_oauth_states.redirect_uri exceeds 512 bytes".to_string()); }
@@ -1979,7 +1991,7 @@ pub fn validate_sound_recorder_oauth_states_row(value: &SoundRecorderOauthStates
 
 pub fn validate_sound_recorder_oauth_states_insert(value: &SoundRecorderOauthStatesInsert) -> Result<(), String> {
     if let Some(value) = &value.provider {
-        if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.provider: {}", value)); }
+        if !["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_oauth_states.provider: {}", value)); }
     }
     if let Some(value) = &value.state_hash {
         validate_string_length("sound_recorder_oauth_states.state_hash", value, None, Some(64))?;
@@ -2033,16 +2045,22 @@ pub enum SoundRecorderCloudConnectionsProvider {
     GoogleDrive,
     MicrosoftOnedrive,
     AppleIcloud,
+    Dropbox,
+    AmazonS3,
+    CloudflareR2,
 }
 
 impl SoundRecorderCloudConnectionsProvider {
-    pub const VALUES: &'static [&'static str] = &["google_drive", "microsoft_onedrive", "apple_icloud"];
+    pub const VALUES: &'static [&'static str] = &["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Self::GoogleDrive => "google_drive",
             Self::MicrosoftOnedrive => "microsoft_onedrive",
             Self::AppleIcloud => "apple_icloud",
+            Self::Dropbox => "dropbox",
+            Self::AmazonS3 => "amazon_s3",
+            Self::CloudflareR2 => "cloudflare_r2",
         }
     }
 }
@@ -2055,6 +2073,9 @@ impl TryFrom<&str> for SoundRecorderCloudConnectionsProvider {
             "google_drive" => Ok(Self::GoogleDrive),
             "microsoft_onedrive" => Ok(Self::MicrosoftOnedrive),
             "apple_icloud" => Ok(Self::AppleIcloud),
+            "dropbox" => Ok(Self::Dropbox),
+            "amazon_s3" => Ok(Self::AmazonS3),
+            "cloudflare_r2" => Ok(Self::CloudflareR2),
             _ => Err(format!("unsupported provider: {value}")),
         }
     }
@@ -2180,7 +2201,7 @@ pub struct SoundRecorderCloudConnectionsInsert {
 }
 
 pub fn validate_sound_recorder_cloud_connections_row(value: &SoundRecorderCloudConnectionsRow) -> Result<(), String> {
-    if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.provider: {}", &value.provider)); }
+    if !["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.provider: {}", &value.provider)); }
     if !["server_oauth", "client_managed"].contains(&(&value.link_mode).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.link_mode: {}", &value.link_mode)); }
     if !["active", "paused", "revoked", "failed"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.status: {}", &value.status)); }
     if let Some(value) = &value.display_name {
@@ -2215,7 +2236,7 @@ pub fn validate_sound_recorder_cloud_connections_row(value: &SoundRecorderCloudC
 
 pub fn validate_sound_recorder_cloud_connections_insert(value: &SoundRecorderCloudConnectionsInsert) -> Result<(), String> {
     if let Some(value) = &value.provider {
-        if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.provider: {}", value)); }
+        if !["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.provider: {}", value)); }
     }
     if let Some(value) = &value.link_mode {
         if !["server_oauth", "client_managed"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_connections.link_mode: {}", value)); }
@@ -2257,6 +2278,71 @@ pub fn validate_sound_recorder_cloud_connections_insert(value: &SoundRecorderClo
     Ok(())
 }
 
+pub const SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_TABLE: &str = "sound_recorder_cloud_connection_projection_outbox";
+pub const SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_COLUMNS: &[&str] = &["seq", "connection_id", "attempts", "available_at", "locked_until", "processed_at", "last_error", "created_at", "updated_at"];
+pub const SOUND_RECORDER_CLOUD_CONNECTION_PROJECTION_OUTBOX_SELECT_SQL: &str = r###"select
+      seq,
+      connection_id::text as connection_id,
+      attempts,
+      to_char(available_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as available_at,
+      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as locked_until,
+      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as processed_at,
+      last_error,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at
+    from sound_recorder_cloud_connection_projection_outbox"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderCloudConnectionProjectionOutboxRow {
+    pub seq: i64,
+    pub connection_id: String,
+    pub attempts: i32,
+    pub available_at: String,
+    pub locked_until: Option<String>,
+    pub processed_at: Option<String>,
+    pub last_error: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SoundRecorderCloudConnectionProjectionOutboxInsert {
+    pub seq: Option<i64>,
+    pub connection_id: Option<String>,
+    pub attempts: Option<i32>,
+    pub available_at: Option<String>,
+    pub locked_until: Option<String>,
+    pub processed_at: Option<String>,
+    pub last_error: Option<String>,
+    pub created_at: Option<String>,
+    pub updated_at: Option<String>,
+}
+
+pub fn validate_sound_recorder_cloud_connection_projection_outbox_row(value: &SoundRecorderCloudConnectionProjectionOutboxRow) -> Result<(), String> {
+    if *(&value.attempts) < 0 { return Err("sound_recorder_cloud_connection_projection_outbox.attempts is below the minimum".to_string()); }
+    if *(&value.attempts) > 50 { return Err("sound_recorder_cloud_connection_projection_outbox.attempts is above the maximum".to_string()); }
+    if let Some(value) = &value.last_error {
+        validate_string_length("sound_recorder_cloud_connection_projection_outbox.last_error", value, None, Some(500))?;
+        if (value).as_bytes().len() > 500 { return Err("sound_recorder_cloud_connection_projection_outbox.last_error exceeds 500 bytes".to_string()); }
+    }
+    Ok(())
+}
+
+pub fn validate_sound_recorder_cloud_connection_projection_outbox_insert(value: &SoundRecorderCloudConnectionProjectionOutboxInsert) -> Result<(), String> {
+    if let Some(value) = &value.attempts {
+        if *(value) < 0 { return Err("sound_recorder_cloud_connection_projection_outbox.attempts is below the minimum".to_string()); }
+        if *(value) > 50 { return Err("sound_recorder_cloud_connection_projection_outbox.attempts is above the maximum".to_string()); }
+    }
+    if let Some(value) = &value.last_error {
+        validate_string_length("sound_recorder_cloud_connection_projection_outbox.last_error", value, None, Some(500))?;
+        if (value).as_bytes().len() > 500 { return Err("sound_recorder_cloud_connection_projection_outbox.last_error exceeds 500 bytes".to_string()); }
+    }
+    Ok(())
+}
+
 pub const SOUND_RECORDER_CLOUD_COPY_JOBS_TABLE: &str = "sound_recorder_cloud_copy_jobs";
 pub const SOUND_RECORDER_CLOUD_COPY_JOBS_COLUMNS: &[&str] = &["id", "account_id", "connection_id", "segment_id", "provider", "status", "destination_key", "provider_file_id", "attempts", "locked_until", "started_at", "completed_at", "last_error", "meta_data", "created_at", "updated_at"];
 pub const SOUND_RECORDER_CLOUD_COPY_JOBS_SELECT_SQL: &str = r###"select
@@ -2284,16 +2370,22 @@ pub enum SoundRecorderCloudCopyJobsProvider {
     GoogleDrive,
     MicrosoftOnedrive,
     AppleIcloud,
+    Dropbox,
+    AmazonS3,
+    CloudflareR2,
 }
 
 impl SoundRecorderCloudCopyJobsProvider {
-    pub const VALUES: &'static [&'static str] = &["google_drive", "microsoft_onedrive", "apple_icloud"];
+    pub const VALUES: &'static [&'static str] = &["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Self::GoogleDrive => "google_drive",
             Self::MicrosoftOnedrive => "microsoft_onedrive",
             Self::AppleIcloud => "apple_icloud",
+            Self::Dropbox => "dropbox",
+            Self::AmazonS3 => "amazon_s3",
+            Self::CloudflareR2 => "cloudflare_r2",
         }
     }
 }
@@ -2306,6 +2398,9 @@ impl TryFrom<&str> for SoundRecorderCloudCopyJobsProvider {
             "google_drive" => Ok(Self::GoogleDrive),
             "microsoft_onedrive" => Ok(Self::MicrosoftOnedrive),
             "apple_icloud" => Ok(Self::AppleIcloud),
+            "dropbox" => Ok(Self::Dropbox),
+            "amazon_s3" => Ok(Self::AmazonS3),
+            "cloudflare_r2" => Ok(Self::CloudflareR2),
             _ => Err(format!("unsupported provider: {value}")),
         }
     }
@@ -2397,7 +2492,7 @@ pub struct SoundRecorderCloudCopyJobsInsert {
 }
 
 pub fn validate_sound_recorder_cloud_copy_jobs_row(value: &SoundRecorderCloudCopyJobsRow) -> Result<(), String> {
-    if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.provider: {}", &value.provider)); }
+    if !["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"].contains(&(&value.provider).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.provider: {}", &value.provider)); }
     if !["pending", "running", "waiting_client", "completed", "failed", "skipped"].contains(&(&value.status).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.status: {}", &value.status)); }
     validate_string_length("sound_recorder_cloud_copy_jobs.destination_key", &value.destination_key, None, Some(2048))?;
     if (&value.destination_key).as_bytes().len() > 2048 { return Err("sound_recorder_cloud_copy_jobs.destination_key exceeds 2048 bytes".to_string()); }
@@ -2417,7 +2512,7 @@ pub fn validate_sound_recorder_cloud_copy_jobs_row(value: &SoundRecorderCloudCop
 
 pub fn validate_sound_recorder_cloud_copy_jobs_insert(value: &SoundRecorderCloudCopyJobsInsert) -> Result<(), String> {
     if let Some(value) = &value.provider {
-        if !["google_drive", "microsoft_onedrive", "apple_icloud"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.provider: {}", value)); }
+        if !["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.provider: {}", value)); }
     }
     if let Some(value) = &value.status {
         if !["pending", "running", "waiting_client", "completed", "failed", "skipped"].contains(&(value).as_str()) { return Err(format!("unsupported sound_recorder_cloud_copy_jobs.status: {}", value)); }
@@ -23275,7 +23370,7 @@ pub fn validate_local_credentials_insert(value: &LocalCredentialsInsert) -> Resu
 }
 
 pub const SESSIONS_TABLE: &str = "shared_auth.sessions";
-pub const SESSIONS_COLUMNS: &[&str] = &["session_id", "shared_user_id", "refresh_token_hash", "provider", "provider_tenant", "provider_subject", "created_at", "updated_at", "last_seen_at", "expires_at", "revoked_at", "rotated_from"];
+pub const SESSIONS_COLUMNS: &[&str] = &["session_id", "shared_user_id", "refresh_token_hash", "provider", "provider_tenant", "provider_subject", "auth_level", "auth_methods", "created_at", "updated_at", "last_seen_at", "expires_at", "revoked_at", "rotated_from"];
 pub const SESSIONS_SELECT_SQL: &str = r###"select
       session_id::text as session_id,
       shared_user_id::text as shared_user_id,
@@ -23283,6 +23378,8 @@ pub const SESSIONS_SELECT_SQL: &str = r###"select
       provider,
       provider_tenant,
       provider_subject,
+      auth_level,
+      auth_methods,
       to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
       to_char(updated_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as updated_at,
       to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as last_seen_at,
@@ -23290,6 +23387,38 @@ pub const SESSIONS_SELECT_SQL: &str = r###"select
       to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as revoked_at,
       rotated_from::text as rotated_from
     from shared_auth.sessions"###;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SessionsAuthLevel {
+    #[serde(rename = "1")]
+    V1,
+    #[serde(rename = "2")]
+    V2,
+}
+
+impl SessionsAuthLevel {
+    pub const VALUES: &'static [&'static str] = &["1", "2"];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::V1 => "1",
+            Self::V2 => "2",
+        }
+    }
+}
+
+impl TryFrom<&str> for SessionsAuthLevel {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, <Self as TryFrom<&str>>::Error> {
+        match value {
+            "1" => Ok(Self::V1),
+            "2" => Ok(Self::V2),
+            _ => Err(format!("unsupported auth_level: {value}")),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
@@ -23301,6 +23430,8 @@ pub struct SessionsRow {
     pub provider: String,
     pub provider_tenant: String,
     pub provider_subject: String,
+    pub auth_level: i16,
+    pub auth_methods: Value,
     pub created_at: String,
     pub updated_at: String,
     pub last_seen_at: String,
@@ -23318,6 +23449,8 @@ pub struct SessionsInsert {
     pub provider: Option<String>,
     pub provider_tenant: Option<String>,
     pub provider_subject: Option<String>,
+    pub auth_level: Option<i16>,
+    pub auth_methods: Option<Value>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
     pub last_seen_at: Option<String>,
@@ -23330,6 +23463,8 @@ pub fn validate_sessions_row(value: &SessionsRow) -> Result<(), String> {
     if (&value.provider).as_bytes().len() > 64 { return Err("sessions.provider exceeds 64 bytes".to_string()); }
     if (&value.provider_tenant).as_bytes().len() > 255 { return Err("sessions.provider_tenant exceeds 255 bytes".to_string()); }
     if (&value.provider_subject).as_bytes().len() > 512 { return Err("sessions.provider_subject exceeds 512 bytes".to_string()); }
+    if !["1", "2"].contains(&(&value.auth_level).as_str()) { return Err(format!("unsupported sessions.auth_level: {}", &value.auth_level)); }
+    if !(&value.auth_methods).is_array() { return Err("sessions.auth_methods must be a JSON array".to_string()); }
     Ok(())
 }
 
@@ -23343,6 +23478,108 @@ pub fn validate_sessions_insert(value: &SessionsInsert) -> Result<(), String> {
     if let Some(value) = &value.provider_subject {
         if (value).as_bytes().len() > 512 { return Err("sessions.provider_subject exceeds 512 bytes".to_string()); }
     }
+    if let Some(value) = &value.auth_level {
+        if !["1", "2"].contains(&(value).as_str()) { return Err(format!("unsupported sessions.auth_level: {}", value)); }
+    }
+    if let Some(value) = &value.auth_methods {
+        if !(value).is_array() { return Err("sessions.auth_methods must be a JSON array".to_string()); }
+    }
+    Ok(())
+}
+
+pub const MAGIC_LINK_TOKENS_TABLE: &str = "shared_auth.magic_link_tokens";
+pub const MAGIC_LINK_TOKENS_COLUMNS: &[&str] = &["token_hash", "otp_hash", "shared_user_id", "identifier_hash", "failed_attempts", "created_at", "expires_at", "consumed_at"];
+pub const MAGIC_LINK_TOKENS_SELECT_SQL: &str = r###"select
+      token_hash,
+      otp_hash,
+      shared_user_id::text as shared_user_id,
+      identifier_hash,
+      failed_attempts,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as consumed_at
+    from shared_auth.magic_link_tokens"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct MagicLinkTokensRow {
+    pub token_hash: String,
+    pub otp_hash: String,
+    pub shared_user_id: String,
+    pub identifier_hash: String,
+    pub failed_attempts: i32,
+    pub created_at: String,
+    pub expires_at: String,
+    pub consumed_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MagicLinkTokensInsert {
+    pub token_hash: Option<String>,
+    pub otp_hash: Option<String>,
+    pub shared_user_id: Option<String>,
+    pub identifier_hash: Option<String>,
+    pub failed_attempts: Option<i32>,
+    pub created_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub consumed_at: Option<String>,
+}
+
+pub fn validate_magic_link_tokens_row(value: &MagicLinkTokensRow) -> Result<(), String> {
+    if *(&value.failed_attempts) < 0 { return Err("magic_link_tokens.failed_attempts is below the minimum".to_string()); }
+    if *(&value.failed_attempts) > 5 { return Err("magic_link_tokens.failed_attempts is above the maximum".to_string()); }
+    Ok(())
+}
+
+pub fn validate_magic_link_tokens_insert(value: &MagicLinkTokensInsert) -> Result<(), String> {
+    if let Some(value) = &value.failed_attempts {
+        if *(value) < 0 { return Err("magic_link_tokens.failed_attempts is below the minimum".to_string()); }
+        if *(value) > 5 { return Err("magic_link_tokens.failed_attempts is above the maximum".to_string()); }
+    }
+    Ok(())
+}
+
+pub const MFA_SMS_CHALLENGES_TABLE: &str = "shared_auth.mfa_sms_challenges";
+pub const MFA_SMS_CHALLENGES_COLUMNS: &[&str] = &["challenge_id", "shared_user_id", "phone_e164", "created_at", "expires_at", "verified_at"];
+pub const MFA_SMS_CHALLENGES_SELECT_SQL: &str = r###"select
+      challenge_id::text as challenge_id,
+      shared_user_id::text as shared_user_id,
+      phone_e164,
+      to_char(created_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as expires_at,
+      to_char(verified_at at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as verified_at
+    from shared_auth.mfa_sms_challenges"###;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "sqlx", derive(sqlx::FromRow))]
+#[serde(rename_all = "camelCase")]
+pub struct MfaSmsChallengesRow {
+    pub challenge_id: String,
+    pub shared_user_id: String,
+    pub phone_e164: String,
+    pub created_at: String,
+    pub expires_at: String,
+    pub verified_at: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MfaSmsChallengesInsert {
+    pub challenge_id: Option<String>,
+    pub shared_user_id: Option<String>,
+    pub phone_e164: Option<String>,
+    pub created_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub verified_at: Option<String>,
+}
+
+pub fn validate_mfa_sms_challenges_row(_value: &MfaSmsChallengesRow) -> Result<(), String> {
+    Ok(())
+}
+
+pub fn validate_mfa_sms_challenges_insert(_value: &MfaSmsChallengesInsert) -> Result<(), String> {
     Ok(())
 }
 

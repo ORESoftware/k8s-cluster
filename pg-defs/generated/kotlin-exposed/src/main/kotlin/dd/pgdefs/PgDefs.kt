@@ -295,6 +295,20 @@ object SoundRecorderCloudConnections : Table("sound_recorder_cloud_connections")
     override val primaryKey = PrimaryKey(id)
 }
 
+object SoundRecorderCloudConnectionProjectionOutbox : Table("sound_recorder_cloud_connection_projection_outbox") {
+    val seq = long("seq")
+    val connectionId = uuid("connection_id")
+    val attempts = integer("attempts")
+    val availableAt = timestampWithTimeZone("available_at")
+    val lockedUntil = timestampWithTimeZone("locked_until").nullable()
+    val processedAt = timestampWithTimeZone("processed_at").nullable()
+    val lastError = varchar("last_error", 500).nullable()
+    val createdAt = timestampWithTimeZone("created_at")
+    val updatedAt = timestampWithTimeZone("updated_at")
+
+    override val primaryKey = PrimaryKey(seq)
+}
+
 object SoundRecorderCloudCopyJobs : Table("sound_recorder_cloud_copy_jobs") {
     val id = uuid("id")
     val accountId = uuid("account_id")
@@ -2983,6 +2997,8 @@ object Sessions : Table("shared_auth.sessions") {
     val provider = text("provider")
     val providerTenant = text("provider_tenant")
     val providerSubject = text("provider_subject")
+    val authLevel = text("auth_level")
+    val authMethods = jsonb<String>("auth_methods", { it }, { it })
     val createdAt = timestampWithTimeZone("created_at")
     val updatedAt = timestampWithTimeZone("updated_at")
     val lastSeenAt = timestampWithTimeZone("last_seen_at")
@@ -2991,6 +3007,30 @@ object Sessions : Table("shared_auth.sessions") {
     val rotatedFrom = uuid("rotated_from").nullable()
 
     override val primaryKey = PrimaryKey(sessionId)
+}
+
+object MagicLinkTokens : Table("shared_auth.magic_link_tokens") {
+    val tokenHash = text("token_hash")
+    val otpHash = text("otp_hash")
+    val sharedUserId = uuid("shared_user_id")
+    val identifierHash = text("identifier_hash")
+    val failedAttempts = integer("failed_attempts")
+    val createdAt = timestampWithTimeZone("created_at")
+    val expiresAt = timestampWithTimeZone("expires_at")
+    val consumedAt = timestampWithTimeZone("consumed_at").nullable()
+
+    override val primaryKey = PrimaryKey(tokenHash)
+}
+
+object MfaSmsChallenges : Table("shared_auth.mfa_sms_challenges") {
+    val challengeId = uuid("challenge_id")
+    val sharedUserId = uuid("shared_user_id")
+    val phoneE164 = text("phone_e164")
+    val createdAt = timestampWithTimeZone("created_at")
+    val expiresAt = timestampWithTimeZone("expires_at")
+    val verifiedAt = timestampWithTimeZone("verified_at").nullable()
+
+    override val primaryKey = PrimaryKey(challengeId)
 }
 
 object Roles : Table("shared_auth.roles") {
@@ -3550,6 +3590,30 @@ fun toSoundRecorderCloudConnectionsRow(row: ResultRow): SoundRecorderCloudConnec
     row[SoundRecorderCloudConnections.metaData],
     row[SoundRecorderCloudConnections.createdAt],
     row[SoundRecorderCloudConnections.updatedAt],
+)
+
+data class SoundRecorderCloudConnectionProjectionOutboxRow(
+    val seq: Long,
+    val connectionId: UUID,
+    val attempts: Int,
+    val availableAt: OffsetDateTime,
+    val lockedUntil: OffsetDateTime?,
+    val processedAt: OffsetDateTime?,
+    val lastError: String?,
+    val createdAt: OffsetDateTime,
+    val updatedAt: OffsetDateTime,
+)
+
+fun toSoundRecorderCloudConnectionProjectionOutboxRow(row: ResultRow): SoundRecorderCloudConnectionProjectionOutboxRow = SoundRecorderCloudConnectionProjectionOutboxRow(
+    row[SoundRecorderCloudConnectionProjectionOutbox.seq],
+    row[SoundRecorderCloudConnectionProjectionOutbox.connectionId],
+    row[SoundRecorderCloudConnectionProjectionOutbox.attempts],
+    row[SoundRecorderCloudConnectionProjectionOutbox.availableAt],
+    row[SoundRecorderCloudConnectionProjectionOutbox.lockedUntil],
+    row[SoundRecorderCloudConnectionProjectionOutbox.processedAt],
+    row[SoundRecorderCloudConnectionProjectionOutbox.lastError],
+    row[SoundRecorderCloudConnectionProjectionOutbox.createdAt],
+    row[SoundRecorderCloudConnectionProjectionOutbox.updatedAt],
 )
 
 data class SoundRecorderCloudCopyJobsRow(
@@ -8315,6 +8379,8 @@ data class SessionsRow(
     val provider: String,
     val providerTenant: String,
     val providerSubject: String,
+    val authLevel: String,
+    val authMethods: String,
     val createdAt: OffsetDateTime,
     val updatedAt: OffsetDateTime,
     val lastSeenAt: OffsetDateTime,
@@ -8330,12 +8396,54 @@ fun toSessionsRow(row: ResultRow): SessionsRow = SessionsRow(
     row[Sessions.provider],
     row[Sessions.providerTenant],
     row[Sessions.providerSubject],
+    row[Sessions.authLevel],
+    row[Sessions.authMethods],
     row[Sessions.createdAt],
     row[Sessions.updatedAt],
     row[Sessions.lastSeenAt],
     row[Sessions.expiresAt],
     row[Sessions.revokedAt],
     row[Sessions.rotatedFrom],
+)
+
+data class MagicLinkTokensRow(
+    val tokenHash: String,
+    val otpHash: String,
+    val sharedUserId: UUID,
+    val identifierHash: String,
+    val failedAttempts: Int,
+    val createdAt: OffsetDateTime,
+    val expiresAt: OffsetDateTime,
+    val consumedAt: OffsetDateTime?,
+)
+
+fun toMagicLinkTokensRow(row: ResultRow): MagicLinkTokensRow = MagicLinkTokensRow(
+    row[MagicLinkTokens.tokenHash],
+    row[MagicLinkTokens.otpHash],
+    row[MagicLinkTokens.sharedUserId],
+    row[MagicLinkTokens.identifierHash],
+    row[MagicLinkTokens.failedAttempts],
+    row[MagicLinkTokens.createdAt],
+    row[MagicLinkTokens.expiresAt],
+    row[MagicLinkTokens.consumedAt],
+)
+
+data class MfaSmsChallengesRow(
+    val challengeId: UUID,
+    val sharedUserId: UUID,
+    val phoneE164: String,
+    val createdAt: OffsetDateTime,
+    val expiresAt: OffsetDateTime,
+    val verifiedAt: OffsetDateTime?,
+)
+
+fun toMfaSmsChallengesRow(row: ResultRow): MfaSmsChallengesRow = MfaSmsChallengesRow(
+    row[MfaSmsChallenges.challengeId],
+    row[MfaSmsChallenges.sharedUserId],
+    row[MfaSmsChallenges.phoneE164],
+    row[MfaSmsChallenges.createdAt],
+    row[MfaSmsChallenges.expiresAt],
+    row[MfaSmsChallenges.verifiedAt],
 )
 
 data class RolesRow(

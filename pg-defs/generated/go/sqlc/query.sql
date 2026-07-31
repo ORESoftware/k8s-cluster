@@ -226,6 +226,21 @@ update sound_recorder_cloud_connections set account_id = $2, created_by_device_i
 -- name: DeleteSoundRecorderCloudConnections :exec
 delete from sound_recorder_cloud_connections where id = $1;
 
+-- name: ListSoundRecorderCloudConnectionProjectionOutbox :many
+select seq, connection_id, attempts, available_at, locked_until, processed_at, last_error, created_at, updated_at from sound_recorder_cloud_connection_projection_outbox;
+
+-- name: GetSoundRecorderCloudConnectionProjectionOutbox :one
+select seq, connection_id, attempts, available_at, locked_until, processed_at, last_error, created_at, updated_at from sound_recorder_cloud_connection_projection_outbox where seq = $1 limit 1;
+
+-- name: CreateSoundRecorderCloudConnectionProjectionOutbox :one
+insert into sound_recorder_cloud_connection_projection_outbox (seq, connection_id, attempts, available_at, locked_until, processed_at, last_error, created_at, updated_at) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning seq, connection_id, attempts, available_at, locked_until, processed_at, last_error, created_at, updated_at;
+
+-- name: UpdateSoundRecorderCloudConnectionProjectionOutbox :one
+update sound_recorder_cloud_connection_projection_outbox set connection_id = $2, attempts = $3, available_at = $4, locked_until = $5, processed_at = $6, last_error = $7, updated_at = $8 where seq = $1 returning seq, connection_id, attempts, available_at, locked_until, processed_at, last_error, created_at, updated_at;
+
+-- name: DeleteSoundRecorderCloudConnectionProjectionOutbox :exec
+delete from sound_recorder_cloud_connection_projection_outbox where seq = $1;
+
 -- name: ListSoundRecorderCloudCopyJobs :many
 select id, account_id, connection_id, segment_id, provider, status, destination_key, provider_file_id, attempts, locked_until, started_at, completed_at, last_error, meta_data, created_at, updated_at from sound_recorder_cloud_copy_jobs;
 
@@ -2417,19 +2432,49 @@ update shared_auth.local_credentials set password_hash = $2, password_changed_at
 delete from shared_auth.local_credentials where shared_user_id = $1;
 
 -- name: ListSessions :many
-select session_id, shared_user_id, refresh_token_hash, provider, provider_tenant, provider_subject, created_at, updated_at, last_seen_at, expires_at, revoked_at, rotated_from from shared_auth.sessions;
+select session_id, shared_user_id, refresh_token_hash, provider, provider_tenant, provider_subject, auth_level, auth_methods, created_at, updated_at, last_seen_at, expires_at, revoked_at, rotated_from from shared_auth.sessions;
 
 -- name: GetSessions :one
-select session_id, shared_user_id, refresh_token_hash, provider, provider_tenant, provider_subject, created_at, updated_at, last_seen_at, expires_at, revoked_at, rotated_from from shared_auth.sessions where session_id = $1 limit 1;
+select session_id, shared_user_id, refresh_token_hash, provider, provider_tenant, provider_subject, auth_level, auth_methods, created_at, updated_at, last_seen_at, expires_at, revoked_at, rotated_from from shared_auth.sessions where session_id = $1 limit 1;
 
 -- name: CreateSessions :one
-insert into shared_auth.sessions (session_id, shared_user_id, refresh_token_hash, provider, provider_tenant, provider_subject, created_at, updated_at, last_seen_at, expires_at, revoked_at, rotated_from) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) returning session_id, shared_user_id, refresh_token_hash, provider, provider_tenant, provider_subject, created_at, updated_at, last_seen_at, expires_at, revoked_at, rotated_from;
+insert into shared_auth.sessions (session_id, shared_user_id, refresh_token_hash, provider, provider_tenant, provider_subject, auth_level, auth_methods, created_at, updated_at, last_seen_at, expires_at, revoked_at, rotated_from) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning session_id, shared_user_id, refresh_token_hash, provider, provider_tenant, provider_subject, auth_level, auth_methods, created_at, updated_at, last_seen_at, expires_at, revoked_at, rotated_from;
 
 -- name: UpdateSessions :one
-update shared_auth.sessions set shared_user_id = $2, refresh_token_hash = $3, provider = $4, provider_tenant = $5, provider_subject = $6, updated_at = $7, last_seen_at = $8, expires_at = $9, revoked_at = $10, rotated_from = $11 where session_id = $1 returning session_id, shared_user_id, refresh_token_hash, provider, provider_tenant, provider_subject, created_at, updated_at, last_seen_at, expires_at, revoked_at, rotated_from;
+update shared_auth.sessions set shared_user_id = $2, refresh_token_hash = $3, provider = $4, provider_tenant = $5, provider_subject = $6, auth_level = $7, auth_methods = $8, updated_at = $9, last_seen_at = $10, expires_at = $11, revoked_at = $12, rotated_from = $13 where session_id = $1 returning session_id, shared_user_id, refresh_token_hash, provider, provider_tenant, provider_subject, auth_level, auth_methods, created_at, updated_at, last_seen_at, expires_at, revoked_at, rotated_from;
 
 -- name: DeleteSessions :exec
 delete from shared_auth.sessions where session_id = $1;
+
+-- name: ListMagicLinkTokens :many
+select token_hash, otp_hash, shared_user_id, identifier_hash, failed_attempts, created_at, expires_at, consumed_at from shared_auth.magic_link_tokens;
+
+-- name: GetMagicLinkTokens :one
+select token_hash, otp_hash, shared_user_id, identifier_hash, failed_attempts, created_at, expires_at, consumed_at from shared_auth.magic_link_tokens where token_hash = $1 limit 1;
+
+-- name: CreateMagicLinkTokens :one
+insert into shared_auth.magic_link_tokens (token_hash, otp_hash, shared_user_id, identifier_hash, failed_attempts, created_at, expires_at, consumed_at) values ($1, $2, $3, $4, $5, $6, $7, $8) returning token_hash, otp_hash, shared_user_id, identifier_hash, failed_attempts, created_at, expires_at, consumed_at;
+
+-- name: UpdateMagicLinkTokens :one
+update shared_auth.magic_link_tokens set otp_hash = $2, shared_user_id = $3, identifier_hash = $4, failed_attempts = $5, expires_at = $6, consumed_at = $7 where token_hash = $1 returning token_hash, otp_hash, shared_user_id, identifier_hash, failed_attempts, created_at, expires_at, consumed_at;
+
+-- name: DeleteMagicLinkTokens :exec
+delete from shared_auth.magic_link_tokens where token_hash = $1;
+
+-- name: ListMfaSmsChallenges :many
+select challenge_id, shared_user_id, phone_e164, created_at, expires_at, verified_at from shared_auth.mfa_sms_challenges;
+
+-- name: GetMfaSmsChallenges :one
+select challenge_id, shared_user_id, phone_e164, created_at, expires_at, verified_at from shared_auth.mfa_sms_challenges where challenge_id = $1 limit 1;
+
+-- name: CreateMfaSmsChallenges :one
+insert into shared_auth.mfa_sms_challenges (challenge_id, shared_user_id, phone_e164, created_at, expires_at, verified_at) values ($1, $2, $3, $4, $5, $6) returning challenge_id, shared_user_id, phone_e164, created_at, expires_at, verified_at;
+
+-- name: UpdateMfaSmsChallenges :one
+update shared_auth.mfa_sms_challenges set shared_user_id = $2, phone_e164 = $3, expires_at = $4, verified_at = $5 where challenge_id = $1 returning challenge_id, shared_user_id, phone_e164, created_at, expires_at, verified_at;
+
+-- name: DeleteMfaSmsChallenges :exec
+delete from shared_auth.mfa_sms_challenges where challenge_id = $1;
 
 -- name: ListRoles :many
 select role_id, shared_user_id, role_name, granted_at, granted_by from shared_auth.roles;

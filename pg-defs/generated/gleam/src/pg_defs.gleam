@@ -360,12 +360,18 @@ pub const sound_recorder_devices_select_sql = "select\n      id::text as id,\n  
 pub type SoundRecorderDevicesPlatform {
   SoundRecorderDevicesPlatformIos
   SoundRecorderDevicesPlatformAndroid
+  SoundRecorderDevicesPlatformMacos
+  SoundRecorderDevicesPlatformWindows
+  SoundRecorderDevicesPlatformLinux
 }
 
 pub fn sound_recorder_devices_platform_to_string(value: SoundRecorderDevicesPlatform) -> String {
   case value {
     SoundRecorderDevicesPlatformIos -> "ios"
     SoundRecorderDevicesPlatformAndroid -> "android"
+    SoundRecorderDevicesPlatformMacos -> "macos"
+    SoundRecorderDevicesPlatformWindows -> "windows"
+    SoundRecorderDevicesPlatformLinux -> "linux"
   }
 }
 
@@ -373,6 +379,9 @@ pub fn parse_sound_recorder_devices_platform(value: String) -> Result(SoundRecor
   case value {
     "ios" -> Ok(SoundRecorderDevicesPlatformIos)
     "android" -> Ok(SoundRecorderDevicesPlatformAndroid)
+    "macos" -> Ok(SoundRecorderDevicesPlatformMacos)
+    "windows" -> Ok(SoundRecorderDevicesPlatformWindows)
+    "linux" -> Ok(SoundRecorderDevicesPlatformLinux)
     _ -> Error("unsupported sound_recorder_devices.platform: " <> value)
   }
 }
@@ -491,7 +500,7 @@ pub fn validate_sound_recorder_devices_slug(value: String) -> Result(String, Str
 }
 
 pub fn validate_sound_recorder_devices_platform(value: String) -> Result(String, String) {
-  case list.contains(["ios", "android"], value) {
+  case list.contains(["ios", "android", "macos", "windows", "linux"], value) {
     True -> Ok(value)
     False -> Error("unsupported sound_recorder_devices.platform: " <> value)
   }
@@ -843,6 +852,7 @@ pub type SoundRecorderOauthStatesProvider {
   SoundRecorderOauthStatesProviderGoogleDrive
   SoundRecorderOauthStatesProviderMicrosoftOnedrive
   SoundRecorderOauthStatesProviderAppleIcloud
+  SoundRecorderOauthStatesProviderDropbox
 }
 
 pub fn sound_recorder_oauth_states_provider_to_string(value: SoundRecorderOauthStatesProvider) -> String {
@@ -850,6 +860,7 @@ pub fn sound_recorder_oauth_states_provider_to_string(value: SoundRecorderOauthS
     SoundRecorderOauthStatesProviderGoogleDrive -> "google_drive"
     SoundRecorderOauthStatesProviderMicrosoftOnedrive -> "microsoft_onedrive"
     SoundRecorderOauthStatesProviderAppleIcloud -> "apple_icloud"
+    SoundRecorderOauthStatesProviderDropbox -> "dropbox"
   }
 }
 
@@ -858,6 +869,7 @@ pub fn parse_sound_recorder_oauth_states_provider(value: String) -> Result(Sound
     "google_drive" -> Ok(SoundRecorderOauthStatesProviderGoogleDrive)
     "microsoft_onedrive" -> Ok(SoundRecorderOauthStatesProviderMicrosoftOnedrive)
     "apple_icloud" -> Ok(SoundRecorderOauthStatesProviderAppleIcloud)
+    "dropbox" -> Ok(SoundRecorderOauthStatesProviderDropbox)
     _ -> Error("unsupported sound_recorder_oauth_states.provider: " <> value)
   }
 }
@@ -915,7 +927,7 @@ pub fn validate_sound_recorder_oauth_states_slug(value: String) -> Result(String
 }
 
 pub fn validate_sound_recorder_oauth_states_provider(value: String) -> Result(String, String) {
-  case list.contains(["google_drive", "microsoft_onedrive", "apple_icloud"], value) {
+  case list.contains(["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox"], value) {
     True -> Ok(value)
     False -> Error("unsupported sound_recorder_oauth_states.provider: " <> value)
   }
@@ -935,6 +947,9 @@ pub type SoundRecorderCloudConnectionsProvider {
   SoundRecorderCloudConnectionsProviderGoogleDrive
   SoundRecorderCloudConnectionsProviderMicrosoftOnedrive
   SoundRecorderCloudConnectionsProviderAppleIcloud
+  SoundRecorderCloudConnectionsProviderDropbox
+  SoundRecorderCloudConnectionsProviderAmazonS3
+  SoundRecorderCloudConnectionsProviderCloudflareR2
 }
 
 pub fn sound_recorder_cloud_connections_provider_to_string(value: SoundRecorderCloudConnectionsProvider) -> String {
@@ -942,6 +957,9 @@ pub fn sound_recorder_cloud_connections_provider_to_string(value: SoundRecorderC
     SoundRecorderCloudConnectionsProviderGoogleDrive -> "google_drive"
     SoundRecorderCloudConnectionsProviderMicrosoftOnedrive -> "microsoft_onedrive"
     SoundRecorderCloudConnectionsProviderAppleIcloud -> "apple_icloud"
+    SoundRecorderCloudConnectionsProviderDropbox -> "dropbox"
+    SoundRecorderCloudConnectionsProviderAmazonS3 -> "amazon_s3"
+    SoundRecorderCloudConnectionsProviderCloudflareR2 -> "cloudflare_r2"
   }
 }
 
@@ -950,6 +968,9 @@ pub fn parse_sound_recorder_cloud_connections_provider(value: String) -> Result(
     "google_drive" -> Ok(SoundRecorderCloudConnectionsProviderGoogleDrive)
     "microsoft_onedrive" -> Ok(SoundRecorderCloudConnectionsProviderMicrosoftOnedrive)
     "apple_icloud" -> Ok(SoundRecorderCloudConnectionsProviderAppleIcloud)
+    "dropbox" -> Ok(SoundRecorderCloudConnectionsProviderDropbox)
+    "amazon_s3" -> Ok(SoundRecorderCloudConnectionsProviderAmazonS3)
+    "cloudflare_r2" -> Ok(SoundRecorderCloudConnectionsProviderCloudflareR2)
     _ -> Error("unsupported sound_recorder_cloud_connections.provider: " <> value)
   }
 }
@@ -1035,7 +1056,7 @@ pub fn validate_sound_recorder_cloud_connections_slug(value: String) -> Result(S
 }
 
 pub fn validate_sound_recorder_cloud_connections_provider(value: String) -> Result(String, String) {
-  case list.contains(["google_drive", "microsoft_onedrive", "apple_icloud"], value) {
+  case list.contains(["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"], value) {
     True -> Ok(value)
     False -> Error("unsupported sound_recorder_cloud_connections.provider: " <> value)
   }
@@ -1055,6 +1076,31 @@ pub fn validate_sound_recorder_cloud_connections_status(value: String) -> Result
   }
 }
 
+pub const sound_recorder_cloud_connection_projection_outbox_table = "sound_recorder_cloud_connection_projection_outbox"
+pub const sound_recorder_cloud_connection_projection_outbox_select_sql = "select\n      seq,\n      connection_id::text as connection_id,\n      attempts,\n      to_char(available_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as available_at,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as processed_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_connection_projection_outbox"
+
+pub type SoundRecorderCloudConnectionProjectionOutboxRow {
+  SoundRecorderCloudConnectionProjectionOutboxRow(
+    seq: Int,
+    connection_id: String,
+    attempts: Int,
+    available_at: String,
+    locked_until: Option(String),
+    processed_at: Option(String),
+    last_error: Option(String),
+    created_at: String,
+    updated_at: String,
+  )
+}
+
+pub fn validate_sound_recorder_cloud_connection_projection_outbox_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("sound_recorder_cloud_connection_projection_outbox.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
 pub const sound_recorder_cloud_copy_jobs_table = "sound_recorder_cloud_copy_jobs"
 pub const sound_recorder_cloud_copy_jobs_select_sql = "select\n      id::text as id,\n      account_id::text as account_id,\n      connection_id::text as connection_id,\n      segment_id::text as segment_id,\n      provider,\n      status,\n      destination_key,\n      provider_file_id,\n      attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as completed_at,\n      last_error,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_copy_jobs"
 
@@ -1062,6 +1108,9 @@ pub type SoundRecorderCloudCopyJobsProvider {
   SoundRecorderCloudCopyJobsProviderGoogleDrive
   SoundRecorderCloudCopyJobsProviderMicrosoftOnedrive
   SoundRecorderCloudCopyJobsProviderAppleIcloud
+  SoundRecorderCloudCopyJobsProviderDropbox
+  SoundRecorderCloudCopyJobsProviderAmazonS3
+  SoundRecorderCloudCopyJobsProviderCloudflareR2
 }
 
 pub fn sound_recorder_cloud_copy_jobs_provider_to_string(value: SoundRecorderCloudCopyJobsProvider) -> String {
@@ -1069,6 +1118,9 @@ pub fn sound_recorder_cloud_copy_jobs_provider_to_string(value: SoundRecorderClo
     SoundRecorderCloudCopyJobsProviderGoogleDrive -> "google_drive"
     SoundRecorderCloudCopyJobsProviderMicrosoftOnedrive -> "microsoft_onedrive"
     SoundRecorderCloudCopyJobsProviderAppleIcloud -> "apple_icloud"
+    SoundRecorderCloudCopyJobsProviderDropbox -> "dropbox"
+    SoundRecorderCloudCopyJobsProviderAmazonS3 -> "amazon_s3"
+    SoundRecorderCloudCopyJobsProviderCloudflareR2 -> "cloudflare_r2"
   }
 }
 
@@ -1077,6 +1129,9 @@ pub fn parse_sound_recorder_cloud_copy_jobs_provider(value: String) -> Result(So
     "google_drive" -> Ok(SoundRecorderCloudCopyJobsProviderGoogleDrive)
     "microsoft_onedrive" -> Ok(SoundRecorderCloudCopyJobsProviderMicrosoftOnedrive)
     "apple_icloud" -> Ok(SoundRecorderCloudCopyJobsProviderAppleIcloud)
+    "dropbox" -> Ok(SoundRecorderCloudCopyJobsProviderDropbox)
+    "amazon_s3" -> Ok(SoundRecorderCloudCopyJobsProviderAmazonS3)
+    "cloudflare_r2" -> Ok(SoundRecorderCloudCopyJobsProviderCloudflareR2)
     _ -> Error("unsupported sound_recorder_cloud_copy_jobs.provider: " <> value)
   }
 }
@@ -1143,7 +1198,7 @@ pub fn validate_sound_recorder_cloud_copy_jobs_slug(value: String) -> Result(Str
 }
 
 pub fn validate_sound_recorder_cloud_copy_jobs_provider(value: String) -> Result(String, String) {
-  case list.contains(["google_drive", "microsoft_onedrive", "apple_icloud"], value) {
+  case list.contains(["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"], value) {
     True -> Ok(value)
     False -> Error("unsupported sound_recorder_cloud_copy_jobs.provider: " <> value)
   }
@@ -11998,7 +12053,27 @@ pub fn validate_local_credentials_slug(value: String) -> Result(String, String) 
 }
 
 pub const sessions_table = "shared_auth.sessions"
-pub const sessions_select_sql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+pub const sessions_select_sql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      auth_level,\n      auth_methods::text as auth_methods_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+
+pub type SessionsAuthLevel {
+  SessionsAuthLevel1
+  SessionsAuthLevel2
+}
+
+pub fn sessions_auth_level_to_string(value: SessionsAuthLevel) -> String {
+  case value {
+    SessionsAuthLevel1 -> "1"
+    SessionsAuthLevel2 -> "2"
+  }
+}
+
+pub fn parse_sessions_auth_level(value: String) -> Result(SessionsAuthLevel, String) {
+  case value {
+    "1" -> Ok(SessionsAuthLevel1)
+    "2" -> Ok(SessionsAuthLevel2)
+    _ -> Error("unsupported sessions.auth_level: " <> value)
+  }
+}
 
 pub type SessionsRow {
   SessionsRow(
@@ -12008,6 +12083,8 @@ pub type SessionsRow {
     provider: String,
     provider_tenant: String,
     provider_subject: String,
+    auth_level: String,
+    auth_methods_json: String,
     created_at: String,
     updated_at: String,
     last_seen_at: String,
@@ -12022,6 +12099,59 @@ pub fn validate_sessions_slug(value: String) -> Result(String, String) {
   case length >= 3 && length <= 120 && is_slug_text(value) {
     True -> Ok(value)
     False -> Error("sessions.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub fn validate_sessions_auth_level(value: String) -> Result(String, String) {
+  case list.contains(["1", "2"], value) {
+    True -> Ok(value)
+    False -> Error("unsupported sessions.auth_level: " <> value)
+  }
+}
+
+pub const magic_link_tokens_table = "shared_auth.magic_link_tokens"
+pub const magic_link_tokens_select_sql = "select\n      token_hash,\n      otp_hash,\n      shared_user_id::text as shared_user_id,\n      identifier_hash,\n      failed_attempts,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consumed_at\n    from shared_auth.magic_link_tokens"
+
+pub type MagicLinkTokensRow {
+  MagicLinkTokensRow(
+    token_hash: String,
+    otp_hash: String,
+    shared_user_id: String,
+    identifier_hash: String,
+    failed_attempts: Int,
+    created_at: String,
+    expires_at: String,
+    consumed_at: Option(String),
+  )
+}
+
+pub fn validate_magic_link_tokens_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("magic_link_tokens.slug must be a lowercase slug 3-120 characters long")
+  }
+}
+
+pub const mfa_sms_challenges_table = "shared_auth.mfa_sms_challenges"
+pub const mfa_sms_challenges_select_sql = "select\n      challenge_id::text as challenge_id,\n      shared_user_id::text as shared_user_id,\n      phone_e164,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(verified_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as verified_at\n    from shared_auth.mfa_sms_challenges"
+
+pub type MfaSmsChallengesRow {
+  MfaSmsChallengesRow(
+    challenge_id: String,
+    shared_user_id: String,
+    phone_e164: String,
+    created_at: String,
+    expires_at: String,
+    verified_at: Option(String),
+  )
+}
+
+pub fn validate_mfa_sms_challenges_slug(value: String) -> Result(String, String) {
+  let length = string.length(value)
+  case length >= 3 && length <= 120 && is_slug_text(value) {
+    True -> Ok(value)
+    False -> Error("mfa_sms_challenges.slug must be a lowercase slug 3-120 characters long")
   }
 }
 

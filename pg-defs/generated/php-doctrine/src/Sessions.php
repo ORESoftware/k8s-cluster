@@ -35,6 +35,12 @@ class Sessions
     #[ORM\Column(type: 'text', name: 'provider_subject')]
     public string $providerSubject;
 
+    #[ORM\Column(type: 'string', name: 'auth_level')]
+    public string $authLevel;
+
+    #[ORM\Column(type: 'json', name: 'auth_methods')]
+    public array $authMethods;
+
     #[ORM\Column(type: 'datetimetz_immutable', name: 'created_at')]
     public \DateTimeImmutable $createdAt;
 

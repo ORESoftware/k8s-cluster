@@ -31,6 +31,8 @@ func (Sessions) Fields() []ent.Field {
 		field.String("provider").StorageKey("provider"),
 		field.String("provider_tenant").Default("default").StorageKey("provider_tenant"),
 		field.String("provider_subject").StorageKey("provider_subject"),
+		field.Enum("auth_level").Values("1", "2").StorageKey("auth_level"),
+		field.JSON("auth_methods", []interface{}{}).StorageKey("auth_methods"),
 		field.Time("created_at").StorageKey("created_at"),
 		field.Time("updated_at").StorageKey("updated_at"),
 		field.Time("last_seen_at").StorageKey("last_seen_at"),

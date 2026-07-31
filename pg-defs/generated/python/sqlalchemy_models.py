@@ -648,7 +648,7 @@ class SoundRecorderAccountsInsert(BaseModel):
             raise ValueError("sound_recorder_accounts.display_name exceeds 160 bytes")
         return value
 
-SoundRecorderDevicesPlatform = Literal["ios", "android"]
+SoundRecorderDevicesPlatform = Literal["ios", "android", "macos", "windows", "linux"]
 SoundRecorderDevicesStatus = Literal["active", "revoked", "lost", "replaced", "deleted"]
 SoundRecorderDevicesTransferPauseReason = Literal["low_battery", "network_constraint", "offline", "manual"]
 SoundRecorderDevicesNetworkPolicy = Literal["any", "wifi_only", "cellular_only"]
@@ -656,7 +656,7 @@ SoundRecorderDevicesNetworkPolicy = Literal["any", "wifi_only", "cellular_only"]
 class SoundRecorderDevices(Base):
     __tablename__ = "sound_recorder_devices"
     __table_args__ = (
-        CheckConstraint("platform in ('ios', 'android')", name="sound_recorder_devices_platform_chk"),
+        CheckConstraint("platform in ('ios', 'android', 'macos', 'windows', 'linux')", name="sound_recorder_devices_platform_chk"),
         CheckConstraint("network_policy in ('any', 'wifi_only', 'cellular_only')", name="sound_recorder_devices_network_policy_chk"),
         CheckConstraint("transfer_pause_reason is null\n      or transfer_pause_reason in ('low_battery', 'network_constraint', 'offline', 'manual')", name="sound_recorder_devices_pause_reason_chk"),
         CheckConstraint("battery_level is null or battery_level between 0 and 100", name="sound_recorder_devices_battery_level_chk"),
@@ -1261,13 +1261,13 @@ class SoundRecorderAuditEventsInsert(BaseModel):
     payload: dict[str, Any] | None = Field(default_factory=dict)
     createdAt: datetime | None = None
 
-SoundRecorderOauthStatesProvider = Literal["google_drive", "microsoft_onedrive", "apple_icloud"]
+SoundRecorderOauthStatesProvider = Literal["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox"]
 SoundRecorderOauthStatesStatus = Literal["pending", "consumed", "expired", "revoked"]
 
 class SoundRecorderOauthStates(Base):
     __tablename__ = "sound_recorder_oauth_states"
     __table_args__ = (
-        CheckConstraint("provider in ('google_drive', 'microsoft_onedrive', 'apple_icloud')", name="sound_recorder_oauth_states_provider_chk"),
+        CheckConstraint("provider in ('google_drive', 'microsoft_onedrive', 'apple_icloud', 'dropbox')", name="sound_recorder_oauth_states_provider_chk"),
         CheckConstraint("status in ('pending', 'consumed', 'expired', 'revoked')", name="sound_recorder_oauth_states_status_chk"),
         CheckConstraint("state_hash ~ '^[a-f0-9]{64}$'", name="sound_recorder_oauth_states_hash_chk"),
         CheckConstraint("octet_length(redirect_uri) between 1 and 512", name="sound_recorder_oauth_states_redirect_uri_size_chk"),
@@ -1354,14 +1354,14 @@ class SoundRecorderOauthStatesInsert(BaseModel):
             raise ValueError("sound_recorder_oauth_states.folder_path exceeds 512 bytes")
         return value
 
-SoundRecorderCloudConnectionsProvider = Literal["google_drive", "microsoft_onedrive", "apple_icloud"]
+SoundRecorderCloudConnectionsProvider = Literal["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"]
 SoundRecorderCloudConnectionsLinkMode = Literal["server_oauth", "client_managed"]
 SoundRecorderCloudConnectionsStatus = Literal["active", "paused", "revoked", "failed"]
 
 class SoundRecorderCloudConnections(Base):
     __tablename__ = "sound_recorder_cloud_connections"
     __table_args__ = (
-        CheckConstraint("provider in ('google_drive', 'microsoft_onedrive', 'apple_icloud')", name="sound_recorder_cloud_connections_provider_chk"),
+        CheckConstraint("provider in (\n        'google_drive',\n        'microsoft_onedrive',\n        'apple_icloud',\n        'dropbox',\n        'amazon_s3',\n        'cloudflare_r2'\n      )", name="sound_recorder_cloud_connections_provider_chk"),
         CheckConstraint("link_mode in ('server_oauth', 'client_managed')", name="sound_recorder_cloud_connections_link_mode_chk"),
         CheckConstraint("status in ('active', 'paused', 'revoked', 'failed')", name="sound_recorder_cloud_connections_status_chk"),
         CheckConstraint("display_name is null or octet_length(display_name) between 1 and 160", name="sound_recorder_cloud_connections_display_name_size_chk"),
@@ -1504,13 +1504,72 @@ class SoundRecorderCloudConnectionsInsert(BaseModel):
             raise ValueError("sound_recorder_cloud_connections.folder_path exceeds 512 bytes")
         return value
 
-SoundRecorderCloudCopyJobsProvider = Literal["google_drive", "microsoft_onedrive", "apple_icloud"]
+class SoundRecorderCloudConnectionProjectionOutbox(Base):
+    __tablename__ = "sound_recorder_cloud_connection_projection_outbox"
+    __table_args__ = (
+        CheckConstraint("attempts between 0 and 50", name="sound_recorder_cloud_connection_projection_outbox_attempts_chk"),
+        CheckConstraint("last_error is null or octet_length(last_error) between 1 and 500", name="sound_recorder_cloud_projection_outbox_last_error_chk"),
+        Index("sound_recorder_cloud_connection_projection_outbox_pending_uq", "connection_id", unique=True, postgresql_where=text("processed_at is null")),
+        Index("sound_recorder_cloud_connection_projection_outbox_ready_idx", text("available_at asc"), text("seq asc"), postgresql_where=text("processed_at is null")),
+    )
+
+    seq: Mapped[int] = mapped_column(BigInteger(), primary_key=True)
+    connection_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+
+class SoundRecorderCloudConnectionProjectionOutboxRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    seq: int
+    connectionId: UUID
+    attempts: int = Field(..., ge=0, le=50)
+    availableAt: datetime
+    lockedUntil: datetime | None = None
+    processedAt: datetime | None = None
+    lastError: str | None = Field(None, max_length=500)
+    createdAt: datetime
+    updatedAt: datetime
+
+    @field_validator("lastError")
+    @classmethod
+    def validate_last_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 500:
+            raise ValueError("sound_recorder_cloud_connection_projection_outbox.last_error exceeds 500 bytes")
+        return value
+
+class SoundRecorderCloudConnectionProjectionOutboxInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    seq: int
+    connectionId: UUID
+    attempts: int | None = Field(0, ge=0, le=50)
+    availableAt: datetime | None = None
+    lockedUntil: datetime | None = None
+    processedAt: datetime | None = None
+    lastError: str | None = Field(None, max_length=500)
+    createdAt: datetime | None = None
+    updatedAt: datetime | None = None
+
+    @field_validator("lastError")
+    @classmethod
+    def validate_last_error(cls, value):
+        if value is not None and len(value.encode("utf-8")) > 500:
+            raise ValueError("sound_recorder_cloud_connection_projection_outbox.last_error exceeds 500 bytes")
+        return value
+
+SoundRecorderCloudCopyJobsProvider = Literal["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"]
 SoundRecorderCloudCopyJobsStatus = Literal["pending", "running", "waiting_client", "completed", "failed", "skipped"]
 
 class SoundRecorderCloudCopyJobs(Base):
     __tablename__ = "sound_recorder_cloud_copy_jobs"
     __table_args__ = (
-        CheckConstraint("provider in ('google_drive', 'microsoft_onedrive', 'apple_icloud')", name="sound_recorder_cloud_copy_jobs_provider_chk"),
+        CheckConstraint("provider in (\n        'google_drive',\n        'microsoft_onedrive',\n        'apple_icloud',\n        'dropbox',\n        'amazon_s3',\n        'cloudflare_r2'\n      )", name="sound_recorder_cloud_copy_jobs_provider_chk"),
         CheckConstraint("status in ('pending', 'running', 'waiting_client', 'completed', 'failed', 'skipped')", name="sound_recorder_cloud_copy_jobs_status_chk"),
         CheckConstraint("octet_length(destination_key) between 1 and 2048", name="sound_recorder_cloud_copy_jobs_destination_key_size_chk"),
         CheckConstraint("provider_file_id is null or octet_length(provider_file_id) between 1 and 512", name="sound_recorder_cloud_copy_jobs_provider_file_id_size_chk"),
@@ -13702,6 +13761,8 @@ class LocalCredentialsInsert(BaseModel):
             raise ValueError("local_credentials.password_hash exceeds 512 bytes")
         return value
 
+SessionsAuthLevel = Literal["1", "2"]
+
 class Sessions(Base):
     __tablename__ = "sessions"
     __table_args__ = (
@@ -13709,6 +13770,8 @@ class Sessions(Base):
         CheckConstraint("octet_length(provider) between 1 and 64", name="shared_auth_sessions_provider_size_chk"),
         CheckConstraint("octet_length(provider_tenant) between 1 and 255", name="shared_auth_sessions_tenant_size_chk"),
         CheckConstraint("octet_length(provider_subject) between 1 and 512", name="shared_auth_sessions_subject_size_chk"),
+        CheckConstraint("auth_level in (1, 2)", name="shared_auth_sessions_level_chk"),
+        CheckConstraint("jsonb_typeof(auth_methods) = 'array'", name="shared_auth_sessions_methods_array_chk"),
         CheckConstraint("expires_at > created_at", name="shared_auth_sessions_expiry_chk"),
         Index("shared_auth_sessions_user_idx", "shared_user_id"),
         Index("shared_auth_sessions_active_expiry_idx", "expires_at", postgresql_where=text("revoked_at is null")),
@@ -13721,6 +13784,8 @@ class Sessions(Base):
     provider: Mapped[str] = mapped_column(Text(), nullable=False)
     provider_tenant: Mapped[str] = mapped_column(Text(), nullable=False, server_default=text("'default'"))
     provider_subject: Mapped[str] = mapped_column(Text(), nullable=False)
+    auth_level: Mapped[str] = mapped_column(SmallInteger(), nullable=False, server_default=text("1"))
+    auth_methods: Mapped[list[Any]] = mapped_column(JSONB(), nullable=False, server_default=text("'[]'::jsonb"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
@@ -13737,6 +13802,8 @@ class SessionsRow(BaseModel):
     provider: str
     providerTenant: str
     providerSubject: str
+    authLevel: SessionsAuthLevel
+    authMethods: list[Any]
     createdAt: datetime
     updatedAt: datetime
     lastSeenAt: datetime
@@ -13774,6 +13841,8 @@ class SessionsInsert(BaseModel):
     provider: str
     providerTenant: str | None = "default"
     providerSubject: str
+    authLevel: SessionsAuthLevel | None = 1
+    authMethods: list[Any] | None = Field(default_factory=list)
     createdAt: datetime | None = None
     updatedAt: datetime | None = None
     lastSeenAt: datetime | None = None
@@ -13801,6 +13870,90 @@ class SessionsInsert(BaseModel):
         if value is not None and len(value.encode("utf-8")) > 512:
             raise ValueError("sessions.provider_subject exceeds 512 bytes")
         return value
+
+class MagicLinkTokens(Base):
+    __tablename__ = "magic_link_tokens"
+    __table_args__ = (
+        CheckConstraint("octet_length(token_hash) = 43", name="shared_auth_magic_link_token_hash_size_chk"),
+        CheckConstraint("octet_length(otp_hash) = 43", name="shared_auth_magic_link_otp_hash_size_chk"),
+        CheckConstraint("octet_length(identifier_hash) = 43", name="shared_auth_magic_link_identifier_hash_size_chk"),
+        CheckConstraint("failed_attempts between 0 and 5", name="shared_auth_magic_link_failed_attempts_chk"),
+        CheckConstraint("expires_at > created_at", name="shared_auth_magic_link_expiry_chk"),
+        Index("shared_auth_magic_link_tokens_user_idx", "shared_user_id"),
+        Index("shared_auth_magic_link_tokens_active_expiry_idx", "expires_at", postgresql_where=text("consumed_at is null")),
+        Index("shared_auth_magic_link_tokens_identifier_created_idx", "identifier_hash", text("created_at desc")),
+        {"schema": "shared_auth"},
+    )
+
+    token_hash: Mapped[str] = mapped_column(Text(), primary_key=True)
+    otp_hash: Mapped[str] = mapped_column(Text(), nullable=False)
+    shared_user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    identifier_hash: Mapped[str] = mapped_column(Text(), nullable=False)
+    failed_attempts: Mapped[int] = mapped_column(Integer(), nullable=False, server_default=text("0"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+class MagicLinkTokensRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    tokenHash: str
+    otpHash: str
+    sharedUserId: UUID
+    identifierHash: str
+    failedAttempts: int = Field(..., ge=0, le=5)
+    createdAt: datetime
+    expiresAt: datetime
+    consumedAt: datetime | None = None
+
+class MagicLinkTokensInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tokenHash: str
+    otpHash: str
+    sharedUserId: UUID
+    identifierHash: str
+    failedAttempts: int | None = Field(0, ge=0, le=5)
+    createdAt: datetime | None = None
+    expiresAt: datetime
+    consumedAt: datetime | None = None
+
+class MfaSmsChallenges(Base):
+    __tablename__ = "mfa_sms_challenges"
+    __table_args__ = (
+        CheckConstraint("phone_e164 ~ '^\\+[1-9][0-9]{7,14}$'", name="shared_auth_mfa_sms_phone_chk"),
+        CheckConstraint("expires_at > created_at", name="shared_auth_mfa_sms_expiry_chk"),
+        Index("shared_auth_mfa_sms_challenges_user_created_idx", "shared_user_id", text("created_at desc")),
+        Index("shared_auth_mfa_sms_challenges_active_expiry_idx", "expires_at", postgresql_where=text("verified_at is null")),
+        {"schema": "shared_auth"},
+    )
+
+    challenge_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
+    shared_user_id: Mapped[UUID] = mapped_column(PgUUID(as_uuid=True), nullable=False)
+    phone_e164: Mapped[str] = mapped_column(Text(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=text("now()"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+class MfaSmsChallengesRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    challengeId: UUID
+    sharedUserId: UUID
+    phoneE164: str = Field(..., pattern="^\\+[1-9][0-9]{7,14}$")
+    createdAt: datetime
+    expiresAt: datetime
+    verifiedAt: datetime | None = None
+
+class MfaSmsChallengesInsert(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    challengeId: UUID | None = None
+    sharedUserId: UUID
+    phoneE164: str = Field(..., pattern="^\\+[1-9][0-9]{7,14}$")
+    createdAt: datetime | None = None
+    expiresAt: datetime
+    verifiedAt: datetime | None = None
 
 class Roles(Base):
     __tablename__ = "roles"

@@ -42,7 +42,7 @@ defmodule DdPgDefs.SoundRecorderCloudConnections do
     struct
     |> cast(attrs, @required_fields ++ @optional_fields)
     |> validate_required(@required_fields)
-    |> validate_inclusion(:provider, ["google_drive", "microsoft_onedrive", "apple_icloud"])
+    |> validate_inclusion(:provider, ["google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2"])
     |> validate_inclusion(:link_mode, ["server_oauth", "client_managed"])
     |> validate_inclusion(:status, ["active", "paused", "revoked", "failed"])
     |> validate_length(:display_name, max: 160)

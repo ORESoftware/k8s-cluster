@@ -29,7 +29,7 @@ func (SoundRecorderCloudCopyJobs) Fields() []ent.Field {
 		field.UUID("account_id", uuid.UUID{}).StorageKey("account_id"),
 		field.UUID("connection_id", uuid.UUID{}).StorageKey("connection_id"),
 		field.UUID("segment_id", uuid.UUID{}).StorageKey("segment_id"),
-		field.Enum("provider").Values("google_drive", "microsoft_onedrive", "apple_icloud").StorageKey("provider"),
+		field.Enum("provider").Values("google_drive", "microsoft_onedrive", "apple_icloud", "dropbox", "amazon_s3", "cloudflare_r2").StorageKey("provider"),
 		field.Enum("status").Values("pending", "running", "waiting_client", "completed", "failed", "skipped").StorageKey("status"),
 		field.String("destination_key").MaxLen(2048).StorageKey("destination_key"),
 		field.String("provider_file_id").MaxLen(512).Optional().Nillable().StorageKey("provider_file_id"),

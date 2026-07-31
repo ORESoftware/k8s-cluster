@@ -514,16 +514,25 @@ let soundRecorderDevicesSelectSql = "select\n      id::text as id,\n      accoun
 type SoundRecorderDevicesPlatform =
     | Ios
     | Android
+    | Macos
+    | Windows
+    | Linux
 
 let soundRecorderDevicesPlatformToString (value: SoundRecorderDevicesPlatform) : string =
     match value with
     | SoundRecorderDevicesPlatform.Ios -> "ios"
     | SoundRecorderDevicesPlatform.Android -> "android"
+    | SoundRecorderDevicesPlatform.Macos -> "macos"
+    | SoundRecorderDevicesPlatform.Windows -> "windows"
+    | SoundRecorderDevicesPlatform.Linux -> "linux"
 
 let parseSoundRecorderDevicesPlatform (value: string) : Result<SoundRecorderDevicesPlatform, string> =
     match value with
     | "ios" -> Ok SoundRecorderDevicesPlatform.Ios
     | "android" -> Ok SoundRecorderDevicesPlatform.Android
+    | "macos" -> Ok SoundRecorderDevicesPlatform.Macos
+    | "windows" -> Ok SoundRecorderDevicesPlatform.Windows
+    | "linux" -> Ok SoundRecorderDevicesPlatform.Linux
     | _ -> Error ("unsupported sound_recorder_devices.platform: " + value)
 
 [<RequireQualifiedAccess>]
@@ -1073,18 +1082,21 @@ type SoundRecorderOauthStatesProvider =
     | GoogleDrive
     | MicrosoftOnedrive
     | AppleIcloud
+    | Dropbox
 
 let soundRecorderOauthStatesProviderToString (value: SoundRecorderOauthStatesProvider) : string =
     match value with
     | SoundRecorderOauthStatesProvider.GoogleDrive -> "google_drive"
     | SoundRecorderOauthStatesProvider.MicrosoftOnedrive -> "microsoft_onedrive"
     | SoundRecorderOauthStatesProvider.AppleIcloud -> "apple_icloud"
+    | SoundRecorderOauthStatesProvider.Dropbox -> "dropbox"
 
 let parseSoundRecorderOauthStatesProvider (value: string) : Result<SoundRecorderOauthStatesProvider, string> =
     match value with
     | "google_drive" -> Ok SoundRecorderOauthStatesProvider.GoogleDrive
     | "microsoft_onedrive" -> Ok SoundRecorderOauthStatesProvider.MicrosoftOnedrive
     | "apple_icloud" -> Ok SoundRecorderOauthStatesProvider.AppleIcloud
+    | "dropbox" -> Ok SoundRecorderOauthStatesProvider.Dropbox
     | _ -> Error ("unsupported sound_recorder_oauth_states.provider: " + value)
 
 [<RequireQualifiedAccess>]
@@ -1163,18 +1175,27 @@ type SoundRecorderCloudConnectionsProvider =
     | GoogleDrive
     | MicrosoftOnedrive
     | AppleIcloud
+    | Dropbox
+    | AmazonS3
+    | CloudflareR2
 
 let soundRecorderCloudConnectionsProviderToString (value: SoundRecorderCloudConnectionsProvider) : string =
     match value with
     | SoundRecorderCloudConnectionsProvider.GoogleDrive -> "google_drive"
     | SoundRecorderCloudConnectionsProvider.MicrosoftOnedrive -> "microsoft_onedrive"
     | SoundRecorderCloudConnectionsProvider.AppleIcloud -> "apple_icloud"
+    | SoundRecorderCloudConnectionsProvider.Dropbox -> "dropbox"
+    | SoundRecorderCloudConnectionsProvider.AmazonS3 -> "amazon_s3"
+    | SoundRecorderCloudConnectionsProvider.CloudflareR2 -> "cloudflare_r2"
 
 let parseSoundRecorderCloudConnectionsProvider (value: string) : Result<SoundRecorderCloudConnectionsProvider, string> =
     match value with
     | "google_drive" -> Ok SoundRecorderCloudConnectionsProvider.GoogleDrive
     | "microsoft_onedrive" -> Ok SoundRecorderCloudConnectionsProvider.MicrosoftOnedrive
     | "apple_icloud" -> Ok SoundRecorderCloudConnectionsProvider.AppleIcloud
+    | "dropbox" -> Ok SoundRecorderCloudConnectionsProvider.Dropbox
+    | "amazon_s3" -> Ok SoundRecorderCloudConnectionsProvider.AmazonS3
+    | "cloudflare_r2" -> Ok SoundRecorderCloudConnectionsProvider.CloudflareR2
     | _ -> Error ("unsupported sound_recorder_cloud_connections.provider: " + value)
 
 [<RequireQualifiedAccess>]
@@ -1296,6 +1317,43 @@ let validateSoundRecorderCloudConnectionsTokenVersion (value: int) : Result<int,
     if value < 1 then Error "sound_recorder_cloud_connections.token_version is below the minimum"
     else Ok value
 
+let soundRecorderCloudConnectionProjectionOutboxTable = "sound_recorder_cloud_connection_projection_outbox"
+let soundRecorderCloudConnectionProjectionOutboxColumns = [ "seq"; "connection_id"; "attempts"; "available_at"; "locked_until"; "processed_at"; "last_error"; "created_at"; "updated_at" ]
+let soundRecorderCloudConnectionProjectionOutboxSelectSql = "select\n      seq,\n      connection_id::text as connection_id,\n      attempts,\n      to_char(available_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as available_at,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(processed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as processed_at,\n      last_error,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_connection_projection_outbox"
+
+type SoundRecorderCloudConnectionProjectionOutboxRow =
+    { SoundRecorderCloudConnectionProjectionOutboxSeq: int64
+      SoundRecorderCloudConnectionProjectionOutboxConnectionId: string
+      SoundRecorderCloudConnectionProjectionOutboxAttempts: int
+      SoundRecorderCloudConnectionProjectionOutboxAvailableAt: string
+      SoundRecorderCloudConnectionProjectionOutboxLockedUntil: string option
+      SoundRecorderCloudConnectionProjectionOutboxProcessedAt: string option
+      SoundRecorderCloudConnectionProjectionOutboxLastError: string option
+      SoundRecorderCloudConnectionProjectionOutboxCreatedAt: string
+      SoundRecorderCloudConnectionProjectionOutboxUpdatedAt: string
+    }
+
+let soundRecorderCloudConnectionProjectionOutboxRowOfRow (get: int -> string) (isNullAt: int -> bool) : SoundRecorderCloudConnectionProjectionOutboxRow =
+    { SoundRecorderCloudConnectionProjectionOutboxSeq = int64 (get 0)
+      SoundRecorderCloudConnectionProjectionOutboxConnectionId = get 1
+      SoundRecorderCloudConnectionProjectionOutboxAttempts = int (get 2)
+      SoundRecorderCloudConnectionProjectionOutboxAvailableAt = get 3
+      SoundRecorderCloudConnectionProjectionOutboxLockedUntil = (if isNullAt 4 then None else Some (get 4))
+      SoundRecorderCloudConnectionProjectionOutboxProcessedAt = (if isNullAt 5 then None else Some (get 5))
+      SoundRecorderCloudConnectionProjectionOutboxLastError = (if isNullAt 6 then None else Some (get 6))
+      SoundRecorderCloudConnectionProjectionOutboxCreatedAt = get 7
+      SoundRecorderCloudConnectionProjectionOutboxUpdatedAt = get 8
+    }
+
+let validateSoundRecorderCloudConnectionProjectionOutboxAttempts (value: int) : Result<int, string> =
+    if value < 0 then Error "sound_recorder_cloud_connection_projection_outbox.attempts is below the minimum"
+    elif value > 50 then Error "sound_recorder_cloud_connection_projection_outbox.attempts is above the maximum"
+    else Ok value
+
+let validateSoundRecorderCloudConnectionProjectionOutboxLastError (value: string) : Result<string, string> =
+    if value.Length > 500 then Error "sound_recorder_cloud_connection_projection_outbox.last_error must be at most 500 characters"
+    else Ok value
+
 let soundRecorderCloudCopyJobsTable = "sound_recorder_cloud_copy_jobs"
 let soundRecorderCloudCopyJobsColumns = [ "id"; "account_id"; "connection_id"; "segment_id"; "provider"; "status"; "destination_key"; "provider_file_id"; "attempts"; "locked_until"; "started_at"; "completed_at"; "last_error"; "meta_data"; "created_at"; "updated_at" ]
 let soundRecorderCloudCopyJobsSelectSql = "select\n      id::text as id,\n      account_id::text as account_id,\n      connection_id::text as connection_id,\n      segment_id::text as segment_id,\n      provider,\n      status,\n      destination_key,\n      provider_file_id,\n      attempts,\n      to_char(locked_until at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as locked_until,\n      to_char(started_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as started_at,\n      to_char(completed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as completed_at,\n      last_error,\n      meta_data::text as meta_data_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at\n    from sound_recorder_cloud_copy_jobs"
@@ -1305,18 +1363,27 @@ type SoundRecorderCloudCopyJobsProvider =
     | GoogleDrive
     | MicrosoftOnedrive
     | AppleIcloud
+    | Dropbox
+    | AmazonS3
+    | CloudflareR2
 
 let soundRecorderCloudCopyJobsProviderToString (value: SoundRecorderCloudCopyJobsProvider) : string =
     match value with
     | SoundRecorderCloudCopyJobsProvider.GoogleDrive -> "google_drive"
     | SoundRecorderCloudCopyJobsProvider.MicrosoftOnedrive -> "microsoft_onedrive"
     | SoundRecorderCloudCopyJobsProvider.AppleIcloud -> "apple_icloud"
+    | SoundRecorderCloudCopyJobsProvider.Dropbox -> "dropbox"
+    | SoundRecorderCloudCopyJobsProvider.AmazonS3 -> "amazon_s3"
+    | SoundRecorderCloudCopyJobsProvider.CloudflareR2 -> "cloudflare_r2"
 
 let parseSoundRecorderCloudCopyJobsProvider (value: string) : Result<SoundRecorderCloudCopyJobsProvider, string> =
     match value with
     | "google_drive" -> Ok SoundRecorderCloudCopyJobsProvider.GoogleDrive
     | "microsoft_onedrive" -> Ok SoundRecorderCloudCopyJobsProvider.MicrosoftOnedrive
     | "apple_icloud" -> Ok SoundRecorderCloudCopyJobsProvider.AppleIcloud
+    | "dropbox" -> Ok SoundRecorderCloudCopyJobsProvider.Dropbox
+    | "amazon_s3" -> Ok SoundRecorderCloudCopyJobsProvider.AmazonS3
+    | "cloudflare_r2" -> Ok SoundRecorderCloudCopyJobsProvider.CloudflareR2
     | _ -> Error ("unsupported sound_recorder_cloud_copy_jobs.provider: " + value)
 
 [<RequireQualifiedAccess>]
@@ -13314,8 +13381,24 @@ let validateLocalCredentialsFailedAttempts (value: int) : Result<int, string> =
     else Ok value
 
 let sessionsTable = "shared_auth.sessions"
-let sessionsColumns = [ "session_id"; "shared_user_id"; "refresh_token_hash"; "provider"; "provider_tenant"; "provider_subject"; "created_at"; "updated_at"; "last_seen_at"; "expires_at"; "revoked_at"; "rotated_from" ]
-let sessionsSelectSql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+let sessionsColumns = [ "session_id"; "shared_user_id"; "refresh_token_hash"; "provider"; "provider_tenant"; "provider_subject"; "auth_level"; "auth_methods"; "created_at"; "updated_at"; "last_seen_at"; "expires_at"; "revoked_at"; "rotated_from" ]
+let sessionsSelectSql = "select\n      session_id::text as session_id,\n      shared_user_id::text as shared_user_id,\n      refresh_token_hash,\n      provider,\n      provider_tenant,\n      provider_subject,\n      auth_level,\n      auth_methods::text as auth_methods_json,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(updated_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as updated_at,\n      to_char(last_seen_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as last_seen_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(revoked_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as revoked_at,\n      rotated_from::text as rotated_from\n    from shared_auth.sessions"
+
+[<RequireQualifiedAccess>]
+type SessionsAuthLevel =
+    | 1
+    | 2
+
+let sessionsAuthLevelToString (value: SessionsAuthLevel) : string =
+    match value with
+    | SessionsAuthLevel.1 -> "1"
+    | SessionsAuthLevel.2 -> "2"
+
+let parseSessionsAuthLevel (value: string) : Result<SessionsAuthLevel, string> =
+    match value with
+    | "1" -> Ok SessionsAuthLevel.1
+    | "2" -> Ok SessionsAuthLevel.2
+    | _ -> Error ("unsupported sessions.auth_level: " + value)
 
 type SessionsRow =
     { SessionsSessionId: string
@@ -13324,6 +13407,8 @@ type SessionsRow =
       SessionsProvider: string
       SessionsProviderTenant: string
       SessionsProviderSubject: string
+      SessionsAuthLevel: string
+      SessionsAuthMethods: string
       SessionsCreatedAt: string
       SessionsUpdatedAt: string
       SessionsLastSeenAt: string
@@ -13339,13 +13424,72 @@ let sessionsRowOfRow (get: int -> string) (isNullAt: int -> bool) : SessionsRow 
       SessionsProvider = get 3
       SessionsProviderTenant = get 4
       SessionsProviderSubject = get 5
-      SessionsCreatedAt = get 6
-      SessionsUpdatedAt = get 7
-      SessionsLastSeenAt = get 8
-      SessionsExpiresAt = get 9
-      SessionsRevokedAt = (if isNullAt 10 then None else Some (get 10))
-      SessionsRotatedFrom = (if isNullAt 11 then None else Some (get 11))
+      SessionsAuthLevel = get 6
+      SessionsAuthMethods = get 7
+      SessionsCreatedAt = get 8
+      SessionsUpdatedAt = get 9
+      SessionsLastSeenAt = get 10
+      SessionsExpiresAt = get 11
+      SessionsRevokedAt = (if isNullAt 12 then None else Some (get 12))
+      SessionsRotatedFrom = (if isNullAt 13 then None else Some (get 13))
     }
+
+let magicLinkTokensTable = "shared_auth.magic_link_tokens"
+let magicLinkTokensColumns = [ "token_hash"; "otp_hash"; "shared_user_id"; "identifier_hash"; "failed_attempts"; "created_at"; "expires_at"; "consumed_at" ]
+let magicLinkTokensSelectSql = "select\n      token_hash,\n      otp_hash,\n      shared_user_id::text as shared_user_id,\n      identifier_hash,\n      failed_attempts,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(consumed_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as consumed_at\n    from shared_auth.magic_link_tokens"
+
+type MagicLinkTokensRow =
+    { MagicLinkTokensTokenHash: string
+      MagicLinkTokensOtpHash: string
+      MagicLinkTokensSharedUserId: string
+      MagicLinkTokensIdentifierHash: string
+      MagicLinkTokensFailedAttempts: int
+      MagicLinkTokensCreatedAt: string
+      MagicLinkTokensExpiresAt: string
+      MagicLinkTokensConsumedAt: string option
+    }
+
+let magicLinkTokensRowOfRow (get: int -> string) (isNullAt: int -> bool) : MagicLinkTokensRow =
+    { MagicLinkTokensTokenHash = get 0
+      MagicLinkTokensOtpHash = get 1
+      MagicLinkTokensSharedUserId = get 2
+      MagicLinkTokensIdentifierHash = get 3
+      MagicLinkTokensFailedAttempts = int (get 4)
+      MagicLinkTokensCreatedAt = get 5
+      MagicLinkTokensExpiresAt = get 6
+      MagicLinkTokensConsumedAt = (if isNullAt 7 then None else Some (get 7))
+    }
+
+let validateMagicLinkTokensFailedAttempts (value: int) : Result<int, string> =
+    if value < 0 then Error "magic_link_tokens.failed_attempts is below the minimum"
+    elif value > 5 then Error "magic_link_tokens.failed_attempts is above the maximum"
+    else Ok value
+
+let mfaSmsChallengesTable = "shared_auth.mfa_sms_challenges"
+let mfaSmsChallengesColumns = [ "challenge_id"; "shared_user_id"; "phone_e164"; "created_at"; "expires_at"; "verified_at" ]
+let mfaSmsChallengesSelectSql = "select\n      challenge_id::text as challenge_id,\n      shared_user_id::text as shared_user_id,\n      phone_e164,\n      to_char(created_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as created_at,\n      to_char(expires_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as expires_at,\n      to_char(verified_at at time zone 'utc', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as verified_at\n    from shared_auth.mfa_sms_challenges"
+
+type MfaSmsChallengesRow =
+    { MfaSmsChallengesChallengeId: string
+      MfaSmsChallengesSharedUserId: string
+      MfaSmsChallengesPhoneE164: string
+      MfaSmsChallengesCreatedAt: string
+      MfaSmsChallengesExpiresAt: string
+      MfaSmsChallengesVerifiedAt: string option
+    }
+
+let mfaSmsChallengesRowOfRow (get: int -> string) (isNullAt: int -> bool) : MfaSmsChallengesRow =
+    { MfaSmsChallengesChallengeId = get 0
+      MfaSmsChallengesSharedUserId = get 1
+      MfaSmsChallengesPhoneE164 = get 2
+      MfaSmsChallengesCreatedAt = get 3
+      MfaSmsChallengesExpiresAt = get 4
+      MfaSmsChallengesVerifiedAt = (if isNullAt 5 then None else Some (get 5))
+    }
+
+let validateMfaSmsChallengesPhoneE164 (value: string) : Result<string, string> =
+    if not (Regex.IsMatch(value, @"^\\+[1-9][0-9]{7,14}$")) then Error "mfa_sms_challenges.phone_e164 does not match the required pattern"
+    else Ok value
 
 let rolesTable = "shared_auth.roles"
 let rolesColumns = [ "role_id"; "shared_user_id"; "role_name"; "granted_at"; "granted_by" ]
