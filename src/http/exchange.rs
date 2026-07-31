@@ -46,6 +46,8 @@ pub(crate) async fn perform_exchange(
         }
     };
 
+    let auth_level = verified.auth_level;
+    let auth_methods = verified.auth_methods.clone();
     let identity = match &state.db {
         Some(db) => db.upsert_supabase_identity(&verified).await?,
         None => AuthenticatedIdentity {
@@ -69,7 +71,8 @@ pub(crate) async fn perform_exchange(
     let project = identity.provider_tenant.clone();
     let provider_subject = identity.provider_subject.clone();
     let roles = identity.roles.clone();
-    let issued = session_tokens::issue(state, identity).await?;
+    let issued =
+        session_tokens::issue_with_assurance(state, identity, auth_level, auth_methods).await?;
 
     state
         .metrics

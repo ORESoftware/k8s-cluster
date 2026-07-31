@@ -126,6 +126,44 @@ pub struct SessionConfig {
     pub allow_registration: bool,
 }
 
+/// Optional RDS-backed passwordless login delivered through SendGrid.
+///
+/// Empty values keep the server deployable and leave only the magic-link
+/// request endpoint unavailable. Local password login and Supabase exchange
+/// continue to work independently.
+#[derive(Clone)]
+pub struct MagicLinkConfig {
+    pub sendgrid_api_key: Option<String>,
+    pub otp_pepper: Option<String>,
+    pub from_email: Option<String>,
+    pub from_name: String,
+    pub link_base_url: Option<String>,
+    pub ttl_secs: u64,
+    pub allow_signup: bool,
+}
+
+impl MagicLinkConfig {
+    pub fn is_enabled(&self) -> bool {
+        self.sendgrid_api_key.is_some()
+            && self.otp_pepper.is_some()
+            && self.from_email.is_some()
+            && self.link_base_url.is_some()
+    }
+}
+
+#[derive(Clone)]
+pub struct TwilioVerifyConfig {
+    pub account_sid: Option<String>,
+    pub auth_token: Option<String>,
+    pub service_sid: Option<String>,
+}
+
+impl TwilioVerifyConfig {
+    pub fn is_enabled(&self) -> bool {
+        self.account_sid.is_some() && self.auth_token.is_some() && self.service_sid.is_some()
+    }
+}
+
 /// Fully-resolved configuration.
 #[derive(Clone)]
 pub struct AppConfig {
@@ -137,6 +175,8 @@ pub struct AppConfig {
     pub db: Option<DbConfig>,
     pub redis: Option<RedisConfig>,
     pub sessions: SessionConfig,
+    pub magic_links: MagicLinkConfig,
+    pub twilio_verify: TwilioVerifyConfig,
     /// HMAC secret for `/internal/webhook/sync`. When absent the endpoint is
     /// disabled (404), rather than exposed without authentication.
     pub webhook_secret: Option<String>,
@@ -216,6 +256,56 @@ impl AppConfig {
             allow_registration: parse_bool("AUTH_ALLOW_REGISTRATION", false)?,
         };
 
+        let magic_link_ttl_secs = env_or("AUTH_MAGIC_LINK_TTL_SECS", "900")
+            .parse()
+            .map_err(|_| ConfigError::Invalid("AUTH_MAGIC_LINK_TTL_SECS"))?;
+        if !(300..=3_600).contains(&magic_link_ttl_secs) {
+            return Err(ConfigError::Invalid(
+                "AUTH_MAGIC_LINK_TTL_SECS must be between 300 and 3600",
+            ));
+        }
+        let magic_link_base_url = optional_env("AUTH_MAGIC_LINK_BASE_URL");
+        if let Some(value) = magic_link_base_url.as_deref() {
+            validate_magic_link_base_url(value)?;
+        }
+        let from_email = optional_env("AUTH_EMAIL_FROM");
+        if from_email
+            .as_deref()
+            .is_some_and(|value| !looks_like_email(value))
+        {
+            return Err(ConfigError::Invalid("AUTH_EMAIL_FROM"));
+        }
+        let otp_pepper = optional_env("AUTH_OTP_PEPPER");
+        if otp_pepper.as_ref().is_some_and(|value| value.len() < 32) {
+            return Err(ConfigError::Invalid(
+                "AUTH_OTP_PEPPER must contain at least 32 bytes",
+            ));
+        }
+        let magic_links = MagicLinkConfig {
+            sendgrid_api_key: optional_env("AUTH_SENDGRID_API_KEY"),
+            otp_pepper,
+            from_email,
+            from_name: env_or("AUTH_EMAIL_FROM_NAME", "OreSoftware"),
+            link_base_url: magic_link_base_url,
+            ttl_secs: magic_link_ttl_secs,
+            allow_signup: parse_bool("AUTH_MAGIC_LINK_ALLOW_SIGNUP", false)?,
+        };
+        let twilio_verify = TwilioVerifyConfig {
+            account_sid: optional_env("AUTH_TWILIO_ACCOUNT_SID"),
+            auth_token: optional_env("AUTH_TWILIO_AUTH_TOKEN"),
+            service_sid: optional_env("AUTH_TWILIO_VERIFY_SERVICE_SID"),
+        };
+        validate_twilio_identifier(
+            twilio_verify.account_sid.as_deref(),
+            "AUTH_TWILIO_ACCOUNT_SID",
+            "AC",
+        )?;
+        validate_twilio_identifier(
+            twilio_verify.service_sid.as_deref(),
+            "AUTH_TWILIO_VERIFY_SERVICE_SID",
+            "VA",
+        )?;
+
         let webhook_secret = std::env::var("AUTH_WEBHOOK_SECRET")
             .ok()
             .filter(|value| !value.is_empty());
@@ -254,11 +344,70 @@ impl AppConfig {
             db,
             redis,
             sessions,
+            magic_links,
+            twilio_verify,
             webhook_secret,
             introspect_secret,
             cors_allow_origins,
         })
     }
+}
+
+fn optional_env(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
+fn validate_magic_link_base_url(value: &str) -> Result<(), ConfigError> {
+    let parsed =
+        reqwest::Url::parse(value).map_err(|_| ConfigError::Invalid("AUTH_MAGIC_LINK_BASE_URL"))?;
+    let loopback_http = parsed.scheme() == "http"
+        && parsed
+            .host_str()
+            .is_some_and(|host| matches!(host, "localhost" | "127.0.0.1" | "::1"));
+    if parsed.scheme() != "https" && parsed.scheme() != "sonusauris" && !loopback_http {
+        return Err(ConfigError::Invalid(
+            "AUTH_MAGIC_LINK_BASE_URL must use HTTPS, sonusauris, or loopback HTTP",
+        ));
+    }
+    if parsed.username() != ""
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(ConfigError::Invalid(
+            "AUTH_MAGIC_LINK_BASE_URL must not contain credentials, query, or fragment",
+        ));
+    }
+    Ok(())
+}
+
+fn looks_like_email(value: &str) -> bool {
+    let mut parts = value.split('@');
+    let local = parts.next().unwrap_or_default();
+    let domain = parts.next().unwrap_or_default();
+    !local.is_empty()
+        && domain.contains('.')
+        && parts.next().is_none()
+        && value.len() <= 320
+        && !value.chars().any(char::is_whitespace)
+}
+
+fn validate_twilio_identifier(
+    value: Option<&str>,
+    key: &'static str,
+    prefix: &str,
+) -> Result<(), ConfigError> {
+    if value.is_some_and(|value| {
+        value.len() != 34
+            || !value.starts_with(prefix)
+            || !value.bytes().all(|byte| byte.is_ascii_alphanumeric())
+    }) {
+        return Err(ConfigError::Invalid(key));
+    }
+    Ok(())
 }
 
 fn validate_projects(projects: &[SupabaseProject]) -> Result<(), ConfigError> {

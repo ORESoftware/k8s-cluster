@@ -11,7 +11,7 @@ allow_unknown = false
 
 # These may hold secrets — flags-2-env must never surface them in help/echo.
 [env]
-ignore = ["AUTH_SIGNING_KEY_PEM", "AUTH_SIGNING_KEY_FILE", "AUTH_DATABASE_URL", "AUTH_REDIS_URL", "AUTH_WEBHOOK_SECRET", "AUTH_SUPABASE_PROJECTS", "SUPABASE_ACCESS_TOKEN", "AUTH_SUPABASE_PUBLISHABLE_KEY", "AUTH_SUPABASE_SECRET_KEY", "AUTH_SUPABASE_SERVICE_ROLE_KEY", "AUTH_SUPABASE_JWT_SECRET"]
+ignore = ["AUTH_SIGNING_KEY_PEM", "AUTH_SIGNING_KEY_FILE", "AUTH_DATABASE_URL", "AUTH_REDIS_URL", "AUTH_WEBHOOK_SECRET", "AUTH_INTROSPECT_SECRET", "AUTH_SUPABASE_PROJECTS", "SUPABASE_ACCESS_TOKEN", "AUTH_SUPABASE_PUBLISHABLE_KEY", "AUTH_SUPABASE_SECRET_KEY", "AUTH_SUPABASE_SERVICE_ROLE_KEY", "AUTH_SUPABASE_JWT_SECRET", "AUTH_SENDGRID_API_KEY", "AUTH_OTP_PEPPER", "AUTH_TWILIO_ACCOUNT_SID", "AUTH_TWILIO_AUTH_TOKEN", "AUTH_TWILIO_VERIFY_SERVICE_SID"]
 
 [flags.bind-addr]
 env = "AUTH_BIND_ADDR"
@@ -81,7 +81,43 @@ help = "Max RDS connection-pool size."
 env = "AUTH_CORS_ALLOW_ORIGINS"
 aliases = ["cors-allow-origins"]
 type = "string"
+default = ""
 help = "Comma-separated browser origins allowed by CORS."
+
+[flags.email-from]
+env = "AUTH_EMAIL_FROM"
+aliases = ["email-from"]
+type = "string"
+default = ""
+help = "Verified SendGrid sender address; empty keeps passwordless email disabled."
+
+[flags.email-from-name]
+env = "AUTH_EMAIL_FROM_NAME"
+aliases = ["email-from-name"]
+type = "string"
+default = "OreSoftware"
+help = "Human-readable sender name for passwordless email."
+
+[flags.magic-link-base-url]
+env = "AUTH_MAGIC_LINK_BASE_URL"
+aliases = ["magic-link-base-url"]
+type = "string"
+default = ""
+help = "HTTPS or Sonus Auris deep-link base URL; empty keeps passwordless email disabled."
+
+[flags.magic-link-ttl-secs]
+env = "AUTH_MAGIC_LINK_TTL_SECS"
+aliases = ["magic-link-ttl-secs"]
+type = "integer"
+default = 900
+help = "Lifetime shared by the email link and six-digit OTP."
+
+[flags.magic-link-allow-signup]
+env = "AUTH_MAGIC_LINK_ALLOW_SIGNUP"
+aliases = ["magic-link-allow-signup"]
+type = "bool"
+default = false
+help = "Allow a verified email link or OTP to create an RDS-backed account."
 
 [flags.rust-log]
 env = "RUST_LOG"

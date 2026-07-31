@@ -5,7 +5,7 @@ use chrono::TimeDelta;
 use shared_auth_server::cache::Cache;
 use shared_auth_server::config::{DbConfig, RedisConfig};
 use shared_auth_server::db::DbStore;
-use shared_auth_server::session::RefreshToken;
+use shared_auth_server::session::{hash_otp, hashed_identifier, MagicLinkToken, RefreshToken};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -51,7 +51,14 @@ async fn postgres_owns_identity_roles_and_rotating_sessions() {
     let old_token = RefreshToken::generate();
     let expiry = chrono::Utc::now().fixed_offset() + TimeDelta::hours(1);
     let old_session = db
-        .create_session(reloaded.identity, &old_token.hash, expiry, None)
+        .create_session(
+            reloaded.identity,
+            &old_token.hash,
+            expiry,
+            None,
+            1,
+            &["password".into()],
+        )
         .await
         .unwrap();
     assert!(db.session_is_active(old_session.session_id).await.unwrap());
@@ -116,6 +123,101 @@ async fn postgres_owns_identity_roles_and_rotating_sessions() {
         .record_webhook_event(event_id, "supabase", "identity.upsert", &old_token.hash)
         .await
         .unwrap());
+
+    let passwordless_email = format!("passwordless-{}@example.invalid", Uuid::new_v4());
+    let identifier_hash = hashed_identifier(&passwordless_email);
+    let otp_pepper = "integration-test-otp-pepper-is-at-least-32-bytes";
+    let email_otp = MagicLinkToken::generate();
+    assert!(db
+        .prepare_magic_link(
+            &passwordless_email,
+            true,
+            &email_otp.hash,
+            &hash_otp(otp_pepper, &passwordless_email, &email_otp.otp),
+            &identifier_hash,
+            chrono::Utc::now().fixed_offset() + TimeDelta::minutes(15),
+        )
+        .await
+        .unwrap());
+    assert!(db
+        .consume_email_otp(
+            &identifier_hash,
+            &hash_otp(otp_pepper, &passwordless_email, "000000"),
+        )
+        .await
+        .is_err());
+    let passwordless_identity = db
+        .consume_email_otp(
+            &identifier_hash,
+            &hash_otp(otp_pepper, &passwordless_email, &email_otp.otp),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        passwordless_identity.email.as_deref(),
+        Some(passwordless_email.as_str())
+    );
+    assert!(passwordless_identity.email_verified);
+    assert_eq!(passwordless_identity.roles, vec!["user"]);
+    assert!(db
+        .consume_email_otp(
+            &identifier_hash,
+            &hash_otp(otp_pepper, &passwordless_email, &email_otp.otp),
+        )
+        .await
+        .is_err());
+
+    let link_email = format!("magic-link-{}@example.invalid", Uuid::new_v4());
+    let magic_link = MagicLinkToken::generate();
+    assert!(db
+        .prepare_magic_link(
+            &link_email,
+            true,
+            &magic_link.hash,
+            &hash_otp(otp_pepper, &link_email, &magic_link.otp),
+            &hashed_identifier(&link_email),
+            chrono::Utc::now().fixed_offset() + TimeDelta::minutes(15),
+        )
+        .await
+        .unwrap());
+    let linked = db.consume_magic_link(&magic_link.hash).await.unwrap();
+    assert!(linked.email_verified);
+    assert!(db.consume_magic_link(&magic_link.hash).await.is_err());
+
+    assert_eq!(
+        db.phone_for_user(passwordless_identity.shared_user_id)
+            .await
+            .unwrap(),
+        None
+    );
+    let sms_challenge = db
+        .create_sms_challenge(
+            passwordless_identity.shared_user_id,
+            "+14155550100",
+            chrono::Utc::now().fixed_offset() + TimeDelta::minutes(10),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        db.sms_challenge_phone(passwordless_identity.shared_user_id, sms_challenge)
+            .await
+            .unwrap(),
+        "+14155550100"
+    );
+    db.complete_sms_challenge(passwordless_identity.shared_user_id, sms_challenge)
+        .await
+        .unwrap();
+    assert_eq!(
+        db.phone_for_user(passwordless_identity.shared_user_id)
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("+14155550100")
+    );
+    assert!(db
+        .sms_challenge_phone(passwordless_identity.shared_user_id, sms_challenge)
+        .await
+        .is_err());
 }
 
 #[tokio::test]

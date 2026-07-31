@@ -12,16 +12,28 @@ pub struct IssuedSession {
     pub refresh_expires_at: Option<u64>,
 }
 
-pub async fn issue(
+pub async fn issue_with_assurance(
     state: &AppState,
     identity: AuthenticatedIdentity,
+    auth_level: u8,
+    auth_methods: Vec<String>,
 ) -> Result<IssuedSession, AuthError> {
+    if !matches!(auth_level, 1 | 2) || auth_methods.is_empty() {
+        return Err(AuthError::Internal);
+    }
     let (identity, session_id, refresh_token, refresh_expires_at) = if let Some(db) = &state.db {
         let refresh = RefreshToken::generate();
         let expires_at = chrono::Utc::now().fixed_offset()
             + TimeDelta::seconds(state.config.sessions.refresh_ttl_secs as i64);
         let session = db
-            .create_session(identity, &refresh.hash, expires_at, None)
+            .create_session(
+                identity,
+                &refresh.hash,
+                expires_at,
+                None,
+                auth_level,
+                &auth_methods,
+            )
             .await?;
         (
             session.identity,
@@ -39,6 +51,8 @@ pub async fn issue(
         provider: identity.provider,
         provider_tenant: identity.provider_tenant,
         provider_subject: identity.provider_subject,
+        auth_level,
+        auth_methods,
         email: identity.email,
         email_verified: identity.email_verified,
         roles: identity.roles,
@@ -61,6 +75,8 @@ pub fn mint_for_session(
         provider: identity.provider.clone(),
         provider_tenant: identity.provider_tenant.clone(),
         provider_subject: identity.provider_subject.clone(),
+        auth_level: session.auth_level,
+        auth_methods: session.auth_methods.clone(),
         email: identity.email.clone(),
         email_verified: identity.email_verified,
         roles: identity.roles.clone(),

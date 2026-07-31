@@ -37,6 +37,8 @@ pub struct MintContext {
     pub provider: String,
     pub provider_tenant: String,
     pub provider_subject: String,
+    pub auth_level: u8,
+    pub auth_methods: Vec<String>,
     pub email: Option<String>,
     pub email_verified: bool,
     pub roles: Vec<String>,
@@ -108,6 +110,8 @@ impl TokenMinter {
             provider: context.provider,
             provider_tenant: context.provider_tenant,
             provider_subject: context.provider_subject,
+            aal: context.auth_level,
+            amr: context.auth_methods,
             email: context.email,
             email_verified: context.email_verified,
             roles: context.roles,
@@ -166,6 +170,8 @@ mod tests {
                 provider: "supabase".into(),
                 provider_tenant: "fiducia-cloud".into(),
                 provider_subject: "sub-1".into(),
+                auth_level: 1,
+                auth_methods: vec!["federated".into()],
                 email: Some("a@b.co".into()),
                 email_verified: true,
                 roles: vec!["user".into()],
@@ -177,6 +183,8 @@ mod tests {
         assert_eq!(claims.supabase_user_id.as_deref(), Some("sub-1"));
         assert_eq!(claims.provider, "supabase");
         assert_eq!(claims.roles, vec!["user"]);
+        assert_eq!(claims.aal, 1);
+        assert_eq!(claims.amr, vec!["federated"]);
         assert_eq!(claims.email.as_deref(), Some("a@b.co"));
         assert!(claims.email_verified);
         assert!(claims.exp > claims.iat);
@@ -192,6 +200,8 @@ mod tests {
                 provider: "local".into(),
                 provider_tenant: "default".into(),
                 provider_subject: "u".into(),
+                auth_level: 1,
+                auth_methods: vec!["password".into()],
                 email: None,
                 email_verified: false,
                 roles: vec![],
