@@ -1,0 +1,113 @@
+name: Materialize DEN-804 DES streaming contract fix
+
+# One-use, same-repository materializer. It removes itself and the patch carrier
+# after the focused Rust regression test passes.
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/agent/den-804-streaming-contract.patch'
+      - '.github/workflows/den-804-des-streaming-contract.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-804-des-streaming-contract-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  apply-and-test:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-804-des-streaming-contract'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the authorized feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-804-des-streaming-contract
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Install the repository Rust toolchain
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+
+      - name: Apply the checksum-pinned contract correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch_file='.github/agent/den-804-streaming-contract.patch'
+          echo 'b4b58a7534173029eb0de001921563431268ce628c944f36977578a2f6d6435d  '"$patch_file" | sha256sum --check
+
+          if grep -q 'pomdp, soccer-planner): each is an iterative solver' remote/deployments/des-rs/src/models.rs; then
+            git apply --check "$patch_file"
+            git apply "$patch_file"
+          else
+            echo 'The streaming contract correction is already present.'
+          fi
+
+          ! grep -q 'pomdp, soccer-planner): each is an iterative solver' remote/deployments/des-rs/src/models.rs
+          ! grep -q 'pomdp`, `soccer-planner`): iterative solvers' remote/deployments/des-rs/readme.md
+          ! grep -q 'pomdp, soccer-planner).' remote/deployments/des-rs/src/docs.rs
+          grep -q 'streaming_names.contains(&expected)' remote/deployments/des-rs/src/models.rs
+          git diff --check
+
+      - name: Initialize the exact public engine gitlinks
+        shell: bash
+        run: |
+          set -euo pipefail
+          git submodule update --init --depth 1 \
+            remote/submodules/discrete-event-system.rs \
+            remote/submodules/soccer-sim-game-engine.rs
+
+      - name: Run the formerly failing registry test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test \
+            --manifest-path remote/deployments/des-rs/Cargo.toml \
+            models::tests::model_registry_and_streaming_solvers_are_exposed \
+            -- --exact
+          git restore --worktree --staged remote/deployments/des-rs/Cargo.lock 2>/dev/null || true
+
+      - name: Commit only the reviewed product files
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch_file='.github/agent/den-804-streaming-contract.patch'
+          workflow_file='.github/workflows/den-804-des-streaming-contract.yml'
+          rm -f "$patch_file" "$workflow_file"
+          git restore --worktree --staged remote/deployments/des-rs/Cargo.lock 2>/dev/null || true
+          git diff --check
+
+          changed="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' \
+            '.github/agent/den-804-streaming-contract.patch' \
+            '.github/workflows/den-804-des-streaming-contract.yml' \
+            'remote/deployments/des-rs/readme.md' \
+            'remote/deployments/des-rs/src/docs.rs' \
+            'remote/deployments/des-rs/src/models.rs' | sort)"
+          test "$changed" = "$expected" || {
+            echo 'Unexpected materializer change set:' >&2
+            printf '%s\n' "$changed" >&2
+            exit 1
+          }
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            "$patch_file" \
+            "$workflow_file" \
+            remote/deployments/des-rs/readme.md \
+            remote/deployments/des-rs/src/docs.rs \
+            remote/deployments/des-rs/src/models.rs
+          git commit -m 'fix(des-rs): align streaming contract with engine registry'
+          git push origin HEAD:agent/den-804-des-streaming-contract
