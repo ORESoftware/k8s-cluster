@@ -42,6 +42,25 @@ jobs:
       - name: Apply the bounded source transformation
         run: |
           set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/apply_code_first_openapi.py')
+          source = path.read_text()
+          before = '''for path in ["src/contracts.rs", "src/contact/contracts.rs"]:
+              replace_once(path, "use serde_json::Value;", "use serde_json::Value;\\nuse utoipa::ToSchema;", "ToSchema import")
+              replace_all(path, "Serialize, Deserialize", "Serialize, Deserialize, ToSchema", 8, "wire schema derives")
+          '''
+          after = '''for path, minimum in [("src/contracts.rs", 9), ("src/contact/contracts.rs", 7)]:
+              replace_once(path, "use serde_json::Value;", "use serde_json::Value;\\nuse utoipa::ToSchema;", "ToSchema import")
+              replace_all(path, "Serialize, Deserialize", "Serialize, Deserialize, ToSchema", minimum, "wire schema derives")
+          '''
+          if before in source:
+              source = source.replace(before, after, 1)
+          elif after not in source:
+              raise SystemExit('unknown DTO schema-count contract')
+          path.write_text(source)
+          PY
           python3 -m py_compile scripts/apply_code_first_openapi.py
           python3 scripts/apply_code_first_openapi.py
           cargo fmt --all
@@ -109,11 +128,12 @@ jobs:
           set -euo pipefail
           rm -f \
             .github/workflows/apply-code-first-openapi.yml \
+            .github/workflows/fix-openapi-schema-count.yml \
             scripts/apply_code_first_openapi.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git diff --cached --check
-          test -z "$(git diff --cached --name-only | grep -E 'apply-code-first-openapi|apply_code_first_openapi' || true)"
+          test -z "$(git diff --cached --name-only | grep -E 'apply-code-first-openapi|fix-openapi-schema-count|apply_code_first_openapi' || true)"
           git commit -m 'feat(DEN-600): add executable OpenAPI routes and contracts'
           git push origin HEAD:agent/code-first-openapi-routes
