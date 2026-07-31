@@ -76,7 +76,7 @@ jobs:
           for issue in "$TRIGGER_PR" "$TRACKING_PR"; do
             gh api --method POST \
               "repos/${repository}/issues/${issue}/comments" \
-              -f body="Protected gh-profile publisher dispatched as ${run_url}." >/dev/null
+              -f body="Protected gh-profile publisher dispatched as ${run_url}." >/dev/null || true
           done
 
       - name: Follow the exact protected publisher run to completion
@@ -107,7 +107,7 @@ jobs:
           for issue in "$TRIGGER_PR" "$TRACKING_PR"; do
             gh api --method POST \
               "repos/${repository}/issues/${issue}/comments" \
-              -f body="Protected gh-profile publisher completed with **${conclusion}**: ${RUN_URL}." >/dev/null
+              -f body="Protected gh-profile publisher completed with **${conclusion}**: ${RUN_URL}." >/dev/null || true
           done
           echo "publisher_run_id=${RUN_ID}"
           echo "publisher_conclusion=${conclusion}"
