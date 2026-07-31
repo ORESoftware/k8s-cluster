@@ -22,6 +22,8 @@ Signals must remain low-cardinality and content-minimized. Rules may use service
 
 Upstream promotion is PR-only. It accepts an allowlisted repository and exact commit SHA, advances the corresponding pointer on a feature branch, and opens a draft PR. It never writes to the default branch, merges a PR, or deploys directly.
 
+Promotion uses two deliberately non-interchangeable credentials. The workflow's built-in `GITHUB_TOKEN` may write only a feature branch and draft PR in this GitOps repository. A separately installed GitHub App is minted at runtime with `contents:read` for exactly the selected allowlisted upstream repository; its token is masked, never persisted in a remote URL, and revoked immediately after the gitlink is resolved. No organization PAT is accepted. Missing App credentials or repository installation fail closed before a branch is created.
+
 ## Deferred authenticated delivery
 
 Authenticated Alertmanager delivery is intentionally not activated by the foundation merge. A separate reviewed change must add the `dd-alertmanager-telemetry` ExternalSecret and bearer-authenticated receiver only after all of the following are verified:
@@ -36,4 +38,4 @@ The Prometheus trace-error alert is also deferred to that activation change so t
 
 ## Validation
 
-`telemetry-foundation.yml` renders the affected Kustomize overlays and runs a content-based contract test. The test rejects copied `dd-ai-agent-runner` ownership, verifies Loki rule wiring and low-cardinality constraints, verifies span-metrics and OTLP paths, and confirms the exact-SHA promotion workflow remains draft-PR-only.
+`telemetry-foundation.yml` renders the affected Kustomize overlays and runs a content-based contract test. The test rejects copied `dd-ai-agent-runner` ownership, verifies Loki rule wiring and low-cardinality constraints, verifies span-metrics and OTLP paths, and confirms the exact-SHA promotion workflow remains least-privilege, owner/repository-scoped, and draft-PR-only.
