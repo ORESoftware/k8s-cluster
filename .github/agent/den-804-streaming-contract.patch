@@ -6,7 +6,7 @@ diff --git a/remote/deployments/des-rs/src/models.rs b/remote/deployments/des-rs
 -/// mdp, pomdp, soccer-planner): each is an iterative solver fed a JSONL
 +/// mdp, pomdp): each is an iterative solver fed a JSONL
  /// command stream.
-@@ -215,7 +215,21 @@ mod tests {
+@@ -215,8 +215,22 @@ mod tests {
 -        assert!(streaming_model_names().contains(&"lp"));
 -        assert!(streaming_model_names().contains(&"mdp"));
 -        assert!(streaming_model_names().contains(&"soccer-planner"));
