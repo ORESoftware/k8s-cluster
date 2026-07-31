@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/ops-owner-device-create-meta-agent-repo.yml
+      - services/remote-dev/**
   workflow_dispatch:
 
 permissions:
@@ -23,8 +24,8 @@ jobs:
     timeout-minutes: 30
     env:
       TRACKING_PR: '435'
-      OAUTH_CLIENT_ID: 178c6fc778ccc68e1d6a
-      OAUTH_CLIENT_SECRET: 34ddeff2b558a23d38fba8a6de74f086ede1cc0b
+      OAUTH_CLIENT_ID: ${{ secrets.META_AGENT_GITHUB_OAUTH_CLIENT_ID }}
+      OAUTH_CLIENT_SECRET: ${{ secrets.META_AGENT_GITHUB_OAUTH_CLIENT_SECRET }}
       EXPECTED_LOGIN: ORESoftware
       TARGET_REPOSITORY: meta-agents-demo/meta-agent-control-plane.rs
       SOURCE_SHA: 55ee15c190b7cfa4e075f6984c7cb551acd4b9d3
@@ -42,6 +43,17 @@ jobs:
           ref: ${{ env.SOURCE_SHA }}
           path: source
           persist-credentials: false
+
+      - name: Verify OAuth app configuration is protected
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test -n "$OAUTH_CLIENT_ID"
+          test -n "$OAUTH_CLIENT_SECRET"
+          [[ "$OAUTH_CLIENT_ID" != *$'\n'* && "$OAUTH_CLIENT_ID" != *$'\r'* ]]
+          [[ "$OAUTH_CLIENT_SECRET" != *$'\n'* && "$OAUTH_CLIENT_SECRET" != *$'\r'* ]]
+          echo "::add-mask::$OAUTH_CLIENT_ID"
+          echo "::add-mask::$OAUTH_CLIENT_SECRET"
 
       - name: Request short-lived GitHub owner device authorization
         id: authorize
