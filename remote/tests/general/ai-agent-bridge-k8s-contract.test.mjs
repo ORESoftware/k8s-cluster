@@ -34,7 +34,7 @@ test('bridge deployment executes the current Rust binary', () => {
   );
   assert.match(
     deployment,
-    /exec "\$built"/,
+    /exec "\$\{built\}"/,
     'the selected and validated binary must become the container process',
   );
   assert.doesNotMatch(
