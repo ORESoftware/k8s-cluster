@@ -1,5 +1,5 @@
-name: Dispatch and observe direct Meta Agents publication
-run-name: Observe direct creation of meta-agent-control-plane.rs @ ${{ github.sha }}
+name: Dispatch and observe exact Meta Agents SSM publication
+run-name: Observe protected-host creation of meta-agent-control-plane.rs @ ${{ github.sha }}
 
 on:
   push:
@@ -14,20 +14,20 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: observe-direct-meta-agents-publication
+  group: observe-exact-meta-agents-ssm-publication
   cancel-in-progress: false
 
 jobs:
   observe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
-      - name: Dispatch and observe exact direct Meta Agents publisher run
+      - name: Dispatch and observe exact protected-host Meta Agents publisher run
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           TRACKING_PR: '413'
-          PUBLISHER_WORKFLOW: ops-publish-exact-meta-agent-direct.yml
+          PUBLISHER_WORKFLOW: ops-publish-exact-meta-agent-now.yml
         run: |
           set -Eeuo pipefail
           repository="$GITHUB_REPOSITORY"
@@ -49,7 +49,7 @@ jobs:
           run_url="$(jq -r .url <<<"$run")"
           [[ "$run_id" =~ ^[0-9]+$ ]]
 
-          gh pr comment "$TRACKING_PR" --repo "$repository" --body "Direct Meta Agents publisher dispatched from trusted main \`${trusted_sha}\`: ${run_url}" >/dev/null || true
+          gh pr comment "$TRACKING_PR" --repo "$repository" --body "Protected-host Meta Agents publisher dispatched from trusted main \`${trusted_sha}\`: ${run_url}" >/dev/null || true
 
           status=0
           gh run watch "$run_id" --repo "$repository" --exit-status || status=$?
@@ -59,13 +59,13 @@ jobs:
           log_file="$(mktemp)"
           trap 'rm -f "$log_file"' EXIT
           gh run view "$run_id" --repo "$repository" --log >"$log_file" 2>/dev/null || true
-          markers="$(grep -Eo 'CREATED_AND_VERIFIED [^[:space:]]+ main=[0-9a-f]{40} feature=[0-9a-f]{40}|no protected GitHub credential candidates were found|no protected candidate authenticates as the active meta-agents-demo owner|Process completed with exit code [0-9]+' "$log_file" | sort -u || true)"
+          markers="$(grep -Eo 'publisher-stage=[A-Za-z0-9._-]+ status=(passed|success|failed)( source=[^[:space:]]+| repository=[^[:space:]]+| reason=[^[:space:]]+| rc=[0-9]+| line=[0-9]+)*|Process completed with exit code [0-9]+' "$log_file" | sort -u || true)"
 
           target='not-created'
           if metadata="$(gh api repos/meta-agents-demo/meta-agent-control-plane.rs 2>/dev/null)"; then
             target="$(jq -r '"owner=" + .owner.login + " visibility=" + .visibility + " default_branch=" + .default_branch + " id=" + (.id|tostring)' <<<"$metadata")"
           fi
-          body="Direct Meta Agents publisher completed: ${run_url}\n\n- trusted main: \`${trusted_sha}\`\n- conclusion: \`$(jq -r '.conclusion // ""' <<<"$detail")\`\n- target: \`${target}\`"
+          body="Protected-host Meta Agents publisher completed: ${run_url}\n\n- trusted main: \`${trusted_sha}\`\n- conclusion: \`$(jq -r '.conclusion // ""' <<<"$detail")\`\n- target: \`${target}\`"
           if test -n "$markers"; then
             body="${body}\n\n\`\`\`text\n${markers}\n\`\`\`"
           fi
