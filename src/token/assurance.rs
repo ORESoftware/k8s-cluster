@@ -53,6 +53,31 @@ impl AuthenticationAssurance {
         }
     }
 
+    /// Bridge from the numeric `(level, methods)` vocabulary used by the local
+    /// password/MFA flows into the OIDC one. The caller must already have
+    /// verified the ceremony; this only normalizes the representation.
+    ///
+    /// Level 2 maps to [`ACR_LOA2`], anything else fails closed to
+    /// [`ACR_LOA1`], so the numeric and OIDC forms cannot diverge.
+    pub fn from_level_and_methods(level: u8, methods: &[String]) -> Self {
+        let mut amr: Vec<String> = Vec::new();
+        for method in methods.iter().filter_map(|method| normalize_method(method)) {
+            if !amr.contains(&method) {
+                amr.push(method);
+            }
+            if amr.len() == 16 {
+                break;
+            }
+        }
+        if amr.is_empty() {
+            amr.push("federated".to_owned());
+        }
+        Self {
+            amr,
+            acr: Some(if level >= 2 { ACR_LOA2 } else { ACR_LOA1 }.to_owned()),
+        }
+    }
+
     /// Numeric assurance level for the `aal` claim, kept in lockstep with
     /// [`Self::acr`] so the two vocabularies can never disagree. Unknown or
     /// absent ACR fails closed to level 1.
