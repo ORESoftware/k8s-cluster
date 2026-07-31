@@ -1,0 +1,502 @@
+name: Apply DEN-319 current publisher reconciliation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-den-319-current-publisher-reconciliation.yml'
+      - '.github/workflows/ops-publish-missing-org-repositories-dispatch.yml'
+      - 'scripts/ops/publish_missing_org_repositories_current.py'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-319-current-publisher-reconciliation
+  cancel-in-progress: false
+
+jobs:
+  reconcile-validate-clean:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      (github.event_name != 'pull_request' || github.head_ref == 'fix/den-319-current-publisher-reconciliation-v2')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact writable branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/den-319-current-publisher-reconciliation-v2
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+          submodules: false
+
+      - name: Reconcile credential, Git transport, diagnostics, and fleet source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          workflow_path = Path('.github/workflows/ops-publish-missing-org-repositories-dispatch.yml')
+          workflow = workflow_path.read_text()
+
+          def replace_once(source: str, before: str, after: str, label: str) -> str:
+              count = source.count(before)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one anchor, found {count}')
+              return source.replace(before, after, 1)
+
+          workflow = replace_once(
+              workflow,
+              '''          #!/usr/bin/env bash
+          set -euo pipefail
+
+          trusted_sha="${1:?trusted SHA required}"
+''',
+              '''          #!/usr/bin/env bash
+          set -Eeuo pipefail
+          umask 077
+
+          stage=initialization
+          report_failure() {
+            local rc=$?
+            trap - ERR
+            printf 'publisher-stage=%s status=failed rc=%s\\n' "$stage" "$rc" >&2
+            exit "$rc"
+          }
+          trap report_failure ERR
+
+          trusted_sha="${1:?trusted SHA required}"
+''',
+              'remote bootstrap',
+          )
+          workflow = replace_once(
+              workflow,
+              '''          test -z "${CODEX_HOME:-}"
+          export CODEX_HOME="$work/codex-home"
+''',
+              '''          test -z "${CODEX_HOME:-}"
+          test -z "${GH_TOKEN:-}"
+          test -z "${GITHUB_REPOSITORY_ADMIN_TOKEN:-}"
+          test -z "${GIT_ASKPASS:-}"
+          export CODEX_HOME="$work/codex-home"
+''',
+              'ambient credential guard',
+          )
+          workflow = replace_once(
+              workflow,
+              '''          cleanup() {
+            unset GH_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN CODEX_HOME
+            rm -rf "$work"
+          }
+''',
+              '''          cleanup() {
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN CODEX_HOME
+            unset credential_source GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+            unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+            rm -rf "$work"
+          }
+''',
+              'cleanup boundary',
+          )
+          workflow = replace_once(
+              workflow,
+              '''          command -v kubectl >/dev/null
+          encoded_pat="$(kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}')"
+          test -n "$encoded_pat"
+          GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
+          unset encoded_pat
+          test -n "$GH_TOKEN"
+          export GH_TOKEN
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
+
+          python3 - <<'PY'
+''',
+              '''          stage=credential-discovery
+          credential_source=
+          GH_TOKEN=
+          if command -v aws >/dev/null 2>&1 && GH_TOKEN="$(
+            aws secretsmanager get-secret-value \\
+              --region "${AWS_REGION:-us-east-1}" \\
+              --secret-id dd/remote-dev/agent-secrets \\
+              --query SecretString \\
+              --output text 2>/dev/null \\
+              | python3 -c '
+          import json
+          import sys
+
+          value = json.load(sys.stdin).get("GH_PAT")
+          if not isinstance(value, str) or not value:
+              raise SystemExit(65)
+          sys.stdout.write(value)
+          '
+          )" && test -n "$GH_TOKEN"; then
+            credential_source=aws-secrets-manager
+          else
+            unset GH_TOKEN
+            stage=credential-kubernetes-fallback
+            if ! command -v kubectl >/dev/null 2>&1; then
+              echo "publisher-stage=$stage status=failed reason=no-supported-credential-source" >&2
+              exit 69
+            fi
+            encoded_pat="$(kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}')"
+            if test -z "$encoded_pat"; then
+              echo "publisher-stage=$stage status=failed reason=missing-or-empty-gh-pat" >&2
+              exit 65
+            fi
+            if ! GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode 2>/dev/null)" || test -z "$GH_TOKEN"; then
+              echo "publisher-stage=$stage status=failed reason=invalid-gh-pat-encoding" >&2
+              exit 65
+            fi
+            unset encoded_pat
+            credential_source=kubernetes-secret
+          fi
+          [[ "$GH_TOKEN" != *$'\\n'* ]]
+          [[ "$GH_TOKEN" != *$'\\r'* ]]
+          export GH_TOKEN
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
+          printf 'publisher-stage=credential-ready source=%s\\n' "$credential_source"
+
+          git_askpass="$work/git-askpass.sh"
+          cat > "$git_askpass" <<'ASKPASS_EOF'
+          #!/usr/bin/env sh
+          case "${1:-}" in
+            *Username*) printf '%s\\n' 'x-access-token' ;;
+            *Password*) printf '%s\\n' "${GH_TOKEN:?GH_TOKEN is required}" ;;
+            *) exit 1 ;;
+          esac
+          ASKPASS_EOF
+          chmod 700 "$git_askpass"
+          export GIT_ASKPASS="$git_askpass"
+          export GIT_ASKPASS_REQUIRE=force
+          export GIT_TERMINAL_PROMPT=0
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=credential.helper
+          export GIT_CONFIG_VALUE_0=
+
+          stage=github-identity
+          python3 - <<'PY'
+''',
+              'credential and askpass boundary',
+          )
+          workflow = replace_once(
+              workflow,
+              '''          import os
+          import urllib.request
+''',
+              '''          import os
+          import urllib.error
+          import urllib.request
+''',
+              'bounded GitHub API import',
+          )
+          workflow = replace_once(
+              workflow,
+              '''              with urllib.request.urlopen(request, timeout=30) as response:
+                  return json.load(response)
+''',
+              '''              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  raise SystemExit(
+                      f"github-api path={path} status={error.code}"
+                  ) from None
+''',
+              'bounded GitHub API error',
+          )
+          workflow = replace_once(
+              workflow,
+              '''          git clone --filter=blob:none --no-checkout \\
+            https://github.com/ORESoftware/k8s-cluster.git \\
+''',
+              '''          stage=trusted-source-preflight
+          git ls-remote --exit-code \\
+            https://github.com/ORESoftware/k8s-cluster.git \\
+            refs/heads/main >/dev/null
+          stage=trusted-source-checkout
+          git clone --filter=blob:none --no-checkout \\
+            https://github.com/ORESoftware/k8s-cluster.git \\
+''',
+              'authenticated Git preflight',
+          )
+          workflow = replace_once(
+              workflow,
+              '''          python3 -m py_compile \\
+            "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories.py" \\
+''',
+              '''          stage=publisher-validation
+          python3 -m py_compile \\
+            "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories.py" \\
+''',
+              'publisher validation stage',
+          )
+          workflow = replace_once(
+              workflow,
+              '''          python3 "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py"
+
+          python3 "$work/k8s-cluster/scripts/ops/finalize_missing_org_repositories.py" \\
+''',
+              '''          stage=repository-publication
+          python3 "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py"
+
+          stage=repository-finalization
+          python3 "$work/k8s-cluster/scripts/ops/finalize_missing_org_repositories.py" \\
+''',
+              'publication stages',
+          )
+          workflow = replace_once(
+              workflow,
+              '''          cat "$work/critical-org-publication.md"
+          REMOTE_EOF
+''',
+              '''          cat "$work/critical-org-publication.md"
+          stage=complete
+          echo "publisher-stage=$stage status=success"
+          REMOTE_EOF
+''',
+              'completion stage',
+          )
+          workflow = replace_once(
+              workflow,
+              '''          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-repositories.sh && chown ec2-user:ec2-user /tmp/publish-critical-org-repositories.sh && chmod 700 /tmp/publish-critical-org-repositories.sh && sudo -u ec2-user -H bash -lc 'unset CODEX_HOME; bash /tmp/publish-critical-org-repositories.sh \\\"\\$1\\\"' _ '$trusted_sha'; status=\\$?; rm -f /tmp/publish-critical-org-repositories.sh; exit \\$status"
+''',
+              '''          remote_command="remote_log=/tmp/publish-critical-org-repositories.log; printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-repositories.sh; setup_status=\\$?; if test \\$setup_status -ne 0; then echo 'publisher-stage=remote-script-transfer status=failed' >&2; rm -f /tmp/publish-critical-org-repositories.sh \\\"\\$remote_log\\\"; exit \\$setup_status; fi; chown ec2-user:ec2-user /tmp/publish-critical-org-repositories.sh && chmod 700 /tmp/publish-critical-org-repositories.sh; setup_status=\\$?; if test \\$setup_status -ne 0; then echo 'publisher-stage=remote-script-ownership status=failed' >&2; rm -f /tmp/publish-critical-org-repositories.sh \\\"\\$remote_log\\\"; exit \\$setup_status; fi; sudo -u ec2-user -H bash -lc 'unset CODEX_HOME; bash /tmp/publish-critical-org-repositories.sh \\\"\\$1\\\"' _ '$trusted_sha' >\\\"\\$remote_log\\\" 2>&1; status=\\$?; cat \\\"\\$remote_log\\\"; rm -f /tmp/publish-critical-org-repositories.sh \\\"\\$remote_log\\\"; exit \\$status"
+''',
+              'bounded remote diagnostics',
+          )
+          workflow_path.write_text(workflow)
+
+          wrapper_path = Path('scripts/ops/publish_missing_org_repositories_current.py')
+          wrapper = wrapper_path.read_text()
+          wrapper = replace_once(
+              wrapper,
+              '''import importlib.util
+import subprocess
+''',
+              '''import importlib.util
+import json
+import os
+import subprocess
+''',
+              'wrapper imports',
+          )
+          wrapper = replace_once(
+              wrapper,
+              '''SPEC.loader.exec_module(MODULE)
+
+
+def fail(message: str) -> None:
+''',
+              '''SPEC.loader.exec_module(MODULE)
+
+FLEET_SOURCE_REPOSITORY = "ORESoftware/ai-agent-coordinator.rs"
+FLEET_SOURCE_SHA = "5d9a0c2cb44dff607bc3953954ce4b9af08e5789"
+FLEET_GENERATOR_SHA256 = (
+    "a57b00961ee57ae09bf3bb2e2d09afbdd1ddbbbde832b027802f82a1fc5dfa84"
+)
+
+
+def fail(message: str) -> None:
+''',
+              'fleet source constants',
+          )
+          fleet_function = '''
+
+def publish_current_hypesiege_and_streempilot(work: Path) -> None:
+    """Publish the exact reviewed schema-v2 fleet one repository at a time."""
+
+    carrier = work / "fleet-carrier"
+    MODULE.run(
+        [
+            "git",
+            "clone",
+            "--filter=blob:none",
+            "--no-checkout",
+            f"https://github.com/{FLEET_SOURCE_REPOSITORY}.git",
+            str(carrier),
+        ]
+    )
+    MODULE.run(
+        ["git", "-C", str(carrier), "fetch", "--depth=1", "origin", FLEET_SOURCE_SHA]
+    )
+    MODULE.run(["git", "-C", str(carrier), "checkout", "--detach", FLEET_SOURCE_SHA])
+    actual_source_sha = MODULE.run(
+        ["git", "-C", str(carrier), "rev-parse", "HEAD"]
+    ).strip()
+    if actual_source_sha != FLEET_SOURCE_SHA:
+        fail(f"fleet source checkout mismatch: {actual_source_sha} != {FLEET_SOURCE_SHA}")
+
+    payload_dir = carrier / "repository-fleets/hypesiege-streempilot"
+    checked_manifest_path = carrier / "repository-fleets/hypesiege-streempilot.json"
+    reconstructor = carrier / "scripts/reconstruct_hypesiege_streempilot_fleet.py"
+    publisher = carrier / "scripts/publish_hypesiege_streempilot_fleet.py"
+    source_root = work / "hypesiege-streempilot-fleet"
+    generated_manifest_path = work / "hypesiege-streempilot-manifest.json"
+
+    MODULE.run([sys.executable, "-m", "py_compile", str(reconstructor), str(publisher)])
+    MODULE.run(
+        [
+            sys.executable,
+            str(reconstructor),
+            "--payload-dir",
+            str(payload_dir),
+            "--output-root",
+            str(source_root),
+            "--manifest-out",
+            str(generated_manifest_path),
+        ]
+    )
+
+    checked_manifest = json.loads(checked_manifest_path.read_text(encoding="utf-8"))
+    generated_manifest = json.loads(generated_manifest_path.read_text(encoding="utf-8"))
+    if generated_manifest != checked_manifest:
+        fail("reconstructed fleet does not exactly match the checked-in schema-v2 ledger")
+    expected_summary = {
+        "schema_version": 2,
+        "generator_sha256": FLEET_GENERATOR_SHA256,
+        "repository_count": 32,
+        "total_tracked_files": 888,
+        "total_gitlinks": 30,
+        "organizations": {"hypesiege": 15, "streempilot": 17},
+    }
+    actual_summary = {key: generated_manifest.get(key) for key in expected_summary}
+    if actual_summary != expected_summary:
+        fail(f"reviewed fleet summary changed: {actual_summary!r}")
+
+    environment = os.environ.copy()
+    environment["GITHUB_REPOSITORY_ADMIN_TOKEN"] = MODULE.TOKEN
+    records = generated_manifest.get("repositories")
+    if not isinstance(records, list):
+        fail("reviewed fleet repository ledger is malformed")
+
+    for record in records:
+        full_name = record.get("full_name")
+        if not isinstance(full_name, str):
+            fail("reviewed fleet contains an invalid repository identity")
+        MODULE.run(
+            [
+                sys.executable,
+                str(publisher),
+                "--manifest",
+                str(generated_manifest_path),
+                "--source-root",
+                str(source_root),
+                "--repository",
+                full_name,
+                "--execute",
+                "--confirm-repository",
+                full_name,
+            ],
+            env=environment,
+        )
+
+    for record in records:
+        full_name = str(record["full_name"])
+        expected = str(record["commit"])
+        actual = MODULE.main_ref(full_name)
+        if actual != expected:
+            fail(f"fleet verification failed for {full_name}: {actual!r} != {expected}")
+        print(f"VERIFIED {full_name} {actual}")
+    print("VERIFIED 32/32 HypeSiege and StreemPilot repositories")
+'''
+          wrapper = replace_once(
+              wrapper,
+              '''
+MODULE.repair_publisher = repair_or_validate_publisher
+MODULE.ensure_repository = ensure_private_repository
+''',
+              fleet_function + '''
+
+MODULE.repair_publisher = repair_or_validate_publisher
+MODULE.ensure_repository = ensure_private_repository
+MODULE.publish_hypesiege_and_streempilot = publish_current_hypesiege_and_streempilot
+''',
+              'fleet override',
+          )
+          wrapper_path.write_text(wrapper)
+          PY
+
+      - name: Validate syntax and the pinned fleet reconstruction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ops/publish_missing_org_repositories.py \
+            scripts/ops/publish_missing_org_repositories_current.py \
+            scripts/ops/finalize_missing_org_repositories.py
+          ruby -e 'require "yaml"; YAML.parse_file(ARGV.fetch(0))' \
+            .github/workflows/ops-publish-missing-org-repositories-dispatch.yml
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path('.github/workflows/ops-publish-missing-org-repositories-dispatch.yml').read_text()
+          start = workflow.index("          #!/usr/bin/env bash\n", workflow.index("<<'REMOTE_EOF'"))
+          end = workflow.index("\n          REMOTE_EOF", start)
+          script = textwrap.dedent(workflow[start:end])
+          Path('/tmp/publisher-remote.sh').write_text(script)
+          required = [
+              'dd/remote-dev/agent-secrets',
+              'credential-kubernetes-fallback',
+              'GIT_ASKPASS',
+              'git ls-remote --exit-code',
+              'publisher-stage=credential-ready',
+              'publisher-stage=$stage status=success',
+          ]
+          missing = [marker for marker in required if marker not in script]
+          if missing:
+              raise SystemExit(f'missing remote publisher markers: {missing}')
+          PY
+          bash -n /tmp/publisher-remote.sh
+
+          temp="$(mktemp -d)"
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/ORESoftware/ai-agent-coordinator.rs.git "$temp/coordinator"
+          git -C "$temp/coordinator" fetch --depth=1 origin \
+            5d9a0c2cb44dff607bc3953954ce4b9af08e5789
+          git -C "$temp/coordinator" checkout --detach \
+            5d9a0c2cb44dff607bc3953954ce4b9af08e5789
+          python3 "$temp/coordinator/scripts/reconstruct_hypesiege_streempilot_fleet.py" \
+            --payload-dir "$temp/coordinator/repository-fleets/hypesiege-streempilot" \
+            --output-root "$temp/fleet" \
+            --manifest-out "$temp/generated.json"
+          cmp "$temp/generated.json" \
+            "$temp/coordinator/repository-fleets/hypesiege-streempilot.json"
+          rm -rf "$temp"
+
+      - name: Verify bounded product-only scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          changed="$(git status --short | awk '{print $2}' | sort)"
+          expected=$'.github/workflows/ops-publish-missing-org-repositories-dispatch.yml\nscripts/ops/publish_missing_org_repositories_current.py'
+          test "$changed" = "$expected" || {
+            echo 'Unexpected reconciliation paths:' >&2
+            printf '%s\n' "$changed" >&2
+            exit 1
+          }
+          ! grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' \
+            .github/workflows/ops-publish-missing-org-repositories-dispatch.yml \
+            scripts/ops/publish_missing_org_repositories_current.py
+          test -z "$(grep -R -n -E '(Authorization: Bearer|https://[^/[:space:]]+:[^@[:space:]]+@github.com)' \
+            .github/workflows/ops-publish-missing-org-repositories-dispatch.yml \
+            scripts/ops/publish_missing_org_repositories_current.py || true)"
+
+      - name: Remove one-shot workflow and commit the product reconciliation
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/apply-den-319-current-publisher-reconciliation.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          test "$(git diff --cached --name-only | sort)" = $'.github/workflows/ops-publish-missing-org-repositories-dispatch.yml\nscripts/ops/publish_missing_org_repositories_current.py'
+          git commit -m 'fix(DEN-319): reconcile protected publisher on current main'
+          git push origin HEAD:fix/den-319-current-publisher-reconciliation-v2
