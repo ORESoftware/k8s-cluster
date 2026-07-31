@@ -1,0 +1,125 @@
+name: native service image contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/native-service-image-contract.yml'
+      - 'remote/tools/build-native-service-images.sh'
+      - 'remote/deployments/dd-document-rs/Cargo.toml'
+      - 'remote/deployments/dd-document-rs/Dockerfile'
+      - 'remote/deployments/dd-ocr-rs/Cargo.toml'
+      - 'remote/deployments/dd-ocr-rs/Dockerfile'
+      - 'remote/argocd/dd-next-runtime/dd-document-rs.deployment.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-ocr-rs.deployment.yaml'
+      - 'remote/databases/pg/seeds/container-pool-app-config.sql'
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - '.github/workflows/native-service-image-contract.yml'
+      - 'remote/tools/build-native-service-images.sh'
+      - 'remote/deployments/dd-document-rs/Cargo.toml'
+      - 'remote/deployments/dd-document-rs/Dockerfile'
+      - 'remote/deployments/dd-ocr-rs/Cargo.toml'
+      - 'remote/deployments/dd-ocr-rs/Dockerfile'
+      - 'remote/argocd/dd-next-runtime/dd-document-rs.deployment.yaml'
+      - 'remote/argocd/dd-next-runtime/dd-ocr-rs.deployment.yaml'
+      - 'remote/databases/pg/seeds/container-pool-app-config.sql'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-service-image-contract-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate shell and release synchronization
+        run: |
+          set -euo pipefail
+          bash -n remote/tools/build-native-service-images.sh
+          bash remote/tools/build-native-service-images.sh check
+
+      - name: Exercise exact build commands without building native images
+        shell: bash
+        run: |
+          set -euo pipefail
+          fake_builder="${RUNNER_TEMP}/fake-nerdctl"
+          state_dir="${RUNNER_TEMP}/fake-native-image-state"
+          log_file="${RUNNER_TEMP}/native-image-build-commands.log"
+          mkdir -p "${state_dir}"
+
+          cat >"${fake_builder}" <<'FAKE'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          : "${NATIVE_IMAGE_FAKE_STATE:?}"
+          : "${NATIVE_IMAGE_FAKE_LOG:?}"
+          printf '%s\n' "$*" >>"${NATIVE_IMAGE_FAKE_LOG}"
+
+          marker_for() {
+            printf '%s/%s\n' "${NATIVE_IMAGE_FAKE_STATE}" "$(printf '%s' "$1" | tr '/:' '__')"
+          }
+
+          args=" $* "
+          if [[ "${args}" == *' image inspect '* ]]; then
+            image="${!#}"
+            test -f "$(marker_for "${image}")"
+            exit
+          fi
+
+          if [[ "${args}" == *' build '* ]]; then
+            image=''
+            while (($#)); do
+              if [[ "$1" == '-t' ]]; then
+                image="${2:?missing image after -t}"
+                break
+              fi
+              shift
+            done
+            test -n "${image}"
+            : >"$(marker_for "${image}")"
+            exit
+          fi
+
+          echo "unexpected fake builder invocation: ${args}" >&2
+          exit 2
+          FAKE
+          chmod 0700 "${fake_builder}"
+
+          NATIVE_IMAGE_FAKE_STATE="${state_dir}" \
+          NATIVE_IMAGE_FAKE_LOG="${log_file}" \
+          BUILDER="${fake_builder}" \
+          bash remote/tools/build-native-service-images.sh build
+
+          grep -F -- '-n k8s.io build' "${log_file}"
+          grep -F -- '-t docker.io/library/dd-document-rs:0.1.0' "${log_file}"
+          grep -F -- '-t docker.io/library/dd-ocr-rs:0.1.0' "${log_file}"
+          grep -F -- '--label org.opencontainers.image.version=0.1.0' "${log_file}"
+          grep -F -- "${GITHUB_WORKSPACE}/remote" "${log_file}"
+
+      - name: Reject mutable native-service tags
+        run: |
+          set -euo pipefail
+          if grep -En \
+            'image:[[:space:]]+([^[:space:]]+/)?dd-(document|ocr)-rs:(latest|dev|main|master)([[:space:]]|$)' \
+            remote/argocd/dd-next-runtime/dd-document-rs.deployment.yaml \
+            remote/argocd/dd-next-runtime/dd-ocr-rs.deployment.yaml; then
+            echo 'mutable native-service GitOps image tag detected' >&2
+            exit 1
+          fi
+          if grep -En \
+            '"image":[[:space:]]+"([^"[:space:]]+/)?dd-document-rs:(latest|dev|main|master)"' \
+            remote/databases/pg/seeds/container-pool-app-config.sql; then
+            echo 'mutable dd-document warm-pool image tag detected' >&2
+            exit 1
+          fi

@@ -67,11 +67,11 @@ spec:
       ports:
         - protocol: TCP
           port: 8110
-    # First-boot crates.io fetch over HTTPS (hostPath + cargo-run pattern).
-    # Tighten once this service moves to a prebuilt image.
+    # Shared OAuth authorization-code and rotating refresh-token state.
     - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
+        - podSelector:
+            matchLabels:
+              app: dd-redis-cache
       ports:
         - protocol: TCP
-          port: 443
+          port: 6379

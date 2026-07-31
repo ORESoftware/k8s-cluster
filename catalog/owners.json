@@ -1,0 +1,208 @@
+{
+  "schema_version": 1,
+  "baseline": {
+    "captured_at": "2026-07-28T00:00:00Z",
+    "repository_count": 547,
+    "public_count": 386,
+    "private_count": 161,
+    "fork_count": 51,
+    "empty_count": 5,
+    "archived_count": 1,
+    "canonical_active_count": 490,
+    "source_issue": "DEN-598"
+  },
+  "owners": [
+    {
+      "owner": "ORESoftware",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-599",
+      "baseline_repository_count": 326,
+      "baseline_canonical_active_count": 270,
+      "baseline_private_count": 32
+    },
+    {
+      "owner": "3FA-app",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-603",
+      "baseline_repository_count": 11,
+      "baseline_canonical_active_count": 11,
+      "baseline_private_count": 9
+    },
+    {
+      "owner": "messaging-intel",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-604",
+      "baseline_repository_count": 12,
+      "baseline_canonical_active_count": 12,
+      "baseline_private_count": 12
+    },
+    {
+      "owner": "shared-auth",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-606",
+      "baseline_repository_count": 11,
+      "baseline_canonical_active_count": 11,
+      "baseline_private_count": 11
+    },
+    {
+      "owner": "opto-sync",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-607",
+      "baseline_repository_count": 3,
+      "baseline_canonical_active_count": 3,
+      "baseline_private_count": 0
+    },
+    {
+      "owner": "fiducia-cloud",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-608",
+      "baseline_repository_count": 32,
+      "baseline_canonical_active_count": 31,
+      "baseline_private_count": 4
+    },
+    {
+      "owner": "sonus-auris",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-609",
+      "baseline_repository_count": 14,
+      "baseline_canonical_active_count": 14,
+      "baseline_private_count": 12
+    },
+    {
+      "owner": "cliptown",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-610",
+      "baseline_repository_count": 10,
+      "baseline_canonical_active_count": 10,
+      "baseline_private_count": 0
+    },
+    {
+      "owner": "voxletra",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-611",
+      "baseline_repository_count": 9,
+      "baseline_canonical_active_count": 9,
+      "baseline_private_count": 9
+    },
+    {
+      "owner": "zed-pkg",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-612",
+      "baseline_repository_count": 11,
+      "baseline_canonical_active_count": 11,
+      "baseline_private_count": 0
+    },
+    {
+      "owner": "zed-pkg-test",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-613",
+      "baseline_repository_count": 4,
+      "baseline_canonical_active_count": 4,
+      "baseline_private_count": 0
+    },
+    {
+      "owner": "rust-ssr-demos",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-614",
+      "baseline_repository_count": 7,
+      "baseline_canonical_active_count": 7,
+      "baseline_private_count": 7
+    },
+    {
+      "owner": "anticaptrad",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-615",
+      "baseline_repository_count": 10,
+      "baseline_canonical_active_count": 10,
+      "baseline_private_count": 0
+    },
+    {
+      "owner": "declarative-migrations",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-616",
+      "baseline_repository_count": 4,
+      "baseline_canonical_active_count": 4,
+      "baseline_private_count": 1
+    },
+    {
+      "owner": "claritas-viz",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-617",
+      "baseline_repository_count": 4,
+      "baseline_canonical_active_count": 4,
+      "baseline_private_count": 3
+    },
+    {
+      "owner": "sagitta-stack",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-618",
+      "baseline_repository_count": 4,
+      "baseline_canonical_active_count": 4,
+      "baseline_private_count": 3
+    },
+    {
+      "owner": "scintilla-run",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-619",
+      "baseline_repository_count": 12,
+      "baseline_canonical_active_count": 12,
+      "baseline_private_count": 11
+    },
+    {
+      "owner": "usa-acc",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-620",
+      "baseline_repository_count": 4,
+      "baseline_canonical_active_count": 4,
+      "baseline_private_count": 3
+    },
+    {
+      "owner": "canonical-cloud",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-621",
+      "baseline_repository_count": 6,
+      "baseline_canonical_active_count": 6,
+      "baseline_private_count": 0
+    },
+    {
+      "owner": "benefactor-cc",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-622",
+      "baseline_repository_count": 9,
+      "baseline_canonical_active_count": 9,
+      "baseline_private_count": 7
+    },
+    {
+      "owner": "daedalus-fab",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-623",
+      "baseline_repository_count": 12,
+      "baseline_canonical_active_count": 12,
+      "baseline_private_count": 11
+    },
+    {
+      "owner": "akrion-sim",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-624",
+      "baseline_repository_count": 9,
+      "baseline_canonical_active_count": 9,
+      "baseline_private_count": 7
+    },
+    {
+      "owner": "athlet-o",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-625",
+      "baseline_repository_count": 11,
+      "baseline_canonical_active_count": 11,
+      "baseline_private_count": 9
+    },
+    {
+      "owner": "quaestor-ledger",
+      "linear_project": "Portfolio Repository Conformance",
+      "linear_issue": "DEN-626",
+      "baseline_repository_count": 12,
+      "baseline_canonical_active_count": 12,
+      "baseline_private_count": 10
+    }
+  ]
+}

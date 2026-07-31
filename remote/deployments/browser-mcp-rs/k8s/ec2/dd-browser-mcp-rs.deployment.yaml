@@ -5,65 +5,70 @@ metadata:
   namespace: default
   labels:
     app: dd-browser-mcp-rs
+    app.kubernetes.io/name: dd-browser-mcp-rs
+    app.kubernetes.io/component: browser-control-plane
+    app.kubernetes.io/part-of: dd-next-runtime
 spec:
-  replicas: 1
+  replicas: 2
+  revisionHistoryLimit: 3
+  minReadySeconds: 5
+  progressDeadlineSeconds: 300
   strategy:
-    type: Recreate
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: dd-browser-mcp-rs
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-07-24-browser-mcp'
+        dd.dev/telemetry-revision: '2026-07-26-browser-mcp-oauth'
       labels:
         app: dd-browser-mcp-rs
+        app.kubernetes.io/name: dd-browser-mcp-rs
+        app.kubernetes.io/component: browser-control-plane
+        app.kubernetes.io/part-of: dd-next-runtime
+        dd.dev/redis-cache-client: 'true'
     spec:
       # No Kubernetes API access is needed (this service only proxies to the
       # in-cluster browser worker), so the SA token is not mounted.
+      serviceAccountName: dd-browser-mcp-rs
       automountServiceAccountToken: false
       enableServiceLinks: false
       terminationGracePeriodSeconds: 20
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: dd-browser-mcp-rs
       containers:
         - name: browser-mcp-rs
-          image: docker.io/library/rust:1.90-bookworm
-          imagePullPolicy: IfNotPresent
+          image: ghcr.io/oresoftware/dd-browser-mcp-rs@sha256:e07da89e3489442464df4730d78006ec83ae8ddcd38d966826f27031b6de4b14
+          imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false
             readOnlyRootFilesystem: true
             runAsNonRoot: true
-            runAsUser: 1000
-            runAsGroup: 1000
+            runAsUser: 65532
+            runAsGroup: 65532
             capabilities:
               drop:
                 - ALL
             seccompProfile:
               type: RuntimeDefault
-          command:
-            - /bin/bash
-            - -lc
-          args:
-            - |
-              set -euo pipefail
-              export PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-              export HOME=/tmp
-              export CARGO_HOME=/tmp/cargo
-              export CARGO_TARGET_DIR=/tmp/dd-browser-mcp-rs-target
-              export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-1}"
-              export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
-              export CARGO_TERM_COLOR="${CARGO_TERM_COLOR:-never}"
-              mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
-              cd /opt/dd-next-1/remote/deployments/browser-mcp-rs
-              exec /usr/local/cargo/bin/cargo run --release --locked
           env:
             - name: HOST
               value: 0.0.0.0
@@ -71,20 +76,6 @@ spec:
               value: '8092'
             - name: HOME
               value: /tmp
-            - name: CARGO_HOME
-              value: /tmp/cargo
-            - name: CARGO_TARGET_DIR
-              value: /tmp/dd-browser-mcp-rs-target
-            - name: CARGO_BUILD_JOBS
-              value: '1'
-            - name: CARGO_INCREMENTAL
-              value: '0'
-            - name: CARGO_TERM_COLOR
-              value: never
-            - name: CARGO_NET_RETRY
-              value: '5'
-            - name: CARGO_HTTP_TIMEOUT
-              value: '120'
             - name: RUST_BACKTRACE
               value: '1'
             # Private browser worker (dd-web-scraper /agent/*).
@@ -98,43 +89,55 @@ spec:
                 secretKeyRef:
                   name: dd-agent-secrets
                   key: SERVER_AUTH_SECRET
-                  optional: true
-            # In-pod bearer gate on POST /mcp. REQUIRED — the gateway
-            # `/browser-mcp` location has no $dd_mcp_auth_ok gate of its own, so
-            # this bearer is the ONLY thing between the public internet and the
-            # write-capable `browser_act` tool.
-            #
-            # This was briefly set to 'false' on 2026-07-25 so a ChatGPT custom
-            # connector could attach (those do OAuth 2.1 or no-auth; they cannot
-            # present a static bearer). That was reverted, because:
-            #   1. ChatGPT write/modify MCP actions are gated to Business/Enterprise/
-            #      Edu. On Pro, `browser_act` will not be invocable even when the
-            #      connector attaches — so anonymity bought nothing.
-            #   2. The intended workloads (IRS EIN, Colorado SOS filings) put an
-            #      SSN in scope. An anonymous, publicly reachable browser driver
-            #      allowlisted to irs.gov is not an acceptable place for that.
-            #
-            # The supported way to drive this WITH write tools today is the OpenAI
-            # Responses API, which does accept arbitrary headers — see
-            # scripts/browser-mcp-responses-driver.mjs. Use OAuth here only if the
-            # ChatGPT-app surface becomes a real requirement on a Business plan.
+            # Public write-capable Browser MCP edges require OAuth. The binary
+            # retains an explicit no-auth compatibility mode for isolated local
+            # or disposable environments, but production must fail closed.
             - name: BROWSER_MCP_REQUIRE_AUTH
               value: 'true'
-            - name: BROWSER_MCP_AUTH_SECRET
+            # Both trusted public edges serve the same GitOps workload. Host
+            # matching selects the exact issuer/resource and binds each access
+            # token to the edge where its flow started.
+            - name: BROWSER_MCP_PUBLIC_BASE_URLS
+              value: 'https://98.90.186.114/browser-mcp,https://hello.95-217-171-250.sslip.io/browser-mcp'
+            - name: BROWSER_MCP_OAUTH_SIGNING_SECRET
               valueFrom:
                 secretKeyRef:
                   name: dd-browser-mcp-rs-secrets
-                  key: BROWSER_MCP_AUTH_SECRET
-                  optional: true
+                  key: BROWSER_MCP_OAUTH_SIGNING_SECRET
+            - name: BROWSER_MCP_OAUTH_OPERATOR_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-browser-mcp-rs-secrets
+                  key: BROWSER_MCP_OAUTH_OPERATOR_SECRET
+            # Shared, TTL-bound authorization-code and rotating-refresh-token
+            # state. Access tokens remain locally verifiable and audience-bound.
+            - name: BROWSER_MCP_OAUTH_REDIS_URL
+              value: redis://dd-redis-cache.default.svc.cluster.local:6379/4
+            - name: BROWSER_MCP_OAUTH_ACCESS_TTL_SECONDS
+              value: '900'
+            - name: BROWSER_MCP_OAUTH_CODE_TTL_SECONDS
+              value: '300'
+            - name: BROWSER_MCP_OAUTH_REFRESH_TTL_SECONDS
+              value: '2592000'
             # Server-side domain allowlist injected into every browser_act call so
             # navigation policy is enforced centrally regardless of what the model
-            # sends. Empty would permit ANY public https host; start narrow and
-            # widen deliberately. Comma-separated hostnames.
-            # Initial exposure: filing/registration sites only. Gmail is
-            # deliberately excluded — email goes through the dedicated Gmail
-            # connector, not a public bearer-gated browser driver. Widen later.
+            # sends. The service fails closed when this is empty; keep it narrow
+            # and widen deliberately. Comma-separated hostnames.
+            # Reviewed Fiducia applications, platform-jobs, and appointments profiles.
+            # Root vendor hostnames also permit that vendor's subdomains. The
+            # two non-root entries are the exact All Things Open Wufoo tenant
+            # and AWS Community Day CFP host. Filing sites, webmail, cloud
+            # metadata, and arbitrary prospect domains remain blocked.
             - name: BROWSER_MCP_ALLOWED_DOMAINS
-              value: 'sos.state.co.us,irs.gov,dnb.com'
+              value: 'benefactor.cc,confluent.cloud,confluent.io,signoz.io,tailscale.com,planetscale.com,clerk.com,algolia.com,app.posthog.com,elevenlabs.io,www.together.ai,support.snyk.io,us.ovhcloud.com,www.pulumi.com,tally.so,allthingsopen.org,allthingsopen.wufoo.com,static.wufoo.com,talks.devopsdays.org,sessionize.com,events.linuxfoundation.org,cfp.awscommunitydaysoflo.com,forms.gle,docs.google.com,www.gstatic.com,ssl.gstatic.com,fonts.googleapis.com,fonts.gstatic.com,greenhouse.io,lever.co,ashbyhq.com,myworkdayjobs.com,workday.com,smartrecruiters.com,icims.com,jobvite.com,workable.com,bamboohr.com,recruitee.com,applytojob.com,ats.rippling.com,breezy.hr,jobscore.com,candidateportalin.ceipal.com,candidateportalnew.ceipal.com,cal.com,calendly.com,httpbingo.org'
+            # Callers select one named workflow profile. Profiles are
+            # server-defined subsets of the ceiling above; caller-provided
+            # allowed_domains are always discarded.
+            - name: BROWSER_MCP_DEFAULT_WORKFLOW
+              value: fiducia-applications
+            - name: BROWSER_MCP_WORKFLOW_ALLOWLISTS_JSON
+              value: >-
+                {"benefactor-site":["benefactor.cc"],"fiducia-applications":["confluent.cloud","confluent.io","signoz.io","tailscale.com","planetscale.com","clerk.com","algolia.com","app.posthog.com","elevenlabs.io","www.together.ai","support.snyk.io","us.ovhcloud.com","www.pulumi.com","tally.so","allthingsopen.org","allthingsopen.wufoo.com","static.wufoo.com","talks.devopsdays.org","sessionize.com","events.linuxfoundation.org","cfp.awscommunitydaysoflo.com","forms.gle","docs.google.com","www.gstatic.com","ssl.gstatic.com","fonts.googleapis.com","fonts.gstatic.com"],"platform-jobs":["greenhouse.io","lever.co","ashbyhq.com","myworkdayjobs.com","workday.com","smartrecruiters.com","icims.com","jobvite.com","workable.com","bamboohr.com","recruitee.com","applytojob.com","ats.rippling.com","breezy.hr","jobscore.com","candidateportalin.ceipal.com","candidateportalnew.ceipal.com"],"appointments":["cal.com","calendly.com"],"smoke-test":["httpbingo.org"]}
             - name: OTEL_SERVICE_NAME
               value: dd-browser-mcp-rs
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -168,7 +171,7 @@ spec:
               port: http
             periodSeconds: 5
             timeoutSeconds: 3
-            failureThreshold: 120
+            failureThreshold: 12
           readinessProbe:
             httpGet:
               path: /readyz
@@ -187,24 +190,17 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              cpu: 100m
-              memory: 256Mi
-              ephemeral-storage: 2Gi
+              cpu: 25m
+              memory: 64Mi
+              ephemeral-storage: 64Mi
             limits:
-              cpu: '2'
-              memory: 2Gi
-              ephemeral-storage: 6Gi
+              cpu: 500m
+              memory: 256Mi
+              ephemeral-storage: 256Mi
           volumeMounts:
-            - name: repo
-              mountPath: /opt/dd-next-1
-              readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
-        - name: repo
-          hostPath:
-            path: /home/ec2-user/codes/dd/dd-next-1
-            type: Directory
         - name: tmp
           emptyDir:
-            sizeLimit: 6Gi
+            sizeLimit: 256Mi

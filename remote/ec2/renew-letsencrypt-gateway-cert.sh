@@ -18,7 +18,11 @@ KUBECTL_BIN="${KUBECTL_BIN:-kubectl}"
 KUBECTL_KUBECONFIG="${KUBECTL_KUBECONFIG:-/etc/kubernetes/admin.conf}"
 KUBECTL_SUDO="${KUBECTL_SUDO:-sudo}"
 
-kubectl_cmd() {
+# Keep call sites readable while still making every Kubernetes operation use the
+# reviewed executable, optional privilege boundary, and explicit kubeconfig.
+# `command` prevents the default KUBECTL_BIN=kubectl from recursively invoking
+# this wrapper function.
+kubectl() {
   local cmd=()
   if [ -n "${KUBECTL_SUDO}" ]; then
     cmd+=("${KUBECTL_SUDO}")
@@ -27,25 +31,37 @@ kubectl_cmd() {
   if [ -n "${KUBECTL_KUBECONFIG}" ]; then
     cmd+=(--kubeconfig "${KUBECTL_KUBECONFIG}")
   fi
-  "${cmd[@]}" "$@"
+  command "${cmd[@]}" "$@"
+}
+
+create_gateway_secret_manifest() {
+  if [ -n "${RENEWED_LINEAGE:-}" ]; then
+    kubectl create secret tls "${K8S_SECRET_NAME}" \
+      --cert="${RENEWED_LINEAGE}/fullchain.pem" \
+      --key="${RENEWED_LINEAGE}/privkey.pem" \
+      -n "${K8S_NAMESPACE}" \
+      --dry-run=client -o yaml
+  else
+    kubectl create secret tls "${K8S_SECRET_NAME}" \
+      --cert="${CERTBOT_CONFIG_DIR}/live/${CERT_NAME}/fullchain.pem" \
+      --key="${CERTBOT_CONFIG_DIR}/live/${CERT_NAME}/privkey.pem" \
+      -n "${K8S_NAMESPACE}" \
+      --dry-run=client -o yaml
+  fi
 }
 
 deploy_gateway_secret() {
   # Prefer the lineage certbot just renewed; fall back to CERT_NAME for manual runs.
   local lineage="${RENEWED_LINEAGE:-${CERTBOT_CONFIG_DIR}/live/${CERT_NAME}}"
-  if [ ! -f "${lineage}/fullchain.pem" ]; then
-    echo "ERROR: no fullchain.pem under ${lineage} (RENEWED_LINEAGE=${RENEWED_LINEAGE:-unset}, CERT_NAME=${CERT_NAME})" >&2
+  if [ ! -f "${lineage}/fullchain.pem" ] || [ ! -f "${lineage}/privkey.pem" ]; then
+    echo "ERROR: incomplete certificate lineage under ${lineage} (RENEWED_LINEAGE=${RENEWED_LINEAGE:-unset}, CERT_NAME=${CERT_NAME})" >&2
     exit 1
   fi
 
-  kubectl_cmd create secret tls "${K8S_SECRET_NAME}" \
-    --cert="${lineage}/fullchain.pem" \
-    --key="${lineage}/privkey.pem" \
-    -n "${K8S_NAMESPACE}" \
-    --dry-run=client -o yaml | kubectl_cmd apply --validate=false -f -
+  create_gateway_secret_manifest | kubectl apply --validate=false -f -
 
-  kubectl_cmd rollout restart "deployment/${K8S_GATEWAY_DEPLOYMENT}" -n "${K8S_NAMESPACE}"
-  kubectl_cmd rollout status "deployment/${K8S_GATEWAY_DEPLOYMENT}" -n "${K8S_NAMESPACE}" --timeout=180s
+  kubectl rollout restart "deployment/${K8S_GATEWAY_DEPLOYMENT}" -n "${K8S_NAMESPACE}"
+  kubectl rollout status "deployment/${K8S_GATEWAY_DEPLOYMENT}" -n "${K8S_NAMESPACE}" --timeout=180s
 }
 
 renew_certificate() {

@@ -44,6 +44,8 @@ read-only by default; do not add write-capable AWS or Kubernetes tools without a
 short-lived human grant, auth, and audit design. Treat the EC2 Kubernetes manifests and live
 `dd_cluster` output as the runtime source of truth.
 
+Reach the cluster MCP through the WireGuard VPN plus `dd-bastion` authenticated gateway flow; never expose the read-only MCP service directly to the public internet.
+
 ## canonical-mcp (canonical.cloud stack)
 
 For anything touching `remote/deployments/canonical-cloud`, the
@@ -157,11 +159,15 @@ context for human-owned migration work, not as an executable migration artifact.
 
 ## API Docs Contract
 
-HTTP API deployments should expose generated API docs at `/docs/api` and `/api/docs`, with
-machine-readable metadata at `/api/docs.json`. Docs must be derived from route declarations or
-equivalent runtime source using `remote/tools/generate-api-docs.mjs`; do not maintain manual route
-inventories for API docs. Non-Rust runtimes may use runtime-specific generated artifacts or modules,
-but they should still come from source scanning and be checked with `--check` in CI.
+HTTP API deployments must expose human-readable docs at `/docs/api` and `/api/docs`,
+and a valid OpenAPI 3.1 document at `/api/docs.json`. Route registration, runtime validation,
+request/response schemas, OpenAPI generation, and SDK generation must share one typed source of
+truth. Rust uses `utoipa` plus `utoipa-axum` route registration; Node/Fastify uses route schemas
+consumed by `@fastify/swagger`; Gleam and Dart use typed route registries that drive both dispatch
+and OpenAPI output. The source scanner in `remote/tools/generate-api-docs.mjs` is a temporary,
+explicitly allowlisted migration bridge only. New services must use a native strategy, and CI must
+regenerate/check the unserved internal contract and the fail-closed public OpenAPI served at `/api/docs.json` before SDK publication.
+See `docs/http-api-openapi-sdk-contract.md`.
 
 ## Access Posture
 
