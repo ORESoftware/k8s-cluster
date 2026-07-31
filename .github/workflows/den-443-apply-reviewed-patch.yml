@@ -71,4 +71,6 @@ jobs:
             .github/workflows/den-443-apply-reviewed-patch.yml \
             patches/den-443-remove-pat-runtime-propagation.patch
           git commit -m 'fix(DEN-443): remove runtime PAT propagation'
+          printf 'VALIDATED_COMMIT=%s\n' "$(git rev-parse HEAD)"
+          printf 'VALIDATED_TREE=%s\n' "$(git show -s --format=%T HEAD)"
           git push origin HEAD:agent/den-443-remove-runtime-pat-propagation
