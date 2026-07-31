@@ -1,5 +1,5 @@
 name: Dispatch and observe canonical mcp-rust-libs publisher
-run-name: Observe canonical mcp-rust-libs publication @ ${{ github.sha }}
+run-name: Reobserve gh-CLI canonical mcp-rust-libs publication @ ${{ github.sha }}
 
 on:
   push:
