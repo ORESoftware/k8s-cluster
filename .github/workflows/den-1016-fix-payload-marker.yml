@@ -1,3 +1,4 @@
+# One-shot repair: remove this workflow after it patches the permanent contract.
 name: DEN-1016 fix payload marker
 
 on:
@@ -6,6 +7,7 @@ on:
       - agent/den-1016-provision-rabbitmq-secret-via-ssm
     paths:
       - '.github/workflows/den-1016-fix-payload-marker.yml'
+  workflow_dispatch: {}
 
 permissions:
   contents: write
