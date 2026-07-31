@@ -41,7 +41,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - name: Checkout exact writable branch with history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -71,12 +71,60 @@ jobs:
           grep -q 'name = "pastey"' Cargo.lock
           grep -q 'source = "git+https://github.com/juhaku/utoipa' Cargo.lock
 
-      - name: Enforce dependency policy
+      - name: Check advisories
+        id: advisories
+        continue-on-error: true
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
         with:
           rust-version: '1.88.0'
           command: check
           arguments: --all-features
+          command-arguments: advisories
+
+      - name: Check bans
+        id: bans
+        continue-on-error: true
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+        with:
+          rust-version: '1.88.0'
+          command: check
+          arguments: --all-features
+          command-arguments: bans
+
+      - name: Check licenses
+        id: licenses
+        continue-on-error: true
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+        with:
+          rust-version: '1.88.0'
+          command: check
+          arguments: --all-features
+          command-arguments: licenses
+
+      - name: Check sources
+        id: sources
+        continue-on-error: true
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
+        with:
+          rust-version: '1.88.0'
+          command: check
+          arguments: --all-features
+          command-arguments: sources
+
+      - name: Report exact dependency-policy surface
+        env:
+          ADVISORIES: ${{ steps.advisories.outcome }}
+          BANS: ${{ steps.bans.outcome }}
+          LICENSES: ${{ steps.licenses.outcome }}
+          SOURCES: ${{ steps.sources.outcome }}
+        run: |
+          set -euo pipefail
+          printf 'cargo-deny advisories=%s bans=%s licenses=%s sources=%s\n' \
+            "$ADVISORIES" "$BANS" "$LICENSES" "$SOURCES"
+          test "$ADVISORIES" = success
+          test "$BANS" = success
+          test "$LICENSES" = success
+          test "$SOURCES" = success
 
       - name: Rescan complete history with the exact fingerprint allowlist
         run: |
