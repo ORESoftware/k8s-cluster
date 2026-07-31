@@ -1,4 +1,5 @@
 name: Dispatch and observe current missing-organization publisher once
+run-name: Observe current trusted repository publisher after protected SSM repair
 
 on:
   push:
