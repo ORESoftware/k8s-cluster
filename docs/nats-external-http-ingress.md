@@ -21,11 +21,7 @@ a standalone VM, Apps Script, or a third-party worker platform.
 POST /v1/queues/vapi-task HTTP/1.1
 Authorization: Bearer <client-scoped-token>
 X-Bridge-Client: external-vapi
-<<<<<<< HEAD
-Idempotency-Key: 7bf5d73d-74e4-46f3-b652-7a024dbeb0be
-=======
 Idempotency-Key: example-request-0001
->>>>>>> origin/dev
 Content-Type: application/json
 
 {"call_id":"...","destination":"..."}
@@ -37,11 +33,7 @@ Successful durable acceptance returns `202`:
 {
   "ok": true,
   "route": "vapi-task",
-<<<<<<< HEAD
-  "message_id": "7bf5d73d-74e4-46f3-b652-7a024dbeb0be"
-=======
   "message_id": "example-request-0001"
->>>>>>> origin/dev
 }
 ```
 
@@ -101,25 +93,17 @@ Kustomization. Activate it only in a dedicated PR after all of the following:
 5. replace the invalid template hostname and TLS secret name;
 6. retain HTTPS redirect, 1 MiB ingress cap, 10 rps limit, and bounded timeouts;
 7. run negative tests for no token, wrong client, wrong route, missing/invalid
-<<<<<<< HEAD
-   idempotency key, invalid JSON, oversized body, no stream, and timeout;
-=======
    idempotency key, invalid JSON, oversized body, no stream, timeout,
    unauthorized subject injection, and duplicate retry behavior;
->>>>>>> origin/dev
 8. confirm access/error logs never contain Authorization, client tokens,
    payloads, query strings, internal subjects, or stream names;
 9. exercise an external producer with a harmless test route before enabling a
    production queue.
 
-<<<<<<< HEAD
-Do not expose NATS ports 4222/6222/8222/7777 through this ingress.
-=======
 Do not expose `/publish/:subject` externally.
 Do not expose NATS ports 4222/6222/8222/7777 through this ingress. The deployed
 binary serves only `/healthz`, `/readyz`, `/metrics`, and named
 `/v1/queues/:route` requests.
->>>>>>> origin/dev
 
 ## External-server migration procedure
 
@@ -129,12 +113,8 @@ For each external producer:
    subjects, retry semantics, message schema, and deployment location;
 2. create a named route and a client-specific route grant;
 3. add a small HTTPS client with explicit connect/request timeouts, bounded
-<<<<<<< HEAD
-   retries, TLS verification, and stable idempotency keys;
-=======
    retries, TLS verification, and one stable idempotency key per logical
    operation;
->>>>>>> origin/dev
 4. shadow or dual-write only when duplicate side effects are safely deduplicated;
 5. verify JetStream consumer processing and tracing end-to-end;
 6. remove the NATS library, `NATS_*` variables, subjects, credentials, and port
@@ -143,10 +123,6 @@ For each external producer:
 8. rotate/remove the old NATS credential and network permission.
 
 A migration is incomplete while the external server can still connect directly
-<<<<<<< HEAD
-to NATS, even if the HTTP path also exists.
-=======
 to NATS, even if the HTTP path also exists. Record each remaining producer
 migration as a child of DEN-440, and keep credential/ingress activation separate
 from source-only client migrations.
->>>>>>> origin/dev

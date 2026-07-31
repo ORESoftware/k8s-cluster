@@ -23,7 +23,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/ai-agent-bridge-revision: '2026-07-30-auth-otel-network-hardening'
+        dd.dev/ai-agent-bridge-revision: '2026-07-30-auth-otel-network-hardening+fiducia-binary'
       labels:
         app: dd-ai-agent-bridge
     spec:
