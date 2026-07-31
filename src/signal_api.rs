@@ -564,37 +564,9 @@ mod tests {
             map_store_error(SignalStoreError::IdempotencyConflict),
             ApiError::Conflict
         ));
-<<<<<<< HEAD
-=======
         assert!(matches!(
             map_store_error(SignalStoreError::RevisionConflict),
             ApiError::Conflict
         ));
-
-        let publish = &fixture["publish_prekeys"];
-        let request: PublishPreKeysRequest = fixture_round_trip(&publish["request"]);
-        let store_request = request
-            .into_store_request(who)
-            .expect("canonical publish request maps to the store");
-        assert_eq!(store_request.bundle_revision, 7);
-        assert_eq!(store_request.account_id, who.account_id);
-        assert_eq!(store_request.device_id, who.device_id);
-        assert_eq!(store_request.bundle.device_id, who.device_id.to_string());
-        assert_eq!(store_request.one_time_prekeys.len(), 1);
-        assert_eq!(store_request.one_time_prekeys[0].prekey_id, 100);
-
-        let _: PublishPreKeysResponse = fixture_round_trip(&publish["response"]);
-        let response = PublishPreKeysResponse::try_from(signal_store::PublishedPreKeys {
-            bundle_revision: 7,
-            device_revision: 12,
-            unclaimed_prekey_count: 24,
-        })
-        .expect("store result maps to the canonical response");
-        assert_eq!(
-            serde_json::to_value(response).unwrap(),
-            publish["response"],
-            "publish-prekey response preserves canonical field semantics"
-        );
->>>>>>> den-536-publish-prekey-parity
     }
 }
