@@ -1,12 +1,9 @@
-name: Dispatch sealed HypeSiege and StreemPilot publication
+name: Dispatch sealed fleet from trusted owner comment
+run-name: Dispatch sealed fleet for PR #${{ github.event.issue.number }}
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - .github/workflows/ops-dispatch-sealed-hypesiege-streempilot.yml
-  workflow_dispatch:
+  issue_comment:
+    types: [created]
 
 permissions:
   actions: write
@@ -19,13 +16,33 @@ concurrency:
 
 jobs:
   dispatch:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.number == 270 &&
+      github.actor == 'ORESoftware' &&
+      github.event.comment.body == 'ops-dispatch-sealed-hypesiege-streempilot:270:fd83ea81e3dd91d3a45855b3262543f64243d0de'
     runs-on: ubuntu-24.04
     timeout-minutes: 65
     env:
       PUBLISH_WORKFLOW: ops-publish-sealed-hypesiege-streempilot.yml
       TRACKING_PR: '270'
+      EXPECTED_MERGE_SHA: fd83ea81e3dd91d3a45855b3262543f64243d0de
+      EXPECTED_HEAD_SHA: f2e42bd555c8f30a5133380036445b65558977ab
 
     steps:
+      - name: Validate immutable publication PR provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          pr="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRACKING_PR}")"
+          test "$(jq -r '.merged' <<<"$pr")" = true
+          test "$(jq -r '.base.ref' <<<"$pr")" = main
+          test "$(jq -r '.head.repo.full_name' <<<"$pr")" = "$GITHUB_REPOSITORY"
+          test "$(jq -r '.head.sha' <<<"$pr")" = "$EXPECTED_HEAD_SHA"
+          test "$(jq -r '.merge_commit_sha' <<<"$pr")" = "$EXPECTED_MERGE_SHA"
+
       - name: Dispatch the trusted-main publisher and capture its run ID
         id: dispatch
         env:
@@ -45,7 +62,7 @@ jobs:
           )"
 
           gh pr comment "$TRACKING_PR" \
-            --body "Trusted-main publication dispatcher started: ${trigger_url}" >/dev/null
+            --body "Trusted owner-comment dispatcher started: ${trigger_url}" >/dev/null
           gh workflow run "$PUBLISH_WORKFLOW" --ref main
 
           run_id=''
@@ -86,18 +103,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ steps.dispatch.outputs.run_url }}
-          PUBLISH_RESULT: ${{ steps.dispatch.outcome == 'success' && steps.dispatch.outputs.run_id != '' && 'dispatched' || 'not-dispatched' }}
-          WATCH_RESULT: ${{ job.status }}
+          DISPATCH_OUTCOME: ${{ steps.dispatch.outcome }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+          JOB_RESULT: ${{ job.status }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$PUBLISH_RESULT" = dispatched && "$WATCH_RESULT" = success ]]; then
+          if [[ "$DISPATCH_OUTCOME" = success && -n "$RUN_ID" && "$JOB_RESULT" = success ]]; then
             gh pr comment "$TRACKING_PR" \
               --body "Sealed HypeSiege/StreemPilot publisher completed successfully: ${RUN_URL}" >/dev/null
           else
             gh pr comment "$TRACKING_PR" \
-              --body "Sealed HypeSiege/StreemPilot publisher did not complete successfully. Dispatch=${PUBLISH_RESULT}; job=${WATCH_RESULT}; run=${RUN_URL:-unavailable}" >/dev/null
+              --body "Sealed HypeSiege/StreemPilot publisher did not complete successfully. Dispatch=${DISPATCH_OUTCOME}; job=${JOB_RESULT}; run=${RUN_URL:-unavailable}" >/dev/null
             exit 1
           fi
-
-# Dispatch nonce: 2026-07-31T14:09:00Z
