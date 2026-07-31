@@ -8,7 +8,7 @@ stage=initialization
 work="$(mktemp -d /tmp/missing-org-publisher.XXXXXX)"
 
 cleanup() {
-  unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN encoded_pat
+  unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN encoded_pat raw_pat secret_json
   unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
   rm -rf "$work"
 }
@@ -22,21 +22,74 @@ trap cleanup EXIT
 trap report_failure ERR
 
 stage=protected-credential
-command -v kubectl >/dev/null
-test -r /etc/kubernetes/admin.conf
-encoded_pat="$(
-  KUBECONFIG=/etc/kubernetes/admin.conf \
-    kubectl -n default get secret dd-agent-secrets \
-    -o jsonpath='{.data.GH_PAT}'
-)"
-test -n "$encoded_pat"
-GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
-unset encoded_pat
-test -n "$GH_TOKEN"
-[[ "$GH_TOKEN" != *$'\n'* && "$GH_TOKEN" != *$'\r'* ]]
+credential_source=''
+GH_TOKEN=''
+
+# Prefer the protected EC2 instance role. This keeps the credential outside the
+# GitHub-hosted runner and matches the External Secrets read path.
+if command -v aws >/dev/null 2>&1; then
+  secret_json="$(
+    aws secretsmanager get-secret-value \
+      --region us-east-1 \
+      --secret-id dd/remote-dev/agent-secrets \
+      --query SecretString \
+      --output text 2>/dev/null || true
+  )"
+  if test -n "$secret_json"; then
+    raw_pat="$(
+      printf '%s' "$secret_json" | python3 -c '
+import json
+import sys
+try:
+    payload = json.load(sys.stdin)
+except (json.JSONDecodeError, OSError):
+    raise SystemExit(0)
+value = payload.get("GH_PAT")
+if isinstance(value, str) and value:
+    sys.stdout.write(value)
+' 2>/dev/null || true
+    )"
+    if test -n "$raw_pat" && [[ "$raw_pat" != *$'\n'* && "$raw_pat" != *$'\r'* ]]; then
+      GH_TOKEN="$raw_pat"
+      credential_source=aws-secrets-manager
+    fi
+  fi
+fi
+unset raw_pat secret_json
+
+# Fall back to the reconciled Kubernetes Secret on whichever protected
+# kubeconfig is available on the SSM host.
+if test -z "$GH_TOKEN" && command -v kubectl >/dev/null 2>&1; then
+  for kubeconfig in \
+    /etc/kubernetes/admin.conf \
+    /root/.kube/config \
+    /home/ec2-user/.kube/config
+  do
+    test -r "$kubeconfig" || continue
+    encoded_pat="$(
+      KUBECONFIG="$kubeconfig" \
+        kubectl -n default get secret dd-agent-secrets \
+        -o jsonpath='{.data.GH_PAT}' 2>/dev/null || true
+    )"
+    test -n "$encoded_pat" || continue
+    raw_pat="$(printf '%s' "$encoded_pat" | base64 --decode 2>/dev/null || true)"
+    unset encoded_pat
+    if test -n "$raw_pat" && [[ "$raw_pat" != *$'\n'* && "$raw_pat" != *$'\r'* ]]; then
+      GH_TOKEN="$raw_pat"
+      credential_source="kubernetes-secret:${kubeconfig}"
+      break
+    fi
+  done
+fi
+unset raw_pat encoded_pat
+
+if test -z "$GH_TOKEN"; then
+  echo 'publisher-stage=protected-credential status=failed reason=no-readable-protected-credential' >&2
+  exit 65
+fi
 export GH_TOKEN
 export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
-printf 'publisher-stage=%s status=passed\n' "$stage"
+printf 'publisher-stage=%s status=passed source=%s\n' "$stage" "$credential_source"
 
 stage=git-credential-transport
 git_askpass="$work/git-askpass.sh"
