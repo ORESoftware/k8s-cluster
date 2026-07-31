@@ -1,5 +1,5 @@
 name: Publish canonical mcp-rust-libs from trusted Actions credential
-run-name: Create ORESoftware/mcp-rust-libs from trusted main @ ${{ github.sha }}
+run-name: Create ORESoftware/mcp-rust-libs from normalized trusted credential v2 @ ${{ github.sha }}
 
 on:
   push:
