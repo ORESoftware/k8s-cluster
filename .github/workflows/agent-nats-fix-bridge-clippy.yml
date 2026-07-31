@@ -1,21 +1,23 @@
 name: Agent NATS fix bridge clippy
 
 on:
-  push:
-    branches:
-      - agent/nats-bridge-consumer-dlq-robustness
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/agent-nats-fix-bridge-clippy.yml'
+      - 'remote/nats-bridge/src/main.rs'
 
 permissions:
   contents: write
 
 jobs:
   fix:
-    if: github.actor != 'github-actions[bot]'
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Check out the NATS hardening branch
-        uses: actions/checkout@v7
+        uses: actions/checkout@v5
         with:
           ref: agent/nats-bridge-consumer-dlq-robustness
           fetch-depth: 0
