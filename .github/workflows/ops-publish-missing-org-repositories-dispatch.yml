@@ -49,55 +49,57 @@ jobs:
           trusted_sha="$(git rev-parse HEAD)"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
           remote_script="$RUNNER_TEMP/publish-critical-org-repositories.sh"
-          cat > "$remote_script" <<EOF
+          cat > "$remote_script" <<'REMOTE_EOF'
           #!/usr/bin/env bash
           set -euo pipefail
-          trusted_sha='$trusted_sha'
-          work="\$(mktemp -d /tmp/critical-org-publisher.XXXXXX)"
+
+          trusted_sha="${1:?trusted SHA required}"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          work="$(mktemp -d /tmp/critical-org-publisher.XXXXXX)"
           cleanup() {
             unset GH_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
-            rm -rf "\$work"
+            rm -rf "$work"
           }
           trap cleanup EXIT
 
-          test "\$(gh api user --jq .login)" = ORESoftware
+          test "$(gh api user --jq .login)" = ORESoftware
           for org in hypesiege StreemPilot meta-agents-demo file-tunnel unreal-unity-poc; do
-            membership="\$(gh api "/user/memberships/orgs/\$org" --jq '.role + ":" + .state')"
-            test "\$membership" = admin:active
-            echo "\$org owner membership verified"
+            membership="$(gh api "/user/memberships/orgs/$org" --jq '.role + ":" + .state')"
+            test "$membership" = admin:active
+            echo "$org owner membership verified"
           done
 
           gh auth setup-git
           git clone --filter=blob:none --no-checkout \
             https://github.com/ORESoftware/k8s-cluster.git \
-            "\$work/k8s-cluster"
-          git -C "\$work/k8s-cluster" fetch --depth=1 origin "\$trusted_sha"
-          git -C "\$work/k8s-cluster" checkout --detach "\$trusted_sha"
-          test "\$(git -C "\$work/k8s-cluster" rev-parse HEAD)" = "\$trusted_sha"
+            "$work/k8s-cluster"
+          git -C "$work/k8s-cluster" fetch --depth=1 origin "$trusted_sha"
+          git -C "$work/k8s-cluster" checkout --detach "$trusted_sha"
+          test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
 
-          GH_TOKEN="\$(gh auth token)"
-          test -n "\$GH_TOKEN"
+          GH_TOKEN="$(gh auth token)"
+          test -n "$GH_TOKEN"
           export GH_TOKEN
-          export GITHUB_REPOSITORY_ADMIN_TOKEN="\$GH_TOKEN"
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
 
           python3 -m py_compile \
-            "\$work/k8s-cluster/scripts/ops/publish_missing_org_repositories.py" \
-            "\$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py" \
-            "\$work/k8s-cluster/scripts/ops/finalize_missing_org_repositories.py"
+            "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories.py" \
+            "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py" \
+            "$work/k8s-cluster/scripts/ops/finalize_missing_org_repositories.py"
 
-          python3 "\$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py"
+          python3 "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py"
 
-          python3 "\$work/k8s-cluster/scripts/ops/finalize_missing_org_repositories.py" \
-            --json-report "\$work/critical-org-publication.json" \
-            --markdown-report "\$work/critical-org-publication.md" \
+          python3 "$work/k8s-cluster/scripts/ops/finalize_missing_org_repositories.py" \
+            --json-report "$work/critical-org-publication.json" \
+            --markdown-report "$work/critical-org-publication.md" \
             --close-carriers
 
-          cat "\$work/critical-org-publication.md"
-          EOF
+          cat "$work/critical-org-publication.md"
+          REMOTE_EOF
           chmod 700 "$remote_script"
 
           encoded="$(base64 --wrap=0 "$remote_script")"
-          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-repositories.sh && chown ec2-user:ec2-user /tmp/publish-critical-org-repositories.sh && chmod 700 /tmp/publish-critical-org-repositories.sh && sudo -u ec2-user -H bash -lc 'bash /tmp/publish-critical-org-repositories.sh'; status=\$?; rm -f /tmp/publish-critical-org-repositories.sh; exit \$status"
+          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-critical-org-repositories.sh && chown ec2-user:ec2-user /tmp/publish-critical-org-repositories.sh && chmod 700 /tmp/publish-critical-org-repositories.sh && sudo -u ec2-user -H bash -lc 'bash /tmp/publish-critical-org-repositories.sh \"\$1\"' _ '$trusted_sha'; status=\$?; rm -f /tmp/publish-critical-org-repositories.sh; exit \$status"
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
