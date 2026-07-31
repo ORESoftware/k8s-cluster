@@ -121,12 +121,9 @@ def successors(state: State):
     if state.status == DELETED:
         # Replaying finalization cannot resurrect or duplicate data.
         yield "finalize-delete-retry", state
-<<<<<<< HEAD
         if state.mirror_copy_fenced:
             # The fence must remain authoritative after finalization too.
             yield "mirror-copy-late-complete-rejected", state
-=======
->>>>>>> origin/agent/formal-methods-20260730-segment-lifecycle
 
 
 def assert_invariants(state: State) -> None:
