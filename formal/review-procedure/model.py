@@ -94,7 +94,6 @@ def successors(state: State):
                 state,
                 mirror=MIRRORED,
             )
-<<<<<<< HEAD
             yield "mirror-copy-fence-and-abandon-after-delete-claim", replace(
                 state,
                 mirror=MIRROR_NONE,
@@ -104,12 +103,6 @@ def successors(state: State):
             # A delayed worker may still report completion, but the durable
             # generation/lease fence rejects publication and preserves state.
             yield "mirror-copy-late-complete-rejected", state
-=======
-            yield "mirror-copy-abort-after-delete-claim", replace(
-                state,
-                mirror=MIRROR_NONE,
-            )
->>>>>>> origin/agent/formal-methods-20260730-segment-lifecycle
         if state.mirror == MIRRORED:
             yield "mirror-delete-claim", replace(
                 state,
