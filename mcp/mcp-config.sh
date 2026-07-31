@@ -57,7 +57,7 @@ cmd_check() {
   local live=0
   [ "${1:-}" = "--live" ] && live=1
 
-  local -A host_of=()
+  # No associative arrays: keep this portable to macOS's stock bash 3.2.
   local all_hosts=""
   local missing=0
   for f in "${CONFIG_FILES[@]}"; do
@@ -66,22 +66,20 @@ cmd_check() {
       missing=1
       continue
     fi
-    local hosts
-    hosts="$(extract_host "$f" | tr '\n' ' ' | sed 's/ *$//')"
-    host_of["$f"]="$hosts"
-    all_hosts+="$hosts "
+    all_hosts+="$(extract_host "$f" | tr '\n' ' ') "
   done
 
   # Distinct hosts across every config file.
   local distinct
-  distinct="$(printf '%s\n' $all_hosts | sort -u | sed '/^$/d')"
+  distinct="$(printf '%s\n' $all_hosts | sed '/^$/d' | sort -u)"
   local n
   n="$(printf '%s\n' "$distinct" | sed '/^$/d' | wc -l | tr -d ' ')"
 
   if [ "$n" -gt 1 ]; then
     echo "DRIFT: IDE MCP configs reference more than one gateway host:"
     for f in "${CONFIG_FILES[@]}"; do
-      [ -n "${host_of[$f]:-}" ] && printf '  %-32s %s\n' "$f" "${host_of[$f]}"
+      [ -f "$ROOT/$f" ] || continue
+      printf '  %-32s %s\n' "$f" "$(extract_host "$f" | tr '\n' ' ')"
     done
     return 1
   fi
