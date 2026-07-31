@@ -182,7 +182,6 @@ def assert_invariants(state: State) -> None:
 def assert_transition(action: str, source: State, target: State) -> None:
     if action == "verify-head-and-complete":
         require(source.primary_exists, "completion ran before object existence")
-<<<<<<< HEAD
     if action == "mirror-claim":
         require(not source.mirror_started, "mirror claim reused an exhausted generation")
     if action == "retention-delete-claim":
@@ -193,10 +192,6 @@ def assert_transition(action: str, source: State, target: State) -> None:
     if action == "mirror-copy-late-complete-rejected":
         require(source.mirror_copy_fenced, "late mirror completion lacked a fence")
         require(target == source, "rejected mirror completion changed abstract state")
-=======
-    if action == "retention-delete-claim":
-        require(source.expired and not source.pinned, "illegal retention deletion claim")
->>>>>>> origin/agent/formal-methods-20260730-segment-lifecycle
     if action == "finalize-delete":
         require(not source.primary_exists, "finalized deletion before primary removal")
         require(
