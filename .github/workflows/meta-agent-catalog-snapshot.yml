@@ -11,22 +11,24 @@ on:
       - 'flake.lock'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  generate:
+  generate-and-commit:
     if: github.head_ref == 'agent/promote-meta-agent-bootstrap-den-1058'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Check out exact PR tree
+      - name: Check out exact PR branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          persist-credentials: false
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          persist-credentials: true
 
       - name: Install Nix
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342
@@ -37,10 +39,14 @@ jobs:
           nix develop --accept-flake-config -c python3 tools/application_catalog.py generate catalog/applications.json
           nix develop --accept-flake-config -c python3 tools/application_catalog.py validate catalog/applications.json
 
-      - name: Upload generated catalog
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v6
-        with:
-          name: meta-agent-catalog-snapshot
-          path: catalog/applications.json
-          if-no-files-found: error
-          retention-days: 1
+      - name: Commit generated snapshot and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm -- .github/workflows/meta-agent-catalog-snapshot.yml
+          git add -- catalog/applications.json
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore(DEN-1058): regenerate application catalog'
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
