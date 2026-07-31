@@ -34,8 +34,9 @@ const NEEDS_FILL = ENTITY.startsWith("<") || CONTACT_EMAIL.startsWith("<");
     Sonus Auris records audio you choose to capture. Your recordings are
     <strong>encrypted on your device</strong> before they leave it. If you enable
     backup, ciphertext can be sent to storage <strong>you</strong> connect (your own
-    S3 bucket, Google Drive, OneDrive, or iCloud) or to Sonus Auris backup storage.
-    We cannot decrypt your clips because their keys stay on your device.
+    S3-compatible bucket, Google Drive, OneDrive, Dropbox, or iCloud) or to Sonus
+    Auris backup storage. We cannot decrypt your clips because their keys stay on
+    your device.
   </p>
 
   <h2>What we collect and why</h2>
@@ -50,9 +51,12 @@ const NEEDS_FILL = ENTITY.startsWith("<") || CONTACT_EMAIL.startsWith("<");
     can prove where it was recorded. Purpose: app functionality you opt into.
   </p>
   <p>
-    <strong>Optional on-device audio analysis</strong> — OFF by default. Sleep/snore,
-    music, and loud-event detection run locally on your device. Detection results
-    stay with your data; raw audio is not sent anywhere for analysis.
+    <strong>Optional audio analysis</strong> — OFF by default. Core sleep/snore,
+    music-pattern, speech-pattern, and loud-event detectors run locally on your
+    device. If you separately enable and configure an external speech-to-text,
+    song-recognition, or similar service, the audio excerpt needed for that request
+    is sent to that provider under its terms. Sonus Auris shows that disclosure
+    before the feature is enabled; recognition is not required for recording.
   </p>
   <p>
     <strong>Account / backend data (only if you use an account)</strong> — your
@@ -73,7 +77,7 @@ const NEEDS_FILL = ENTITY.startsWith("<") || CONTACT_EMAIL.startsWith("<");
     <li>We do not sell your data.</li>
     <li>We do not use your data for advertising.</li>
     <li>We do not have access to the contents of your encrypted recordings.</li>
-    <li>We do not record without you starting capture.</li>
+    <li>We do not record unless you start capture or explicitly arm a recording schedule.</li>
   </ul>
 
   <h2>Where your data goes</h2>
@@ -81,13 +85,20 @@ const NEEDS_FILL = ENTITY.startsWith("<") || CONTACT_EMAIL.startsWith("<");
     <li><strong>On your device</strong> by default (encrypted).</li>
     <li>
       <strong>To storage you control</strong>, if you connect it (your S3-compatible
-      bucket, Google Drive, OneDrive, or iCloud). Their handling is governed by their terms.
+      bucket, Google Drive, OneDrive, Dropbox, or iCloud). Their handling is governed
+      by their terms.
     </li>
     <li>
       <strong>To Supabase and the optional Sonus Auris backend</strong>, only for
       features you invoke (authentication, settings/consent sync, diagnostics,
       backup coordination, encrypted backup, and alert links). Recordings remain
       client-encrypted; the services cannot derive the device-held key.
+    </li>
+    <li>
+      <strong>To an external recognition provider</strong>, only when you explicitly
+      enable and invoke a feature that needs it. The provider receives the bounded
+      audio excerpt required for that request; connected-storage encryption does
+      not apply to an excerpt deliberately sent for recognition.
     </li>
   </ul>
 

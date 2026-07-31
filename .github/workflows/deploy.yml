@@ -23,6 +23,10 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
       - name: Build with Astro
         uses: withastro/action@e84f40bd8d2caa9e768ec82ad30dd81f0b280853 # v6.1.2
+        env:
+          PUBLIC_RUST_DESKTOP_DOWNLOAD_BASE_URL: ${{ vars.PUBLIC_RUST_DESKTOP_DOWNLOAD_BASE_URL }}
+          PUBLIC_FLUTTER_DESKTOP_DOWNLOAD_BASE_URL: ${{ vars.PUBLIC_FLUTTER_DESKTOP_DOWNLOAD_BASE_URL }}
+          PUBLIC_DESKTOP_TESTERS_URL: ${{ vars.PUBLIC_DESKTOP_TESTERS_URL }}
         with:
           node-version: 22
         # Reads astro.config.mjs (site + base) and uploads the build as the

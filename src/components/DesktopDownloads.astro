@@ -1,0 +1,212 @@
+---
+// Tester-facing desktop downloads. The release pipeline publishes the same
+// filenames beneath a stable `.../desktop/alpha/latest` prefix. A restricted
+// Drive folder can be supplied temporarily while the R2 download host is being
+// activated.
+interface Props {
+  align?: "start" | "center";
+}
+
+const { align = "start" } = Astro.props;
+const trimUrl = (value: string | undefined) => value?.trim().replace(/\/+$/, "");
+const rustDownloadBase = trimUrl(
+  import.meta.env.PUBLIC_RUST_DESKTOP_DOWNLOAD_BASE_URL ??
+    import.meta.env.PUBLIC_DESKTOP_DOWNLOAD_BASE_URL,
+);
+const flutterDownloadBase = trimUrl(
+  import.meta.env.PUBLIC_FLUTTER_DESKTOP_DOWNLOAD_BASE_URL,
+);
+const testerFolderUrl = trimUrl(import.meta.env.PUBLIC_DESKTOP_TESTERS_URL);
+
+const releaseGroups = [
+  {
+    name: "Rust recorder",
+    detail: "Lean native recorder with account connection status",
+    base: rustDownloadBase,
+    files: [
+      {
+        label: "macOS",
+        detail: "Apple silicon",
+        file: "sonus-auris-rust-macos-arm64.zip",
+      },
+      {
+        label: "Windows",
+        detail: "64-bit",
+        file: "sonus-auris-rust-windows-x64.zip",
+      },
+      {
+        label: "Linux",
+        detail: "64-bit",
+        file: "sonus-auris-rust-linux-x64.tar.gz",
+      },
+    ],
+  },
+  {
+    name: "Flutter client",
+    detail: "Full Sonus Auris account, cloud, and recorder experience",
+    base: flutterDownloadBase,
+    files: [
+      {
+        label: "macOS",
+        detail: "Apple silicon",
+        file: "sonus-auris-flutter-macos-arm64.zip",
+      },
+      {
+        label: "Windows",
+        detail: "64-bit",
+        file: "sonus-auris-flutter-windows-x64.zip",
+      },
+      {
+        label: "Linux",
+        detail: "64-bit",
+        file: "sonus-auris-flutter-linux-x64.tar.gz",
+      },
+    ],
+  },
+].filter((group) => group.base);
+---
+
+<div class={`desktop-downloads ${align}`}>
+  <div class="desktop-heading">
+    <span class="desktop-kicker">Desktop alpha</span>
+    <strong>Choose the Rust recorder or full Flutter client</strong>
+    <small>Unsigned preview builds for invited testers. Local recording works even when account or cloud services are unavailable.</small>
+  </div>
+
+  {releaseGroups.map((group) => (
+    <section class="release-group">
+      <div class="release-heading">
+        <strong>{group.name}</strong>
+        <small>{group.detail}</small>
+      </div>
+      <div class="desktop-actions">
+        {group.files.map((download) => (
+          <a class="desktop-button" href={`${group.base}/${download.file}`} download>
+            <span>{download.label}</span>
+            <small>{download.detail}</small>
+          </a>
+        ))}
+      </div>
+      <a class="checksum-link" href={`${group.base}/SHA256SUMS`}>
+        Verify {group.name.toLowerCase()} checksums
+      </a>
+    </section>
+  ))}
+
+  <div class="desktop-actions">
+    {testerFolderUrl && (
+      <a class="desktop-button tester-folder" href={testerFolderUrl} rel="noopener noreferrer">
+        <span>Tester downloads</span>
+        <small>Sign-in required</small>
+      </a>
+    )}
+
+    {releaseGroups.length === 0 && !testerFolderUrl && (
+      <span class="desktop-button is-coming" aria-label="Desktop alpha downloads are being prepared">
+        <span>Desktop alpha</span>
+        <small>Downloads opening soon</small>
+      </span>
+    )}
+  </div>
+</div>
+
+<style>
+  .desktop-downloads {
+    width: min(100%, 640px);
+    margin-top: 24px;
+    padding-top: 22px;
+    border-top: 1px solid rgba(255, 253, 248, 0.2);
+  }
+  .desktop-downloads.center {
+    text-align: center;
+  }
+  .desktop-heading {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .desktop-kicker {
+    color: #ffe0bd;
+    font-size: 0.72rem;
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .desktop-heading strong {
+    color: #fffdf8;
+    font-size: 1.08rem;
+  }
+  .desktop-heading small {
+    color: rgba(255, 253, 248, 0.72);
+    font-size: 0.83rem;
+    line-height: 1.45;
+  }
+  .desktop-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: inherit;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .release-group {
+    margin-top: 18px;
+  }
+  .release-heading {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .release-heading strong {
+    color: #fffdf8;
+  }
+  .release-heading small {
+    color: rgba(255, 253, 248, 0.68);
+    font-size: 0.76rem;
+  }
+  .desktop-downloads.center .desktop-actions {
+    justify-content: center;
+  }
+  .desktop-button {
+    display: inline-flex;
+    min-width: 126px;
+    flex-direction: column;
+    padding: 10px 16px;
+    border: 1px solid rgba(255, 253, 248, 0.24);
+    border-radius: 12px;
+    background: rgba(255, 253, 248, 0.1);
+    color: #fffdf8;
+    text-align: left;
+    transition: background 0.15s ease, transform 0.15s ease;
+  }
+  a.desktop-button:hover {
+    background: rgba(255, 253, 248, 0.17);
+    color: #fffdf8;
+    transform: translateY(-2px);
+  }
+  .desktop-button span {
+    font-weight: 900;
+  }
+  .desktop-button small {
+    color: rgba(255, 253, 248, 0.7);
+    font-size: 0.72rem;
+  }
+  .desktop-button.is-coming {
+    cursor: default;
+    opacity: 0.78;
+  }
+  .tester-folder {
+    border-color: rgba(255, 224, 189, 0.38);
+    background: rgba(253, 126, 20, 0.16);
+  }
+  .checksum-link {
+    display: inline-block;
+    margin-top: 12px;
+    color: rgba(255, 253, 248, 0.7);
+    font-size: 0.76rem;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .checksum-link:hover {
+    color: #fffdf8;
+  }
+</style>

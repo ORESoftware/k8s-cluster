@@ -45,6 +45,13 @@ npm run build    # outputs to ./dist
 npm run preview  # preview the production build
 ```
 
+Desktop alpha buttons are enabled at build time. Use
+`PUBLIC_RUST_DESKTOP_DOWNLOAD_BASE_URL` and
+`PUBLIC_FLUTTER_DESKTOP_DOWNLOAD_BASE_URL` for the stable R2 alpha prefixes, or
+`PUBLIC_DESKTOP_TESTERS_URL` for a restricted
+Google Drive folder while R2 is being activated. If neither is set, the site
+shows an honest non-clickable “Downloads opening soon” state.
+
 ## Structure
 
 ```
@@ -61,6 +68,7 @@ src/
     Privacy.astro           # privacy-first promises + vault
     OpenSource.astro        # "read the code" + terminal
     Download.astro          # final CTA
+    DesktopDownloads.astro  # gated desktop-alpha downloads
     NoSpooks.astro          # tongue-in-cheek "no spooks" / warrant-canary band
     Footer.astro            # link columns + Partners row
     Partners.astro          # neutral capability badges (footer)

@@ -21,6 +21,8 @@ animation is inline SVG/CSS only.
 - `OpenSource.astro` — "read the code" section (`#open-source`): a `points`
   list, GitHub CTA, and a decorative fake terminal transcript.
 - `Download.astro` — final centered CTA card (`#download`) with `StoreButtons`.
+- `DesktopDownloads.astro` — environment-driven Rust desktop alpha links for
+  R2 or a temporary restricted tester folder.
 - `NoSpooks.astro` — tongue-in-cheek "certified spook-free" / warrant-canary
   band. The agency call-outs and membership badge are a joke/satirical
   placeholder (see the comment in the file).
