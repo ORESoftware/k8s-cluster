@@ -308,12 +308,18 @@ jobs:
           fi
 
           printf 'publisher-stage=credential-root status=ready source=%s\n' "$credential_source"
+          set +e
           printf '%s\n' "$encoded_pat" |
             sudo -u ec2-user -H bash -lc \
               'unset CODEX_HOME GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT; exec bash /tmp/publish-critical-org-repositories.sh "$1" "$2"' \
               _ "$trusted_sha" "$credential_source" >"$remote_log" 2>&1
           status=$?
-          tail -c 20000 "$remote_log"
+          set -e
+          if test -f "$remote_log"; then
+            tail -c 20000 "$remote_log"
+          else
+            echo 'publisher-stage=remote-execution status=failed reason=missing-remote-log' >&2
+          fi
           exit "$status"
           ROOT_EOF
 
