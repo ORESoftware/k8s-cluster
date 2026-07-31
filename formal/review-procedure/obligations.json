@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "repository": "sonus-auris/sonus-auris-backend.rs",
+  "procedure": "docs/FORMAL_REVIEW_PROCEDURE.md",
+  "obligations": [
+    {
+      "id": "SEG_VERIFY",
+      "kind": "safety",
+      "statement": "A segment becomes uploaded only after authenticated object existence, size, type, and identity checks succeed.",
+      "trigger_paths": [
+        "src/**"
+      ],
+      "model": "formal/review-procedure/model.py",
+      "evidence": [
+        "bounded lifecycle model",
+        "HeadObject verification tests"
+      ],
+      "commands": [
+        "python3 formal/review-procedure/model.py",
+        "cargo test --all-targets --locked"
+      ],
+      "assumptions": [
+        "the object-store response is authenticated and correctly interpreted"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "SEG_PIN",
+      "kind": "safety",
+      "statement": "Rolling retention cannot finalize deletion of a segment that is currently pinned for permanent retention.",
+      "trigger_paths": [
+        "src/**",
+        "migrations/**"
+      ],
+      "model": "formal/review-procedure/model.py",
+      "evidence": [
+        "bounded lifecycle model",
+        "pin-versus-sweep race tests"
+      ],
+      "commands": [
+        "python3 formal/review-procedure/model.py",
+        "cargo test --all-targets --locked"
+      ],
+      "assumptions": [
+        "pin and delete claims serialize in PostgreSQL"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "SEG_ERASE",
+      "kind": "safety",
+      "statement": "A segment is marked erased only after primary and every known mirror object are deleted or confirmed absent.",
+      "trigger_paths": [
+        "src/**"
+      ],
+      "model": "formal/review-procedure/model.py",
+      "evidence": [
+        "bounded lifecycle model",
+        "primary/mirror failure matrix tests"
+      ],
+      "commands": [
+        "python3 formal/review-procedure/model.py",
+        "cargo test --all-targets --locked"
+      ],
+      "assumptions": [
+        "storage inventory metadata names every authoritative copy"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "SEG_TRANSITION",
+      "kind": "safety",
+      "statement": "Every persisted segment state follows the declared presigned, uploaded, mirrored, pinned, expired, and erased transition relation.",
+      "trigger_paths": [
+        "src/**",
+        "migrations/**"
+      ],
+      "model": "formal/review-procedure/model.py",
+      "evidence": [
+        "bounded lifecycle model",
+        "state transition tests"
+      ],
+      "commands": [
+        "python3 formal/review-procedure/model.py",
+        "cargo test --all-targets --locked"
+      ],
+      "assumptions": [
+        "legacy rows are normalized before entering the modeled relation"
+      ],
+      "bounded": true
+    },
+    {
+      "id": "SEG_RETRY",
+      "kind": "refinement",
+      "statement": "Ambiguous retries for presign, completion, mirroring, retention, and erasure do not duplicate or resurrect data.",
+      "trigger_paths": [
+        "src/**",
+        "tests/**"
+      ],
+      "model": null,
+      "evidence": [
+        "retry tests with stable request/claim identity",
+        "database uniqueness constraints"
+      ],
+      "commands": [
+        "python3 formal/review-procedure/check.py",
+        "cargo test --all-targets --locked"
+      ],
+      "assumptions": [
+        "request identifiers and claim leases remain stable across transport retry"
+      ],
+      "bounded": false
+    }
+  ]
+}
