@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use thiserror::Error;
+use utoipa::ToSchema;
 
 use crate::contracts::{ProviderEnvironment, ProviderKind, PushJob, PushOutcome, PushTarget};
 use crate::provider::{ProviderError, ProviderReadiness, PushProvider};
@@ -117,7 +118,7 @@ fn readiness(provider: Option<&Arc<dyn PushProvider>>) -> ProviderReadinessView 
         .into()
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct RegistryReadiness {
     pub fcm: ProviderReadinessView,
     pub apns_production: ProviderReadinessView,
@@ -126,7 +127,7 @@ pub struct RegistryReadiness {
     pub web_push: ProviderReadinessView,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ProviderReadinessView {
     pub configured: bool,
     #[serde(skip_serializing_if = "Option::is_none")]

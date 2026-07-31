@@ -1,12 +1,13 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use utoipa::ToSchema;
 
 use crate::contracts::PushTarget;
 
 const FINGERPRINT_HEX_LENGTH: usize = 24;
 
 /// Stable, non-reversible identifier for a capability target.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(transparent)]
 pub struct TargetFingerprint(String);
 

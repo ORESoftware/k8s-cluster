@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use serde::Serialize;
+use utoipa::ToSchema;
 
 use super::contracts::{ContactJob, ContactOutcome, ContactProviderKind};
 use super::provider::{ContactProvider, ContactProviderError};
@@ -66,13 +67,13 @@ fn readiness(provider: Option<&Arc<dyn ContactProvider>>) -> ContactProviderRead
         .into()
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ContactRegistryReadiness {
     pub sendgrid: ContactProviderReadinessView,
     pub twilio: ContactProviderReadinessView,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ContactProviderReadinessView {
     pub configured: bool,
     #[serde(skip_serializing_if = "Option::is_none")]

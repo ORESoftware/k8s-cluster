@@ -5,6 +5,7 @@
 //! separate [`contact::ContactJob`] contract so fallback delivery cannot weaken
 //! push-target validation or accept provider credentials from producers.
 
+pub mod api_docs;
 pub mod contact;
 pub mod contracts;
 pub mod dispatch;
@@ -17,6 +18,7 @@ pub mod retry;
 pub mod runtime;
 pub mod validation;
 
+pub use api_docs::{application_router, canonical_json, openapi_document, public_openapi_document};
 pub use contact::{
     ContactApiState, ContactBatchRequest, ContactBatchResponse, ContactContent, ContactJob,
     ContactOutcome, ContactOutcomeClass, ContactProvider, ContactProviderError,
