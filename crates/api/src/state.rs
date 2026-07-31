@@ -2,7 +2,7 @@
 
 use crate::error::ApiError;
 use crate::metrics::Metrics;
-use crate::vapi_client::VapiClient;
+use crate::vapi_client::{VapiAssistantConfig, VapiClient};
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use t2v_llm::LlmClient;
