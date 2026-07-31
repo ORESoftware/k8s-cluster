@@ -49,11 +49,7 @@ pub(crate) struct OneTimePreKeyRequest {
     public_key: Vec<u8>,
 }
 
-<<<<<<< HEAD
 #[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
-=======
-#[derive(Debug, Deserialize, Serialize)]
->>>>>>> den-536-publish-prekey-parity
 #[serde(deny_unknown_fields)]
 pub(crate) struct PublishPreKeysRequest {
     version: u16,
