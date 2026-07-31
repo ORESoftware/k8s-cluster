@@ -44,7 +44,7 @@ jobs:
         run: cargo install cargo-audit --locked
       - name: Audit dependency advisories
         working-directory: remote/nats-bridge
-        run: cargo audit --locked
+        run: cargo audit
 
   contracts:
     runs-on: ubuntu-latest
