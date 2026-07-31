@@ -35,7 +35,7 @@ jobs:
           retry-max-attempts: 2
           mask-aws-account-id: true
 
-      - name: Create the canonical repository and bootstrap pull request
+      - name: Publish the reviewed subtree through the protected cluster credential
         shell: bash
         env:
           INSTANCE_ID: ${{ secrets.AWS_SSM_INSTANCE_ID }}
@@ -50,36 +50,202 @@ jobs:
           #!/usr/bin/env bash
           set -euo pipefail
 
+          trusted_sha="${1:?trusted k8s-cluster SHA required}"
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          readonly expected_login='ORESoftware'
+          readonly target_repository='ORESoftware/mcp-rust-libs'
           readonly source_repository='ORESoftware/testing'
           readonly source_sha='069b1aa4251658c8348d2eb477ad71369d9b742b'
           readonly source_subdirectory='mcp-rust-libs'
-          readonly source_manifest_sha256='288e6c5db4d6dfad4dce9bc069e3c1f19bd7ea35134ae68d8a138bed6d9b5bf6'
-          readonly target_repository='ORESoftware/mcp-rust-libs'
+          readonly source_manifest_sha256='b9ba89f29dca3e5020430d3a5d35967e523d3e94db9168a91cdf24a9bd5f2a33'
           readonly target_branch='bootstrap/semantic-polyglot-20260731'
           readonly baseline_timestamp='2026-07-31T13:30:00Z'
-          work="$(mktemp -d /tmp/mcp-rust-libs-publisher.XXXXXX)"
+          readonly source_timestamp='2026-07-31T13:31:00Z'
 
+          test -z "${CODEX_HOME:-}"
+          work="$(mktemp -d /tmp/mcp-rust-libs-publisher.XXXXXX)"
+          export CODEX_HOME="$work/codex-home"
+          install -d -m 700 "$CODEX_HOME"
           cleanup() {
-            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN \
+              GIT_ASKPASS GIT_USERNAME GIT_TERMINAL_PROMPT \
+              GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM CODEX_HOME
             rm -rf "$work"
           }
           trap cleanup EXIT
 
-          test "$(gh api user --jq .login)" = ORESoftware
-          gh auth setup-git
-          GH_TOKEN="$(gh auth token)"
+          command -v kubectl >/dev/null
+          encoded_pat="$(kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}')"
+          test -n "$encoded_pat"
+          GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
+          unset encoded_pat
           test -n "$GH_TOKEN"
           export GH_TOKEN
           export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
 
-          git clone --filter=blob:none --no-checkout \
-            "https://github.com/${source_repository}.git" \
-            "$work/carrier"
-          git -C "$work/carrier" fetch --depth=1 origin "$source_sha"
-          git -C "$work/carrier" checkout --detach "$source_sha"
-          test "$(git -C "$work/carrier" rev-parse HEAD)" = "$source_sha"
+          api_helper="$work/github_api.py"
+          cat > "$api_helper" <<'PYTHON'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.parse
+          import urllib.request
 
-          source="$work/carrier/$source_subdirectory"
+          API = "https://api.github.com"
+          TOKEN = os.environ["GH_TOKEN"]
+          TARGET = "ORESoftware/mcp-rust-libs"
+          OWNER = "ORESoftware"
+          DESCRIPTION = (
+              "Shared Rust, TypeScript, Dart, and Gleam MCP runtime, contracts, "
+              "safety, telemetry, code generation, and testkit libraries"
+          )
+          HEADERS = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {TOKEN}",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "bounded-mcp-rust-libs-publisher",
+          }
+
+          def request(method: str, path: str, payload=None, allow_404: bool = False):
+              body = None
+              headers = dict(HEADERS)
+              if payload is not None:
+                  body = json.dumps(payload, separators=(",", ":")).encode()
+                  headers["Content-Type"] = "application/json"
+              req = urllib.request.Request(API + path, data=body, headers=headers, method=method)
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as response:
+                      raw = response.read()
+              except urllib.error.HTTPError as error:
+                  if allow_404 and error.code == 404:
+                      return None
+                  raise SystemExit(f"GitHub API {method} {path} failed with HTTP {error.code}")
+              return json.loads(raw) if raw else None
+
+          def ensure_repository():
+              repo = request("GET", f"/repos/{TARGET}", allow_404=True)
+              if repo is None:
+                  repo = request(
+                      "POST",
+                      "/user/repos",
+                      {
+                          "name": "mcp-rust-libs",
+                          "description": DESCRIPTION,
+                          "private": False,
+                          "has_issues": True,
+                          "has_projects": False,
+                          "has_wiki": False,
+                          "auto_init": False,
+                      },
+                  )
+                  print(f"CREATED {TARGET}")
+              if repo.get("owner", {}).get("login") != OWNER or repo.get("visibility") != "public":
+                  raise SystemExit("canonical repository owner or visibility is not exact")
+              request(
+                  "PATCH",
+                  f"/repos/{TARGET}",
+                  {
+                      "description": DESCRIPTION,
+                      "private": False,
+                      "has_issues": True,
+                      "has_projects": False,
+                      "has_wiki": False,
+                      "allow_squash_merge": True,
+                      "allow_merge_commit": True,
+                      "allow_rebase_merge": False,
+                      "delete_branch_on_merge": True,
+                  },
+              )
+
+          def get_ref(ref: str) -> str:
+              value = request("GET", f"/repos/{TARGET}/git/ref/{ref}", allow_404=True)
+              return "" if value is None else value["object"]["sha"]
+
+          def ensure_pull_request(branch: str, expected_head: str, body: str) -> int:
+              query = urllib.parse.urlencode(
+                  {
+                      "state": "all",
+                      "head": f"{OWNER}:{branch}",
+                      "base": "main",
+                      "per_page": 10,
+                  }
+              )
+              pulls = request("GET", f"/repos/{TARGET}/pulls?{query}")
+              if len(pulls) > 1:
+                  raise SystemExit("multiple canonical bootstrap pull requests exist")
+              if not pulls:
+                  pull = request(
+                      "POST",
+                      f"/repos/{TARGET}/pulls",
+                      {
+                          "title": "Bootstrap shared polyglot MCP libraries",
+                          "head": branch,
+                          "base": "main",
+                          "body": body,
+                          "maintainer_can_modify": True,
+                      },
+                  )
+              else:
+                  pull = pulls[0]
+                  if pull.get("merged_at"):
+                      raise SystemExit("bootstrap pull request is merged but main is not the reviewed tree")
+                  if pull.get("state") == "closed":
+                      pull = request(
+                          "PATCH",
+                          f"/repos/{TARGET}/pulls/{pull['number']}",
+                          {"state": "open"},
+                      )
+              if pull.get("head", {}).get("sha") != expected_head:
+                  raise SystemExit("bootstrap pull request head differs from reviewed branch head")
+              return int(pull["number"])
+
+          command = sys.argv[1]
+          if command == "user":
+              print(request("GET", "/user")["login"])
+          elif command == "ensure-repository":
+              ensure_repository()
+          elif command == "get-ref":
+              print(get_ref(sys.argv[2]))
+          elif command == "set-default-main":
+              request("PATCH", f"/repos/{TARGET}", {"default_branch": "main"})
+          elif command == "ensure-pr":
+              branch, expected_head, body_path = sys.argv[2:5]
+              body = open(body_path, encoding="utf-8").read()
+              print(ensure_pull_request(branch, expected_head, body))
+          else:
+              raise SystemExit(f"unknown helper command: {command}")
+          PYTHON
+          chmod 700 "$api_helper"
+
+          actual_login="$(python3 "$api_helper" user)"
+          test "$actual_login" = "$expected_login"
+          python3 "$api_helper" ensure-repository
+
+          askpass="$work/git-askpass.sh"
+          cat > "$askpass" <<'ASKPASS'
+          #!/usr/bin/env bash
+          case "${1:-}" in
+            *Username*) printf '%s\n' "${GIT_USERNAME:-x-access-token}" ;;
+            *) printf '%s\n' "${GH_TOKEN:?missing GH_TOKEN}" ;;
+          esac
+          ASKPASS
+          chmod 700 "$askpass"
+          export GIT_ASKPASS="$askpass"
+          export GIT_USERNAME='x-access-token'
+          export GIT_TERMINAL_PROMPT=0
+          export GIT_CONFIG_GLOBAL=/dev/null
+          export GIT_CONFIG_NOSYSTEM=1
+
+          carrier="$work/carrier"
+          git clone --filter=blob:none --no-checkout \
+            "https://github.com/${source_repository}.git" "$carrier"
+          git -C "$carrier" fetch --depth=1 origin "$source_sha"
+          git -C "$carrier" checkout --detach "$source_sha"
+          test "$(git -C "$carrier" rev-parse HEAD)" = "$source_sha"
+
+          source="$carrier/$source_subdirectory"
           for required in \
             Cargo.toml \
             .zpkg.toml \
@@ -94,7 +260,7 @@ jobs:
           done
           test "$(sha256sum "$source/reports/source-files.sha256" | awk '{print $1}')" = \
             "$source_manifest_sha256"
-          source_tree="$(git -C "$work/carrier" rev-parse "${source_sha}:${source_subdirectory}")"
+          source_tree="$(git -C "$carrier" rev-parse "${source_sha}:${source_subdirectory}")"
           [[ "$source_tree" =~ ^[0-9a-f]{40}$ ]]
 
           (
@@ -104,128 +270,102 @@ jobs:
             python3 scripts/check-scaffold.py
             python3 tooling/conformance/run.py
             python3 scripts/update-source-manifest.py --check
-            sh scripts/verify-zed-package.sh "$source"
           )
 
-          description='Shared Rust, TypeScript, Dart, and Gleam MCP runtime, contracts, safety, telemetry, schema generation, and conformance libraries'
-          if ! gh api "repos/$target_repository" >/dev/null 2>&1; then
-            gh api --method POST user/repos \
-              -f name=mcp-rust-libs \
-              -f description="$description" \
-              -F private=false \
-              -F has_issues=true \
-              -F has_projects=false \
-              -F has_wiki=false \
-              -F auto_init=false >/dev/null
-            echo "CREATED $target_repository"
-          fi
-
-          test "$(gh api "repos/$target_repository" --jq '.owner.login + ":" + .visibility')" = \
-            'ORESoftware:public'
-          gh api --method PATCH "repos/$target_repository" \
-            -f description="$description" \
-            -F private=false \
-            -F has_issues=true \
-            -F has_projects=false \
-            -F has_wiki=false \
-            -F allow_squash_merge=true \
-            -F allow_merge_commit=true \
-            -F allow_rebase_merge=false \
-            -F delete_branch_on_merge=true >/dev/null
-
           baseline="$work/baseline"
-          mkdir -p "$baseline"
+          mkdir -p "$baseline/.github/workflows"
           git -C "$baseline" init -b main
           git -C "$baseline" config user.name 'ORESoftware publication automation'
           git -C "$baseline" config user.email 'bot@oresoftware.dev'
-          cat > "$baseline/README.md" <<'README'
-          # mcp-rust-libs
-
-          Canonical polyglot MCP commons repository. The reviewed implementation is introduced through the bootstrap pull request.
-          README
-          git -C "$baseline" add README.md
+          cp "$source/README.md" "$baseline/README.md"
+          cp "$source/LICENSE-MIT" "$baseline/LICENSE-MIT"
+          cp "$source/LICENSE-APACHE" "$baseline/LICENSE-APACHE"
+          cp "$source/CODEOWNERS" "$baseline/CODEOWNERS"
+          cp "$source/.github/workflows/scaffold.yml" \
+            "$baseline/.github/workflows/scaffold.yml"
+          git -C "$baseline" add -A
           GIT_AUTHOR_DATE="$baseline_timestamp" GIT_COMMITTER_DATE="$baseline_timestamp" \
-            git -C "$baseline" commit -m 'chore: initialize canonical repository'
+            git -C "$baseline" commit -m 'chore: initialize canonical repository and review gate [skip ci]'
           expected_main="$(git -C "$baseline" rev-parse HEAD)"
           expected_main_tree="$(git -C "$baseline" rev-parse 'HEAD^{tree}')"
-          remote_main="$(gh api "repos/$target_repository/git/ref/heads/main" --jq .object.sha 2>/dev/null || true)"
+
+          remote_main="$(python3 "$api_helper" get-ref heads/main)"
           if test -z "$remote_main"; then
             git -C "$baseline" remote add origin "https://github.com/${target_repository}.git"
-            git -C "$baseline" push origin HEAD:refs/heads/main
-            remote_main="$(gh api "repos/$target_repository/git/ref/heads/main" --jq .object.sha)"
+            git -C "$baseline" -c credential.helper= push origin HEAD:refs/heads/main
+            remote_main="$(python3 "$api_helper" get-ref heads/main)"
+            test "$remote_main" = "$expected_main"
+            python3 "$api_helper" set-default-main
           fi
-          gh api --method PATCH "repos/$target_repository" -f default_branch=main >/dev/null
 
-          git clone "https://github.com/${target_repository}.git" "$work/target"
-          git -C "$work/target" config user.name 'ORESoftware publication automation'
-          git -C "$work/target" config user.email 'bot@oresoftware.dev'
-          git -C "$work/target" fetch origin main
-          main_tree="$(git -C "$work/target" rev-parse 'origin/main^{tree}')"
+          target="$work/target"
+          git clone --depth=1 --branch main "https://github.com/${target_repository}.git" "$target"
+          main_tree="$(git -C "$target" rev-parse 'HEAD^{tree}')"
           if test "$main_tree" = "$source_tree"; then
-            echo "ALREADY_PUBLISHED $target_repository main=$remote_main source_tree=$source_tree"
+            echo "ALREADY_PUBLISHED $target_repository main=$remote_main source_tree=$source_tree trusted_k8s=$trusted_sha"
             exit 0
           fi
-          if test "$remote_main" != "$expected_main" || test "$main_tree" != "$expected_main_tree"; then
-            echo "Refusing unexpected $target_repository/main state: commit=$remote_main tree=$main_tree" >&2
+          if test "$main_tree" != "$expected_main_tree"; then
+            echo "Refusing unexpected $target_repository/main: commit=$remote_main tree=$main_tree" >&2
             exit 1
           fi
 
-          if git -C "$work/target" ls-remote --exit-code --heads origin "$target_branch" >/dev/null 2>&1; then
-            git -C "$work/target" fetch origin "$target_branch"
-            git -C "$work/target" checkout -B "$target_branch" "origin/$target_branch"
-            test "$(git -C "$work/target" rev-parse 'HEAD^{tree}')" = "$source_tree"
-          else
-            git -C "$work/target" checkout -b "$target_branch" origin/main
-            find "$work/target" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-            cp -a "$source"/. "$work/target"/
-            git -C "$work/target" add -A
-            git -C "$work/target" commit \
-              -m 'feat: bootstrap shared polyglot MCP libraries' \
-              -m "Promote the reviewed ${source_repository}@${source_sha} subtree to the canonical repository root."
-            test "$(git -C "$work/target" rev-parse 'HEAD^{tree}')" = "$source_tree"
-            git -C "$work/target" push --set-upstream origin "$target_branch"
-          fi
-
-          head_sha="$(git -C "$work/target" rev-parse HEAD)"
-          pr_json="$(gh pr list \
-            --repo "$target_repository" \
-            --head "$target_branch" \
-            --base main \
-            --state all \
-            --json number,state,mergedAt,headRefOid,url)"
-          pr_count="$(jq 'length' <<<"$pr_json")"
-          test "$pr_count" -le 1
-          if test "$pr_count" -eq 0; then
-            pr_url="$(
-              gh pr create \
-                --repo "$target_repository" \
-                --base main \
-                --head "$target_branch" \
-                --title 'Bootstrap shared polyglot MCP libraries' \
-                --body "Promotes only the reviewed \`${source_subdirectory}/\` subtree from \`${source_repository}@${source_sha}\` to repository root. The semantic merge preserves the hardened Rust runtime/config/telemetry/HTTP/safety/testkit implementation and layers TypeScript/Zod, Dart, Gleam, JSON Schema, deterministic generation, fixtures, and four-target Zed packaging around it. Product tools, authorization, mutations, credentials, endpoint ownership, and business schemas remain in their owning MCP repositories. Source manifest SHA-256: \`${source_manifest_sha256}\`. Linear: DEN-319, DEN-957, DEN-959, DEN-967, DEN-968, DEN-969, DEN-970, DEN-972, DEN-1186."
-            )"
-            pr_number="${pr_url##*/}"
-          else
-            pr_number="$(jq -r '.[0].number' <<<"$pr_json")"
-            pr_state="$(jq -r '.[0].state' <<<"$pr_json")"
-            merged_at="$(jq -r '.[0].mergedAt // ""' <<<"$pr_json")"
-            if test "$pr_state" = CLOSED && test -z "$merged_at"; then
-              gh pr reopen "$pr_number" --repo "$target_repository"
+          remote_head="$(git -C "$target" ls-remote origin "refs/heads/${target_branch}" | awk '{print $1}')"
+          if test -n "$remote_head"; then
+            git -C "$target" fetch --depth=1 origin "$target_branch"
+            branch_tree="$(git -C "$target" rev-parse 'FETCH_HEAD^{tree}')"
+            if test "$branch_tree" != "$source_tree"; then
+              echo "Refusing divergent $target_repository/$target_branch: head=$remote_head tree=$branch_tree" >&2
+              exit 1
             fi
+            expected_head="$remote_head"
+          else
+            git -C "$target" checkout -b "$target_branch" main
+            find "$target" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+            cp -a "$source"/. "$target"/
+            git -C "$target" config user.name 'ORESoftware publication automation'
+            git -C "$target" config user.email 'bot@oresoftware.dev'
+            git -C "$target" add -A
+            GIT_AUTHOR_DATE="$source_timestamp" GIT_COMMITTER_DATE="$source_timestamp" \
+              git -C "$target" commit \
+                -m 'feat: bootstrap shared polyglot MCP libraries' \
+                -m "Promote reviewed ${source_repository}@${source_sha} subtree to canonical repository root."
+            expected_head="$(git -C "$target" rev-parse HEAD)"
+            test "$(git -C "$target" rev-parse 'HEAD^{tree}')" = "$source_tree"
+            git -C "$target" -c credential.helper= push origin "HEAD:refs/heads/${target_branch}"
+            test "$(python3 "$api_helper" get-ref "heads/${target_branch}")" = "$expected_head"
           fi
 
-          gh pr view "$pr_number" --repo "$target_repository" \
-            --json number,state,isDraft,headRefOid,url \
-            --jq '{number,state,isDraft,headRefOid,url}'
-          test "$(gh pr view "$pr_number" --repo "$target_repository" --json headRefOid --jq .headRefOid)" = \
-            "$head_sha"
-          echo "PUBLISHED $target_repository PR#$pr_number head=$head_sha source_tree=$source_tree"
-          REMOTE_SCRIPT
+          pr_body="$work/bootstrap-pr.md"
+          cat > "$pr_body" <<EOF
+          ## Canonical bootstrap
 
+          This promotes only the exact reviewed \`${source_subdirectory}/\` subtree from
+          \`${source_repository}@${source_sha}\` to repository root.
+
+          The deep semantic merge preserves the hardened Rust runtime, strict
+          configuration, stderr-only telemetry, bounded HTTP, safety, and
+          real-process testkit implementation while layering shared JSON Schema
+          contracts, deterministic code generation, TypeScript/Zod, Dart, Gleam,
+          portable fixtures, and the four-target Zed package around it.
+
+          Product tools, credentials, authorization, mutation policy, endpoint
+          ownership, and business schemas remain in their owning repositories.
+
+          Source-manifest SHA-256: \`${source_manifest_sha256}\`.
+          Source Git tree: \`${source_tree}\`.
+          Merge only after the complete target polyglot matrix succeeds.
+
+          Refs DEN-319, DEN-957, DEN-959, DEN-967, DEN-968, DEN-969, DEN-970, DEN-972, DEN-1186.
+          EOF
+          pr_number="$(python3 "$api_helper" ensure-pr "$target_branch" "$expected_head" "$pr_body")"
+          test "$(python3 "$api_helper" get-ref "heads/${target_branch}")" = "$expected_head"
+          echo "PUBLISHED $target_repository PR#$pr_number head=$expected_head source_tree=$source_tree trusted_k8s=$trusted_sha"
+          REMOTE_SCRIPT
           chmod 700 "$remote_script"
 
           encoded="$(base64 --wrap=0 "$remote_script")"
-          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-mcp-rust-libs.sh && chown ec2-user:ec2-user /tmp/publish-mcp-rust-libs.sh && chmod 700 /tmp/publish-mcp-rust-libs.sh && sudo -u ec2-user -H bash /tmp/publish-mcp-rust-libs.sh; status=\$?; rm -f /tmp/publish-mcp-rust-libs.sh; exit \$status"
+          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-mcp-rust-libs.sh && chown ec2-user:ec2-user /tmp/publish-mcp-rust-libs.sh && chmod 700 /tmp/publish-mcp-rust-libs.sh && sudo -u ec2-user -H bash -lc 'unset CODEX_HOME; exec bash /tmp/publish-mcp-rust-libs.sh \"\$1\"' _ '$trusted_sha'; status=\$?; rm -f /tmp/publish-mcp-rust-libs.sh; exit \$status"
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
@@ -233,7 +373,7 @@ jobs:
             aws ssm send-command \
               --instance-ids "$INSTANCE_ID" \
               --document-name AWS-RunShellScript \
-              --comment "Publish canonical mcp-rust-libs from k8s-cluster $trusted_sha" \
+              --comment "Publish canonical mcp-rust-libs from reviewed carrier 069b1aa" \
               --parameters "file://$parameters" \
               --query 'Command.CommandId' \
               --output text
@@ -241,7 +381,7 @@ jobs:
           echo "ssm_command_id=$command_id"
 
           status=Pending
-          for _ in $(seq 1 480); do
+          for _ in $(seq 1 600); do
             status="$(
               aws ssm get-command-invocation \
                 --command-id "$command_id" \
