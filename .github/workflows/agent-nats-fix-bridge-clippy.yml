@@ -1,0 +1,68 @@
+name: Agent NATS fix bridge clippy
+
+on:
+  push:
+    branches:
+      - agent/nats-bridge-consumer-dlq-robustness
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the NATS hardening branch
+        uses: actions/checkout@v7
+        with:
+          ref: agent/nats-bridge-consumer-dlq-robustness
+          fetch-depth: 0
+
+      - name: Install the repository Rust formatter
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.90.0 --profile minimal --component rustfmt
+
+      - name: Apply the validated bridge Clippy fix
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("remote/nats-bridge/src/main.rs")
+          source = path.read_text(encoding="utf-8")
+          old = '''    if let Some(t) = &bridge_token {
+        if t.len() < 16 {
+            eprintln!("Fatal: BRIDGE_TOKEN must be at least 16 characters");
+            std::process::exit(1);
+        }
+    }
+'''
+          new = '''    if let Some(t) = &bridge_token
+        && t.len() < 16
+    {
+        eprintln!("Fatal: BRIDGE_TOKEN must be at least 16 characters");
+        std::process::exit(1);
+    }
+'''
+          occurrences = source.count(old)
+          if occurrences != 1:
+              raise SystemExit(
+                  f"expected exactly one token-validation block, found {occurrences}"
+              )
+          path.write_text(source.replace(old, new), encoding="utf-8")
+
+      - name: Format, validate, and commit the source-only fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustfmt +1.90.0 --edition 2021 remote/nats-bridge/src/main.rs
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add remote/nats-bridge/src/main.rs
+          git diff --cached --quiet && exit 0
+          git commit -m "fix(messaging): satisfy bridge clippy"
+          git push origin HEAD:agent/nats-bridge-consumer-dlq-robustness
