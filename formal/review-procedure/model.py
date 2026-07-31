@@ -86,13 +86,18 @@ def successors(state: State):
         if state.primary_exists:
             yield "delete-primary", replace(state, primary_exists=False)
         if state.mirror == MIRROR_COPYING:
-            # A mirror operation already in flight must be observed to
-            # completion (an inventoried mirror) or explicitly abandoned behind
-            # a durable fence before it can be treated as absent for erasure.
+<<<<<<< HEAD
+            # An in-flight copy must either become an inventoried mirror or be
+            # durably fenced before it can be treated as absent.
+=======
+            # A mirror operation already in flight must be observed to completion
+            # or explicitly abandoned before erasure can be finalized.
+>>>>>>> origin/agent/formal-methods-20260730-segment-lifecycle
             yield "mirror-copy-complete-after-delete-claim", replace(
                 state,
                 mirror=MIRRORED,
             )
+<<<<<<< HEAD
             yield "mirror-copy-fence-and-abandon-after-delete-claim", replace(
                 state,
                 mirror=MIRROR_NONE,
@@ -102,6 +107,12 @@ def successors(state: State):
             # A delayed worker may still report completion, but the durable
             # generation/lease fence rejects publication and preserves state.
             yield "mirror-copy-late-complete-rejected", state
+=======
+            yield "mirror-copy-abort-after-delete-claim", replace(
+                state,
+                mirror=MIRROR_NONE,
+            )
+>>>>>>> origin/agent/formal-methods-20260730-segment-lifecycle
         if state.mirror == MIRRORED:
             yield "mirror-delete-claim", replace(
                 state,
@@ -121,9 +132,12 @@ def successors(state: State):
     if state.status == DELETED:
         # Replaying finalization cannot resurrect or duplicate data.
         yield "finalize-delete-retry", state
+<<<<<<< HEAD
         if state.mirror_copy_fenced:
             # The fence must remain authoritative after finalization too.
             yield "mirror-copy-late-complete-rejected", state
+=======
+>>>>>>> origin/agent/formal-methods-20260730-segment-lifecycle
 
 
 def assert_invariants(state: State) -> None:
@@ -140,6 +154,7 @@ def assert_invariants(state: State) -> None:
             state.mirror in {MIRROR_NONE, MIRROR_DELETED},
             "deleted segment still has an authoritative mirror",
         )
+<<<<<<< HEAD
         if state.mirror_started and state.mirror == MIRROR_NONE:
             require(
                 state.mirror_copy_fenced,
@@ -176,12 +191,22 @@ def assert_invariants(state: State) -> None:
         require(
             state.status in {DELETE_CLAIMED, DELETED},
             "mirror fence exists outside deletion state",
+=======
+    if state.pinned:
+        require(state.status == UPLOADED, "pinned segment left uploaded state")
+    if state.mirror in {MIRROR_COPYING, MIRRORED, MIRROR_DELETE_CLAIMED}:
+        require(state.verified, "mirror exists for an unverified segment")
+        require(
+            state.status in {UPLOADED, DELETE_CLAIMED},
+            "mirror exists outside uploaded/deletion state",
+>>>>>>> origin/agent/formal-methods-20260730-segment-lifecycle
         )
 
 
 def assert_transition(action: str, source: State, target: State) -> None:
     if action == "verify-head-and-complete":
         require(source.primary_exists, "completion ran before object existence")
+<<<<<<< HEAD
     if action == "mirror-claim":
         require(not source.mirror_started, "mirror claim reused an exhausted generation")
     if action == "retention-delete-claim":
@@ -192,17 +217,24 @@ def assert_transition(action: str, source: State, target: State) -> None:
     if action == "mirror-copy-late-complete-rejected":
         require(source.mirror_copy_fenced, "late mirror completion lacked a fence")
         require(target == source, "rejected mirror completion changed abstract state")
+=======
+    if action == "retention-delete-claim":
+        require(source.expired and not source.pinned, "illegal retention deletion claim")
+>>>>>>> origin/agent/formal-methods-20260730-segment-lifecycle
     if action == "finalize-delete":
         require(not source.primary_exists, "finalized deletion before primary removal")
         require(
             source.mirror in {MIRROR_NONE, MIRROR_DELETED},
             "finalized deletion before mirror removal",
         )
+<<<<<<< HEAD
         if source.mirror_started and source.mirror == MIRROR_NONE:
             require(
                 source.mirror_copy_fenced,
                 "finalized deletion after mirror abandonment without fencing",
             )
+=======
+>>>>>>> origin/agent/formal-methods-20260730-segment-lifecycle
     if action.endswith("-retry"):
         require(target == source, f"retry transition {action} changed abstract state")
 
@@ -238,6 +270,7 @@ def main() -> None:
     )
     require(
         "mirror-copy-complete-after-delete-claim" in action_names
+<<<<<<< HEAD
         and "mirror-copy-fence-and-abandon-after-delete-claim" in action_names,
         "in-flight mirror resolution paths were not explored",
     )
@@ -254,6 +287,11 @@ def main() -> None:
         ),
         "fenced mirror-abandonment erasure path was not explored",
     )
+=======
+        and "mirror-copy-abort-after-delete-claim" in action_names,
+        "in-flight mirror resolution paths were not explored",
+    )
+>>>>>>> origin/agent/formal-methods-20260730-segment-lifecycle
 
     print(
         f"segment lifecycle model: {len(seen)} states, "
