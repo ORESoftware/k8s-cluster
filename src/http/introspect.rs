@@ -108,6 +108,8 @@ pub async fn introspect(
             "email": claims.email,
             "email_verified": claims.email_verified,
             "roles": claims.roles,
+            "amr": claims.amr,
+            "acr": claims.acr,
         }))
         .into_response(),
         Err(_) => Json(json!({ "active": false })).into_response(),
@@ -129,6 +131,10 @@ pub async fn verify(State(state): State<AppState>, headers: HeaderMap) -> impl I
                 &claims.provider_tenant,
             );
             insert_header(&mut output, "x-auth-roles", &claims.roles.join(","));
+            insert_header(&mut output, "x-auth-amr", &claims.amr.join(","));
+            if let Some(acr) = &claims.acr {
+                insert_header(&mut output, "x-auth-acr", acr);
+            }
             if let Some(project) = &claims.project {
                 insert_header(&mut output, "x-auth-project", project);
             }
