@@ -2,8 +2,7 @@ name: Materialize DEN-1016 audit on current dev v2
 
 on:
   pull_request:
-    branches:
-      - dev
+    branches: [dev]
     paths:
       - '.github/workflows/materialize-den-1016-current-dev-v2.yml'
   workflow_dispatch: {}
@@ -32,7 +31,7 @@ jobs:
           show-progress: false
           submodules: false
 
-      - name: Merge the reviewed audit history without choosing a side
+      - name: Merge reviewed audit history without selecting a side
         shell: bash
         run: |
           set -euo pipefail
@@ -42,16 +41,15 @@ jobs:
             dev:refs/remotes/origin/dev \
             harden/dev-audit-2026-07-29-post-secret-stage:refs/remotes/origin/harden/dev-audit-2026-07-29-post-secret-stage
           set +e
-          git merge --no-commit --no-ff \
-            origin/harden/dev-audit-2026-07-29-post-secret-stage
+          git merge --no-commit --no-ff origin/harden/dev-audit-2026-07-29-post-secret-stage
           merge_status=$?
           set -e
           if [ "$merge_status" -ne 0 ] && ! git diff --name-only --diff-filter=U | grep -q .; then
-            echo 'merge failed without content conflicts that can be reviewed' >&2
+            echo 'merge failed without reviewable content conflicts' >&2
             exit "$merge_status"
           fi
 
-      - name: Resolve only provably equivalent or monotonic meanings
+      - name: Resolve only equivalent or monotonic meanings
         shell: bash
         run: |
           set -euo pipefail
@@ -66,48 +64,37 @@ jobs:
               Path(path).write_text(content)
               subprocess.check_call(['git', 'add', '--', path])
 
-          def yaml_semantic_lines(lines: list[str]) -> list[str]:
+          def semantic_yaml(lines: list[str]) -> list[str]:
               return [
-                  line.rstrip()
-                  for line in lines
+                  line.rstrip() for line in lines
                   if line.strip() and not line.lstrip().startswith('#')
               ]
 
-          conflicts = [
-              line for line in run('git', 'diff', '--name-only', '--diff-filter=U').splitlines()
-              if line
-          ]
-          unresolved = []
-          decisions = []
+          conflicts = run('git', 'diff', '--name-only', '--diff-filter=U').splitlines()
+          unresolved: list[tuple[str, str]] = []
+          decisions: list[tuple[str, str]] = []
 
           for path in conflicts:
               ours = run('git', 'show', f':2:{path}')
               theirs = run('git', 'show', f':3:{path}')
               ours_lines = ours.splitlines()
               theirs_lines = theirs.splitlines()
-              ours_set = set(ours_lines)
-              theirs_set = set(theirs_lines)
 
               if ours == theirs:
                   stage(path, ours)
                   decisions.append((path, 'byte-identical'))
                   continue
 
-              if path.endswith('.externalsecret.yaml'):
-                  if yaml_semantic_lines(ours_lines) == yaml_semantic_lines(theirs_lines):
-                      stage(path, ours)
-                      decisions.append((path, 'identical YAML object; preserve current documentation'))
-                      continue
+              if path.endswith('.externalsecret.yaml') and semantic_yaml(ours_lines) == semantic_yaml(theirs_lines):
+                  stage(path, ours)
+                  decisions.append((path, 'identical object; preserved current operational comments'))
+                  continue
 
               if path.endswith('/kustomization.yaml'):
-                  audit_non_resources = {
-                      line for line in theirs_lines if not line.startswith('  - ')
-                  }
-                  current_non_resources = {
-                      line for line in ours_lines if not line.startswith('  - ')
-                  }
-                  if not audit_non_resources.issubset(current_non_resources):
-                      unresolved.append((path, 'non-resource kustomization semantics diverged'))
+                  ours_non_resources = {line for line in ours_lines if not line.startswith('  - ')}
+                  theirs_non_resources = {line for line in theirs_lines if not line.startswith('  - ')}
+                  if not theirs_non_resources.issubset(ours_non_resources):
+                      unresolved.append((path, 'non-resource Kustomize semantics diverged'))
                       continue
                   merged = list(ours_lines)
                   seen = set(merged)
@@ -116,33 +103,33 @@ jobs:
                           merged.append(line)
                           seen.add(line)
                   stage(path, '\n'.join(merged) + '\n')
-                  decisions.append((path, 'resource-inventory union'))
+                  decisions.append((path, 'ordered resource-inventory union'))
                   continue
 
+              ours_set = set(ours_lines)
+              theirs_set = set(theirs_lines)
               if ours_set.issuperset(theirs_set):
                   stage(path, ours)
                   decisions.append((path, 'current-dev strict superset'))
                   continue
               if theirs_set.issuperset(ours_set):
                   stage(path, theirs)
-                  decisions.append((path, 'audit strict superset'))
+                  decisions.append((path, 'reviewed-audit strict superset'))
                   continue
 
-              unresolved.append((path, 'neither side is equivalent or a proven superset'))
+              unresolved.append((path, 'neither side is equivalent nor a proven superset'))
 
           if unresolved:
-              print('Unresolved semantic conflicts:')
               for path, reason in unresolved:
-                  print(f'  {path}: {reason}')
+                  print(f'unresolved: {path}: {reason}')
               raise SystemExit(1)
 
-          print('Semantic conflict decisions:')
           for path, reason in decisions:
-              print(f'  {path}: {reason}')
+              print(f'resolved: {path}: {reason}')
           PY
           test -z "$(git diff --name-only --diff-filter=U)"
 
-      - name: Prove current dev and audited security invariants survived
+      - name: Preserve current-dev and audited invariants
         shell: bash
         run: |
           set -euo pipefail
@@ -159,68 +146,64 @@ jobs:
           grep -Fq 'USACC_MONOREPO_REVISION' \
             remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.deployment.yaml
 
-      - name: Pin mutable action references exposed by the audit contract
+      - name: Pin mutable action dependencies exposed by the audit
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
 
-          replacements = {
+          rules = {
               '.github/workflows/browser-mcp-policy.yml': [
-                  ('uses: actions/checkout@v4',
-                   'uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4'),
+                  ('uses: actions/checkout@v4', 'uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4'),
               ],
               '.github/workflows/den-255-static-current.yml': [
-                  ('uses: actions/upload-artifact@v6',
-                   'uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6'),
+                  ('uses: actions/upload-artifact@v6', 'uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6'),
               ],
               '.github/workflows/den-445-focused-cargo-diagnostics.yml': [
-                  ('uses: actions/checkout@v7',
-                   'uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1'),
-                  ('uses: dtolnay/rust-toolchain@stable\n        with:\n          components: rustfmt',
-                   'uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable\n        with:\n          toolchain: stable\n          components: rustfmt'),
+                  ('uses: actions/checkout@v7', 'uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1'),
+                  ('uses: dtolnay/rust-toolchain@stable\n        with:\n          components: rustfmt', 'uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable\n        with:\n          toolchain: stable\n          components: rustfmt'),
               ],
               '.github/workflows/den-445-rust-diagnostics.yml': [
-                  ('uses: actions/checkout@v7',
-                   'uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1'),
-                  ('uses: dtolnay/rust-toolchain@stable\n        if: steps.migration.outputs.status == \'0\'\n        with:\n          components: rustfmt',
-                   'uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable\n        if: steps.migration.outputs.status == \'0\'\n        with:\n          toolchain: stable\n          components: rustfmt'),
+                  ('uses: actions/checkout@v7', 'uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1'),
+                  ('uses: dtolnay/rust-toolchain@stable\n        if: steps.migration.outputs.status == \'0\'\n        with:\n          components: rustfmt', 'uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable\n        if: steps.migration.outputs.status == \'0\'\n        with:\n          toolchain: stable\n          components: rustfmt'),
               ],
               '.github/workflows/nats-messaging-resilience.yml': [
-                  ('uses: actions/checkout@v5',
-                   'uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0'),
-                  ('uses: dtolnay/rust-toolchain@stable',
-                   'uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable'),
+                  ('uses: actions/checkout@v5', 'uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0'),
+                  ('uses: dtolnay/rust-toolchain@stable', 'uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable'),
               ],
               '.github/workflows/repo-checks.yml': [
-                  ('uses: actions/checkout@v7',
-                   'uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1'),
-                  ('uses: actions/setup-node@v7',
-                   'uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7'),
-                  ('uses: azure/setup-kubectl@v5',
-                   'uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5'),
-                  ('uses: actions/upload-artifact@v6',
-                   'uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6'),
+                  ('uses: actions/checkout@v7', 'uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1'),
+                  ('uses: actions/setup-node@v7', 'uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7'),
+                  ('uses: azure/setup-kubectl@v5', 'uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5'),
+                  ('uses: actions/upload-artifact@v6', 'uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6'),
               ],
           }
 
-          for raw_path, rules in replacements.items():
+          for raw_path, replacements in rules.items():
               path = Path(raw_path)
               text = path.read_text()
-              for old, new in rules:
+              for old, new in replacements:
                   count = text.count(old)
                   if count != 1:
-                      raise SystemExit(
-                          f'{raw_path}: expected exactly one {old!r}, found {count}'
-                      )
+                      raise SystemExit(f'{raw_path}: expected one exact occurrence, found {count}: {old!r}')
                   text = text.replace(old, new, 1)
               path.write_text(text)
           PY
           git add .github/workflows
           git diff --cached --check
 
-      - name: Validate manifests, source boundaries, and workflow immutability
+      - name: Remove temporary carriers before validating the product tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/materialize-den-1016-current-dev-v2.yml
+          rm -f .github/workflows/repair-den-1016-externalsecret-merge.yml
+          git add -A
+          test ! -e .github/workflows/materialize-den-1016-current-dev-v2.yml
+          test ! -e .github/workflows/repair-den-1016-externalsecret-merge.yml
+
+      - name: Validate the exact commit candidate
         shell: bash
         run: |
           set -euo pipefail
@@ -237,51 +220,18 @@ jobs:
           fi
           mapfile -t workflows < <(
             git diff --name-only origin/dev -- '.github/workflows/*.yml' '.github/workflows/*.yaml' |
-              grep -v 'materialize-den-1016-current-dev-v2.yml' || true
+              while read -r path; do [ -e "$path" ] && printf '%s\n' "$path"; done
           )
           if [ "${#workflows[@]}" -gt 0 ]; then
-            ruby -e 'require "yaml"; ARGV.each { |path| YAML.parse_file(path) }' \
-              "${workflows[@]}"
+            ruby -e 'require "yaml"; ARGV.each { |path| YAML.parse_file(path) }' "${workflows[@]}"
           fi
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          import subprocess
 
-          paths = subprocess.check_output(
-              ['git', 'diff', '--name-only', 'origin/dev', '--', '.github/workflows'],
-              text=True,
-          ).splitlines()
-          failures = []
-          for raw in paths:
-              if raw.endswith('materialize-den-1016-current-dev-v2.yml'):
-                  continue
-              path = Path(raw)
-              if not path.exists():
-                  continue
-              for number, line in enumerate(path.read_text().splitlines(), 1):
-                  match = re.match(r'^\s*uses:\s*([^\s#]+)', line)
-                  if not match:
-                      continue
-                  ref = match.group(1)
-                  if ref.startswith('./') or ref.startswith('docker://'):
-                      continue
-                  if not re.fullmatch(r'[^@]+@[0-9a-fA-F]{40}', ref):
-                      failures.append(f'{path}:{number}: mutable action reference {ref}')
-          if failures:
-              raise SystemExit('\n'.join(failures))
-          PY
-
-      - name: Remove carrier and publish the semantic merge commit
+      - name: Publish the semantic merge commit
         shell: bash
         run: |
           set -euo pipefail
-          rm -f .github/workflows/materialize-den-1016-current-dev-v2.yml
-          rm -f .github/workflows/repair-den-1016-externalsecret-merge.yml
           git add -A
           git diff --cached --check
-          test -z "$(git diff --cached --name-only | grep 'materialize-den-1016-current-dev-v2.yml' || true)"
-          test -z "$(git diff --cached --name-only | grep 'repair-den-1016-externalsecret-merge.yml' || true)"
           git status --short
           git commit -m 'harden: semantically merge July audit onto current dev [DEN-1016]'
           git push origin HEAD:agent/den-1016-audit-current-dev-v2
