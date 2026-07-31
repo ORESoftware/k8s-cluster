@@ -1,0 +1,102 @@
+name: Materialize DEN-466 response model fix
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/agent/den-466-reward-estimate.patch'
+      - '.github/workflows/den-466-response-model-materializer.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-466-response-model-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  apply-test-and-clean:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/den-466-fastapi-contract-factory'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the authorized branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-466-fastapi-contract-factory
+          fetch-depth: 0
+          persist-credentials: true
+          submodules: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            remote/deployments/ai-ml-pipeline/requirements.txt
+            remote/deployments/ai-ml-pipeline/requirements-dev.txt
+
+      - name: Install pinned contract dependencies
+        working-directory: remote/deployments/ai-ml-pipeline
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+
+      - name: Apply the checksum-pinned response model correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch_file='.github/agent/den-466-reward-estimate.patch'
+          echo '34aeffbe08231c9eb89f91a6be91cdf524c09ff6e5940b64c414b8ff21b38c17  '"$patch_file" | sha256sum --check
+
+          if grep -q 'reward_estimate: dict\[str, Any\]' remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline_api.py; then
+            git apply --check "$patch_file"
+            git apply "$patch_file"
+          else
+            echo 'The scalar reward estimate model is already present.'
+          fi
+
+          grep -q 'reward_estimate: float = Field(alias="rewardEstimate")' \
+            remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline_api.py
+          git diff --check
+
+      - name: Run executable contract tests and deterministic export
+        working-directory: remote/deployments/ai-ml-pipeline
+        env:
+          PYTHONPATH: tests/shims:src
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests/test_api_contract.py
+          output_dir="$RUNNER_TEMP/ai-ml-pipeline-openapi"
+          python src/export_openapi.py --output-dir "$output_dir" --check
+          cmp generated/openapi.public.json "$output_dir/openapi.public.json"
+          test -s "$output_dir/openapi.internal.json"
+
+      - name: Commit only the reviewed product correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch_file='.github/agent/den-466-reward-estimate.patch'
+          workflow_file='.github/workflows/den-466-response-model-materializer.yml'
+          rm -f "$patch_file" "$workflow_file"
+          git diff --check
+
+          changed="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' \
+            '.github/agent/den-466-reward-estimate.patch' \
+            '.github/workflows/den-466-response-model-materializer.yml' \
+            'remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline_api.py' | sort)"
+          test "$changed" = "$expected" || {
+            echo 'Unexpected materializer change set:' >&2
+            printf '%s\n' "$changed" >&2
+            exit 1
+          }
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add "$patch_file" "$workflow_file" \
+            remote/deployments/ai-ml-pipeline/src/dd_ai_ml_pipeline_api.py
+          git commit -m 'fix(ai-ml-pipeline): model reward estimate as a scalar'
+          git push origin HEAD:agent/den-466-fastapi-contract-factory
