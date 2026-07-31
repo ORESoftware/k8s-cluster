@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: nats-resilience-${{ github.event_name }}-${{ github.ref }}
@@ -25,7 +25,6 @@ concurrency:
 
 jobs:
   rust-and-live-nats:
-    if: github.event_name == 'pull_request' && github.head_ref == 'agent/nats-bridge-consumer-dlq-robustness'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -34,11 +33,9 @@ jobs:
           K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
         run: test -n "$K8S_LIBS_DEPLOY_KEY"
 
-      - name: Checkout the PR head branch
+      - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: agent/nats-bridge-consumer-dlq-robustness
-          fetch-depth: 0
           ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
       - name: Initialize shared Rust libraries
@@ -51,49 +48,6 @@ jobs:
         with:
           toolchain: '1.90.0'
           components: rustfmt, clippy
-
-      - name: Apply and publish the validated bridge Clippy fix
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          python <<'PY'
-          from pathlib import Path
-
-          path = Path("remote/nats-bridge/src/main.rs")
-          source = path.read_text(encoding="utf-8")
-          old = (
-              "    if let Some(t) = &bridge_token {\n"
-              "        if t.len() < 16 {\n"
-              "            eprintln!(\"Fatal: BRIDGE_TOKEN must be at least 16 characters\");\n"
-              "            std::process::exit(1);\n"
-              "        }\n"
-              "    }\n"
-          )
-          new = (
-              "    if bridge_token.as_ref().is_some_and(|t| t.len() < 16) {\n"
-              "        eprintln!(\"Fatal: BRIDGE_TOKEN must be at least 16 characters\");\n"
-              "        std::process::exit(1);\n"
-              "    }\n"
-          )
-          occurrences = source.count(old)
-          if occurrences != 1:
-              raise SystemExit(
-                  f"expected exactly one token-validation block, found {occurrences}"
-              )
-          path.write_text(source.replace(old, new), encoding="utf-8")
-          PY
-          rustfmt --edition 2021 remote/nats-bridge/src/main.rs
-          git diff --check
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add remote/nats-bridge/src/main.rs
-          git diff --cached --quiet && exit 0
-          git commit -m "fix(messaging): satisfy bridge clippy"
-          git push \
-            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-            HEAD:agent/nats-bridge-consumer-dlq-robustness
 
       - name: Verify owned Rust source formatting
         run: |
