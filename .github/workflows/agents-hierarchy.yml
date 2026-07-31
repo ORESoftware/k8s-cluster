@@ -23,11 +23,11 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-      - name: Check out the pinned validator implementation
+      - name: Check out the immutable validator implementation
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: canonical-cloud/canonical.cloud
-          ref: ${{ github.workflow_sha }}
+          ref: 5598aec6873e1a16b7e6785acff6092229b82bae
           path: .agents-validator
           persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
