@@ -63,8 +63,7 @@ jobs:
           }
           trap cleanup EXIT
 
-          actual_login="$(gh api user --jq .login)"
-          test "$actual_login" = "$EXPECTED_LOGIN"
+          test "$(gh api user --jq .login)" = "$EXPECTED_LOGIN"
           gh auth setup-git
 
           carrier="$work/carrier"
@@ -75,14 +74,17 @@ jobs:
           test "$(git -C "$carrier" rev-parse HEAD)" = "$SOURCE_SHA"
 
           source="$carrier/mcp-rust-libs"
-          test -f "$source/Cargo.toml"
-          test -f "$source/.zpkg.toml"
-          test -f "$source/.github/workflows/scaffold.yml"
-          test -f "$source/packages/rust/Cargo.toml"
-          test -f "$source/packages/typescript/package.json"
-          test -f "$source/packages/dart/pubspec.yaml"
-          test -f "$source/packages/gleam/gleam.toml"
-          test -f "$source/reports/polyglot-api-repair-complete.txt"
+          for required in \
+            Cargo.toml \
+            .zpkg.toml \
+            .github/workflows/scaffold.yml \
+            packages/rust/Cargo.toml \
+            packages/typescript/package.json \
+            packages/dart/pubspec.yaml \
+            packages/gleam/gleam.toml \
+            reports/polyglot-api-repair-complete.txt; do
+            test -f "$source/$required"
+          done
 
           (
             cd "$source"
@@ -107,10 +109,8 @@ jobs:
             echo "CREATED ${TARGET}"
           fi
 
-          owner_login="$(gh api "repos/${TARGET}" --jq .owner.login)"
-          visibility="$(gh api "repos/${TARGET}" --jq .visibility)"
-          test "$owner_login" = "$EXPECTED_LOGIN"
-          test "$visibility" = public
+          test "$(gh api "repos/${TARGET}" --jq .owner.login)" = "$EXPECTED_LOGIN"
+          test "$(gh api "repos/${TARGET}" --jq .visibility)" = public
           gh api --method PATCH "repos/${TARGET}" \
             -f description="$description" \
             -F private=false \
@@ -148,7 +148,7 @@ jobs:
               echo "Canonical main already contains source at ${remote_main}; publication is idempotently complete."
               exit 0
             fi
-            echo "::error::Refusing to overwrite unexpected ${TARGET}/main ${remote_main} (expected bootstrap ${expected_base})."
+            echo "Refusing to overwrite unexpected ${TARGET}/main ${remote_main} (expected ${expected_base})." >&2
             exit 1
           fi
 
@@ -157,7 +157,6 @@ jobs:
           git -C "$bootstrap" checkout -b "$BOOTSTRAP_BRANCH" main
           find "$bootstrap" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -a "$source"/. "$bootstrap"/
-          rm -rf "$bootstrap/.gitmodules"
           git -C "$bootstrap" config user.name 'ORESoftware publication automation'
           git -C "$bootstrap" config user.email 'bot@oresoftware.dev'
           git -C "$bootstrap" add -A
@@ -187,10 +186,10 @@ jobs:
           \`${SOURCE_REPOSITORY}@${SOURCE_SHA}\` to the repository root.
 
           The semantic merge preserves the hardened Rust runtime base while adding
-          the shared JSON Schema contracts, deterministic code generation,
-          TypeScript/Zod, Dart, Gleam, conformance fixtures, and Zed package
-          manifest. Product-specific tools, credentials, authorization, and
-          business policy remain outside this library.
+          shared JSON Schema contracts, deterministic code generation,
+          TypeScript/Zod, Dart, Gleam, conformance fixtures, and Zed packaging.
+          Product tools, credentials, authorization, and business policy remain
+          in their owning MCP server repositories.
 
           Merge only after the complete polyglot validation matrix succeeds.
 
@@ -206,14 +205,13 @@ jobs:
             echo "Bootstrap PR already exists as #${existing_pr}."
           fi
 
-          final_head="$(gh api "repos/${TARGET}/git/ref/heads/${BOOTSTRAP_BRANCH}" --jq .object.sha)"
-          test "$final_head" = "$expected_head"
-          echo "PUSHED ${TARGET} ${BOOTSTRAP_BRANCH} ${final_head}"
+          test "$(gh api "repos/${TARGET}/git/ref/heads/${BOOTSTRAP_BRANCH}" --jq .object.sha)" = "$expected_head"
+          echo "PUSHED ${TARGET} ${BOOTSTRAP_BRANCH} ${expected_head}"
           REMOTE
           chmod 700 "$remote_script"
 
           encoded="$(base64 --wrap=0 "$remote_script")"
-          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-mcp-rust-libs.sh && chmod 700 /tmp/publish-mcp-rust-libs.sh && sudo -u ec2-user -H bash /tmp/publish-mcp-rust-libs.sh; status=\$?; rm -f /tmp/publish-mcp-rust-libs.sh; exit \$status"
+          remote_command="printf '%s' '$encoded' | base64 --decode > /tmp/publish-mcp-rust-libs.sh && chown ec2-user:ec2-user /tmp/publish-mcp-rust-libs.sh && chmod 700 /tmp/publish-mcp-rust-libs.sh && sudo -u ec2-user -H bash /tmp/publish-mcp-rust-libs.sh; status=\$?; rm -f /tmp/publish-mcp-rust-libs.sh; exit \$status"
           parameters="$RUNNER_TEMP/ssm-parameters.json"
           jq -nc --arg command "$remote_command" '{commands:[$command]}' > "$parameters"
 
