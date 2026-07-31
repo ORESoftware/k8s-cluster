@@ -132,8 +132,8 @@ spec:
             - name: AI_AGENT_BRIDGE_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: dd-agent-secrets
-                  key: SERVER_AUTH_SECRET
+                  name: dd-ai-agent-bridge-secrets
+                  key: inbox_token
             # In-cluster embedder is optional — the built-in deterministic local
             # embedder is used when this is unset. Enable once the endpoint/contract
             # is confirmed:
