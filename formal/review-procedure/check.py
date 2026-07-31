@@ -65,7 +65,6 @@ def require_safe_repo_path(value: object, label: str) -> PurePosixPath:
     require(not path.is_absolute(), f"{label} must be repository-relative")
     require(".." not in path.parts, f"{label} must not traverse outside the repository")
     require(raw not in {".", ""}, f"{label} must name a repository file")
-<<<<<<< HEAD
     require(raw == path.as_posix(), f"{label} must use normalized POSIX syntax")
     return path
 
@@ -90,15 +89,6 @@ def require_safe_trigger(value: str, label: str) -> None:
     require(not path.is_absolute(), f"{label} must be repository-relative")
     require(".." not in path.parts, f"{label} must not traverse outside the repository")
     require(value == path.as_posix(), f"{label} must use normalized POSIX syntax")
-=======
-    return path
-
-
-def require_safe_trigger(value: str, label: str) -> None:
-    path = PurePosixPath(value)
-    require(not path.is_absolute(), f"{label} must be repository-relative")
-    require(".." not in path.parts, f"{label} must not traverse outside the repository")
->>>>>>> origin/agent/formal-methods-20260730-segment-lifecycle
 
 
 def validate_document(document: object) -> tuple[str, int]:
