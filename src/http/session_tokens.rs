@@ -105,14 +105,13 @@ pub fn mint_step_up(
         provider: claims.provider.clone(),
         provider_tenant: claims.provider_tenant.clone(),
         provider_subject: claims.provider_subject.clone(),
-        // A completed step-up is level 2 by definition; keep the numeric pair
-        // aligned with the OIDC pair below rather than letting it default.
+        // A completed step-up is level 2 by definition; keep it aligned with
+        // the ACR below rather than letting it default.
         auth_level: 2,
-        auth_methods: amr.clone(),
+        auth_methods: amr,
         email: claims.email.clone(),
         email_verified: claims.email_verified,
         roles: claims.roles.clone(),
-        amr,
         acr: Some(ACR_STEP_UP.to_string()),
     })
 }
