@@ -2,7 +2,7 @@
 
 use crate::error::ApiError;
 use crate::metrics::Metrics;
-use crate::vapi_client::VapiClient;
+use crate::vapi_client::{VapiAssistantConfig, VapiClient};
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 use t2v_llm::LlmClient;
@@ -26,6 +26,8 @@ pub struct AppState {
     /// Bearer secret guarding operator (`/vapi/call`) and history endpoints.
     /// None → those endpoints fail closed (503).
     pub server_auth_secret: Option<Arc<str>>,
+    /// Config for the inline assistant returned on Vapi `assistant-request`.
+    pub vapi_assistant: VapiAssistantConfig,
     /// Limits concurrent upstream LLM calls.
     llm_semaphore: Arc<Semaphore>,
 }
@@ -85,6 +87,7 @@ impl AppState {
             vapi_webhook_secret,
             allow_insecure_webhook,
             server_auth_secret,
+            vapi_assistant: VapiAssistantConfig::from_env(),
             llm_semaphore: Arc::new(Semaphore::new(max_inflight)),
         }
     }

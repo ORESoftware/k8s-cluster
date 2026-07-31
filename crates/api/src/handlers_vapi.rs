@@ -12,6 +12,7 @@ use crate::error::ApiError;
 use crate::handlers_speech::run_translation;
 use crate::metrics::Metrics;
 use crate::state::AppState;
+use crate::vapi_client::VapiAssistantConfig;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -82,7 +83,12 @@ pub async fn webhook(State(state): State<AppState>, headers: HeaderMap, body: By
     match event_type.as_str() {
         "assistant-request" => json_response(
             StatusCode::OK,
-            json!({ "assistant": translator_assistant() }),
+            json!({
+                "assistant": translator_assistant(
+                    &state.vapi_assistant,
+                    state.vapi_webhook_secret.as_deref(),
+                )
+            }),
         ),
         "tool-calls" => handle_tool_calls(&state, &message).await,
         "status-update" => {
@@ -284,24 +290,31 @@ async fn handle_tool_calls(state: &AppState, message: &Value) -> Response {
             "translate_text" => run_translate_tool(state, &call.arguments).await,
             other => Err(format!("unknown tool '{other}'")),
         };
-        let result_value = match result {
-            Ok(v) => v,
+        // Vapi's ToolCallResult carries a STRING `result` (read back to the
+        // model) or a STRING `error`. Returning a JSON object here would not be
+        // spoken back; for a voice translator the useful result is the bare
+        // translated text.
+        match result {
+            Ok(text) => results.push(json!({
+                "toolCallId": call.id,
+                "name": call.name,
+                "result": text,
+            })),
             Err(e) => {
                 Metrics::bump(&state.metrics.errors_total);
-                json!({ "ok": false, "error": e })
+                results.push(json!({
+                    "toolCallId": call.id,
+                    "name": call.name,
+                    "error": e,
+                }));
             }
-        };
-        results.push(json!({
-            "toolCallId": call.id,
-            "name": call.name,
-            "result": result_value,
-        }));
+        }
     }
 
     json_response(StatusCode::OK, json!({ "results": results }))
 }
 
-async fn run_translate_tool(state: &AppState, args: &Value) -> Result<Value, String> {
+async fn run_translate_tool(state: &AppState, args: &Value) -> Result<String, String> {
     let text = args
         .get("text")
         .and_then(Value::as_str)
@@ -328,27 +341,28 @@ async fn run_translate_tool(state: &AppState, args: &Value) -> Result<Value, Str
     let row = run_translation(state, text, target_lang, source_lang, provider)
         .await
         .map_err(|e| e.message)?;
-    Ok(json!({
-        "ok": true,
-        "translatedText": row.translated_text,
-        "targetLang": row.target_lang,
-        "provider": row.provider,
-    }))
+    // The bare translation — Vapi reads this string straight back to the caller.
+    Ok(row.translated_text)
 }
 
 /// The live-translator assistant config returned for `assistant-request`.
-/// The model calls back our `translate_text` server tool; `{{SERVER_URL}}` is
-/// filled in by Vapi from the assistant's configured server, so the tool posts
-/// to this same webhook.
-fn translator_assistant() -> Value {
-    json!({
+///
+/// The model calls back our `translate_text` server tool. When a public
+/// `server_url` is configured we set it (plus the webhook secret and a tool
+/// timeout) explicitly on the assistant's `server` block, so Vapi routes
+/// tool-calls / status-update / end-of-call-report back to this webhook and
+/// echoes the secret as `x-vapi-secret` — closing the auth loop instead of
+/// relying on the phone-number-level server. A `voice` is always set so Vapi
+/// has an explicit TTS provider.
+fn translator_assistant(config: &VapiAssistantConfig, webhook_secret: Option<&str>) -> Value {
+    let mut assistant = json!({
         "name": "t2v Live Translator",
-        "firstMessage": "Hi! I can translate between languages in real time. What would you like translated, and into which language?",
+        "firstMessage": config.first_message,
         "firstMessageMode": "assistant-speaks-first",
         "serverMessages": ["assistant-request", "tool-calls", "status-update", "end-of-call-report"],
         "model": {
-            "provider": "openai",
-            "model": "gpt-4o",
+            "provider": config.model_provider,
+            "model": config.model,
             "temperature": 0.2,
             "messages": [{
                 "role": "system",
@@ -371,8 +385,29 @@ fn translator_assistant() -> Value {
                     }
                 }
             }]
+        },
+        "voice": {
+            "provider": config.voice_provider,
+            "voiceId": config.voice_id,
+        },
+    });
+
+    if let (Some(provider), Some(model)) = (
+        config.transcriber_provider.as_deref(),
+        config.transcriber_model.as_deref(),
+    ) {
+        assistant["transcriber"] = json!({ "provider": provider, "model": model });
+    }
+
+    if let Some(url) = config.server_url.as_deref() {
+        let mut server = json!({ "url": url, "timeoutSeconds": config.tool_timeout_secs });
+        if let Some(secret) = webhook_secret {
+            server["secret"] = json!(secret);
         }
-    })
+        assistant["server"] = server;
+    }
+
+    assistant
 }
 
 // ---------------------------------------------------------------------------
@@ -444,11 +479,69 @@ mod tests {
     }
 
     #[test]
-    fn translator_assistant_declares_translate_tool() {
-        let a = translator_assistant();
-        let tool_name = a
-            .pointer("/model/tools/0/function/name")
-            .and_then(Value::as_str);
-        assert_eq!(tool_name, Some("translate_text"));
+    fn translator_assistant_declares_tool_voice_and_server() {
+        let config = VapiAssistantConfig {
+            server_url: Some("https://api.example.test/vapi/webhook".to_string()),
+            model_provider: "openai".to_string(),
+            model: "gpt-4o".to_string(),
+            voice_provider: "openai".to_string(),
+            voice_id: "alloy".to_string(),
+            transcriber_provider: None,
+            transcriber_model: None,
+            first_message: "Hi".to_string(),
+            tool_timeout_secs: 30,
+        };
+        let a = translator_assistant(&config, Some("s3cr3t"));
+
+        // Tool is declared for the model to call.
+        assert_eq!(
+            a.pointer("/model/tools/0/function/name")
+                .and_then(Value::as_str),
+            Some("translate_text")
+        );
+        // A voice is always set so Vapi has an explicit TTS provider.
+        assert_eq!(
+            a.pointer("/voice/provider").and_then(Value::as_str),
+            Some("openai")
+        );
+        assert_eq!(
+            a.pointer("/voice/voiceId").and_then(Value::as_str),
+            Some("alloy")
+        );
+        // The server block routes callbacks here and carries the secret + timeout.
+        assert_eq!(
+            a.pointer("/server/url").and_then(Value::as_str),
+            Some("https://api.example.test/vapi/webhook")
+        );
+        assert_eq!(
+            a.pointer("/server/secret").and_then(Value::as_str),
+            Some("s3cr3t")
+        );
+        assert_eq!(
+            a.pointer("/server/timeoutSeconds").and_then(Value::as_u64),
+            Some(30)
+        );
+    }
+
+    #[test]
+    fn translator_assistant_omits_server_when_no_url() {
+        let config = VapiAssistantConfig {
+            server_url: None,
+            model_provider: "openai".to_string(),
+            model: "gpt-4o".to_string(),
+            voice_provider: "openai".to_string(),
+            voice_id: "alloy".to_string(),
+            transcriber_provider: None,
+            transcriber_model: None,
+            first_message: "Hi".to_string(),
+            tool_timeout_secs: 30,
+        };
+        let a = translator_assistant(&config, None);
+        assert!(
+            a.get("server").is_none(),
+            "no server block without a configured URL"
+        );
+        // Voice is still present.
+        assert!(a.get("voice").is_some());
     }
 }
