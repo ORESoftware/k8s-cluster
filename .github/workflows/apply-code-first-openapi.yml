@@ -71,6 +71,33 @@ jobs:
           PY
           python3 -m py_compile scripts/apply_code_first_openapi.py
           python3 scripts/apply_code_first_openapi.py
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/main.rs')
+          source = path.read_text()
+          before = '''        let authenticator = Arc::new(DenyAllAuthenticator);
+        let _ = router(ApiState::new(
+            ProviderRegistry::new(),
+            authenticator.clone(),
+        ))
+        .merge(contact_router(ContactApiState::new(
+            ContactProviderRegistry::new(),
+            authenticator,
+        )));
+'''
+          after = '''        let authenticator = Arc::new(DenyAllAuthenticator);
+        let _ = application_router(
+            ApiState::new(ProviderRegistry::new(), authenticator.clone()),
+            ContactApiState::new(ContactProviderRegistry::new(), authenticator.clone()),
+            authenticator,
+        )
+        .expect("application router");
+'''
+          if source.count(before) != 1:
+              raise SystemExit('expected exactly one legacy router construction test')
+          path.write_text(source.replace(before, after, 1))
+          PY
           cargo fmt --all
 
       - name: Resolve and validate the new dependency graph
