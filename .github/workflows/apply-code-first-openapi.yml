@@ -67,6 +67,42 @@ jobs:
           elif after_import not in source:
               raise SystemExit('unknown contact OpenAPI import contract')
 
+          before_projection = '''fn public_projection(openapi: &OpenApi) -> Result<OpenApi, serde_json::Error> {
+              let mut value = serde_json::to_value(openapi)?;
+              let allowed = PUBLIC_PATHS.iter().copied().collect::<std::collections::BTreeSet<_>>();
+              value["paths"]
+                  .as_object_mut()
+                  .expect("OpenAPI paths are always an object")
+                  .retain(|path, _| allowed.contains(path.as_str()));
+              value["info"]["title"] = serde_json::Value::String(
+                  "push-notification-server API (public)".to_owned(),
+              );
+              value["x-dd-contract-scope"] = serde_json::Value::String("public".to_owned());
+              serde_json::from_value(value)
+          }
+          '''
+          after_projection = '''fn public_projection(openapi: &OpenApi) -> Result<OpenApi, serde_json::Error> {
+              let mut public = openapi.clone();
+              public
+                  .paths
+                  .paths
+                  .retain(|path, _| PUBLIC_PATHS.contains(&path.as_str()));
+              public.info.title = "push-notification-server API (public)".to_owned();
+              public
+                  .extensions
+                  .get_or_insert_with(Default::default)
+                  .insert(
+                      "x-dd-contract-scope".to_owned(),
+                      serde_json::Value::String("public".to_owned()),
+                  );
+              Ok(public)
+          }
+          '''
+          if before_projection in source:
+              source = source.replace(before_projection, after_projection, 1)
+          elif after_projection not in source:
+              raise SystemExit('unknown public projection contract')
+
           path.write_text(source)
           PY
           python3 -m py_compile scripts/apply_code_first_openapi.py
@@ -94,9 +130,11 @@ jobs:
         )
         .expect("application router");
 '''
-          if source.count(before) != 1:
-              raise SystemExit('expected exactly one legacy router construction test')
-          path.write_text(source.replace(before, after, 1))
+          if source.count(before) == 1:
+              source = source.replace(before, after, 1)
+          elif after not in source and 'push_notification_server::application_router(' not in source:
+              raise SystemExit('unknown router construction test contract')
+          path.write_text(source)
           PY
           cargo fmt --all
 
