@@ -1,0 +1,64 @@
+name: Complete token-alias evidence commit once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-token-alias-evidence-tail-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: complete-token-alias-evidence-commit-once
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Append the missing durable-evidence commit boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          git pull --rebase origin main
+          python3 - <<'PY'
+          from pathlib import Path
+
+          target = Path('.github/workflows/ops-probe-protected-github-token-aliases-once.yml')
+          text = target.read_text(encoding='utf-8')
+          marker = '          git diff --cached --check\n'
+          completed = "          git commit -m 'ops(DEN-319): record protected GitHub token alias evidence'\n"
+          if completed not in text:
+              if text.count(marker) != 1:
+                  raise SystemExit('token-alias evidence insertion point drifted')
+              text = text.replace(
+                  marker,
+                  marker
+                  + "          git config user.name 'github-actions[bot]'\n"
+                  + "          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'\n"
+                  + completed
+                  + "          git push origin HEAD:main\n",
+                  1,
+              )
+              target.write_text(text, encoding='utf-8')
+          Path('.github/workflows/fix-token-alias-evidence-tail-once.yml').unlink()
+          PY
+          git diff --check
+
+      - name: Commit the one-shot repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(DEN-319): persist redacted token-alias probe evidence'
+          git push origin HEAD:main
