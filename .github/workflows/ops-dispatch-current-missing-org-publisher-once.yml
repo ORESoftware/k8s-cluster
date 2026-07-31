@@ -1,5 +1,5 @@
 name: Dispatch corrected missing-organization publisher once
-run-name: Retrigger corrected publisher after explicit repository-context fix
+run-name: Retrigger corrected publisher after root credential-boundary fix
 
 on:
   push:
