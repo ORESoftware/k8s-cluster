@@ -15,8 +15,12 @@
 #        dd/shared-auth/database-url          (RDS DSN, search_path=shared_auth)
 #        dd/shared-auth/redis-url             (private VPC Redis/Valkey URL)
 #        dd/shared-auth/webhook-secret        (32+ byte provider-sync HMAC key)
+#        dd/shared-auth/introspect-secret     (32+ byte service-to-service key;
+#                                              shared with Sonus backend)
 #      Fiducia manages these values behind the ClusterSecretStore. Provider API
-#      keys never belong in project JSON, ConfigMaps, images, or git.
+#      keys never belong in project JSON, ConfigMaps, images, or git. Optional
+#      SendGrid/Twilio fields live in provider-credentials; omitting them
+#      disables only passwordless email/SMS endpoints.
 #   4. apply the canonical remote/libs/pg-defs schema to RDS via dpm
 #   5. let the server release workflow publish GHCR and commit its immutable
 #      digest into deploy/k8s; add an imagePullSecret if the package is private

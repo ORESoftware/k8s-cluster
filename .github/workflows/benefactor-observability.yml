@@ -1,0 +1,37 @@
+name: Benefactor observability contract
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/benefactor-observability.yml"
+      - "remote/argocd/benefactor-backend-rs/**"
+      - "remote/argocd/observability/prometheus.configmap.yaml"
+      - "remote/argocd/observability/prometheus.deployment.yaml"
+      - "tools/test_benefactor_observability.py"
+  push:
+    branches:
+      - dev
+    paths:
+      - ".github/workflows/benefactor-observability.yml"
+      - "remote/argocd/benefactor-backend-rs/**"
+      - "remote/argocd/observability/prometheus.configmap.yaml"
+      - "remote/argocd/observability/prometheus.deployment.yaml"
+      - "tools/test_benefactor_observability.py"
+
+permissions:
+  contents: read
+
+jobs:
+  static-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+        with:
+          version: v1.31.0
+      - name: Run Benefactor observability contract
+        run: python3 -m unittest -v tools/test_benefactor_observability.py
+      - name: Render observability and backend manifests
+        run: |
+          kubectl kustomize remote/argocd/observability >/tmp/observability.yaml
+          kubectl kustomize remote/argocd/benefactor-backend-rs >/tmp/benefactor-backend-rs.yaml

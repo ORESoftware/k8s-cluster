@@ -1,0 +1,144 @@
+schema_version: 2
+owner_issue: DEN-666
+gitops_branch: dev
+prometheus:
+  namespace: observability
+  workload_label: app=dd-prometheus
+  scrape_interval: 15s
+  discovery_mode: static-service-target
+  limitation: service-level target does not guarantee one scrape per ready replica
+  replica_discovery_follow_up: DEN-684
+  pod_discovery:
+    contract: docs/observability/prometheus-pod-discovery-contract-v1.yaml
+    contract_version: 1
+    phase: prerequisites
+    enabled: false
+    planned_job: first-party-pods-v1
+    service_account: observability/dd-prometheus
+    automount_service_account_token: false
+    projected_token_expiration_seconds: 3600
+    duplicate_target_gate: required-before-cutover
+    scale_to_zero_alert_policy: suppress-target-missing
+
+applications:
+  - project: github.com/fiducia-cloud
+    issue: DEN-667
+    source_repository: fiducia-cloud/fiducia-customer.rs
+    source_pull_request: 21
+    source_revision: 957618c8ff7ca746519889573443b5e9e68dde19
+    workload: fiducia/fiducia-backend
+    target: fiducia-backend.fiducia.svc.cluster.local:8117
+    path: /metrics
+    implementation: native-rust
+    discovery_mode: static-service-target
+    expected_replica_targets: 1
+    public_gateway: app.fiducia.cloud/metrics returns 404
+
+  - project: github.com/canonical-cloud
+    issue: DEN-668
+    source_repository: canonical-cloud/canonical-web-server.rs
+    source_pull_request: 27
+    publisher_pull_request: 28
+    release_contract_pull_request: 29
+    package_scope_fix_pull_request: 30
+    source_revision: e09bb95160aaf95a836e810eb20b65e74f6317a6
+    package: ghcr.io/canonical-cloud/canonical-web-server-rs
+    web_tag: web-e09bb95160aaf95a836e810eb20b65e74f6317a6
+    web_digest: sha256:61ec2bc5ca5f73bee07f3da1ef29149defbb0e7f14a4070d43dff311dec9421e
+    web_image: ghcr.io/canonical-cloud/canonical-web-server-rs:web-e09bb95160aaf95a836e810eb20b65e74f6317a6@sha256:61ec2bc5ca5f73bee07f3da1ef29149defbb0e7f14a4070d43dff311dec9421e
+    revoker_tag: revoker-e09bb95160aaf95a836e810eb20b65e74f6317a6
+    revoker_digest: sha256:beb1b3414f429836be78cd41005070bf86dfd367389dbe7b202a89a5308d297b
+    revoker_image: ghcr.io/canonical-cloud/canonical-web-server-rs:revoker-e09bb95160aaf95a836e810eb20b65e74f6317a6@sha256:beb1b3414f429836be78cd41005070bf86dfd367389dbe7b202a89a5308d297b
+    publication_status_context: canonical-containers/published
+    publication_status: success
+    publication_run: 30511670591
+    remote_pullback_verified: true
+    workload: canonical-cloud/canonical-cloud-web
+    target: canonical-cloud-web.canonical-cloud.svc.cluster.local:8081
+    path: /metrics
+    implementation: native-rust
+    discovery_mode: static-service-target
+    expected_replica_targets: 1
+    public_gateway: no public Canonical route is configured in dd-remote-gateway
+
+  - project: github.com/akrion-sim
+    issue: DEN-669
+    source_repository: akrion-sim/akrion-web-server.rs
+    source_pull_request: 14
+    source_revision: 1bd5dc5a050ce05f9a495e08038cc02e9647e092
+    workload: default/dd-akrion-web-server-rs
+    target: dd-akrion-web-server-rs.default.svc.cluster.local:8127
+    path: /metrics
+    implementation: native-rust
+    discovery_mode: static-service-target
+    expected_replica_targets: 1
+    public_gateway: /akrion-sim/metrics returns 404
+
+  - project: github.com/sonus-auris
+    issue: DEN-670
+    source_repository: sonus-auris/sonus-auris-site.web
+    source_revision: 2f94949c6a36533cec3cfe36022f7f9da50648de
+    workload: default/dd-sonus-auris-site
+    target: dd-sonus-auris-site.default.svc.cluster.local:9113
+    path: /metrics
+    implementation: nginx-prometheus-exporter-sidecar
+    exporter_image: docker.io/nginx/nginx-prometheus-exporter:1.5.1@sha256:9f6d963bb2b19d706d401cc3e2c3ea8de2f1c471b96a2156ca45e76f650b1625
+    discovery_mode: static-service-target
+    expected_replica_targets: 1
+    public_gateway: site traffic uses 8080; exporter port 9113 is not routed
+
+  - project: github.com/usa-acc
+    issue: DEN-674
+    source_repository: usa-acc/rest-api-backend.rs
+    source_pull_request: 5
+    source_revision: 2d56ef1e69783285526d098abb810e096cd94908
+    workload: default/usacc-rest-api-backend-rs
+    target: usacc-rest-api-backend-rs.default.svc.cluster.local:8121
+    path: /metrics
+    implementation: native-rust
+    discovery_mode: static-service-target
+    expected_replica_targets: 1
+    public_gateway: /usacc/metrics requires gateway authentication and is not publicly accessible
+
+  - project: github.com/shared-auth
+    issue: DEN-675
+    component: auth-server
+    source_repository: shared-auth/shared-auth-server.rs
+    source_pull_requests: [16, 19]
+    source_revision: 821386ba8b167571b27d91012c665ffcb724ae46
+    workload: shared-auth/dd-shared-auth
+    target: dd-shared-auth.shared-auth.svc.cluster.local:8120
+    path: /metrics
+    implementation: native-rust
+    discovery_mode: static-service-target
+    expected_replica_targets: 2
+    network_policy: observability/app=dd-prometheus -> tcp/8120
+    public_gateway: /shared-auth/metrics returns 404 before the public auth proxy
+
+  - project: github.com/shared-auth
+    issue: DEN-675
+    component: nats-bridge
+    source_repository: shared-auth/shared-auth-nats-bridge.rs
+    source_pull_requests: [3, 4, 5]
+    source_revision: d03316944e33fd59ee90a4acaa4fee67cae71d61
+    workload: shared-auth/dd-shared-auth-nats-bridge
+    target: dd-shared-auth-nats-bridge.shared-auth.svc.cluster.local:8121
+    path: /metrics
+    implementation: native-rust
+    discovery_mode: static-service-target
+    expected_replica_targets: 2
+    network_policy: observability/app=dd-prometheus -> tcp/8121
+    metric_cardinality: bounded outcome labels; raw NATS subjects excluded
+    public_gateway: no NATS bridge route exists
+
+completion_gates:
+  - application source and release artifact are immutable and deployed
+  - Canonical canonical-containers/published status is success
+  - Canonical manifests pin the remotely verified registry digests
+  - Service DNS, port, path, and NetworkPolicy match the scrape job
+  - public gateway does not expose application metrics
+  - Prometheus configuration and alert rules load successfully
+  - live up equals 1 for each current static target
+  - Sonus nginx_up equals 1
+  - DEN-684 discovery identity is least privilege and uses a bounded projected token
+  - pod discovery remains disabled until duplicate-target and scale-to-zero gates pass

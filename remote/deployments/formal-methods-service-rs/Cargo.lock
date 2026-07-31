@@ -204,6 +204,7 @@ dependencies = [
  "hex",
  "hmac",
  "http-body-util",
+ "libc",
  "reqwest",
  "serde",
  "serde_json",

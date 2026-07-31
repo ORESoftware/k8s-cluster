@@ -25,7 +25,7 @@ patches:
           metadata:
             annotations:
               dd.dev/soccer-engine-revision: 2550d1225db3e85935fe6a127795a6b612e6388b
-              dd.dev/des-engine-revision: 0abe4a00a4bafbb8ef9024a03539f617a0a1ef15
+              dd.dev/des-engine-revision: 894e86fb188b88b0e2c734b5cf7caa27c6b18e00
           spec:
             containers:
               - name: soccer-learning
@@ -37,7 +37,7 @@ patches:
                   - name: SOCCER_ENGINE_SOURCE_REPO
                     value: https://github.com/ORESoftware/discrete-event-system.rs.git
                   - name: SOCCER_ENGINE_SOURCE_REF
-                    value: 0abe4a00a4bafbb8ef9024a03539f617a0a1ef15
+                    value: 894e86fb188b88b0e2c734b5cf7caa27c6b18e00
                   # Preserve the live ConfigMap-backed feature-gate ownership
                   # while adopting this Deployment into Argo. Explicit nulls
                   # remove the source manifest's literal value before adding

@@ -9,9 +9,10 @@
 //! - only subjects under the configured allowlist prefixes are publishable —
 //!   never `$SYS.>`/`$JS.>`, wildcards, or arbitrary fleet subjects;
 //! - bodies must be JSON and are capped well below the NATS `max_payload`;
-//! - publishes go through JetStream so a work-queue message is acknowledged
-//!   durable before the HTTP caller gets a 2xx (subjects not bound to any
-//!   stream fall back to core NATS and are reported `durable: false`).
+//! - durable subject families fail closed unless JetStream acknowledges the
+//!   write; explicitly non-durable subjects may fall back to core NATS;
+//! - publish concurrency is bounded and optional message IDs map to
+//!   `Nats-Msg-Id` for JetStream de-duplication.
 //!
 //! Env:
 //!   NATS_URL                 default nats://127.0.0.1:4222
@@ -21,7 +22,10 @@
 //!   BRIDGE_ALLOW_INSECURE    "true" to run without BRIDGE_TOKEN (dev only)
 //!   BRIDGE_SUBJECT_PREFIXES  comma-separated allowlist, e.g. "dd.vapi.tasks.,vxl."
 //!                            (required; there is no permit-all default)
+//!   BRIDGE_DURABLE_SUBJECT_PREFIXES  subset that must receive a JetStream ACK
 //!   BRIDGE_MAX_BODY_BYTES    default 262144
+//!   BRIDGE_MAX_IN_FLIGHT     default 64; excess requests receive HTTP 429
+//!   BRIDGE_PUBLISH_TIMEOUT_MS default 5000
 //!   PORT                     default 3004
 
 use axum::{
@@ -36,17 +40,27 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Semaphore;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 const DEFAULT_MAX_BODY: usize = 256 * 1024;
-const PUBLISH_TIMEOUT: Duration = Duration::from_secs(5);
+const DEFAULT_MAX_IN_FLIGHT: usize = 64;
+const DEFAULT_PUBLISH_TIMEOUT_MS: u64 = 5_000;
 
 struct AppState {
     nats: async_nats::Client,
     jetstream: async_nats::jetstream::Context,
     bridge_token: Option<String>,
     subject_prefixes: Vec<String>,
+    durable_subject_prefixes: Vec<String>,
+    publish_timeout: Duration,
+    publish_slots: Arc<Semaphore>,
     published_total: AtomicU64,
+    durable_published_total: AtomicU64,
+    core_published_total: AtomicU64,
+    duplicate_total: AtomicU64,
+    overloaded_total: AtomicU64,
+    durability_rejected_total: AtomicU64,
     rejected_total: AtomicU64,
 }
 
@@ -70,14 +84,14 @@ async fn main() {
     if bridge_token.is_none() && !allow_insecure {
         // Fail closed: an unauthenticated bridge on an unauthenticated bus is
         // an open relay for the whole cluster.
-        eprintln!("Fatal: BRIDGE_TOKEN is not set (set BRIDGE_ALLOW_INSECURE=true only for local dev)");
+        eprintln!(
+            "Fatal: BRIDGE_TOKEN is not set (set BRIDGE_ALLOW_INSECURE=true only for local dev)"
+        );
         std::process::exit(1);
     }
-    if let Some(t) = &bridge_token {
-        if t.len() < 16 {
-            eprintln!("Fatal: BRIDGE_TOKEN must be at least 16 characters");
-            std::process::exit(1);
-        }
+    if bridge_token.as_ref().is_some_and(|t| t.len() < 16) {
+        eprintln!("Fatal: BRIDGE_TOKEN must be at least 16 characters");
+        std::process::exit(1);
     }
 
     let subject_prefixes = parse_prefixes(
@@ -86,13 +100,28 @@ async fn main() {
             .as_str(),
     );
     if subject_prefixes.is_empty() {
-        eprintln!("Fatal: BRIDGE_SUBJECT_PREFIXES is not set; refusing to run as an any-subject relay");
+        eprintln!(
+            "Fatal: BRIDGE_SUBJECT_PREFIXES is not set; refusing to run as an any-subject relay"
+        );
+        std::process::exit(1);
+    }
+    let durable_subject_prefixes = parse_prefixes(
+        std::env::var("BRIDGE_DURABLE_SUBJECT_PREFIXES")
+            .unwrap_or_default()
+            .as_str(),
+    );
+    if let Err(error) = validate_durable_prefixes(&subject_prefixes, &durable_subject_prefixes) {
+        eprintln!("Fatal: {error}");
         std::process::exit(1);
     }
 
     let nats_url =
         std::env::var("NATS_URL").unwrap_or_else(|_| "nats://127.0.0.1:4222".to_string());
-    tracing::info!(%nats_url, prefixes = ?subject_prefixes, "connecting to NATS");
+    tracing::info!(
+        prefixes = ?subject_prefixes,
+        durable_prefixes = ?durable_subject_prefixes,
+        "connecting to configured NATS endpoint"
+    );
 
     let mut opts = async_nats::ConnectOptions::new()
         .name("dd-nats-bridge")
@@ -102,7 +131,8 @@ async fn main() {
         if !token.trim().is_empty() {
             opts = opts.token(token.trim().to_string());
         }
-    } else if let (Ok(user), Ok(pass)) = (std::env::var("NATS_USER"), std::env::var("NATS_PASSWORD"))
+    } else if let (Ok(user), Ok(pass)) =
+        (std::env::var("NATS_USER"), std::env::var("NATS_PASSWORD"))
     {
         opts = opts.user_and_password(user, pass);
     }
@@ -118,14 +148,33 @@ async fn main() {
     let max_body: usize = std::env::var("BRIDGE_MAX_BODY_BYTES")
         .ok()
         .and_then(|v| v.parse().ok())
+        .filter(|value| *value > 0)
         .unwrap_or(DEFAULT_MAX_BODY);
+    let max_in_flight = std::env::var("BRIDGE_MAX_IN_FLIGHT")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| (1..=4096).contains(value))
+        .unwrap_or(DEFAULT_MAX_IN_FLIGHT);
+    let publish_timeout_ms = std::env::var("BRIDGE_PUBLISH_TIMEOUT_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| (100..=30_000).contains(value))
+        .unwrap_or(DEFAULT_PUBLISH_TIMEOUT_MS);
 
     let state = Arc::new(AppState {
         nats,
         jetstream,
         bridge_token,
         subject_prefixes,
+        durable_subject_prefixes,
+        publish_timeout: Duration::from_millis(publish_timeout_ms),
+        publish_slots: Arc::new(Semaphore::new(max_in_flight)),
         published_total: AtomicU64::new(0),
+        durable_published_total: AtomicU64::new(0),
+        core_published_total: AtomicU64::new(0),
+        duplicate_total: AtomicU64::new(0),
+        overloaded_total: AtomicU64::new(0),
+        durability_rejected_total: AtomicU64::new(0),
         rejected_total: AtomicU64::new(0),
     });
 
@@ -171,7 +220,14 @@ async fn healthz(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> 
         "ok": true,
         "nats": format!("{:?}", state.nats.connection_state()),
         "published_total": state.published_total.load(Ordering::Relaxed),
+        "durable_published_total": state.durable_published_total.load(Ordering::Relaxed),
+        "core_published_total": state.core_published_total.load(Ordering::Relaxed),
+        "duplicate_total": state.duplicate_total.load(Ordering::Relaxed),
+        "overloaded_total": state.overloaded_total.load(Ordering::Relaxed),
+        "durability_rejected_total": state.durability_rejected_total.load(Ordering::Relaxed),
         "rejected_total": state.rejected_total.load(Ordering::Relaxed),
+        "publish_slots_available": state.publish_slots.available_permits(),
+        "publish_timeout_ms": state.publish_timeout.as_millis(),
     }))
 }
 
@@ -194,7 +250,11 @@ async fn publish_handler(
     };
 
     if !caller_authorized(&headers, state.bridge_token.as_deref()) {
-        return reject(&state, StatusCode::UNAUTHORIZED, "invalid bridge token".into());
+        return reject(
+            &state,
+            StatusCode::UNAUTHORIZED,
+            "invalid bridge token".into(),
+        );
     }
 
     if let Err(e) = validate_subject(&subject, &state.subject_prefixes) {
@@ -202,23 +262,81 @@ async fn publish_handler(
         return reject(&state, StatusCode::FORBIDDEN, e);
     }
 
+    let message_id = match request_message_id(&headers) {
+        Ok(value) => value,
+        Err(error) => return reject(&state, StatusCode::BAD_REQUEST, error),
+    };
+
     // The bridge relays JSON only; reject other payloads early.
     if serde_json::from_slice::<serde_json::Value>(&body).is_err() {
-        return reject(&state, StatusCode::BAD_REQUEST, "body must be valid JSON".into());
+        return reject(
+            &state,
+            StatusCode::BAD_REQUEST,
+            "body must be valid JSON".into(),
+        );
     }
 
-    // JetStream first so work-queue messages are durably acked before we
-    // return 2xx; subjects not bound to a stream fall back to core NATS.
+    // Shed excess work before it can allocate an unbounded queue of HTTP tasks
+    // waiting on JetStream ACKs. Callers get an explicit retryable 429.
+    let _permit = match state.publish_slots.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => {
+            state.overloaded_total.fetch_add(1, Ordering::Relaxed);
+            return reject(
+                &state,
+                StatusCode::TOO_MANY_REQUESTS,
+                "bridge publish concurrency limit reached; retry with backoff".into(),
+            );
+        }
+    };
+
+    let durable_required = subject_matches_prefixes(&subject, &state.durable_subject_prefixes);
     let js_result = tokio::time::timeout(
-        PUBLISH_TIMEOUT,
-        publish_jetstream(&state, &subject, body.clone()),
+        state.publish_timeout,
+        publish_jetstream(&state, &subject, body.clone(), message_id.as_deref()),
     )
     .await;
 
-    let durable = match js_result {
-        Ok(Ok(())) => true,
+    match js_result {
+        Ok(Ok(ack)) => {
+            state.published_total.fetch_add(1, Ordering::Relaxed);
+            state
+                .durable_published_total
+                .fetch_add(1, Ordering::Relaxed);
+            if ack.duplicate {
+                state.duplicate_total.fetch_add(1, Ordering::Relaxed);
+            }
+            tracing::info!(
+                %subject,
+                stream = %ack.stream,
+                sequence = ack.sequence,
+                duplicate = ack.duplicate,
+                "durably published"
+            );
+            Ok(Json(json!({
+                "ok": true,
+                "subject": subject,
+                "durable": true,
+                "idempotent": message_id.is_some(),
+                "messageId": message_id,
+                "stream": ack.stream,
+                "sequence": ack.sequence,
+                "duplicate": ack.duplicate,
+            })))
+        }
+        Ok(Err(PublishError::NoStream)) if durable_required => {
+            state
+                .durability_rejected_total
+                .fetch_add(1, Ordering::Relaxed);
+            tracing::error!(%subject, "durable subject is not bound to a JetStream stream");
+            reject(
+                &state,
+                StatusCode::SERVICE_UNAVAILABLE,
+                "durable subject is not bound to a JetStream stream".into(),
+            )
+        }
         Ok(Err(PublishError::NoStream)) => {
-            let core = tokio::time::timeout(PUBLISH_TIMEOUT, async {
+            let core = tokio::time::timeout(state.publish_timeout, async {
                 state
                     .nats
                     .publish(subject.clone(), body)
@@ -228,26 +346,40 @@ async fn publish_handler(
             })
             .await;
             match core {
-                Ok(Ok(())) => false,
+                Ok(Ok(())) => {
+                    state.published_total.fetch_add(1, Ordering::Relaxed);
+                    state.core_published_total.fetch_add(1, Ordering::Relaxed);
+                    tracing::info!(%subject, "published through explicitly non-durable core NATS fallback");
+                    Ok(Json(json!({
+                        "ok": true,
+                        "subject": subject,
+                        "durable": false,
+                        "idempotent": false,
+                        "messageId": message_id,
+                        "duplicate": false,
+                    })))
+                }
                 Ok(Err(e)) => {
                     tracing::error!(%subject, "core publish failed: {e}");
-                    return reject(&state, StatusCode::BAD_GATEWAY, "publish failed".into());
+                    reject(&state, StatusCode::BAD_GATEWAY, "publish failed".into())
                 }
-                Err(_) => {
-                    return reject(&state, StatusCode::GATEWAY_TIMEOUT, "publish timed out".into())
-                }
+                Err(_) => reject(
+                    &state,
+                    StatusCode::GATEWAY_TIMEOUT,
+                    "publish timed out".into(),
+                ),
             }
         }
         Ok(Err(PublishError::Other(e))) => {
             tracing::error!(%subject, "jetstream publish failed: {e}");
-            return reject(&state, StatusCode::BAD_GATEWAY, "publish failed".into());
+            reject(&state, StatusCode::BAD_GATEWAY, "publish failed".into())
         }
-        Err(_) => return reject(&state, StatusCode::GATEWAY_TIMEOUT, "publish timed out".into()),
-    };
-
-    state.published_total.fetch_add(1, Ordering::Relaxed);
-    tracing::info!(%subject, durable, "published");
-    Ok(Json(json!({ "ok": true, "subject": subject, "durable": durable })))
+        Err(_) => reject(
+            &state,
+            StatusCode::GATEWAY_TIMEOUT,
+            "publish timed out".into(),
+        ),
+    }
 }
 
 enum PublishError {
@@ -256,18 +388,35 @@ enum PublishError {
     Other(String),
 }
 
+struct DurableAck {
+    stream: String,
+    sequence: u64,
+    duplicate: bool,
+}
+
 async fn publish_jetstream(
     state: &AppState,
     subject: &str,
     body: Bytes,
-) -> Result<(), PublishError> {
-    let ack = state
-        .jetstream
-        .publish(subject.to_string(), body)
-        .await
-        .map_err(|e| classify_js_error(&e.to_string()))?;
-    ack.await.map_err(|e| classify_js_error(&e.to_string()))?;
-    Ok(())
+    message_id: Option<&str>,
+) -> Result<DurableAck, PublishError> {
+    let ack = if let Some(message_id) = message_id {
+        let mut headers = async_nats::HeaderMap::new();
+        headers.insert("Nats-Msg-Id", message_id);
+        state
+            .jetstream
+            .publish_with_headers(subject.to_string(), headers, body)
+            .await
+    } else {
+        state.jetstream.publish(subject.to_string(), body).await
+    }
+    .map_err(|e| classify_js_error(&e.to_string()))?;
+    let ack = ack.await.map_err(|e| classify_js_error(&e.to_string()))?;
+    Ok(DurableAck {
+        stream: ack.stream,
+        sequence: ack.sequence,
+        duplicate: ack.duplicate,
+    })
 }
 
 /// async-nats surfaces "subject not bound to a stream" as either
@@ -279,6 +428,63 @@ fn classify_js_error(msg: &str) -> PublishError {
     } else {
         PublishError::Other(msg.to_string())
     }
+}
+
+fn subject_matches_prefixes(subject: &str, prefixes: &[String]) -> bool {
+    prefixes
+        .iter()
+        .any(|prefix| subject_in_prefix(subject, prefix))
+}
+
+fn namespace_prefix_contains(container: &str, candidate: &str) -> bool {
+    let container = container.trim_end_matches('.');
+    let candidate = candidate.trim_end_matches('.');
+    if container.is_empty() || candidate.is_empty() {
+        return false;
+    }
+    match candidate.strip_prefix(container) {
+        Some(rest) => rest.is_empty() || rest.starts_with('.'),
+        None => false,
+    }
+}
+
+fn validate_durable_prefixes(allowed: &[String], durable: &[String]) -> Result<(), String> {
+    for prefix in durable {
+        if !allowed
+            .iter()
+            .any(|allowed_prefix| namespace_prefix_contains(allowed_prefix, prefix))
+        {
+            return Err(format!(
+                "durable prefix '{prefix}' is outside BRIDGE_SUBJECT_PREFIXES"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn request_message_id(headers: &HeaderMap) -> Result<Option<String>, String> {
+    let value = ["x-message-id", "idempotency-key", "nats-msg-id"]
+        .into_iter()
+        .find_map(|name| headers.get(name));
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let value = value
+        .to_str()
+        .map_err(|_| "message id header must be valid ASCII".to_string())?
+        .trim();
+    if value.is_empty() || value.len() > 128 {
+        return Err("message id must be 1-128 characters".into());
+    }
+    if !value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | ':' | '/'))
+    {
+        return Err(
+            "message id may contain only ASCII alphanumerics, '-', '_', '.', ':', or '/'".into(),
+        );
+    }
+    Ok(Some(value.to_string()))
 }
 
 fn caller_authorized(headers: &HeaderMap, expected: Option<&str>) -> bool {
@@ -425,7 +631,10 @@ mod tests {
         h2.insert("x-bridge-token", "tok-abcdef123456".parse().unwrap());
         assert!(caller_authorized(&h2, Some("tok-abcdef123456")));
 
-        assert!(!caller_authorized(&HeaderMap::new(), Some("tok-abcdef123456")));
+        assert!(!caller_authorized(
+            &HeaderMap::new(),
+            Some("tok-abcdef123456")
+        ));
     }
 
     // ---------------------------------------------------------------------
@@ -733,7 +942,10 @@ mod tests {
     #[test]
     fn insecure_mode_bypasses_all_auth() {
         assert!(caller_authorized(&HeaderMap::new(), None));
-        assert!(caller_authorized(&headers(&[("authorization", "Bearer whatever")]), None));
+        assert!(caller_authorized(
+            &headers(&[("authorization", "Bearer whatever")]),
+            None
+        ));
         assert!(caller_authorized(&headers(&[("x-bridge-token", "")]), None));
     }
 
@@ -853,7 +1065,10 @@ mod tests {
         assert!(constant_time_eq("tok-abcdef123456", "tok-abcdef123456"));
         assert!(!constant_time_eq("tok-abcdef123456", "tok-abcdef123457")); // content
         assert!(!constant_time_eq("tok", "tok-abcdef123456")); // shorter presented
-        assert!(!constant_time_eq("tok-abcdef123456xxxx", "tok-abcdef123456")); // longer
+        assert!(!constant_time_eq(
+            "tok-abcdef123456xxxx",
+            "tok-abcdef123456"
+        )); // longer
         assert!(!constant_time_eq("tok-abcdef12345", "tok-abcdef123456")); // off-by-one len
         assert!(constant_time_eq("", "")); // degenerate equal
         assert!(!constant_time_eq("", "x"));
@@ -951,5 +1166,54 @@ mod tests {
             classify_js_error("permission denied"),
             PublishError::Other(_)
         ));
+    }
+
+    #[test]
+    fn durable_prefixes_must_be_inside_publish_allowlist() {
+        let allowed = parse_prefixes("dd.vapi.tasks.,vxl.");
+        assert!(validate_durable_prefixes(&allowed, &parse_prefixes("dd.vapi.tasks.")).is_ok());
+        assert!(validate_durable_prefixes(&allowed, &parse_prefixes("vxl.events.")).is_ok());
+        assert!(validate_durable_prefixes(&allowed, &parse_prefixes("dd.remote.")).is_err());
+        assert!(namespace_prefix_contains("dd.vapi", "dd.vapi.tasks."));
+        assert!(!namespace_prefix_contains(
+            "dd.vapi.tasks.",
+            "dd.vapi.other."
+        ));
+    }
+
+    #[test]
+    fn message_id_headers_are_validated_and_precedence_is_stable() {
+        let mut headers = HeaderMap::new();
+        headers.insert("idempotency-key", "task/123:attempt-1".parse().unwrap());
+        assert_eq!(
+            request_message_id(&headers).unwrap().as_deref(),
+            Some("task/123:attempt-1")
+        );
+
+        headers.insert("x-message-id", "preferred-id".parse().unwrap());
+        assert_eq!(
+            request_message_id(&headers).unwrap().as_deref(),
+            Some("preferred-id")
+        );
+
+        let mut invalid = HeaderMap::new();
+        invalid.insert("x-message-id", "contains space".parse().unwrap());
+        assert!(request_message_id(&invalid).is_err());
+        invalid.insert("x-message-id", "".parse().unwrap());
+        assert!(request_message_id(&invalid).is_err());
+        invalid.insert("x-message-id", "a".repeat(129).parse().unwrap());
+        assert!(request_message_id(&invalid).is_err());
+    }
+
+    #[test]
+    fn durable_subject_matching_is_token_anchored() {
+        let durable = parse_prefixes("dd.vapi.tasks.,vxl.orders");
+        assert!(subject_matches_prefixes("dd.vapi.tasks.call", &durable));
+        assert!(subject_matches_prefixes("vxl.orders.created", &durable));
+        assert!(!subject_matches_prefixes(
+            "dd.vapi.tasksEvil.call",
+            &durable
+        ));
+        assert!(!subject_matches_prefixes("vxl.ordersEvil", &durable));
     }
 }

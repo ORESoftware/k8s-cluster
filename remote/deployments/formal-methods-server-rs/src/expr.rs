@@ -1,5 +1,9 @@
 use std::collections::HashSet;
 
+const MAX_EXPRESSION_BYTES: usize = 4 * 1024;
+const MAX_EXPRESSION_TOKENS: usize = 512;
+const MAX_EXPRESSION_DEPTH: usize = 64;
+
 // ---------------------------------------------------------------------------
 // expression DSL: lexer + Pratt parser + SMT-LIB printer
 // ---------------------------------------------------------------------------
@@ -79,6 +83,11 @@ fn lex(input: &str) -> Result<Vec<Token>, String> {
                 "not" => Token::OpNot,
                 _ => Token::Ident(ident.to_string()),
             });
+            if tokens.len() > MAX_EXPRESSION_TOKENS {
+                return Err(format!(
+                    "expression exceeds the {MAX_EXPRESSION_TOKENS} token limit"
+                ));
+            }
             continue;
         }
         if c.is_ascii_digit() {
@@ -101,6 +110,11 @@ fn lex(input: &str) -> Result<Vec<Token>, String> {
             } else {
                 Token::Int(lit.to_string())
             });
+            if tokens.len() > MAX_EXPRESSION_TOKENS {
+                return Err(format!(
+                    "expression exceeds the {MAX_EXPRESSION_TOKENS} token limit"
+                ));
+            }
             continue;
         }
         let next = bytes.get(i + 1).map(|b| *b as char);
@@ -133,6 +147,11 @@ fn lex(input: &str) -> Result<Vec<Token>, String> {
         };
         if let Some(tok) = pushed {
             tokens.push(tok);
+            if tokens.len() > MAX_EXPRESSION_TOKENS {
+                return Err(format!(
+                    "expression exceeds the {MAX_EXPRESSION_TOKENS} token limit"
+                ));
+            }
             continue;
         }
         let tok = match c {
@@ -151,6 +170,11 @@ fn lex(input: &str) -> Result<Vec<Token>, String> {
         };
         i += 1;
         tokens.push(tok);
+        if tokens.len() > MAX_EXPRESSION_TOKENS {
+            return Err(format!(
+                "expression exceeds the {MAX_EXPRESSION_TOKENS} token limit"
+            ));
+        }
     }
     Ok(tokens)
 }
@@ -173,8 +197,13 @@ impl Parser {
         tok
     }
 
-    fn parse_expr(&mut self, min_bp: u8) -> Result<Expr, String> {
-        let mut lhs = self.parse_unary()?;
+    fn parse_expr(&mut self, min_bp: u8, depth: usize) -> Result<Expr, String> {
+        if depth > MAX_EXPRESSION_DEPTH {
+            return Err(format!(
+                "expression exceeds the {MAX_EXPRESSION_DEPTH} level nesting limit"
+            ));
+        }
+        let mut lhs = self.parse_unary(depth)?;
         loop {
             let (op, l_bp, r_bp) = match self.peek() {
                 Some(Token::OpOr) => ("or", 10, 11),
@@ -196,35 +225,40 @@ impl Parser {
                 break;
             }
             self.bump();
-            let rhs = self.parse_expr(r_bp)?;
+            let rhs = self.parse_expr(r_bp, depth + 1)?;
             lhs = Expr::Binary(op, Box::new(lhs), Box::new(rhs));
         }
         Ok(lhs)
     }
 
-    fn parse_unary(&mut self) -> Result<Expr, String> {
+    fn parse_unary(&mut self, depth: usize) -> Result<Expr, String> {
+        if depth > MAX_EXPRESSION_DEPTH {
+            return Err(format!(
+                "expression exceeds the {MAX_EXPRESSION_DEPTH} level nesting limit"
+            ));
+        }
         match self.peek() {
             Some(Token::OpNot) => {
                 self.bump();
-                let inner = self.parse_unary()?;
+                let inner = self.parse_unary(depth + 1)?;
                 Ok(Expr::Unary("not", Box::new(inner)))
             }
             Some(Token::OpMinus) => {
                 self.bump();
-                let inner = self.parse_unary()?;
+                let inner = self.parse_unary(depth + 1)?;
                 Ok(Expr::Unary("-", Box::new(inner)))
             }
-            _ => self.parse_atom(),
+            _ => self.parse_atom(depth),
         }
     }
 
-    fn parse_atom(&mut self) -> Result<Expr, String> {
+    fn parse_atom(&mut self, depth: usize) -> Result<Expr, String> {
         let tok = self
             .bump()
             .ok_or_else(|| "unexpected end of expression".to_string())?;
         match tok {
             Token::LParen => {
-                let inner = self.parse_expr(0)?;
+                let inner = self.parse_expr(0, depth + 1)?;
                 match self.bump() {
                     Some(Token::RParen) => Ok(inner),
                     other => Err(format!("expected ')', got {other:?}")),
@@ -240,7 +274,7 @@ impl Parser {
                     let mut args = Vec::new();
                     if !matches!(self.peek(), Some(Token::RParen)) {
                         loop {
-                            args.push(self.parse_expr(0)?);
+                            args.push(self.parse_expr(0, depth + 1)?);
                             match self.peek() {
                                 Some(Token::Comma) => {
                                     self.bump();
@@ -269,9 +303,14 @@ impl Parser {
 }
 
 pub(crate) fn parse_expr(input: &str) -> Result<Expr, String> {
+    if input.len() > MAX_EXPRESSION_BYTES {
+        return Err(format!(
+            "expression exceeds the {MAX_EXPRESSION_BYTES} byte limit"
+        ));
+    }
     let tokens = lex(input)?;
     let mut parser = Parser { tokens, pos: 0 };
-    let expr = parser.parse_expr(0)?;
+    let expr = parser.parse_expr(0, 0)?;
     if parser.pos != parser.tokens.len() {
         return Err(format!(
             "trailing tokens after expression near position {}",
@@ -413,5 +452,17 @@ mod tests {
         assert!(vars.contains("y"));
         assert!(vars.contains("z"));
         assert!(vars.contains("flag"));
+    }
+
+    #[test]
+    fn parser_rejects_oversized_and_deep_expressions() {
+        assert!(parse_expr(&"x".repeat(MAX_EXPRESSION_BYTES + 1)).is_err());
+        let deeply_nested = format!(
+            "{}x{}",
+            "(".repeat(MAX_EXPRESSION_DEPTH + 1),
+            ")".repeat(MAX_EXPRESSION_DEPTH + 1)
+        );
+        assert!(parse_expr(&deeply_nested).is_err());
+        assert!(parse_expr(&vec!["x"; MAX_EXPRESSION_TOKENS + 1].join(" + ")).is_err());
     }
 }

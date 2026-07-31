@@ -28,9 +28,11 @@ function imageReference(manifest: string): string {
 }
 
 function releaseShas(manifest: string): string[] {
-  return [...manifest.matchAll(/canonical\.cloud\/release-sha: "([0-9a-f]{40})"/g)].map(
-    (match) => match[1],
-  );
+  return [
+    ...manifest.matchAll(
+      /^[ \t]*canonical\.cloud\/release-sha:[ \t]*"([0-9a-f]{40})"[ \t]*$/gm,
+    ),
+  ].map((match) => match[1]);
 }
 
 test('canonical-cloud has a dedicated, self-healing Argo application on dev', async () => {
@@ -171,7 +173,7 @@ test('runtime, worker, and registry credentials are strictly isolated', async ()
 });
 
 test('promotion helper changes only immutable image refs and release annotations', async () => {
-  const { renderPromotion } = await import(
+  const { renderPromotion, promoteFiles } = await import(
     '../../argocd/canonical-cloud/promote-release.mjs'
   );
   const source = [
@@ -219,6 +221,119 @@ test('promotion helper changes only immutable image refs and release annotations
         label: 'web test',
       }),
     /digest must match/,
+  );
+
+  const legacySource = source.replace(
+    'ghcr.io/canonical-cloud/canonical-web-server:1111111111111111111111111111111111111111',
+    `ghcr.io/canonical-cloud/canonical-web-server-rs:web-${'1'.repeat(40)}@sha256:${'c'.repeat(64)}`,
+  );
+  const migrated = renderPromotion(legacySource, {
+    repository: 'ghcr.io/canonical-cloud/canonical-web-server',
+    sourceRepositories: ['ghcr.io/canonical-cloud/canonical-web-server-rs'],
+    digest,
+    releaseSha,
+    label: 'legacy web package migration',
+  });
+  assert.match(
+    migrated,
+    new RegExp(`image: ghcr\\.io/canonical-cloud/canonical-web-server@${digest}`),
+  );
+  assert.doesNotMatch(migrated, /canonical-web-server-rs/);
+
+  const legacyRevokerSource = source.replace(
+    'ghcr.io/canonical-cloud/canonical-web-server:1111111111111111111111111111111111111111',
+    `ghcr.io/canonical-cloud/canonical-web-server-rs:revoker-${'1'.repeat(40)}@sha256:${'d'.repeat(64)}`,
+  );
+  const migratedRevoker = renderPromotion(legacyRevokerSource, {
+    repository: 'ghcr.io/canonical-cloud/canonical-session-revoker',
+    sourceRepositories: ['ghcr.io/canonical-cloud/canonical-web-server-rs'],
+    digest,
+    releaseSha,
+    label: 'legacy revoker package migration',
+  });
+  assert.match(
+    migratedRevoker,
+    new RegExp(`image: ghcr\\.io/canonical-cloud/canonical-session-revoker@${digest}`),
+  );
+  assert.equal(
+    renderPromotion(migratedRevoker, {
+      repository: 'ghcr.io/canonical-cloud/canonical-session-revoker',
+      sourceRepositories: ['ghcr.io/canonical-cloud/canonical-web-server-rs'],
+      digest,
+      releaseSha,
+      label: 'migrated revoker idempotence',
+    }),
+    migratedRevoker,
+  );
+
+  const collidingRepository = source.replace(
+    'ghcr.io/canonical-cloud/canonical-web-server:1111111111111111111111111111111111111111',
+    'ghcr.io/canonical-cloud/canonical-web-server-malicious:latest',
+  );
+  assert.throws(
+    () =>
+      renderPromotion(collidingRepository, {
+        repository: 'ghcr.io/canonical-cloud/canonical-web-server',
+        sourceRepositories: ['ghcr.io/canonical-cloud/canonical-web-server-rs'],
+        digest,
+        releaseSha,
+        label: 'prefix collision',
+      }),
+    /expected 1 matches, found 0/,
+  );
+
+  const validBatchEntry = {
+    path: 'web.deployment.yaml',
+    promotion: {
+      repository: 'ghcr.io/canonical-cloud/canonical-web-server',
+      digest,
+      releaseSha,
+      label: 'web batch',
+    },
+  };
+  const writes: string[] = [];
+  await assert.rejects(
+    promoteFiles(
+      [
+        validBatchEntry,
+        {
+          ...validBatchEntry,
+          path: 'revoker.deployment.yaml',
+          promotion: {
+            ...validBatchEntry.promotion,
+            label: 'invalid revoker batch',
+          },
+        },
+      ],
+      {
+        read: async (path: string) =>
+          path === 'web.deployment.yaml'
+            ? source
+            : source.replace(/canonical\.cloud\/release-sha/g, 'invalid/release-sha'),
+        write: async (path: string) => {
+          writes.push(path);
+        },
+      },
+    ),
+    /invalid revoker batch.*expected 2 matches, found 0/,
+  );
+  assert.deepEqual(writes, []);
+
+  const commentedAnnotations = source
+    .replace(/canonical\.cloud\/release-sha/g, 'invalid/release-sha')
+    .concat(
+      `# canonical.cloud/release-sha: "${'1'.repeat(40)}"\n`,
+      `# canonical.cloud/release-sha: "${'1'.repeat(40)}"\n`,
+    );
+  assert.throws(
+    () =>
+      renderPromotion(commentedAnnotations, {
+        repository: 'ghcr.io/canonical-cloud/canonical-web-server',
+        digest,
+        releaseSha,
+        label: 'commented annotations',
+      }),
+    /commented annotations.*expected 2 matches, found 0/,
   );
 });
 

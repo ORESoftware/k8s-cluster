@@ -1,0 +1,119 @@
+name: prometheus application scrape
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - .github/workflows/prometheus-application-scrape.yml
+      - docs/observability/prometheus-application-rollout.yaml
+      - docs/observability/prometheus-pod-discovery-contract-v1.yaml
+      - remote/argocd/observability/kustomization.yaml
+      - remote/argocd/observability/prometheus.rbac.yaml
+      - remote/argocd/observability/prometheus.configmap.yaml
+      - remote/argocd/observability/prometheus.deployment.yaml
+      - remote/argocd/fiducia/fiducia-backend.deployment.yaml
+      - remote/argocd/fiducia/fiducia-backend.networkpolicy.yaml
+      - remote/argocd/canonical-cloud/web.deployment.yaml
+      - remote/argocd/canonical-cloud/web.service.yaml
+      - remote/argocd/canonical-cloud/web.networkpolicy.yaml
+      - remote/argocd/canonical-cloud/revoker.deployment.yaml
+      - remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.deployment.yaml
+      - remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.service.yaml
+      - remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.networkpolicy.yaml
+      - remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.deployment.yaml
+      - remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.service.yaml
+      - remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.networkpolicy.yaml
+      - remote/argocd/dd-next-runtime/dd-sonus-auris-site.configmap.yaml
+      - remote/argocd/dd-next-runtime/dd-sonus-auris-site.deployment.yaml
+      - remote/argocd/dd-next-runtime/dd-sonus-auris-site.service.yaml
+      - remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml
+      - remote/tests/general/prometheus-application-scrape.test.ts
+      - remote/tests/general/prometheus-pod-discovery-prerequisites.test.ts
+      - remote/tests/package.json
+      - remote/tests/pnpm-lock.yaml
+  push:
+    branches: [dev, main]
+    paths:
+      - .github/workflows/prometheus-application-scrape.yml
+      - docs/observability/prometheus-application-rollout.yaml
+      - docs/observability/prometheus-pod-discovery-contract-v1.yaml
+      - remote/argocd/observability/kustomization.yaml
+      - remote/argocd/observability/prometheus.rbac.yaml
+      - remote/argocd/observability/prometheus.configmap.yaml
+      - remote/argocd/observability/prometheus.deployment.yaml
+      - remote/argocd/fiducia/fiducia-backend.deployment.yaml
+      - remote/argocd/fiducia/fiducia-backend.networkpolicy.yaml
+      - remote/argocd/canonical-cloud/web.deployment.yaml
+      - remote/argocd/canonical-cloud/web.service.yaml
+      - remote/argocd/canonical-cloud/web.networkpolicy.yaml
+      - remote/argocd/canonical-cloud/revoker.deployment.yaml
+      - remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.deployment.yaml
+      - remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.service.yaml
+      - remote/argocd/dd-next-runtime/dd-akrion-web-server-rs.networkpolicy.yaml
+      - remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.deployment.yaml
+      - remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.service.yaml
+      - remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.networkpolicy.yaml
+      - remote/argocd/dd-next-runtime/dd-sonus-auris-site.configmap.yaml
+      - remote/argocd/dd-next-runtime/dd-sonus-auris-site.deployment.yaml
+      - remote/argocd/dd-next-runtime/dd-sonus-auris-site.service.yaml
+      - remote/argocd/dd-next-runtime/dd-remote-gateway.configmap.yaml
+      - remote/tests/general/prometheus-application-scrape.test.ts
+      - remote/tests/general/prometheus-pod-discovery-prerequisites.test.ts
+      - remote/tests/package.json
+      - remote/tests/pnpm-lock.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository without private submodules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/prometheus-application-scrape.yml
+
+      - name: Install Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+
+      - name: Install locked test dependencies
+        working-directory: remote/tests
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.33.0 --activate
+          pnpm install --frozen-lockfile
+
+      - name: Verify scrape, discovery-security, release, network, exporter, alert, and gateway contracts
+        working-directory: remote/tests
+        run: pnpm run test:cli:prometheus-applications
+
+      - name: Render affected GitOps overlays
+        run: |
+          set -euo pipefail
+          kubectl kustomize remote/argocd/observability >/tmp/observability.yaml
+          kubectl kustomize remote/argocd/fiducia >/tmp/fiducia.yaml
+          kubectl kustomize remote/argocd/canonical-cloud >/tmp/canonical-cloud.yaml
+          kubectl kustomize remote/argocd/dd-next-runtime >/tmp/dd-next-runtime.yaml
+          grep -q 'name: dd-prometheus-config' /tmp/observability.yaml
+          grep -q 'name: dd-prometheus-discovery' /tmp/observability.yaml
+          grep -q 'serviceAccountName: dd-prometheus' /tmp/observability.yaml
+          grep -q 'expirationSeconds: 3600' /tmp/observability.yaml
+          grep -q 'name: fiducia-backend' /tmp/fiducia.yaml
+          grep -q 'name: canonical-cloud-web' /tmp/canonical-cloud.yaml
+          grep -q 'name: dd-sonus-auris-site' /tmp/dd-next-runtime.yaml
+          grep -q 'name: usacc-rest-api-backend-rs' /tmp/dd-next-runtime.yaml

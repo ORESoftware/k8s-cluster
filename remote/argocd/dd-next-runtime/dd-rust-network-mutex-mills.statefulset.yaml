@@ -22,7 +22,7 @@ spec:
   template:
     metadata:
       annotations:
-        dd.dev/telemetry-revision: '2026-06-07-rust-network-mutex-mills'
+        dd.dev/telemetry-revision: '2026-07-29-otel'
       labels:
         app: dd-rust-network-mutex-mills
         role: live-mutex-broker
@@ -110,6 +110,15 @@ spec:
               value: '1'
             - name: RUST_LOG
               value: info
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4317
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: grpc
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: >-
+                service.namespace=oresoftware,
+                deployment.environment.name=remote-dev,
+                github.repository=ORESoftware/live-mutex-mills.rs
           ports:
             - name: peer
               containerPort: 7990
