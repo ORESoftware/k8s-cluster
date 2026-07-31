@@ -27,9 +27,32 @@ spec:
             - sh
             - -c
             - chown -R 999:999 /var/lib/rabbitmq
+          # Same shape the ai-ml-platform postgres init containers already use
+          # for this identical job: root only long enough to chown, with the
+          # capability set narrowed to what chown actually needs instead of the
+          # full root default.
           securityContext:
             runAsUser: 0
             runAsGroup: 0
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - CHOWN
+                - DAC_OVERRIDE
+                - FOWNER
+            seccompProfile:
+              type: RuntimeDefault
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
           volumeMounts:
             - name: data
               mountPath: /var/lib/rabbitmq
@@ -37,18 +60,38 @@ spec:
         - name: rabbitmq
           image: rabbitmq:3.13-management-alpine
           imagePullPolicy: IfNotPresent
+          # Sourced from the gcs-rabbitmq ExternalSecret, never inline: the
+          # Erlang cookie is RCE-equivalent on the distribution port and the
+          # broker login gates every AMQP producer/consumer.
           env:
             - name: RABBITMQ_DEFAULT_USER
-              value: gcs
+              valueFrom:
+                secretKeyRef:
+                  name: gcs-rabbitmq
+                  key: RABBITMQ_DEFAULT_USER
             - name: RABBITMQ_DEFAULT_PASS
-              value: gcs
+              valueFrom:
+                secretKeyRef:
+                  name: gcs-rabbitmq
+                  key: RABBITMQ_DEFAULT_PASS
             - name: RABBITMQ_ERLANG_COOKIE
-              value: gcs-cookie
+              valueFrom:
+                secretKeyRef:
+                  name: gcs-rabbitmq
+                  key: RABBITMQ_ERLANG_COOKIE
           ports:
             - name: amqp
               containerPort: 5672
             - name: management
               containerPort: 15672
+          # Deliberately not dropping ALL here: the rabbitmq entrypoint runs as
+          # root and chowns /var/lib/rabbitmq before stepping down to the
+          # rabbitmq user, which needs CHOWN/DAC_OVERRIDE. no_new_privs is safe
+          # — dropping privileges does not require gaining any.
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           resources:
             requests:
               cpu: '1'

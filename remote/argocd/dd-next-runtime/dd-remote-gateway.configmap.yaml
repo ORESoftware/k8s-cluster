@@ -2670,7 +2670,19 @@ data:
         return 200 '{"service":"dd-chron-service","kind":"planned deployment","namespace":"default","httpService":false,"notes":"Cron/at style scheduler should expose an authenticated status and control API when promoted from templates."}';
       }
 
+      # /tasks, /status and /agents are the dd-dev-server-api control plane
+      # (list/create agent tasks). They were the only dev-server routes without
+      # the operator gate, unlike their /agents/tasks, /agents/threads and
+      # /dd-thread/* siblings. dd-dev-server-api fail-closes on a missing
+      # X-Server-Auth, and the gateway only forwards a non-empty
+      # $dd_dev_server_auth_header when $dd_gateway_auth_ok = 1 — so every
+      # caller that works today is already authenticated and the gate is a
+      # no-op for them. It stops unauthenticated traffic from reaching the
+      # control plane at all instead of relying on the backend to reject it.
       location /tasks {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -2681,6 +2693,9 @@ data:
       }
 
       location /status {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -2691,6 +2706,9 @@ data:
       }
 
       location /agents {
+        if ($dd_gateway_auth_ok = 0) {
+          return 401;
+        }
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
