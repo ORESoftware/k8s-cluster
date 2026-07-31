@@ -1,0 +1,87 @@
+name: DEN-980 one-shot semantic rebase
+
+on:
+  push:
+    branches:
+      - agent/den-980-assurance-propagation-rebased
+    paths:
+      - .github/workflows/den-980-rebase.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-980-semantic-rebase
+  cancel-in-progress: false
+
+jobs:
+  rebase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: shared_auth
+          POSTGRES_PASSWORD: shared_auth
+          POSTGRES_DB: shared_auth
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U shared_auth -d shared_auth"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://shared_auth:shared_auth@127.0.0.1:5432/shared_auth
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: agent/den-980-assurance-propagation-rebased
+          fetch-depth: 0
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: "1.95.0"
+          components: rustfmt,clippy
+      - name: Merge reviewed assurance implementation with current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main agent/den-980-assurance-propagation
+          git merge --no-ff --no-commit origin/agent/den-980-assurance-propagation
+          test -z "$(git diff --name-only --diff-filter=U)"
+          git rm .github/workflows/den-980-rebase.yml
+          actual="$(git diff --cached --name-only | sort)"
+          expected="$(cat <<'EOF'
+          src/http/exchange.rs
+          src/http/introspect.rs
+          src/http/local.rs
+          src/http/session_tokens.rs
+          src/token/assurance.rs
+          src/token/claims.rs
+          src/token/minter.rs
+          src/token/mod.rs
+          EOF
+          )"
+          if [[ "$actual" != "$expected" ]]; then
+            printf 'unexpected semantic rebase file set:\n%s\n' "$actual" >&2
+            exit 1
+          fi
+          git diff --cached --check
+      - name: Validate merged assurance tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all --check
+          cargo clippy --all-targets --locked -- -D warnings
+          cargo test --all-targets --locked
+          cargo check --all-targets --locked
+      - name: Commit current-main semantic merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'DEN-980: merge assurance propagation with current main'
+          git push origin HEAD:agent/den-980-assurance-propagation-rebased
