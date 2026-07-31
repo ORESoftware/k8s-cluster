@@ -1,0 +1,125 @@
+name: Apply SeaORM 2 semantic migration
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/apply-sea-orm-2-semantic-migration.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'src/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-sea-orm-2-semantic-migration
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: >-
+      github.repository == 'ORESoftware/3fa-backend.rs' &&
+      (github.event_name != 'pull_request' || github.head_ref == 'agent/sea-orm-2-semantic-migration')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: threefa_signal_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      THREEFA_SIGNAL_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/threefa_signal_test
+    steps:
+      - name: Checkout writable replacement branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: agent/sea-orm-2-semantic-migration
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Adapt owned statements to SeaORM 2 borrowing semantics
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              '.query_one(postgres(': '.query_one(&postgres(',
+              '.query_all(postgres(': '.query_all(&postgres(',
+              '.execute(postgres(': '.execute(&postgres(',
+              '.execute(Statement::from_string(': '.execute(&Statement::from_string(',
+          }
+          total = {key: 0 for key in replacements}
+          for path in Path('src').glob('*.rs'):
+              source = path.read_text()
+              updated = source
+              for before, after in replacements.items():
+                  count = updated.count(before)
+                  total[before] += count
+                  updated = updated.replace(before, after)
+              if updated != source:
+                  path.write_text(updated)
+
+          expected = {
+              '.query_one(postgres(': 10,
+              '.query_all(postgres(': 1,
+              '.execute(postgres(': 4,
+              '.execute(Statement::from_string(': 1,
+          }
+          if total != expected:
+              raise SystemExit(f'unexpected SeaORM statement migration counts: {total!r}')
+
+          error_path = Path('src/error.rs')
+          source = error_path.read_text()
+          before = 'RuntimeErr::SqlxError(error) => matches!(\n            error,'
+          after = 'RuntimeErr::SqlxError(error) => matches!(\n            &**error,'
+          if source.count(before) != 1:
+              raise SystemExit('expected one SeaORM Arc-wrapped sqlx error match')
+          error_path.write_text(source.replace(before, after))
+          PY
+
+      - name: Validate migrated database semantics
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo check --locked
+          cargo test --locked
+          cargo test --locked signal_postgres_tests -- --ignored --test-threads=1
+          python3 scripts/check_sensitive_debug.py
+          git diff --check
+
+      - name: Verify the migration is bounded and conflict-free
+        run: |
+          set -euo pipefail
+          changed="$(git status --short | awk '{print $2}' | sort)"
+          expected=$'src/error.rs\nsrc/signal_bundle_store.rs\nsrc/signal_maintenance.rs\nsrc/signal_store.rs\nsrc/state.rs'
+          test "$changed" = "$expected" || {
+            echo 'Unexpected SeaORM migration paths:' >&2
+            printf '%s\n' "$changed" >&2
+            exit 1
+          }
+          ! grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' src
+
+      - name: Remove one-shot workflow and commit product changes
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/apply-sea-orm-2-semantic-migration.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'build: migrate database calls to SeaORM 2'
+          git push origin HEAD:agent/sea-orm-2-semantic-migration
