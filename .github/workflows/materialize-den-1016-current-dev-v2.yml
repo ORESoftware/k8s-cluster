@@ -94,17 +94,12 @@ jobs:
                   continue
 
               if path.endswith('.externalsecret.yaml'):
-                  # The two reviewed add/add conflicts describe exactly the same
-                  # ExternalSecret objects. Their only difference is explanatory
-                  # comments, so retain current dev's richer operational guidance.
                   if yaml_semantic_lines(ours_lines) == yaml_semantic_lines(theirs_lines):
                       stage(path, ours)
                       decisions.append((path, 'identical YAML object; preserve current documentation'))
                       continue
 
               if path.endswith('/kustomization.yaml'):
-                  # Kustomizations are ordered resource inventories. Preserve every current
-                  # line and append only resources introduced by the reviewed audit.
                   audit_non_resources = {
                       line for line in theirs_lines if not line.startswith('  - ')
                   }
@@ -124,8 +119,6 @@ jobs:
                   decisions.append((path, 'resource-inventory union'))
                   continue
 
-              # A side may be selected only when it is a strict textual superset of the
-              # other side, proving it retains every line of the smaller meaning.
               if ours_set.issuperset(theirs_set):
                   stage(path, ours)
                   decisions.append((path, 'current-dev strict superset'))
@@ -165,6 +158,67 @@ jobs:
             remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.deployment.yaml
           grep -Fq 'USACC_MONOREPO_REVISION' \
             remote/argocd/dd-next-runtime/usacc-rest-api-backend-rs.deployment.yaml
+
+      - name: Pin mutable action references exposed by the audit contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              '.github/workflows/browser-mcp-policy.yml': [
+                  ('uses: actions/checkout@v4',
+                   'uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4'),
+              ],
+              '.github/workflows/den-255-static-current.yml': [
+                  ('uses: actions/upload-artifact@v6',
+                   'uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6'),
+              ],
+              '.github/workflows/den-445-focused-cargo-diagnostics.yml': [
+                  ('uses: actions/checkout@v7',
+                   'uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1'),
+                  ('uses: dtolnay/rust-toolchain@stable\n        with:\n          components: rustfmt',
+                   'uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable\n        with:\n          toolchain: stable\n          components: rustfmt'),
+              ],
+              '.github/workflows/den-445-rust-diagnostics.yml': [
+                  ('uses: actions/checkout@v7',
+                   'uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1'),
+                  ('uses: dtolnay/rust-toolchain@stable\n        if: steps.migration.outputs.status == \'0\'\n        with:\n          components: rustfmt',
+                   'uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable\n        if: steps.migration.outputs.status == \'0\'\n        with:\n          toolchain: stable\n          components: rustfmt'),
+              ],
+              '.github/workflows/nats-messaging-resilience.yml': [
+                  ('uses: actions/checkout@v5',
+                   'uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0'),
+                  ('uses: dtolnay/rust-toolchain@stable',
+                   'uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable'),
+              ],
+              '.github/workflows/repo-checks.yml': [
+                  ('uses: actions/checkout@v7',
+                   'uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1'),
+                  ('uses: actions/setup-node@v7',
+                   'uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7'),
+                  ('uses: azure/setup-kubectl@v5',
+                   'uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5'),
+                  ('uses: actions/upload-artifact@v6',
+                   'uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6'),
+              ],
+          }
+
+          for raw_path, rules in replacements.items():
+              path = Path(raw_path)
+              text = path.read_text()
+              for old, new in rules:
+                  count = text.count(old)
+                  if count != 1:
+                      raise SystemExit(
+                          f'{raw_path}: expected exactly one {old!r}, found {count}'
+                      )
+                  text = text.replace(old, new, 1)
+              path.write_text(text)
+          PY
+          git add .github/workflows
+          git diff --cached --check
 
       - name: Validate manifests, source boundaries, and workflow immutability
         shell: bash
