@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - reloader.deployment.yaml
+  - gcs-rabbitmq-management.externalsecret.yaml
   - k8s-resource-exporter.rbac.yaml
   - k8s-resource-exporter.configmap.yaml
   - k8s-resource-exporter.deployment.yaml
