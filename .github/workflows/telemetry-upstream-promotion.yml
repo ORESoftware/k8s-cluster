@@ -1,0 +1,123 @@
+name: telemetry upstream promotion
+
+on:
+  repository_dispatch:
+    types: [telemetry-upstream-promotion]
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: Exact allowlisted owner/repository
+        required: true
+        type: string
+      sha:
+        description: Full upstream commit SHA
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: telemetry-upstream-promotion-${{ github.event.client_payload.repository || inputs.repository }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ secrets.ORG_GITOPS_TOKEN || github.token }}
+      REQUESTED_REPOSITORY: ${{ github.event.client_payload.repository || inputs.repository }}
+      REQUESTED_SHA: ${{ github.event.client_payload.sha || inputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          submodules: false
+          fetch-depth: 0
+          token: ${{ secrets.ORG_GITOPS_TOKEN || github.token }}
+
+      - name: Validate request and open draft promotion PR
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          case "$REQUESTED_REPOSITORY" in
+            ORESoftware/chat.vibe)
+              path=remote/deployments/gcs/chat-vibe
+              slug=chat-vibe
+              ;;
+            ORESoftware/live-mutex-mills.rs)
+              path=remote/submodules/live-mutex-mills.rs
+              slug=live-mutex-mills
+              ;;
+            ORESoftware/mip-solver-node.rs)
+              path=remote/deployments/mip-solver-node.rs
+              slug=mip-solver-node
+              ;;
+            ORESoftware/t2v-v2t.rs)
+              path=remote/deployments/t2v-v2t.rs
+              slug=t2v-v2t
+              ;;
+            ORESoftware/tor-server.rs)
+              path=remote/deployments/tor-server.rs
+              slug=tor-server
+              ;;
+            *)
+              echo "repository is not in the promotion allowlist: $REQUESTED_REPOSITORY" >&2
+              exit 1
+              ;;
+          esac
+
+          if [[ ! "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "sha must be a full lowercase commit SHA" >&2
+            exit 1
+          fi
+
+          short_sha="${REQUESTED_SHA:0:12}"
+          branch="agent/promote-${slug}-${short_sha}"
+          if [ "$(gh pr list --state all --head "$branch" --json number --jq length)" != 0 ]; then
+            echo "promotion PR already exists for $branch"
+            exit 0
+          fi
+
+          git config url."https://github.com/".insteadOf git@github.com:
+          git submodule sync -- "$path"
+          git submodule update --init --depth 1 "$path"
+          git -C "$path" fetch --depth 1 origin "$REQUESTED_SHA"
+          git -C "$path" checkout --detach "$REQUESTED_SHA"
+
+          if git diff --quiet -- "$path"; then
+            echo "$path already points at $REQUESTED_SHA"
+            exit 0
+          fi
+
+          git switch -c "$branch"
+          git config user.name ore-telemetry-gitops
+          git config user.email bot@oresoftware.dev
+          git add "$path"
+          git commit -m "promote ${slug} to ${short_sha}"
+          git push --set-upstream origin "$branch"
+
+          body="$RUNNER_TEMP/promotion.md"
+          {
+            echo "## Upstream"
+            echo
+            echo "- Repository: \`$REQUESTED_REPOSITORY\`"
+            echo "- Commit: \`$REQUESTED_SHA\`"
+            echo "- Submodule: \`$path\`"
+            echo
+            echo "## Deployment contract"
+            echo
+            echo "This is an automated, draft-only GitOps promotion. Required repository"
+            echo "checks and rendered Kubernetes validation must pass before review."
+            echo "This workflow never merges or deploys the pull request directly."
+          } > "$body"
+
+          gh pr create \
+            --draft \
+            --base dev \
+            --head "$branch" \
+            --title "promote ${slug} telemetry build ${short_sha}" \
+            --body-file "$body"
