@@ -45,7 +45,7 @@ jobs:
         run: |
           set -euo pipefail
           patch_file='.github/agent/den-804-streaming-contract.patch'
-          echo '81da91ed0c864f51aee286497385baf7689a42d5a96eadf5ebbc156ff440a998  '"$patch_file" | sha256sum --check
+          echo '53c4abec26222a5e0818631a907682b398801a72b5e4ac6a654c3a5cbb1b537e  '"$patch_file" | sha256sum --check
 
           if grep -q 'pomdp, soccer-planner): each is an iterative solver' remote/deployments/des-rs/src/models.rs; then
             git apply --check "$patch_file"
