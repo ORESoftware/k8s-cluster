@@ -25,7 +25,7 @@
 
 import Fastify from 'fastify';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { Dirent } from 'node:fs';
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import type { IncomingMessage } from 'node:http';
@@ -3445,11 +3445,25 @@ function renderMetrics(): string {
   return `${lines.join('\n')}\n`;
 }
 
+// Constant-time secret comparison. `===` on a shared secret leaks a byte-wise
+// match prefix through response timing, so every X-Server-Auth / bearer check
+// goes through this instead — same discipline token.ts already applies to the
+// direct-stream HMAC.
+function secretEquals(given: string | undefined, expected: string): boolean {
+  if (typeof given !== 'string' || expected.length === 0) return false;
+  const givenBuf = Buffer.from(given, 'utf8');
+  const expectedBuf = Buffer.from(expected, 'utf8');
+  if (givenBuf.length !== expectedBuf.length) return false;
+  return timingSafeEqual(givenBuf, expectedBuf);
+}
+
 function headerMatches(value: string | string[] | undefined, expected: string): boolean {
   if (Array.isArray(value)) {
-    return value.includes(expected);
+    // Fold with a non-short-circuiting OR so a multi-valued header still costs
+    // the same regardless of which entry (if any) matches.
+    return value.reduce<boolean>((acc, entry) => secretEquals(entry, expected) || acc, false);
   }
-  return value === expected;
+  return secretEquals(value, expected);
 }
 
 function rejectUpgrade(socket: Socket, status: number, message: string): void {
@@ -4203,7 +4217,7 @@ fastify.addHook('preHandler', async (req, reply) => {
     return;
   }
 
-  if (!config.serverAuthSecret || req.headers['x-server-auth'] !== config.serverAuthSecret) {
+  if (!config.serverAuthSecret || !headerMatches(req.headers['x-server-auth'], config.serverAuthSecret)) {
     return reply.code(401).send({ error: 'unauthorized' });
   }
 });
@@ -4222,18 +4236,29 @@ fastify.get('/favicon.ico', async (_req, reply) => {
   return reply.code(204).send();
 });
 
-fastify.get('/healthz', async () => ({
-  ok: true,
-  startedAt: serverStartedAt,
-  serverInstanceId,
-  pinnedThreadId: config.threadId,
-  pinnedUserId: config.userId,
-  inFlightCount: Array.from(tasks.values()).filter((t) => !t.finished).length,
-  queuedTaskCount: totalQueuedTaskCount(),
-  totalTracked: tasks.size,
-  sessionCount: sessions.size,
-  containerPoolConfigured: containerPoolConfigured(config.containerPool),
-}));
+// /healthz is exempt from the global auth hook (kubelet probes and the
+// gateway's ungated /healthz route reach it unauthenticated), so the liveness
+// answer is all an anonymous caller gets. The operational detail — owner ids,
+// instance id, queue depths — is only returned to an authenticated caller;
+// pinnedUserId in particular should not be readable by anyone who can reach
+// the pod.
+fastify.get('/healthz', async (req) => {
+  const base = { ok: true as const, startedAt: serverStartedAt };
+  if (!config.serverAuthSecret || !headerMatches(req.headers['x-server-auth'], config.serverAuthSecret)) {
+    return base;
+  }
+  return {
+    ...base,
+    serverInstanceId,
+    pinnedThreadId: config.threadId,
+    pinnedUserId: config.userId,
+    inFlightCount: Array.from(tasks.values()).filter((t) => !t.finished).length,
+    queuedTaskCount: totalQueuedTaskCount(),
+    totalTracked: tasks.size,
+    sessionCount: sessions.size,
+    containerPoolConfigured: containerPoolConfigured(config.containerPool),
+  };
+});
 
 fastify.get('/metrics', async (_req, reply) => {
   reply.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
@@ -4820,7 +4845,7 @@ fastify.get('/stream/:taskId', (req, reply) => {
   }
   if (
     !tokenAuthed &&
-    (!config.serverAuthSecret || req.headers['x-server-auth'] !== config.serverAuthSecret)
+    (!config.serverAuthSecret || !headerMatches(req.headers['x-server-auth'], config.serverAuthSecret))
   ) {
     reply.code(401).send({ error: 'unauthorized' });
     return;
