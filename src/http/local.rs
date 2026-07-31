@@ -183,8 +183,12 @@ pub(crate) async fn response_from_issued_with_assurance(
     let shared_user_id = identity.shared_user_id.to_string();
     let provider = identity.provider.clone();
     let roles = identity.roles.clone();
-    let issued =
-        session_tokens::issue_with_assurance(state, identity, auth_level, auth_methods).await?;
+    let issued = session_tokens::issue_with_assurance(
+        state,
+        identity,
+        crate::token::AuthenticationAssurance::from_level_and_methods(auth_level, &auth_methods),
+    )
+    .await?;
     Ok(SessionResponse {
         access_token: issued.access.token,
         token_type: "Bearer",
