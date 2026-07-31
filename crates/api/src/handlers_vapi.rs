@@ -12,6 +12,7 @@ use crate::error::ApiError;
 use crate::handlers_speech::run_translation;
 use crate::metrics::Metrics;
 use crate::state::AppState;
+use crate::vapi_client::VapiAssistantConfig;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
