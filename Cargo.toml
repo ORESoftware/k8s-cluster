@@ -45,7 +45,9 @@ sea-orm = { version = "2.0", default-features = false, features = [
     "with-uuid",
 ] }
 
-reqwest = { version = "0.12", default-features = false, features = ["form", "json", "rustls-tls"] }
+# `.form()` (used by src/twilio.rs) is not feature-gated in reqwest 0.12 — there
+# is no "form" feature, and naming one fails resolution outright.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 # Explicit rustls provider (reqwest + sqlx both use rustls); installed once at startup.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive"] }
