@@ -8,8 +8,10 @@ stage=initialization
 work="$(mktemp -d /tmp/missing-org-publisher.XXXXXX)"
 
 cleanup() {
-  unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN encoded_pat raw_pat secret_json
+  unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+  unset encoded_pat raw_pat secret_json credential_source ec2_home
   unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
+  unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
   rm -rf "$work"
 }
 report_failure() {
@@ -83,6 +85,43 @@ if test -z "$GH_TOKEN" && command -v kubectl >/dev/null 2>&1; then
 fi
 unset raw_pat encoded_pat
 
+# The protected host also has the authenticated ORESoftware GitHub CLI profile
+# requested by the owner. Resolve the account home explicitly and use the CLI
+# abstraction rather than parsing hosts.yml, because gh may store the token in
+# the operating-system credential store.
+if test -z "$GH_TOKEN" && \
+   command -v sudo >/dev/null 2>&1 && \
+   command -v getent >/dev/null 2>&1; then
+  ec2_home="$(getent passwd ec2-user | awk -F: '$1 == "ec2-user" { print $6 }')"
+  case "$ec2_home" in
+    /*)
+      raw_pat="$(
+        sudo -u ec2-user -H \
+          env \
+            -u GH_TOKEN \
+            -u GITHUB_TOKEN \
+            -u GH_ENTERPRISE_TOKEN \
+            -u GITHUB_REPOSITORY_ADMIN_TOKEN \
+            -u GH_CONFIG_DIR \
+            HOME="$ec2_home" \
+            XDG_CONFIG_HOME="$ec2_home/.config" \
+            bash -c 'command -v gh >/dev/null 2>&1 && gh auth token --hostname github.com' \
+          2>/dev/null || true
+      )"
+      ;;
+    *)
+      raw_pat=''
+      ;;
+  esac
+  if test -n "$raw_pat" && \
+     [[ "$raw_pat" != *$'\n'* && "$raw_pat" != *$'\r'* && \
+        "$raw_pat" != *$'\t'* && "$raw_pat" != *' '* ]]; then
+    GH_TOKEN="$raw_pat"
+    credential_source=protected-gh-profile
+  fi
+fi
+unset raw_pat ec2_home
+
 if test -z "$GH_TOKEN"; then
   echo 'publisher-stage=protected-credential status=failed reason=no-readable-protected-credential' >&2
   exit 65
@@ -105,6 +144,9 @@ chmod 700 "$git_askpass"
 export GIT_ASKPASS="$git_askpass"
 export GIT_ASKPASS_REQUIRE=force
 export GIT_TERMINAL_PROMPT=0
+export GIT_CONFIG_COUNT=1
+export GIT_CONFIG_KEY_0=credential.helper
+export GIT_CONFIG_VALUE_0=
 printf 'publisher-stage=%s status=passed\n' "$stage"
 
 stage=github-identity-and-ownership

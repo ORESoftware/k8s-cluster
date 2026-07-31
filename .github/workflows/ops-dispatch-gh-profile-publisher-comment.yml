@@ -1,0 +1,48 @@
+name: Dispatch protected gh-profile repository publisher
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: dispatch-protected-gh-profile-repository-publisher
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: >-
+      github.event.repository.full_name == 'ORESoftware/k8s-cluster' &&
+      github.event.issue.pull_request != null &&
+      github.event.issue.number == 291 &&
+      github.event.comment.user.login == 'ORESoftware' &&
+      github.event.comment.body == 'ops-dispatch-gh-profile-publisher:291'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch the trusted-main protected-profile publisher
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          payload="$(jq -nc '{ref:"main"}')"
+          response="$RUNNER_TEMP/dispatch-response.json"
+          status="$(curl --silent --show-error \
+            --output "$response" \
+            --write-out '%{http_code}' \
+            --request POST \
+            --header 'Accept: application/vnd.github+json' \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --data "$payload" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/ops-publish-missing-org-repositories-gh-profile.yml/dispatches")"
+          if test "$status" != 204; then
+            cat "$response" >&2
+            printf 'workflow dispatch failed with HTTP %s\n' "$status" >&2
+            exit 1
+          fi
+          echo 'Protected gh-profile publisher dispatched from trusted main.'
