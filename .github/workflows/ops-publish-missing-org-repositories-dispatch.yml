@@ -51,7 +51,16 @@ jobs:
           remote_script="$RUNNER_TEMP/publish-critical-org-repositories.sh"
           cat > "$remote_script" <<'REMOTE_EOF'
           #!/usr/bin/env bash
-          set -euo pipefail
+          set -Eeuo pipefail
+
+          stage=initialization
+          report_failure() {
+            local rc=$?
+            trap - ERR
+            printf 'publisher-stage=%s status=failed rc=%s\n' "$stage" "$rc" >&2
+            exit "$rc"
+          }
+          trap report_failure ERR
 
           trusted_sha="${1:?trusted SHA required}"
           [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
@@ -60,23 +69,60 @@ jobs:
           export CODEX_HOME="$work/codex-home"
           install -d -m 700 "$CODEX_HOME"
           cleanup() {
-            unset GH_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN CODEX_HOME
+            unset GH_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN CODEX_HOME credential_source
             rm -rf "$work"
           }
           trap cleanup EXIT
 
-          command -v kubectl >/dev/null
-          encoded_pat="$(kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}')"
-          test -n "$encoded_pat"
-          GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode)"
-          unset encoded_pat
-          test -n "$GH_TOKEN"
+          stage=credential-discovery
+          credential_source=
+          GH_TOKEN=
+          if command -v aws >/dev/null 2>&1 && GH_TOKEN="$(
+            aws secretsmanager get-secret-value \
+              --region "${AWS_REGION:-us-east-1}" \
+              --secret-id dd/remote-dev/agent-secrets \
+              --query SecretString \
+              --output text 2>/dev/null \
+              | python3 -c '
+          import json
+          import sys
+
+          value = json.load(sys.stdin).get("GH_PAT")
+          if not isinstance(value, str) or not value:
+              raise SystemExit(65)
+          sys.stdout.write(value)
+          '
+          )" && test -n "$GH_TOKEN"; then
+            credential_source=aws-secrets-manager
+          else
+            unset GH_TOKEN
+            stage=credential-kubernetes
+            if ! command -v kubectl >/dev/null 2>&1; then
+              echo "publisher-stage=$stage status=failed reason=no-supported-credential-source" >&2
+              exit 69
+            fi
+            encoded_pat="$(kubectl -n default get secret dd-agent-secrets -o jsonpath='{.data.GH_PAT}')"
+            if test -z "$encoded_pat"; then
+              echo "publisher-stage=$stage status=failed reason=missing-or-empty-gh-pat" >&2
+              exit 65
+            fi
+            if ! GH_TOKEN="$(printf '%s' "$encoded_pat" | base64 --decode 2>/dev/null)" ||
+              test -z "$GH_TOKEN"; then
+              echo "publisher-stage=$stage status=failed reason=invalid-gh-pat-encoding" >&2
+              exit 65
+            fi
+            unset encoded_pat
+            credential_source=kubernetes-secret
+          fi
           export GH_TOKEN
           export GITHUB_REPOSITORY_ADMIN_TOKEN="$GH_TOKEN"
+          printf 'publisher-stage=credential-ready source=%s\n' "$credential_source"
 
+          stage=github-identity
           python3 - <<'PY'
           import json
           import os
+          import urllib.error
           import urllib.request
 
           token = os.environ["GH_TOKEN"]
@@ -92,8 +138,13 @@ jobs:
                   "https://api.github.com" + path,
                   headers=headers,
               )
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  return json.load(response)
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      return json.load(response)
+              except urllib.error.HTTPError as error:
+                  raise SystemExit(
+                      f"github-api path={path} status={error.code}"
+                  ) from None
 
           identity = get("/user")
           if identity.get("login") != "ORESoftware":
@@ -120,6 +171,7 @@ jobs:
               print(f"{organization} owner membership verified")
           PY
 
+          stage=trusted-source-checkout
           git clone --filter=blob:none --no-checkout \
             https://github.com/ORESoftware/k8s-cluster.git \
             "$work/k8s-cluster"
@@ -127,19 +179,24 @@ jobs:
           git -C "$work/k8s-cluster" checkout --detach "$trusted_sha"
           test "$(git -C "$work/k8s-cluster" rev-parse HEAD)" = "$trusted_sha"
 
+          stage=publisher-validation
           python3 -m py_compile \
             "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories.py" \
             "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py" \
             "$work/k8s-cluster/scripts/ops/finalize_missing_org_repositories.py"
 
+          stage=repository-publication
           python3 "$work/k8s-cluster/scripts/ops/publish_missing_org_repositories_current.py"
 
+          stage=repository-finalization
           python3 "$work/k8s-cluster/scripts/ops/finalize_missing_org_repositories.py" \
             --json-report "$work/critical-org-publication.json" \
             --markdown-report "$work/critical-org-publication.md" \
             --close-carriers
 
           cat "$work/critical-org-publication.md"
+          stage=complete
+          echo "publisher-stage=$stage status=success"
           REMOTE_EOF
           chmod 700 "$remote_script"
 
