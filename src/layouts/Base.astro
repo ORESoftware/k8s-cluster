@@ -27,6 +27,29 @@ const fontFaceCss = `@font-face {
   font-display: swap;
   src: url("${base}/fonts/baloo2.woff2") format("woff2");
 }`;
+
+// GitHub Pages does not honor public/_headers, so enforce the directives that
+// browsers support through a CSP meta element. Header-only protections such as
+// HSTS and frame-ancestors remain documented in public/_headers for the future
+// CDN migration. The current site has no client JavaScript or forms, allowing a
+// deliberately narrow policy that turns unexpected active content into a CI- and
+// browser-visible failure rather than silently expanding the attack surface.
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'none'",
+  "object-src 'none'",
+  "script-src 'none'",
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self'",
+  "img-src 'self' data:",
+  "media-src 'self' blob:",
+  "connect-src 'none'",
+  "frame-src 'none'",
+  "worker-src 'none'",
+  "manifest-src 'self'",
+  "form-action 'self'",
+  "upgrade-insecure-requests",
+].join("; ");
 ---
 
 <!doctype html>
@@ -34,6 +57,9 @@ const fontFaceCss = `@font-face {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content={contentSecurityPolicy} />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta name="robots" content="index,follow,max-image-preview:large" />
     <link rel="icon" type="image/svg+xml" href={`${base}/favicon.svg`} />
     <meta name="generator" content={Astro.generator} />
 
