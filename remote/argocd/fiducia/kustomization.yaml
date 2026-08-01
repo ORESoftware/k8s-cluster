@@ -18,6 +18,7 @@ resources:
   - availability-pdbs.yaml
   - fiducia-runtime-secrets.externalsecret.yaml
   - fiducia-kv-protection.externalsecret.yaml
+  - fiducia-revocation-secrets.externalsecret.yaml
   - fiducia-node.statefulset.yaml
   - fiducia-node.service.yaml
   - fiducia-node.networkpolicy.yaml
@@ -29,6 +30,8 @@ resources:
   - fiducia-backend.networkpolicy.yaml
   - fiducia-auth.deployment.yaml
   - fiducia-auth.networkpolicy.yaml
+  - fiducia-revocation-admin.deployment.yaml
+  - fiducia-revocation-admin.networkpolicy.yaml
   - fiducia-admin.deployment.yaml
   - fiducia-admin.networkpolicy.yaml
 
@@ -60,3 +63,9 @@ patches:
       version: v1
       kind: Deployment
       name: fiducia-backend
+  - path: fiducia-load-balance.revocation.patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: fiducia-load-balance
