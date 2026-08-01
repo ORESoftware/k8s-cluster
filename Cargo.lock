@@ -3347,7 +3347,7 @@ dependencies = [
  "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
  "prometheus",
- "rand 0.8.7",
+ "rand 0.10.2",
  "reqwest 0.12.28",
  "sea-orm",
  "serde",
