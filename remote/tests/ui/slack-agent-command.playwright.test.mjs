@@ -100,12 +100,14 @@ async function verifyDispatch(
 
   const job = coordinator.job;
   const payload = job.payload;
+  const normalizedRepository = expectedRepository.toLowerCase();
   assert.equal(job.task_type, 'slack_agent_run');
   assert.equal(payload.run_id, ids.run);
   assert.equal(payload.provider, expectedProvider);
   assert.equal(payload.action, expectedAction);
   assert.equal(payload.bridge_workflow_id, ids.workflow);
-  assert.equal(payload.routing.repository, expectedRepository);
+  assert.equal(payload.routing.repository.toLowerCase(), normalizedRepository);
+  assert.equal(`${job.org}/${job.repo}`.toLowerCase(), normalizedRepository);
   assert.equal(payload.routing.linear_issue, expectedIssue);
   assert.equal(
     payload.routing.linear_run_project_id,
@@ -130,6 +132,12 @@ async function verifyDispatch(
 
   assert.equal(bridge.workflow.plan.assignments.length, 1);
   assert.equal(bridge.workflow.plan.assignments[0].agent_key, expectedAgent);
+  assert.equal(bridge.workflow.plan.meta.repository.toLowerCase(), normalizedRepository);
+  assert.equal(
+    Object.hasOwn(bridge.workflow.plan, 'file_lease'),
+    false,
+    'Slack repository metadata must not opt the workflow into file leases',
+  );
 
   const duplicate = await request.post(`${coordinatorBase}/v1/jobs`, {
     headers: {
@@ -296,6 +304,14 @@ test('Slack slash commands traverse browser, modal, bridge, coordinator, Postgre
       path: path.join(outputDir, 'slack-agent-command-dashboard.png'),
       fullPage: true,
     });
+  } catch (error) {
+    await page
+      .screenshot({
+        path: path.join(outputDir, 'slack-agent-command-failure.png'),
+        fullPage: true,
+      })
+      .catch(() => {});
+    throw error;
   } finally {
     await context.close();
     await browser.close();
