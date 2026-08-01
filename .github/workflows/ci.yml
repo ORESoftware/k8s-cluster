@@ -81,8 +81,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: tests/package-lock.json
       - name: install test deps
         working-directory: tests
         run: npm ci
