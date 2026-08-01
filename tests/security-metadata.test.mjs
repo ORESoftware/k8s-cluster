@@ -20,8 +20,11 @@ function walk(directory) {
 }
 
 function attribute(tag, name) {
-  const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']*)["']`, "i"));
-  return match?.[1] ?? null;
+  // Capture using the opening quote as a backreference. A generic
+  // ["']... ["'] pattern truncates a double-quoted CSP at its first embedded
+  // apostrophe (`'self'`) and can therefore make a correct build look weak.
+  const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*(["'])([\\s\\S]*?)\\1`, "i"));
+  return match?.[2] ?? null;
 }
 
 function decodeAttribute(value) {
