@@ -151,12 +151,7 @@ fn build_cors(state: &AppState) -> CorsLayer {
         .collect::<Vec<_>>();
     CorsLayer::new()
         .allow_origin(origins)
-        .allow_methods([
-            Method::GET,
-            Method::POST,
-            Method::DELETE,
-            Method::OPTIONS,
-        ])
+        .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
         .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
 }
 
