@@ -2,7 +2,7 @@ impl FactorService {
     pub async fn connect(config: &DbConfig) -> anyhow::Result<Self> {
         let mut options = ConnectOptions::new(config.url.clone());
         options
-            .max_connections(config.max_connections.min(3).max(1))
+            .max_connections(config.max_connections.clamp(1, 3))
             .min_connections(1)
             .connect_timeout(std::time::Duration::from_secs(5))
             .acquire_timeout(std::time::Duration::from_secs(5))
