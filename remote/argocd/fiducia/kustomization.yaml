@@ -37,6 +37,17 @@ resources:
 # optional. Keep the source manifests readable while making the rendered GitOps
 # contract fail closed after the cloud-bootstrap ExternalSecrets reconcile.
 patches:
+  - path: fiducia-load-balance.tls.patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: fiducia-load-balance
+  - path: fiducia-load-balance.tls.patch.yaml
+    target:
+      version: v1
+      kind: Service
+      name: fiducia-load-balance
   - path: fiducia-node.required-secrets.patch.yaml
     target:
       group: apps
