@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!("t2v-web listening on http://{addr}");
 
-    axum::serve(app(state).into_make_service_with_connect_info::<SocketAddr>())
+    axum::serve(listener, app(state))
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     Ok(())
