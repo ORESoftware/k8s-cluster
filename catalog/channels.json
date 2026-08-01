@@ -193,6 +193,42 @@
       "linear_project": "github.com/streempilot",
       "owner": "streempilot",
       "slack_channel": "#streempilot"
+    },
+    {
+      "binding_state": "unbound",
+      "channel_inventoried": false,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/shared-auth",
+      "owner": "shared-auth",
+      "slack_channel": "#shared-auth"
+    },
+    {
+      "binding_state": "unbound",
+      "channel_inventoried": false,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/opto-sync",
+      "owner": "opto-sync",
+      "slack_channel": "#opto-sync"
+    },
+    {
+      "binding_state": "unbound",
+      "channel_inventoried": false,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/voxletra",
+      "owner": "voxletra",
+      "slack_channel": "#voxletra"
     }
   ],
   "governing_issue": "DEN-1267",
