@@ -83,6 +83,20 @@ validate_fixture() {
 		catalog/fixtures/repositories.v2.json \
 		--public-safe \
 		--repo-root "$PWD"
+	check-jsonschema \
+		--schemafile catalog/channels.schema.json \
+		catalog/channels.json
+	python tools/channel_catalog.py validate \
+		catalog/channels.json
+	# memebank, hypesiege, and streempilot own Slack channels and Linear
+	# projects but are absent from the DEN-598 owners baseline. The gap is
+	# allow-listed here so it stays visible until that baseline is recaptured.
+	python tools/channel_catalog.py check \
+		catalog/channels.json \
+		--repo-root "$PWD" \
+		--allow-unregistered-owner memebank \
+		--allow-unregistered-owner hypesiege \
+		--allow-unregistered-owner streempilot
 }
 
 build_artifacts() {
