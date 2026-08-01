@@ -21,8 +21,8 @@ spec:
       volumes:
         # Strategic-merge deletion of the legacy authoritative emptyDir. The
         # volumeClaimTemplate below supplies the same `data` mount instead.
-        - name: data
-          $patch: delete
+        - $patch: delete
+          name: data
   volumeClaimTemplates:
     - metadata:
         name: data
