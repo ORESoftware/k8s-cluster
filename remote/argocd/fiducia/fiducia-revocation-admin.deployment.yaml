@@ -1,0 +1,159 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fiducia-revocation-admin
+  namespace: fiducia
+  labels:
+    app.kubernetes.io/name: fiducia-revocation-admin
+    app.kubernetes.io/part-of: fiducia
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fiducia-revocation-admin
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fiducia-revocation-admin
+        app.kubernetes.io/part-of: fiducia
+      annotations:
+        prometheus.io/scrape: "false"
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: revocation-admin
+          image: rust:1.95.0-bookworm
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-ceu"]
+          args:
+            - |
+              set -o pipefail
+              mkdir -p /workspace/home /workspace/cargo /workspace/src
+              cd /workspace/src
+
+              git clone --filter=blob:none --no-checkout https://github.com/fiducia-cloud/fiducia-interfaces.git fiducia-interfaces
+              git -C fiducia-interfaces fetch --depth 1 origin bd718cd72d72aa330534f3688f8fb1ce90c19d10
+              git -C fiducia-interfaces checkout --detach FETCH_HEAD
+
+              git clone --filter=blob:none --no-checkout https://github.com/fiducia-cloud/fiducia-auth.rs.git fiducia-auth.rs
+              git -C fiducia-auth.rs fetch --depth 1 origin ff635ebee5fcdde6c9c56492a2265eedad7bdd25
+              git -C fiducia-auth.rs checkout --detach FETCH_HEAD
+
+              exec cargo run \
+                --manifest-path fiducia-auth.rs/Cargo.toml \
+                --locked \
+                --release \
+                --bin fiducia-revocation-admin
+          env:
+            - name: HOME
+              value: /workspace/home
+            - name: CARGO_HOME
+              value: /workspace/cargo
+            - name: RUST_BACKTRACE
+              value: "1"
+            - name: FIDUCIA_REVOCATION_PORT
+              value: "8098"
+            - name: FIDUCIA_REVOCATION_ADMIN_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: fiducia-revocation-secrets
+                  key: admin-secret
+                  optional: false
+            - name: FIDUCIA_REVOCATION_READER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: fiducia-revocation-secrets
+                  key: reader-secret
+                  optional: false
+            - name: FIDUCIA_KV_URL
+              value: http://fiducia-load-balance.fiducia.svc.cluster.local:8088
+            - name: FIDUCIA_KV_ORG_ID
+              value: fiducia-revocation
+            - name: FIDUCIA_INTERNAL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: fiducia-cluster-secrets
+                  key: internal-secret
+                  optional: false
+          ports:
+            - name: http
+              containerPort: 8098
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 120
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: workspace
+          emptyDir:
+            sizeLimit: 4Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fiducia-revocation-admin
+  namespace: fiducia
+  labels:
+    app.kubernetes.io/name: fiducia-revocation-admin
+    app.kubernetes.io/part-of: fiducia
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: fiducia-revocation-admin
+  ports:
+    - name: http
+      port: 8098
+      targetPort: http
+      protocol: TCP
