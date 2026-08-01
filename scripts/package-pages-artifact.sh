@@ -2,7 +2,7 @@
 set -euo pipefail
 
 root="${1:-dist}"
-output="${2:-${RUNNER_TEMP:-artifacts}/github-pages.tar}"
+output="${2:-${RUNNER_TEMP:-artifacts}/artifact.tar}"
 evidence_dir="${3:-artifacts/pages-evidence}"
 
 node scripts/pages-artifact-evidence.mjs --root "$root" --out "$evidence_dir"
@@ -34,5 +34,5 @@ if [[ -f "$root/.well-known/security.txt" ]]; then
   grep -Fxq './.well-known/security.txt' "$entries_file"
 fi
 
-sha256sum "$output" > "$evidence_dir/github-pages.tar.sha256"
+sha256sum "$output" > "$evidence_dir/artifact.tar.sha256"
 echo "Packaged deterministic Pages artifact: $output"
