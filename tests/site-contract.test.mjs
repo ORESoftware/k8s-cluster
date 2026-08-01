@@ -79,7 +79,15 @@ test("consensus pitching carries the crash-fault (CFT, not Byzantine) qualifier"
   // CFT — one operator's non-lying nodes. The site may sell consensus,
   // elections, and exactly-once coordination, but never Byzantine/trustless
   // security. If the pitch is present, the qualifier must be too.
-  const sources = { "src/pages/index.astro": page, "src/layouts/Layout.astro": layout };
+  // Every page that pitches consensus must be in this map, not just the
+  // landing page: use-cases.astro and investors.astro together carry most of
+  // the consensus copy on the site, and were previously unchecked.
+  const sources = {
+    "src/pages/index.astro": page,
+    "src/layouts/Layout.astro": layout,
+    "src/pages/use-cases.astro": useCases,
+    "src/pages/investors.astro": investors,
+  };
   const pitches = /consensus|election|financial|payout|custody|exactly-once/i;
   const qualifier = /crash-fault\s+tolerant\s*\(CFT\)[^.]*not\s+Byzantine/is;
 
