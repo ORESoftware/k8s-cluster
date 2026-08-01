@@ -61,6 +61,33 @@ Environment knobs (all optional; set on the `dd-cluster-mcp-rs` Deployment):
 > When the IP changes you must also **reissue the TLS cert for the new IP** (see
 > "TLS" below) or clients will fail certificate validation.
 
+## Keeping the four configs in sync (`mcp-config.sh`)
+
+The gateway host is duplicated across four per-tool files: `.mcp.json` (Claude Code),
+`.cursor/mcp.json` (Cursor), `.vscode/mcp.json` (VS Code), and
+[`codex-config.example.toml`](./codex-config.example.toml) (Codex).
+
+**Why not one symlinked file?** The formats are deliberately not shared. Claude Code
+expands `${DD_MCP_TOKEN}`, Cursor requires `${env:DD_MCP_TOKEN}` (and does not read a
+root `.mcp.json`), VS Code uses a different `servers` + `inputs` schema with a prompted
+token, and Claude Code ignores an `mcp.json` placed inside `.claude/`. A single
+symlinked file cannot carry a working token reference for all of them, so each tool
+keeps its own file and the **gateway host** is treated as the shared value.
+
+[`mcp-config.sh`](./mcp-config.sh) manages that shared value non-destructively:
+
+```sh
+mcp/mcp-config.sh check           # read-only: assert all four configs use the same host
+mcp/mcp-config.sh check --live    # also compare against the live EC2 EIP (needs awscli)
+mcp/mcp-config.sh set-ip <NEW_IP> # surgically swap the host across all files + this README
+mcp/mcp-config.sh set-ip <NEW_IP> --dry-run
+```
+
+`check` never writes; `set-ip` only replaces the host substring (all other formatting and
+comments are preserved) and prints a diff to review before committing. The Nix dev shell
+runs `check` on entry and warns if the configs have drifted. So when the EIP changes, run
+`set-ip` instead of hand-editing the four files listed above (then reissue the TLS cert).
+
 ## Auth model
 
 The MCP server pods have **no app-level auth** — authorization is enforced at
