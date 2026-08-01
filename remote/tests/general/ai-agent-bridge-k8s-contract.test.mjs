@@ -113,6 +113,78 @@ test('the applied runtime kustomization registers bridge deployment and service 
   assert.equal(count(kustomization, '- dd-ai-agent-bridge.service.yaml'), 1);
 });
 
+test('bridge bearer secret is consistent across deployment, ExternalSecret, fixture, and CI', () => {
+  // The ExternalSecret provisions the secret and its key...
+  assert.match(
+    externalSecret,
+    new RegExp(`kind:\\s*ExternalSecret[\\s\\S]*name:\\s*${SECRET_NAME}`),
+    `${externalSecretPath} must provision the ${SECRET_NAME} secret`,
+  );
+  assert.match(
+    externalSecret,
+    new RegExp(`secretKey:\\s*${SECRET_KEY}`),
+    `${externalSecretPath} must populate the ${SECRET_KEY} key`,
+  );
+
+  // ...both deployment env bindings consume exactly that secret + key...
+  for (const envName of ['API_AUTH_BEARER', 'AI_AGENT_BRIDGE_TOKEN']) {
+    const block = envBlock(envName);
+    assert.match(block, new RegExp(`name: ${SECRET_NAME}`), `${envName} must reference ${SECRET_NAME}`);
+    assert.match(block, new RegExp(`key: ${SECRET_KEY}`), `${envName} must reference key ${SECRET_KEY}`);
+  }
+
+  // ...the kind smoke fixture points at the same secret + key...
+  assert.match(fixture, new RegExp(`name: ${SECRET_NAME}`));
+  assert.match(fixture, new RegExp(`key: ${SECRET_KEY}`));
+
+  // ...and the CI script actually creates that secret with that key, so the smoke
+  // exercises the same contract it asserts.
+  assert.match(
+    kindScript,
+    new RegExp(`create secret generic ${SECRET_NAME}`),
+    `${kindScriptPath} must create the ${SECRET_NAME} secret`,
+  );
+  assert.match(kindScript, new RegExp(`--from-literal=${SECRET_KEY}=`));
+
+  // The retired shared cluster credential must not creep back into the bridge chain.
+  for (const [label, text] of [
+    ['deployment', deployment],
+    ['fixture', fixture],
+    ['externalSecret', externalSecret],
+  ]) {
+    assert.doesNotMatch(text, /dd-agent-secrets/, `${label} must not reuse the shared dd-agent-secrets credential`);
+    assert.doesNotMatch(text, /SERVER_AUTH_SECRET/, `${label} must not reuse SERVER_AUTH_SECRET`);
+  }
+});
+
+test('deployment keeps the hostPath staleness guard that prevented the 2026-07-31 outage', () => {
+  // The crate the mounted hostPath declares must build the exact binary we exec;
+  // otherwise fall back to the pinned clone. This turns a silent node/Git drift
+  // (crate renamed in Git, node still on the old checkout) into an automatic
+  // recovery instead of exec'ing a path that does not exist.
+  assert.match(deployment, /bin_name="fiducia-ai-agent-bridge"/);
+  assert.match(
+    deployment,
+    /grep -q "\^name = /,
+    'the mounted Cargo.toml must be checked for the target binary before it is trusted',
+  );
+  assert.match(deployment, /\$\{bin_name\}/);
+
+  // After building, the binary must exist before exec, failing with the real cause
+  // rather than bash's bare "No such file or directory".
+  assert.match(deployment, /if \[ ! -x "\$\{built\}" \]; then/);
+  assert.match(deployment, /FATAL: cargo did not produce/);
+});
+
+test('bridge exports telemetry to the in-cluster OTEL collector', () => {
+  assert.match(envBlock('OTEL_SERVICE_NAME'), /value: dd-ai-agent-bridge/);
+  assert.match(
+    envBlock('OTEL_EXPORTER_OTLP_ENDPOINT'),
+    /value: http:\/\/dd-otel-collector\.observability\.svc\.cluster\.local:4318/,
+  );
+  assert.match(envBlock('OTEL_EXPORTER_OTLP_PROTOCOL'), /value: http\/protobuf/);
+});
+
 const audit = {
   generated_at: new Date().toISOString(),
   deployment: deploymentPath,
