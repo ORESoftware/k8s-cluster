@@ -20,6 +20,8 @@ LC_ALL=C tar \
   --owner=0 \
   --group=0 \
   --numeric-owner \
+  --dereference \
+  --hard-dereference \
   --mode='u+rwX,go+rX,go-w' \
   -cf "$output" \
   -C "$root" \
@@ -33,6 +35,17 @@ grep -Fxq './deployment.json' "$entries_file"
 if [[ -f "$root/.well-known/security.txt" ]]; then
   grep -Fxq './.well-known/security.txt' "$entries_file"
 fi
+
+# Prove the archive that will be uploaded expands to the same bytes that were
+# inventoried. This catches omitted dot-directories and any packaging-time drift.
+verification_root="$(mktemp -d)"
+trap 'rm -rf "$verification_root"' EXIT
+LC_ALL=C tar -xf "$output" -C "$verification_root"
+archive_evidence="$evidence_dir/archive-roundtrip"
+node scripts/pages-artifact-evidence.mjs \
+  --root "$verification_root" \
+  --out "$archive_evidence"
+cmp "$evidence_dir/pages-tree.sha256" "$archive_evidence/pages-tree.sha256"
 
 sha256sum "$output" > "$evidence_dir/artifact.tar.sha256"
 echo "Packaged deterministic Pages artifact: $output"
