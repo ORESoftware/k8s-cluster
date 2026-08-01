@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout feature branch
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: agent/den-445-strong-openapi-contract
           fetch-depth: 1
@@ -121,8 +121,6 @@ jobs:
           RS
 
       - name: Install Rust toolchain
-        # This action takes the toolchain from the ref name, so pinning to a
-        # commit means the `toolchain` input has to say `stable` explicitly.
         uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           toolchain: stable

@@ -33,23 +33,33 @@ test('bridge deployment executes the current Rust binary', () => {
   // retired binary name cannot return.
   assert.match(
     deployment,
-    /bin_name="fiducia-ai-agent-bridge"/,
+    // \b anchors so a substring match on the retired name cannot pass.
+    /\bbin_name="fiducia-ai-agent-bridge"/,
     'bin_name must resolve to the current fiducia-ai-agent-bridge binary',
   );
+  // Both halves of the contract, kept from the two branches that wrote this test
+  // concurrently — they check different things and neither implies the other:
+  //   1. the exec path is COMPOSED from bin_name (not a hardcoded literal), and
+  //   2. the variable that was existence-checked is what actually becomes PID 1.
   assert.match(
     deployment,
     /\/release\/\$\{bin_name\}/,
-    'the deployment must exec the built ${bin_name} path',
+    'the built path must be composed from ${bin_name}',
+  );
+  assert.match(
+    deployment,
+    /exec "\$\{built\}"/,
+    'the selected and validated binary must become the container process',
   );
   assert.doesNotMatch(
     deployment,
-    /bin_name="ai-agent-bridge"/,
+    /\bbin_name="ai-agent-bridge"/,
     'the retired ai-agent-bridge binary name must not return',
   );
   assert.doesNotMatch(
     deployment,
     /\/release\/ai-agent-bridge(?:["'\s]|$)/,
-    'no direct exec of the retired binary path',
+    'the retired literal ai-agent-bridge executable must not return',
   );
 });
 
@@ -105,7 +115,7 @@ const audit = {
   deployment: deploymentPath,
   service: servicePath,
   startup_contract: {
-    current_binary: deployment.includes('fiducia-ai-agent-bridge'),
+    current_binary: deployment.includes('bin_name="fiducia-ai-agent-bridge"'),
     required_api_bearer: !envBlock('API_AUTH_BEARER').includes('optional: true'),
     healthz: deployment.includes('path: /healthz'),
     readyz: deployment.includes('path: /readyz'),
