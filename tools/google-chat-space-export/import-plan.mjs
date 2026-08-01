@@ -20,12 +20,17 @@ function usage() {
   return `Usage:
   node tools/google-chat-space-export/import-plan.mjs \\
     --input <export-file-or-directory> [--input <another-path>] \\
+    [--since <ISO-8601 timestamp>] \\
     [--existing-index <linear-issues.json>] \\
     [--project-map <project-map.json>] \\
     [--json <plan.json>] [--markdown <plan.md>]
 
 The command is read-only. It validates, deduplicates, and groups exported Google
 Chat messages, then emits a dry-run plan. It never calls Linear or creates issues.
+
+--since narrows the plan to messages created at or after the given instant. It can
+only narrow: a value earlier than ${START_TIME_INCLUSIVE} is rejected, so the fixed
+space/date boundary can never be widened from the command line.
 `;
 }
 
