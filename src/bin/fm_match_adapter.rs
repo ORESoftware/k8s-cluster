@@ -1,7 +1,7 @@
 //! JSON-lines adapter that replays the formal match lifecycle against production Rust state.
 
 use serde::{Deserialize, Serialize};
-use soccer_engine::soccer::{MatchAction, MatchProjection, SoccerRealtimeSession};
+use soccer_engine::soccer::lifecycle::{MatchAction, MatchProjection, SoccerRealtimeSession};
 use std::error::Error;
 use std::io::{self, BufRead, Write};
 

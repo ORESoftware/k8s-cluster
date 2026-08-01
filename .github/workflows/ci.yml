@@ -56,7 +56,7 @@ jobs:
           workspaces: akrion-soccer-engine.rs
       - name: Formal production lifecycle unit tests
         working-directory: akrion-soccer-engine.rs
-        run: cargo test --lib des::general::soccer::tests
+        run: cargo test --lib des::general::soccer::lifecycle::tests
       - name: Formal model-to-Rust debug/release refinement
         working-directory: akrion-soccer-engine.rs
         run: python3 formal/compare_match_replay.py
