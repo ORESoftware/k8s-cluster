@@ -1,0 +1,58 @@
+server:
+  bind: 127.0.0.1:8160
+  max_concurrent_model_requests: 4
+
+database:
+  url_env: AI_AGENT_COORDINATOR_DATABASE_URL
+
+auth:
+  required: true
+  token_env: COORDINATOR_API_TOKEN
+
+github:
+  webhook_secret_env: GITHUB_WEBHOOK_SECRET
+  issue_trigger_labels:
+    - agent:run
+  review_trigger_labels:
+    - agent:review
+  auto_enqueue_failed_workflows: false
+
+workers:
+  default_org_concurrency: 4
+  default_repo_concurrency: 2
+
+routing:
+  require_repository_context: true
+  default_order:
+    - local-test
+  task_orders:
+    slack_agent_run:
+      - local-test
+  fallbacks: {}
+
+budgets:
+  default_org_daily_usd: 100.0
+  default_repo_daily_usd: 20.0
+
+security:
+  max_request_bytes: 2097152
+  redact_secrets: true
+  deny_remote_when_secrets_cannot_be_redacted: true
+  restricted_requires_local: true
+
+providers:
+  local-test:
+    kind: openai-compatible
+    base_url: http://127.0.0.1:8199/v1
+    trust: local
+    timeout_seconds: 5
+
+models:
+  local-test:
+    provider: local-test
+    upstream_model: no-op
+    tier: local
+    input_cost_per_million_usd: 0.0
+    output_cost_per_million_usd: 0.0
+    task_types:
+      - '*'

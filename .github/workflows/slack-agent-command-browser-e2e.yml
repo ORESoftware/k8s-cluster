@@ -1,0 +1,144 @@
+name: Slack agent command browser e2e
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/slack-agent-command-browser-e2e.yml'
+      - 'scripts/ci/run-slack-command-e2e.sh'
+      - 'remote/tests/fixtures/slack-command-*'
+      - 'remote/tests/ui/slack-agent-command.playwright.test.mjs'
+      - 'remote/tests/package.json'
+      - 'remote/tests/pnpm-lock.yaml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/slack-agent-command-browser-e2e.yml'
+      - 'scripts/ci/run-slack-command-e2e.sh'
+      - 'remote/tests/fixtures/slack-command-*'
+      - 'remote/tests/ui/slack-agent-command.playwright.test.mjs'
+      - 'remote/tests/package.json'
+      - 'remote/tests/pnpm-lock.yaml'
+  workflow_dispatch:
+    inputs:
+      bridge_ref:
+        description: ai-agent-bridge.rs branch, tag, or commit
+        required: false
+        default: agent/den-1041-ores-slash-commands
+      coordinator_ref:
+        description: ai-agent-coordinator.rs branch, tag, or commit
+        required: false
+        default: agent/den-1231-slack-run-envelope
+
+permissions:
+  contents: read
+
+concurrency:
+  group: slack-agent-command-browser-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: coordinator
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username postgres --dbname coordinator"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - name: Checkout integration harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Checkout bridge source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ORESoftware/ai-agent-bridge.rs
+          ref: ${{ github.event_name == 'push' && 'main' || (inputs.bridge_ref || 'agent/den-1041-ores-slash-commands') }}
+          path: .e2e/bridge
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Checkout coordinator source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ORESoftware/ai-agent-coordinator.rs
+          ref: ${{ github.event_name == 'push' && 'main' || (inputs.coordinator_ref || 'agent/den-1231-slack-run-envelope') }}
+          path: .e2e/coordinator
+          persist-credentials: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/slack-agent-command-browser-e2e.yml
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.97.1'
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install browser-test dependencies
+        working-directory: remote/tests
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium runtime
+        working-directory: remote/tests
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Record tested revisions
+        env:
+          BRIDGE_REF: ${{ github.event_name == 'push' && 'main' || (inputs.bridge_ref || 'agent/den-1041-ores-slash-commands') }}
+          COORDINATOR_REF: ${{ github.event_name == 'push' && 'main' || (inputs.coordinator_ref || 'agent/den-1231-slack-run-envelope') }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/slack-command-e2e-results"
+          jq -n \
+            --arg harness "$GITHUB_SHA" \
+            --arg bridge_ref "$BRIDGE_REF" \
+            --arg bridge_commit "$(git -C .e2e/bridge rev-parse HEAD)" \
+            --arg coordinator_ref "$COORDINATOR_REF" \
+            --arg coordinator_commit "$(git -C .e2e/coordinator rev-parse HEAD)" \
+            '{
+              schema_version: 1,
+              harness_commit: $harness,
+              bridge_ref: $bridge_ref,
+              bridge_commit: $bridge_commit,
+              coordinator_ref: $coordinator_ref,
+              coordinator_commit: $coordinator_commit
+            }' >"$RUNNER_TEMP/slack-command-e2e-results/revisions.json"
+
+      - name: Run real-service Playwright integration
+        env:
+          SLACK_E2E_LOG_DIR: ${{ runner.temp }}/slack-command-e2e-logs
+          PLAYWRIGHT_OUTPUT_DIR: ${{ runner.temp }}/slack-command-e2e-results
+          SLACK_COMMAND_STATE_DIR: ${{ runner.temp }}/slack-command-state
+        run: bash scripts/ci/run-slack-command-e2e.sh
+
+      - name: Upload browser evidence and service logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: slack-agent-command-browser-e2e
+          path: |
+            ${{ runner.temp }}/slack-command-e2e-results
+            ${{ runner.temp }}/slack-command-e2e-logs
+          if-no-files-found: error
+          retention-days: 14

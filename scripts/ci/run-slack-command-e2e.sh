@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+BRIDGE_DIR="${BRIDGE_DIR:-${ROOT}/.e2e/bridge}"
+COORDINATOR_DIR="${COORDINATOR_DIR:-${ROOT}/.e2e/coordinator}"
+LOG_DIR="${SLACK_E2E_LOG_DIR:-${RUNNER_TEMP:-/tmp}/slack-command-e2e-logs}"
+RESULT_DIR="${PLAYWRIGHT_OUTPUT_DIR:-${RUNNER_TEMP:-/tmp}/slack-command-e2e-results}"
+STATE_DIR="${SLACK_COMMAND_STATE_DIR:-${RUNNER_TEMP:-/tmp}/slack-command-state}"
+BRIDGE_TEST_TOKEN="${BRIDGE_TEST_TOKEN:-bridge-integration-token}"
+COORDINATOR_TEST_TOKEN="${COORDINATOR_TEST_TOKEN:-coordinator-integration-token}"
+SLACK_TEST_TOKEN="${SLACK_TEST_TOKEN:-slack-integration-token}"
+SIGNING_TEST_SECRET="${SIGNING_TEST_SECRET:-integration-signing-secret}"
+
+mkdir -p "$LOG_DIR" "$RESULT_DIR" "$STATE_DIR"
+
+pids=()
+cleanup() {
+  local pid
+  for pid in "${pids[@]:-}"; do
+    kill "$pid" 2>/dev/null || true
+  done
+  for pid in "${pids[@]:-}"; do
+    wait "$pid" 2>/dev/null || true
+  done
+}
+trap cleanup EXIT INT TERM
+
+start_process() {
+  local name="$1"
+  shift
+  "$@" >"${LOG_DIR}/${name}.log" 2>&1 &
+  local pid=$!
+  pids+=("$pid")
+  echo "$pid" >"${LOG_DIR}/${name}.pid"
+  echo "started ${name} pid=${pid}"
+}
+
+bearer_header() {
+  local token="$1"
+  printf '%s: %s %s' 'Authorization' 'Bearer' "$token"
+}
+
+wait_http() {
+  local url="$1"
+  local bearer="${2:-}"
+  local attempt
+  for attempt in $(seq 1 180); do
+    if [[ -n "$bearer" ]]; then
+      if curl --silent --show-error --fail --max-time 2 \
+        --header "$(bearer_header "$bearer")" "$url" >/dev/null 2>&1; then
+        return 0
+      fi
+    elif curl --silent --show-error --fail --max-time 2 "$url" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "timed out waiting for ${url}" >&2
+  return 1
+}
+
+if [[ ! -f "${BRIDGE_DIR}/Cargo.toml" ]]; then
+  echo "missing bridge checkout at ${BRIDGE_DIR}" >&2
+  exit 1
+fi
+if [[ ! -f "${COORDINATOR_DIR}/Cargo.toml" ]]; then
+  echo "missing coordinator checkout at ${COORDINATOR_DIR}" >&2
+  exit 1
+fi
+
+schema="${COORDINATOR_DIR}/tests/fixtures/ai_agent_coordinator.schema.sql"
+test -f "$schema"
+docker run --rm \
+  --network host \
+  --env PGPASSWORD=postgres \
+  --volume "${schema}:/schema.sql:ro" \
+  postgres:17 \
+  psql \
+    --host 127.0.0.1 \
+    --username postgres \
+    --dbname coordinator \
+    --set ON_ERROR_STOP=1 \
+    --file /schema.sql
+
+cargo build \
+  --manifest-path "${BRIDGE_DIR}/Cargo.toml" \
+  --locked \
+  --bin fiducia-ai-agent-bridge \
+  --bin fiducia-slack-command
+cargo build \
+  --manifest-path "${COORDINATOR_DIR}/Cargo.toml" \
+  --locked \
+  --bin ai-agent-coordinator
+
+start_process slack-mock \
+  env SLACK_MOCK_PORT=8170 \
+  node "${ROOT}/remote/tests/fixtures/slack-command-mock.mjs"
+wait_http http://127.0.0.1:8170/healthz
+
+start_process bridge \
+  env \
+    HOST=127.0.0.1 \
+    HTTP_PORT=8142 \
+    TCP_PORT=8143 \
+    API_AUTH_BEARER="$BRIDGE_TEST_TOKEN" \
+    AI_AGENT_BRIDGE_TOKEN="$BRIDGE_TEST_TOKEN" \
+    AI_AGENT_BRIDGE_DIR="${RUNNER_TEMP:-/tmp}/slack-bridge-inbox" \
+    LOG_FORMAT=json \
+    RUST_LOG=info \
+  "${BRIDGE_DIR}/target/debug/fiducia-ai-agent-bridge"
+wait_http http://127.0.0.1:8142/readyz
+
+bridge_auth_header="$(bearer_header "$BRIDGE_TEST_TOKEN")"
+for registration in \
+  '{"agent_key":"gpt-5.6-sol","display_name":"ChatGPT Sol","kind":"chatgpt","meta":{"capabilities":["rust","github","linear"]}}' \
+  '{"agent_key":"claude-fable-5","display_name":"Claude Fable","kind":"claude","meta":{"capabilities":["rust","github","linear"]}}'; do
+  curl --silent --show-error --fail \
+    --request POST \
+    --header "$bridge_auth_header" \
+    --header 'Content-Type: application/json' \
+    --data "$registration" \
+    http://127.0.0.1:8142/agents/register >/dev/null
+done
+unset bridge_auth_header
+
+start_process coordinator \
+  env \
+    COORDINATOR_CONFIG="${ROOT}/remote/tests/fixtures/slack-command-coordinator.yaml" \
+    AI_AGENT_COORDINATOR_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/coordinator \
+    COORDINATOR_API_TOKEN="$COORDINATOR_TEST_TOKEN" \
+    GITHUB_REPOSITORY_ADMIN_ENABLED=false \
+    LINEAR_DELIVERY_ENABLED=false \
+    EMAIL_ATTENTION_ENABLED=false \
+    TELEMETRY_AUTOMATION_ENABLED=false \
+    RUST_LOG=info \
+  "${COORDINATOR_DIR}/target/debug/ai-agent-coordinator"
+wait_http http://127.0.0.1:8160/readyz
+
+start_process slack-command \
+  env \
+    SLACK_COMMAND_HOST=127.0.0.1 \
+    SLACK_COMMAND_PORT=8151 \
+    SLACK_SIGNING_SECRET="$SIGNING_TEST_SECRET" \
+    SLACK_BOT_TOKEN="$SLACK_TEST_TOKEN" \
+    SLACK_PROJECT_REGISTRY_PATH="${ROOT}/remote/tests/fixtures/slack-command-registry.json" \
+    SLACK_COMMAND_STATE_DIR="$STATE_DIR" \
+    SLACK_BRIDGE_URL=http://127.0.0.1:8142/ \
+    SLACK_BRIDGE_BEARER="$BRIDGE_TEST_TOKEN" \
+    SLACK_COORDINATOR_URL=http://127.0.0.1:8160/ \
+    SLACK_COORDINATOR_BEARER="$COORDINATOR_TEST_TOKEN" \
+    SLACK_API_BASE_URL=http://127.0.0.1:8170/api/ \
+    SLACK_CLAUDE_AGENT_KEY=claude-fable-5 \
+    SLACK_CHATGPT_AGENT_KEY=gpt-5.6-sol \
+    SLACK_LINEAR_RUN_PROJECT_ID=72e891e2-603d-4903-8d08-bd06d204520f \
+    SLACK_CONTEXT_MESSAGE_COUNT=5 \
+    SLACK_COMMAND_MAX_CONCURRENT_RUNS=4 \
+    SLACK_COMMAND_DRY_RUN=false \
+    RUST_LOG=info \
+  "${BRIDGE_DIR}/target/debug/fiducia-slack-command"
+wait_http http://127.0.0.1:8151/readyz
+
+cd "${ROOT}/remote/tests"
+PLAYWRIGHT_OUTPUT_DIR="$RESULT_DIR" \
+SLACK_COMMAND_BASE_URL=http://127.0.0.1:8151 \
+SLACK_MOCK_BASE_URL=http://127.0.0.1:8170 \
+BRIDGE_BASE_URL=http://127.0.0.1:8142 \
+COORDINATOR_BASE_URL=http://127.0.0.1:8160 \
+SLACK_SIGNING_SECRET="$SIGNING_TEST_SECRET" \
+SLACK_BRIDGE_BEARER="$BRIDGE_TEST_TOKEN" \
+SLACK_COORDINATOR_BEARER="$COORDINATOR_TEST_TOKEN" \
+node --test ui/slack-agent-command.playwright.test.mjs
