@@ -2,6 +2,252 @@
   "$schema": "./applications.schema.json",
   "applications": [
     {
+      "declaration_count": 4,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "ai-agent-coordinator",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/ai-agent-coordinator.application.yaml",
+          "project": "ai-agent-coordinator",
+          "sources": [
+            {
+              "chart": "",
+              "path": "deploy/overlays/cross-org-linear-pilot",
+              "repo_url": "https://github.com/ORESoftware/ai-agent-coordinator.rs.git",
+              "target_revision": "d25e04e50be4a9fad039cfcfa6c321e9c99a1e02"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "PruneLast=true",
+              "ServerSideApply=true"
+            ]
+          }
+        },
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "ai-agent-coordinator",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 1,
+          "manifest_path": "remote/argocd/clusters/aws/ai-agent-coordinator.applications.yaml",
+          "project": "ai-agent-coordinator",
+          "sources": [
+            {
+              "chart": "",
+              "path": "deploy/overlays/cross-org-linear-pilot",
+              "repo_url": "https://github.com/ORESoftware/ai-agent-coordinator.rs.git",
+              "target_revision": "d25e04e50be4a9fad039cfcfa6c321e9c99a1e02"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "PruneLast=true",
+              "ServerSideApply=true"
+            ]
+          }
+        },
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "ai-agent-coordinator",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 1,
+          "manifest_path": "remote/argocd/clusters/gcp/ai-agent-coordinator.applications.yaml",
+          "project": "ai-agent-coordinator",
+          "sources": [
+            {
+              "chart": "",
+              "path": "deploy/overlays/cross-org-linear-pilot",
+              "repo_url": "https://github.com/ORESoftware/ai-agent-coordinator.rs.git",
+              "target_revision": "d25e04e50be4a9fad039cfcfa6c321e9c99a1e02"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "PruneLast=true",
+              "ServerSideApply=true"
+            ]
+          }
+        },
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "ai-agent-coordinator",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 1,
+          "manifest_path": "remote/argocd/clusters/hetzner/ai-agent-coordinator.applications.yaml",
+          "project": "ai-agent-coordinator",
+          "sources": [
+            {
+              "chart": "",
+              "path": "deploy/overlays/cross-org-linear-pilot",
+              "repo_url": "https://github.com/ORESoftware/ai-agent-coordinator.rs.git",
+              "target_revision": "d25e04e50be4a9fad039cfcfa6c321e9c99a1e02"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "PruneLast=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": true,
+      "name": "ai-agent-coordinator"
+    },
+    {
+      "declaration_count": 4,
+      "declarations": [
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "argocd",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/apps/ai-agent-coordinator-platform.application.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/projects/ai-agent-coordinator",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "PruneLast=true",
+              "ServerSideApply=true"
+            ]
+          }
+        },
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "argocd",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/aws/ai-agent-coordinator.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/projects/ai-agent-coordinator",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "PruneLast=true",
+              "ServerSideApply=true"
+            ]
+          }
+        },
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "argocd",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/gcp/ai-agent-coordinator.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/projects/ai-agent-coordinator",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "PruneLast=true",
+              "ServerSideApply=true"
+            ]
+          }
+        },
+        {
+          "application_namespace": "argocd",
+          "destination": {
+            "name": "",
+            "namespace": "argocd",
+            "server": "https://kubernetes.default.svc"
+          },
+          "document_index": 0,
+          "manifest_path": "remote/argocd/clusters/hetzner/ai-agent-coordinator.applications.yaml",
+          "project": "default",
+          "sources": [
+            {
+              "chart": "",
+              "path": "remote/argocd/projects/ai-agent-coordinator",
+              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "target_revision": "dev"
+            }
+          ],
+          "sync_policy": {
+            "automated": true,
+            "create_namespace": false,
+            "prune": true,
+            "self_heal": true,
+            "sync_options": [
+              "PruneLast=true",
+              "ServerSideApply=true"
+            ]
+          }
+        }
+      ],
+      "duplicate_name": true,
+      "name": "ai-agent-coordinator-platform"
+    },
+    {
       "declaration_count": 3,
       "declarations": [
         {
@@ -1618,7 +1864,7 @@
             {
               "chart": "",
               "path": "remote/argocd/messaging",
-              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "repo_url": "git@github.com:ORESoftware/k8s-cluster.git",
               "target_revision": "dev"
             }
           ],
@@ -1770,7 +2016,7 @@
             {
               "chart": "",
               "path": "remote/argocd/dd-next-runtime",
-              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "repo_url": "git@github.com:ORESoftware/k8s-cluster.git",
               "target_revision": "dev"
             }
           ],
@@ -1924,7 +2170,7 @@
             {
               "chart": "",
               "path": "remote/argocd/observability",
-              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "repo_url": "git@github.com:ORESoftware/k8s-cluster.git",
               "target_revision": "dev"
             }
           ],
@@ -2173,7 +2419,7 @@
           "sources": [
             {
               "chart": "",
-              "path": "remote/argocd/secrets",
+              "path": "remote/argocd/secrets/common",
               "repo_url": "git@github.com:ORESoftware/k8s-cluster.git",
               "target_revision": "dev"
             }
@@ -2202,7 +2448,7 @@
             {
               "chart": "",
               "path": "remote/argocd/secrets/common",
-              "repo_url": "https://github.com/ORESoftware/k8s-cluster.git",
+              "repo_url": "git@github.com:ORESoftware/k8s-cluster.git",
               "target_revision": "dev"
             }
           ],
@@ -3532,12 +3778,12 @@
     "source": "tracked Argo CD Application manifests"
   },
   "summary": {
-    "application_documents": 106,
-    "applications": 77,
+    "application_documents": 114,
+    "applications": 79,
     "default_destination_namespace_declarations": 53,
-    "default_project_declarations": 87,
-    "duplicate_names": 13,
+    "default_project_declarations": 91,
+    "duplicate_names": 15,
     "gitlink_render_path_violations": 0,
-    "in_repo_source_declarations": 70
+    "in_repo_source_declarations": 74
   }
 }

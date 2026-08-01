@@ -1,0 +1,112 @@
+name: Dispatch and observe current missing-organization publisher once
+run-name: Observe current protected gh-profile publisher after exact dispatcher merge
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-observe-current-missing-org-publisher-once.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+concurrency:
+  group: observe-current-missing-organization-publisher
+  cancel-in-progress: false
+
+jobs:
+  dispatch-and-observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - name: Dispatch exact trusted-main publisher and capture its run
+        id: dispatch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          request_id="den-319-observed-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          response="$(mktemp)"
+          trap 'rm -f "$response"' EXIT
+
+          status="$(
+            curl --silent --show-error \
+              --output "$response" \
+              --write-out '%{http_code}' \
+              --request POST \
+              --header 'Accept: application/vnd.github+json' \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header 'X-GitHub-Api-Version: 2022-11-28' \
+              "https://api.github.com/repos/${REPOSITORY}/actions/workflows/ops-publish-missing-org-repositories-dispatch.yml/dispatches" \
+              --data "{\"ref\":\"main\",\"inputs\":{\"request_id\":\"${request_id}\"}}"
+          )"
+          if [[ "$status" != 204 ]]; then
+            echo "publisher dispatch failed with HTTP ${status}" >&2
+            cat "$response" >&2
+            exit 1
+          fi
+
+          expected_title="Publish missing organization repositories (${request_id})"
+          run_id=""
+          for _ in $(seq 1 60); do
+            run_id="$(
+              gh api \
+                "repos/${REPOSITORY}/actions/workflows/ops-publish-missing-org-repositories-dispatch.yml/runs?event=workflow_dispatch&per_page=50" \
+                --jq ".workflow_runs[] | select(.display_title == \"${expected_title}\" and .created_at >= \"${started_at}\") | .id" \
+                | head -n1
+            )"
+            if [[ -n "$run_id" ]]; then
+              break
+            fi
+            sleep 2
+          done
+          [[ "$run_id" =~ ^[0-9]+$ ]]
+
+          run_url="https://github.com/${REPOSITORY}/actions/runs/${run_id}"
+          gh api --method POST "repos/${REPOSITORY}/issues/270/comments" \
+            -f body="Observed trusted publisher started: ${run_url} (request \`${request_id}\`)." >/dev/null
+
+          {
+            printf 'request_id=%s\n' "$request_id"
+            printf 'run_id=%s\n' "$run_id"
+            printf 'run_url=%s\n' "$run_url"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Wait for exact publisher run and report conclusion
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REQUEST_ID: ${{ steps.dispatch.outputs.request_id }}
+          RUN_ID: ${{ steps.dispatch.outputs.run_id }}
+          RUN_URL: ${{ steps.dispatch.outputs.run_url }}
+        run: |
+          set -euo pipefail
+          conclusion=""
+          status="queued"
+          for _ in $(seq 1 1200); do
+            run="$(gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}")"
+            status="$(jq -r .status <<<"$run")"
+            conclusion="$(jq -r '.conclusion // empty' <<<"$run")"
+            if [[ "$status" == completed ]]; then
+              break
+            fi
+            sleep 3
+          done
+
+          if [[ "$status" != completed ]]; then
+            conclusion=timed_out
+          fi
+
+          gh api --method POST "repos/${REPOSITORY}/issues/270/comments" \
+            -f body="Observed trusted publisher completed with **${conclusion}**: ${RUN_URL} (request \`${REQUEST_ID}\`)." >/dev/null
+
+          echo "publisher_run_id=${RUN_ID}"
+          echo "publisher_conclusion=${conclusion}"
+          test "$conclusion" = success

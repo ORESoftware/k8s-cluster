@@ -1,0 +1,259 @@
+name: Owner-authorize and publish exact HypeSiege and StreemPilot fleet
+run-name: Publish 32 reviewed HypeSiege and StreemPilot repositories with owner authorization
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-owner-device-publish-hypesiege-streempilot.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: owner-device-publish-hypesiege-streempilot
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      TRACKING_ISSUE: '291'
+      OAUTH_CLIENT_ID: 178c6fc778ccc68e1d6a
+      EXPECTED_LOGIN: ORESoftware
+      COORDINATOR_SHA: e125b9c7c0be1d625abad3ff276311639d52585e
+      EXPECTED_GENERATOR_SHA256: a57b00961ee57ae09bf3bb2e2d09afbdd1ddbbbde832b027802f82a1fc5dfa84
+      SOURCE_ROOT: /tmp/hypesiege-streempilot-fleet
+      GENERATED_MANIFEST: /tmp/hypesiege-streempilot-manifest.json
+
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Request short-lived GitHub owner device authorization
+        shell: bash
+        env:
+          COMMENT_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          response="$RUNNER_TEMP/github-device-code.json"
+          token_response="$RUNNER_TEMP/github-device-token.json"
+          cleanup() {
+            rm -f "$response" "$token_response"
+            unset access_token device_code
+          }
+          trap cleanup EXIT
+
+          http_status="$(
+            curl --silent --show-error \
+              --output "$response" \
+              --write-out '%{http_code}' \
+              --request POST \
+              --header 'Accept: application/json' \
+              --data-urlencode "client_id=${OAUTH_CLIENT_ID}" \
+              --data-urlencode 'scope=repo read:org' \
+              https://github.com/login/device/code
+          )"
+          test "$http_status" = 200
+
+          device_code="$(jq -er '.device_code | select(type == "string" and length > 0)' "$response")"
+          user_code="$(jq -er '.user_code | select(type == "string" and length > 0)' "$response")"
+          verification_uri="$(jq -er '.verification_uri | select(type == "string" and startswith("https://github.com/"))' "$response")"
+          expires_in="$(jq -er '.expires_in | select(type == "number" and . > 0)' "$response")"
+          interval="$(jq -er '.interval | select(type == "number" and . > 0)' "$response")"
+          [[ "$user_code" =~ ^[A-Z0-9]{4}-[A-Z0-9]{4}$ ]]
+
+          echo "::notice title=GitHub owner authorization::Open ${verification_uri} and enter ${user_code}"
+          body="**Authorize the 32-repository HypeSiege/StreemPilot publication now:** open ${verification_uri} and enter **\`${user_code}\`**. This code expires in about $((expires_in / 60)) minutes. The workflow accepts only GitHub account \`${EXPECTED_LOGIN}\` with active admin access to both organizations. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          GH_TOKEN="$COMMENT_TOKEN" gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_ISSUE}/comments" \
+            -f body="$body" >/dev/null || true
+
+          elapsed=0
+          access_token=''
+          while (( elapsed < expires_in )); do
+            sleep "$interval"
+            elapsed=$((elapsed + interval))
+            http_status="$(
+              curl --silent --show-error \
+                --output "$token_response" \
+                --write-out '%{http_code}' \
+                --request POST \
+                --header 'Accept: application/json' \
+                --data-urlencode "client_id=${OAUTH_CLIENT_ID}" \
+                --data-urlencode "device_code=${device_code}" \
+                --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:device_code' \
+                https://github.com/login/oauth/access_token
+            )"
+            test "$http_status" = 200
+            error="$(jq -r '.error // empty' "$token_response")"
+            case "$error" in
+              '')
+                access_token="$(jq -er '.access_token | select(type == "string" and length > 0)' "$token_response")"
+                break
+                ;;
+              authorization_pending)
+                ;;
+              slow_down)
+                interval=$((interval + 5))
+                ;;
+              access_denied|expired_token|incorrect_device_code|incorrect_client_credentials)
+                echo "GitHub device authorization failed: ${error}" >&2
+                exit 1
+                ;;
+              *)
+                echo "Unexpected GitHub device-flow response: ${error}" >&2
+                exit 1
+                ;;
+            esac
+          done
+
+          test -n "$access_token"
+          echo "::add-mask::$access_token"
+          {
+            printf 'GH_TOKEN=%s\n' "$access_token"
+            printf 'GITHUB_REPOSITORY_ADMIN_TOKEN=%s\n' "$access_token"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify exact owner identity and organization administration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(gh api user --jq .login)" = "$EXPECTED_LOGIN"
+          for org in hypesiege StreemPilot; do
+            membership="$(gh api "/user/memberships/orgs/$org")"
+            test "$(jq -er .role <<<"$membership")" = admin
+            test "$(jq -er .state <<<"$membership")" = active
+            echo "$org active admin membership verified"
+          done
+
+      - name: Fetch the exact reviewed coordinator product commit
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          coordinator="$RUNNER_TEMP/ai-agent-coordinator"
+          git init "$coordinator"
+          git -C "$coordinator" remote add origin \
+            https://github.com/ORESoftware/ai-agent-coordinator.rs.git
+          git -C "$coordinator" fetch --depth=1 origin "$COORDINATOR_SHA"
+          git -C "$coordinator" checkout --detach FETCH_HEAD
+          test "$(git -C "$coordinator" rev-parse HEAD)" = "$COORDINATOR_SHA"
+          echo "COORDINATOR_ROOT=$coordinator" >> "$GITHUB_ENV"
+
+      - name: Reconstruct and validate the deterministic 32-repository fleet
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd "$COORDINATOR_ROOT"
+          python3 -m py_compile \
+            scripts/reconstruct_hypesiege_streempilot_fleet.py \
+            scripts/publish_hypesiege_streempilot_fleet.py \
+            scripts/test_publish_hypesiege_streempilot_fleet.py
+          python3 -m unittest -v scripts/test_publish_hypesiege_streempilot_fleet.py
+          python3 scripts/reconstruct_hypesiege_streempilot_fleet.py \
+            --payload-dir repository-fleets/hypesiege-streempilot \
+            --output-root "$SOURCE_ROOT" \
+            --manifest-out "$GENERATED_MANIFEST"
+          GENERATED_MANIFEST="$GENERATED_MANIFEST" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          checked = json.loads(Path('repository-fleets/hypesiege-streempilot.json').read_text())
+          generated = json.loads(Path(os.environ['GENERATED_MANIFEST']).read_text())
+          assert generated == checked, 'reconstructed fleet differs from reviewed ledger'
+          assert generated['schema_version'] == 2
+          assert generated['generator_sha256'] == os.environ['EXPECTED_GENERATOR_SHA256']
+          assert generated['repository_count'] == 32
+          assert generated['total_tracked_files'] == 888
+          assert generated['total_gitlinks'] == 30
+          assert generated['organizations'] == {'hypesiege': 15, 'streempilot': 17}
+          assert len(generated['repositories']) == 32
+          PY
+
+      - name: Create and push every reviewed repository child-first
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          while IFS= read -r repository; do
+            echo "Publishing $repository"
+            python3 "$COORDINATOR_ROOT/scripts/publish_hypesiege_streempilot_fleet.py" \
+              --manifest "$GENERATED_MANIFEST" \
+              --source-root "$SOURCE_ROOT" \
+              --repository "$repository" \
+              --execute \
+              --confirm-repository "$repository"
+          done < <(jq -r '.repositories[].full_name' "$GENERATED_MANIFEST")
+
+      - name: Verify exact remote repository objects, visibility, branches, and SHAs
+        shell: bash
+        env:
+          COMMENT_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          report="$RUNNER_TEMP/hypesiege-streempilot-publication.json"
+          GENERATED_MANIFEST="$GENERATED_MANIFEST" REPORT="$report" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          token = os.environ['GH_TOKEN']
+          manifest = json.loads(Path(os.environ['GENERATED_MANIFEST']).read_text())
+
+          def get(path: str):
+              request = Request(
+                  'https://api.github.com' + path,
+                  headers={
+                      'Accept': 'application/vnd.github+json',
+                      'Authorization': f'Bearer {token}',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                      'User-Agent': 'owner-device-hypesiege-streempilot-verifier',
+                  },
+              )
+              with urlopen(request, timeout=30) as response:
+                  return json.load(response)
+
+          counts = {'hypesiege': 0, 'streempilot': 0}
+          repositories = []
+          for record in manifest['repositories']:
+              metadata = get(f"/repos/{record['full_name']}")
+              ref = get(f"/repos/{record['full_name']}/git/ref/heads/main")
+              observed = ref['object']['sha']
+              assert metadata['full_name'].casefold() == record['full_name'].casefold()
+              assert metadata['default_branch'] == 'main'
+              assert metadata['visibility'] == record['visibility']
+              assert observed == record['commit']
+              counts[record['org']] += 1
+              repositories.append({
+                  'repository': metadata['full_name'],
+                  'repository_id': metadata['id'],
+                  'visibility': metadata['visibility'],
+                  'default_branch': metadata['default_branch'],
+                  'main_sha': observed,
+              })
+          assert counts == {'hypesiege': 15, 'streempilot': 17}
+          Path(os.environ['REPORT']).write_text(json.dumps({
+              'success': True,
+              'repository_count': len(repositories),
+              'organization_counts': counts,
+              'generator_sha256': manifest['generator_sha256'],
+              'total_tracked_files': manifest['total_tracked_files'],
+              'total_gitlinks': manifest['total_gitlinks'],
+              'repositories': repositories,
+          }, indent=2, sort_keys=True) + '\n')
+          print('VERIFIED 32/32 HypeSiege and StreemPilot repository objects and main SHAs')
+          PY
+
+          body="Created and directly verified all **32/32** reviewed repositories: **HypeSiege 15/15**, **StreemPilot 17/17**; exact visibility, default branches, and main SHAs match the schema-v2 ledger. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          GH_TOKEN="$COMMENT_TOKEN" gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_ISSUE}/comments" \
+            -f body="$body" >/dev/null || true

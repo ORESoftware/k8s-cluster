@@ -1,0 +1,107 @@
+name: Validate sealed HypeSiege and StreemPilot publisher
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/ops-publish-sealed-hypesiege-streempilot.yml
+      - .github/workflows/validate-sealed-hypesiege-streempilot-publisher.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-sealed-hypesiege-streempilot-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      COORDINATOR_SHA: e125b9c7c0be1d625abad3ff276311639d52585e
+      EXPECTED_GENERATOR_SHA256: a57b00961ee57ae09bf3bb2e2d09afbdd1ddbbbde832b027802f82a1fc5dfa84
+      SOURCE_ROOT: ${{ runner.temp }}/hypesiege-streempilot-fleet
+      GENERATED_MANIFEST: ${{ runner.temp }}/hypesiege-streempilot-manifest.json
+
+    steps:
+      - name: Check out the proposed trusted-main workflow
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Prove the publication workflow remains fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/ops-publish-sealed-hypesiege-streempilot.yml')
+          text = path.read_text(encoding='utf-8')
+          required = (
+              'branches:\n      - main',
+              'id-token: write',
+              'COORDINATOR_SHA: e125b9c7c0be1d625abad3ff276311639d52585e',
+              'GH_PAT',
+              "printf '::add-mask::%s\\n'",
+              'test "$(gh api user --jq .login)" = ORESoftware',
+              'for org in hypesiege StreemPilot',
+              '--confirm-repository "$repository"',
+              "assert generated == checked",
+              "assert observed == record['commit']",
+              'docs/ops/hypesiege-streempilot-publication-2026-07-31.json',
+          )
+          missing = [snippet for snippet in required if snippet not in text]
+          assert not missing, f'publication workflow contract is incomplete: {missing}'
+          assert '\n  pull_request:' not in text, 'mutation workflow must not run on pull requests'
+          assert 'channelsiege' not in text.casefold(), 'channelsiege is not a HypeSiege substitute'
+          assert 'curl -H "Authorization' not in text, 'credential must not be printed in shell arguments'
+          PY
+
+      - name: Fetch the exact reviewed coordinator product commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          coordinator="$RUNNER_TEMP/ai-agent-coordinator"
+          git init "$coordinator"
+          git -C "$coordinator" remote add origin \
+            https://github.com/ORESoftware/ai-agent-coordinator.rs.git
+          git -C "$coordinator" fetch --depth=1 origin "$COORDINATOR_SHA"
+          git -C "$coordinator" checkout --detach FETCH_HEAD
+          test "$(git -C "$coordinator" rev-parse HEAD)" = "$COORDINATOR_SHA"
+          echo "COORDINATOR_ROOT=$coordinator" >> "$GITHUB_ENV"
+
+      - name: Reconstruct and compare the complete network-free product
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$COORDINATOR_ROOT"
+          python3 -m py_compile \
+            scripts/reconstruct_hypesiege_streempilot_fleet.py \
+            scripts/publish_hypesiege_streempilot_fleet.py \
+            scripts/test_publish_hypesiege_streempilot_fleet.py
+          python3 -m unittest -v scripts/test_publish_hypesiege_streempilot_fleet.py
+          python3 scripts/reconstruct_hypesiege_streempilot_fleet.py \
+            --payload-dir repository-fleets/hypesiege-streempilot \
+            --output-root "$SOURCE_ROOT" \
+            --manifest-out "$GENERATED_MANIFEST"
+          GENERATED_MANIFEST="$GENERATED_MANIFEST" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          checked = json.loads(
+              Path('repository-fleets/hypesiege-streempilot.json').read_text()
+          )
+          generated = json.loads(Path(os.environ['GENERATED_MANIFEST']).read_text())
+          assert generated == checked
+          assert generated['generator_sha256'] == os.environ['EXPECTED_GENERATOR_SHA256']
+          assert generated['repository_count'] == 32
+          assert generated['total_tracked_files'] == 888
+          assert generated['total_gitlinks'] == 30
+          assert generated['organizations'] == {'hypesiege': 15, 'streempilot': 17}
+          assert all(record['visibility'] == 'public' for record in generated['repositories'])
+          PY
+          git diff --check
