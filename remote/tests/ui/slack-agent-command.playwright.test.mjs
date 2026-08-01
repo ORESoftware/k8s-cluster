@@ -26,6 +26,10 @@ function encodedCommand({ command, channel = 'C1', text = '', trigger }) {
   }).toString();
 }
 
+function encodedInteraction(payload) {
+  return new URLSearchParams({ payload: JSON.stringify(payload) }).toString();
+}
+
 function slackHeaders(body, timestamp = Math.floor(Date.now() / 1000)) {
   const signature = createHmac('sha256', signingSecret)
     .update(`v0:${timestamp}:${body}`)
@@ -75,7 +79,17 @@ function idsFromStatus(text) {
   return { job, workflow, run };
 }
 
-async function verifyDispatch(request, statusText, expectedProvider, expectedAgent) {
+async function verifyDispatch(
+  request,
+  statusText,
+  {
+    expectedProvider,
+    expectedAgent,
+    expectedRepository,
+    expectedIssue,
+    expectedAction,
+  },
+) {
   const ids = idsFromStatus(statusText);
   const coordinator = await getJson(request, `${coordinatorBase}/v1/jobs/${ids.job}`, {
     headers: { authorization: `Bearer ${coordinatorBearer}` },
@@ -84,26 +98,60 @@ async function verifyDispatch(request, statusText, expectedProvider, expectedAge
     headers: { authorization: `Bearer ${bridgeBearer}` },
   });
 
-  const payload = coordinator.job.payload;
-  assert.equal(coordinator.job.task_type, 'slack_agent_run');
+  const job = coordinator.job;
+  const payload = job.payload;
+  assert.equal(job.task_type, 'slack_agent_run');
   assert.equal(payload.run_id, ids.run);
   assert.equal(payload.provider, expectedProvider);
+  assert.equal(payload.action, expectedAction);
   assert.equal(payload.bridge_workflow_id, ids.workflow);
-  assert.equal(payload.routing.repository, 'ORESoftware/ai-agent-bridge.rs');
-  assert.equal(payload.routing.linear_issue, 'DEN-1041');
+  assert.equal(payload.routing.repository, expectedRepository);
+  assert.equal(payload.routing.linear_issue, expectedIssue);
+  assert.equal(
+    payload.routing.linear_run_project_id,
+    '72e891e2-603d-4903-8d08-bd06d204520f',
+  );
   assert.equal(payload.context.trust, 'untrusted_channel_context');
   assert.deepEqual(
     payload.context.messages.map((message) => message.text),
     ['message-2', 'message-3', 'message-4', 'message-5', 'message-6'],
   );
   assert.equal(payload.context.messages.some((message) => message.text === 'ignore-bot'), false);
+  assert.deepEqual(
+    [...payload.broadcast_targets].sort(),
+    [
+      'ai_agent_bridge_workflow',
+      'ai_agent_coordinator_job',
+      'github_branch_pr_checks',
+      'linear_run_queue',
+      'slack_run_thread',
+    ].sort(),
+  );
 
   assert.equal(bridge.workflow.plan.assignments.length, 1);
   assert.equal(bridge.workflow.plan.assignments[0].agent_key, expectedAgent);
+
+  const duplicate = await request.post(`${coordinatorBase}/v1/jobs`, {
+    headers: {
+      authorization: `Bearer ${coordinatorBearer}`,
+      'idempotency-key': `slack-command:${ids.run}`,
+    },
+    data: {
+      org: job.org,
+      repo: job.repo,
+      task_type: job.task_type,
+      payload: job.payload,
+      priority: job.priority,
+      max_attempts: job.max_attempts,
+      budget_usd: job.budget_usd,
+    },
+  });
+  assert.equal(duplicate.status(), 202, await duplicate.text());
+  assert.equal((await duplicate.json()).job.id, ids.job, 'coordinator idempotency created a second job');
   return ids;
 }
 
-test('Slack slash commands traverse browser, bridge, coordinator, PostgreSQL, and Slack contracts', async () => {
+test('Slack slash commands traverse browser, modal, bridge, coordinator, PostgreSQL, and Slack contracts', async () => {
   await mkdir(outputDir, { recursive: true });
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext();
@@ -130,7 +178,7 @@ test('Slack slash commands traverse browser, bridge, coordinator, PostgreSQL, an
     const modalBody = encodedCommand({ command: '/ores-claude', trigger: 'trigger-modal' });
     const modalResponse = await postSigned(request, '/slack/commands/ores-claude', modalBody);
     assert.equal(modalResponse.status(), 200, await modalResponse.text());
-    await waitFor(request, (state) => state.views.length === 1, 'modal was not opened');
+    let state = await waitFor(request, (candidate) => candidate.views.length === 1, 'modal was not opened');
 
     await page.reload();
     assert.equal(await page.getByTestId('modal-count').innerText(), '1');
@@ -142,6 +190,51 @@ test('Slack slash commands traverse browser, bridge, coordinator, PostgreSQL, an
     assert.equal(await page.getByTestId('context-default').innerText(), '5');
     assert.equal(await page.getByTestId('write-default').innerText(), 'draft_pull_request');
 
+    const privateMetadata = state.views[0].view.private_metadata;
+    assert.equal(typeof privateMetadata, 'string');
+    const interactionBody = encodedInteraction({
+      type: 'view_submission',
+      team: { id: 'T1' },
+      user: { id: 'U1' },
+      view: {
+        id: 'V-modal-submit-1',
+        callback_id: 'ores-agent-run-v1',
+        private_metadata: privateMetadata,
+        state: {
+          values: {
+            task: { task: { value: 'Investigate DEN-1231 with tests' } },
+            action: { action: { selected_option: { value: 'investigate' } } },
+            repository: {
+              repository: {
+                selected_option: { value: 'ORESoftware/ai-agent-coordinator.rs' },
+              },
+            },
+            issue: { issue: { value: 'DEN-1231' } },
+            write_scope: {
+              write_scope: { selected_option: { value: 'draft_pull_request' } },
+            },
+            context_messages: {
+              context_messages: { selected_option: { value: '5' } },
+            },
+          },
+        },
+      },
+    });
+    const interactionResponse = await postSigned(request, '/slack/interactions', interactionBody);
+    assert.equal(interactionResponse.status(), 200, await interactionResponse.text());
+    state = await waitFor(
+      request,
+      (candidate) => candidate.messages.length === 1,
+      'Claude modal dispatch status was not posted',
+    );
+    await verifyDispatch(request, state.messages[0].text, {
+      expectedProvider: 'claude',
+      expectedAgent: 'claude-fable-5',
+      expectedRepository: 'ORESoftware/ai-agent-coordinator.rs',
+      expectedIssue: 'DEN-1231',
+      expectedAction: 'investigate',
+    });
+
     const chatgptBody = encodedCommand({
       command: '/ores-chatgpt',
       text: 'Implement DEN-1041 with tests',
@@ -150,35 +243,25 @@ test('Slack slash commands traverse browser, bridge, coordinator, PostgreSQL, an
     const chatgptResponse = await postSigned(request, '/slack/commands/ores-chatgpt', chatgptBody);
     assert.equal(chatgptResponse.status(), 200, await chatgptResponse.text());
     assert.match((await chatgptResponse.json()).text, /Accepted ChatGPT run/);
-
-    let state = await waitFor(
+    state = await waitFor(
       request,
-      (candidate) => candidate.messages.length === 1,
+      (candidate) => candidate.messages.length === 2,
       'ChatGPT dispatch status was not posted',
     );
-    await verifyDispatch(request, state.messages[0].text, 'chatgpt', 'gpt-5.6-sol');
+    await verifyDispatch(request, state.messages[1].text, {
+      expectedProvider: 'chatgpt',
+      expectedAgent: 'gpt-5.6-sol',
+      expectedRepository: 'ORESoftware/ai-agent-bridge.rs',
+      expectedIssue: 'DEN-1041',
+      expectedAction: 'implement',
+    });
 
     const duplicateResponse = await postSigned(request, '/slack/commands/ores-chatgpt', chatgptBody);
     assert.equal(duplicateResponse.status(), 200, await duplicateResponse.text());
     assert.match((await duplicateResponse.json()).text, /already accepted/);
     await new Promise((resolve) => setTimeout(resolve, 250));
     state = await mockState(request);
-    assert.equal(state.messages.length, 1, 'duplicate request posted a second status');
-
-    const claudeBody = encodedCommand({
-      command: '/ores-claude',
-      text: 'Implement DEN-1041 with tests',
-      trigger: 'trigger-claude',
-    });
-    const claudeResponse = await postSigned(request, '/slack/commands/ores-claude', claudeBody);
-    assert.equal(claudeResponse.status(), 200, await claudeResponse.text());
-    assert.match((await claudeResponse.json()).text, /Accepted Claude run/);
-    state = await waitFor(
-      request,
-      (candidate) => candidate.messages.length === 2,
-      'Claude dispatch status was not posted',
-    );
-    await verifyDispatch(request, state.messages[1].text, 'claude', 'claude-fable-5');
+    assert.equal(state.messages.length, 2, 'duplicate Slack request posted a second status');
 
     const unauthorizedBody = encodedCommand({
       command: '/ores-chatgpt',
