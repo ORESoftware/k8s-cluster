@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "slack": {
+    "workspace_id": "T01B3C83PMK",
+    "app_id": "A0BMBAMM5NJ",
+    "channel_id": "C0BLYPGGFH6",
+    "channel_name": "cliptown"
+  },
+  "linear": {
+    "team": "Denman",
+    "project": "github.com/cliptown",
+    "routing_issue": "DEN-1273",
+    "delivery_issue": "DEN-1284"
+  },
+  "github": {
+    "organization": "cliptown",
+    "repository": "cliptown-monorepo"
+  },
+  "routing": {
+    "require_linear_issue": true,
+    "branch_and_pr_include_issue_id": true,
+    "post_pr_ci_review_merge_updates_to_origin_thread": true,
+    "idempotency_source": "slack_event_id",
+    "organization_allowlist_only": true,
+    "redact_secrets": true
+  }
+}
