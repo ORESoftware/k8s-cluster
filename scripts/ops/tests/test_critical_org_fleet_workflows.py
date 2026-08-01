@@ -71,7 +71,15 @@ class CriticalOrgFleetWorkflowContracts(unittest.TestCase):
         text = CANONICAL.read_text(encoding="utf-8")
         self.assertIn('current_pull="$(GH_TOKEN="$COMMENT_TOKEN" gh api', text)
         self.assertIn('.head.sha == $head', text)
+        self.assertIn(
+            '.title == "DO NOT MERGE: publish exact 34-repository organization fleet"',
+            text,
+        )
         self.assertIn("CARRIER_HEAD_SHA", text)
+        self.assertIn("TRUSTED_SHA", text)
+        self.assertIn("trusted_to_current_after_auth=", text)
+        self.assertIn("issues/comments/${auth_comment_id}", text)
+        self.assertIn("auth_comment_id=''", text)
         self.assertNotIn("statuses: write", text)
         self.assertNotIn("code_context=", text)
         self.assertIn("[REDACTED-CODE]", text)
