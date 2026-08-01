@@ -13,6 +13,11 @@ rm -f "$output"
 # source and generated-output checks. We package it ourselves because the
 # current official composite action excludes top-level dot-directories, which
 # would silently drop RFC 9116 `/.well-known/security.txt`.
+#
+# Do not dereference symlinks here. The inventory already rejects them, and
+# leaving tar's default behavior intact means a path swapped to a symlink during
+# packaging is archived as a symlink and then rejected by the round-trip
+# inventory instead of reading bytes outside the verified tree.
 LC_ALL=C tar \
   --format=ustar \
   --sort=name \
@@ -20,8 +25,6 @@ LC_ALL=C tar \
   --owner=0 \
   --group=0 \
   --numeric-owner \
-  --dereference \
-  --hard-dereference \
   --mode='u+rwX,go+rX,go-w' \
   -cf "$output" \
   -C "$root" \
@@ -30,14 +33,20 @@ LC_ALL=C tar \
 entries_file="$evidence_dir/pages-archive-entries.txt"
 LC_ALL=C tar -tf "$output" | LC_ALL=C sort > "$entries_file"
 
-grep -Fxq './index.html' "$entries_file"
-grep -Fxq './deployment.json' "$entries_file"
-if [[ -f "$root/.well-known/security.txt" ]]; then
-  grep -Fxq './.well-known/security.txt' "$entries_file"
-fi
+required_entries=(
+  './.well-known/security.txt'
+  './deployment.json'
+  './index.html'
+  './robots.txt'
+  './sitemap.xml'
+)
+for required in "${required_entries[@]}"; do
+  grep -Fxq "$required" "$entries_file"
+done
 
 # Prove the archive that will be uploaded expands to the same bytes that were
-# inventoried. This catches omitted dot-directories and any packaging-time drift.
+# inventoried. This catches omitted dot-directories, path races, and any other
+# packaging-time drift.
 verification_root="$(mktemp -d)"
 trap 'rm -rf "$verification_root"' EXIT
 LC_ALL=C tar -xf "$output" -C "$verification_root"
