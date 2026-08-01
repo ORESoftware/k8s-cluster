@@ -41,17 +41,13 @@ root_checks() {
 catalog_static_checks() {
 	ruff check \
 		tools/application_catalog.py \
-		tools/channel_catalog.py \
 		tools/repository_catalog.py \
 		tools/test_application_catalog.py \
-		tools/test_channel_catalog.py \
 		tools/test_repository_catalog.py
 	ruff format --check \
 		tools/application_catalog.py \
-		tools/channel_catalog.py \
 		tools/repository_catalog.py \
 		tools/test_application_catalog.py \
-		tools/test_channel_catalog.py \
 		tools/test_repository_catalog.py
 	nixfmt --check flake.nix .nix/dev-shell.nix
 	actionlint .github/workflows/repository-catalog.yml
@@ -62,7 +58,6 @@ unit_tests() {
 		cd tools
 		python -m unittest -v \
 			test_application_catalog.py \
-			test_channel_catalog.py \
 			test_repository_catalog.py
 	)
 }
@@ -83,20 +78,6 @@ validate_fixture() {
 		catalog/fixtures/repositories.v2.json \
 		--public-safe \
 		--repo-root "$PWD"
-	check-jsonschema \
-		--schemafile catalog/channels.schema.json \
-		catalog/channels.json
-	python tools/channel_catalog.py validate \
-		catalog/channels.json
-	# memebank, hypesiege, and streempilot own Slack channels and Linear
-	# projects but are absent from the DEN-598 owners baseline. The gap is
-	# allow-listed here so it stays visible until that baseline is recaptured.
-	python tools/channel_catalog.py check \
-		catalog/channels.json \
-		--repo-root "$PWD" \
-		--allow-unregistered-owner memebank \
-		--allow-unregistered-owner hypesiege \
-		--allow-unregistered-owner streempilot
 }
 
 build_artifacts() {
