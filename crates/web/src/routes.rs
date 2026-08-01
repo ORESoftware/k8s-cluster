@@ -248,19 +248,13 @@ async fn stream_stats(mut socket: WebSocket, state: AppState) {
     loop {
         interval.tick().await;
         let stats = load_stats(&state).await;
+        // Each card carries hx-swap-oob="true" itself, so htmx replaces the
+        // matching #stat-* node in place — no wrapper element sharing the id.
         let frame = maud::html! {
-            div id="stat-transcriptions" hx-swap-oob="true" {
-                (views::metric_card("stat-transcriptions", stats.transcriptions, "transcriptions"))
-            }
-            div id="stat-translations" hx-swap-oob="true" {
-                (views::metric_card("stat-translations", stats.translations, "translations"))
-            }
-            div id="stat-syntheses" hx-swap-oob="true" {
-                (views::metric_card("stat-syntheses", stats.syntheses, "syntheses"))
-            }
-            div id="stat-vapi" hx-swap-oob="true" {
-                (views::metric_card("stat-vapi", stats.vapi_calls, "vapi calls"))
-            }
+            (views::metric_card("stat-transcriptions", stats.transcriptions, "transcriptions", true))
+            (views::metric_card("stat-translations", stats.translations, "translations", true))
+            (views::metric_card("stat-syntheses", stats.syntheses, "syntheses", true))
+            (views::metric_card("stat-vapi", stats.vapi_calls, "vapi calls", true))
         }
         .into_string();
 
