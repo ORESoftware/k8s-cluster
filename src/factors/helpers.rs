@@ -2,7 +2,7 @@ impl FactorService {
     async fn verified_phone(&self, user_id: Uuid) -> Result<String, AuthError> {
         let row = self
             .db
-            .query_one(&statement(
+            .query_one_raw(statement(
                 "SELECT phone FROM shared_auth.principals \
                  WHERE shared_user_id = $1 AND status = 'active' AND phone_verified = true",
                 vec![user_id.into()],
@@ -21,7 +21,7 @@ impl FactorService {
         challenge_id: Uuid,
     ) -> Result<(), AuthError> {
         self.db
-            .execute(&statement(
+            .execute_raw(statement(
                 "UPDATE shared_auth.auth_challenges \
                  SET consumed_at = coalesce(consumed_at, now()) \
                  WHERE challenge_id = $1 AND shared_user_id = $2 AND session_id = $3",
@@ -366,7 +366,7 @@ fn validate_webauthn_config(rp_id: &str, origin: &Url, rp_name: &str) -> anyhow:
         anyhow::bail!("AUTH_WEBAUTHN_RP_ORIGIN must use HTTPS or loopback HTTP");
     }
     let valid_rp = host == rp_id
-        || (!rp_id.parse::<std::net::IpAddr>().is_ok()
+        || (rp_id.parse::<std::net::IpAddr>().is_err()
             && host
                 .strip_suffix(&rp_id)
                 .is_some_and(|prefix| prefix.ends_with('.')));
