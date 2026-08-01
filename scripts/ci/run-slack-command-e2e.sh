@@ -178,4 +178,5 @@ COORDINATOR_BASE_URL=http://127.0.0.1:8160 \
 SLACK_SIGNING_SECRET="$SIGNING_TEST_SECRET" \
 SLACK_BRIDGE_BEARER="$BRIDGE_TEST_TOKEN" \
 SLACK_COORDINATOR_BEARER="$COORDINATOR_TEST_TOKEN" \
-node --test ui/slack-agent-command.playwright.test.mjs
+node --test ui/slack-agent-command.playwright.test.mjs 2>&1 \
+  | tee "$RESULT_DIR/playwright.tap"
