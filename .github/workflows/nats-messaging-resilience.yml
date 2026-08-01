@@ -34,7 +34,7 @@ jobs:
         run: test -n "$K8S_LIBS_DEPLOY_KEY"
 
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
@@ -44,7 +44,7 @@ jobs:
         run: bash scripts/ci/init-submodules-with-report.sh remote/libs
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
         with:
           toolchain: '1.90.0'
           components: rustfmt, clippy
