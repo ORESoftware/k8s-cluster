@@ -20,7 +20,7 @@ flags2env = { git = "https://github.com/ORESoftware/flags-2-env.git", rev = "377
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net", "sync"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "limit", "timeout", "set-header"] }
+tower-http = { version = "0.7", features = ["trace", "limit", "timeout", "set-header"] }
 # Per-client rate limiting (GCRA) for the unauthenticated auth endpoints.
 tower_governor = "0.8"
 tracing = "0.1"
