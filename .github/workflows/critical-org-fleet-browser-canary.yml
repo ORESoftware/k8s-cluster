@@ -15,7 +15,7 @@ on:
         default: true
         type: boolean
   workflow_run:
-    workflows: ['Canonical critical organization fleet publication']
+    workflows: ['Run canonical critical organization fleet publication isolated']
     types: [completed]
 
 permissions:
@@ -74,14 +74,38 @@ jobs:
   live:
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.live == true) ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'workflow_dispatch' &&
+        github.event.workflow_run.head_branch == 'main'
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Check out trusted default branch
+      - name: Bind exact trusted publication revision
+        id: trusted
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          MANUAL_SHA: ${{ github.sha }}
+          MANUAL_REF: ${{ github.ref }}
+        run: |
+          set -Eeuo pipefail
+          if test "$EVENT_NAME" = workflow_run; then
+            trusted_sha="$WORKFLOW_RUN_SHA"
+          else
+            test "$MANUAL_REF" = refs/heads/main
+            trusted_sha="$MANUAL_SHA"
+          fi
+          [[ "$trusted_sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$trusted_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Check out exact trusted publication revision
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
+          ref: ${{ steps.trusted.outputs.sha }}
           persist-credentials: false
 
       - name: Install pnpm
