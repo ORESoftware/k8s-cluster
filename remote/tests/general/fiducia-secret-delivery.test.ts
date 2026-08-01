@@ -208,9 +208,11 @@ test('FID-SEC-1 phase 1: the KV-path TLS PKI renders and is inert (no workload c
     /dnsNames:[\s\S]{0,240}fiducia-load-balance\.fiducia\.svc\.cluster\.local/,
   );
   assert.match(rendered, /^\s*-\s*fiducia-load-balance\s*$/m, 'expected the bare Service name SAN');
+  // kubectl kustomize sorts spec keys alphabetically, so issuerRef precedes
+  // secretName; anchor on the cert's metadata name instead of field order.
   assert.match(
     rendered,
-    /secretName:\s*fiducia-load-balance-tls[\s\S]{0,500}issuerRef:[\s\S]{0,160}name:\s*fiducia-ca/,
+    /name:\s*fiducia-load-balance-tls[\s\S]{0,400}issuerRef:[\s\S]{0,120}kind:\s*Issuer[\s\S]{0,60}name:\s*fiducia-ca/,
     'the serving cert must be signed by the fiducia-ca Issuer',
   );
 
