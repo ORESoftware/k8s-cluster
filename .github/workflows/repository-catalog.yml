@@ -35,11 +35,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  # Same-repository pull requests may commit a deterministic generated catalog
-  # back to their own head branch. Forked pull requests remain read-only and get
-  # the drift artifact instead.
-  contents: write
-  pull-requests: read
+  contents: read
 
 concurrency:
   group: repository-catalog-${{ github.workflow }}-${{ github.ref }}
@@ -55,8 +51,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
-          persist-credentials: true
+          persist-credentials: false
 
       - name: Install Nix
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
@@ -67,40 +62,11 @@ jobs:
       - name: Evaluate flake checks
         run: nix flake check --accept-flake-config --print-build-logs
 
-      - name: Generate stale application-catalog evidence
-        if: ${{ failure() && !cancelled() }}
-        shell: bash
-        run: |
-          mkdir -p artifacts
-          nix develop --accept-flake-config -c python tools/application_catalog.py generate \
-            artifacts/applications.generated.json
-          diff -u catalog/applications.json artifacts/applications.generated.json \
-            > artifacts/applications.diff || true
-
-      - name: Commit deterministic catalog repair to same-repository PR branch
-        if: >-
-          ${{ failure() && !cancelled() && github.event_name == 'pull_request' &&
-              github.event.pull_request.head.repo.full_name == github.repository }}
-        shell: bash
-        env:
-          HEAD_BRANCH: ${{ github.head_ref }}
-        run: |
-          cp artifacts/applications.generated.json catalog/applications.json
-          git add catalog/applications.json
-          if git diff --cached --quiet; then
-            echo "Catalog is already current."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore(catalog): regenerate application inventory"
-          git push origin "HEAD:${HEAD_BRANCH}"
-
       - name: Upload drift and dashboard evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: repository-catalog-evidence
           path: artifacts/
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 14
