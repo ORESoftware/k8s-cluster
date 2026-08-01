@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/refresh-openapi-lock.yml'
       - 'Cargo.toml'
+      - 'deny.toml'
   workflow_dispatch:
 
 permissions:
@@ -52,16 +53,26 @@ jobs:
           cmp /tmp/openapi.public.json generated/openapi.public.json
           git diff --check
 
-      - name: Verify bounded dependency change
+      - name: Verify bounded dependency state
         run: |
           set -euo pipefail
-          test "$(git status --short | awk '{print $2}' | sort)" = 'Cargo.lock'
+          changed="$(git status --short | awk '{print $2}' | sort)"
+          case "$changed" in
+            ''|Cargo.lock)
+              ;;
+            *)
+              echo "unexpected dependency resolution paths: $changed" >&2
+              exit 1
+              ;;
+          esac
           test -z "$(grep -n 'source = \"git+https://github.com/juhaku/utoipa' Cargo.lock || true)"
           grep -q 'name = "utoipa"' Cargo.lock
           grep -q 'name = "utoipa-axum"' Cargo.lock
           grep -q 'name = "utoipa-scalar"' Cargo.lock
+          grep -q 'ignore = \["RUSTSEC-2024-0436"\]' deny.toml
+          test -z "$(grep -n 'github.com/juhaku/utoipa' deny.toml || true)"
 
-      - name: Remove this one-shot workflow and commit lockfile
+      - name: Remove this one-shot workflow and commit the verified state
         run: |
           set -euo pipefail
           rm -f .github/workflows/refresh-openapi-lock.yml
@@ -69,6 +80,16 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git diff --cached --check
-          test "$(git diff --cached --name-only | sort)" = $'.github/workflows/refresh-openapi-lock.yml\nCargo.lock'
-          git commit -m 'security: refresh registry-backed OpenAPI lockfile'
+          mapfile -t staged < <(git diff --cached --name-only | sort)
+          expected_workflow='.github/workflows/refresh-openapi-lock.yml'
+          if [ "${#staged[@]}" -eq 1 ]; then
+            test "${staged[0]}" = "$expected_workflow"
+          elif [ "${#staged[@]}" -eq 2 ]; then
+            test "${staged[0]}" = "$expected_workflow"
+            test "${staged[1]}" = 'Cargo.lock'
+          else
+            printf 'unexpected staged paths:\n%s\n' "${staged[*]}" >&2
+            exit 1
+          fi
+          git commit -m 'security: verify registry-backed OpenAPI dependency state'
           git push origin HEAD:agent/code-first-openapi-routes
