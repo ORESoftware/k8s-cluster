@@ -43,7 +43,7 @@ patches:
       version: v1
       kind: Deployment
       name: fiducia-load-balance
-  - path: fiducia-load-balance.tls.patch.yaml
+  - path: fiducia-load-balance-tls.service.patch.yaml
     target:
       version: v1
       kind: Service
