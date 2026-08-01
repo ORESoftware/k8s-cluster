@@ -109,6 +109,19 @@ pub struct Config {
     /// as long as it is off.
     pub tenant_routes_require_user_jwt: bool,
 
+    /// Require a *fresh AAL2* session and an explicit financial scope for every
+    /// human-initiated **mutation** of a tenant's ledger state (`POST`/`PUT`/
+    /// `PATCH`/`DELETE` on `/v1/tenants/{tenant_id}/...`). Reads, unscoped
+    /// provisioning calls, and provider webhooks are unaffected.
+    ///
+    /// Defaults to `false` — a *migration window*, like
+    /// [`Self::tenant_routes_require_user_jwt`]: existing user tokens may not
+    /// carry `aal2`/`financial_scopes` yet, so flipping it on before the issuer
+    /// stamps them would lock out legitimate callers. The server logs a WARN
+    /// every boot while it is off. Turn it on once Shared Auth issues stepped-up,
+    /// scoped tokens.
+    pub step_up_required_for_mutations: bool,
+
     /// Refuse outbound HTTP to private / loopback / link-local IPs.
     /// Protects `tenant.webhook` jobs and notification channels from
     /// being weaponized into an SSRF probe of the cluster's internal
@@ -190,6 +203,10 @@ impl fmt::Debug for Config {
             .field(
                 "tenant_routes_require_user_jwt",
                 &self.tenant_routes_require_user_jwt,
+            )
+            .field(
+                "step_up_required_for_mutations",
+                &self.step_up_required_for_mutations,
             )
             .finish_non_exhaustive()
     }
@@ -305,6 +322,22 @@ impl Config {
             );
         }
 
+        // Fail-closed *financial* posture, gated behind an explicit migration
+        // flag: human mutations of tenant ledger state require fresh AAL2 + a
+        // financial scope. Defaults off so callers whose tokens are not yet
+        // stepped-up/scoped keep working; WARN every boot until it is on.
+        let step_up_required_for_mutations =
+            env_bool("BILLING_REQUIRE_STEP_UP_FOR_MUTATIONS", false);
+        if !allow_insecure_dev && !step_up_required_for_mutations {
+            tracing::warn!(
+                "BILLING_REQUIRE_STEP_UP_FOR_MUTATIONS is off: human mutations of \
+                 tenant financial state are not required to carry a fresh AAL2 \
+                 session and an explicit financial scope. Treat this as a \
+                 time-boxed migration window and enable it once Shared Auth issues \
+                 stepped-up, scoped tokens."
+            );
+        }
+
         Ok(Self {
             host: env::var("BILLING_HOST").unwrap_or_else(|_| "0.0.0.0".into()),
             port: env::var("BILLING_PORT")
@@ -382,6 +415,7 @@ impl Config {
             api_auth_bearer,
             supabase,
             tenant_routes_require_user_jwt,
+            step_up_required_for_mutations,
             // Default fail-closed: the only legitimate use for outbound
             // private-IP traffic is dev/integration. Production callers
             // should hit the public webhook URL of their tenant.
@@ -500,6 +534,7 @@ impl Config {
             // Tests build routers without a Supabase project to talk to; the
             // per-tenant checks have their own focused tests in `api::auth`.
             tenant_routes_require_user_jwt: false,
+            step_up_required_for_mutations: false,
             // Tests sometimes hit localhost; default-allow keeps them simple.
             block_private_outbound: false,
             fiducia_enabled: false,

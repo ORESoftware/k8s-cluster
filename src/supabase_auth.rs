@@ -152,6 +152,32 @@ impl SupabaseConfig {
 /// Constructing one of these is the *authentication* event. It is deliberately
 /// not the authorization event: see [`SupabaseIdentity::is_entitled_to`], which
 /// the API middleware calls with the tenant from the request path.
+/// Authenticator Assurance Level, from the Supabase `aal` claim.
+///
+/// Anything that is not exactly `aal2` collapses to [`Aal::Aal1`] — an absent,
+/// unknown, or malformed value must never read as *more* assured than it is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Aal {
+    /// One factor, or an absent/unknown `aal`. Not stepped up.
+    Aal1,
+    /// Two factors (`aal2`).
+    Aal2,
+}
+
+impl Aal {
+    fn from_claim(raw: Option<&str>) -> Self {
+        match raw.map(str::trim) {
+            Some("aal2") => Aal::Aal2,
+            _ => Aal::Aal1,
+        }
+    }
+
+    /// True only for a genuine two-factor session.
+    pub fn is_aal2(self) -> bool {
+        matches!(self, Aal::Aal2)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SupabaseIdentity {
     /// The Supabase user id (`sub`).
@@ -162,12 +188,32 @@ pub struct SupabaseIdentity {
     pub role: Option<String>,
     /// Tenants this token asserts membership of, parsed from the claims below.
     pub tenant_ids: Vec<Uuid>,
+    /// Assurance level (`aal`). Load-bearing: financial mutations require AAL2.
+    pub assurance: Aal,
+    /// Financial scopes, read from the client-unwritable `app_metadata` bucket
+    /// (never from user-writable metadata). Empty unless the issuer granted them.
+    pub scopes: Vec<String>,
+    /// Unix time of the freshest authentication factor (`amr`), used to require
+    /// a *recent* step-up for mutations. `None` when the token records no factor
+    /// timestamp, which is treated as "not fresh" and fails closed.
+    pub step_up_at: Option<u64>,
 }
 
 impl SupabaseIdentity {
     /// The per-tenant authorization decision — the actual IDOR fix.
     pub fn is_entitled_to(&self, tenant_id: Uuid) -> bool {
         self.tenant_ids.contains(&tenant_id)
+    }
+
+    /// Whether this identity carries the given financial scope.
+    pub fn has_scope(&self, scope: &str) -> bool {
+        self.scopes.iter().any(|granted| granted == scope)
+    }
+
+    /// Age, in seconds, of the freshest recorded authentication factor relative
+    /// to `now`. `None` when no factor timestamp is present (treated as stale).
+    pub fn step_up_age_secs(&self, now: u64) -> Option<u64> {
+        self.step_up_at.map(|at| now.saturating_sub(at))
     }
 }
 
@@ -180,13 +226,27 @@ struct SupabaseClaims {
     email: Option<String>,
     #[serde(default)]
     role: Option<String>,
+    /// Session assurance level, e.g. `"aal1"` / `"aal2"`. Absent on older tokens.
+    #[serde(default)]
+    aal: Option<String>,
+    /// Authentication methods with timestamps, e.g.
+    /// `[{"method":"password","timestamp":1712…},{"method":"totp","timestamp":…}]`.
+    /// Used only to measure how recently the caller last authenticated a factor.
+    #[serde(default)]
+    amr: Vec<Amr>,
     /// `app_metadata` is the only claim bucket a Supabase user cannot write to
     /// from the client SDK — it is settable solely by the service-role key or a
-    /// database trigger. Tenant membership therefore lives here and *only*
-    /// here. `user_metadata` is user-writable and is never consulted for
-    /// authorization.
+    /// database trigger. Tenant membership and financial scopes therefore live
+    /// here and *only* here. `user_metadata` is user-writable and is never
+    /// consulted for authorization.
     #[serde(default)]
     app_metadata: Option<AppMetadata>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Amr {
+    #[serde(default)]
+    timestamp: Option<u64>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -195,6 +255,10 @@ struct AppMetadata {
     tenant_id: Option<String>,
     #[serde(default)]
     tenant_ids: Option<Vec<String>>,
+    /// Financial authorization scopes granted to this principal (e.g.
+    /// `["billing:write"]`). Client-unwritable, like tenant membership.
+    #[serde(default)]
+    financial_scopes: Option<Vec<String>>,
 }
 
 impl SupabaseClaims {
@@ -217,6 +281,28 @@ impl SupabaseClaims {
             }
         }
         out
+    }
+
+    /// Financial scopes asserted by this token, trimmed and de-duplicated.
+    /// Empty (deny-by-default) unless `app_metadata.financial_scopes` grants any.
+    fn scopes(&self) -> Vec<String> {
+        let Some(meta) = self.app_metadata.as_ref() else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for raw in meta.financial_scopes.iter().flatten() {
+            let scope = raw.trim();
+            if !scope.is_empty() && !out.iter().any(|s: &String| s == scope) {
+                out.push(scope.to_string());
+            }
+        }
+        out
+    }
+
+    /// The most recent factor timestamp in `amr`, i.e. how recently the caller
+    /// last authenticated. `None` when no factor carries a timestamp.
+    fn latest_amr_at(&self) -> Option<u64> {
+        self.amr.iter().filter_map(|entry| entry.timestamp).max()
     }
 }
 
@@ -308,6 +394,9 @@ impl SupabaseVerifier {
 
         Ok(SupabaseIdentity {
             tenant_ids: claims.tenant_ids(),
+            assurance: Aal::from_claim(claims.aal.as_deref()),
+            scopes: claims.scopes(),
+            step_up_at: claims.latest_amr_at(),
             subject,
             email: claims
                 .email
