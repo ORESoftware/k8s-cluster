@@ -50,9 +50,13 @@ pub fn layout(title: &str, body: Markup) -> Markup {
     }
 }
 
-pub fn metric_card(id: &str, value: u64, label: &str) -> Markup {
+/// A live metric card. `oob` puts `hx-swap-oob="true"` on the card itself so
+/// the websocket can replace it by id — the card element carries the marker
+/// directly rather than being wrapped in a second element with the same id
+/// (which would leave two `#id` nodes in the DOM after each swap).
+pub fn metric_card(id: &str, value: u64, label: &str, oob: bool) -> Markup {
     html! {
-        div .card id=(id) {
+        div .card id=(id) hx-swap-oob=[oob.then_some("true")] {
             div .metric { (value) }
             div .metric-label { (label) }
         }
