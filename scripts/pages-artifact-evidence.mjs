@@ -14,6 +14,13 @@ import path from 'node:path';
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 const GIT_SHA_HEX = /^[0-9a-f]{40}$/i;
 const SAFE_REPOSITORY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+export const REQUIRED_PAGES_ARTIFACTS = Object.freeze([
+  '.well-known/security.txt',
+  'deployment.json',
+  'index.html',
+  'robots.txt',
+  'sitemap.xml',
+]);
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
@@ -91,7 +98,7 @@ export async function inventoryPagesTree(rootDirectory) {
   if (entries.length === 0) {
     throw new Error('Pages artifact tree is empty');
   }
-  for (const required of ['index.html', 'deployment.json']) {
+  for (const required of REQUIRED_PAGES_ARTIFACTS) {
     if (!entries.some((entry) => entry.path === required)) {
       throw new Error(`Pages artifact is missing required file: ${required}`);
     }
