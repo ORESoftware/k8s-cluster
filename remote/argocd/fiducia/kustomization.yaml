@@ -18,6 +18,7 @@ resources:
   - availability-pdbs.yaml
   - fiducia-runtime-secrets.externalsecret.yaml
   - fiducia-kv-protection.externalsecret.yaml
+  - fiducia-internal-tls.yaml
   - fiducia-node.statefulset.yaml
   - fiducia-node.service.yaml
   - fiducia-node.networkpolicy.yaml
