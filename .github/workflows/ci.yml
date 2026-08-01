@@ -12,6 +12,9 @@ on:
 permissions:
   contents: read
 
+env:
+  ASTRO_TELEMETRY_DISABLED: "1"
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -34,5 +37,15 @@ jobs:
         run: npm ci
       - name: Reject high or critical npm advisories
         run: npm audit --audit-level=high
-      - name: Build and verify generated legal, download, metadata, and link surfaces
+      - name: Build and verify generated legal, download, metadata, link, and security surfaces
         run: npm run check
+      - name: Upload failed build evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: failure()
+        with:
+          name: site-ci-failure-${{ github.run_attempt }}
+          path: |
+            dist/
+            npm-debug.log*
+          if-no-files-found: ignore
+          retention-days: 14
