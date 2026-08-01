@@ -10,6 +10,7 @@ use anyhow::{bail, Result};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
+use tokio::time::{timeout, Duration};
 use tracing::debug;
 
 use crate::cell::Cell;
@@ -18,6 +19,23 @@ use crate::crypto::{ClientHandshake, Opener, Sealer};
 use crate::wire::{frame_bytes, read_frame, strip_len, write_frame};
 
 const CLIENT_READ_CHUNK: usize = 32 * 1024;
+
+/// Default backward-idle timeout for a spliced stream. Bounds an abandoned or
+/// stalled circuit so a detached splice task cannot pin the entry-relay socket
+/// and circuit state indefinitely (0 disables). Overridable per deployment.
+const DEFAULT_CLIENT_IDLE_SECS: u64 = 600;
+
+fn client_idle_timeout() -> Option<Duration> {
+    let secs = std::env::var("TOR_CLIENT_IDLE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_CLIENT_IDLE_SECS);
+    return if secs == 0 {
+        None
+    } else {
+        Some(Duration::from_secs(secs))
+    };
+}
 
 pub struct Circuit {
     r0_r: OwnedReadHalf,
@@ -108,6 +126,7 @@ impl Circuit {
             mut openers_bwd,
         } = self;
         let exit = sealers_fwd.len() - 1;
+        let idle = client_idle_timeout();
 
         // App -> circuit: wrap each chunk as Data for the exit.
         let up = async move {
@@ -134,12 +153,22 @@ impl Circuit {
             }
         };
 
-        // Circuit -> app: peel layers until a Data (or End) cell.
+        // Circuit -> app: peel layers until a Data (or End) cell. The backward
+        // read is bounded by an idle timeout so a silent/black-holed circuit
+        // cannot pin this detached splice task (and its entry-relay socket)
+        // forever after the app side has already gone away.
         let down = async move {
             loop {
-                let frame = match read_frame(&mut r0_r).await {
-                    Ok(f) => f,
-                    Err(_) => break,
+                let read = read_frame(&mut r0_r);
+                let frame = match idle {
+                    Some(d) => match timeout(d, read).await {
+                        Ok(Ok(f)) => f,
+                        _ => break, // circuit closed or idle timeout
+                    },
+                    None => match read.await {
+                        Ok(f) => f,
+                        Err(_) => break,
+                    },
                 };
                 match peel_backward(&mut openers_bwd, frame) {
                     Ok(Peeled::Data(bytes)) => {
@@ -167,16 +196,19 @@ impl Circuit {
 /// shallower hop down to the entry. Returns the outermost ciphertext to write.
 fn wrap_forward(sealers: &mut [Sealer], target: usize, cell: &Cell) -> Result<Vec<u8>> {
     if target >= sealers.len() {
-        bail!("wrap_forward target {target} out of range {}", sealers.len());
+        bail!(
+            "wrap_forward target {target} out of range {}",
+            sealers.len()
+        );
     }
-    let mut ct = sealers[target].seal(&cell.encode())?;
+    let mut ct = sealers[target].seal(&cell.encode()?)?;
     let mut m = target;
     while m > 0 {
         m -= 1;
         let relay_cell = Cell::Relay {
             payload: frame_bytes(&ct),
         };
-        ct = sealers[m].seal(&relay_cell.encode())?;
+        ct = sealers[m].seal(&relay_cell.encode()?)?;
     }
     return Ok(ct);
 }
@@ -215,14 +247,86 @@ fn peel_backward(openers: &mut [Opener], frame: Vec<u8>) -> Result<Peeled> {
             bail!("ran out of onion layers while peeling backward frame");
         }
         let plaintext = openers[idx].open(&ct)?;
+        let is_exit_layer = idx == openers.len() - 1;
         match Cell::decode(&plaintext)? {
             Cell::Relay { payload } => {
                 ct = strip_len(&payload)?;
                 idx += 1;
             }
-            Cell::Data { bytes } => return Ok(Peeled::Data(bytes)),
-            Cell::End => return Ok(Peeled::End),
-            other => bail!("unexpected cell while peeling backward: {other:?}"),
+            // End-to-end integrity: only the exit layer may deliver application
+            // Data/End. Each relay holds the backward key the client uses for its
+            // own hop, so without this a malicious middle/entry relay could seal a
+            // Data cell at its layer and inject bytes the app would attribute to
+            // the exit. Sealing a valid Data at the exit layer requires the exit's
+            // key, which no other relay possesses.
+            Cell::Data { bytes } if is_exit_layer => return Ok(Peeled::Data(bytes)),
+            Cell::End if is_exit_layer => return Ok(Peeled::End),
+            other => bail!(
+                "mis-layered or unexpected cell while peeling backward (possible relay injection): {other:?}"
+            ),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crypto::{generate_static_keypair, relay_handshake, ClientHandshake, HopKeys};
+
+    /// Establish one hop's shared keys the way `build()` does.
+    fn hop_keys() -> (HopKeys, HopKeys) {
+        let (relay_secret, relay_pub) = generate_static_keypair();
+        let client = ClientHandshake::new(relay_pub);
+        let (created, relay_keys) = relay_handshake(&relay_secret, &client.create_blob()).unwrap();
+        let client_keys = client.finish(&created).unwrap();
+        return (client_keys, relay_keys);
+    }
+
+    #[test]
+    fn peel_backward_accepts_exit_data_but_rejects_pre_exit_injection() {
+        // 2-hop circuit: openers[0] = entry, openers[1] = exit.
+        let (c0, r0) = hop_keys();
+        let (c1, r1) = hop_keys();
+
+        // Legit path: the exit seals Data, the entry wraps it in a Relay layer.
+        let mut openers = vec![Opener::new(c0.backward), Opener::new(c1.backward)];
+        let mut exit_sealer = Sealer::new(r1.backward);
+        let mut entry_sealer = Sealer::new(r0.backward);
+        let exit_ct = exit_sealer
+            .seal(
+                &Cell::Data {
+                    bytes: b"legit-from-exit".to_vec(),
+                }
+                .encode()
+                .unwrap(),
+            )
+            .unwrap();
+        let wrapped = Cell::Relay {
+            payload: frame_bytes(&exit_ct),
+        };
+        let entry_ct = entry_sealer.seal(&wrapped.encode().unwrap()).unwrap();
+        match peel_backward(&mut openers, entry_ct).unwrap() {
+            Peeled::Data(b) => assert_eq!(b, b"legit-from-exit"),
+            _ => panic!("expected exit Data"),
+        }
+
+        // Malicious entry: seal a Data cell at the ENTRY layer (idx 0, not the
+        // exit). This is what a hostile guard would do to inject content; it must
+        // be rejected now.
+        let mut openers2 = vec![Opener::new(c0.backward), Opener::new(c1.backward)];
+        let mut evil_entry = Sealer::new(r0.backward);
+        let evil_ct = evil_entry
+            .seal(
+                &Cell::Data {
+                    bytes: b"INJECTED".to_vec(),
+                }
+                .encode()
+                .unwrap(),
+            )
+            .unwrap();
+        assert!(
+            peel_backward(&mut openers2, evil_ct).is_err(),
+            "a Data cell sealed at a non-exit layer must be rejected as injection"
+        );
     }
 }

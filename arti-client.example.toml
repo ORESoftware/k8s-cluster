@@ -1,0 +1,16 @@
+# Arti client-only configuration loaded with TOR_ARTI_CONFIG. Obtain a current
+# bridge line through an authorized Tor bridge-distribution channel; do not use
+# the documentation placeholder below unchanged.
+[bridges]
+enabled = true
+bridges = [
+  # Syntactically valid documentation-only values; bridge.example.net cannot
+  # carry traffic. Replace this entire line with a current issued bridge line.
+  "obfs4 bridge.example.net:443 $0bac39417268b69b9f514e7f63fa6fba1a788958 ed25519:dGhpcyBpcyBbpmNyZWRpYmx5IHNpbGx5ISEhISEhISA iat-mode=1",
+]
+
+[[bridges.transports]]
+protocols = ["obfs4"]
+path = "/usr/bin/obfs4proxy"
+arguments = []
+run_on_startup = false

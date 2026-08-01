@@ -21,6 +21,7 @@ spec:
         runAsNonRoot: true
         runAsUser: 65532
         runAsGroup: 65532
+        fsGroup: 65532
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: client
@@ -29,25 +30,29 @@ spec:
           args: ["client"]
           env:
             - { name: TOR_SOCKS_LISTEN, value: "0.0.0.0:9050" }
+            - { name: TOR_SOCKS_ALLOW_REMOTE, value: "1" }
+            - { name: TOR_SOCKS_USERNAME, value: "tor" }
+            - { name: TOR_SOCKS_PASSWORD_FILE, value: "/secrets/client/socks.password" }
+            - { name: TOR_MAX_SOCKS_CONNECTIONS, value: "256" }
             - { name: TOR_UI_LISTEN, value: "0.0.0.0:9060" }
+            - { name: TOR_UI_TOKEN_FILE, value: "/secrets/client/ui.token" }
+            - { name: TOR_NETWORK_SECRET_FILE, value: "/secrets/network/network.secret" }
             - { name: TOR_DIRECTORY, value: "/etc/tor/directory.toml" }
             - { name: TOR_HOPS, value: "3" }
             - { name: TOR_DOCS_DIR, value: "/docs" }
             - { name: RUST_LOG, value: "info" }
-            # The dashboard binds 0.0.0.0 and is reachable cluster-wide, so its
-            # /api/fetch proxy primitive should be token-guarded. Create the
-            # secret to enable it: kubectl -n anon-proxy create secret generic \
-            #   tor-ui-token --from-literal=token=$(openssl rand -hex 24)
-            # (optional:true keeps the Deployment applyable before it exists).
-            - name: TOR_UI_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: tor-ui-token
-                  key: token
-                  optional: true
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://dd-otel-collector.observability.svc.cluster.local:4317" }
+            - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: "grpc" }
+            - { name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=oresoftware,deployment.environment.name=remote-dev,github.repository=ORESoftware/tor-server.rs" }
           ports:
             - { name: socks, containerPort: 9050 }
             - { name: ui, containerPort: 9060 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: ui }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: socks }
+            periodSeconds: 20
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -57,11 +62,21 @@ spec:
             limits: { memory: "128Mi" }
           volumeMounts:
             - { name: directory, mountPath: /etc/tor, readOnly: true }
+            - { name: client-auth, mountPath: /secrets/client, readOnly: true }
+            - { name: network-secret, mountPath: /secrets/network, readOnly: true }
       volumes:
         - name: directory
           configMap:
             name: tor-directory
             items: [{ key: directory.toml, path: directory.toml }]
+        - name: client-auth
+          secret:
+            secretName: tor-client-auth
+            defaultMode: 0440
+        - name: network-secret
+          secret:
+            secretName: tor-network-secret
+            defaultMode: 0440
 ---
 apiVersion: v1
 kind: Service

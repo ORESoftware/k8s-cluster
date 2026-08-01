@@ -11,7 +11,7 @@
 | `policy`      | Exit range filtering (SSRF protection) + extend allowlist.          |
 | `relay`       | The relay/exit node: accept, handshake, forward/peel one layer.     |
 | `circuit`     | Client-side circuit construction + bidirectional splicing.          |
-| `socks`       | SOCKS5 front-end (CONNECT).                                          |
+| `socks`       | Bounded SOCKS5 front-end (CONNECT + optional RFC 1929 auth).         |
 | `web`         | Dashboard UI, docs server, `/api/*`, PAC.                           |
 | `stats`       | Process-wide circuit counters for the dashboard.                    |
 

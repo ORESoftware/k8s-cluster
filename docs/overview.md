@@ -36,6 +36,8 @@ One binary, three modes (`argv[1]` or `TOR_ROLE`):
 - Not compatible with the real Tor network — see [tor-interop](/docs/tor-interop).
 - Not a full anonymity system with traffic-analysis defenses — see
   [security](/docs/security).
+- Not a VPN or transparent packet tunnel — see
+  [cloud/VPN/obfuscation guidance](/docs/cloud-vpn-obfuscation).
 
 Continue to [architecture](/docs/architecture), the wire
 [protocol](/docs/protocol), [usage](/docs/usage), [security](/docs/security),

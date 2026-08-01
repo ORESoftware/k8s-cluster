@@ -4,13 +4,13 @@
 //!   * Each relay owns a long-term X25519 static keypair; its public key is
 //!     published in the directory.
 //!   * The client, per hop, generates an ephemeral X25519 key `x`.
-//!   * Client sends `X = x·G` (32 bytes) as the CREATE blob.
+//!   * Client sends protocol marker `TSR2` and `X = x·G` as the CREATE blob.
 //!   * The relay generates its own ephemeral `y`, and both sides compute the
 //!     same shared secret from two Diffie-Hellman results:
 //!         s1 = DH(client_eph, relay_static)   (authenticates the relay)
 //!         s2 = DH(client_eph, relay_eph)       (forward secrecy)
 //!     keyed material = HKDF-SHA256(salt, s1 || s2).
-//!   * The relay replies CREATED = `Y = y·G` (32 bytes) || auth-MAC (32 bytes),
+//!   * The relay replies CREATED = `TSR2` || `Y = y·G` || auth-MAC,
 //!     where the MAC is HMAC-SHA256 over the transcript keyed by a derived
 //!     auth key. The client verifies the MAC, proving the relay holds the
 //!     static secret matching the directory public key.
@@ -27,12 +27,16 @@ use hmac::{Hmac, Mac};
 use rand::rngs::OsRng;
 use sha2::Sha256;
 use std::sync::OnceLock;
+use subtle::ConstantTimeEq;
 use x25519_dalek::{PublicKey, StaticSecret};
+use zeroize::Zeroize;
 
 type HmacSha256 = Hmac<Sha256>;
 
-const HKDF_SALT: &[u8] = b"tor-server.rs/v1/onion-handshake";
-const HKDF_INFO: &[u8] = b"tor-server.rs/v1/keys";
+const HANDSHAKE_MARKER: &[u8; 4] = b"TSR2";
+const HKDF_SALT: &[u8] = b"tor-server.rs/v2/onion-handshake";
+const HKDF_INFO: &[u8] = b"tor-server.rs/v2/directional-keys";
+const AUTH_ROLE: &[u8] = b"tor-server.rs/v2/relay-auth";
 
 /// Optional overlay-membership pre-shared key. When set (via `TOR_NETWORK_SECRET`),
 /// it is folded into every hop's key derivation, so a client and relay only
@@ -57,15 +61,26 @@ pub struct HopKeys {
     pub backward: [u8; 32],
 }
 
-fn derive_keys(s1: &[u8; 32], s2: &[u8; 32], client_pub: &[u8; 32], relay_eph_pub: &[u8; 32]) -> (HopKeys, [u8; 32]) {
+fn derive_keys(
+    s1: &[u8; 32],
+    s2: &[u8; 32],
+    relay_static_pub: &[u8; 32],
+    client_pub: &[u8; 32],
+    relay_eph_pub: &[u8; 32],
+) -> (HopKeys, [u8; 32]) {
     let psk = network_secret();
-    let mut ikm = Vec::with_capacity(64 + psk.len());
+    let mut ikm = Vec::with_capacity(64 + 4 + 96 + psk.len());
     ikm.extend_from_slice(s1);
     ikm.extend_from_slice(s2);
+    ikm.extend_from_slice(HANDSHAKE_MARKER);
+    ikm.extend_from_slice(relay_static_pub);
+    ikm.extend_from_slice(client_pub);
+    ikm.extend_from_slice(relay_eph_pub);
     ikm.extend_from_slice(psk);
     let hk = Hkdf::<Sha256>::new(Some(HKDF_SALT), &ikm);
     let mut okm = [0u8; 96];
-    hk.expand(HKDF_INFO, &mut okm).expect("96 bytes is a valid HKDF length");
+    hk.expand(HKDF_INFO, &mut okm)
+        .expect("96 bytes is a valid HKDF length");
 
     let mut forward = [0u8; 32];
     let mut backward = [0u8; 32];
@@ -74,11 +89,21 @@ fn derive_keys(s1: &[u8; 32], s2: &[u8; 32], client_pub: &[u8; 32], relay_eph_pu
     backward.copy_from_slice(&okm[32..64]);
     auth_key.copy_from_slice(&okm[64..96]);
 
-    let mut mac = <HmacSha256 as Mac>::new_from_slice(&auth_key).expect("hmac accepts any key length");
+    let mut mac =
+        <HmacSha256 as Mac>::new_from_slice(&auth_key).expect("hmac accepts any key length");
+    mac.update(HANDSHAKE_MARKER);
+    mac.update(AUTH_ROLE);
+    mac.update(relay_static_pub);
     mac.update(client_pub);
     mac.update(relay_eph_pub);
     let tag: [u8; 32] = mac.finalize().into_bytes().into();
 
+    // Wipe the transient key material (the concatenated DH secrets and the full
+    // 96-byte KDF output). `forward`/`backward` are moved into the returned
+    // HopKeys; the returned auth `tag` is public.
+    ikm.zeroize();
+    okm.zeroize();
+    auth_key.zeroize();
     return (HopKeys { forward, backward }, tag);
 }
 
@@ -103,29 +128,47 @@ impl ClientHandshake {
         };
     }
 
-    /// The 32-byte CREATE blob (our ephemeral public key).
+    /// Versioned CREATE blob (`TSR2` plus our 32-byte ephemeral public key).
     pub fn create_blob(&self) -> Vec<u8> {
-        return self.eph_public.to_vec();
+        let mut create = Vec::with_capacity(36);
+        create.extend_from_slice(HANDSHAKE_MARKER);
+        create.extend_from_slice(&self.eph_public);
+        return create;
     }
 
-    /// Consume the 64-byte CREATED reply, verify it, and derive hop keys.
+    /// Consume the versioned CREATED reply, verify it, and derive hop keys.
     pub fn finish(self, created: &[u8]) -> Result<HopKeys> {
-        if created.len() != 64 {
-            bail!("CREATED must be 64 bytes, got {}", created.len());
+        if created.len() != 68 {
+            bail!("CREATED must be 68 bytes, got {}", created.len());
+        }
+        if &created[0..4] != HANDSHAKE_MARKER {
+            bail!("CREATED used an unsupported handshake version");
         }
         let mut relay_eph_pub = [0u8; 32];
-        relay_eph_pub.copy_from_slice(&created[0..32]);
+        relay_eph_pub.copy_from_slice(&created[4..36]);
         let mut got_mac = [0u8; 32];
-        got_mac.copy_from_slice(&created[32..64]);
+        got_mac.copy_from_slice(&created[36..68]);
 
-        let s1 = self.eph_secret.diffie_hellman(&self.relay_static_pub).to_bytes();
+        let s1 = self.eph_secret.diffie_hellman(&self.relay_static_pub);
+        if !s1.was_contributory() {
+            bail!("relay static X25519 key produced a non-contributory shared secret");
+        }
         let s2 = self
             .eph_secret
-            .diffie_hellman(&PublicKey::from(relay_eph_pub))
-            .to_bytes();
-        let (keys, want_mac) = derive_keys(&s1, &s2, &self.eph_public, &relay_eph_pub);
+            .diffie_hellman(&PublicKey::from(relay_eph_pub));
+        if !s2.was_contributory() {
+            bail!("relay ephemeral X25519 key produced a non-contributory shared secret");
+        }
+        let relay_static_pub = self.relay_static_pub.to_bytes();
+        let (keys, want_mac) = derive_keys(
+            &s1.to_bytes(),
+            &s2.to_bytes(),
+            &relay_static_pub,
+            &self.eph_public,
+            &relay_eph_pub,
+        );
 
-        if !ct_eq(&got_mac, &want_mac) {
+        if !bool::from(got_mac.ct_eq(&want_mac)) {
             bail!("relay authentication failed: CREATED MAC mismatch");
         }
         return Ok(keys);
@@ -135,34 +178,38 @@ impl ClientHandshake {
 /// Relay side of the handshake: given our static secret and the client's CREATE
 /// blob, produce the CREATED reply and our hop keys.
 pub fn relay_handshake(static_secret: &StaticSecret, create: &[u8]) -> Result<(Vec<u8>, HopKeys)> {
-    if create.len() != 32 {
-        bail!("CREATE must be 32 bytes, got {}", create.len());
+    if create.len() != 36 {
+        bail!("CREATE must be 36 bytes, got {}", create.len());
+    }
+    if &create[0..4] != HANDSHAKE_MARKER {
+        bail!("CREATE used an unsupported handshake version");
     }
     let mut client_pub = [0u8; 32];
-    client_pub.copy_from_slice(create);
+    client_pub.copy_from_slice(&create[4..36]);
     let client_pub_point = PublicKey::from(client_pub);
 
     let relay_eph_secret = StaticSecret::random_from_rng(OsRng);
     let relay_eph_pub = PublicKey::from(&relay_eph_secret).to_bytes();
 
-    let s1 = static_secret.diffie_hellman(&client_pub_point).to_bytes();
-    let s2 = relay_eph_secret.diffie_hellman(&client_pub_point).to_bytes();
-    let (keys, mac) = derive_keys(&s1, &s2, &client_pub, &relay_eph_pub);
+    let s1 = static_secret.diffie_hellman(&client_pub_point);
+    let s2 = relay_eph_secret.diffie_hellman(&client_pub_point);
+    if !s1.was_contributory() || !s2.was_contributory() {
+        bail!("client X25519 key produced a non-contributory shared secret");
+    }
+    let relay_static_pub = PublicKey::from(static_secret).to_bytes();
+    let (keys, mac) = derive_keys(
+        &s1.to_bytes(),
+        &s2.to_bytes(),
+        &relay_static_pub,
+        &client_pub,
+        &relay_eph_pub,
+    );
 
-    let mut created = Vec::with_capacity(64);
+    let mut created = Vec::with_capacity(68);
+    created.extend_from_slice(HANDSHAKE_MARKER);
     created.extend_from_slice(&relay_eph_pub);
     created.extend_from_slice(&mac);
     return Ok((created, keys));
-}
-
-/// Constant-time 32-byte equality: fold all byte differences into one accumulator
-/// so the comparison time does not depend on where the first mismatch is.
-fn ct_eq(a: &[u8; 32], b: &[u8; 32]) -> bool {
-    let mut diff = 0u8;
-    for i in 0..32 {
-        diff |= a[i] ^ b[i];
-    }
-    return diff == 0;
 }
 
 /// AEAD sealer with a monotonic per-stream nonce counter. One `Sealer` owns one
@@ -181,12 +228,16 @@ impl Sealer {
     }
 
     pub fn seal(&mut self, plaintext: &[u8]) -> Result<Vec<u8>> {
+        let next = self
+            .counter
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("AEAD nonce space exhausted"))?;
         let nonce = nonce_from_counter(self.counter);
         let ct = self
             .cipher
             .encrypt(&nonce, plaintext)
             .map_err(|_| anyhow::anyhow!("AEAD seal failed"))?;
-        self.counter = self.counter.checked_add(1).expect("nonce counter overflow");
+        self.counter = next;
         return Ok(ct);
     }
 }
@@ -206,12 +257,16 @@ impl Opener {
     }
 
     pub fn open(&mut self, ciphertext: &[u8]) -> Result<Vec<u8>> {
+        let next = self
+            .counter
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("AEAD nonce space exhausted"))?;
         let nonce = nonce_from_counter(self.counter);
         let pt = self
             .cipher
             .decrypt(&nonce, ciphertext)
             .map_err(|_| anyhow::anyhow!("AEAD open failed (bad tag or desync)"))?;
-        self.counter = self.counter.checked_add(1).expect("nonce counter overflow");
+        self.counter = next;
         return Ok(pt);
     }
 }
@@ -260,6 +315,23 @@ mod tests {
     }
 
     #[test]
+    fn relay_rejects_non_contributory_client_key() {
+        let (relay_secret, _relay_pub) = generate_static_keypair();
+        let mut create = HANDSHAKE_MARKER.to_vec();
+        create.extend_from_slice(&[0u8; 32]);
+        assert!(relay_handshake(&relay_secret, &create).is_err());
+    }
+
+    #[test]
+    fn handshake_rejects_unknown_protocol_version() {
+        let (relay_secret, relay_pub) = generate_static_keypair();
+        let client = ClientHandshake::new(relay_pub);
+        let mut create = client.create_blob();
+        create[3] ^= 1;
+        assert!(relay_handshake(&relay_secret, &create).is_err());
+    }
+
+    #[test]
     fn seal_open_roundtrips_in_order() {
         let (relay_secret, relay_pub) = generate_static_keypair();
         let client = ClientHandshake::new(relay_pub);
@@ -275,6 +347,18 @@ mod tests {
             assert_ne!(ct, msg);
             assert_eq!(opener.open(&ct).unwrap(), msg);
         }
+    }
+
+    #[test]
+    fn nonce_counter_exhaustion_fails_closed() {
+        let key = [42u8; 32];
+        let mut sealer = Sealer::new(key);
+        sealer.counter = u64::MAX;
+        assert!(sealer.seal(b"never encrypted").is_err());
+
+        let mut opener = Opener::new(key);
+        opener.counter = u64::MAX;
+        assert!(opener.open(b"never decrypted").is_err());
     }
 
     #[test]

@@ -19,6 +19,16 @@ spec:
       labels: { app: tor-relay, relay: a }
     spec:
       automountServiceAccountToken: false
+      # Keep the three relays on separate nodes. Co-locating entry/middle/exit on
+      # one node lets a node-level observer correlate the whole circuit, defeating
+      # the point of onion routing. `required` needs >= 3 schedulable nodes; for a
+      # small/dev cluster switch to preferredDuringSchedulingIgnoredDuringExecution.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: { app: tor-relay }
+              topologyKey: kubernetes.io/hostname
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -33,9 +43,21 @@ spec:
           env:
             - { name: TOR_LISTEN, value: "0.0.0.0:9001" }
             - { name: TOR_KEY_FILE, value: "/keys/relay.key" }
+            - { name: TOR_NETWORK_SECRET_FILE, value: "/secrets/network/network.secret" }
+            - { name: TOR_RELAY_PEERS, value: "tor-relay-a.anon-proxy.svc.cluster.local:9001,tor-relay-b.anon-proxy.svc.cluster.local:9001,tor-relay-c.anon-proxy.svc.cluster.local:9001" }
+            - { name: TOR_EXIT_DENY_PORTS, value: "25" }
             - { name: RUST_LOG, value: "info" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://dd-otel-collector.observability.svc.cluster.local:4317" }
+            - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: "grpc" }
+            - { name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=oresoftware,deployment.environment.name=remote-dev,github.repository=ORESoftware/tor-server.rs" }
           ports:
             - { name: onion, containerPort: 9001 }
+          readinessProbe:
+            tcpSocket: { port: onion }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: onion }
+            periodSeconds: 20
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -45,11 +67,17 @@ spec:
             limits: { memory: "128Mi" }
           volumeMounts:
             - { name: key, mountPath: /keys, readOnly: true }
+            - { name: network-secret, mountPath: /secrets/network, readOnly: true }
       volumes:
         - name: key
           secret:
             secretName: tor-relay-a-key
+            defaultMode: 0440
             items: [{ key: relay.key, path: relay.key }]
+        - name: network-secret
+          secret:
+            secretName: tor-network-secret
+            defaultMode: 0440
 ---
 apiVersion: v1
 kind: Service
@@ -75,6 +103,16 @@ spec:
       labels: { app: tor-relay, relay: b }
     spec:
       automountServiceAccountToken: false
+      # Keep the three relays on separate nodes. Co-locating entry/middle/exit on
+      # one node lets a node-level observer correlate the whole circuit, defeating
+      # the point of onion routing. `required` needs >= 3 schedulable nodes; for a
+      # small/dev cluster switch to preferredDuringSchedulingIgnoredDuringExecution.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: { app: tor-relay }
+              topologyKey: kubernetes.io/hostname
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -89,9 +127,21 @@ spec:
           env:
             - { name: TOR_LISTEN, value: "0.0.0.0:9001" }
             - { name: TOR_KEY_FILE, value: "/keys/relay.key" }
+            - { name: TOR_NETWORK_SECRET_FILE, value: "/secrets/network/network.secret" }
+            - { name: TOR_RELAY_PEERS, value: "tor-relay-a.anon-proxy.svc.cluster.local:9001,tor-relay-b.anon-proxy.svc.cluster.local:9001,tor-relay-c.anon-proxy.svc.cluster.local:9001" }
+            - { name: TOR_EXIT_DENY_PORTS, value: "25" }
             - { name: RUST_LOG, value: "info" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://dd-otel-collector.observability.svc.cluster.local:4317" }
+            - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: "grpc" }
+            - { name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=oresoftware,deployment.environment.name=remote-dev,github.repository=ORESoftware/tor-server.rs" }
           ports:
             - { name: onion, containerPort: 9001 }
+          readinessProbe:
+            tcpSocket: { port: onion }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: onion }
+            periodSeconds: 20
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -101,11 +151,17 @@ spec:
             limits: { memory: "128Mi" }
           volumeMounts:
             - { name: key, mountPath: /keys, readOnly: true }
+            - { name: network-secret, mountPath: /secrets/network, readOnly: true }
       volumes:
         - name: key
           secret:
             secretName: tor-relay-b-key
+            defaultMode: 0440
             items: [{ key: relay.key, path: relay.key }]
+        - name: network-secret
+          secret:
+            secretName: tor-network-secret
+            defaultMode: 0440
 ---
 apiVersion: v1
 kind: Service
@@ -131,6 +187,16 @@ spec:
       labels: { app: tor-relay, relay: c }
     spec:
       automountServiceAccountToken: false
+      # Keep the three relays on separate nodes. Co-locating entry/middle/exit on
+      # one node lets a node-level observer correlate the whole circuit, defeating
+      # the point of onion routing. `required` needs >= 3 schedulable nodes; for a
+      # small/dev cluster switch to preferredDuringSchedulingIgnoredDuringExecution.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels: { app: tor-relay }
+              topologyKey: kubernetes.io/hostname
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -145,9 +211,21 @@ spec:
           env:
             - { name: TOR_LISTEN, value: "0.0.0.0:9001" }
             - { name: TOR_KEY_FILE, value: "/keys/relay.key" }
+            - { name: TOR_NETWORK_SECRET_FILE, value: "/secrets/network/network.secret" }
+            - { name: TOR_RELAY_PEERS, value: "tor-relay-a.anon-proxy.svc.cluster.local:9001,tor-relay-b.anon-proxy.svc.cluster.local:9001,tor-relay-c.anon-proxy.svc.cluster.local:9001" }
+            - { name: TOR_EXIT_DENY_PORTS, value: "25" }
             - { name: RUST_LOG, value: "info" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://dd-otel-collector.observability.svc.cluster.local:4317" }
+            - { name: OTEL_EXPORTER_OTLP_PROTOCOL, value: "grpc" }
+            - { name: OTEL_RESOURCE_ATTRIBUTES, value: "service.namespace=oresoftware,deployment.environment.name=remote-dev,github.repository=ORESoftware/tor-server.rs" }
           ports:
             - { name: onion, containerPort: 9001 }
+          readinessProbe:
+            tcpSocket: { port: onion }
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: { port: onion }
+            periodSeconds: 20
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -157,11 +235,17 @@ spec:
             limits: { memory: "128Mi" }
           volumeMounts:
             - { name: key, mountPath: /keys, readOnly: true }
+            - { name: network-secret, mountPath: /secrets/network, readOnly: true }
       volumes:
         - name: key
           secret:
             secretName: tor-relay-c-key
+            defaultMode: 0440
             items: [{ key: relay.key, path: relay.key }]
+        - name: network-secret
+          secret:
+            secretName: tor-network-secret
+            defaultMode: 0440
 ---
 apiVersion: v1
 kind: Service

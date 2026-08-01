@@ -17,7 +17,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::Semaphore;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::{timeout, Duration};
 use tracing::{debug, info, warn};
 use x25519_dalek::StaticSecret;
@@ -39,22 +39,40 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(20);
 /// pin a circuit slot during connect.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
-fn max_circuits() -> usize {
-    return std::env::var("TOR_MAX_CIRCUITS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1024);
+fn max_circuits() -> Result<usize> {
+    let value = match std::env::var("TOR_MAX_CIRCUITS") {
+        Ok(raw) => raw
+            .parse::<usize>()
+            .map_err(|_| anyhow!("TOR_MAX_CIRCUITS must be a positive integer"))?,
+        Err(_) => 1024,
+    };
+    if value == 0 || value > 1_000_000 {
+        bail!("TOR_MAX_CIRCUITS must be between 1 and 1000000");
+    }
+    return Ok(value);
 }
 
 /// Optional idle timeout on the forward read loop (0 = disabled). Bounds
 /// post-handshake slowloris, where a peer completes the handshake then holds
 /// the circuit open sending nothing.
+///
+/// Applies to BOTH the forward read loop and the detached backward pumps, so a
+/// peer that goes silent cannot park a pump forever and leak its circuit-slot
+/// permit. Defaults to a finite value (a disabled/0 timeout re-enables the
+/// slot-exhaustion DoS); operators with legitimately long-idle streams can raise
+/// it. 0 disables (not recommended).
+const DEFAULT_IDLE_SECS: u64 = 600;
+
 fn idle_timeout() -> Option<Duration> {
     let secs: u64 = std::env::var("TOR_CIRCUIT_IDLE_TIMEOUT_SECS")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
-    return if secs == 0 { None } else { Some(Duration::from_secs(secs)) };
+        .unwrap_or(DEFAULT_IDLE_SECS);
+    return if secs == 0 {
+        None
+    } else {
+        Some(Duration::from_secs(secs))
+    };
 }
 
 /// Connect to `addr` with a bounded timeout.
@@ -65,12 +83,47 @@ async fn connect_timeout(addr: impl tokio::net::ToSocketAddrs) -> Result<TcpStre
         .map_err(|e| anyhow!("connect failed: {e}"));
 }
 
+/// Try every permitted DNS answer within one bounded deadline. This avoids an
+/// unreachable IPv6 answer preventing a usable IPv4 connection (or vice versa).
+async fn connect_resolved(addrs: &[std::net::SocketAddr]) -> Result<TcpStream> {
+    let attempt = async {
+        let mut last_error = None;
+        for addr in addrs {
+            match TcpStream::connect(addr).await {
+                Ok(stream) => return Ok(stream),
+                Err(error) => last_error = Some(error),
+            }
+        }
+        return Err(anyhow!(
+            "all {} resolved destination addresses failed{}",
+            addrs.len(),
+            last_error
+                .map(|error| format!(": {error}"))
+                .unwrap_or_default()
+        ));
+    };
+
+    return timeout(CONNECT_TIMEOUT, attempt)
+        .await
+        .map_err(|_| anyhow!("connect timed out"))?;
+}
+
 pub async fn run(listen: &str, secret: StaticSecret) -> Result<()> {
     let secret = Arc::new(secret);
-    let policy = Arc::new(Policy::from_env());
-    let limit = Arc::new(Semaphore::new(max_circuits()));
+    let policy = Arc::new(Policy::from_env()?);
+    let limit = Arc::new(Semaphore::new(max_circuits()?));
     let listener = TcpListener::bind(listen).await?;
-    info!(%listen, allow_private_exit = policy.allow_private_exit(), "relay listening");
+    if !policy.extend_allowlisted() && !is_loopback_listen(listen) {
+        warn!(
+            "relay is non-loopback and TOR_RELAY_PEERS is unset; Extend targets are unrestricted — pin the allowlist to prevent relay-to-arbitrary-host connections"
+        );
+    }
+    info!(
+        %listen,
+        allow_private_exit = policy.allow_private_exit(),
+        exit_enabled = policy.exit_enabled(),
+        "relay listening"
+    );
     loop {
         let (stream, peer) = match listener.accept().await {
             Ok(v) => v,
@@ -79,9 +132,12 @@ pub async fn run(listen: &str, secret: StaticSecret) -> Result<()> {
                 continue;
             }
         };
-        // Reject rather than queue when saturated, bounding memory/FD use.
+        // Reject rather than queue when saturated, bounding memory/FD use. The
+        // permit is shared (Arc) with the backward pump the circuit later spawns
+        // so a circuit only frees its slot once *both* directions have finished;
+        // a detached pump must not outlive the accounting.
         let permit = match limit.clone().try_acquire_owned() {
-            Ok(p) => p,
+            Ok(p) => Arc::new(p),
             Err(_) => {
                 debug!("at circuit capacity, dropping {peer}");
                 continue;
@@ -90,15 +146,27 @@ pub async fn run(listen: &str, secret: StaticSecret) -> Result<()> {
         let secret = secret.clone();
         let policy = policy.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_circuit(stream, secret, policy).await {
+            if let Err(e) = handle_circuit(stream, secret, policy, permit).await {
                 debug!("circuit from {peer} ended: {e:#}");
             }
-            drop(permit);
         });
     }
 }
 
-async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>, policy: Arc<Policy>) -> Result<()> {
+/// Loopback check mirroring `main::is_loopback_listener` for the relay warning.
+fn is_loopback_listen(listen: &str) -> bool {
+    return listen
+        .parse::<std::net::SocketAddr>()
+        .map(|a| a.ip().is_loopback())
+        .unwrap_or(false);
+}
+
+async fn handle_circuit(
+    prev: TcpStream,
+    secret: Arc<StaticSecret>,
+    policy: Arc<Policy>,
+    permit: Arc<OwnedSemaphorePermit>,
+) -> Result<()> {
     prev.set_nodelay(true).ok();
     let (mut prev_r, mut prev_w) = prev.into_split();
 
@@ -126,8 +194,8 @@ async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>, policy: Arc<
         let frame = match idle {
             Some(d) => match timeout(d, read).await {
                 Ok(Ok(f)) => f,
-                Ok(Err(_)) => break,           // previous hop closed
-                Err(_) => break,               // idle timeout
+                Ok(Err(_)) => break, // previous hop closed
+                Err(_) => break,     // idle timeout
             },
             None => match read.await {
                 Ok(f) => f,
@@ -147,12 +215,18 @@ async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>, policy: Arc<
                 let (next_r, mut nw) = next.into_split();
                 write_frame(&mut nw, &create).await?;
                 next_w = Some(nw);
-                let pw = prev_w.take().ok_or_else(|| anyhow!("prev_w already taken"))?;
-                let sealer = sealer_bwd.take().ok_or_else(|| anyhow!("sealer already taken"))?;
+                let pw = prev_w
+                    .take()
+                    .ok_or_else(|| anyhow!("prev_w already taken"))?;
+                let sealer = sealer_bwd
+                    .take()
+                    .ok_or_else(|| anyhow!("sealer already taken"))?;
+                let hold = permit.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = middle_pump(next_r, pw, sealer).await {
+                    if let Err(e) = middle_pump(next_r, pw, sealer, idle).await {
                         debug!("middle pump ended: {e:#}");
                     }
+                    drop(hold); // release the circuit slot only when this direction ends
                 });
             }
             Cell::Relay { payload } => {
@@ -167,18 +241,25 @@ async fn handle_circuit(prev: TcpStream, secret: Arc<StaticSecret>, policy: Arc<
                 if next_w.is_some() || dest_w.is_some() {
                     bail!("Begin after this relay already has a next hop");
                 }
-                // Exit policy: resolve + reject private/loopback/metadata ranges.
-                let addr = policy.resolve_exit(&host, port).await?;
-                let dest = connect_timeout(addr).await?;
+                // Exit policy: enforce exit-enabled, resolve + reject
+                // private/loopback/metadata ranges.
+                let addrs = policy.resolve_exit(&host, port).await?;
+                let dest = connect_resolved(&addrs).await?;
                 dest.set_nodelay(true).ok();
                 let (dest_r, dw) = dest.into_split();
                 dest_w = Some(dw);
-                let pw = prev_w.take().ok_or_else(|| anyhow!("prev_w already taken"))?;
-                let sealer = sealer_bwd.take().ok_or_else(|| anyhow!("sealer already taken"))?;
+                let pw = prev_w
+                    .take()
+                    .ok_or_else(|| anyhow!("prev_w already taken"))?;
+                let sealer = sealer_bwd
+                    .take()
+                    .ok_or_else(|| anyhow!("sealer already taken"))?;
+                let hold = permit.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = exit_pump(dest_r, pw, sealer).await {
+                    if let Err(e) = exit_pump(dest_r, pw, sealer, idle).await {
                         debug!("exit pump ended: {e:#}");
                     }
+                    drop(hold); // release the circuit slot only when this direction ends
                 });
             }
             Cell::Data { bytes } => {
@@ -201,16 +282,26 @@ async fn middle_pump(
     mut next_r: OwnedReadHalf,
     mut prev_w: OwnedWriteHalf,
     mut sealer: Sealer,
+    idle: Option<Duration>,
 ) -> Result<()> {
     loop {
-        let frame = match read_frame(&mut next_r).await {
-            Ok(f) => f,
-            Err(_) => break,
+        let read = read_frame(&mut next_r);
+        // Idle-bounded so a silent next hop cannot park this pump (and pin the
+        // shared circuit-slot permit) forever after the forward side is gone.
+        let frame = match idle {
+            Some(d) => match timeout(d, read).await {
+                Ok(Ok(f)) => f,
+                _ => break, // next hop closed or idle timeout
+            },
+            None => match read.await {
+                Ok(f) => f,
+                Err(_) => break,
+            },
         };
         let cell = Cell::Relay {
             payload: frame_bytes(&frame),
         };
-        let ct = sealer.seal(&cell.encode())?;
+        let ct = sealer.seal(&cell.encode()?)?;
         write_frame(&mut prev_w, &ct).await?;
     }
     return Ok(());
@@ -223,22 +314,30 @@ async fn exit_pump(
     mut dest_r: OwnedReadHalf,
     mut prev_w: OwnedWriteHalf,
     mut sealer: Sealer,
+    idle: Option<Duration>,
 ) -> Result<()> {
     let mut buf = vec![0u8; EXIT_READ_CHUNK];
     loop {
-        let n = match dest_r.read(&mut buf).await {
-            Ok(0) => {
-                let ct = sealer.seal(&Cell::End.encode())?;
+        let read = dest_r.read(&mut buf);
+        // Idle-bounded (see middle_pump): a destination that accepts then stalls
+        // must not pin this pump and its circuit-slot permit indefinitely.
+        let outcome = match idle {
+            Some(d) => timeout(d, read).await.ok(),
+            None => Some(read.await),
+        };
+        let n = match outcome {
+            Some(Ok(0)) => {
+                let ct = sealer.seal(&Cell::End.encode()?)?;
                 let _ = write_frame(&mut prev_w, &ct).await;
                 break;
             }
-            Ok(n) => n,
-            Err(_) => break,
+            Some(Ok(n)) => n,
+            Some(Err(_)) | None => break, // read error or idle timeout
         };
         let cell = Cell::Data {
             bytes: buf[..n].to_vec(),
         };
-        let ct = sealer.seal(&cell.encode())?;
+        let ct = sealer.seal(&cell.encode()?)?;
         write_frame(&mut prev_w, &ct).await?;
     }
     return Ok(());
