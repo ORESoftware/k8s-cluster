@@ -302,7 +302,9 @@ mod tests {
             "OTEL_EXPORTER_OTLP_ENDPOINT",
             "DEPLOYMENT_ENVIRONMENT",
             "SHARED_AUTH_BASE_URL",
-            "dd-shared-auth.shared-auth.svc.cluster.local:8120",
+            // The sanctioned hop. Pinning the direct dd-shared-auth address
+            // here is what kept the NetworkPolicy-denied value in CI.
+            "http://dd-remote-gateway.default.svc.cluster.local/shared-auth",
         ] {
             assert!(manifest.contains(required), "manifest missing {required}");
         }
