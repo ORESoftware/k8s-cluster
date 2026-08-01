@@ -22,11 +22,14 @@ pub use des_engine;
 
 pub mod des;
 
-// Ergonomic top-level re-exports so consumers (the axum servers, a desktop game)
-// can reach the engine without the mirrored `des::general::…` path, e.g.
-//   soccer_engine::soccer::{SoccerMatch, SoccerLiveHttpBridge, SoccerLiveServerConfig}
-//   soccer_engine::{soccer_learning, soccer_planner, rotation}
-pub use des::general::soccer;
+// Ergonomic top-level facade. The production simulation remains the canonical
+// `des::general::soccer` module; the bounded formal lifecycle is kept in a
+// separate module and re-exported only through this consumer-facing facade.
+pub mod soccer {
+    pub use crate::des::general::soccer::*;
+    pub use crate::des::general::soccer_lifecycle::*;
+}
+
 pub use des::general::soccer_rotation as rotation;
 pub use des::soccer_learning;
 #[cfg(feature = "planner")]
