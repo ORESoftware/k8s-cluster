@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS = ROOT / ".github" / "workflows"
-CANONICAL = WORKFLOWS / "ops-canonical-critical-org-fleet-publication.yml"
+CANONICAL = WORKFLOWS / "ops-run-canonical-fleet-isolated.yml"
 BROWSER_WORKFLOW = WORKFLOWS / "critical-org-fleet-browser-canary.yml"
 BROWSER_TEST = (
     ROOT
@@ -23,7 +23,7 @@ OBSOLETE = (
 
 
 class CriticalOrgFleetWorkflowContracts(unittest.TestCase):
-    def test_only_one_owner_mutation_workflow_remains(self) -> None:
+    def test_isolated_publisher_replaces_competing_mutation_paths(self) -> None:
         self.assertTrue(CANONICAL.is_file())
         for path in OBSOLETE:
             self.assertFalse(
@@ -31,7 +31,10 @@ class CriticalOrgFleetWorkflowContracts(unittest.TestCase):
                 f"obsolete competing workflow remains: {path}",
             )
         text = CANONICAL.read_text(encoding="utf-8")
+        self.assertIn("workflow_dispatch:", text)
+        self.assertNotIn("\n  push:", text)
         self.assertIn("group: critical-org-fleet-publication", text)
+        self.assertIn("cancel-in-progress: false", text)
         self.assertEqual(text.count("gh auth login"), 1)
         self.assertEqual(
             text.count(
@@ -45,24 +48,47 @@ class CriticalOrgFleetWorkflowContracts(unittest.TestCase):
         text = CANONICAL.read_text(encoding="utf-8")
         self.assertIn("id: carrier", text)
         self.assertIn(
-            'echo "main_sha=$main_sha" >> "$GITHUB_OUTPUT"',
+            'echo "trusted_sha=$trusted_sha" >> "$GITHUB_OUTPUT"',
             text,
         )
         self.assertIn(
-            "ref: ${{ steps.carrier.outputs.main_sha }}",
+            "ref: ${{ steps.carrier.outputs.trusted_sha }}",
             text,
         )
         self.assertNotIn(
             "ref: ${{ steps.carrier.outputs.head_sha }}",
             text,
         )
+        self.assertIn(
+            "test \"$(sed -n 's/^trusted-main=//p' <<<\"$marker\")\" = \"$parent_sha\"",
+            text,
+        )
+        self.assertIn("carrier_to_trusted=", text)
+        self.assertIn("trusted_to_current=", text)
         self.assertIn("persist-credentials: false", text)
+
+    def test_authorization_intent_is_revalidated_before_mutation(self) -> None:
+        text = CANONICAL.read_text(encoding="utf-8")
+        self.assertIn('current_pull="$(GH_TOKEN="$COMMENT_TOKEN" gh api', text)
+        self.assertIn('.head.sha == $head', text)
+        self.assertIn("CARRIER_HEAD_SHA", text)
+        self.assertNotIn("statuses: write", text)
+        self.assertNotIn("code_context=", text)
+        self.assertIn("[REDACTED-CODE]", text)
 
     def test_report_gate_is_strict_and_not_neutralized(self) -> None:
         text = CANONICAL.read_text(encoding="utf-8")
         self.assertIn(".success == true", text)
         self.assertIn(".organizations.hypesiege.count == 15", text)
         self.assertIn(".organizations.StreemPilot.count == 17", text)
+        self.assertIn(
+            "(.organizations.hypesiege.repositories | length) == 15",
+            text,
+        )
+        self.assertIn(
+            "(.organizations.StreemPilot.repositories | length) == 17",
+            text,
+        )
         self.assertIn("(.extracted_repositories | length) == 2", text)
         self.assertNotRegex(
             text,
@@ -73,27 +99,29 @@ class CriticalOrgFleetWorkflowContracts(unittest.TestCase):
         self.assertIn("if-no-files-found: warn", text)
         self.assertIn("retention-days: 14", text)
 
-    def test_device_code_is_not_used_as_a_status_context(self) -> None:
-        text = CANONICAL.read_text(encoding="utf-8")
-        self.assertIn("'critical-org-fleet/device-auth'", text)
-        self.assertNotIn(
-            'code_context="critical-org-fleet/device-auth/$code"',
-            text,
-        )
-
-    def test_browser_canary_has_hermetic_and_trusted_live_modes(self) -> None:
+    def test_browser_canary_has_hermetic_and_exact_live_modes(self) -> None:
         workflow = BROWSER_WORKFLOW.read_text(encoding="utf-8")
         test_source = BROWSER_TEST.read_text(encoding="utf-8")
         self.assertIn("workflow_run:", workflow)
         self.assertIn(
-            "Canonical critical organization fleet publication",
+            "Run canonical critical organization fleet publication isolated",
             workflow,
         )
         self.assertIn(
             "github.event.workflow_run.conclusion == 'success'",
             workflow,
         )
-        self.assertIn("ref: main", workflow)
+        self.assertIn(
+            "github.event.workflow_run.event == 'workflow_dispatch'",
+            workflow,
+        )
+        self.assertIn(
+            "github.event.workflow_run.head_branch == 'main'",
+            workflow,
+        )
+        self.assertIn("WORKFLOW_RUN_SHA", workflow)
+        self.assertIn("MANUAL_SHA", workflow)
+        self.assertIn("ref: ${{ steps.trusted.outputs.sha }}", workflow)
         self.assertNotIn("${{ secrets.", workflow)
         self.assertIn("permissions:\n  contents: read", workflow)
         self.assertIn("CRITICAL_ORG_FLEET_LIVE: '1'", workflow)
