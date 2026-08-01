@@ -1,12 +1,14 @@
 // Fast source-contract tests: assert (without a browser) that the landing page,
 // layout, and CSS keep their key marketing content, CTAs, and responsive rules.
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const page = await readFile(new URL("../src/pages/index.astro", import.meta.url), "utf8");
 const layout = await readFile(new URL("../src/layouts/Layout.astro", import.meta.url), "utf8");
 const css = await readFile(new URL("../src/styles/global.css", import.meta.url), "utf8");
+const useCases = await readFile(new URL("../src/pages/use-cases.astro", import.meta.url), "utf8");
+const investors = await readFile(new URL("../src/pages/investors.astro", import.meta.url), "utf8");
 
 test("landing page keeps every coordination primitive visible", () => {
   for (const label of [
@@ -72,12 +74,50 @@ test("CNAME and astro config agree on the canonical domain fiducia.cloud", async
   assert.equal(new URL(config.site).hostname, cname, "CNAME and astro site must be one domain");
 });
 
+test("no source directory publishes anything that isn't meant to be public", async () => {
+  // Fast counterpart to tests/site-dist.test.mjs, needing no build: everything
+  // in public/ is copied verbatim to the site root, and every file in
+  // src/pages/ without a leading underscore becomes a live route. Internal
+  // READMEs reached the public domain twice this way (092ec55, then 0479717).
+  const dirs = {
+    "src/pages": {
+      allow: new Set(["index.astro", "404.astro", "use-cases.astro", "investors.astro"]),
+      exempt: (name) => name.startsWith("_"), // underscore = not routed by Astro
+      hint: "prefix it with an underscore (e.g. _README.md) so Astro won't route it",
+    },
+    "public": {
+      allow: new Set(["CNAME", "company-facts.json", "favicon.svg"]),
+      exempt: () => false, // public/ is copied verbatim; nothing is exempt
+      hint: "move it out of public/ — everything here is served at the site root",
+    },
+  };
+
+  for (const [dir, { allow, exempt, hint }] of Object.entries(dirs)) {
+    const entries = await readdir(new URL(`../${dir}`, import.meta.url));
+    const unexpected = entries.filter((name) => !allow.has(name) && !exempt(name));
+    assert.deepEqual(
+      unexpected,
+      [],
+      `${dir}/ would publish ${unexpected.join(", ")}. If that is intended, add it ` +
+        `to the allowlist in this test; otherwise ${hint}.`,
+    );
+  }
+});
+
 test("consensus pitching carries the crash-fault (CFT, not Byzantine) qualifier", () => {
   // Language policy (fiducia-monorepo/docs/use-cases-exploration.md): Raft is
   // CFT — one operator's non-lying nodes. The site may sell consensus,
   // elections, and exactly-once coordination, but never Byzantine/trustless
   // security. If the pitch is present, the qualifier must be too.
-  const sources = { "src/pages/index.astro": page, "src/layouts/Layout.astro": layout };
+  // Every page that pitches consensus must be in this map, not just the
+  // landing page: use-cases.astro and investors.astro together carry most of
+  // the consensus copy on the site, and were previously unchecked.
+  const sources = {
+    "src/pages/index.astro": page,
+    "src/layouts/Layout.astro": layout,
+    "src/pages/use-cases.astro": useCases,
+    "src/pages/investors.astro": investors,
+  };
   const pitches = /consensus|election|financial|payout|custody|exactly-once/i;
   const qualifier = /crash-fault\s+tolerant\s*\(CFT\)[^.]*not\s+Byzantine/is;
 
