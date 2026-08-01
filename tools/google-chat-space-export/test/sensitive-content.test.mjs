@@ -17,6 +17,19 @@ const secretFixtures = [
   ['google_chat_bridge_token', `CHAT_BRIDGE_TOKEN=${'abcdefghijklmnop' + 'qrstuvwxyz0123456789'}`],
   ['slack_token', `${'xoxb' + '-'}123456789012-abcdefghijklmnopqrstuvwxyz`],
   ['google_api_key', `${'AIza' + 'SyA'}12345678901234567890123456789012`],
+  ['sendgrid_api_key', `${'S' + 'G.'}abcdefghijklmnopqrstuv.abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG`],
+  ['supabase_key', `${'sb_' + 'publishable_'}abcdefghijklmnopqrstuvwxyz012345`],
+  ['openai_api_key', `${'sk-' + 'proj-'}abcdefghijklmnopqrstuvwxyz012345`],
+  ['anthropic_api_key', `${'sk-' + 'ant-'}abcdefghijklmnopqrstuvwxyz012345`],
+  ['stripe_secret_key', `${'sk_' + 'live_'}abcdefghijklmnopqrstuvwxyz`],
+  ['huggingface_token', `${'hf_' + 'abcdefghijklmnopqrstuvwx'}`],
+  ['npm_token', `${'npm_' + 'abcdefghijklmnopqrstuvwx'}`],
+  ['pypi_token', `${'pypi-' + 'abcdefghijklmnopqrstuvwx'}`],
+  ['gitlab_token', `${'glpat-' + 'abcdefghijklmnopqrstuvwx'}`],
+  ['digitalocean_token', `${'dop_' + 'v1_'}0123456789abcdef0123456789abcdef`],
+  ['twilio_api_key', `${'S' + 'K'}0123456789abcdef0123456789abcdef`],
+  ['jwt', `${'eyJ' + 'abcdefghijk'}.${'abcdefghijklmnop'}.${'qrstuvwxyz012345'}`],
+  ['url_password', `postgresql://test:${'secret-' + 'password-0123456789'}@db.example.invalid/app`],
   ['bearer_token', `Authorization: Bearer ${'abcdefghijklmnop' + 'qrstuvwxyz0123456789'}`],
   ['assigned_secret', `CLIENT_SECRET=${'abcdefghijklmnop' + 'qrstuvwxyz0123456789'}`],
   [
@@ -43,6 +56,8 @@ test('does not flag architectural discussion without assigned values', () => {
 test('classifies high-confidence contact-only messages without treating ordinary numbers as contacts', () => {
   assert.equal(isHighConfidenceContactOnly('+1 202 555 0147 test contact'), true);
   assert.equal(isHighConfidenceContactOnly('test contact 2025550147'), true);
+  assert.equal(isHighConfidenceContactOnly('WhatsApp agregame +1 202 555 0147'), true);
+  assert.equal(isHighConfidenceContactOnly('202 555 0147wpp'), true);
   assert.equal(isHighConfidenceContactOnly('100 variables, 150 constraints, objective 47824'), false);
   assert.equal(isHighConfidenceContactOnly('100.1.1.250'), false);
 });
