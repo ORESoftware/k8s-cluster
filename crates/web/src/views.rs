@@ -81,10 +81,10 @@ pub fn dashboard(stats: &DashboardStats) -> Markup {
             }
             div hx-ext="ws" ws-connect="/ws/stats" {
                 section .cards {
-                    (metric_card("stat-transcriptions", stats.transcriptions, "transcriptions"))
-                    (metric_card("stat-translations", stats.translations, "translations"))
-                    (metric_card("stat-syntheses", stats.syntheses, "syntheses"))
-                    (metric_card("stat-vapi", stats.vapi_calls, "vapi calls"))
+                    (metric_card("stat-transcriptions", stats.transcriptions, "transcriptions", false))
+                    (metric_card("stat-translations", stats.translations, "translations", false))
+                    (metric_card("stat-syntheses", stats.syntheses, "syntheses", false))
+                    (metric_card("stat-vapi", stats.vapi_calls, "vapi calls", false))
                 }
                 p .ticker id="live-ticker" { "live · streaming over websocket" }
             }
