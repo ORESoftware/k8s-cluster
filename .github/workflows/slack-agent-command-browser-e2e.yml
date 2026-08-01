@@ -100,19 +100,32 @@ jobs:
           cache: pnpm
           cache-dependency-path: remote/tests/pnpm-lock.yaml
 
+      - name: Initialize evidence directories
+        run: |
+          mkdir -p \
+            "$RUNNER_TEMP/slack-command-e2e-results" \
+            "$RUNNER_TEMP/slack-command-e2e-logs"
+
       - name: Install browser-test dependencies
         working-directory: remote/tests
         run: pnpm install --frozen-lockfile
 
       - name: Run Google Chat bridge and import-planner regressions
+        shell: bash
         run: |
+          set -euo pipefail
           node --check tools/google-chat-space-export/import-plan.mjs
           node --test \
             tools/google-chat-space-export/test/app.test.mjs \
-            tools/google-chat-space-export/test/import-plan.test.mjs
+            tools/google-chat-space-export/test/import-plan.test.mjs \
+            | tee "$RUNNER_TEMP/slack-command-e2e-results/google-chat-tests.tap"
 
       - name: Run AI bridge Kubernetes contract
-        run: node --test remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs \
+            | tee "$RUNNER_TEMP/slack-command-e2e-results/bridge-k8s-contract.tap"
 
       - name: Install Chromium runtime
         working-directory: remote/tests
@@ -123,7 +136,6 @@ jobs:
           BRIDGE_REF: ${{ github.event_name == 'push' && 'main' || (inputs.bridge_ref || 'agent/den-1041-ores-slash-commands') }}
           COORDINATOR_REF: ${{ github.event_name == 'push' && 'main' || (inputs.coordinator_ref || 'agent/den-1231-slack-run-envelope') }}
         run: |
-          mkdir -p "$RUNNER_TEMP/slack-command-e2e-results"
           jq -n \
             --arg harness "$GITHUB_SHA" \
             --arg bridge_ref "$BRIDGE_REF" \
@@ -154,5 +166,5 @@ jobs:
           path: |
             ${{ runner.temp }}/slack-command-e2e-results
             ${{ runner.temp }}/slack-command-e2e-logs
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
