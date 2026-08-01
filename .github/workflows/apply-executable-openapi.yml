@@ -46,7 +46,7 @@ jobs:
           toolchain: '1.88.0'
           components: rustfmt, clippy
 
-      - name: Remove duplicate dashboard annotation from the bounded transform
+      - name: Normalize the bounded transformation idempotently
         shell: bash
         run: |
           set -euo pipefail
@@ -57,12 +57,16 @@ jobs:
           source = path.read_text()
           start_marker = '# Add the missing dashboard annotation after status helpers are in place.\n'
           end_marker = 'web_path.write_text(web)\n'
-          start = source.index(start_marker)
-          end = source.index(end_marker, start)
-          middle = source[start:end]
-          if middle.count('operation_id = "getTorDashboard"') != 1:
-              raise SystemExit('expected exactly one duplicate dashboard annotation block')
-          path.write_text(source[:start] + source[end:])
+          if start_marker in source:
+              start = source.index(start_marker)
+              end = source.index(end_marker, start)
+              middle = source[start:end]
+              if middle.count('operation_id = "getTorDashboard"') != 1:
+                  raise SystemExit('duplicate dashboard block changed unexpectedly')
+              source = source[:start] + source[end:]
+              path.write_text(source)
+          elif source.count('operation_id = "getTorDashboard"') != 1:
+              raise SystemExit('expected exactly one dashboard annotation in normalized transform')
           PY
           python3 -m py_compile scripts/apply-executable-openapi.py
 
