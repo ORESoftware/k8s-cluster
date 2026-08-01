@@ -145,22 +145,15 @@ async fn publish_revision_retry_stale_conflict_and_replenishment_are_atomic() {
         Err(SignalStoreError::IdempotencyConflict)
     ));
 
-    let revision_eight = publish_prekeys(
-        &db,
-        request(account_id, device_id, 8, 8, &[(101, 7)]),
-    )
-    .await
-    .expect("advance revision and replenish one fresh key");
+    let revision_eight = publish_prekeys(&db, request(account_id, device_id, 8, 8, &[(101, 7)]))
+        .await
+        .expect("advance revision and replenish one fresh key");
     assert_eq!(revision_eight.bundle_revision, 8);
     assert_eq!(revision_eight.device_revision, 2);
     assert_eq!(revision_eight.unclaimed_prekey_count, 2);
 
     assert!(matches!(
-        publish_prekeys(
-            &db,
-            request(account_id, device_id, 9, 9, &[(100, 6)]),
-        )
-        .await,
+        publish_prekeys(&db, request(account_id, device_id, 9, 9, &[(100, 6)]),).await,
         Err(SignalStoreError::IdempotencyConflict)
     ));
 
