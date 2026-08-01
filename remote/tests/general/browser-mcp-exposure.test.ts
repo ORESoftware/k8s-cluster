@@ -106,6 +106,22 @@ function envValue(manifest: string, name: string): string | null {
   return m[1].trim().replace(/^['"]|['"]$/g, '');
 }
 
+// Isolate one Application document from a multi-app cluster profile. These
+// files carry a dozen apps each, so a whole-file regex can be satisfied by a
+// neighbouring app and prove nothing about this one.
+function argoApplication(source: string, name: string, file: string): string {
+  const documents = source.split(/^---$/m);
+  const matches = documents.filter((document) =>
+    new RegExp(`^\\s*name:\\s*${name}\\s*$`, 'm').test(document),
+  );
+  assert.equal(
+    matches.length,
+    1,
+    `${file} must declare exactly one ${name} Application, found ${matches.length}.`,
+  );
+  return matches[0];
+}
+
 function nginxLocation(source: string, declaration: string): string {
   const marker = `      location ${declaration} {`;
   const start = source.indexOf(marker);
