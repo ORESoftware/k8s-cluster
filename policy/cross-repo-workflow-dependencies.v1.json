@@ -70,6 +70,12 @@
       "owning_issue": "DEN-1321",
       "expires_on": "2026-08-15",
       "reason": "Existing browser refactor carrier pending canonical-main migration."
+    },
+    {
+      "workflow": ".github/workflows/slack-agent-command-browser-e2e.yml",
+      "owning_issue": "DEN-1041",
+      "expires_on": "2026-08-05",
+      "reason": "PR #495 replaces the merged bridge and coordinator feature-ref defaults with canonical main; remove this exception immediately after that PR lands."
     }
   ]
 }
