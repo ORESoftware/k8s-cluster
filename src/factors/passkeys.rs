@@ -29,13 +29,11 @@ impl FactorService {
         let state = serde_json::to_value(&registration).map_err(|_| AuthError::Internal)?;
         let expires_at = Utc::now().fixed_offset() + TimeDelta::minutes(PASSKEY_TTL_MINUTES);
         let challenge_id = self
-            .insert_challenge(
+            .insert_passkey_challenge(
                 user_id,
                 session_id,
                 "passkey_register",
-                None,
                 state,
-                1,
                 expires_at,
             )
             .await?;
@@ -121,15 +119,7 @@ impl FactorService {
         let state = serde_json::to_value(authentication).map_err(|_| AuthError::Internal)?;
         let expires_at = Utc::now().fixed_offset() + TimeDelta::minutes(PASSKEY_TTL_MINUTES);
         let challenge_id = self
-            .insert_challenge(
-                user_id,
-                session_id,
-                "passkey_auth",
-                None,
-                state,
-                1,
-                expires_at,
-            )
+            .insert_passkey_challenge(user_id, session_id, "passkey_auth", state, expires_at)
             .await?;
         Ok(CeremonyStart {
             challenge_id: challenge_id.to_string(),
@@ -226,14 +216,12 @@ impl FactorService {
             .collect()
     }
 
-    async fn insert_challenge(
+    async fn insert_passkey_challenge(
         &self,
         user_id: Uuid,
         session_id: Uuid,
-        kind: &str,
-        code_tag: Option<Vec<u8>>,
+        kind: &'static str,
         state: Value,
-        max_attempts: i32,
         expires_at: DateTime<FixedOffset>,
     ) -> Result<Uuid, AuthError> {
         let challenge_id = Uuid::new_v4();
@@ -283,16 +271,14 @@ impl FactorService {
         transaction
             .execute_raw(statement(
                 "INSERT INTO shared_auth.auth_challenges \
-                    (challenge_id, shared_user_id, session_id, kind, code_tag, state, max_attempts, expires_at) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                    (challenge_id, shared_user_id, session_id, kind, state, max_attempts, expires_at) \
+                 VALUES ($1, $2, $3, $4, $5, 1, $6)",
                 vec![
                     challenge_id.into(),
                     user_id.into(),
                     session_id.into(),
                     kind.to_owned().into(),
-                    code_tag.into(),
                     state.into(),
-                    max_attempts.into(),
                     expires_at.into(),
                 ],
             ))
