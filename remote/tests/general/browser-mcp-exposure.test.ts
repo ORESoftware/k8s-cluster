@@ -106,6 +106,22 @@ function envValue(manifest: string, name: string): string | null {
   return m[1].trim().replace(/^['"]|['"]$/g, '');
 }
 
+// Isolate one Application document from a multi-app cluster profile. These
+// files carry a dozen apps each, so a whole-file regex can be satisfied by a
+// neighbouring app and prove nothing about this one.
+function argoApplication(source: string, name: string, file: string): string {
+  const documents = source.split(/^---$/m);
+  const matches = documents.filter((document) =>
+    new RegExp(`^\\s*name:\\s*${name}\\s*$`, 'm').test(document),
+  );
+  assert.equal(
+    matches.length,
+    1,
+    `${file} must declare exactly one ${name} Application, found ${matches.length}.`,
+  );
+  return matches[0];
+}
+
 function nginxLocation(source: string, declaration: string): string {
   const marker = `      location ${declaration} {`;
   const start = source.indexOf(marker);
@@ -270,11 +286,32 @@ test('browser-mcp is registered in both cluster profiles', () => {
     [AWS_APPS, aws],
     [HETZNER_APPS, hetzner],
   ] as const) {
-    assert.match(source, /name:\s*dd-browser-mcp-rs/);
+    const application = argoApplication(source, 'dd-browser-mcp-rs', name);
+
     assert.match(
-      source,
+      application,
       /path:\s*remote\/deployments\/browser-mcp-rs\/k8s\/ec2/,
       `${name} must reconcile the browser MCP deployment.`,
+    );
+
+    // The OAuth posture asserted above only reaches a cluster if ArgoCD is
+    // actually tracking the branch that carries it, and only stays there if
+    // drift is corrected automatically. A hand-edited or pinned Application
+    // would silently strand the deployment on an older, weaker revision.
+    assert.match(
+      application,
+      /targetRevision:\s*dev\s*$/m,
+      `${name} browser MCP must track dev.`,
+    );
+    assert.doesNotMatch(
+      application,
+      /targetRevision:\s*(?:main|master|HEAD)\s*$/m,
+      `${name} browser MCP must not track a non-GitOps revision.`,
+    );
+    assert.match(
+      application,
+      /syncPolicy:\s*\n\s*automated:\s*\n\s*prune:\s*true\s*\n\s*selfHeal:\s*true/,
+      `${name} browser MCP must self-heal and prune automatically.`,
     );
   }
 });
