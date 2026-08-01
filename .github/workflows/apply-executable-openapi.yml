@@ -1,11 +1,19 @@
-name: Apply executable dashboard OpenAPI
+name: Apply executable Tor dashboard OpenAPI
 
 on:
+  push:
+    branches:
+      - agent/executable-openapi-dashboard
+    paths:
+      - '.github/workflows/apply-executable-openapi.yml'
+      - 'scripts/apply-executable-openapi.py'
+      - 'scripts/apply_executable_openapi.py'
   pull_request:
     branches:
       - main
     paths:
       - '.github/workflows/apply-executable-openapi.yml'
+      - 'scripts/apply-executable-openapi.py'
       - 'scripts/apply_executable_openapi.py'
   workflow_dispatch:
 
@@ -13,11 +21,11 @@ permissions:
   contents: write
 
 concurrency:
-  group: apply-tor-openapi-contract
+  group: apply-tor-executable-openapi
   cancel-in-progress: false
 
 jobs:
-  apply:
+  materialize:
     if: >-
       github.repository == 'ORESoftware/tor-server.rs' &&
       (github.event_name != 'pull_request' || github.head_ref == 'agent/executable-openapi-dashboard')
@@ -38,69 +46,117 @@ jobs:
           toolchain: '1.88.0'
           components: rustfmt, clippy
 
-      - name: Apply the bounded source transformation
+      - name: Remove duplicate dashboard annotation from the bounded transform
+        shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/apply_executable_openapi.py
-          python3 scripts/apply_executable_openapi.py
-          cargo fmt --all
+          python3 - <<'PY'
+          from pathlib import Path
 
-      - name: Resolve and validate the executable contract
+          path = Path('scripts/apply-executable-openapi.py')
+          source = path.read_text()
+          start_marker = '# Add the missing dashboard annotation after status helpers are in place.\n'
+          end_marker = 'web_path.write_text(web)\n'
+          start = source.index(start_marker)
+          end = source.index(end_marker, start)
+          middle = source[start:end]
+          if middle.count('operation_id = "getTorDashboard"') != 1:
+              raise SystemExit('expected exactly one duplicate dashboard annotation block')
+          path.write_text(source[:start] + source[end:])
+          PY
+          python3 -m py_compile scripts/apply-executable-openapi.py
+
+      - name: Apply code-first route and contract transformation
+        run: python3 scripts/apply-executable-openapi.py
+
+      - name: Resolve and validate the complete Rust application
         run: |
           set -euo pipefail
-          cargo check
-          cargo test --all-targets
-          cargo clippy --all-targets -- -D warnings
+          cargo update
+          cargo fmt --all
           cargo fmt --all -- --check
           cargo check --locked
+          cargo clippy --locked --all-targets -- -D warnings
           cargo test --locked --all-targets
 
-      - name: Generate the deterministic contract
+      - name: Generate deterministic public and internal contracts
         run: |
           set -euo pipefail
           mkdir -p generated
-          cargo run --locked --quiet -- --export-openapi > generated/openapi.json
-          cargo run --locked --quiet -- --export-openapi > /tmp/openapi.2.json
-          cmp generated/openapi.json /tmp/openapi.2.json
-          python3 -m json.tool generated/openapi.json >/dev/null
+          cargo run --locked --quiet -- --export-openapi=internal > generated/openapi.internal.json
+          cargo run --locked --quiet -- --export-openapi=public > generated/openapi.public.json
+          cargo run --locked --quiet -- --export-openapi=internal > /tmp/openapi.internal.2.json
+          cargo run --locked --quiet -- --export-openapi=public > /tmp/openapi.public.2.json
+          cmp generated/openapi.internal.json /tmp/openapi.internal.2.json
+          cmp generated/openapi.public.json /tmp/openapi.public.2.json
+          python3 -m json.tool generated/openapi.internal.json >/dev/null
+          python3 -m json.tool generated/openapi.public.json >/dev/null
 
-      - name: Assert exact HTTP and WebSocket contract
+      - name: Verify fail-closed visibility and operation contracts
         run: |
           python3 - <<'PY'
           import json
           from pathlib import Path
 
-          document = json.loads(Path('generated/openapi.json').read_text())
-          expected = {
-              '/', '/api/status', '/api/fetch', '/ws/stats', '/vendor/{file}',
-              '/docs', '/docs/{name}', '/proxy.pac', '/healthz',
+          public = json.loads(Path('generated/openapi.public.json').read_text())
+          internal = json.loads(Path('generated/openapi.internal.json').read_text())
+          expected_public = {
+              '/healthz', '/vendor/{file}', '/docs', '/docs/{name}', '/proxy.pac',
               '/openapi.json', '/api/docs.json', '/api/docs', '/docs/api',
           }
-          assert set(document['paths']) == expected
-          assert 'bearer_auth' in document['components']['securitySchemes']
-          assert document['paths']['/api/fetch']['get']['security'] == [{'bearer_auth': []}]
-          assert '101' in document['paths']['/ws/stats']['get']['responses']
-          operation_ids = [
-              operation['operationId']
-              for item in document['paths'].values()
-              for method, operation in item.items()
-              if method.lower() in {'get', 'post', 'put', 'patch', 'delete'}
-          ]
+          sensitive = {
+              '/', '/api/status', '/api/fetch', '/ws/stats',
+              '/internal/openapi.json', '/internal/docs/api',
+          }
+          assert set(public['paths']) == expected_public
+          assert set(internal['paths']) == expected_public | sensitive
+          assert public['x-dd-contract-scope'] == 'public'
+          assert internal['x-dd-contract-scope'] == 'internal'
+          assert 'securitySchemes' not in public.get('components', {})
+          assert 'ui_token' in internal['components']['securitySchemes']
+          operation_ids = []
+          for path, item in internal['paths'].items():
+              for method, operation in item.items():
+                  if method.lower() not in {'get', 'post', 'put', 'patch', 'delete'}:
+                      continue
+                  operation_ids.append(operation['operationId'])
+                  if path in sensitive:
+                      assert operation.get('security') == [{'ui_token': []}], (method, path)
           assert len(operation_ids) == len(set(operation_ids))
           PY
-          git diff --check
-          ! grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' src generated Cargo.toml
 
-      - name: Remove one-shot transport and commit the product change
+      - name: Verify bounded product scope and repository hygiene
+        run: |
+          set -euo pipefail
+          git diff --check
+          if git grep -nE '^(<<<<<<< |=======|>>>>>>> )' -- Cargo.toml generated src; then
+            echo 'git conflict marker detected' >&2
+            exit 1
+          fi
+          mapfile -t changed < <(git status --short | sed -E 's/^.. //' | sort)
+          test "${#changed[@]}" -gt 0
+          for path in "${changed[@]}"; do
+            case "$path" in
+              Cargo.lock|Cargo.toml|generated/openapi.internal.json|generated/openapi.public.json|scripts/apply-executable-openapi.py|src/main.rs|src/web.rs)
+                ;;
+              *)
+                echo "unexpected transformation path: $path" >&2
+                exit 1
+                ;;
+            esac
+          done
+
+      - name: Remove one-shot transport and commit product tree
         run: |
           set -euo pipefail
           rm -f \
             .github/workflows/apply-executable-openapi.yml \
+            scripts/apply-executable-openapi.py \
             scripts/apply_executable_openapi.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git diff --cached --check
           test -z "$(git diff --cached --name-only | grep -E 'apply-executable-openapi|apply_executable_openapi' || true)"
-          git commit -m 'feat(DEN-465): add executable dashboard OpenAPI routes'
+          git commit -m 'feat(DEN-465): add executable Tor dashboard OpenAPI routes'
           git push origin HEAD:agent/executable-openapi-dashboard
