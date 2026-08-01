@@ -286,11 +286,32 @@ test('browser-mcp is registered in both cluster profiles', () => {
     [AWS_APPS, aws],
     [HETZNER_APPS, hetzner],
   ] as const) {
-    assert.match(source, /name:\s*dd-browser-mcp-rs/);
+    const application = argoApplication(source, 'dd-browser-mcp-rs', name);
+
     assert.match(
-      source,
+      application,
       /path:\s*remote\/deployments\/browser-mcp-rs\/k8s\/ec2/,
       `${name} must reconcile the browser MCP deployment.`,
+    );
+
+    // The OAuth posture asserted above only reaches a cluster if ArgoCD is
+    // actually tracking the branch that carries it, and only stays there if
+    // drift is corrected automatically. A hand-edited or pinned Application
+    // would silently strand the deployment on an older, weaker revision.
+    assert.match(
+      application,
+      /targetRevision:\s*dev\s*$/m,
+      `${name} browser MCP must track dev.`,
+    );
+    assert.doesNotMatch(
+      application,
+      /targetRevision:\s*(?:main|master|HEAD)\s*$/m,
+      `${name} browser MCP must not track a non-GitOps revision.`,
+    );
+    assert.match(
+      application,
+      /syncPolicy:\s*\n\s*automated:\s*\n\s*prune:\s*true\s*\n\s*selfHeal:\s*true/,
+      `${name} browser MCP must self-heal and prune automatically.`,
     );
   }
 });
