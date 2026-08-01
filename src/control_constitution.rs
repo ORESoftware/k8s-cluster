@@ -145,7 +145,8 @@ pub fn evaluate(registry: &ActionRegistry, proposal: &ActionProposal) -> Decisio
         .iter()
         .map(String::as_str)
         .collect();
-    let supplied_approvals: BTreeSet<&str> = proposal.approvals.iter().map(String::as_str).collect();
+    let supplied_approvals: BTreeSet<&str> =
+        proposal.approvals.iter().map(String::as_str).collect();
 
     let mut satisfied_constraints = Vec::new();
     let mut denial_reasons = Vec::new();
