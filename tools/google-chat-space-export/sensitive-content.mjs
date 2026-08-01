@@ -32,6 +32,60 @@ const SECRET_PATTERNS = [
     pattern: /\bAIza[0-9A-Za-z_-]{30,}\b/g,
   },
   {
+    kind: 'sendgrid_api_key',
+    pattern: /\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{32,}\b/g,
+  },
+  {
+    kind: 'supabase_key',
+    pattern: /\bsb_(?:publishable|secret)_[A-Za-z0-9_-]{20,}\b/g,
+  },
+  {
+    kind: 'openai_api_key',
+    pattern: /\bsk-(?!ant-)(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}\b/g,
+  },
+  {
+    kind: 'anthropic_api_key',
+    pattern: /\bsk-ant-[A-Za-z0-9_-]{20,}\b/g,
+  },
+  {
+    kind: 'stripe_secret_key',
+    pattern: /\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b/g,
+  },
+  {
+    kind: 'huggingface_token',
+    pattern: /\bhf_[A-Za-z0-9]{20,}\b/g,
+  },
+  {
+    kind: 'npm_token',
+    pattern: /\bnpm_[A-Za-z0-9]{20,}\b/g,
+  },
+  {
+    kind: 'pypi_token',
+    pattern: /\bpypi-[A-Za-z0-9_-]{20,}\b/g,
+  },
+  {
+    kind: 'gitlab_token',
+    pattern: /\bglpat-[A-Za-z0-9_-]{20,}\b/g,
+  },
+  {
+    kind: 'digitalocean_token',
+    pattern: /\bdop_v1_[A-Fa-f0-9]{32,}\b/g,
+  },
+  {
+    kind: 'twilio_api_key',
+    pattern: /\bSK[A-Fa-f0-9]{32}\b/g,
+  },
+  {
+    kind: 'jwt',
+    pattern: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,
+  },
+  {
+    kind: 'url_password',
+    pattern:
+      /\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqp):\/\/[^:\s/@]+:([^@\s/]+)@/gi,
+    capture: 1,
+  },
+  {
     kind: 'bearer_token',
     pattern: /\bAuthorization\s*:\s*Bearer\s+([A-Za-z0-9._~+/=-]{20,})/gi,
     capture: 1,
@@ -51,6 +105,9 @@ const SECRET_PATTERNS = [
 
 const CONTACT_ONLY_PATTERN = /^\s*(?:\+?\d[\d\s().-]{6,}\d)(?:\s+[\p{L}\p{M}][\p{L}\p{M}\s_.-]{0,80})?\s*$/u;
 const NAMED_CONTACT_PATTERN = /^\s*[\p{L}\p{M}][\p{L}\p{M}\s_.-]{0,80}\s+(?:\+?\d[\d\s().-]{6,}\d)\s*$/u;
+const PHONE_LIKE_PATTERN = /\+?\d[\d\s().-]{6,}\d/u;
+const CONTACT_CONTEXT_PATTERN =
+  /(?:whats?app|wpp|agr[eé]game|agregame|add me|phone|tel[eé]fono|telephone|contact(?:o|ame)?|mi n[uú]mero)/iu;
 
 function fingerprint(value) {
   return createHash('sha256').update(value).digest('hex').slice(0, 16);
@@ -118,7 +175,8 @@ export function isHighConfidenceContactOnly(value) {
   const text = String(value ?? '').trim();
   if (!text || text.length > 140 || /https?:\/\//i.test(text)) return false;
   if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(text)) return false;
-  return CONTACT_ONLY_PATTERN.test(text) || NAMED_CONTACT_PATTERN.test(text);
+  if (CONTACT_ONLY_PATTERN.test(text) || NAMED_CONTACT_PATTERN.test(text)) return true;
+  return PHONE_LIKE_PATTERN.test(text) && CONTACT_CONTEXT_PATTERN.test(text);
 }
 
 export function classifySensitiveMessage(message) {
