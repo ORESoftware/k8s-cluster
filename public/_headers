@@ -6,9 +6,14 @@
 # headers below are actually served. To enforce them, move hosting to a host
 # that reads `_headers` (Netlify / Cloudflare Pages) or put the equivalent
 # response headers in front of the origin (Cloudflare rules, CDN, nginx).
-# A `<meta http-equiv>` CSP can approximate script/style/frame-src in the
-# markup, but X-Frame-Options / frame-ancestors / HSTS require a real response
-# header and cannot be set from static HTML on GitHub Pages.
+# `src/layouts/Base.astro` therefore also emits, in production builds only:
+#   * <meta http-equiv="Content-Security-Policy"> — the subset of the policy
+#     below that is valid in markup, so script/style/img/font/connect/form-action
+#     /base-uri/object-src ARE enforced on GitHub Pages today; and
+#   * <meta name="referrer" content="strict-origin-when-cross-origin">.
+# `frame-ancestors`, X-Frame-Options, HSTS, Permissions-Policy, COOP, and
+# X-Content-Type-Options are invalid or ignored in <meta> and still require a
+# real response header in front of the origin. Keep the two policies in sync.
 #
 # The site ships no client JavaScript and no forms, so the policy below is
 # intentionally tight and the practical XSS/clickjacking surface is small.

@@ -1,6 +1,8 @@
 ---
 // Brand logo: inline-SVG mark + "Sonus Auris / audio dashcam" wordmark, linking
 // home. `size` scales the mark; `light` switches text colors for dark backgrounds.
+import { uniqueId } from "../lib/unique-id";
+
 interface Props {
   size?: number;
   light?: boolean;
@@ -9,6 +11,11 @@ const { size = 34, light = false } = Astro.props;
 const word = light ? "#fffdf8" : "#0c2a22";
 const sub = light ? "rgba(255,253,248,0.75)" : "#355a4f";
 const homeHref = `${import.meta.env.BASE_URL.replace(/\/+$/, "")}/`;
+
+// The logo renders more than once per page (nav + footer), so the gradient
+// needs a per-instance id: duplicate DOM ids are invalid HTML and the second
+// `url(#…)` reference resolves to whichever element came first.
+const gradientId = uniqueId("logo-g");
 ---
 
 <a href={homeHref} class="logo" aria-label="Sonus Auris home">
@@ -20,12 +27,12 @@ const homeHref = `${import.meta.env.BASE_URL.replace(/\/+$/, "")}/`;
     aria-hidden="true"
   >
     <defs>
-      <linearGradient id="logo-g" x1="0" y1="0" x2="1" y2="1">
+      <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
         <stop offset="0" stop-color="#34c585"></stop>
         <stop offset="1" stop-color="#136f4f"></stop>
       </linearGradient>
     </defs>
-    <rect width="64" height="64" rx="16" fill="url(#logo-g)"></rect>
+    <rect width="64" height="64" rx="16" fill={`url(#${gradientId})`}></rect>
     <path
       d="M24 44c-5 0-9-4-9-12 0-9 7-16 16-16s16 6 16 15c0 7-5 10-9 10-3 0-4-2-4-4s2-3 2-6c0-3-2-5-5-5s-5 2-5 6c0 6 1 8 1 12z"
       fill="none"

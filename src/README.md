@@ -17,6 +17,10 @@ JavaScript** (the only animation is inline SVG/CSS).
   readable article column used by the legal pages.
 - `components/` — the homepage sections (Hero, Features, Privacy, …) plus small
   reusable pieces (Logo, StoreButtons, Nav, Footer, Partners).
+- `lib/` — tiny build-time helpers shared by components. `external-url.ts`
+  validates deployment-supplied URLs (store listings, download hosts) as
+  absolute https before they can reach an `href`; `unique-id.ts` hands out
+  per-render DOM ids for components that appear more than once on a page.
 - `styles/global.css` — brand design tokens (colors, radius, shadows), base
   element styles, shared utility classes (`.container`, `.btn`, `.card`,
   `.eyebrow`, `.section`), and the self-hosted `@font-face`.

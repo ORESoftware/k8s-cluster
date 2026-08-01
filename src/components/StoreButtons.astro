@@ -2,18 +2,23 @@
 // Reusable App Store + Google Play badge row. The final download section may
 // also render desktop installers. Every URL is build-time configuration so the
 // static site never guesses a store listing or serves an unverified artifact.
+// Every configured store/download URL is validated as an absolute https URL
+// before rendering; a non-https or unparseable value falls back to the
+// "coming soon" badge instead of emitting an unusable or active href.
+import { httpsBaseUrl, httpsUrl } from "../lib/external-url";
+
 interface Props {
   align?: "start" | "center";
   desktop?: boolean;
 }
 
 const { align = "start", desktop = false } = Astro.props;
-const APPLE_URL = import.meta.env.PUBLIC_APP_STORE_URL?.trim();
-const GOOGLE_URL = import.meta.env.PUBLIC_PLAY_STORE_URL?.trim();
-const DOWNLOAD_BASE_URL = import.meta.env.PUBLIC_DOWNLOAD_BASE_URL?.trim().replace(/\/+$/, "");
+const APPLE_URL = httpsUrl(import.meta.env.PUBLIC_APP_STORE_URL);
+const GOOGLE_URL = httpsUrl(import.meta.env.PUBLIC_PLAY_STORE_URL);
+const DOWNLOAD_BASE_URL = httpsBaseUrl(import.meta.env.PUBLIC_DOWNLOAD_BASE_URL);
 
 const desktopUrl = (explicitValue: string | undefined, relativePath: string) => {
-  const explicit = explicitValue?.trim();
+  const explicit = httpsUrl(explicitValue);
   if (explicit) return explicit;
   return DOWNLOAD_BASE_URL ? `${DOWNLOAD_BASE_URL}/${relativePath}` : undefined;
 };
