@@ -71,21 +71,23 @@ command despite the runbook saying "prefer the CLI"). Injection today is ad-hoc.
   (`auth.rs:322-340`), so the public gateway hop cannot forge cluster-internal trust.
 - ESO is deliberately handed a **read-only** `kv:read` key; writers use a separate `kv:write` key.
 
-## Next-steps backlog (ready to file as Linear issues)
+## Next-steps backlog (filed in Linear)
 
-Suggested epic: **"fiducia-cloud secret delivery — hardening phase 2"**. Priorities relative to a
-secrets-manager posture; "Area" indicates which repo owns the change.
+Filed under Linear epic **[DEN-1236](https://linear.app/denman/issue/DEN-1236)** — "fiducia-cloud
+secret delivery — hardening phase 2 (k8s ↔ KV)" (team Denman, label *Security hardening*, related to
+DEN-1164). Priorities relative to a secrets-manager posture; "Area" indicates which repo owns the
+change.
 
-| ID | Title | Priority | Area | Depends on |
-| --- | --- | --- | --- | --- |
-| FID-SEC-1 | TLS on the in-cluster KV path | High | k8s-cluster + fiducia-infra | — |
-| FID-SEC-2 | KV access audit logging → Loki | High | fiducia-monorepo (node + LB) | — |
-| FID-SEC-3 | Raft durability: `emptyDir` → PVC | High | k8s-cluster + fiducia-infra | — |
-| FID-SEC-4 | Prefix/path ACLs on KV keys | Medium | fiducia-monorepo (auth + node) | — |
-| FID-SEC-5 | Gate/forbid `plaintext:true` writes | Medium | fiducia-monorepo (node) | — |
-| FID-SEC-6 | Managed injection Job (AWS SM → KV) | Medium | k8s-cluster | FID-SEC-1, FID-SEC-2 |
-| FID-SEC-7 | Immutable images, deploy by digest | Medium | fiducia-monorepo CI + k8s-cluster | — |
-| FID-SEC-8 | Fix doc/manifest drift | Low | k8s-cluster + docs | — |
+| Linear | ID | Title | Priority | Area | Depends on |
+| --- | --- | --- | --- | --- | --- |
+| DEN-1240 | FID-SEC-1 | TLS on the in-cluster KV path | High | k8s-cluster + fiducia-infra | — |
+| DEN-1241 | FID-SEC-2 | KV access audit logging → Loki | High | fiducia-monorepo (node + LB) | — |
+| DEN-1242 | FID-SEC-3 | Raft durability: `emptyDir` → PVC | High | k8s-cluster + fiducia-infra | — |
+| DEN-1243 | FID-SEC-4 | Prefix/path ACLs on KV keys | Medium | fiducia-monorepo (auth + node) | — |
+| DEN-1244 | FID-SEC-5 | Gate/forbid `plaintext:true` writes | Medium | fiducia-monorepo (node) | — |
+| DEN-1245 | FID-SEC-6 | Managed injection Job (AWS SM → KV) | Medium | k8s-cluster | FID-SEC-1, FID-SEC-4 |
+| DEN-1246 | FID-SEC-7 | Immutable images, deploy by digest | Medium | fiducia-monorepo CI + k8s-cluster | — |
+| DEN-1247 | FID-SEC-8 | Fix doc/manifest drift | Low (**done**) | k8s-cluster + docs | — |
 
 ### FID-SEC-1 — TLS on the in-cluster KV path (High)
 Bearer credentials and unsealed secret values currently cross the pod network in cleartext. The LB
