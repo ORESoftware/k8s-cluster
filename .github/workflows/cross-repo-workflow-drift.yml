@@ -7,6 +7,8 @@ on:
       - 'policy/cross-repo-workflow-dependencies.v1.json'
       - 'scripts/ci/validate_cross_repo_workflow_dependencies.py'
       - 'scripts/ci/test_validate_cross_repo_workflow_dependencies.py'
+      - 'scripts/ci/check_cross_repo_exception_pr_state.py'
+      - 'scripts/ci/test_check_cross_repo_exception_pr_state.py'
       - 'docs/cross-repo-workflow-dependencies.md'
   push:
     branches: [main, dev]
@@ -15,6 +17,8 @@ on:
       - 'policy/cross-repo-workflow-dependencies.v1.json'
       - 'scripts/ci/validate_cross_repo_workflow_dependencies.py'
       - 'scripts/ci/test_validate_cross_repo_workflow_dependencies.py'
+      - 'scripts/ci/check_cross_repo_exception_pr_state.py'
+      - 'scripts/ci/test_check_cross_repo_exception_pr_state.py'
       - 'docs/cross-repo-workflow-dependencies.md'
   schedule:
     - cron: '17 8 * * 1'
@@ -48,14 +52,19 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Compile validator and tests
+      - name: Compile validators and tests
         run: >-
           python -m py_compile
           scripts/ci/validate_cross_repo_workflow_dependencies.py
           scripts/ci/test_validate_cross_repo_workflow_dependencies.py
+          scripts/ci/check_cross_repo_exception_pr_state.py
+          scripts/ci/test_check_cross_repo_exception_pr_state.py
 
       - name: Run positive and negative fixtures
-        run: python -m unittest -v scripts/ci/test_validate_cross_repo_workflow_dependencies.py
+        run: >-
+          python -m unittest -v
+          scripts/ci/test_validate_cross_repo_workflow_dependencies.py
+          scripts/ci/test_check_cross_repo_exception_pr_state.py
 
       - name: Validate the governed dependency slice
         run: >-
@@ -65,9 +74,26 @@ jobs:
           --report-json "$RUNNER_TEMP/cross-repo-workflow-drift.json"
           --report-markdown "$RUNNER_TEMP/cross-repo-workflow-drift.md"
 
+      - name: Require PR-owned exceptions to have open owning PRs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/ci/check_cross_repo_exception_pr_state.py
+          --ledger policy/cross-repo-workflow-dependencies.v1.json
+          2>&1 | tee "$RUNNER_TEMP/cross-repo-exception-pr-state.txt"
+
       - name: Publish report summary
         if: always()
-        run: cat "$RUNNER_TEMP/cross-repo-workflow-drift.md" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          cat "$RUNNER_TEMP/cross-repo-workflow-drift.md" >> "$GITHUB_STEP_SUMMARY"
+          if test -f "$RUNNER_TEMP/cross-repo-exception-pr-state.txt"; then
+            {
+              echo
+              echo '## PR-owned exception state'
+              echo
+              cat "$RUNNER_TEMP/cross-repo-exception-pr-state.txt"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Upload machine-readable and human-readable evidence
         if: always()
@@ -77,5 +103,6 @@ jobs:
           path: |
             ${{ runner.temp }}/cross-repo-workflow-drift.json
             ${{ runner.temp }}/cross-repo-workflow-drift.md
+            ${{ runner.temp }}/cross-repo-exception-pr-state.txt
           retention-days: 14
           if-no-files-found: error
