@@ -220,9 +220,42 @@ mod tests {
         );
         assert!(shared_auth_config(Some("http://auth.example.test".into())).is_none());
         assert!(shared_auth_config(Some("http://127.0.0.1:8120".into())).is_some());
+        assert!(shared_auth_config(Some("http://localhost:8120".into())).is_some());
         assert!(shared_auth_config(Some(
             "http://dd-shared-auth.shared-auth.svc.cluster.local:8120".into()
         ))
         .is_some());
+    }
+
+    /// Both deployment manifests must survive this function. 3fa-infra routes
+    /// through the default-namespace gateway; the EC2 manifest still dials the
+    /// service directly. Rejecting either one disables authentication silently.
+    #[test]
+    fn every_deployed_shared_auth_hop_is_accepted() {
+        for url in [
+            "http://dd-remote-gateway.default.svc.cluster.local/shared-auth",
+            "http://dd-shared-auth.shared-auth.svc.cluster.local:8120",
+        ] {
+            assert!(
+                shared_auth_config(Some(url.into())).is_some(),
+                "deployed hop rejected: {url}"
+            );
+        }
+    }
+
+    #[test]
+    fn plaintext_off_cluster_hosts_are_rejected() {
+        for url in [
+            "http://evil.test",
+            // Suffix lookalikes must not pass as in-cluster hosts.
+            "http://attacker.test/.svc.cluster.local",
+            "http://notsvc.cluster.local:8120",
+            "ftp://dd-shared-auth.shared-auth.svc.cluster.local",
+        ] {
+            assert!(
+                shared_auth_config(Some(url.into())).is_none(),
+                "off-cluster plaintext accepted: {url}"
+            );
+        }
     }
 }
