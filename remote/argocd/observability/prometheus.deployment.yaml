@@ -23,7 +23,7 @@ spec:
         # for `jobs.batch`). Roll this value whenever the mounted Prometheus
         # configuration changes so every scrape and alert contract reaches
         # the running pods.
-        dd.dev/config-revision: "2026-07-30-benefactor-usacc-applications"
+        dd.dev/config-revision: "2026-07-31-ai-agent-bridge-metrics"
       labels:
         app: dd-prometheus
     spec:
