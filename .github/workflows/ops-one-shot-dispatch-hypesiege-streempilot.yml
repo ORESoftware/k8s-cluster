@@ -1,0 +1,34 @@
+name: One-shot dispatch sealed HypeSiege and StreemPilot publisher
+# dispatch-request: 2026-07-31T14:24:00Z
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/ops-one-shot-dispatch-hypesiege-streempilot.yml
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: ops-one-shot-dispatch-hypesiege-streempilot
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch the audited sealed publisher from trusted main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = main
+          gh workflow run ops-publish-sealed-hypesiege-streempilot.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            --ref main
+          echo "Dispatched sealed HypeSiege/StreemPilot publisher from ${GITHUB_SHA}"

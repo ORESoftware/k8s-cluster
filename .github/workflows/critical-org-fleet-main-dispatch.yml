@@ -3,10 +3,9 @@ name: Critical target organization fleet trusted supervisor
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
-    branches:
-      - main
+    branches: [main]
     paths:
-      - '.github/critical-org-publish-trigger-main'
+      - .github/critical-org-publish-trigger-main
 
 permissions:
   actions: write
@@ -15,28 +14,34 @@ permissions:
   statuses: write
 
 concurrency:
-  group: critical-target-org-publish-supervisor-20260731
-  cancel-in-progress: false
+  group: critical-target-org-publish-supervisor-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   supervise:
-    if: github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'agent/critical-org-publish-trigger-main-20260731-v')
-    runs-on: ubuntu-latest
-    timeout-minutes: 50
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'agent/critical-org-publish-trigger-main-20260731-v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 65
     env:
       GH_TOKEN: ${{ github.token }}
       TARGET_SHA: ${{ github.event.pull_request.head.sha }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
+      MARKER_PATH: .github/critical-org-publish-trigger-main
+      PUBLISH_WORKFLOW: ops-publish-missing-org-repositories-v2.yml
+
     steps:
-      - name: Dispatch and supervise the trusted main-ref publisher
+      - name: Validate carrier, dispatch protected publisher v2, and follow exact run
         shell: bash
         run: |
           set -euo pipefail
+          repository="$GITHUB_REPOSITORY"
 
-          report_error() {
-            description="$1"
-            details="${2:-No additional diagnostic was returned.}"
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+          fail() {
+            local description=$1
+            local detail=${2:-No additional diagnostic was returned.}
+            gh api --method POST "repos/${repository}/statuses/${TARGET_SHA}" \
               -f state=error \
               -f context='ops/missing-repository-publication' \
               -f description="$description" >/dev/null || true
@@ -44,109 +49,120 @@ jobs:
             {
               echo '### Trusted repository publisher diagnostic'
               echo
-              echo "- Head: \`${TARGET_SHA}\`"
-              echo "- Base workflow commit: \`${GITHUB_SHA}\`"
+              echo "- Carrier: #${PR_NUMBER} at \`${TARGET_SHA}\`"
+              echo "- Trusted supervisor: \`${GITHUB_SHA}\`"
               echo "- Result: **${description}**"
               echo
               echo '```text'
-              printf '%s\n' "$details" | head -c 3000
+              printf '%s\n' "$detail" | head -c 3000
               echo
               echo '```'
             } > "$body"
-            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body-file "$body" || true
+            gh pr comment "$PR_NUMBER" --repo "$repository" --body-file "$body" || true
             exit 1
           }
 
-          workflow_file='ops-publish-missing-org-repositories-dispatch.yml'
-          runs_endpoint="repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_file}/runs?branch=main&event=workflow_dispatch&per_page=100"
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] || fail 'invalid carrier head SHA'
 
-          if ! before_runs="$(gh api "$runs_endpoint" 2>&1)"; then
-            report_error 'dispatchable publisher workflow is not registered' "$before_runs"
+          mapfile -t changed_files < <(
+            gh api --paginate \
+              "repos/${repository}/pulls/${PR_NUMBER}/files?per_page=100" \
+              --jq '.[].filename'
+          )
+          if (( ${#changed_files[@]} != 1 )) || [[ "${changed_files[0]:-}" != "$MARKER_PATH" ]]; then
+            fail 'carrier changed files outside the fixed marker' "$(printf '%s\n' "${changed_files[@]:-<none>}")"
           fi
-          before_ids="$(jq -r '.workflow_runs[].id' <<<"$before_runs")"
 
+          marker="$(
+            gh api --method GET \
+              "repos/${repository}/contents/${MARKER_PATH}" \
+              -f ref="$TARGET_SHA" \
+              --jq '.content' \
+              | tr -d '\n' \
+              | base64 --decode
+          )"
+          [[ "$marker" == 'publish=protected-host-v2' ]] || \
+            fail 'carrier marker content is not approved' "$marker"
+
+          workflow="$(gh api "repos/${repository}/actions/workflows/${PUBLISH_WORKFLOW}" 2>&1)" || \
+            fail 'protected publisher v2 workflow is not registered' "$workflow"
+          [[ "$(jq -r '.state' <<<"$workflow")" == active ]] || \
+            fail 'protected publisher v2 workflow is not active' "$workflow"
+
+          runs_endpoint="repos/${repository}/actions/workflows/${PUBLISH_WORKFLOW}/runs?branch=main&event=workflow_dispatch&per_page=100"
+          before="$RUNNER_TEMP/before-run-ids.txt"
+          before_runs="$(gh api "$runs_endpoint" 2>&1)" || \
+            fail 'unable to snapshot publisher v2 runs' "$before_runs"
+          jq -r '.workflow_runs[].id' <<<"$before_runs" | sort -n > "$before"
+
+          request_id="carrier-${PR_NUMBER}-${TARGET_SHA}"
           payload="$RUNNER_TEMP/dispatch.json"
           jq -nc \
             --arg ref main \
-            --arg request_id "$TARGET_SHA" \
+            --arg request_id "$request_id" \
             '{ref:$ref,inputs:{request_id:$request_id}}' > "$payload"
-          if ! dispatch_output="$(gh api --method POST \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow_file}/dispatches" \
-            --input "$payload" 2>&1)"; then
-            report_error 'workflow dispatch API rejected the request' "$dispatch_output"
-          fi
+          dispatch="$(gh api --method POST \
+            "repos/${repository}/actions/workflows/${PUBLISH_WORKFLOW}/dispatches" \
+            --input "$payload" 2>&1)" || fail 'workflow dispatch API rejected the request' "$dispatch"
 
           run_id=''
           last_runs=''
-          for _ in $(seq 1 60); do
-            if ! last_runs="$(gh api "$runs_endpoint" 2>&1)"; then
-              report_error 'unable to list dispatched publisher runs' "$last_runs"
-            fi
+          for _ in $(seq 1 90); do
+            last_runs="$(gh api "$runs_endpoint" 2>&1)" || \
+              fail 'unable to list publisher v2 runs after dispatch' "$last_runs"
             while IFS= read -r candidate; do
-              [[ -n "$candidate" ]] || continue
-              if ! grep -qxF "$candidate" <<<"$before_ids"; then
+              [[ "$candidate" =~ ^[0-9]+$ ]] || continue
+              if ! grep -Fxq "$candidate" "$before"; then
                 run_id="$candidate"
                 break
               fi
-            done < <(jq -r '.workflow_runs[].id' <<<"$last_runs")
-            if [[ -n "$run_id" ]]; then
-              break
-            fi
+            done < <(
+              jq -r --arg request_id "$request_id" \
+                '.workflow_runs[] | select(.display_title | contains($request_id)) | .id' \
+                <<<"$last_runs"
+            )
+            [[ "$run_id" =~ ^[0-9]+$ ]] && break
             sleep 2
           done
 
-          if [[ -z "$run_id" ]]; then
-            recent="$(jq -r '.workflow_runs[:10][] | [.id,.event,.head_branch,.display_title,.status,.conclusion] | @tsv' <<<"$last_runs" 2>/dev/null || true)"
-            report_error 'dispatch accepted but no new publisher run appeared' "Workflow: ${workflow_file}\nRecent runs:\n${recent}"
+          if [[ ! "$run_id" =~ ^[0-9]+$ ]]; then
+            recent="$(jq -r '.workflow_runs[:10][] | [.id,.status,.conclusion,.display_title] | @tsv' <<<"$last_runs" 2>/dev/null || true)"
+            fail 'dispatch accepted but no exact publisher v2 run appeared' "Request: ${request_id}\n${recent}"
           fi
 
-          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${run_id}"
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+          run_url="https://github.com/${repository}/actions/runs/${run_id}"
+          gh api --method POST "repos/${repository}/statuses/${TARGET_SHA}" \
             -f state=pending \
             -f context='ops/missing-repository-publication' \
-            -f description="publisher run ${run_id} is executing on trusted main" \
+            -f description="publisher v2 run ${run_id} is executing" \
             -f target_url="$run_url" >/dev/null
-          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --body "Trusted-main publisher dispatched: ${run_url}" >/dev/null || true
+          gh pr comment "$PR_NUMBER" --repo "$repository" \
+            --body "Trusted protected-host publisher v2 dispatched: ${run_url}" >/dev/null || true
 
-          status='queued'
+          status=queued
           conclusion=''
-          attempt='1'
-          for _ in $(seq 1 180); do
-            current="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}")"
+          for _ in $(seq 1 240); do
+            current="$(gh api "repos/${repository}/actions/runs/${run_id}")"
             status="$(jq -r '.status' <<<"$current")"
-            conclusion="$(jq -r '.conclusion // ""' <<<"$current")"
-            attempt="$(jq -r '.run_attempt' <<<"$current")"
-            echo "publisher run=${run_id} attempt=${attempt} status=${status} conclusion=${conclusion:-pending}"
-            if [[ "$status" == completed ]]; then
-              break
-            fi
+            conclusion="$(jq -r '.conclusion // empty' <<<"$current")"
+            echo "publisher v2 run=${run_id} status=${status} conclusion=${conclusion:-pending}"
+            [[ "$status" == completed ]] && break
             sleep 15
           done
-
-          if [[ "$status" != completed ]]; then
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
-              -f state=error \
-              -f context='ops/missing-repository-publication' \
-              -f description='publisher supervision timed out' \
-              -f target_url="$run_url" >/dev/null
-            gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
-              --body "Publisher supervision timed out: ${run_url}" >/dev/null || true
-            exit 1
-          fi
+          [[ "$status" == completed ]] || conclusion=timed_out
 
           if [[ "$conclusion" == success ]]; then
             state=success
-            description='all 34 canonical repositories published and verified'
+            description='protected publisher v2 succeeded; direct remote audit pending'
           else
             state=failure
-            description="repository publication ${conclusion:-failed}"
+            description="repository publication v2 ${conclusion:-failed}"
           fi
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
+          gh api --method POST "repos/${repository}/statuses/${TARGET_SHA}" \
             -f state="$state" \
             -f context='ops/missing-repository-publication' \
             -f description="$description" \
             -f target_url="$run_url" >/dev/null
-          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --body "Publisher completed with **${conclusion:-unknown}**: ${run_url}" >/dev/null || true
+          gh pr comment "$PR_NUMBER" --repo "$repository" \
+            --body "Publisher v2 completed with **${conclusion:-unknown}**: ${run_url}" >/dev/null || true
           test "$conclusion" = success
