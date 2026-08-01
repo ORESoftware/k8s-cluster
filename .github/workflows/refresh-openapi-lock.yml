@@ -39,7 +39,7 @@ jobs:
           toolchain: '1.88.0'
           components: rustfmt, clippy
 
-      - name: Resolve the registry-backed contract family
+      - name: Resolve the reviewed upstream contract family
         run: |
           set -euo pipefail
           cargo update
@@ -57,22 +57,16 @@ jobs:
         run: |
           set -euo pipefail
           changed="$(git status --short | awk '{print $2}' | sort)"
-          case "$changed" in
-            ''|Cargo.lock)
-              ;;
-            *)
-              echo "unexpected dependency resolution paths: $changed" >&2
-              exit 1
-              ;;
-          esac
-          test -z "$(grep -n 'source = \"git+https://github.com/juhaku/utoipa' Cargo.lock || true)"
-          grep -q 'name = "utoipa"' Cargo.lock
-          grep -q 'name = "utoipa-axum"' Cargo.lock
-          grep -q 'name = "utoipa-scalar"' Cargo.lock
-          grep -q 'ignore = \["RUSTSEC-2024-0436"\]' deny.toml
-          test -z "$(grep -n 'github.com/juhaku/utoipa' deny.toml || true)"
+          test "$changed" = 'Cargo.lock' || {
+            echo "unexpected dependency resolution paths: $changed" >&2
+            exit 1
+          }
+          grep -q 'source = "git+https://github.com/juhaku/utoipa?rev=aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a#' Cargo.lock
+          test -z "$(grep -n '^name = "paste"$' Cargo.lock || true)"
+          grep -Fq 'https://github.com/juhaku/utoipa?rev=aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a' deny.toml
+          test -z "$(grep -n 'RUSTSEC-2024-0436' deny.toml || true)"
 
-      - name: Remove this one-shot workflow and commit the verified state
+      - name: Remove this one-shot workflow and commit the verified lockfile
         run: |
           set -euo pipefail
           rm -f .github/workflows/refresh-openapi-lock.yml
@@ -80,16 +74,6 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git diff --cached --check
-          mapfile -t staged < <(git diff --cached --name-only | sort)
-          expected_workflow='.github/workflows/refresh-openapi-lock.yml'
-          if [ "${#staged[@]}" -eq 1 ]; then
-            test "${staged[0]}" = "$expected_workflow"
-          elif [ "${#staged[@]}" -eq 2 ]; then
-            test "${staged[0]}" = "$expected_workflow"
-            test "${staged[1]}" = 'Cargo.lock'
-          else
-            printf 'unexpected staged paths:\n%s\n' "${staged[*]}" >&2
-            exit 1
-          fi
-          git commit -m 'security: verify registry-backed OpenAPI dependency state'
+          test "$(git diff --cached --name-only | sort)" = $'.github/workflows/refresh-openapi-lock.yml\nCargo.lock'
+          git commit -m 'security: lock the reviewed pastey-migrated Utoipa source'
           git push origin HEAD:agent/code-first-openapi-routes
