@@ -82,10 +82,23 @@ pub fn totp_code(secret: &[u8], unix_seconds: u64) -> String {
 
 /// Verify a submitted 6-digit code against the secret at `unix_seconds`,
 /// allowing ±[`SKEW_STEPS`] steps of clock skew. Constant-time comparison.
+///
+/// The enrollment handler calls [`matching_counter`] directly so it can also
+/// reject replays; this boolean form stays as the simple verification API
+/// (tests and the in-flight TOTP regression suite use it).
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn verify_totp(secret: &[u8], submitted: &str, unix_seconds: u64) -> bool {
+    matching_counter(secret, submitted, unix_seconds).is_some()
+}
+
+/// Like [`verify_totp`], but return the HOTP counter the submitted code
+/// matched, so callers can reject replays of an already-accepted counter
+/// (RFC 6238 §5.2). `None` means the code is malformed or matches no counter
+/// within ±[`SKEW_STEPS`] of the step containing `unix_seconds`.
+pub fn matching_counter(secret: &[u8], submitted: &str, unix_seconds: u64) -> Option<u64> {
     let submitted = submitted.trim();
     if submitted.len() != 6 || !submitted.bytes().all(|b| b.is_ascii_digit()) {
-        return false;
+        return None;
     }
     let counter = unix_seconds / STEP_SECONDS;
     for offset in -SKEW_STEPS..=SKEW_STEPS {
@@ -94,10 +107,10 @@ pub fn verify_totp(secret: &[u8], submitted: &str, unix_seconds: u64) -> bool {
         };
         let candidate = hotp(secret, candidate_counter, 6);
         if constant_time_eq(submitted.as_bytes(), candidate.as_bytes()) {
-            return true;
+            return Some(candidate_counter);
         }
     }
-    false
+    None
 }
 
 /// Provisioning URI understood by Authy, Google Authenticator, 1Password, etc.
@@ -203,5 +216,55 @@ mod tests {
         assert!(!verify_totp(RFC6238_SECRET, "12345", now));
         assert!(!verify_totp(RFC6238_SECRET, "abcdef", now));
         assert!(!verify_totp(RFC6238_SECRET, "1234567", now));
+    }
+
+    #[test]
+    fn matching_counter_identifies_the_exact_step_within_the_skew_window() {
+        let now = 1_234_567_890u64;
+        let counter = now / STEP_SECONDS;
+        for offset in [-1i64, 0, 1] {
+            let candidate_counter = counter.checked_add_signed(offset).unwrap();
+            let code = hotp(RFC6238_SECRET, candidate_counter, 6);
+            // A colliding adjacent code would legitimately match the nearer
+            // counter first; only assert when the codes are distinct.
+            let distinct = (-SKEW_STEPS..=SKEW_STEPS)
+                .filter(|&other| other != offset)
+                .all(|other| {
+                    hotp(
+                        RFC6238_SECRET,
+                        counter.checked_add_signed(other).unwrap(),
+                        6,
+                    ) != code
+                });
+            if distinct {
+                assert_eq!(
+                    matching_counter(RFC6238_SECRET, &code, now),
+                    Some(candidate_counter),
+                    "offset {offset}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn matching_counter_rejects_out_of_window_and_malformed_codes() {
+        let now = 1_234_567_890u64;
+        let counter = now / STEP_SECONDS;
+        let in_window: Vec<String> = (-SKEW_STEPS..=SKEW_STEPS)
+            .map(|offset| {
+                hotp(
+                    RFC6238_SECRET,
+                    counter.checked_add_signed(offset).unwrap(),
+                    6,
+                )
+            })
+            .collect();
+        let far = hotp(RFC6238_SECRET, counter + 5, 6);
+        if !in_window.contains(&far) {
+            assert_eq!(matching_counter(RFC6238_SECRET, &far, now), None);
+        }
+        assert_eq!(matching_counter(RFC6238_SECRET, "12345", now), None);
+        assert_eq!(matching_counter(RFC6238_SECRET, "abcdef", now), None);
+        assert_eq!(matching_counter(RFC6238_SECRET, "", now), None);
     }
 }
