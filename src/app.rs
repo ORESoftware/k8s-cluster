@@ -309,5 +309,12 @@ mod tests {
             assert!(manifest.contains(required), "manifest missing {required}");
         }
         assert!(!manifest.contains("remote/deployments/threefa-web-server-rs"));
+        // Regression guard: shared-auth's ingress NetworkPolicy drops traffic
+        // that is not from dd-remote-gateway, so a direct dial silently breaks
+        // every login.
+        assert!(
+            !manifest.contains("value: http://dd-shared-auth."),
+            "manifest dials shared-auth directly instead of via the gateway"
+        );
     }
 }
