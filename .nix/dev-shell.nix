@@ -55,5 +55,14 @@ pkgs.mkShell {
       export NO_COLOR="''${NO_COLOR:-1}"
       export TF_IN_AUTOMATION="''${TF_IN_AUTOMATION:-1}"
     fi
+
+    # MCP IDE-config drift check (read-only, non-fatal): the gateway host lives in
+    # four per-tool config files that cannot be symlinked together (incompatible
+    # env interpolation + schemas — see mcp/README.md), so warn if they disagree.
+    # Fix drift or a changed EIP with: mcp/mcp-config.sh set-ip <NEW_IP>
+    if [ -x "$PWD/mcp/mcp-config.sh" ]; then
+      "$PWD/mcp/mcp-config.sh" check >/dev/null 2>&1 \
+        || echo "warning: MCP IDE configs disagree on the gateway host — run: mcp/mcp-config.sh check"
+    fi
   '';
 }
