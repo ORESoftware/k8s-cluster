@@ -132,7 +132,7 @@ jobs:
           persist-credentials: false
 
       - name: Detect private-library credential availability
-        id: private-libs
+        id: private_libs
         shell: bash
         env:
           K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
@@ -146,19 +146,19 @@ jobs:
           fi
 
       - name: Check out pinned remote/libs
-        if: steps.private-libs.outputs.available == 'true'
+        if: steps.private_libs.outputs.available == 'true'
         uses: ./.github/actions/checkout-remote-libs
         with:
           ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
 
       - name: Install pnpm
-        if: steps.private-libs.outputs.available == 'true'
+        if: steps.private_libs.outputs.available == 'true'
         uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
         with:
           version: 10.33.0
 
       - name: Setup Node
-        if: steps.private-libs.outputs.available == 'true'
+        if: steps.private_libs.outputs.available == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
@@ -166,12 +166,12 @@ jobs:
           cache-dependency-path: remote/tests/pnpm-lock.yaml
 
       - name: Install test dependencies
-        if: steps.private-libs.outputs.available == 'true'
+        if: steps.private_libs.outputs.available == 'true'
         working-directory: remote/tests
         run: pnpm install --frozen-lockfile
 
       - name: Install ${{ matrix.engine }} browser
-        if: steps.private-libs.outputs.available == 'true'
+        if: steps.private_libs.outputs.available == 'true'
         working-directory: remote/tests
         env:
           ENGINE: ${{ matrix.engine }}
@@ -185,7 +185,7 @@ jobs:
           fi
 
       - name: Run private service-worker E2E (${{ matrix.engine }})
-        if: steps.private-libs.outputs.available == 'true'
+        if: steps.private_libs.outputs.available == 'true'
         working-directory: remote/tests
         env:
           BROWSER_ARTIFACT_DIR: ${{ runner.temp }}/browser-artifacts/${{ matrix.engine }}
@@ -193,7 +193,7 @@ jobs:
         run: node --test browser/service-worker.test.mjs
 
       - name: Upload private browser failure evidence
-        if: always() && steps.private-libs.outputs.available == 'true'
+        if: always() && steps.private_libs.outputs.available == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: browser-e2e-private-${{ matrix.engine }}-${{ github.run_attempt }}
