@@ -5,6 +5,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rm,
   symlink,
   writeFile,
 } from 'node:fs/promises';
@@ -15,6 +16,7 @@ import test from 'node:test';
 
 import {
   inventoryPagesTree,
+  REQUIRED_PAGES_ARTIFACTS,
   writePagesEvidence,
 } from '../scripts/pages-artifact-evidence.mjs';
 
@@ -23,7 +25,6 @@ const execFileAsync = promisify(execFile);
 async function fixtureRoot(t) {
   const temporary = await mkdtemp(path.join(os.tmpdir(), 'sonus-pages-'));
   t.after(async () => {
-    const { rm } = await import('node:fs/promises');
     await rm(temporary, { recursive: true, force: true });
   });
   const root = path.join(temporary, 'dist');
@@ -37,10 +38,18 @@ async function fixtureRoot(t) {
     path.join(root, '.well-known', 'security.txt'),
     'Contact: mailto:security@example.test\n',
   );
+  await writeFile(
+    path.join(root, 'robots.txt'),
+    'User-agent: *\nAllow: /\nSitemap: https://sonusauris.app/sitemap.xml\n',
+  );
+  await writeFile(
+    path.join(root, 'sitemap.xml'),
+    '<?xml version="1.0"?><urlset><url><loc>https://sonusauris.app/</loc></url></urlset>\n',
+  );
   return { root, temporary };
 }
 
-test('inventory is deterministic and includes dot-directories', async (t) => {
+test('inventory is deterministic and includes all release-critical trust files', async (t) => {
   const { root } = await fixtureRoot(t);
   const first = await inventoryPagesTree(root);
   const second = await inventoryPagesTree(root);
@@ -48,7 +57,7 @@ test('inventory is deterministic and includes dot-directories', async (t) => {
   assert.deepEqual(first, second);
   assert.deepEqual(
     first.entries.map((entry) => entry.path),
-    ['.well-known/security.txt', 'deployment.json', 'index.html'],
+    [...REQUIRED_PAGES_ARTIFACTS],
   );
   assert.match(first.treeSha256, /^[0-9a-f]{64}$/);
   assert.equal(
@@ -57,7 +66,17 @@ test('inventory is deterministic and includes dot-directories', async (t) => {
   );
 });
 
-test('symlinks fail closed before a Pages archive can dereference them', async (t) => {
+test('missing trust metadata fails before the Pages artifact is created', async (t) => {
+  const { root } = await fixtureRoot(t);
+  await rm(path.join(root, '.well-known', 'security.txt'));
+
+  await assert.rejects(
+    inventoryPagesTree(root),
+    /missing required file: \.well-known\/security\.txt/,
+  );
+});
+
+test('symlinks fail closed before the Pages archive can read them', async (t) => {
   const { root, temporary } = await fixtureRoot(t);
   const outside = path.join(temporary, 'outside-secret.txt');
   await writeFile(outside, 'must not enter the deployment');
@@ -97,8 +116,10 @@ test('evidence is written outside the deployed tree with no secret-shaped fields
 
   assert.equal(evidence.commitSha, 'a'.repeat(40));
   assert.equal(evidence.refName, 'main');
-  assert.equal(evidence.fileCount, 3);
-  assert.ok(manifest.includes('  .well-known/security.txt\n'));
+  assert.equal(evidence.fileCount, REQUIRED_PAGES_ARTIFACTS.length);
+  for (const required of REQUIRED_PAGES_ARTIFACTS) {
+    assert.ok(manifest.includes(`  ${required}\n`), `manifest omitted ${required}`);
+  }
   assert.doesNotMatch(
     evidenceText.toLowerCase(),
     /authorization|cookie|password|private_key|secret|token/,
@@ -113,7 +134,7 @@ test('evidence is written outside the deployed tree with no secret-shaped fields
   );
 });
 
-test('packaging is deterministic and preserves .well-known/security.txt', async (t) => {
+test('packaging is deterministic and preserves every mandatory trust file', async (t) => {
   const { root, temporary } = await fixtureRoot(t);
   const outputOne = path.join(temporary, 'one.tar');
   const outputTwo = path.join(temporary, 'two.tar');
@@ -141,7 +162,11 @@ test('packaging is deterministic and preserves .well-known/security.txt', async 
   );
 
   const { stdout } = await execFileAsync('tar', ['-tf', outputOne]);
-  assert.match(stdout, /^\.\/\.well-known\/security\.txt$/m);
-  assert.match(stdout, /^\.\/deployment\.json$/m);
-  assert.match(stdout, /^\.\/index\.html$/m);
+  for (const required of REQUIRED_PAGES_ARTIFACTS) {
+    assert.match(
+      stdout,
+      new RegExp(`^\\./${required.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'),
+      `archive omitted ${required}`,
+    );
+  }
 });
