@@ -3,7 +3,8 @@ name: critical org fleet workflow contract
 on:
   pull_request:
     paths:
-      - '.github/workflows/ops-canonical-critical-org-fleet-publication.yml'
+      - '.github/workflows/ops-run-canonical-fleet-isolated.yml'
+      - '.github/workflows/ops-dispatch-isolated-fleet-from-comment.yml'
       - '.github/workflows/ops-supervise-full-critical-org-fleet-publication.yml'
       - '.github/workflows/ops-dispatch-full-critical-org-fleet-publication.yml'
       - '.github/workflows/ops-trigger-full-critical-org-fleet-publication.yml'
@@ -14,7 +15,8 @@ on:
   push:
     branches: [main]
     paths:
-      - '.github/workflows/ops-canonical-critical-org-fleet-publication.yml'
+      - '.github/workflows/ops-run-canonical-fleet-isolated.yml'
+      - '.github/workflows/ops-dispatch-isolated-fleet-from-comment.yml'
       - '.github/workflows/ops-supervise-full-critical-org-fleet-publication.yml'
       - '.github/workflows/ops-dispatch-full-critical-org-fleet-publication.yml'
       - '.github/workflows/ops-trigger-full-critical-org-fleet-publication.yml'
@@ -51,10 +53,14 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Compile contract sources
+      - name: Compile and parse contract sources
         run: |
           python -m py_compile scripts/ops/tests/test_critical_org_fleet_workflows.py
           node --check remote/tests/browser/critical-org-fleet-publication.test.mjs
+          ruby -e 'require "yaml"; ARGV.each { |path| YAML.load_file(path, aliases: true) }' \
+            .github/workflows/ops-run-canonical-fleet-isolated.yml \
+            .github/workflows/critical-org-fleet-browser-canary.yml \
+            .github/workflows/critical-org-fleet-workflow-contract.yml
 
       - name: Run workflow safety contracts
         run: >-
