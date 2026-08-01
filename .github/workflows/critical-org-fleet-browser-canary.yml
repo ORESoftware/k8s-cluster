@@ -1,0 +1,121 @@
+name: critical org fleet browser canary
+
+on:
+  pull_request:
+    paths:
+      - 'remote/tests/browser/critical-org-fleet-publication.test.mjs'
+      - 'remote/tests/package.json'
+      - 'remote/tests/pnpm-lock.yaml'
+      - '.github/workflows/critical-org-fleet-browser-canary.yml'
+  workflow_dispatch:
+    inputs:
+      live:
+        description: Verify all 32 public GitHub repository pages
+        required: true
+        default: true
+        type: boolean
+  workflow_run:
+    workflows: ['Canonical critical organization fleet publication']
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: critical-org-fleet-browser-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  hermetic:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install browser test dependencies
+        working-directory: remote/tests
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        working-directory: remote/tests
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run hermetic browser mutation tests
+        working-directory: remote/tests
+        env:
+          FLEET_BROWSER_ARTIFACT_DIR: ${{ runner.temp }}/critical-org-fleet-browser
+        run: node --test browser/critical-org-fleet-publication.test.mjs
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: critical-org-fleet-browser-fixture-${{ github.run_id }}
+          path: ${{ runner.temp }}/critical-org-fleet-browser
+          if-no-files-found: warn
+          retention-days: 7
+
+  live:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.live == true) ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out trusted default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install browser test dependencies
+        working-directory: remote/tests
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chromium
+        working-directory: remote/tests
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Verify all public fleet pages at their approved commits
+        working-directory: remote/tests
+        env:
+          CRITICAL_ORG_FLEET_LIVE: '1'
+          FLEET_BROWSER_ARTIFACT_DIR: ${{ runner.temp }}/critical-org-fleet-browser
+        run: node --test browser/critical-org-fleet-publication.test.mjs
+
+      - name: Upload live browser evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: critical-org-fleet-browser-live-${{ github.run_id }}
+          path: ${{ runner.temp }}/critical-org-fleet-browser
+          if-no-files-found: warn
+          retention-days: 14
