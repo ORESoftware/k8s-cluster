@@ -1100,10 +1100,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "pastey"
-version = "0.2.3"
+name = "paste"
+version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pem"
@@ -1888,9 +1888,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.54"
+version = "0.3.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e1d5e639ff6bab73cb6885cc7e7b1de96c3f32c68ec55f3952614bec1092244"
+checksum = "cdb87b95ec50ddfa440816d227a17b2ccbdda963a316a727fda0fc4334f7d134"
 dependencies = [
  "deranged",
  "num-conv",
@@ -2187,7 +2187,8 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 [[package]]
 name = "utoipa"
 version = "5.5.0"
-source = "git+https://github.com/juhaku/utoipa?rev=aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a#aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bde15df68e80b16c7d16b9616e80770ad158988daa56a27dccd1e55558b0160"
 dependencies = [
  "indexmap",
  "serde",
@@ -2198,10 +2199,11 @@ dependencies = [
 [[package]]
 name = "utoipa-axum"
 version = "0.2.0"
-source = "git+https://github.com/juhaku/utoipa?rev=aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a#aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c25bae5bccc842449ec0c5ddc5cbb6a3a1eaeac4503895dc105a1138f8234a0"
 dependencies = [
  "axum",
- "pastey",
+ "paste",
  "tower-layer",
  "tower-service",
  "utoipa",
@@ -2210,7 +2212,8 @@ dependencies = [
 [[package]]
 name = "utoipa-gen"
 version = "5.5.0"
-source = "git+https://github.com/juhaku/utoipa?rev=aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a#aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ba0b99ee52df3028635d93840c797102da61f8a7bb3cf751032455895b52ef8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2220,7 +2223,8 @@ dependencies = [
 [[package]]
 name = "utoipa-scalar"
 version = "0.3.0"
-source = "git+https://github.com/juhaku/utoipa?rev=aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a#aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59559e1509172f6b26c1cdbc7247c4ddd1ac6560fe94b584f81ee489b141f719"
 dependencies = [
  "serde",
  "serde_json",
