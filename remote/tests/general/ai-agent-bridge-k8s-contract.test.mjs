@@ -59,11 +59,7 @@ test('bridge deployment executes the current Rust binary', () => {
   assert.doesNotMatch(
     deployment,
     /\/release\/ai-agent-bridge(?:["'\s]|$)/,
-<<<<<<< HEAD
-    'no direct exec of the retired binary path',
-=======
     'the retired literal ai-agent-bridge executable must not return',
->>>>>>> origin/dev
   );
 });
 
