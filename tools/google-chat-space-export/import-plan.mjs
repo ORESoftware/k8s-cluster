@@ -37,6 +37,7 @@ space/date boundary can never be widened from the command line.
 function parseArgs(argv) {
   const options = {
     inputs: [],
+    since: null,
     existingIndex: null,
     projectMap: null,
     jsonOutput: null,
