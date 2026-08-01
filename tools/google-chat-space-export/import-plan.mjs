@@ -675,6 +675,7 @@ export function buildImportPlan(pageDocuments, options = {}) {
       spaceName: EXPECTED_SPACE_NAME,
       spaceId: EXPECTED_SPACE_ID,
       startTimeInclusive: START_TIME_INCLUSIVE,
+      windowStartInclusive: window.iso,
       runIds: [...pageRuns].sort(),
     },
     stats,
