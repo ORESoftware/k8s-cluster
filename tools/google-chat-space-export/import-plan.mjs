@@ -696,6 +696,10 @@ export function renderMarkdown(plan) {
     `Plan ID: \`${plan.planId}\``,
     '',
     `Source: \`${plan.source.spaceName}\` from \`${plan.source.startTimeInclusive}\``,
+    ...(plan.source.windowStartInclusive &&
+    plan.source.windowStartInclusive !== plan.source.startTimeInclusive
+      ? [`Window narrowed to messages at or after \`${plan.source.windowStartInclusive}\`.`]
+      : []),
     '',
     '## Reconciliation summary',
     '',
