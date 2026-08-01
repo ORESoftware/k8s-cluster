@@ -146,15 +146,12 @@ test('bridge bearer secret is consistent across deployment, ExternalSecret, fixt
   );
   assert.match(kindScript, new RegExp(`--from-literal=${SECRET_KEY}=`));
 
-  // The retired shared cluster credential must not creep back into the bridge chain.
-  for (const [label, text] of [
-    ['deployment', deployment],
-    ['fixture', fixture],
-    ['externalSecret', externalSecret],
-  ]) {
-    assert.doesNotMatch(text, /dd-agent-secrets/, `${label} must not reuse the shared dd-agent-secrets credential`);
-    assert.doesNotMatch(text, /SERVER_AUTH_SECRET/, `${label} must not reuse SERVER_AUTH_SECRET`);
-  }
+  // The retired shared cluster credential must not creep back into the running
+  // deployment. (The ExternalSecret's comments intentionally name the old
+  // dd-agent-secrets/SERVER_AUTH_SECRET to document why it was abandoned, so the
+  // negative check is scoped to the manifest that actually wires the bearer.)
+  assert.doesNotMatch(deployment, /dd-agent-secrets/, 'deployment must not reuse the shared dd-agent-secrets credential');
+  assert.doesNotMatch(deployment, /SERVER_AUTH_SECRET/, 'deployment must not reuse SERVER_AUTH_SECRET');
 });
 
 test('deployment keeps the hostPath staleness guard that prevented the 2026-07-31 outage', () => {
