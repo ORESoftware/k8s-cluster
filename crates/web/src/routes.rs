@@ -60,9 +60,14 @@ pub async fn security_headers(
     next: axum::middleware::Next,
 ) -> Response {
     use axum::http::HeaderValue;
+    // `script-src 'self'` stays strict — the important one (htmx is vendored
+    // same-origin, no CDN, no inline/eval scripts). `style-src` additionally
+    // allows 'unsafe-inline' because htmx injects a small inline <style> for
+    // its indicator CSS at runtime; inline styles are low-risk and blocking
+    // them breaks htmx's UI. Everything else is same-origin only.
     const CSP: &str = "default-src 'self'; \
          script-src 'self'; \
-         style-src 'self'; \
+         style-src 'self' 'unsafe-inline'; \
          img-src 'self' data:; \
          media-src data:; \
          connect-src 'self'; \
