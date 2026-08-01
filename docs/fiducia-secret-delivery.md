@@ -121,8 +121,10 @@ Use a different operator credential with `kv:write`; never give ESO write scope.
 shape is `k8s/<namespace>/<workload>/<ENV_VAR>`. The cluster-dedicated Fiducia organization already
 provides the tenant boundary.
 
-Prefer the `fiducia` CLI or an authenticated admin UI. For the HTTP API, keep the value off the
-command line and shell history:
+Write through the authenticated HTTP API below with a dedicated `kv:write` operator credential, kept
+separate from ESO's read-only key. (There is no `kv` subcommand in the `fiducia` CLI today, and the
+admin UI has no KV-write endpoint; the HTTP API is the write path.) Keep the value off the command
+line and shell history:
 
 ```bash
 set +x
