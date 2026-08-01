@@ -29,7 +29,7 @@ impl FactorService {
     async fn list_factors(&self, user_id: Uuid) -> Result<Vec<Factor>, AuthError> {
         let rows = self
             .db
-            .query_all(statement(
+            .query_all(&statement(
                 "SELECT factor_id, kind, label, enabled, confirmed_at, last_used_at, created_at \
                  FROM shared_auth.auth_factors \
                  WHERE shared_user_id = $1 \
@@ -42,47 +42,46 @@ impl FactorService {
     }
 
     async fn delete_factor(&self, user_id: Uuid, factor_id: Uuid) -> Result<(), AuthError> {
-        let row = self
-            .db
-            .query_one(statement(
-                "SELECT enabled FROM shared_auth.auth_factors \
-                 WHERE shared_user_id = $1 AND factor_id = $2",
-                vec![user_id.into(), factor_id.into()],
+        let transaction = self.db.begin().await.map_err(db_error)?;
+        // Lock the user's complete factor set. Two simultaneous removals must
+        // serialize so they cannot both observe two enabled factors and delete
+        // the last two independently.
+        let rows = transaction
+            .query_all(&statement(
+                "SELECT factor_id, enabled FROM shared_auth.auth_factors \
+                 WHERE shared_user_id = $1 ORDER BY factor_id FOR UPDATE",
+                vec![user_id.into()],
             ))
             .await
-            .map_err(db_error)?
-            .ok_or(AuthError::BadRequest("unknown factor"))?;
-        let enabled: bool = row.try_get("", "enabled").map_err(db_error)?;
-        if enabled {
-            let count = self
-                .db
-                .query_one(statement(
-                    "SELECT count(*)::bigint AS count FROM shared_auth.auth_factors \
-                     WHERE shared_user_id = $1 AND enabled = true",
-                    vec![user_id.into()],
-                ))
-                .await
-                .map_err(db_error)?
-                .ok_or(AuthError::Internal)?;
-            let count: i64 = count.try_get("", "count").map_err(db_error)?;
-            if count <= 1 {
-                return Err(AuthError::Conflict);
+            .map_err(db_error)?;
+
+        let mut target_enabled = None;
+        let mut enabled_count = 0_i64;
+        for row in rows {
+            let row_factor_id: Uuid = row.try_get("", "factor_id").map_err(db_error)?;
+            let enabled: bool = row.try_get("", "enabled").map_err(db_error)?;
+            enabled_count += i64::from(enabled);
+            if row_factor_id == factor_id {
+                target_enabled = Some(enabled);
             }
         }
-        let result = self
-            .db
-            .execute(statement(
+        let target_enabled = target_enabled.ok_or(AuthError::BadRequest("unknown factor"))?;
+        if target_enabled && enabled_count <= 1 {
+            return Err(AuthError::Conflict);
+        }
+
+        let result = transaction
+            .execute(&statement(
                 "DELETE FROM shared_auth.auth_factors \
                  WHERE shared_user_id = $1 AND factor_id = $2",
                 vec![user_id.into(), factor_id.into()],
             ))
             .await
             .map_err(db_error)?;
-        if result.rows_affected() == 1 {
-            Ok(())
-        } else {
-            Err(AuthError::BadRequest("unknown factor"))
+        if result.rows_affected() != 1 {
+            return Err(AuthError::BadRequest("unknown factor"));
         }
+        transaction.commit().await.map_err(db_error)
     }
 
     async fn enroll_totp(
@@ -93,6 +92,7 @@ impl FactorService {
     ) -> Result<TotpEnrollment, AuthError> {
         let key = self.totp_key.ok_or(AuthError::Unavailable)?;
         let label = normalize_label(label)?;
+        let factor_id = Uuid::new_v4();
         let mut secret = [0u8; 20];
         SysRng
             .try_fill_bytes(&mut secret)
@@ -101,19 +101,19 @@ impl FactorService {
         SysRng
             .try_fill_bytes(&mut nonce)
             .map_err(|_| AuthError::Internal)?;
-        let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| AuthError::Internal)?;
-        let ciphertext = cipher
-            .encrypt(Nonce::from_slice(&nonce), secret.as_ref())
-            .map_err(|_| AuthError::Internal)?;
-        let factor_id = Uuid::new_v4();
+        // AES-GCM AAD binds the ciphertext to this user, factor, and format
+        // version. Copying ciphertext/nonce between rows therefore cannot turn
+        // one user's secret into another user's valid factor.
+        let ciphertext = encrypt_totp_secret(&key, user_id, factor_id, nonce, &secret)?;
         let public_data = json!({
             "algorithm": "SHA1",
             "digits": 6,
             "period": TOTP_STEP_SECONDS,
             "last_counter": -1,
+            "encryption_version": TOTP_ENCRYPTION_VERSION,
         });
         self.db
-            .execute(statement(
+            .execute(&statement(
                 "INSERT INTO shared_auth.auth_factors \
                     (factor_id, shared_user_id, kind, label, secret_ciphertext, secret_nonce, public_data) \
                  VALUES ($1, $2, 'totp', $3, $4, $5, $6)",
@@ -159,9 +159,10 @@ impl FactorService {
         let key = self.totp_key.ok_or(AuthError::Unavailable)?;
         let row = self
             .db
-            .query_one(statement(
+            .query_one(&statement(
                 "SELECT secret_ciphertext, secret_nonce, \
-                        coalesce((public_data ->> 'last_counter')::bigint, -1) AS last_counter \
+                        coalesce((public_data ->> 'last_counter')::bigint, -1) AS last_counter, \
+                        coalesce((public_data ->> 'encryption_version')::bigint, 0) AS encryption_version \
                  FROM shared_auth.auth_factors \
                  WHERE factor_id = $1 AND shared_user_id = $2 AND kind = 'totp'",
                 vec![factor_id.into(), user_id.into()],
@@ -172,13 +173,12 @@ impl FactorService {
         let ciphertext: Vec<u8> = row.try_get("", "secret_ciphertext").map_err(db_error)?;
         let nonce: Vec<u8> = row.try_get("", "secret_nonce").map_err(db_error)?;
         let last_counter: i64 = row.try_get("", "last_counter").map_err(db_error)?;
-        if nonce.len() != 12 {
+        let encryption_version: i64 = row.try_get("", "encryption_version").map_err(db_error)?;
+        if encryption_version != TOTP_ENCRYPTION_VERSION {
             return Err(AuthError::Internal);
         }
-        let cipher = Aes256Gcm::new_from_slice(&key).map_err(|_| AuthError::Internal)?;
-        let secret = cipher
-            .decrypt(Nonce::from_slice(&nonce), ciphertext.as_ref())
-            .map_err(|_| AuthError::Internal)?;
+        let nonce: [u8; 12] = nonce.try_into().map_err(|_| AuthError::Internal)?;
+        let secret = decrypt_totp_secret(&key, user_id, factor_id, nonce, &ciphertext)?;
         let current = now_secs() / TOTP_STEP_SECONDS;
         let matched = [current.saturating_sub(1), current, current.saturating_add(1)]
             .into_iter()
@@ -188,9 +188,12 @@ impl FactorService {
             })
             .ok_or(AuthError::Unauthorized)?;
 
+        // The monotonic predicate makes successful use of a TOTP time-step a
+        // compare-and-set operation. Concurrent replay of the same code can
+        // update at most one row.
         let result = self
             .db
-            .execute(statement(
+            .execute(&statement(
                 "UPDATE shared_auth.auth_factors SET \
                     enabled = true, confirmed_at = coalesce(confirmed_at, now()), \
                     last_used_at = now(), updated_at = now(), \
