@@ -17,49 +17,57 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  verify:
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
+
       - name: Setup Node
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
           node-version: 22
           cache: npm
+
       - run: npm ci
-      # These must stay identical to the `build` job's environment. The
-      # download and store URLs come from repository variables and change what
-      # the site renders (store badges become links, desktop installer and
-      # checksum links appear), so verifying a build without them would gate
-      # publication on markup that is not the markup being published.
-      - name: Verify the exact production-root static site before publication
+
+      # These repository variables change the generated markup, so the one
+      # production build that passes the gates is also the tree we archive.
+      - name: Build and verify the production-root static site
         run: npm run check
         env:
           PUBLIC_RUST_DESKTOP_DOWNLOAD_BASE_URL: ${{ vars.PUBLIC_RUST_DESKTOP_DOWNLOAD_BASE_URL }}
           PUBLIC_FLUTTER_DESKTOP_DOWNLOAD_BASE_URL: ${{ vars.PUBLIC_FLUTTER_DESKTOP_DOWNLOAD_BASE_URL }}
           PUBLIC_DESKTOP_TESTERS_URL: ${{ vars.PUBLIC_DESKTOP_TESTERS_URL }}
 
-  build:
-    needs: verify
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Seal the exact verified Pages tree
+        run: npm run evidence:pages
+
+      - name: Retain Pages tree and archive evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          persist-credentials: false
-      - name: Build with Astro
-        uses: withastro/action@e84f40bd8d2caa9e768ec82ad30dd81f0b280853 # v6.1.2
-        env:
-          PUBLIC_RUST_DESKTOP_DOWNLOAD_BASE_URL: ${{ vars.PUBLIC_RUST_DESKTOP_DOWNLOAD_BASE_URL }}
-          PUBLIC_FLUTTER_DESKTOP_DOWNLOAD_BASE_URL: ${{ vars.PUBLIC_FLUTTER_DESKTOP_DOWNLOAD_BASE_URL }}
-          PUBLIC_DESKTOP_TESTERS_URL: ${{ vars.PUBLIC_DESKTOP_TESTERS_URL }}
+          name: pages-build-evidence-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            artifacts/pages-evidence/
+            dist/deployment.json
+          if-no-files-found: error
+          retention-days: 30
+
+      # deploy-pages expects an Actions artifact named `github-pages` whose
+      # payload contains artifact.tar. Upload the tar created from the verified
+      # tree directly: the official upload-pages composite currently excludes
+      # top-level dot-directories and would omit .well-known/security.txt.
+      - name: Upload the exact verified Pages artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          node-version: 22
+          name: github-pages
+          path: ${{ runner.temp }}/artifact.tar
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
   deploy:
     needs: build
@@ -72,6 +80,6 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Deploy to GitHub Pages
+      - name: Deploy the verified artifact to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
