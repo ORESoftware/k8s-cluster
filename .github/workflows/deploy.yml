@@ -9,6 +9,7 @@ permissions:
   contents: read
 
 env:
+  ASTRO_TELEMETRY_DISABLED: "1"
   SONUS_AURIS_SITE_URL: https://sonusauris.app
   SONUS_AURIS_SITE_BASE: /
 
