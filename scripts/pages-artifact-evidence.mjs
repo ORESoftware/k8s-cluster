@@ -19,6 +19,10 @@ function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
+function compareUtf8(left, right) {
+  return Buffer.compare(Buffer.from(left, 'utf8'), Buffer.from(right, 'utf8'));
+}
+
 function assertSafeRelativePath(relativePath) {
   if (
     relativePath.length === 0 ||
@@ -46,7 +50,7 @@ function relativeArtifactPath(root, candidate) {
 
 async function walk(root, directory, entries) {
   const names = await readdir(directory);
-  names.sort((left, right) => left.localeCompare(right, 'en'));
+  names.sort(compareUtf8);
 
   for (const name of names) {
     const candidate = path.join(directory, name);
@@ -82,7 +86,7 @@ export async function inventoryPagesTree(rootDirectory) {
 
   const entries = [];
   await walk(root, root, entries);
-  entries.sort((left, right) => left.path.localeCompare(right.path, 'en'));
+  entries.sort((left, right) => compareUtf8(left.path, right.path));
 
   if (entries.length === 0) {
     throw new Error('Pages artifact tree is empty');
