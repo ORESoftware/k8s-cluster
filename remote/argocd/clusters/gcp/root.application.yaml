@@ -1,0 +1,44 @@
+# Root app-of-apps for the GCP (GKE / kubeadm-on-GCP) cluster.
+#
+# Self-referencing GitOps entry point: it syncs THIS cluster's own overlay
+# (remote/argocd/clusters/gcp), which renders every child Application CR
+# (applications.yaml, ai-agent-coordinator.applications.yaml), the provider
+# StorageClass, and this Application itself (it is a resource in the same
+# kustomization). Before this existed, `kubectl apply -k clusters/gcp` was a
+# one-shot bootstrap: later git edits to the Application set never reached the
+# cluster and the Application CRs had no drift detection (audit finding #1,
+# GitHub issue #30 / DEN-1150). With automated+selfHeal here, edits to
+# clusters/gcp on `dev` reconcile automatically and out-of-band mutations to the
+# Application set are healed back to git.
+#
+# Bootstrap is unchanged: `kubectl apply -k remote/argocd/clusters/gcp` now
+# creates this root Application alongside everything else, and thereafter it
+# manages itself. `path` resolves to tracked files inside k8s-cluster (not a
+# submodule gitlink), so it renders — see docs/app-deploy-contract.md for the
+# render-trap this avoids.
+#
+# prune+selfHeal give drift detection for the child Application SET; there is
+# deliberately NO app-level cascade finalizer, matching every other Application
+# here, so pruning a removed child deletes only its Application CR (orphaning,
+# never cascade-deleting, its workloads).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-root-gcp
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/clusters/gcp
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
