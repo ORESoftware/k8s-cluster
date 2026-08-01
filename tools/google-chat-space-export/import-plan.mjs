@@ -520,6 +520,7 @@ function issueSummary(issue) {
 export function buildImportPlan(pageDocuments, options = {}) {
   const projectMap = normalizeProjectMap(options.projectMap);
   const existing = buildExistingIndex(options.existingIndex || []);
+  const window = resolveWindowStart(options.since);
   const uniqueMessages = new Map();
   const pageRuns = new Set();
   let rawMessageCount = 0;
