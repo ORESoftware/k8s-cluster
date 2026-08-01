@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "dependencies": [
+    {
+      "workflow": ".github/workflows/ai-agent-coordinator-gitops.yml",
+      "repository": "ORESoftware/ai-agent-coordinator.rs",
+      "ref_policy": "immutable_commit",
+      "expected_ref": "d25e04e50be4a9fad039cfcfa6c321e9c99a1e02",
+      "ref_source": "env:COORDINATOR_REVISION",
+      "owning_issue": "DEN-788"
+    },
+    {
+      "workflow": ".github/workflows/cluster-e2e.yml",
+      "repository": "ORESoftware/k8s-cluster-e2e",
+      "ref_policy": "default_branch",
+      "owning_issue": "DEN-801"
+    }
+  ],
+  "feature_ref_exceptions": [
+    {
+      "workflow": ".github/workflows/ops-apply-mcp-publisher-boundary-repair-once.yml",
+      "owning_issue": "DEN-1321",
+      "expires_on": "2026-08-15",
+      "reason": "Existing one-shot publisher repair workflow pending execution-carrier reconciliation."
+    },
+    {
+      "workflow": ".github/workflows/den-445-rust-diagnostics.yml",
+      "owning_issue": "DEN-1321",
+      "expires_on": "2026-08-15",
+      "reason": "Existing diagnostic workflow pending canonical dependency classification."
+    },
+    {
+      "workflow": ".github/workflows/den-445-focused-cargo-diagnostics.yml",
+      "owning_issue": "DEN-1321",
+      "expires_on": "2026-08-15",
+      "reason": "Existing focused diagnostic workflow pending canonical dependency classification."
+    },
+    {
+      "workflow": ".github/workflows/critical-org-fleet-dispatch.yml",
+      "owning_issue": "DEN-1321",
+      "expires_on": "2026-08-15",
+      "reason": "Existing fleet dispatcher pending execution-only metadata and expiry migration."
+    },
+    {
+      "workflow": ".github/workflows/ops-publish-exact-meta-agent-direct.yml",
+      "owning_issue": "DEN-1321",
+      "expires_on": "2026-08-15",
+      "reason": "Existing Meta Agents publication carrier pending lifecycle reconciliation."
+    },
+    {
+      "workflow": ".github/workflows/ops-publish-exact-meta-agent-now.yml",
+      "owning_issue": "DEN-1321",
+      "expires_on": "2026-08-15",
+      "reason": "Existing Meta Agents publication carrier pending lifecycle reconciliation."
+    },
+    {
+      "workflow": ".github/workflows/ops-owner-device-create-meta-agent-repo.yml",
+      "owning_issue": "DEN-1321",
+      "expires_on": "2026-08-15",
+      "reason": "Existing owner-device carrier pending lifecycle reconciliation."
+    },
+    {
+      "workflow": ".github/workflows/ops-supervise-exact-meta-agent-publication.yml",
+      "owning_issue": "DEN-1321",
+      "expires_on": "2026-08-15",
+      "reason": "Existing supervised publisher pending lifecycle reconciliation."
+    },
+    {
+      "workflow": ".github/workflows/browser-test-apply-refactor.yml",
+      "owning_issue": "DEN-1321",
+      "expires_on": "2026-08-15",
+      "reason": "Existing browser refactor carrier pending canonical-main migration."
+    }
+  ]
+}
