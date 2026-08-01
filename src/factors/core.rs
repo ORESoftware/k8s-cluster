@@ -29,7 +29,7 @@ impl FactorService {
     async fn list_factors(&self, user_id: Uuid) -> Result<Vec<Factor>, AuthError> {
         let rows = self
             .db
-            .query_all(&statement(
+            .query_all_raw(statement(
                 "SELECT factor_id, kind, label, enabled, confirmed_at, last_used_at, created_at \
                  FROM shared_auth.auth_factors \
                  WHERE shared_user_id = $1 \
@@ -47,7 +47,7 @@ impl FactorService {
         // serialize so they cannot both observe two enabled factors and delete
         // the last two independently.
         let rows = transaction
-            .query_all(&statement(
+            .query_all_raw(statement(
                 "SELECT factor_id, enabled FROM shared_auth.auth_factors \
                  WHERE shared_user_id = $1 ORDER BY factor_id FOR UPDATE",
                 vec![user_id.into()],
@@ -71,7 +71,7 @@ impl FactorService {
         }
 
         let result = transaction
-            .execute(&statement(
+            .execute_raw(statement(
                 "DELETE FROM shared_auth.auth_factors \
                  WHERE shared_user_id = $1 AND factor_id = $2",
                 vec![user_id.into(), factor_id.into()],
@@ -113,7 +113,7 @@ impl FactorService {
             "encryption_version": TOTP_ENCRYPTION_VERSION,
         });
         self.db
-            .execute(&statement(
+            .execute_raw(statement(
                 "INSERT INTO shared_auth.auth_factors \
                     (factor_id, shared_user_id, kind, label, secret_ciphertext, secret_nonce, public_data) \
                  VALUES ($1, $2, 'totp', $3, $4, $5, $6)",
@@ -159,7 +159,7 @@ impl FactorService {
         let key = self.totp_key.ok_or(AuthError::Unavailable)?;
         let row = self
             .db
-            .query_one(&statement(
+            .query_one_raw(statement(
                 "SELECT secret_ciphertext, secret_nonce, \
                         coalesce((public_data ->> 'last_counter')::bigint, -1) AS last_counter, \
                         coalesce((public_data ->> 'encryption_version')::bigint, 0) AS encryption_version \
@@ -193,7 +193,7 @@ impl FactorService {
         // update at most one row.
         let result = self
             .db
-            .execute(&statement(
+            .execute_raw(statement(
                 "UPDATE shared_auth.auth_factors SET \
                     enabled = true, confirmed_at = coalesce(confirmed_at, now()), \
                     last_used_at = now(), updated_at = now(), \
