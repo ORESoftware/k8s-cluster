@@ -4,7 +4,7 @@ Akrion combines a discrete-event match engine, real-time sessions, MPC, POMDP/RL
 
 ## Implemented refinement boundary
 
-`formal/match_model.py` remains the finite specification. Production Rust now exposes the same lifecycle through `SoccerMatch`, `SoccerRealtimeSession`, `MatchAction`, and the enum-and-integer-only `MatchProjection` in `src/des/general/soccer.rs`. `src/bin/fm_match_adapter.rs` is a protocol-only JSON-lines process that constructs the formal fixture, applies canonical events to the production transition path, and emits the initial and post-event projections.
+`formal/match_model.py` remains the finite specification. Production Rust now exposes the same lifecycle through `SoccerMatch`, `SoccerRealtimeSession`, `MatchAction`, and the enum-and-integer-only `MatchProjection` in `src/des/general/soccer/lifecycle.rs`. `src/bin/fm_match_adapter.rs` is a protocol-only JSON-lines process that constructs the formal fixture, applies canonical events to the production transition path, and emits the initial and post-event projections.
 
 `formal/compare_match_replay.py` performs the bounded refinement check:
 
@@ -49,7 +49,7 @@ The claim is therefore **bounded production refinement for this lifecycle projec
    python3 formal/match_model.py
    printf '%s\n' '{"op":"replay","events":["start","home_goal","restart","tick","finish"]}' \
      | cargo run --quiet --bin fm_match_adapter
-   cargo test --lib des::general::soccer::tests
+   cargo test --lib des::general::soccer::lifecycle::tests
    python3 formal/compare_match_replay.py
    cargo check --all-targets
    ```
