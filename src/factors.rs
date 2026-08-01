@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use aes_gcm::{
-    aead::{Aead, KeyInit},
+    aead::{Aead, KeyInit as AeadKeyInit, Payload},
     Aes256Gcm, Nonce,
 };
 use axum::{
@@ -17,10 +17,11 @@ use axum::{
     Json,
 };
 use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit as HmacKeyInit, Mac};
 use rand::{rngs::SysRng, TryRng};
 use sea_orm::{
     ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement,
+    TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -43,9 +44,13 @@ use crate::http::introspect::active_claims;
 use crate::http::session_tokens;
 
 const OTP_TTL_MINUTES: i64 = 10;
+const OTP_RESEND_INTERVAL_SECONDS: i64 = 30;
+const MAX_ACTIVE_OTP_CHALLENGES: i64 = 3;
 const PASSKEY_TTL_MINUTES: i64 = 5;
+const MAX_ACTIVE_PASSKEY_CEREMONIES: i64 = 3;
 const TOTP_STEP_SECONDS: u64 = 30;
 const TOTP_DIGITS: u32 = 1_000_000;
+const TOTP_ENCRYPTION_VERSION: i64 = 1;
 const MAX_OTP_ATTEMPTS: i32 = 5;
 
 #[derive(Clone)]
