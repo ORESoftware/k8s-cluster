@@ -128,8 +128,10 @@ Replace in-pod `git clone main && cargo run` with CI-built, scanned, signed imag
 **Acceptance:** images built+signed in CI with SBOM/provenance; manifests reference digests; startup
 no longer clones or compiles; egress narrowed.
 
-### FID-SEC-8 — Fix doc/manifest drift (Low)
-**Acceptance:** remove the nonexistent-`FIDUCIA_AUTH_MODE` comment in the LB deployment (real knob is
-`FIDUCIA_AUTH_REQUIRED`, and KV is scope-gated regardless); correct
-`docs/fiducia-secret-delivery.md` "prefer the CLI" (fiducia-cli has no kv command — the write path is a
-raw authenticated PUT).
+### FID-SEC-8 — Fix doc/manifest drift (Low — **done**, DEN-1247)
+- `docs/fiducia-secret-delivery.md`: replaced "Prefer the `fiducia` CLI or an authenticated admin UI"
+  with the accurate HTTP-API write path (the CLI has no `kv` subcommand; the admin UI has no KV-write
+  endpoint). **Applied in this change.**
+- The nonexistent-`FIDUCIA_AUTH_MODE` LB comment was **already fixed** by the merged hardening series:
+  the deployment now sets `FIDUCIA_AUTH_REQUIRED=true` explicitly with an accurate comment, and
+  `/v1/kv` is scope-gated regardless. No further action.
