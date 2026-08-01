@@ -24,6 +24,15 @@ function attribute(tag, name) {
   return match?.[1] ?? null;
 }
 
+function decodeAttribute(value) {
+  return value
+    .replace(/&#(?:39|x27);|&apos;/gi, "'")
+    .replace(/&quot;/gi, '"')
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&amp;/gi, "&");
+}
+
 function cspFrom(html) {
   const tag = [...html.matchAll(/<meta\b[^>]*>/gi)]
     .map((match) => match[0])
@@ -33,7 +42,7 @@ function cspFrom(html) {
   assert.ok(tag, "missing Content-Security-Policy meta element");
   const content = attribute(tag, "content");
   assert.ok(content, "Content-Security-Policy meta element has no content");
-  return content;
+  return decodeAttribute(content);
 }
 
 function directives(csp) {
