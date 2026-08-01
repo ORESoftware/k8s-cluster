@@ -551,12 +551,17 @@ export function buildImportPlan(pageDocuments, options = {}) {
     }
   }
 
-  const messages = [...uniqueMessages.values()]
+  const deduped = [...uniqueMessages.values()]
     .map((entry) => entry.message)
     .sort((left, right) => {
       const time = left.createTime.localeCompare(right.createTime);
       return time || left.sourceKey.localeCompare(right.sourceKey);
     });
+
+  const messages = window.narrowed
+    ? deduped.filter((message) => Date.parse(message.createTime) >= window.timestamp)
+    : deduped;
+  const windowedOutMessages = deduped.length - messages.length;
 
   const groups = new Map();
   for (const message of messages) {
