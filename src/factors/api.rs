@@ -100,10 +100,13 @@ pub struct StepUpResponse {
 pub async fn capabilities(State(state): State<AppState>) -> Json<Capabilities> {
     let factors = state.factors.as_ref();
     let mut methods = Vec::new();
-    if state.config.magic_links.is_enabled() {
+    // Email OTP does not need the magic-link callback URL. Advertising it from
+    // MagicLinkConfig::is_enabled() incorrectly hid a fully configured SendGrid
+    // OTP lane whenever passwordless links were intentionally disabled.
+    if email_otp_is_enabled(&state) {
         methods.push("email_otp".to_owned());
     }
-    if state.config.twilio_verify.is_enabled() {
+    if sms_otp_is_enabled(&state) {
         methods.push("sms_otp".to_owned());
     }
     if factors.is_some_and(FactorService::supports_totp) {
@@ -187,6 +190,15 @@ pub async fn create_challenge(
     Json(request): Json<ChallengeRequest>,
 ) -> Result<(StatusCode, Json<ChallengeStart>), AuthError> {
     let claims = claims(&state, &headers).await?;
+    match request.kind {
+        ChallengeKind::EmailOtp if !email_otp_is_enabled(&state) => {
+            return Err(AuthError::Unavailable);
+        }
+        ChallengeKind::SmsOtp if !sms_otp_is_enabled(&state) => {
+            return Err(AuthError::Unavailable);
+        }
+        _ => {}
+    }
     let service = state.factors.as_ref().ok_or(AuthError::Unavailable)?;
     let pepper = state
         .config
@@ -197,21 +209,32 @@ pub async fn create_challenge(
     let (response, destination, code) = service
         .create_otp_challenge(&claims, request.kind, pepper.as_bytes())
         .await?;
-    match request.kind {
-        ChallengeKind::EmailOtp => {
-            send_email_otp(&state, &destination, &code).await?;
-        }
+    let delivery = match request.kind {
+        ChallengeKind::EmailOtp => send_email_otp(&state, &destination, &code).await,
         ChallengeKind::SmsOtp => {
-            if !state.config.twilio_verify.is_enabled() {
-                return Err(AuthError::Unavailable);
-            }
             crate::twilio::start_sms_verification(
                 &state.http,
                 &state.config.twilio_verify,
                 &destination,
             )
-            .await?;
+            .await
         }
+    };
+    if let Err(error) = delivery {
+        // The code was never delivered. Consume the durable challenge so it
+        // does not occupy the active-challenge budget or become usable after a
+        // provider retry whose outcome the server did not observe.
+        if let Ok(challenge_id) = Uuid::parse_str(&response.challenge_id) {
+            let user_id = claim_user_id(&claims)?;
+            let session_id = claim_session_id(&claims)?;
+            if let Err(cancel_error) = service
+                .cancel_challenge(user_id, session_id, challenge_id)
+                .await
+            {
+                tracing::warn!(error = %cancel_error, %challenge_id, "failed to cancel undelivered OTP challenge");
+            }
+        }
+        return Err(error);
     }
     Ok((StatusCode::ACCEPTED, Json(response)))
 }
@@ -234,10 +257,10 @@ pub async fn verify_challenge(
 
     let row = service
         .db
-        .query_one(statement(
-            "SELECT kind, destination_hint FROM shared_auth.auth_challenges \
+        .query_one(&statement(
+            "SELECT kind FROM shared_auth.auth_challenges \
              WHERE challenge_id = $1 AND shared_user_id = $2 AND session_id = $3 \
-               AND consumed_at IS NULL AND expires_at > now()",
+               AND consumed_at IS NULL AND expires_at > now() AND attempts < max_attempts",
             vec![
                 challenge_id.into(),
                 claim_user_id(&claims)?.into(),
@@ -258,6 +281,9 @@ pub async fn verify_challenge(
         )
         .await?;
         if !valid {
+            service
+                .record_failed_otp_attempt(&claims, challenge_id, "sms_otp")
+                .await?;
             return Err(AuthError::Unauthorized);
         }
     }
