@@ -257,7 +257,7 @@ pub async fn verify_challenge(
 
     let row = service
         .db
-        .query_one(&statement(
+        .query_one_raw(statement(
             "SELECT kind FROM shared_auth.auth_challenges \
              WHERE challenge_id = $1 AND shared_user_id = $2 AND session_id = $3 \
                AND consumed_at IS NULL AND expires_at > now() AND attempts < max_attempts",
