@@ -37,9 +37,7 @@ fn authorize_caller(state: &AppState, headers: &HeaderMap) -> Result<(), AuthErr
     let Some(expected) = state.config.introspect_secret.as_deref() else {
         static WARN_ONCE: Once = Once::new();
         WARN_ONCE.call_once(|| {
-            tracing::warn!(
-                "/auth/introspect is disabled because AUTH_INTROSPECT_SECRET is unset"
-            );
+            tracing::warn!("/auth/introspect is disabled because AUTH_INTROSPECT_SECRET is unset");
         });
         return Err(AuthError::Unauthorized);
     };
@@ -206,13 +204,11 @@ mod tests {
     #[test]
     fn introspection_rejects_missing_or_incorrect_service_credentials() {
         assert!(authorize_service_credential(Some(SECRET), None).is_err());
-        assert!(
-            authorize_service_credential(
-                Some(SECRET),
-                Some("fedcba9876543210fedcba9876543210")
-            )
-            .is_err()
-        );
+        assert!(authorize_service_credential(
+            Some(SECRET),
+            Some("fedcba9876543210fedcba9876543210")
+        )
+        .is_err());
     }
 
     #[test]
