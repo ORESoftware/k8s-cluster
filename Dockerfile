@@ -31,7 +31,7 @@ COPY . .
 ARG PUBLIC_BASE=/fiducia
 RUN PUBLIC_BASE="$PUBLIC_BASE" npm run build
 
-FROM nginx:1.31-alpine@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa
+FROM nginx:1.31-alpine@sha256:4a73073bd557c65b759505da037898b61f1be6cbcc3c2c3aeac22d2a470c1752
 COPY nginx.conf /etc/nginx/nginx.conf
 COPY --from=build --chown=nginx:nginx /build/fiducia-marketing.web/dist /srv/www
 USER nginx
