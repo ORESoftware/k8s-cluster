@@ -22,12 +22,15 @@ pub use des_engine;
 
 pub mod des;
 
-// Ergonomic top-level facade. The production simulation remains the canonical
-// `des::general::soccer` module; the bounded formal lifecycle is kept in a
-// separate module and re-exported only through this consumer-facing facade.
+// Ergonomic top-level facade. Production simulation types remain directly under
+// `soccer`; the bounded formal lifecycle is namespaced to avoid ambiguous names
+// such as `SoccerRealtimeSession` while preserving the adapter/refinement seam.
 pub mod soccer {
     pub use crate::des::general::soccer::*;
-    pub use crate::des::general::soccer_lifecycle::*;
+
+    pub mod lifecycle {
+        pub use crate::des::general::soccer_lifecycle::*;
+    }
 }
 
 pub use des::general::soccer_rotation as rotation;
