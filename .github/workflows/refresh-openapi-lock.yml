@@ -1,0 +1,74 @@
+name: Refresh OpenAPI lockfile
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/refresh-openapi-lock.yml'
+      - 'Cargo.toml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-push-openapi-lock
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: >-
+      github.repository == 'ORESoftware/push-notification-server.rs' &&
+      (github.event_name != 'pull_request' || github.head_ref == 'agent/code-first-openapi-routes')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact writable branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/code-first-openapi-routes
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Setup Rust 1.88
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt, clippy
+
+      - name: Resolve the registry-backed contract family
+        run: |
+          set -euo pipefail
+          cargo update
+          cargo fmt --all -- --check
+          cargo check --locked
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets
+          cargo run --locked --quiet -- --export-openapi=internal > /tmp/openapi.internal.json
+          cargo run --locked --quiet -- --export-openapi=public > /tmp/openapi.public.json
+          cmp /tmp/openapi.internal.json generated/openapi.internal.json
+          cmp /tmp/openapi.public.json generated/openapi.public.json
+          git diff --check
+
+      - name: Verify bounded dependency change
+        run: |
+          set -euo pipefail
+          test "$(git status --short | awk '{print $2}' | sort)" = 'Cargo.lock'
+          test -z "$(grep -n 'source = \"git+https://github.com/juhaku/utoipa' Cargo.lock || true)"
+          grep -q 'name = "utoipa"' Cargo.lock
+          grep -q 'name = "utoipa-axum"' Cargo.lock
+          grep -q 'name = "utoipa-scalar"' Cargo.lock
+
+      - name: Remove this one-shot workflow and commit lockfile
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/refresh-openapi-lock.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          test "$(git diff --cached --name-only | sort)" = $'.github/workflows/refresh-openapi-lock.yml\nCargo.lock'
+          git commit -m 'security: refresh registry-backed OpenAPI lockfile'
+          git push origin HEAD:agent/code-first-openapi-routes
