@@ -4,7 +4,9 @@ metadata:
   name: fiducia-revocation-admin
   namespace: fiducia
   labels:
+    app: fiducia-auth
     app.kubernetes.io/name: fiducia-revocation-admin
+    app.kubernetes.io/component: revocation-authority
     app.kubernetes.io/part-of: fiducia
 spec:
   replicas: 1
@@ -20,7 +22,9 @@ spec:
   template:
     metadata:
       labels:
+        app: fiducia-auth
         app.kubernetes.io/name: fiducia-revocation-admin
+        app.kubernetes.io/component: revocation-authority
         app.kubernetes.io/part-of: fiducia
       annotations:
         prometheus.io/scrape: "false"
@@ -37,7 +41,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: revocation-admin
-          image: rust:1.95.0-bookworm
+          image: docker.io/library/rust:1.95.0-bookworm
           imagePullPolicy: IfNotPresent
           command: ["/bin/bash", "-ceu"]
           args:
@@ -146,7 +150,9 @@ metadata:
   name: fiducia-revocation-admin
   namespace: fiducia
   labels:
+    app: fiducia-auth
     app.kubernetes.io/name: fiducia-revocation-admin
+    app.kubernetes.io/component: revocation-authority
     app.kubernetes.io/part-of: fiducia
 spec:
   type: ClusterIP
