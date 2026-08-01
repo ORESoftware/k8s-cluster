@@ -10,9 +10,26 @@ const kustomizationPath = 'remote/argocd/dd-next-runtime/kustomization.yaml';
 const runnerPath =
   'remote/argocd/dd-next-runtime/dd-ai-agent-runner.deployment.yaml';
 
+const externalSecretPath =
+  'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.externalsecret.yaml';
+const fixturePath = 'remote/tests/fixtures/ai-agent-bridge-kind.yaml.tmpl';
+const kindScriptPath = 'scripts/ci/test-ai-agent-bridge-kind.sh';
+
 const deployment = readFileSync(deploymentPath, 'utf8');
 const service = readFileSync(servicePath, 'utf8');
 const kustomization = readFileSync(kustomizationPath, 'utf8');
+const externalSecret = readFileSync(externalSecretPath, 'utf8');
+const fixture = readFileSync(fixturePath, 'utf8');
+const kindScript = readFileSync(kindScriptPath, 'utf8');
+
+// The one true secret contract for the bridge bearer. Everything that names the
+// secret — the deployment, the ExternalSecret that provisions it, the kind smoke
+// fixture, and the CI script that seeds it — must agree on BOTH of these, or the
+// pod binds a key that was never populated (the exact drift that shipped a broken
+// merge: the deployment pointed at dd-agent-secrets/SERVER_AUTH_SECRET while the
+// rest of the tree provisioned dd-ai-agent-bridge-secrets/inbox_token).
+const SECRET_NAME = 'dd-ai-agent-bridge-secrets';
+const SECRET_KEY = 'inbox_token';
 
 function count(text, needle) {
   return text.split(needle).length - 1;
