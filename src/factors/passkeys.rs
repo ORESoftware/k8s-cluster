@@ -75,7 +75,7 @@ impl FactorService {
         let label = normalize_label(label)?;
         let row = self
             .db
-            .query_one(&statement(
+            .query_one_raw(statement(
                 "INSERT INTO shared_auth.auth_factors \
                     (factor_id, shared_user_id, kind, label, public_data, external_id, enabled, confirmed_at) \
                  VALUES ($1, $2, 'passkey', $3, $4, $5, true, now()) \
@@ -168,7 +168,7 @@ impl FactorService {
         // from the same old signature counter.
         let transaction = self.db.begin().await.map_err(db_error)?;
         let row = transaction
-            .query_one(&statement(
+            .query_one_raw(statement(
                 "SELECT public_data FROM shared_auth.auth_factors \
                  WHERE shared_user_id = $1 AND kind = 'passkey' AND external_id = $2 \
                    AND enabled = true FOR UPDATE",
@@ -191,7 +191,7 @@ impl FactorService {
         }
         let public_data = serde_json::to_value(stored).map_err(|_| AuthError::Internal)?;
         let update = transaction
-            .execute(&statement(
+            .execute_raw(statement(
                 "UPDATE shared_auth.auth_factors \
                  SET public_data = $3, last_used_at = now(), updated_at = now() \
                  WHERE shared_user_id = $1 AND external_id = $2 \
@@ -209,7 +209,7 @@ impl FactorService {
     async fn passkeys_for(&self, user_id: Uuid) -> Result<Vec<(String, Passkey)>, AuthError> {
         let rows = self
             .db
-            .query_all(&statement(
+            .query_all_raw(statement(
                 "SELECT external_id, public_data FROM shared_auth.auth_factors \
                  WHERE shared_user_id = $1 AND kind = 'passkey' AND enabled = true",
                 vec![user_id.into()],
@@ -239,7 +239,7 @@ impl FactorService {
         let challenge_id = Uuid::new_v4();
         let transaction = self.db.begin().await.map_err(db_error)?;
         transaction
-            .query_one(&statement(
+            .query_one_raw(statement(
                 "SELECT session_id FROM shared_auth.sessions \
                  WHERE session_id = $1 AND shared_user_id = $2 \
                    AND revoked_at IS NULL AND expires_at > now() FOR UPDATE",
@@ -249,7 +249,7 @@ impl FactorService {
             .map_err(db_error)?
             .ok_or(AuthError::Unauthorized)?;
         transaction
-            .execute(&statement(
+            .execute_raw(statement(
                 "UPDATE shared_auth.auth_challenges SET consumed_at = now() \
                  WHERE shared_user_id = $1 AND session_id = $2 AND kind = $3 \
                    AND consumed_at IS NULL AND expires_at <= now()",
@@ -262,7 +262,7 @@ impl FactorService {
             .await
             .map_err(db_error)?;
         let active = transaction
-            .query_one(&statement(
+            .query_one_raw(statement(
                 "SELECT count(*)::bigint AS active_count \
                  FROM shared_auth.auth_challenges \
                  WHERE shared_user_id = $1 AND session_id = $2 AND kind = $3 \
@@ -281,7 +281,7 @@ impl FactorService {
             return Err(AuthError::RateLimited);
         }
         transaction
-            .execute(&statement(
+            .execute_raw(statement(
                 "INSERT INTO shared_auth.auth_challenges \
                     (challenge_id, shared_user_id, session_id, kind, code_tag, state, max_attempts, expires_at) \
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
@@ -311,7 +311,7 @@ impl FactorService {
     ) -> Result<Value, AuthError> {
         let row = self
             .db
-            .query_one(&statement(
+            .query_one_raw(statement(
                 "UPDATE shared_auth.auth_challenges SET consumed_at = now(), attempts = attempts + 1 \
                  WHERE challenge_id = $1 AND shared_user_id = $2 AND session_id = $3 AND kind = $4 \
                    AND consumed_at IS NULL AND expires_at > now() AND attempts < max_attempts \
