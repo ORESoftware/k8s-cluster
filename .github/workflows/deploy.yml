@@ -9,6 +9,7 @@ permissions:
   contents: read
 
 env:
+  ASTRO_TELEMETRY_DISABLED: "1"
   SONUS_AURIS_SITE_URL: https://sonusauris.app
   SONUS_AURIS_SITE_BASE: /
 
@@ -62,7 +63,11 @@ jobs:
           path: |
             artifacts/pages-evidence/
             dist/deployment.json
+            dist/.well-known/security.txt
+            dist/robots.txt
+            dist/sitemap.xml
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 30
 
       # deploy-pages expects an Actions artifact named `github-pages` whose
