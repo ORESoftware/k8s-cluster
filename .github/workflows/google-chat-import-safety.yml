@@ -1,0 +1,32 @@
+name: Google Chat import safety
+
+on:
+  pull_request:
+    paths:
+      - 'tools/google-chat-space-export/sensitive-content.mjs'
+      - 'tools/google-chat-space-export/sanitize-export.mjs'
+      - 'tools/google-chat-space-export/test/sensitive-content.test.mjs'
+      - 'tools/google-chat-space-export/SENSITIVE_CONTENT.md'
+      - '.github/workflows/google-chat-import-safety.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/google-chat-space-export/sensitive-content.mjs'
+      - 'tools/google-chat-space-export/sanitize-export.mjs'
+      - 'tools/google-chat-space-export/test/sensitive-content.test.mjs'
+      - 'tools/google-chat-space-export/SENSITIVE_CONTENT.md'
+      - '.github/workflows/google-chat-import-safety.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+      - run: node --test tools/google-chat-space-export/test/sensitive-content.test.mjs
