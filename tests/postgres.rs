@@ -243,3 +243,92 @@ async fn redis_cache_is_disposable_and_uses_hashed_buckets() {
     cache.mark_revoked(session_id, 60).await.unwrap();
     assert!(cache.is_revoked(session_id).await.unwrap());
 }
+
+/// A P-256 signing PEM from a fixed scalar, only so the router can build.
+fn router_signing_pem() -> String {
+    use p256::pkcs8::{EncodePrivateKey, LineEnding};
+    p256::SecretKey::from_slice(&[9u8; 32])
+        .unwrap()
+        .to_pkcs8_pem(LineEnding::LF)
+        .unwrap()
+        .to_string()
+}
+
+/// Build the real axum router backed by a live Postgres (no Supabase project,
+/// no Redis) — the minimal wiring to drive the local-auth handlers over HTTP.
+async fn router_with_db(url: String) -> axum::Router {
+    use shared_auth_server::config::{
+        AppConfig, MagicLinkConfig, SessionConfig, SigningConfig, TwilioVerifyConfig,
+    };
+    let config = AppConfig {
+        bind_addr: "127.0.0.1:0".parse().unwrap(),
+        projects: vec![],
+        signing: SigningConfig {
+            ec_private_pem: router_signing_pem(),
+            key_id: "shared-auth-test".into(),
+            issuer: "https://auth.oresoftware.dev".into(),
+            audience: "oresoftware".into(),
+            ttl_secs: 3600,
+        },
+        db: Some(DbConfig {
+            url,
+            max_connections: 2,
+        }),
+        redis: None,
+        sessions: SessionConfig {
+            refresh_ttl_secs: 3600,
+            allow_registration: true,
+        },
+        magic_links: MagicLinkConfig {
+            sendgrid_api_key: None,
+            otp_pepper: None,
+            from_email: None,
+            from_name: "OreSoftware".into(),
+            link_base_url: None,
+            ttl_secs: 900,
+            allow_signup: false,
+        },
+        twilio_verify: TwilioVerifyConfig {
+            account_sid: None,
+            auth_token: None,
+            service_sid: None,
+        },
+        webhook_secret: None,
+        introspect_secret: None,
+        cors_allow_origins: vec![],
+    };
+    let state = shared_auth_server::state::AppState::build(config)
+        .await
+        .unwrap();
+    shared_auth_server::http::router(state)
+}
+
+#[tokio::test]
+async fn login_rejects_overlong_password_before_hashing() {
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+    let Some(url) = std::env::var("AUTH_TEST_DATABASE_URL").ok() else {
+        eprintln!("AUTH_TEST_DATABASE_URL unset; skipping router login-bound test");
+        return;
+    };
+    let app = router_with_db(url).await;
+    // A password past the 1024-byte registration cap can never match; the guard
+    // rejects it with 400 up front instead of paying Argon2 cost. The decision
+    // depends only on the submitted length, so a non-existent account is fine.
+    let body = serde_json::json!({
+        "email": "nobody@example.invalid",
+        "password": "a".repeat(2000),
+    })
+    .to_string();
+    let resp = app
+        .oneshot(
+            Request::post("/auth/login")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
