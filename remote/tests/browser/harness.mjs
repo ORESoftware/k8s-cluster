@@ -375,19 +375,23 @@ function wrap(engine, page, diagnostics) {
         : page.$eval(selector, (element) => element.textContent).catch(() => null),
     select: (selector, value) =>
       engine === "playwright" ? page.selectOption(selector, value) : page.select(selector, value),
-    fill: (selector, value) =>
-      engine === "playwright"
-        ? page.fill(selector, value)
-        : page.$eval(
-            selector,
-            (element, nextValue) => {
-              element.focus();
-              element.value = nextValue;
-              element.dispatchEvent(new Event("input", { bubbles: true }));
-              element.dispatchEvent(new Event("change", { bubbles: true }));
-            },
-            value,
-          ),
+    fill: async (selector, value) => {
+      if (engine === "playwright") {
+        await page.fill(selector, value);
+        await page.dispatchEvent(selector, "change");
+        return;
+      }
+      await page.$eval(
+        selector,
+        (element, nextValue) => {
+          element.focus();
+          element.value = nextValue;
+          element.dispatchEvent(new Event("input", { bubbles: true }));
+          element.dispatchEvent(new Event("change", { bubbles: true }));
+        },
+        value,
+      );
+    },
     click: (selector) => page.click(selector),
   };
 }
