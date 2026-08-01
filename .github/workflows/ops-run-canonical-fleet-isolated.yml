@@ -92,6 +92,7 @@ jobs:
         env:
           COMMENT_TOKEN: ${{ github.token }}
           CARRIER_HEAD_SHA: ${{ steps.carrier.outputs.head_sha }}
+          TRUSTED_SHA: ${{ steps.carrier.outputs.trusted_sha }}
         run: |
           set -Eeuo pipefail
           umask 077
@@ -103,10 +104,16 @@ jobs:
           report_md="$RUNNER_TEMP/critical-org-fleet-publication.md"
           : > "$auth_log"
           auth_pid=''
+          auth_comment_id=''
           cleanup() {
             if [[ -n "${auth_pid:-}" ]] && kill -0 "$auth_pid" 2>/dev/null; then
               kill "$auth_pid" 2>/dev/null || true
               wait "$auth_pid" 2>/dev/null || true
+            fi
+            if [[ -n "${auth_comment_id:-}" ]]; then
+              GH_TOKEN="$COMMENT_TOKEN" gh api --method DELETE \
+                "repos/${GITHUB_REPOSITORY}/issues/comments/${auth_comment_id}" \
+                >/dev/null 2>&1 || true
             fi
             unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN token
             rm -f "$auth_log"
@@ -137,8 +144,12 @@ jobs:
             exit 1
           fi
 
-          GH_TOKEN="$COMMENT_TOKEN" gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body \
-            "**Fresh isolated canonical fleet authorization:** open https://github.com/login/device and enter **\`$code\`**. Ignore every earlier code. This run accepts only \`${EXPECTED_LOGIN}\` with active admin access to all five target organizations. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          auth_body="**Fresh isolated canonical fleet authorization:** open https://github.com/login/device and enter **\`$code\`**. Ignore every earlier code. This run accepts only \`${EXPECTED_LOGIN}\` with active admin access to all five target organizations. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          auth_comment_id="$(GH_TOKEN="$COMMENT_TOKEN" gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_PR}/comments" \
+            -f body="$auth_body" --jq .id)"
+          [[ "$auth_comment_id" =~ ^[0-9]+$ ]]
+          unset auth_body
           echo "::notice title=GitHub device authorization::Open https://github.com/login/device and enter $code"
 
           set +e
@@ -151,15 +162,29 @@ jobs:
             exit "$auth_rc"
           fi
           rm -f "$auth_log"
+          if GH_TOKEN="$COMMENT_TOKEN" gh api --method DELETE \
+            "repos/${GITHUB_REPOSITORY}/issues/comments/${auth_comment_id}" >/dev/null; then
+            auth_comment_id=''
+          fi
 
           current_pull="$(GH_TOKEN="$COMMENT_TOKEN" gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRACKING_PR}")"
           jq -e --arg head "$CARRIER_HEAD_SHA" '
             .state == "open" and
             .draft == true and
+            .user.login == "ORESoftware" and
+            .base.ref == "main" and
             .head.sha == $head and
             .head.repo.full_name == "ORESoftware/k8s-cluster" and
-            .head.ref == "agent/critical-org-fleet-device-auth-20260731-v1"
+            .head.ref == "agent/critical-org-fleet-device-auth-20260731-v1" and
+            .title == "DO NOT MERGE: publish exact 34-repository organization fleet" and
+            .commits == 1 and
+            .changed_files == 1
           ' <<<"$current_pull" >/dev/null
+
+          current_main="$(GH_TOKEN="$COMMENT_TOKEN" gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq .object.sha)"
+          [[ "$current_main" =~ ^[0-9a-f]{40}$ ]]
+          trusted_to_current_after_auth="$(GH_TOKEN="$COMMENT_TOKEN" gh api "repos/${GITHUB_REPOSITORY}/compare/${TRUSTED_SHA}...${current_main}")"
+          jq -e '(.status == "ahead" or .status == "identical") and .behind_by == 0' <<<"$trusted_to_current_after_auth" >/dev/null
 
           test "$(env -u GH_TOKEN -u GITHUB_TOKEN gh api user --jq .login)" = "$EXPECTED_LOGIN"
           for organization in hypesiege StreemPilot meta-agents-demo file-tunnel unreal-unity-poc; do
