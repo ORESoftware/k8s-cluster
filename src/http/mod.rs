@@ -28,7 +28,7 @@ pub mod webhook;
 use std::time::Duration;
 
 use axum::{
-    http::{header, HeaderValue, Method},
+    http::{header, HeaderName, HeaderValue, Method},
     routing::{get, post},
     Router,
 };
@@ -96,6 +96,29 @@ pub fn router(state: AppState) -> Router {
         .layer(SetResponseHeaderLayer::if_not_present(
             header::STRICT_TRANSPORT_SECURITY,
             HeaderValue::from_static("max-age=31536000; includeSubDomains"),
+        ))
+        // Token-bearing bodies — the /ui/exchange minted-JWT page, the /auth/*
+        // JSON access/refresh tokens, and introspect claims — must never sit in
+        // a shared or browser cache. `if_not_present` leaves the JWKS handler's
+        // explicit `public, max-age=300` intact, since that is public key
+        // material meant to be cached by downstream verifiers.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("no-store"),
+        ))
+        // The UI uses no powerful browser features; deny them all so a
+        // compromised or MITM'd response cannot silently request them.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("permissions-policy"),
+            HeaderValue::from_static(
+                "accelerometer=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()",
+            ),
+        ))
+        // Isolate the browsing context — no cross-origin window handle can reach
+        // an auth page opened from, or opening, another origin.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            HeaderName::from_static("cross-origin-opener-policy"),
+            HeaderValue::from_static("same-origin"),
         ))
         .layer(cors)
         .with_state(state)
