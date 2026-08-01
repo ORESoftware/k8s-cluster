@@ -12,8 +12,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
 
 concurrency:
   group: publication-carrier-uniqueness-${{ github.event.pull_request.number || github.ref }}
@@ -52,6 +50,10 @@ jobs:
         (startsWith(github.event.pull_request.title, 'DO NOT MERGE:') ||
          startsWith(github.event.pull_request.title, '[DO NOT MERGE]') ||
          startsWith(github.event.pull_request.title, 'TRIGGER:')))
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
