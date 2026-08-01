@@ -112,6 +112,38 @@ impl FactorService {
         ))
     }
 
+    async fn record_failed_otp_attempt(
+        &self,
+        claims: &OreClaims,
+        challenge_id: Uuid,
+        expected_kind: &str,
+    ) -> Result<(), AuthError> {
+        if expected_kind != "sms_otp" {
+            return Err(AuthError::Unauthorized);
+        }
+        let result = self
+            .db
+            .execute(&statement(
+                "UPDATE shared_auth.auth_challenges SET attempts = attempts + 1 \
+                 WHERE challenge_id = $1 AND shared_user_id = $2 AND session_id = $3 \
+                   AND kind = $4 AND consumed_at IS NULL AND expires_at > now() \
+                   AND attempts < max_attempts",
+                vec![
+                    challenge_id.into(),
+                    claim_user_id(claims)?.into(),
+                    claim_session_id(claims)?.into(),
+                    expected_kind.to_owned().into(),
+                ],
+            ))
+            .await
+            .map_err(db_error)?;
+        if result.rows_affected() == 1 {
+            Ok(())
+        } else {
+            Err(AuthError::Unauthorized)
+        }
+    }
+
     async fn verify_otp_challenge(
         &self,
         claims: &OreClaims,
