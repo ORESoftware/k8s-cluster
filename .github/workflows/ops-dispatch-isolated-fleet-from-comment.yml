@@ -1,0 +1,55 @@
+name: Dispatch isolated canonical fleet publisher from exact comment
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  dispatch:
+    if: >-
+      github.event.issue.pull_request != null &&
+      github.event.issue.number == 471 &&
+      github.event.comment.user.login == 'ORESoftware' &&
+      github.event.comment.body == 'ops-run-canonical-fleet-isolated:a778474bb146d7bc3c2996e59023a9d6e30567ed'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate exact carrier and trusted workflow before dispatch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/471")"
+          jq -e '
+            .state == "open" and
+            .draft == true and
+            .user.login == "ORESoftware" and
+            .base.ref == "main" and
+            .head.repo.full_name == "ORESoftware/k8s-cluster" and
+            .head.ref == "agent/critical-org-fleet-device-auth-20260731-v1" and
+            .title == "DO NOT MERGE: publish exact 34-repository organization fleet" and
+            .commits == 1 and
+            .changed_files == 1
+          ' <<<"$pull" >/dev/null
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/ops-run-canonical-fleet-isolated.yml?ref=main" --jq .name)" = ops-run-canonical-fleet-isolated.yml
+
+      - name: Dispatch the registered trusted-main publisher
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          before="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run ops-run-canonical-fleet-isolated.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+          gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/471/comments" \
+            -f body="Dispatched isolated canonical fleet publisher from trusted main after ${before}. The child workflow will post the fresh owner code and exact run URL here." >/dev/null
