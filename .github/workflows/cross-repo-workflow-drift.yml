@@ -1,0 +1,81 @@
+name: Cross-repository workflow drift
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - 'policy/cross-repo-workflow-dependencies.v1.json'
+      - 'scripts/ci/validate_cross_repo_workflow_dependencies.py'
+      - 'scripts/ci/test_validate_cross_repo_workflow_dependencies.py'
+      - 'docs/cross-repo-workflow-dependencies.md'
+  push:
+    branches: [main, dev]
+    paths:
+      - '.github/workflows/**'
+      - 'policy/cross-repo-workflow-dependencies.v1.json'
+      - 'scripts/ci/validate_cross_repo_workflow_dependencies.py'
+      - 'scripts/ci/test_validate_cross_repo_workflow_dependencies.py'
+      - 'docs/cross-repo-workflow-dependencies.md'
+  schedule:
+    - cron: '17 8 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: cross-repo-workflow-drift-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/cross-repo-workflow-drift.yml
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+
+      - name: Compile validator and tests
+        run: >-
+          python -m py_compile
+          scripts/ci/validate_cross_repo_workflow_dependencies.py
+          scripts/ci/test_validate_cross_repo_workflow_dependencies.py
+
+      - name: Run positive and negative fixtures
+        run: python -m unittest -v scripts/ci/test_validate_cross_repo_workflow_dependencies.py
+
+      - name: Validate the governed dependency slice
+        run: >-
+          python scripts/ci/validate_cross_repo_workflow_dependencies.py
+          --ledger policy/cross-repo-workflow-dependencies.v1.json
+          --repo-root .
+          --report-json "$RUNNER_TEMP/cross-repo-workflow-drift.json"
+          --report-markdown "$RUNNER_TEMP/cross-repo-workflow-drift.md"
+
+      - name: Publish report summary
+        if: always()
+        run: cat "$RUNNER_TEMP/cross-repo-workflow-drift.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload machine-readable and human-readable evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: cross-repo-workflow-drift-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/cross-repo-workflow-drift.json
+            ${{ runner.temp }}/cross-repo-workflow-drift.md
+          retention-days: 14
+          if-no-files-found: error
