@@ -1,13 +1,14 @@
-# Supply-chain gates for this repository: RustSec advisories against the
-# committed Cargo.lock, and a secret scan of the working tree.
+# Secret scanning for this repository.
 #
-# Kept out of ci.yml on purpose. These checks answer "is anything we depend on,
-# or anything we committed, known-bad *today*", so they can turn red without a
-# single line of this repo changing. Giving them their own workflow keeps that
-# signal legible instead of looking like a flaky build.
+# Dependency-vulnerability scanning is NOT here: `nix.yml`'s `audit` job already
+# runs `cargo audit --deny warnings` (via `agent-check audit`, with cargo-audit
+# pinned by the flake) against the same committed Cargo.lock. Adding a second
+# cargo-audit job would duplicate that gate and give this repo two independently
+# pinned cargo-audit versions that could disagree with each other.
 #
-# The cargo-audit setup is copied from 3FA-mcp-server.rs, the only repo in the
-# family that already ran this gate, rather than inventing a second pattern.
+# Kept out of ci.yml on purpose. This check answers "is anything we committed
+# known-bad *today*", which can turn red without a single line of this repo
+# changing, so it gets its own workflow and its own required check.
 name: security
 
 on:
@@ -24,24 +25,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  cargo-audit:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-          show-progress: false
-      # Prebuilt binary served from the runner tool cache, so this costs seconds
-      # rather than a from-source build of cargo-audit on every run.
-      - uses: taiki-e/install-action@c44f6b046f1c29ae5918b1e0bfdbb2f1813836fd # v2
-        with:
-          tool: cargo-audit@0.22.2
-      # Cargo.lock is committed here (it is not gitignored), so the audit sees
-      # exactly the versions CI builds and no lockfile has to be generated first.
-      - name: RustSec advisory audit
-        run: cargo audit --deny warnings
-
   secret-scan:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -53,6 +36,9 @@ jobs:
       # `dir` scans the checked-out tree, not history. History scanning across
       # this family surfaces long-deleted test fixtures and is slow enough that
       # nobody would keep it required; what ships is what is in the tree.
+      #
+      # Nothing in this repo currently trips a rule, so there is deliberately no
+      # .gitleaksignore — no allowlist means nowhere for a real leak to hide.
       - name: Secret scan (working tree)
         uses: docker://ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f # v8.30.1
         with:
