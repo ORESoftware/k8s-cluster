@@ -146,6 +146,25 @@ function validateTimestamp(value, label) {
   return timestamp;
 }
 
+/**
+ * Resolves the effective window start. The fixed boundary is a security property,
+ * so --since may only move the start forward; anything earlier is rejected rather
+ * than silently clamped, which would hide a caller's intent to widen history.
+ */
+export function resolveWindowStart(since) {
+  const boundary = Date.parse(START_TIME_INCLUSIVE);
+  if (since === null || since === undefined || since === '') {
+    return { iso: START_TIME_INCLUSIVE, timestamp: boundary, narrowed: false };
+  }
+  const timestamp = validateTimestamp(since, '--since');
+  if (timestamp < boundary) {
+    throw new Error(
+      `--since ${since} predates the fixed boundary ${START_TIME_INCLUSIVE}; it can only narrow the window.`,
+    );
+  }
+  return { iso: new Date(timestamp).toISOString(), timestamp, narrowed: timestamp > boundary };
+}
+
 function canonicalSourceKey(message) {
   if (message.sourceKey) return String(message.sourceKey);
   if (message.name) return `google-chat:${EXPECTED_SPACE_ID}:${message.name}`;
