@@ -133,4 +133,58 @@ for (const file of htmlFiles) {
   }
 }
 
+// Absolute same-origin asset references that live in `content=` attributes
+// rather than `href=`/`src=`. The walk above only follows `href=`, and
+// tests/build-security.test.mjs matches only <a|form|iframe|link|script ...
+// action|href|src>, so a <meta property="og:image"> pointing at a deleted file
+// is invisible to every other gate: the build succeeds and ships a 404 to every
+// link unfurler. Verified by deleting public/og.svg — `npm run check` and all
+// 48 Playwright tests passed while dist/index.html still advertised it.
+for (const file of htmlFiles) {
+  const html = readFileSync(file, "utf8");
+  for (const match of html.matchAll(/<meta\b[^>]*\bcontent=["']([^"']+)["'][^>]*>/gi)) {
+    const value = match[1];
+    if (!value.startsWith(productionHost)) continue;
+    const target = value.slice(productionHost.length).split(/[?#]/, 1)[0];
+    if (!target || target === "/") continue;
+    const relative = target.replace(/^\/+/, "");
+    const candidate = target.endsWith("/")
+      ? path.join(dist, relative, "index.html")
+      : path.join(dist, relative);
+    assert.ok(
+      existsSync(candidate),
+      `${path.relative(dist, file)}: <meta> references ${value}, which is not in the build`,
+    );
+  }
+}
+
+// Astro inlines PUBLIC_* variables at build time, so one the deploy workflow
+// forgets to forward does not error — the component silently renders its
+// unconfigured fallback and the site ships with dead CTAs. Nothing else in the
+// repo reads a workflow file, so this is the only place the two can be kept
+// honest with each other.
+const deployWorkflow = path.resolve(".github/workflows/deploy.yml");
+if (existsSync(deployWorkflow)) {
+  const workflow = readFileSync(deployWorkflow, "utf8");
+  const forwarded = new Set(
+    [...workflow.matchAll(/^\s{8,}(PUBLIC_[A-Z0-9_]+):/gm)].map((m) => m[1]),
+  );
+  const srcDir = path.resolve("src");
+  const referenced = new Set();
+  for (const file of walk(srcDir)) {
+    if (!/\.(astro|ts|tsx|js|mjs)$/.test(file)) continue;
+    for (const match of readFileSync(file, "utf8").matchAll(/PUBLIC_[A-Z0-9_]+/g)) {
+      referenced.add(match[0]);
+    }
+  }
+  const missing = [...referenced].filter((name) => !forwarded.has(name)).sort();
+  assert.deepEqual(
+    missing,
+    [],
+    `.github/workflows/deploy.yml does not forward ${missing.join(", ")} to the build. ` +
+      "src/ reads these, so production renders their unconfigured fallback. Add each to " +
+      "the Build with Astro `env:` block (and define it as a repository variable).",
+  );
+}
+
 console.log(`Verified ${htmlFiles.length} generated HTML pages for ${productionHost}.`);

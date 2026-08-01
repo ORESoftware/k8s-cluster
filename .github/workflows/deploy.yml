@@ -46,9 +46,25 @@ jobs:
       - name: Build with Astro
         uses: withastro/action@e84f40bd8d2caa9e768ec82ad30dd81f0b280853 # v6.1.2
         env:
+          # Every PUBLIC_* variable the components read must be forwarded here:
+          # Astro inlines these at build time, so one that is missing does not
+          # error — the component silently renders its unconfigured fallback.
+          # Keep this list in sync with .env.example; scripts/verify-build.mjs
+          # fails the build if they drift apart.
+          #
+          # Alpha desktop builds (DesktopDownloads.astro)
           PUBLIC_RUST_DESKTOP_DOWNLOAD_BASE_URL: ${{ vars.PUBLIC_RUST_DESKTOP_DOWNLOAD_BASE_URL }}
           PUBLIC_FLUTTER_DESKTOP_DOWNLOAD_BASE_URL: ${{ vars.PUBLIC_FLUTTER_DESKTOP_DOWNLOAD_BASE_URL }}
+          PUBLIC_DESKTOP_DOWNLOAD_BASE_URL: ${{ vars.PUBLIC_DESKTOP_DOWNLOAD_BASE_URL }}
           PUBLIC_DESKTOP_TESTERS_URL: ${{ vars.PUBLIC_DESKTOP_TESTERS_URL }}
+          # Mobile store listings (StoreButtons.astro)
+          PUBLIC_APP_STORE_URL: ${{ vars.PUBLIC_APP_STORE_URL }}
+          PUBLIC_PLAY_STORE_URL: ${{ vars.PUBLIC_PLAY_STORE_URL }}
+          # Stable per-OS installers (StoreButtons.astro)
+          PUBLIC_DOWNLOAD_BASE_URL: ${{ vars.PUBLIC_DOWNLOAD_BASE_URL }}
+          PUBLIC_DOWNLOAD_WINDOWS_URL: ${{ vars.PUBLIC_DOWNLOAD_WINDOWS_URL }}
+          PUBLIC_DOWNLOAD_MACOS_URL: ${{ vars.PUBLIC_DOWNLOAD_MACOS_URL }}
+          PUBLIC_DOWNLOAD_LINUX_URL: ${{ vars.PUBLIC_DOWNLOAD_LINUX_URL }}
         with:
           node-version: 22
 
