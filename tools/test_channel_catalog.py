@@ -120,9 +120,7 @@ class ChannelCatalogTests(unittest.TestCase):
             )
             catalog = self.catalog(self.channel("cliptown"), self.channel("memebank"))
             problems = find_unregistered_owners(catalog, root)
-            self.assertEqual(
-                problems, ["memebank: not present in catalog/owners.json"]
-            )
+            self.assertEqual(problems, ["memebank: not present in catalog/owners.json"])
 
     def test_render_summary_lists_every_channel(self):
         catalog = self.catalog(

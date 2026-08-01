@@ -131,7 +131,9 @@ def _validate_channel(value: Any, identity: str) -> list[str]:
 def find_public_boundary_violations(raw: str) -> list[str]:
     violations: list[str] = []
     for match in sorted(set(SLACK_CHANNEL_ID.findall(raw))):
-        violations.append(f"Slack channel ID {match} must not appear in a public catalog")
+        violations.append(
+            f"Slack channel ID {match} must not appear in a public catalog"
+        )
     for match in sorted(set(UUID.findall(raw))):
         violations.append(f"Linear UUID {match} must not appear in a public catalog")
     return violations
