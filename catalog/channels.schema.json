@@ -1,0 +1,95 @@
+{
+  "$id": "https://github.com/ORESoftware/k8s-cluster/catalog/channels.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "const": "./channels.schema.json"
+    },
+    "captured_at": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "channels": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_state": {
+            "description": "Whether the Linear project exposes a slackChannelId. Moving unbound -> bound is an operator action in Linear's Slack integration surface; ProjectUpdateInput has no slackChannelId field.",
+            "enum": ["bound", "unbound"],
+            "type": "string"
+          },
+          "channel_inventoried": {
+            "description": "Whether the Slack channel itself was observed in the DEN-1267 inventory. False means the Linear project is confirmed but the channel was not seen.",
+            "type": "boolean"
+          },
+          "linear_notifications": {
+            "additionalProperties": false,
+            "description": "Mirrors the writable Linear toggles slackNewIssue / slackIssueComments / slackIssueStatuses.",
+            "properties": {
+              "issue_comments": {
+                "type": "boolean"
+              },
+              "issue_statuses": {
+                "type": "boolean"
+              },
+              "new_issue": {
+                "type": "boolean"
+              }
+            },
+            "required": ["new_issue", "issue_comments", "issue_statuses"],
+            "type": "object"
+          },
+          "linear_project": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "owner": {
+            "description": "The eponymous GitHub organization login.",
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*$",
+            "type": "string"
+          },
+          "slack_channel": {
+            "description": "Channel name only. Immutable Slack channel IDs must not appear in this public repository.",
+            "pattern": "^#[a-z0-9][a-z0-9._-]*$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "binding_state",
+          "channel_inventoried",
+          "linear_notifications",
+          "linear_project",
+          "owner",
+          "slack_channel"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "governing_issue": {
+      "pattern": "^DEN-[0-9]+$",
+      "type": "string"
+    },
+    "notes": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1
+    }
+  },
+  "required": [
+    "$schema",
+    "captured_at",
+    "channels",
+    "governing_issue",
+    "schema_version"
+  ],
+  "type": "object"
+}

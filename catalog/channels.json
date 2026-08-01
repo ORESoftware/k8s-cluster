@@ -1,0 +1,243 @@
+{
+  "$schema": "./channels.schema.json",
+  "captured_at": "2026-08-01T00:00:00Z",
+  "channels": [
+    {
+      "binding_state": "bound",
+      "channel_inventoried": true,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/sonus-auris",
+      "owner": "sonus-auris",
+      "slack_channel": "#sonus-auris"
+    },
+    {
+      "binding_state": "bound",
+      "channel_inventoried": true,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/messaging-intel",
+      "owner": "messaging-intel",
+      "slack_channel": "#messaging-intel"
+    },
+    {
+      "binding_state": "bound",
+      "channel_inventoried": true,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/zed-pkg",
+      "owner": "zed-pkg",
+      "slack_channel": "#zed-pkg"
+    },
+    {
+      "binding_state": "bound",
+      "channel_inventoried": true,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/fiducia-cloud",
+      "owner": "fiducia-cloud",
+      "slack_channel": "#fiducia-cloud"
+    },
+    {
+      "binding_state": "unbound",
+      "channel_inventoried": true,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/ORESoftware",
+      "owner": "ORESoftware",
+      "slack_channel": "#oresoftware"
+    },
+    {
+      "binding_state": "unbound",
+      "channel_inventoried": true,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/3FA-app",
+      "owner": "3FA-app",
+      "slack_channel": "#3fa-app"
+    },
+    {
+      "binding_state": "unbound",
+      "channel_inventoried": true,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/cliptown",
+      "owner": "cliptown",
+      "slack_channel": "#cliptown"
+    },
+    {
+      "binding_state": "unbound",
+      "channel_inventoried": true,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/benefactor-cc",
+      "owner": "benefactor-cc",
+      "slack_channel": "#benefactor-cc"
+    },
+    {
+      "binding_state": "unbound",
+      "channel_inventoried": true,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/athlet-o",
+      "owner": "athlet-o",
+      "slack_channel": "#athlet-o"
+    },
+    {
+      "binding_state": "unbound",
+      "channel_inventoried": true,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/scintilla-run",
+      "owner": "scintilla-run",
+      "slack_channel": "#scintilla-run"
+    },
+    {
+      "binding_state": "unbound",
+      "channel_inventoried": true,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/quaestor-ledger",
+      "owner": "quaestor-ledger",
+      "slack_channel": "#quaestor-ledger"
+    },
+    {
+      "binding_state": "unbound",
+      "channel_inventoried": true,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/daedalus-fab",
+      "owner": "daedalus-fab",
+      "slack_channel": "#daedalus-fab"
+    },
+    {
+      "binding_state": "unbound",
+      "channel_inventoried": true,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/akrion-sim",
+      "owner": "akrion-sim",
+      "slack_channel": "#akrion-sim"
+    },
+    {
+      "binding_state": "unbound",
+      "channel_inventoried": true,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "memebank",
+      "owner": "memebank",
+      "slack_channel": "#memebank"
+    },
+    {
+      "binding_state": "unbound",
+      "channel_inventoried": false,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/hypesiege",
+      "owner": "hypesiege",
+      "slack_channel": "#hypesiege"
+    },
+    {
+      "binding_state": "unbound",
+      "channel_inventoried": false,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/streempilot",
+      "owner": "streempilot",
+      "slack_channel": "#streempilot"
+    },
+    {
+      "binding_state": "unbound",
+      "channel_inventoried": false,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/shared-auth",
+      "owner": "shared-auth",
+      "slack_channel": "#shared-auth"
+    },
+    {
+      "binding_state": "unbound",
+      "channel_inventoried": false,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/opto-sync",
+      "owner": "opto-sync",
+      "slack_channel": "#opto-sync"
+    },
+    {
+      "binding_state": "unbound",
+      "channel_inventoried": false,
+      "linear_notifications": {
+        "issue_comments": true,
+        "issue_statuses": true,
+        "new_issue": true
+      },
+      "linear_project": "github.com/voxletra",
+      "owner": "voxletra",
+      "slack_channel": "#voxletra"
+    }
+  ],
+  "governing_issue": "DEN-1267",
+  "notes": [
+    "Public-safe registry. Immutable Slack channel IDs and Linear project UUIDs are deliberately excluded because this repository is public; they are recorded on DEN-1267.",
+    "binding_state records whether the Linear project exposes a slackChannelId. Linear's ProjectUpdateInput has no slackChannelId field, so 'unbound' -> 'bound' is an operator action in the Linear Slack integration surface, not an API write.",
+    "linear_notifications mirrors the writable Linear toggles slackNewIssue / slackIssueComments / slackIssueStatuses. All tracked projects already have all three enabled, so binding alone starts the event flow.",
+    "channel_inventoried is false where the Linear project is confirmed but the Slack channel was not observed in the DEN-1267 inventory of 2026-07-27.",
+    "#general (workspace-wide) is intentionally absent: it carries a portfolio routing index, not one-project event traffic."
+  ],
+  "schema_version": 1
+}
