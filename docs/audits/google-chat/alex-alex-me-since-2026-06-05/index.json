@@ -109,76 +109,23 @@
     },
     "duplicates": 16
   },
-  "shards": [
-    {
-      "file": "ledger-0001.json",
-      "records": 96,
-      "sha256": "030c24d1fea3ae02247ca122645d168f7bbab812d0c9704cac64d2baffb5b0cb",
-      "firstCreateTime": "2026-06-05T02:31:47.609599Z",
-      "lastCreateTime": "2026-06-14T17:41:52.647103Z"
-    },
-    {
-      "file": "ledger-0002.json",
-      "records": 96,
-      "sha256": "627566f7dcb4a491d31686896da69a8d04a5a9a2d9a64bd6f952bffc931a1f4d",
-      "firstCreateTime": "2026-06-14T19:30:29.503487Z",
-      "lastCreateTime": "2026-06-18T19:02:31.764767Z"
-    },
-    {
-      "file": "ledger-0003.json",
-      "records": 96,
-      "sha256": "923df1014b311a25183fdaa6aedc34b3f9b062245ee58980f83fd0f49d5ca07a",
-      "firstCreateTime": "2026-06-18T19:37:50.271519Z",
-      "lastCreateTime": "2026-06-25T19:05:41.506911Z"
-    },
-    {
-      "file": "ledger-0004.json",
-      "records": 96,
-      "sha256": "b8cb765467e60bfdfcc6747fd55df6e99d91cadb0fd4c79ced402bc58aea5784",
-      "firstCreateTime": "2026-06-25T21:11:35.446351Z",
-      "lastCreateTime": "2026-06-27T23:10:18.043295Z"
-    },
-    {
-      "file": "ledger-0005.json",
-      "records": 96,
-      "sha256": "dd6d3e9c672f28497741dc76dac998cc16cd0c970122f8036dcc2b5881af2a7f",
-      "firstCreateTime": "2026-06-27T23:22:25.238975Z",
-      "lastCreateTime": "2026-06-30T22:29:52.740751Z"
-    },
-    {
-      "file": "ledger-0006.json",
-      "records": 96,
-      "sha256": "58d8e9f3bf0bf4fbb18dcb7eb1ae03641341393948f34bb1c9b80c229bd1217c",
-      "firstCreateTime": "2026-06-30T22:31:47.135503Z",
-      "lastCreateTime": "2026-07-05T14:35:17.824863Z"
-    },
-    {
-      "file": "ledger-0007.json",
-      "records": 96,
-      "sha256": "db00800e8446621209246b78dfb97d075ba8a3a3b98e904642005877f28b3f7e",
-      "firstCreateTime": "2026-07-05T14:35:45.765039Z",
-      "lastCreateTime": "2026-07-12T21:08:51.254655Z"
-    },
-    {
-      "file": "ledger-0008.json",
-      "records": 96,
-      "sha256": "8f3f56d3a23bb074dc9cc9614d7aae9b649dfa16a56be9c870447a263036e490",
-      "firstCreateTime": "2026-07-12T21:12:43.279567Z",
-      "lastCreateTime": "2026-07-21T01:32:33.428799Z"
-    },
-    {
-      "file": "ledger-0009.json",
-      "records": 96,
-      "sha256": "6a149f7b4a8dd2ca3f89769abf8dfd7dea7567de79a7a257deacbd85a8f6a021",
-      "firstCreateTime": "2026-07-21T01:43:26.091183Z",
-      "lastCreateTime": "2026-07-26T04:18:17.542991Z"
-    },
-    {
-      "file": "ledger-0010.json",
-      "records": 91,
-      "sha256": "28617c1cc1980aeeee031130c7471ac835597954cd616890d50739b649aebf39",
-      "firstCreateTime": "2026-07-26T05:14:50.118847Z",
-      "lastCreateTime": "2026-08-01T15:32:03.554959Z"
-    }
-  ]
+  "ledger": {
+    "files": [
+      "ledger.json.gz.base64.part-0001",
+      "ledger.json.gz.base64.part-0002",
+      "ledger.json.gz.base64.part-0003",
+      "ledger.json.gz.base64.part-0004",
+      "ledger.json.gz.base64.part-0005",
+      "ledger.json.gz.base64.part-0006",
+      "ledger.json.gz.base64.part-0007",
+      "ledger.json.gz.base64.part-0008"
+    ],
+    "format": "gzip+base64-parts",
+    "records": 955,
+    "compressedBytes": 23763,
+    "base64Characters": 31684,
+    "parts": 8,
+    "sha256": "8f24e09b4bffe35973ed7cf5c891a431cfd8f91995d90e777ea7bb3bd778e588",
+    "uncompressedJsonBytes": 129970
+  }
 }
