@@ -1,0 +1,86 @@
+name: investor browser audit
+
+on:
+  pull_request:
+    paths:
+      - 'src/pages/investors.astro'
+      - 'public/company-facts.json'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'astro.config.mjs'
+      - '.github/workflows/investor-browser-audit.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/pages/investors.astro'
+      - 'public/company-facts.json'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'astro.config.mjs'
+      - '.github/workflows/investor-browser-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.base }}
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    name: browser (${{ matrix.base }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - base: root
+            public_base: '/'
+          - base: prefixed
+            public_base: '/fiducia'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          path: repo
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          repository: fiducia-cloud/fiducia-interfaces
+          ref: 487e470c45ab5851e8f6f3b1dc048fe067fbf408
+          path: fiducia-interfaces
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          repository: fiducia-cloud/fiducia-test-config
+          ref: 825220281fdc16bbf47a035177001d2fe29bdabf
+          path: fiducia-test-config
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: '22.22.1'
+          cache: npm
+          cache-dependency-path: repo/package-lock.json
+      - id: chrome
+        uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd # v2
+      - run: npm ci --ignore-scripts
+        working-directory: repo
+      - run: npm test
+        working-directory: repo
+      - name: Playwright and Puppeteer evidence audit
+        working-directory: repo
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+          PUBLIC_BASE: ${{ matrix.public_base }}
+        run: npm run test:browser
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: investor-browser-${{ matrix.base }}
+          path: repo/test-results/
+          if-no-files-found: error
+          retention-days: 14
