@@ -75,7 +75,7 @@ impl FactorService {
         let label = normalize_label(label)?;
         let row = self
             .db
-            .query_one(statement(
+            .query_one(&statement(
                 "INSERT INTO shared_auth.auth_factors \
                     (factor_id, shared_user_id, kind, label, public_data, external_id, enabled, confirmed_at) \
                  VALUES ($1, $2, 'passkey', $3, $4, $5, true, now()) \
@@ -161,29 +161,55 @@ impl FactorService {
                 tracing::info!(error = %error, "passkey authentication rejected");
                 AuthError::Unauthorized
             })?;
-        let mut stored = self.passkey_by_external_id(user_id, &external_id).await?;
-        let _ = stored.update_credential(&result);
+
+        // WebAuthn verification uses the credential snapshot captured when the
+        // ceremony started. Lock and reload the current row before applying the
+        // result so two valid-looking concurrent assertions cannot both advance
+        // from the same old signature counter.
+        let transaction = self.db.begin().await.map_err(db_error)?;
+        let row = transaction
+            .query_one(&statement(
+                "SELECT public_data FROM shared_auth.auth_factors \
+                 WHERE shared_user_id = $1 AND kind = 'passkey' AND external_id = $2 \
+                   AND enabled = true FOR UPDATE",
+                vec![user_id.into(), external_id.clone().into()],
+            ))
+            .await
+            .map_err(db_error)?
+            .ok_or(AuthError::Unauthorized)?;
+        let data: Value = row.try_get("", "public_data").map_err(db_error)?;
+        let mut stored: Passkey =
+            serde_json::from_value(data).map_err(|_| AuthError::Internal)?;
+        let changed = stored
+            .update_credential(&result)
+            .ok_or(AuthError::Unauthorized)?;
+        if result.needs_update() && !changed {
+            // Another ceremony already committed this counter/backup-state
+            // transition. Treat the stale assertion as a replay rather than
+            // minting a second step-up token.
+            return Err(AuthError::Unauthorized);
+        }
         let public_data = serde_json::to_value(stored).map_err(|_| AuthError::Internal)?;
-        let result = self
-            .db
-            .execute(statement(
-                "UPDATE shared_auth.auth_factors SET public_data = $3, last_used_at = now(), updated_at = now() \
-                 WHERE shared_user_id = $1 AND external_id = $2 AND kind = 'passkey' AND enabled = true",
+        let update = transaction
+            .execute(&statement(
+                "UPDATE shared_auth.auth_factors \
+                 SET public_data = $3, last_used_at = now(), updated_at = now() \
+                 WHERE shared_user_id = $1 AND external_id = $2 \
+                   AND kind = 'passkey' AND enabled = true",
                 vec![user_id.into(), external_id.into(), public_data.into()],
             ))
             .await
             .map_err(db_error)?;
-        if result.rows_affected() == 1 {
-            Ok(())
-        } else {
-            Err(AuthError::Unauthorized)
+        if update.rows_affected() != 1 {
+            return Err(AuthError::Unauthorized);
         }
+        transaction.commit().await.map_err(db_error)
     }
 
     async fn passkeys_for(&self, user_id: Uuid) -> Result<Vec<(String, Passkey)>, AuthError> {
         let rows = self
             .db
-            .query_all(statement(
+            .query_all(&statement(
                 "SELECT external_id, public_data FROM shared_auth.auth_factors \
                  WHERE shared_user_id = $1 AND kind = 'passkey' AND enabled = true",
                 vec![user_id.into()],
@@ -200,25 +226,6 @@ impl FactorService {
             .collect()
     }
 
-    async fn passkey_by_external_id(
-        &self,
-        user_id: Uuid,
-        external_id: &str,
-    ) -> Result<Passkey, AuthError> {
-        let row = self
-            .db
-            .query_one(statement(
-                "SELECT public_data FROM shared_auth.auth_factors \
-                 WHERE shared_user_id = $1 AND kind = 'passkey' AND external_id = $2 AND enabled = true",
-                vec![user_id.into(), external_id.to_owned().into()],
-            ))
-            .await
-            .map_err(db_error)?
-            .ok_or(AuthError::Unauthorized)?;
-        let data: Value = row.try_get("", "public_data").map_err(db_error)?;
-        serde_json::from_value(data).map_err(|_| AuthError::Internal)
-    }
-
     async fn insert_challenge(
         &self,
         user_id: Uuid,
@@ -230,8 +237,51 @@ impl FactorService {
         expires_at: DateTime<FixedOffset>,
     ) -> Result<Uuid, AuthError> {
         let challenge_id = Uuid::new_v4();
-        self.db
-            .execute(statement(
+        let transaction = self.db.begin().await.map_err(db_error)?;
+        transaction
+            .query_one(&statement(
+                "SELECT session_id FROM shared_auth.sessions \
+                 WHERE session_id = $1 AND shared_user_id = $2 \
+                   AND revoked_at IS NULL AND expires_at > now() FOR UPDATE",
+                vec![session_id.into(), user_id.into()],
+            ))
+            .await
+            .map_err(db_error)?
+            .ok_or(AuthError::Unauthorized)?;
+        transaction
+            .execute(&statement(
+                "UPDATE shared_auth.auth_challenges SET consumed_at = now() \
+                 WHERE shared_user_id = $1 AND session_id = $2 AND kind = $3 \
+                   AND consumed_at IS NULL AND expires_at <= now()",
+                vec![
+                    user_id.into(),
+                    session_id.into(),
+                    kind.to_owned().into(),
+                ],
+            ))
+            .await
+            .map_err(db_error)?;
+        let active = transaction
+            .query_one(&statement(
+                "SELECT count(*)::bigint AS active_count \
+                 FROM shared_auth.auth_challenges \
+                 WHERE shared_user_id = $1 AND session_id = $2 AND kind = $3 \
+                   AND consumed_at IS NULL AND expires_at > now()",
+                vec![
+                    user_id.into(),
+                    session_id.into(),
+                    kind.to_owned().into(),
+                ],
+            ))
+            .await
+            .map_err(db_error)?
+            .ok_or(AuthError::Internal)?;
+        let active_count: i64 = active.try_get("", "active_count").map_err(db_error)?;
+        if active_count >= MAX_ACTIVE_PASSKEY_CEREMONIES {
+            return Err(AuthError::RateLimited);
+        }
+        transaction
+            .execute(&statement(
                 "INSERT INTO shared_auth.auth_challenges \
                     (challenge_id, shared_user_id, session_id, kind, code_tag, state, max_attempts, expires_at) \
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
@@ -248,6 +298,7 @@ impl FactorService {
             ))
             .await
             .map_err(db_error)?;
+        transaction.commit().await.map_err(db_error)?;
         Ok(challenge_id)
     }
 
@@ -260,7 +311,7 @@ impl FactorService {
     ) -> Result<Value, AuthError> {
         let row = self
             .db
-            .query_one(statement(
+            .query_one(&statement(
                 "UPDATE shared_auth.auth_challenges SET consumed_at = now(), attempts = attempts + 1 \
                  WHERE challenge_id = $1 AND shared_user_id = $2 AND session_id = $3 AND kind = $4 \
                    AND consumed_at IS NULL AND expires_at > now() AND attempts < max_attempts \
