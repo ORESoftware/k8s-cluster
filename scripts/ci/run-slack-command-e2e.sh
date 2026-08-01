@@ -113,14 +113,23 @@ wait_http http://127.0.0.1:8142/readyz
 
 bridge_auth_header="$(bearer_header "$BRIDGE_TEST_TOKEN")"
 for registration in \
-  '{"agent_key":"gpt-5.6-sol","display_name":"ChatGPT Sol","kind":"chatgpt","meta":{"capabilities":["rust","github","linear"]}}' \
+  '{"agent_key":"gpt-5.6-sol","display_name":"ChatGPT Sol","kind":"codex","meta":{"capabilities":["rust","github","linear"]}}' \
   '{"agent_key":"claude-fable-5","display_name":"Claude Fable","kind":"claude","meta":{"capabilities":["rust","github","linear"]}}'; do
-  curl --silent --show-error --fail \
+  agent_key="$(jq --raw-output '.agent_key' <<<"$registration")"
+  response_path="${LOG_DIR}/bridge-register-${agent_key}.json"
+  status="$(curl --silent --show-error \
     --request POST \
     --header "$bridge_auth_header" \
     --header 'Content-Type: application/json' \
     --data "$registration" \
-    http://127.0.0.1:8142/agents/register >/dev/null
+    --output "$response_path" \
+    --write-out '%{http_code}' \
+    http://127.0.0.1:8142/agents/register)"
+  if [[ ! "$status" =~ ^2[0-9][0-9]$ ]] || ! jq --exit-status '.ok == true' "$response_path" >/dev/null; then
+    echo "bridge agent registration failed for ${agent_key}: HTTP ${status}" >&2
+    cat "$response_path" >&2
+    exit 1
+  fi
 done
 unset bridge_auth_header
 
