@@ -75,6 +75,7 @@
     "test:ui:playwright": "node ui-playwright-smoke.mjs",
     "test:ui:puppeteer": "node ui-puppeteer-smoke.mjs",
     "test:ui:fiducia-customer": "node fiducia-customer-portal-smoke.mjs",
+    "test:ui:fiducia-kv-auth": "node fiducia-kv-auth-smoke.mjs",
     "test:ui:sweep": "node ui-gateway-sweep.mjs",
     "test:ui:benefactor": "node benefactor-site-smoke.mjs",
     "test:ui:athleto": "node --test ui/*.test.mjs",
