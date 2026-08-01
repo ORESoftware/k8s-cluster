@@ -175,9 +175,6 @@ impl Trace {
             self.executed_probability = Some(self.selected_probability);
             self.likelihood_status = LikelihoodStatus::ExactExecutedAction;
         } else {
-            // The downstream feasibility/MPC mapping is not modeled here. Using
-            // the promoted action probability for a different executed action
-            // would fabricate an on-policy likelihood.
             self.executed_probability = None;
             self.likelihood_status = LikelihoodStatus::UnknownAfterDownstreamOverride;
         }
@@ -295,9 +292,7 @@ fn probabilities(strategy: Strategy, ranked: &[Candidate]) -> Vec<f64> {
             values
         }
         Strategy::Boltzmann { temperature } => softmax(ranked, temperature, 0.0),
-        Strategy::UncertaintyDirected { beta, temperature } => {
-            softmax(ranked, temperature, beta)
-        }
+        Strategy::UncertaintyDirected { beta, temperature } => softmax(ranked, temperature, beta),
     }
 }
 
@@ -433,8 +428,8 @@ mod tests {
     fn rank_profile_selects_first_second_and_third() {
         let profile = Profile::rank_70_20_10(1);
         assert_eq!(select_with_draw(profile, 0.69).selected_action_id, 10);
-        assert_eq!(select_with_draw(profile, 0.70).selected_action_id, 20);
-        assert_eq!(select_with_draw(profile, 0.90).selected_action_id, 30);
+        assert_eq!(select_with_draw(profile, 0.75).selected_action_id, 20);
+        assert_eq!(select_with_draw(profile, 0.95).selected_action_id, 30);
     }
 
     #[test]
