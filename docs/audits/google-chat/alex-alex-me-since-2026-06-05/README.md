@@ -2,9 +2,10 @@
 
 This ledger accounts for every Google Chat message in the requested window
 without committing message bodies, credential values, contact values, or the raw
-export. The machine-readable ledger is split into ten compact JSON shards. It
-contains only source-key message IDs, timestamps, dispositions, routing
-categories, canonical Linear issue identifiers, and exact duplicate provenance.
+export. The machine-readable ledger is gzip-compressed and stored as eight deterministic
+base64 parts. It contains only source-key message IDs, timestamps, dispositions,
+routing categories, canonical Linear issue identifiers, and exact duplicate
+provenance.
 
 ## Verified input
 
@@ -138,11 +139,14 @@ Linear safely.
 ## Machine-readable ledger
 
 - Index: `index.json`
-- Shards: `shards/ledger-0001.json` through `shards/ledger-0010.json`
-- The index records each shard's SHA-256, record count, and timestamp range.
-- Each record stores `id` (appended to `sourceKeyPrefix`), `t` (create time),
-  `d` (disposition), `c` (category), optional `i` (Linear issue identifiers),
-  and optional `dup` (the first identical message ID).
+- Complete content-free ledger: concatenate `ledger.json.gz.base64.part-0001` through `part-0008`, base64-decode the result, then gunzip it.
+- The index records the gzip SHA-256, record count, compressed size, base64 character count, part count, and uncompressed JSON size.
+- After decompression, each record stores `id` (appended to `sourceKeyPrefix`), `t` (create time), `d` (disposition), `c` (category), optional `i` (Linear issue identifiers), and optional `dup` (the first identical message ID).
 
-The ten shards contain 955 records in chronological order. Their hashes are
-verified by `index.json`; no raw Chat text is present.
+The compressed ledger contains all 955 records in chronological order. No raw Chat text is present.
+
+```bash
+cat ledger.json.gz.base64.part-* | base64 --decode > ledger.json.gz
+sha256sum ledger.json.gz
+gzip --decompress --stdout ledger.json.gz > ledger.json
+```
