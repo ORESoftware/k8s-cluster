@@ -62,6 +62,7 @@ unit_tests() {
 		cd tools
 		python -m unittest -v \
 			test_application_catalog.py \
+			test_channel_catalog.py \
 			test_repository_catalog.py
 	)
 }
