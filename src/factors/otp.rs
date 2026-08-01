@@ -28,8 +28,61 @@ impl FactorService {
         };
         let challenge_id = Uuid::new_v4();
         let tag = otp_tag(pepper, challenge_id, &code)?;
-        self.db
-            .execute(statement(
+
+        let transaction = self.db.begin().await.map_err(db_error)?;
+        // Serialize challenge starts per session. This makes the resend interval
+        // and active-challenge cap reliable across every server replica.
+        transaction
+            .query_one(&statement(
+                "SELECT session_id FROM shared_auth.sessions \
+                 WHERE session_id = $1 AND shared_user_id = $2 \
+                   AND revoked_at IS NULL AND expires_at > now() FOR UPDATE",
+                vec![session_id.into(), user_id.into()],
+            ))
+            .await
+            .map_err(db_error)?
+            .ok_or(AuthError::Unauthorized)?;
+        transaction
+            .execute(&statement(
+                "UPDATE shared_auth.auth_challenges SET consumed_at = now() \
+                 WHERE shared_user_id = $1 AND session_id = $2 AND kind = $3 \
+                   AND consumed_at IS NULL AND expires_at <= now()",
+                vec![
+                    user_id.into(),
+                    session_id.into(),
+                    db_kind.to_owned().into(),
+                ],
+            ))
+            .await
+            .map_err(db_error)?;
+        let active = transaction
+            .query_one(&statement(
+                "SELECT count(*)::bigint AS active_count, max(created_at) AS latest_created_at \
+                 FROM shared_auth.auth_challenges \
+                 WHERE shared_user_id = $1 AND session_id = $2 AND kind = $3 \
+                   AND consumed_at IS NULL AND expires_at > now()",
+                vec![
+                    user_id.into(),
+                    session_id.into(),
+                    db_kind.to_owned().into(),
+                ],
+            ))
+            .await
+            .map_err(db_error)?
+            .ok_or(AuthError::Internal)?;
+        let active_count: i64 = active.try_get("", "active_count").map_err(db_error)?;
+        let latest_created_at: Option<DateTime<FixedOffset>> =
+            active.try_get("", "latest_created_at").map_err(db_error)?;
+        let resend_cutoff = Utc::now().fixed_offset()
+            - TimeDelta::seconds(OTP_RESEND_INTERVAL_SECONDS);
+        if active_count >= MAX_ACTIVE_OTP_CHALLENGES
+            || latest_created_at.is_some_and(|created_at| created_at > resend_cutoff)
+        {
+            return Err(AuthError::RateLimited);
+        }
+
+        transaction
+            .execute(&statement(
                 "INSERT INTO shared_auth.auth_challenges \
                     (challenge_id, shared_user_id, session_id, kind, destination_hint, code_tag, state, max_attempts, expires_at) \
                  VALUES ($1, $2, $3, $4, $5, $6, '{}'::jsonb, $7, $8)",
@@ -46,6 +99,8 @@ impl FactorService {
             ))
             .await
             .map_err(db_error)?;
+        transaction.commit().await.map_err(db_error)?;
+
         Ok((
             ChallengeStart {
                 challenge_id: challenge_id.to_string(),
@@ -68,13 +123,16 @@ impl FactorService {
         validate_otp(code)?;
         let user_id = claim_user_id(claims)?;
         let session_id = claim_session_id(claims)?;
-        let row = self
-            .db
-            .query_one(statement(
+        let transaction = self.db.begin().await.map_err(db_error)?;
+        // Lock before checking the tag, expiry, or attempt count. A concurrent
+        // verifier can therefore never consume the same challenge twice or
+        // succeed after another request exhausted its attempts.
+        let row = transaction
+            .query_one(&statement(
                 "SELECT kind, code_tag FROM shared_auth.auth_challenges \
                  WHERE challenge_id = $1 AND shared_user_id = $2 AND session_id = $3 \
                    AND kind IN ('email_otp', 'sms_otp') AND consumed_at IS NULL \
-                   AND expires_at > now() AND attempts < max_attempts",
+                   AND expires_at > now() AND attempts < max_attempts FOR UPDATE",
                 vec![challenge_id.into(), user_id.into(), session_id.into()],
             ))
             .await
@@ -82,30 +140,47 @@ impl FactorService {
             .ok_or(AuthError::Unauthorized)?;
         let kind: String = row.try_get("", "kind").map_err(db_error)?;
         let expected: Vec<u8> = row.try_get("", "code_tag").map_err(db_error)?;
-        let presented = otp_tag(pepper, challenge_id, code)?;
-        if !externally_verified && !constant_time_bytes_eq(&expected, &presented, pepper) {
-            self.db
-                .execute(statement(
+        if externally_verified && kind != "sms_otp" {
+            return Err(AuthError::Unauthorized);
+        }
+        let valid = externally_verified || otp_tag_matches(pepper, challenge_id, code, &expected);
+        if !valid {
+            let result = transaction
+                .execute(&statement(
                     "UPDATE shared_auth.auth_challenges SET attempts = attempts + 1 \
-                     WHERE challenge_id = $1 AND consumed_at IS NULL",
-                    vec![challenge_id.into()],
+                     WHERE challenge_id = $1 AND shared_user_id = $2 AND session_id = $3 \
+                       AND consumed_at IS NULL AND expires_at > now() AND attempts < max_attempts",
+                    vec![challenge_id.into(), user_id.into(), session_id.into()],
                 ))
                 .await
                 .map_err(db_error)?;
+            if result.rows_affected() != 1 {
+                return Err(AuthError::Unauthorized);
+            }
+            transaction.commit().await.map_err(db_error)?;
             return Err(AuthError::Unauthorized);
         }
-        let result = self
-            .db
-            .execute(statement(
-                "UPDATE shared_auth.auth_challenges SET consumed_at = now(), attempts = attempts + 1 \
-                 WHERE challenge_id = $1 AND consumed_at IS NULL",
-                vec![challenge_id.into()],
+
+        let result = transaction
+            .execute(&statement(
+                "UPDATE shared_auth.auth_challenges \
+                 SET consumed_at = now(), attempts = attempts + 1 \
+                 WHERE challenge_id = $1 AND shared_user_id = $2 AND session_id = $3 \
+                   AND kind = $4 AND consumed_at IS NULL AND expires_at > now() \
+                   AND attempts < max_attempts",
+                vec![
+                    challenge_id.into(),
+                    user_id.into(),
+                    session_id.into(),
+                    kind.clone().into(),
+                ],
             ))
             .await
             .map_err(db_error)?;
         if result.rows_affected() != 1 {
             return Err(AuthError::Unauthorized);
         }
+        transaction.commit().await.map_err(db_error)?;
         match kind.as_str() {
             "email_otp" => Ok("email_otp"),
             "sms_otp" => Ok("sms_otp"),
