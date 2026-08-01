@@ -761,7 +761,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
   const existingIndex = options.existingIndex ? await readJson(options.existingIndex) : [];
   const projectMap = options.projectMap ? await readJson(options.projectMap) : null;
-  const plan = buildImportPlan(pageDocuments, { existingIndex, projectMap });
+  const plan = buildImportPlan(pageDocuments, { existingIndex, projectMap, since: options.since });
   const json = `${JSON.stringify(plan, null, 2)}\n`;
   const markdown = renderMarkdown(plan);
 
