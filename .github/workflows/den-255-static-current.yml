@@ -35,6 +35,9 @@ jobs:
           cache-dependency-path: remote/tests/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: remote/tests
+      - name: Install the locked Playwright Chromium runtime
+        working-directory: remote/tests
+        run: pnpm exec playwright install --with-deps chromium
       - name: Run authoritative static list
         id: tests
         continue-on-error: true
@@ -59,7 +62,7 @@ jobs:
           exit "$status"
       - name: Upload diagnostic
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: den-255-static-current
           path: ${{ runner.temp }}/den-255-static-current

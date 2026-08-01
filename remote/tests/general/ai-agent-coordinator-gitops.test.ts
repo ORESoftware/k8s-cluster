@@ -15,7 +15,7 @@ function findRepoRoot(): string {
 
 const repoRoot = findRepoRoot();
 const read = (path: string) => readFile(resolve(repoRoot, path), 'utf8');
-const appCommit = process.env.COORDINATOR_REVISION ?? 'd25e04e50be4a9fad039cfcfa6c321e9c99a1e02';
+const appCommit = 'a6fb1f89e064c21dc1e435931c75e9871746d0f7';
 const platformRoot = 'remote/argocd/projects/ai-agent-coordinator';
 const tenantPath = `${platformRoot}/tenant.yaml`;
 const projectPath = `${platformRoot}/appproject.yaml`;

@@ -1,3 +1,0 @@
-target=meta-agents-demo/meta-agent-control-plane.rs
-expected-main=4d6ec3ad0ec7b688f0e777129eee7e0f0d999df1
-execution=installed-app-pr-merge-20260731-1056

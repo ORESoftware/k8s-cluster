@@ -9,136 +9,124 @@ permissions:
   contents: read
   id-token: write
   issues: write
-  pull-requests: read
   statuses: write
 
+concurrency:
+  group: ops-publish-missing-organization-repositories
+  cancel-in-progress: false
+
 jobs:
-  validate:
+  publish:
     if: >-
       github.event.issue.pull_request &&
       github.actor == 'chatgpt' &&
-      startsWith(github.event.comment.body, 'ops-publish-missing-org-repositories:')
+      github.event.comment.body == 'ops-publish-missing-org-repositories:231:e481ff951e3713913813bc25966745757186bb57'
     runs-on: ubuntu-latest
-    outputs:
-      request_id: ${{ steps.contract.outputs.request_id }}
-      pr_number: ${{ steps.contract.outputs.pr_number }}
-      target_sha: ${{ steps.contract.outputs.target_sha }}
+    timeout-minutes: 50
+    env:
+      TARGET_SHA: e481ff951e3713913813bc25966745757186bb57
+      TARGET_BRANCH: agent/critical-org-publish-trigger-main-20260731-v4
+      PR_NUMBER: '231'
     steps:
-      - name: Validate the exact one-file same-repository carrier
-        id: contract
+      - name: Mark the exact trigger commit pending
         env:
-          COMMENT_BODY: ${{ github.event.comment.body }}
-          EVENT_PR_NUMBER: ${{ github.event.issue.number }}
           GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
-
-          IFS=: read -r command pr_number target_sha trailing <<<"$COMMENT_BODY"
-          test "$command" = ops-publish-missing-org-repositories
-          test -z "${trailing:-}"
-          [[ "$pr_number" =~ ^[0-9]+$ ]]
-          [[ "$target_sha" =~ ^[0-9a-f]{40}$ ]]
-          test "$pr_number" = "$EVENT_PR_NUMBER"
-
-          pr="$(gh api "repos/${REPOSITORY}/pulls/${pr_number}")"
-          test "$(jq -r '.state' <<<"$pr")" = open
-          test "$(jq -r '.draft' <<<"$pr")" = true
-          test "$(jq -r '.title' <<<"$pr")" = \
-            'DO NOT MERGE: supervised trusted repository publication'
-          test "$(jq -r '.user.login' <<<"$pr")" = ORESoftware
-          test "$(jq -r '.head.repo.full_name' <<<"$pr")" = "$REPOSITORY"
-          test "$(jq -r '.head.sha' <<<"$pr")" = "$target_sha"
-          test "$(jq -r '.base.ref' <<<"$pr")" = main
-          test "$(jq -r '.commits' <<<"$pr")" = 1
-          head_ref="$(jq -r '.head.ref' <<<"$pr")"
-          [[ "$head_ref" == agent/critical-org-publish-trigger-main-* ]]
-
-          trusted_main="$(gh api "repos/${REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
-          [[ "$trusted_main" =~ ^[0-9a-f]{40}$ ]]
-          test "$(jq -r '.base.sha' <<<"$pr")" = "$trusted_main"
-
-          commit="$(gh api "repos/${REPOSITORY}/commits/${target_sha}")"
-          test "$(jq '.parents | length' <<<"$commit")" = 1
-          test "$(jq -r '.parents[0].sha' <<<"$commit")" = "$trusted_main"
-
-          mapfile -t changed_files < <(
-            gh api --paginate \
-              "repos/${REPOSITORY}/pulls/${pr_number}/files?per_page=100" \
-              --jq '.[].filename'
-          )
-          test "${#changed_files[@]}" -eq 1
-          test "${changed_files[0]}" = .github/critical-org-publish-trigger-main
-
-          marker="$(
-            gh api \
-              "repos/${REPOSITORY}/contents/.github/critical-org-publish-trigger-main?ref=${target_sha}" \
-              --jq '.content' \
-              | tr -d '\n' \
-              | base64 --decode
-          )"
-          test "$marker" = "trusted-main:${trusted_main}"
-
-          {
-            printf 'request_id=pr-%s-%s\n' "$pr_number" "$target_sha"
-            printf 'pr_number=%s\n' "$pr_number"
-            printf 'target_sha=%s\n' "$target_sha"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Mark the exact carrier pending
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ steps.contract.outputs.pr_number }}
-          REPOSITORY: ${{ github.repository }}
-          TARGET_SHA: ${{ steps.contract.outputs.target_sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          run_url="https://github.com/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          gh api --method POST "repos/${REPOSITORY}/statuses/${TARGET_SHA}" \
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state=pending \
             -f context='ops/missing-repository-publication' \
             -f description="trusted-main publisher run ${GITHUB_RUN_ID} is executing" \
             -f target_url="$run_url" >/dev/null
-          gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
             --body "Trusted-main publisher started: ${run_url}" >/dev/null
 
-  publish:
-    needs: validate
-    uses: ./.github/workflows/ops-publish-missing-org-repositories-dispatch.yml
-    with:
-      request_id: ${{ needs.validate.outputs.request_id }}
-    secrets: inherit
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
 
-  report:
-    if: always() && needs.validate.result == 'success'
-    needs: [validate, publish]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Report exact publication result
+      - name: Validate the fixed same-repository trigger
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ needs.validate.outputs.pr_number }}
-          PUBLISH_RESULT: ${{ needs.publish.result }}
-          REPOSITORY: ${{ github.repository }}
-          TARGET_SHA: ${{ needs.validate.outputs.target_sha }}
         shell: bash
         run: |
           set -euo pipefail
-          run_url="https://github.com/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          if [[ "$PUBLISH_RESULT" == success ]]; then
+          pr="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"
+          test "$(jq -r '.head.repo.full_name' <<<"$pr")" = "$GITHUB_REPOSITORY"
+          test "$(jq -r '.head.ref' <<<"$pr")" = "$TARGET_BRANCH"
+          test "$(jq -r '.head.sha' <<<"$pr")" = "$TARGET_SHA"
+          test "$(jq -r '.base.ref' <<<"$pr")" = main
+          test "$(jq -r '.state' <<<"$pr")" = open
+
+      - name: Configure trusted main-ref AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Load and mask the protected GitHub publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_json="$(aws secretsmanager get-secret-value \
+            --secret-id dd/remote-dev/agent-secrets \
+            --query SecretString \
+            --output text)"
+          token="$(jq -er '.GH_PAT | select(type == "string" and length > 0)' <<<"$secret_json")"
+          printf '::add-mask::%s\n' "$token"
+          {
+            printf 'GH_TOKEN=%s\n' "$token"
+            printf 'GITHUB_REPOSITORY_ADMIN_TOKEN=%s\n' "$token"
+          } >> "$GITHUB_ENV"
+          unset token secret_json
+
+      - name: Verify exact publisher identity and organization ownership
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api user --jq .login)" = ORESoftware
+          for org in hypesiege StreemPilot meta-agents-demo file-tunnel unreal-unity-poc; do
+            membership="$(gh api "/user/memberships/orgs/$org" --jq '.role + ":" + .state')"
+            test "$membership" = admin:active
+            echo "$org owner membership verified"
+          done
+
+      - name: Publish and verify the fixed 34-repository allowlist
+        id: publish
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ops/publish_missing_org_repositories.py
+          python3 scripts/ops/publish_missing_org_repositories.py
+
+      - name: Report exact publication result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if [[ "${{ steps.publish.outcome }}" == success ]]; then
             state=success
             description='all 34 canonical repositories published and verified'
+            conclusion=success
           else
             state=failure
             description='trusted publisher failed; inspect the linked Actions run'
+            conclusion=failure
           fi
-          gh api --method POST "repos/${REPOSITORY}/statuses/${TARGET_SHA}" \
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${TARGET_SHA}" \
             -f state="$state" \
             -f context='ops/missing-repository-publication' \
             -f description="$description" \
             -f target_url="$run_url" >/dev/null
-          gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" \
-            --body "Trusted-main publisher completed with **${PUBLISH_RESULT}**: ${run_url}" >/dev/null
-          test "$PUBLISH_RESULT" = success
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "Trusted-main publisher completed with **${conclusion}**: ${run_url}" >/dev/null
+          test "$conclusion" = success

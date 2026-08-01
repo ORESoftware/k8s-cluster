@@ -19,7 +19,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  COORDINATOR_REVISION: d25e04e50be4a9fad039cfcfa6c321e9c99a1e02
+  COORDINATOR_REVISION: a6fb1f89e064c21dc1e435931c75e9871746d0f7
 
 jobs:
   contract:
