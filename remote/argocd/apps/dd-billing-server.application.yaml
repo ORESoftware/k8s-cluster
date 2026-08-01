@@ -4,11 +4,7 @@
 # deployed nothing). The manifests live at quaestor-ledger/billing-server.rs
 # `k8s/ec2` (verified to render). See docs/app-deploy-contract.md.
 #
-# NOTE (2026-08-01): switched from the git@ SSH URL to HTTPS. ArgoCD holds repo
-# credentials for only k8s-cluster and benefactor-cc, so the SSH form failed with
-# `error creating SSH agent: SSH_AUTH_SOCK not-specified` and both apps sat
-# Unknown/Degraded. Both repos are readable ANONYMOUSLY over HTTPS (verified with
-# git ls-remote), so HTTPS needs no credential at all.
+# PREREQ: ArgoCD needs a read cred for git@github.com:quaestor-ledger/billing-server.rs.git
 # on the AWS cluster before this can sync (same as the threefa precedent).
 #
 # STILL A DUPLICATE: also declared inline in clusters/aws/applications.yaml; both
@@ -23,7 +19,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/quaestor-ledger/billing-server.rs.git
+    repoURL: git@github.com:quaestor-ledger/billing-server.rs.git
     targetRevision: main
     path: k8s/ec2
   destination:

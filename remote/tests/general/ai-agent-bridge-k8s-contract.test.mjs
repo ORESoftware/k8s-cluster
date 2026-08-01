@@ -27,29 +27,15 @@ function envBlock(name) {
 }
 
 test('bridge deployment executes the current Rust binary', () => {
-  // The deployment resolves the binary through bin_name and execs
-  // "${CARGO_TARGET_DIR:-target}/release/${bin_name}". Assert the name is the
-  // current binary, that the built path is what gets exec'd, and that the
-  // retired binary name cannot return.
   assert.match(
     deployment,
-    /bin_name="fiducia-ai-agent-bridge"/,
-    'bin_name must resolve to the current fiducia-ai-agent-bridge binary',
-  );
-  assert.match(
-    deployment,
-    /\/release\/\$\{bin_name\}/,
-    'the deployment must exec the built ${bin_name} path',
-  );
-  assert.doesNotMatch(
-    deployment,
-    /bin_name="ai-agent-bridge"/,
-    'the retired ai-agent-bridge binary name must not return',
+    /\/release\/fiducia-ai-agent-bridge(?:["'\s]|$)/,
+    'the deployment must execute fiducia-ai-agent-bridge',
   );
   assert.doesNotMatch(
     deployment,
     /\/release\/ai-agent-bridge(?:["'\s]|$)/,
-    'no direct exec of the retired binary path',
+    'the retired ai-agent-bridge binary name must not return',
   );
 });
 
