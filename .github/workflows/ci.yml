@@ -128,6 +128,24 @@ jobs:
         if: failure()
         run: cat /tmp/shared-auth-browser.log || true
 
+  refresh-audited-lock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Refresh only the patched event-listener package
+        run: cargo update -p event-listener --precise 5.4.2
+      - name: Prove the refreshed lock resolves without mutation
+        run: cargo metadata --locked --no-deps --format-version 1 >/dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: audited-cargo-lock
+          path: Cargo.lock
+          if-no-files-found: error
+          retention-days: 1
+
   rustsec:
     runs-on: ubuntu-latest
     timeout-minutes: 10
