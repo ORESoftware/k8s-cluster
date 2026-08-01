@@ -30,6 +30,7 @@ fn document() -> Value {
             "/auth/refresh": { "post": { "summary": "Atomically rotate a refresh token", "responses": { "200": { "description": "Rotated token pair" }, "401": { "description": "Invalid, expired, revoked, or replayed token" } } } },
             "/auth/logout": { "post": { "summary": "Revoke a refresh session", "responses": { "204": { "description": "Revoked or already absent" } } } },
             "/auth/introspect": { "post": { "summary": "Inspect a shared-auth access token", "responses": { "200": { "description": "Token activity and provider provenance" } } } },
+            "/auth/verify": { "get": { "summary": "Bearer check for gateway auth_request", "responses": { "200": { "description": "Token accepted" }, "401": { "description": "Token rejected" } } } },
             "/.well-known/jwks.json": { "get": { "summary": "Read public ES256 signing keys", "responses": { "200": { "description": "JWKS" } } } },
             "/healthz": { "get": { "summary": "Liveness", "responses": { "200": { "description": "Alive" } } } },
             "/readyz": { "get": { "summary": "Postgres-aware readiness", "responses": { "200": { "description": "Ready" }, "503": { "description": "Not ready" } } } }
