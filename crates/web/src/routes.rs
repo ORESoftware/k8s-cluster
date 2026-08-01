@@ -60,9 +60,14 @@ pub async fn security_headers(
     next: axum::middleware::Next,
 ) -> Response {
     use axum::http::HeaderValue;
+    // `script-src 'self'` stays strict — the important one (htmx is vendored
+    // same-origin, no CDN, no inline/eval scripts). `style-src` additionally
+    // allows 'unsafe-inline' because htmx injects a small inline <style> for
+    // its indicator CSS at runtime; inline styles are low-risk and blocking
+    // them breaks htmx's UI. Everything else is same-origin only.
     const CSP: &str = "default-src 'self'; \
          script-src 'self'; \
-         style-src 'self'; \
+         style-src 'self' 'unsafe-inline'; \
          img-src 'self' data:; \
          media-src data:; \
          connect-src 'self'; \
@@ -248,19 +253,13 @@ async fn stream_stats(mut socket: WebSocket, state: AppState) {
     loop {
         interval.tick().await;
         let stats = load_stats(&state).await;
+        // Each card carries hx-swap-oob="true" itself, so htmx replaces the
+        // matching #stat-* node in place — no wrapper element sharing the id.
         let frame = maud::html! {
-            div id="stat-transcriptions" hx-swap-oob="true" {
-                (views::metric_card("stat-transcriptions", stats.transcriptions, "transcriptions"))
-            }
-            div id="stat-translations" hx-swap-oob="true" {
-                (views::metric_card("stat-translations", stats.translations, "translations"))
-            }
-            div id="stat-syntheses" hx-swap-oob="true" {
-                (views::metric_card("stat-syntheses", stats.syntheses, "syntheses"))
-            }
-            div id="stat-vapi" hx-swap-oob="true" {
-                (views::metric_card("stat-vapi", stats.vapi_calls, "vapi calls"))
-            }
+            (views::metric_card("stat-transcriptions", stats.transcriptions, "transcriptions", true))
+            (views::metric_card("stat-translations", stats.translations, "translations", true))
+            (views::metric_card("stat-syntheses", stats.syntheses, "syntheses", true))
+            (views::metric_card("stat-vapi", stats.vapi_calls, "vapi calls", true))
         }
         .into_string();
 
