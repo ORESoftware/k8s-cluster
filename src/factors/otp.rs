@@ -33,7 +33,7 @@ impl FactorService {
         // Serialize challenge starts per session. This makes the resend interval
         // and active-challenge cap reliable across every server replica.
         transaction
-            .query_one(&statement(
+            .query_one_raw(statement(
                 "SELECT session_id FROM shared_auth.sessions \
                  WHERE session_id = $1 AND shared_user_id = $2 \
                    AND revoked_at IS NULL AND expires_at > now() FOR UPDATE",
@@ -43,7 +43,7 @@ impl FactorService {
             .map_err(db_error)?
             .ok_or(AuthError::Unauthorized)?;
         transaction
-            .execute(&statement(
+            .execute_raw(statement(
                 "UPDATE shared_auth.auth_challenges SET consumed_at = now() \
                  WHERE shared_user_id = $1 AND session_id = $2 AND kind = $3 \
                    AND consumed_at IS NULL AND expires_at <= now()",
@@ -56,7 +56,7 @@ impl FactorService {
             .await
             .map_err(db_error)?;
         let active = transaction
-            .query_one(&statement(
+            .query_one_raw(statement(
                 "SELECT count(*)::bigint AS active_count, max(created_at) AS latest_created_at \
                  FROM shared_auth.auth_challenges \
                  WHERE shared_user_id = $1 AND session_id = $2 AND kind = $3 \
@@ -82,7 +82,7 @@ impl FactorService {
         }
 
         transaction
-            .execute(&statement(
+            .execute_raw(statement(
                 "INSERT INTO shared_auth.auth_challenges \
                     (challenge_id, shared_user_id, session_id, kind, destination_hint, code_tag, state, max_attempts, expires_at) \
                  VALUES ($1, $2, $3, $4, $5, $6, '{}'::jsonb, $7, $8)",
@@ -123,7 +123,7 @@ impl FactorService {
         }
         let result = self
             .db
-            .execute(&statement(
+            .execute_raw(statement(
                 "UPDATE shared_auth.auth_challenges SET attempts = attempts + 1 \
                  WHERE challenge_id = $1 AND shared_user_id = $2 AND session_id = $3 \
                    AND kind = $4 AND consumed_at IS NULL AND expires_at > now() \
@@ -160,7 +160,7 @@ impl FactorService {
         // verifier can therefore never consume the same challenge twice or
         // succeed after another request exhausted its attempts.
         let row = transaction
-            .query_one(&statement(
+            .query_one_raw(statement(
                 "SELECT kind, code_tag FROM shared_auth.auth_challenges \
                  WHERE challenge_id = $1 AND shared_user_id = $2 AND session_id = $3 \
                    AND kind IN ('email_otp', 'sms_otp') AND consumed_at IS NULL \
@@ -178,7 +178,7 @@ impl FactorService {
         let valid = externally_verified || otp_tag_matches(pepper, challenge_id, code, &expected);
         if !valid {
             let result = transaction
-                .execute(&statement(
+                .execute_raw(statement(
                     "UPDATE shared_auth.auth_challenges SET attempts = attempts + 1 \
                      WHERE challenge_id = $1 AND shared_user_id = $2 AND session_id = $3 \
                        AND consumed_at IS NULL AND expires_at > now() AND attempts < max_attempts",
@@ -194,7 +194,7 @@ impl FactorService {
         }
 
         let result = transaction
-            .execute(&statement(
+            .execute_raw(statement(
                 "UPDATE shared_auth.auth_challenges \
                  SET consumed_at = now(), attempts = attempts + 1 \
                  WHERE challenge_id = $1 AND shared_user_id = $2 AND session_id = $3 \
