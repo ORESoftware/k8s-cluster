@@ -2,7 +2,7 @@ impl FactorService {
     async fn verified_phone(&self, user_id: Uuid) -> Result<String, AuthError> {
         let row = self
             .db
-            .query_one(statement(
+            .query_one(&statement(
                 "SELECT phone FROM shared_auth.principals \
                  WHERE shared_user_id = $1 AND status = 'active' AND phone_verified = true",
                 vec![user_id.into()],
@@ -12,6 +12,24 @@ impl FactorService {
             .ok_or(AuthError::BadRequest("verified phone is required"))?;
         let phone: Option<String> = row.try_get("", "phone").map_err(db_error)?;
         phone.ok_or(AuthError::BadRequest("verified phone is required"))
+    }
+
+    async fn cancel_challenge(
+        &self,
+        user_id: Uuid,
+        session_id: Uuid,
+        challenge_id: Uuid,
+    ) -> Result<(), AuthError> {
+        self.db
+            .execute(&statement(
+                "UPDATE shared_auth.auth_challenges \
+                 SET consumed_at = coalesce(consumed_at, now()) \
+                 WHERE challenge_id = $1 AND shared_user_id = $2 AND session_id = $3",
+                vec![challenge_id.into(), user_id.into(), session_id.into()],
+            ))
+            .await
+            .map_err(db_error)?;
+        Ok(())
     }
 }
 
@@ -30,11 +48,24 @@ fn step_up(state: &AppState, claims: &OreClaims, method: &str) -> Result<StepUpR
     })
 }
 
+fn email_otp_is_enabled(state: &AppState) -> bool {
+    state.config.magic_links.sendgrid_api_key.is_some()
+        && state.config.magic_links.otp_pepper.is_some()
+        && state.config.magic_links.from_email.is_some()
+}
+
+fn sms_otp_is_enabled(state: &AppState) -> bool {
+    state.config.twilio_verify.is_enabled() && state.config.magic_links.otp_pepper.is_some()
+}
+
 async fn send_email_otp(
     state: &AppState,
     recipient: &str,
     code: &str,
 ) -> Result<(), AuthError> {
+    if !email_otp_is_enabled(state) {
+        return Err(AuthError::Unavailable);
+    }
     let config = &state.config.magic_links;
     let api_key = config
         .sendgrid_api_key
@@ -139,15 +170,21 @@ fn validate_otp(code: &str) -> Result<(), AuthError> {
 }
 
 fn generate_code() -> Result<String, AuthError> {
-    let mut bytes = [0u8; 4];
-    SysRng
-        .try_fill_bytes(&mut bytes)
-        .map_err(|_| AuthError::Internal)?;
-    Ok(format!("{:06}", u32::from_be_bytes(bytes) % TOTP_DIGITS))
+    let unbiased_zone = u32::MAX - (u32::MAX % TOTP_DIGITS);
+    loop {
+        let mut bytes = [0u8; 4];
+        SysRng
+            .try_fill_bytes(&mut bytes)
+            .map_err(|_| AuthError::Internal)?;
+        let value = u32::from_be_bytes(bytes);
+        if value < unbiased_zone {
+            return Ok(format!("{:06}", value % TOTP_DIGITS));
+        }
+    }
 }
 
 fn totp_code(secret: &[u8], counter: u64) -> String {
-    let mut mac = <Hmac<Sha1> as Mac>::new_from_slice(secret)
+    let mut mac = <Hmac<Sha1> as HmacKeyInit>::new_from_slice(secret)
         .expect("HMAC accepts arbitrary TOTP secret lengths");
     mac.update(&counter.to_be_bytes());
     let digest = mac.finalize().into_bytes();
@@ -160,24 +197,85 @@ fn totp_code(secret: &[u8], counter: u64) -> String {
 }
 
 fn otp_tag(key: &[u8], challenge_id: Uuid, code: &str) -> Result<Vec<u8>, AuthError> {
-    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key).map_err(|_| AuthError::Internal)?;
+    let mut mac = <Hmac<Sha256> as HmacKeyInit>::new_from_slice(key)
+        .map_err(|_| AuthError::Internal)?;
     mac.update(challenge_id.as_bytes());
     mac.update(code.as_bytes());
     Ok(mac.finalize().into_bytes().to_vec())
 }
 
-fn constant_time_code_eq(expected: &str, presented: &str, key: &[u8]) -> bool {
-    constant_time_bytes_eq(expected.as_bytes(), presented.as_bytes(), key)
+fn otp_tag_matches(key: &[u8], challenge_id: Uuid, code: &str, expected: &[u8]) -> bool {
+    let Ok(mut mac) = <Hmac<Sha256> as HmacKeyInit>::new_from_slice(key) else {
+        return false;
+    };
+    mac.update(challenge_id.as_bytes());
+    mac.update(code.as_bytes());
+    mac.verify_slice(expected).is_ok()
 }
 
-fn constant_time_bytes_eq(expected: &[u8], presented: &[u8], key: &[u8]) -> bool {
-    let tag = |value: &[u8]| {
-        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(key)
-            .expect("HMAC accepts arbitrary comparison key lengths");
-        mac.update(value);
-        mac.finalize().into_bytes()
+fn constant_time_code_eq(expected: &str, presented: &str, key: &[u8]) -> bool {
+    let Ok(mut expected_mac) = <Hmac<Sha256> as HmacKeyInit>::new_from_slice(key) else {
+        return false;
     };
-    tag(expected) == tag(presented)
+    expected_mac.update(expected.as_bytes());
+    let expected_tag = expected_mac.finalize().into_bytes();
+
+    let Ok(mut presented_mac) = <Hmac<Sha256> as HmacKeyInit>::new_from_slice(key) else {
+        return false;
+    };
+    presented_mac.update(presented.as_bytes());
+    presented_mac.verify_slice(&expected_tag).is_ok()
+}
+
+fn totp_aad(user_id: Uuid, factor_id: Uuid) -> Vec<u8> {
+    format!(
+        "shared-auth:totp:v{TOTP_ENCRYPTION_VERSION}:{user_id}:{factor_id}"
+    )
+    .into_bytes()
+}
+
+fn encrypt_totp_secret(
+    key: &[u8; 32],
+    user_id: Uuid,
+    factor_id: Uuid,
+    nonce: [u8; 12],
+    secret: &[u8],
+) -> Result<Vec<u8>, AuthError> {
+    let cipher = <Aes256Gcm as AeadKeyInit>::new_from_slice(key)
+        .map_err(|_| AuthError::Internal)?;
+    let nonce = Nonce::from(nonce);
+    let aad = totp_aad(user_id, factor_id);
+    cipher
+        .encrypt(
+            &nonce,
+            Payload {
+                msg: secret,
+                aad: &aad,
+            },
+        )
+        .map_err(|_| AuthError::Internal)
+}
+
+fn decrypt_totp_secret(
+    key: &[u8; 32],
+    user_id: Uuid,
+    factor_id: Uuid,
+    nonce: [u8; 12],
+    ciphertext: &[u8],
+) -> Result<Vec<u8>, AuthError> {
+    let cipher = <Aes256Gcm as AeadKeyInit>::new_from_slice(key)
+        .map_err(|_| AuthError::Internal)?;
+    let nonce = Nonce::from(nonce);
+    let aad = totp_aad(user_id, factor_id);
+    cipher
+        .decrypt(
+            &nonce,
+            Payload {
+                msg: ciphertext,
+                aad: &aad,
+            },
+        )
+        .map_err(|_| AuthError::Internal)
 }
 
 fn encode_base32(input: &[u8]) -> String {
@@ -239,6 +337,45 @@ fn hex_nibble(value: u8) -> anyhow::Result<u8> {
     }
 }
 
+fn validate_webauthn_config(rp_id: &str, origin: &Url, rp_name: &str) -> anyhow::Result<()> {
+    let rp_id = rp_id.trim().trim_end_matches('.').to_ascii_lowercase();
+    let rp_name = rp_name.trim();
+    if rp_id.is_empty() || rp_id.len() > 253 {
+        anyhow::bail!("AUTH_WEBAUTHN_RP_ID must be a valid DNS name or IP address");
+    }
+    if rp_name.is_empty() || rp_name.len() > 128 {
+        anyhow::bail!("AUTH_WEBAUTHN_RP_NAME must contain between 1 and 128 characters");
+    }
+    if origin.username() != ""
+        || origin.password().is_some()
+        || origin.query().is_some()
+        || origin.fragment().is_some()
+        || !matches!(origin.path(), "" | "/")
+    {
+        anyhow::bail!(
+            "AUTH_WEBAUTHN_RP_ORIGIN must be an origin without credentials, path, query, or fragment"
+        );
+    }
+    let host = origin
+        .host_str()
+        .ok_or_else(|| anyhow::anyhow!("AUTH_WEBAUTHN_RP_ORIGIN must contain a host"))?
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
+    let loopback = matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1");
+    if origin.scheme() != "https" && !(origin.scheme() == "http" && loopback) {
+        anyhow::bail!("AUTH_WEBAUTHN_RP_ORIGIN must use HTTPS or loopback HTTP");
+    }
+    let valid_rp = host == rp_id
+        || (!rp_id.parse::<std::net::IpAddr>().is_ok()
+            && host
+                .strip_suffix(&rp_id)
+                .is_some_and(|prefix| prefix.ends_with('.')));
+    if !valid_rp {
+        anyhow::bail!("AUTH_WEBAUTHN_RP_ID must equal or be a registrable suffix of the origin host");
+    }
+    Ok(())
+}
+
 fn build_webauthn() -> anyhow::Result<Option<Arc<Webauthn>>> {
     let rp_id = optional_env("AUTH_WEBAUTHN_RP_ID");
     let origin = optional_env("AUTH_WEBAUTHN_RP_ORIGIN");
@@ -247,6 +384,7 @@ fn build_webauthn() -> anyhow::Result<Option<Arc<Webauthn>>> {
         (None, None, None) => Ok(None),
         (Some(rp_id), Some(origin), Some(rp_name)) => {
             let origin = Url::parse(&origin)?;
+            validate_webauthn_config(&rp_id, &origin, &rp_name)?;
             let builder = WebauthnBuilder::new(&rp_id, &origin)?.rp_name(&rp_name);
             Ok(Some(Arc::new(builder.build()?)))
         }
