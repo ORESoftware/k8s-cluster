@@ -59,6 +59,9 @@ function parseArgs(argv) {
       case '--input':
         options.inputs.push(next());
         break;
+      case '--since':
+        options.since = next();
+        break;
       case '--existing-index':
         options.existingIndex = next();
         break;
