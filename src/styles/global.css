@@ -249,6 +249,7 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 880px) {
   .hero { padding: 5rem 0 4rem; }
   .hero__title { font-size: 2.8rem; }
+  .section__head h1,
   .section__head h2 { font-size: 2rem; }
   .cta h2 { font-size: 2rem; }
   .grid-3 { grid-template-columns: 1fr; }
