@@ -25,7 +25,7 @@ test('private service-worker E2E uses the narrow exact-gitlink checkout only whe
   assert.match(workflow, /uses: \.\/\.github\/actions\/checkout-remote-libs/);
   assert.match(
     workflow,
-    /if:\s*steps\.private-libs\.outputs\.available == 'true'[\s\S]*?ssh-key:\s*\$\{\{\s*secrets\.K8S_LIBS_DEPLOY_KEY\s*\}\}/,
+    /if:\s*steps\.private_libs\.outputs\.available == 'true'[\s\S]*?ssh-key:\s*\$\{\{\s*secrets\.K8S_LIBS_DEPLOY_KEY\s*\}\}/,
   );
   assert.match(
     workflow,
