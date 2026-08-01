@@ -5,14 +5,103 @@ on:
   push:
     branches: [main]
 
+# Least privilege by default; individual jobs opt into more only if needed.
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   rust:
+    name: fmt · clippy · test · release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: rustfmt
+        run: cargo fmt --all --check
+      - name: clippy (deny warnings)
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: unit tests
+        run: cargo test --locked
+      - name: release build (pinned lockfile)
+        run: cargo build --release --locked
+
+  audit:
+    name: cargo-audit (RustSec)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      # Honors the single pinned exception in .cargo/audit.toml
+      # (RUSTSEC-2023-0071 — arti-only rsa, client role, no private-key ops).
+      - name: cargo audit
+        run: cargo audit
+
+  arti:
+    name: arti backend (compile check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --all-features
+      # The optional real-Tor backend pulls the full Arti stack; compile-check it
+      # (not a full build/test) so the feature can't silently break.
+      - name: cargo check --features arti
+        run: cargo check --features arti --locked
+
+  browser-e2e:
+    name: browser e2e (Playwright + Puppeteer via the onion proxy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build release binary (used by the e2e harness)
+        run: cargo build --release --locked
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+      - name: install test deps
+        working-directory: tests
+        run: npm ci
+      - name: install chromium + system deps
+        working-directory: tests
+        run: npx playwright install --with-deps chromium
+      # Boots a real 3-relay onion overlay + SOCKS/UI client and drives headless
+      # Chromium THROUGH the proxy: proves browser traffic traverses the overlay,
+      # DNS resolves at the exit, caches bust per navigation, and the dashboard +
+      # rendered docs work end to end.
+      - name: run browser e2e
+        working-directory: tests
+        env:
+          TOR_E2E_RUST_LOG: warn
+        run: npm test
+      - name: upload playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests/test-results
+          retention-days: 7

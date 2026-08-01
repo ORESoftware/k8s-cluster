@@ -17,6 +17,15 @@
 //!   keygen  Generate/persist a relay keypair and print its public key, then exit.
 //!             env: TOR_KEY_FILE (default ./relay.key)
 
+// The codebase deliberately uses explicit `return` (and a couple of index-style
+// loops) for readability. Allow those specific lints crate-wide so CI can run
+// `clippy -D warnings` and gate on genuine issues without churning the style.
+#![allow(
+    clippy::needless_return,
+    clippy::needless_range_loop,
+    clippy::doc_overindented_list_items
+)]
+
 mod cell;
 mod circuit;
 mod config;
