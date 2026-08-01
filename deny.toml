@@ -4,12 +4,6 @@ all-features = true
 
 [advisories]
 yanked = "deny"
-# Utoipa Axum 0.2.0 currently depends on paste 1.0.15. RUSTSEC-2024-0436
-# is an unmaintained-crate notice, not a memory-safety or code-execution
-# advisory, and no maintained compatible Utoipa Axum release removes it yet.
-# Keep this exception exact, visible, and temporary; remove it as soon as the
-# executable-route integration can upgrade without changing the runtime API.
-ignore = ["RUSTSEC-2024-0436"]
 
 [licenses]
 confidence-threshold = 0.8
@@ -30,4 +24,9 @@ wildcards = "deny"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
-allow-git = []
+# The complete Utoipa type family is pinned to one reviewed upstream commit
+# that replaced the archived `paste` dependency. No branch, tag, or wildcard
+# Git source is accepted.
+allow-git = [
+  "https://github.com/juhaku/utoipa?rev=aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a",
+]
