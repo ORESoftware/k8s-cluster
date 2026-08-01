@@ -3,6 +3,7 @@
 mod auth;
 mod config;
 mod contract;
+pub mod control_constitution;
 mod db;
 mod docs;
 mod error;
