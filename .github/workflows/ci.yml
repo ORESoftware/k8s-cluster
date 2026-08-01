@@ -96,7 +96,7 @@ jobs:
           -out "$AUTH_SIGNING_KEY_FILE"
       - name: Install pinned Playwright package
         working-directory: e2e
-        run: npm install --ignore-scripts --no-audit --no-fund
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Install Chromium runtime
         working-directory: e2e
         run: npx playwright install --with-deps chromium
@@ -127,64 +127,6 @@ jobs:
       - name: Print server log on failure
         if: failure()
         run: cat /tmp/shared-auth-browser.log || true
-
-  refresh-audited-lock:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install Rust
-        run: rustup toolchain install stable --profile minimal
-      - name: Refresh only the patched event-listener package
-        run: cargo update -p event-listener --precise 5.4.2
-      - name: Prove the refreshed lock resolves without mutation
-        run: cargo metadata --locked --no-deps --format-version 1 >/dev/null
-      - uses: actions/upload-artifact@v4
-        with:
-          name: audited-cargo-lock
-          path: Cargo.lock
-          if-no-files-found: error
-          retention-days: 1
-
-  publish-audited-locks:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-      - name: Generate and publish audited lockfiles exactly once
-        run: |
-          set -euo pipefail
-          cargo update -p event-listener --precise 5.4.2
-          cargo metadata --locked --no-deps --format-version 1 >/dev/null
-          (cd e2e && npm install --package-lock-only --ignore-scripts --no-audit --no-fund)
-          python3 - <<'PY'
-          from pathlib import Path
-          workflow = Path('.github/workflows/ci.yml')
-          content = workflow.read_text()
-          start = content.index('\n  refresh-audited-lock:')
-          end = content.index('\n  rustsec:', start)
-          content = content[:start] + content[end:]
-          content = content.replace(
-              'run: npm install --ignore-scripts --no-audit --no-fund',
-              'run: npm ci --ignore-scripts --no-audit --no-fund',
-          )
-          workflow.write_text(content)
-          PY
-          rm -f .github/workflows/den-981-lock-refresh.yml
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add Cargo.lock e2e/package-lock.json .github/workflows/ci.yml .github/workflows/den-981-lock-refresh.yml
-          git commit -m 'DEN-981: commit audited Rust and browser locks [lock-published]'
-          git push origin HEAD:${{ github.head_ref }}
 
   rustsec:
     runs-on: ubuntu-latest
