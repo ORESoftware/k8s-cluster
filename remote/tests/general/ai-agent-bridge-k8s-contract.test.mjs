@@ -29,8 +29,31 @@ function envBlock(name) {
 test('bridge deployment executes the current Rust binary', () => {
   assert.match(
     deployment,
-    /\/release\/fiducia-ai-agent-bridge(?:["'\s]|$)/,
-    'the deployment must execute fiducia-ai-agent-bridge',
+    // The deployment selects the binary via bin_name and execs the validated
+    // "${built}" path, so a literal /release/fiducia-ai-agent-bridge no longer
+    // appears. Assert the parameterised contract instead, in three parts that
+    // each catch a different failure:
+    //   1. bin_name resolves to the current binary (\b so the retired substring
+    //      cannot satisfy it),
+    //   2. the built path is COMPOSED from bin_name rather than hardcoded, and
+    //   3. the variable that was existence-checked is what becomes PID 1.
+    /\bbin_name="fiducia-ai-agent-bridge"/,
+    'bin_name must resolve to the current fiducia-ai-agent-bridge binary',
+  );
+  assert.match(
+    deployment,
+    /\/release\/\$\{bin_name\}/,
+    'the built path must be composed from ${bin_name}',
+  );
+  assert.match(
+    deployment,
+    /exec "\$\{built\}"/,
+    'the selected and validated binary must become the container process',
+  );
+  assert.doesNotMatch(
+    deployment,
+    /\bbin_name="ai-agent-bridge"/,
+    'the retired ai-agent-bridge binary name must not return',
   );
   assert.doesNotMatch(
     deployment,
