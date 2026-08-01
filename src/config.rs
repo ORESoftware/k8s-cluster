@@ -102,7 +102,9 @@ pub(crate) fn shared_auth_config(base_url: Option<String>) -> Option<SharedAuthC
         return None;
     }
     let accepted = base_url.starts_with("https://")
-        || in_cluster_or_loopback(base_url.strip_prefix("http://")?);
+        || base_url
+            .strip_prefix("http://")
+            .is_some_and(in_cluster_or_loopback);
     if !accepted {
         // A rejected URL leaves `shared_auth` unset, which turns every login
         // into a 503. Say so at startup instead of failing silently at request
