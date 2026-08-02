@@ -86,12 +86,11 @@ jobs:
           npm run test:browser 2>&1 | tee browser-audit.log
       - name: Record job diagnostics
         if: always()
-        working-directory: repo
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
           PUBLIC_BASE: ${{ matrix.public_base }}
         run: |
-          mkdir -p test-results
+          mkdir -p repo/test-results
           {
             printf 'base=%s\n' "${PUBLIC_BASE}"
             printf 'commit=%s\n' "${GITHUB_SHA}"
@@ -103,9 +102,9 @@ jobs:
             else
               printf 'chrome=unavailable\n'
             fi
-          } > "test-results/environment-${{ matrix.base }}.txt"
-          if test -f browser-audit.log; then
-            cp browser-audit.log "test-results/browser-${{ matrix.base }}.log"
+          } > "repo/test-results/environment-${{ matrix.base }}.txt"
+          if test -f repo/browser-audit.log; then
+            cp repo/browser-audit.log "repo/test-results/browser-${{ matrix.base }}.log"
           fi
       - name: Upload browser evidence
         if: always()
