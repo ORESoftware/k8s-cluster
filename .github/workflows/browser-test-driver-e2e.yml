@@ -1,0 +1,159 @@
+name: browser-test real driver e2e
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/browser-test-driver-e2e.yml'
+      - 'remote/deployments/browser-test-server/**'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/browser-test-driver-e2e.yml'
+      - 'remote/deployments/browser-test-server/**'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-test-driver-e2e-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+  PUPPETEER_SKIP_DOWNLOAD: 'true'
+
+jobs:
+  contract:
+    name: workflow and script contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/browser-test-driver-e2e.yml
+
+      - name: Validate driver smoke syntax and safety boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check remote/deployments/browser-test-server/scripts/browser-driver-smoke.mjs
+          grep -F "127.0.0.1" remote/deployments/browser-test-server/scripts/browser-driver-smoke.mjs >/dev/null
+          ! grep -Eqi -- 'https?://[^127]|SERVER_AUTH_SECRET=[^[:space:]]+' \
+            remote/deployments/browser-test-server/scripts/browser-driver-smoke.mjs
+
+  driver:
+    name: ${{ matrix.tool }} real browser
+    needs: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        tool: [playwright, puppeteer, selenium]
+    steps:
+      - name: Checkout without private gitlinks
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Create contract-only telemetry package shim
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf remote/libs
+          mkdir -p remote/libs/telemetry-node
+          cat > remote/libs/telemetry-node/package.json <<'JSON'
+          {
+            "name": "@dd/telemetry",
+            "version": "0.0.0-driver-e2e-shim",
+            "type": "module",
+            "exports": {
+              ".": {
+                "types": "./index.d.ts",
+                "default": "./index.js"
+              }
+            }
+          }
+          JSON
+          cat > remote/libs/telemetry-node/index.js <<'JS'
+          export function initTelemetry() {
+            return { shutdown: async () => undefined };
+          }
+          export function instrumentFastify() {}
+          export function loggerMixin() {
+            return {};
+          }
+          JS
+          cat > remote/libs/telemetry-node/index.d.ts <<'TS'
+          export interface TelemetryGuard {
+            shutdown(): Promise<void>;
+          }
+          export function initTelemetry(service: string): TelemetryGuard;
+          export function instrumentFastify(app: unknown, options?: { service?: string }): void;
+          export function loggerMixin(): Record<string, unknown>;
+          TS
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+          cache: pnpm
+          cache-dependency-path: remote/deployments/browser-test-server/pnpm-lock.yaml
+
+      - name: Install locked service dependencies
+        working-directory: remote/deployments/browser-test-server
+        run: pnpm install --frozen-lockfile --ignore-workspace
+
+      - name: Typecheck and build production service
+        working-directory: remote/deployments/browser-test-server
+        run: |
+          set -euo pipefail
+          pnpm run typecheck
+          pnpm run build
+
+      - name: Install Chromium and system dependencies
+        working-directory: remote/deployments/browser-test-server
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Resolve immutable test browser path
+        working-directory: remote/deployments/browser-test-server
+        shell: bash
+        run: |
+          set -euo pipefail
+          chromium_path="$(node --input-type=module -e \
+            "import { chromium } from 'playwright'; process.stdout.write(chromium.executablePath())")"
+          test -x "$chromium_path"
+          echo "BROWSER_TEST_CHROMIUM_PATH=$chromium_path" >>"$GITHUB_ENV"
+          "$chromium_path" --version
+
+      - name: Run real ${{ matrix.tool }} scenario
+        working-directory: remote/deployments/browser-test-server
+        env:
+          BROWSER_TEST_TOOL: ${{ matrix.tool }}
+          BROWSER_DRIVER_ARTIFACT_DIR: ${{ runner.temp }}/browser-driver-${{ matrix.tool }}
+          SE_MANAGER_PATH: ${{ runner.temp }}/selenium-manager
+        run: node scripts/browser-driver-smoke.mjs
+
+      - name: Upload sanitized driver evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+        with:
+          name: browser-test-driver-${{ matrix.tool }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/browser-driver-${{ matrix.tool }}
+          retention-days: 7
+          if-no-files-found: error
