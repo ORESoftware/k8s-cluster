@@ -2,6 +2,11 @@
 **/*.rs.bk
 *.pdb
 
+.cache/
+.direnv/
+/result
+/result-*
+
 .env
 .env.*
 !.env.example

@@ -3,15 +3,22 @@
 //! These tests are ignored by the ordinary unit-test job and run in the
 //! dedicated PostgreSQL CI job with `--ignored --test-threads=1`.
 
+use crate::device_sync_protocol::SignalCiphertextEnvelope;
 use crate::signal_bundle_store::claim_prekey_bundle;
 use crate::signal_maintenance::{acknowledge_batch, cleanup_expired_state};
+use crate::signal_store::{enqueue_envelope, pull_mailbox, SignalStoreError};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use sea_orm::{
     ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, QueryResult, Statement,
+    TransactionTrait,
 };
+use serde_json::Value;
 use std::sync::Arc;
+use std::time::Duration;
+use time::OffsetDateTime;
 use tokio::sync::Barrier;
+use tokio::time::timeout;
 use uuid::Uuid;
 
 const TEST_DATABASE_ENV: &str = "THREEFA_SIGNAL_TEST_DATABASE_URL";
@@ -67,10 +74,20 @@ CREATE TABLE threefa.device_one_time_prekeys (
 );
 
 CREATE TABLE threefa.device_mailbox (
+    mailbox_seq BIGSERIAL UNIQUE,
     envelope_id UUID PRIMARY KEY,
     account_id UUID NOT NULL,
+    sender_device_id UUID,
     recipient_device_id UUID NOT NULL,
+    protocol_version SMALLINT,
+    session_id TEXT,
+    message_number NUMERIC(20, 0),
+    kind TEXT,
+    client_created_at_ms BIGINT,
     expires_at_ms BIGINT NOT NULL,
+    ciphertext_base64 TEXT,
+    ciphertext_size_bytes INTEGER,
+    delivered_at TIMESTAMPTZ,
     acknowledged_at TIMESTAMPTZ
 );
 "#,
@@ -87,6 +104,44 @@ async fn execute(db: &DatabaseConnection, sql: String) {
 
 fn required_i64(row: &QueryResult, column: &str) -> i64 {
     row.try_get("", column).expect("read i64 column")
+}
+
+async fn wait_for_lock_wait(db: &DatabaseConnection, query_fragment: &str) {
+    timeout(Duration::from_secs(2), async {
+        loop {
+            let row = db
+                .query_one_raw(Statement::from_sql_and_values(
+                    DatabaseBackend::Postgres,
+                    r#"
+SELECT EXISTS (
+    SELECT 1
+    FROM pg_stat_activity
+    WHERE pid <> pg_backend_pid()
+      AND datname = current_database()
+      AND wait_event_type = 'Lock'
+      AND query LIKE $1
+) AS blocked
+"#,
+                    vec![format!("%{query_fragment}%").into()],
+                ))
+                .await
+                .expect("inspect PostgreSQL lock waits")
+                .expect("lock-wait query returns a row");
+            if row.try_get::<bool>("", "blocked").unwrap() {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("query never entered a lock wait: {query_fragment}"));
+}
+
+fn canonical_envelope() -> SignalCiphertextEnvelope {
+    let fixture: Value = serde_json::from_str(include_str!("../fixtures/signal-http-wire.json"))
+        .expect("canonical Signal fixture is JSON");
+    serde_json::from_value(fixture["queue_envelope"]["request"]["envelope"].clone())
+        .expect("canonical queue envelope decodes")
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -166,7 +221,7 @@ async fn concurrent_prekey_claims_return_distinct_one_time_keys() {
     assert_eq!(claimed_b.device_revision, 12);
 
     let row = db
-        .query_one(Statement::from_string(
+        .query_one_raw(Statement::from_string(
             DatabaseBackend::Postgres,
             "SELECT count(*)::bigint AS claimed, count(DISTINCT claimed_by_device_id)::bigint AS claimants FROM threefa.device_one_time_prekeys WHERE claimed_at IS NOT NULL",
         ))
@@ -175,6 +230,181 @@ async fn concurrent_prekey_claims_return_distinct_one_time_keys() {
         .expect("claim count row");
     assert_eq!(required_i64(&row, "claimed"), 2);
     assert_eq!(required_i64(&row, "claimants"), 2);
+}
+
+#[tokio::test]
+#[ignore = "requires THREEFA_SIGNAL_TEST_DATABASE_URL"]
+async fn envelope_idempotency_and_mailbox_cursors_are_postgres_enforced() {
+    let db = database().await;
+    reset_schema(&db).await;
+
+    let mut envelope = canonical_envelope();
+    let now_ms = OffsetDateTime::now_utc().unix_timestamp() * 1_000;
+    envelope.metadata.created_at_ms = now_ms;
+    envelope.metadata.expires_at_ms = now_ms + 60_000;
+    let account_id = Uuid::parse_str(&envelope.metadata.account_id).unwrap();
+    let sender_id = Uuid::parse_str(&envelope.metadata.sender_device_id).unwrap();
+    let recipient_id = Uuid::parse_str(&envelope.metadata.recipient_device_id).unwrap();
+    execute(
+        &db,
+        format!(
+            "INSERT INTO threefa.accounts (id) VALUES ('{account_id}'); INSERT INTO threefa.devices (id, account_id) VALUES ('{sender_id}', '{account_id}'), ('{recipient_id}', '{account_id}');"
+        ),
+    )
+    .await;
+
+    let inserted = enqueue_envelope(&db, &envelope)
+        .await
+        .expect("insert canonical-derived envelope");
+    assert!(inserted.inserted);
+    let duplicate = enqueue_envelope(&db, &envelope)
+        .await
+        .expect("exact retry is idempotent");
+    assert!(!duplicate.inserted);
+    assert_eq!(duplicate.mailbox_seq, inserted.mailbox_seq);
+
+    let mut conflicting = envelope.clone();
+    conflicting.ciphertext[0] ^= 0xff;
+    assert!(matches!(
+        enqueue_envelope(&db, &conflicting).await,
+        Err(SignalStoreError::IdempotencyConflict)
+    ));
+
+    let page = pull_mailbox(&db, account_id, recipient_id, 0, 50)
+        .await
+        .expect("pull recipient mailbox");
+    assert_eq!(page.len(), 1);
+    assert_eq!(page[0].mailbox_seq, inserted.mailbox_seq);
+    assert_eq!(page[0].envelope, envelope);
+
+    let delivered_retry = pull_mailbox(&db, account_id, recipient_id, 0, 50)
+        .await
+        .expect("delivery without acknowledgement remains retryable");
+    assert_eq!(delivered_retry.len(), 1);
+    assert_eq!(delivered_retry[0].mailbox_seq, inserted.mailbox_seq);
+
+    assert!(
+        pull_mailbox(&db, account_id, recipient_id, inserted.mailbox_seq, 50)
+            .await
+            .expect("cursor after delivered row")
+            .is_empty()
+    );
+    assert!(pull_mailbox(&db, Uuid::new_v4(), recipient_id, 0, 50)
+        .await
+        .expect("cross-account pull closes to an empty page")
+        .is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "requires THREEFA_SIGNAL_TEST_DATABASE_URL"]
+async fn concurrent_exact_retry_and_locked_cursor_cannot_skip_mail() {
+    let db = Arc::new(database().await);
+    reset_schema(db.as_ref()).await;
+
+    let mut envelope = canonical_envelope();
+    let now_ms = OffsetDateTime::now_utc().unix_timestamp() * 1_000;
+    envelope.metadata.created_at_ms = now_ms;
+    envelope.metadata.expires_at_ms = now_ms + 60_000;
+    let envelope_id = Uuid::parse_str(&envelope.metadata.envelope_id).unwrap();
+    let account_id = Uuid::parse_str(&envelope.metadata.account_id).unwrap();
+    let sender_id = Uuid::parse_str(&envelope.metadata.sender_device_id).unwrap();
+    let recipient_id = Uuid::parse_str(&envelope.metadata.recipient_device_id).unwrap();
+    execute(
+        db.as_ref(),
+        format!(
+            "INSERT INTO threefa.accounts (id) VALUES ('{account_id}'); INSERT INTO threefa.devices (id, account_id) VALUES ('{sender_id}', '{account_id}'), ('{recipient_id}', '{account_id}');"
+        ),
+    )
+    .await;
+
+    let transaction = db.begin().await.expect("begin uncommitted enqueue");
+    let inserted = transaction
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            r#"
+INSERT INTO threefa.device_mailbox (
+    envelope_id, account_id, sender_device_id, recipient_device_id,
+    protocol_version, session_id, message_number, kind,
+    client_created_at_ms, expires_at_ms, ciphertext_base64,
+    ciphertext_size_bytes
+) VALUES ($1, $2, $3, $4, $5, $6, $7::numeric, $8, $9, $10, $11, $12)
+RETURNING mailbox_seq
+"#,
+            vec![
+                envelope_id.into(),
+                account_id.into(),
+                sender_id.into(),
+                recipient_id.into(),
+                i64::from(envelope.metadata.version).into(),
+                envelope.metadata.session_id.clone().into(),
+                envelope.metadata.message_number.to_string().into(),
+                "vault_mutation".into(),
+                envelope.metadata.created_at_ms.into(),
+                envelope.metadata.expires_at_ms.into(),
+                BASE64.encode(&envelope.ciphertext).into(),
+                i64::try_from(envelope.ciphertext.len()).unwrap().into(),
+            ],
+        ))
+        .await
+        .expect("insert uncommitted envelope")
+        .expect("insert returns mailbox cursor");
+    let first_cursor = required_i64(&inserted, "mailbox_seq");
+
+    let barrier = Arc::new(Barrier::new(2));
+    let retry_db = Arc::clone(&db);
+    let retry_envelope = envelope.clone();
+    let retry_barrier = Arc::clone(&barrier);
+    let retry = tokio::spawn(async move {
+        retry_barrier.wait().await;
+        enqueue_envelope(retry_db.as_ref(), &retry_envelope).await
+    });
+    barrier.wait().await;
+    wait_for_lock_wait(db.as_ref(), "INSERT INTO threefa.device_mailbox").await;
+    transaction
+        .commit()
+        .await
+        .expect("commit original envelope");
+    let duplicate = retry
+        .await
+        .expect("retry task")
+        .expect("concurrent exact retry is idempotent");
+    assert!(!duplicate.inserted);
+    assert_eq!(duplicate.mailbox_seq, first_cursor);
+
+    envelope.metadata.envelope_id = Uuid::new_v4().to_string();
+    envelope.metadata.message_number += 1;
+    let second = enqueue_envelope(db.as_ref(), &envelope)
+        .await
+        .expect("insert later envelope");
+    assert!(second.mailbox_seq > first_cursor);
+
+    let locker = db.begin().await.expect("begin cursor lock");
+    locker
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT mailbox_seq FROM threefa.device_mailbox WHERE mailbox_seq = $1 FOR UPDATE",
+            vec![first_cursor.into()],
+        ))
+        .await
+        .expect("lock first cursor")
+        .expect("first cursor exists");
+
+    let pull_db = Arc::clone(&db);
+    let pull_barrier = Arc::new(Barrier::new(2));
+    let task_barrier = Arc::clone(&pull_barrier);
+    let pull = tokio::spawn(async move {
+        task_barrier.wait().await;
+        pull_mailbox(pull_db.as_ref(), account_id, recipient_id, 0, 1).await
+    });
+    pull_barrier.wait().await;
+    wait_for_lock_wait(db.as_ref(), "WITH selected AS").await;
+    locker.commit().await.expect("release first cursor");
+    let page = pull
+        .await
+        .expect("pull task")
+        .expect("pull after cursor lock");
+    assert_eq!(page.len(), 1);
+    assert_eq!(page[0].mailbox_seq, first_cursor);
 }
 
 #[tokio::test]

@@ -2,7 +2,7 @@
 name = "threefa-backend"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.95"
 license = "MIT OR Apache-2.0"
 authors = ["ORES"]
 
@@ -17,30 +17,31 @@ thiserror = "2"
 flags2env = { git = "https://github.com/ORESoftware/flags-2-env.git", rev = "377bff1a4e7424eb98377997a232ddc0fc700f59" }
 
 # Web stack
-axum = "0.7"
+axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net", "sync"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["trace", "limit", "timeout", "set-header"] }
 # Per-client rate limiting (GCRA) for the unauthenticated auth endpoints.
-tower_governor = "0.4"
+tower_governor = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
 
 # Explicit observability: JSON stdout is collected by Loki, request metrics are
 # scraped by Prometheus, and tracing spans are exported over OTLP/HTTP.
-prometheus = "0.13"
-tracing-opentelemetry = "0.27"
-opentelemetry = "0.26"
-opentelemetry_sdk = { version = "0.26", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.26", default-features = false, features = [
+# Prometheus 0.14 pulls protobuf 3.7.2+, which fixes RUSTSEC-2024-0437.
+prometheus = "0.14"
+tracing-opentelemetry = "0.33"
+opentelemetry = { version = "0.32", default-features = false, features = ["trace"] }
+opentelemetry_sdk = { version = "0.32", default-features = false, features = ["trace"] }
+opentelemetry-otlp = { version = "0.32", default-features = false, features = [
     "trace", "http-proto", "reqwest-client", "reqwest-rustls",
 ] }
-opentelemetry-http = "0.26"
-opentelemetry-semantic-conventions = "0.16"
+opentelemetry-http = { version = "0.32", default-features = false }
+opentelemetry-semantic-conventions = { version = "0.32", features = ["semconv_experimental"] }
 
 # Persistence. SeaORM owns the application-facing database contract; schema
 # migrations remain an explicit operator action and are never run at startup.
-sea-orm = { version = "1.1.20", default-features = false, features = [
+sea-orm = { version = "2.0.0", default-features = false, features = [
     "macros", "runtime-tokio-rustls", "sqlx-postgres", "with-json", "with-time", "with-uuid",
 ] }
 uuid = { version = "1", features = ["v4", "serde"] }
@@ -58,7 +59,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 
 [dev-dependencies]
 http-body-util = "0.1"
-sea-orm = { version = "1.1.20", default-features = false, features = ["mock"] }
+sea-orm = { version = "2.0.0", default-features = false, features = ["mock"] }
 tempfile = "3"
 tokio = { version = "1", features = ["rt", "macros", "test-util"] }
 tower = { version = "0.5", features = ["util"] }

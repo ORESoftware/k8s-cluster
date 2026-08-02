@@ -96,8 +96,8 @@ service-owned `threefa` schema.
 SeaORM entities compile without a live database. A database is needed only to
 run the service or database-backed integration tests.
 
-The dependency lock currently requires Rust 1.88 or newer. The deployment
-builder is pinned to the multi-architecture Rust 1.95 Bookworm image digest.
+The dependency lock and SeaORM 2 require Rust 1.95 or newer. The repository
+toolchain and deployment builder are both pinned to Rust 1.95.
 
 ## Observability
 
@@ -168,6 +168,13 @@ MIT OR Apache-2.0
 > **ORM policy:** application persistence uses **SeaORM**. Its `sqlx-postgres`
 > feature is the database driver beneath SeaORM; do not add direct `sqlx` calls
 > or a direct `sqlx` dependency.
+>
+> The SeaORM 2 upgrade is intentionally PostgreSQL-only. SQLx 0.9 makes MySQL
+> RSA support explicit opt-in, so the unmaintained `rsa` crate is absent from
+> `Cargo.lock` and `sqlx-mysql` is inactive. SeaORM 2 requires statement
+> builders by reference, but no schema migration or application query rewrite
+> was required. The only operational compatibility change is the coordinated
+> Rust MSRV/toolchain increase from 1.88 to 1.95.
 
 > **Locking/leases:** if this service ever needs distributed locks or leases,
 > use the fiducia-cloud primitives (github.com/fiducia-cloud) rather than

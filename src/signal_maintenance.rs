@@ -15,6 +15,10 @@ use uuid::Uuid;
 pub const MAX_SIGNAL_ACK_BATCH: usize = 250;
 pub const ACKNOWLEDGED_MAIL_RETENTION_DAYS: i64 = 7;
 pub const CLAIMED_PREKEY_RETENTION_DAYS: i64 = 30;
+const _: () = assert!(
+    ACKNOWLEDGED_MAIL_RETENTION_DAYS > 0
+        && CLAIMED_PREKEY_RETENTION_DAYS >= ACKNOWLEDGED_MAIL_RETENTION_DAYS
+);
 
 const ACTIVE_RECIPIENT_SQL: &str = r#"
 SELECT 1
@@ -93,7 +97,7 @@ pub async fn acknowledge_batch(
     let transaction = db.begin().await?;
 
     let active = transaction
-        .query_one(postgres(
+        .query_one_raw(postgres(
             ACTIVE_RECIPIENT_SQL,
             vec![account_id.into(), recipient_device_id.into()],
         ))
@@ -105,7 +109,7 @@ pub async fn acknowledge_batch(
     let mut acknowledged = 0_u64;
     for envelope_id in envelope_ids {
         acknowledged += transaction
-            .execute(postgres(
+            .execute_raw(postgres(
                 ACKNOWLEDGE_ONE_SQL,
                 vec![
                     account_id.into(),
@@ -131,7 +135,7 @@ pub async fn cleanup_expired_state(
         return Err(SignalMaintenanceError::InvalidBatch);
     }
     let row = db
-        .query_one(postgres(
+        .query_one_raw(postgres(
             CLEANUP_SQL,
             vec![
                 now_ms.into(),
@@ -194,8 +198,6 @@ mod tests {
 
     #[test]
     fn cleanup_has_explicit_retention_windows() {
-        assert!(ACKNOWLEDGED_MAIL_RETENTION_DAYS > 0);
-        assert!(CLAIMED_PREKEY_RETENTION_DAYS >= ACKNOWLEDGED_MAIL_RETENTION_DAYS);
         assert!(CLEANUP_SQL.contains("expires_at_ms <= $1"));
         assert!(CLEANUP_SQL.contains("acknowledged_at IS NOT NULL"));
         assert!(CLEANUP_SQL.contains("claimed_at IS NOT NULL"));

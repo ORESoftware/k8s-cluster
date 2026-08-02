@@ -28,3 +28,8 @@ If any marker or suspicious partial resolution remains, repeat the semantic reso
 ## Change discipline
 
 Keep changes scoped, preserve repository conventions, update tests when behavior changes, and record validation and residual risk in the pull request.
+
+## Repository-specific rules
+
+- **This repository is the source of truth.** The copy vendored into `ORESoftware/k8s-cluster` (under `remote/deployments/`) is a *secondary* submodule checkout — after merging here, bump the submodule pointer there. Do not edit the vendored copy directly.
+- This repo is standalone (no superproject path deps): `cargo check` and `cargo test` run anywhere, and CI runs the full suite.

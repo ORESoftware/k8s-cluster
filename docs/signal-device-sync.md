@@ -35,7 +35,7 @@ The route names below are the intended contract; they remain disabled until hand
 
 ### Publish/rotate a device bundle
 
-`PUT /v1/devices/me/prekeys`
+`PUT /v1/signal/prekeys`
 
 - requires the caller's service-local sync token;
 - verifies `device_id` equals the authenticated device;
@@ -47,7 +47,7 @@ The route names below are the intended contract; they remain disabled until hand
 
 ### Fetch a sibling prekey bundle
 
-`POST /v1/devices/{device_id}/prekey-bundle`
+`POST /v1/signal/devices/{device_id}/prekey-bundle`
 
 - requires the target and caller to be active devices on the same account;
 - locks one unclaimed one-time prekey with `FOR UPDATE SKIP LOCKED`;
@@ -57,7 +57,7 @@ The route names below are the intended contract; they remain disabled until hand
 
 ### Enqueue ciphertext
 
-`POST /v1/device-mailbox`
+`POST /v1/signal/envelopes`
 
 - requires the authenticated device to match `sender_device_id`;
 - verifies account/device membership and that neither device is revoked;

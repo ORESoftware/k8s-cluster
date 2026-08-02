@@ -124,58 +124,51 @@ RETURNING prekey.prekey_id, prekey.public_key_base64
 "#;
 
 const ENQUEUE_ENVELOPE_SQL: &str = r#"
-WITH attempted AS (
-    INSERT INTO threefa.device_mailbox (
-        envelope_id,
-        account_id,
-        sender_device_id,
-        recipient_device_id,
-        protocol_version,
-        session_id,
-        message_number,
-        kind,
-        client_created_at_ms,
-        expires_at_ms,
-        ciphertext_base64,
-        ciphertext_size_bytes
-    )
-    SELECT
-        $4, $1, $2, $3, $5, $6, $7::numeric, $8, $9, $10, $11, $12
-    FROM threefa.devices AS sender
-    JOIN threefa.devices AS recipient
-      ON recipient.id = $3
-     AND recipient.account_id = $1
-     AND recipient.revoked = false
-     AND recipient.lifecycle_state = 'active'
-    WHERE sender.id = $2
-      AND sender.account_id = $1
-      AND sender.revoked = false
-      AND sender.lifecycle_state = 'active'
-    ON CONFLICT (envelope_id) DO NOTHING
-    RETURNING mailbox_seq
-), matching AS (
-    SELECT mailbox_seq
-    FROM threefa.device_mailbox
-    WHERE envelope_id = $4
-      AND account_id = $1
-      AND sender_device_id = $2
-      AND recipient_device_id = $3
-      AND protocol_version = $5
-      AND session_id = $6
-      AND message_number = $7::numeric
-      AND kind = $8
-      AND client_created_at_ms = $9
-      AND expires_at_ms = $10
-      AND ciphertext_base64 = $11
-      AND ciphertext_size_bytes = $12
+INSERT INTO threefa.device_mailbox (
+    envelope_id,
+    account_id,
+    sender_device_id,
+    recipient_device_id,
+    protocol_version,
+    session_id,
+    message_number,
+    kind,
+    client_created_at_ms,
+    expires_at_ms,
+    ciphertext_base64,
+    ciphertext_size_bytes
 )
-SELECT mailbox_seq, true AS inserted
-FROM attempted
-UNION ALL
-SELECT mailbox_seq, false AS inserted
-FROM matching
-WHERE NOT EXISTS (SELECT 1 FROM attempted)
-LIMIT 1
+SELECT
+    $4, $1, $2, $3, $5, $6, $7::numeric, $8, $9, $10, $11, $12
+FROM threefa.devices AS sender
+JOIN threefa.devices AS recipient
+  ON recipient.id = $3
+ AND recipient.account_id = $1
+ AND recipient.revoked = false
+ AND recipient.lifecycle_state = 'active'
+WHERE sender.id = $2
+  AND sender.account_id = $1
+  AND sender.revoked = false
+  AND sender.lifecycle_state = 'active'
+ON CONFLICT (envelope_id) DO NOTHING
+RETURNING mailbox_seq
+"#;
+
+const MATCH_ENVELOPE_SQL: &str = r#"
+SELECT mailbox_seq
+FROM threefa.device_mailbox
+WHERE envelope_id = $4
+  AND account_id = $1
+  AND sender_device_id = $2
+  AND recipient_device_id = $3
+  AND protocol_version = $5
+  AND session_id = $6
+  AND message_number = $7::numeric
+  AND kind = $8
+  AND client_created_at_ms = $9
+  AND expires_at_ms = $10
+  AND ciphertext_base64 = $11
+  AND ciphertext_size_bytes = $12
 "#;
 
 const PULL_MAILBOX_SQL: &str = r#"
@@ -193,7 +186,7 @@ WITH selected AS (
       AND mailbox.acknowledged_at IS NULL
       AND mailbox.expires_at_ms > (extract(epoch FROM clock_timestamp()) * 1000)::bigint
     ORDER BY mailbox.mailbox_seq
-    FOR UPDATE OF mailbox SKIP LOCKED
+    FOR UPDATE OF mailbox
     LIMIT $4
 ), delivered AS (
     UPDATE threefa.device_mailbox AS mailbox
@@ -392,7 +385,7 @@ pub async fn publish_prekeys(
     let transaction = db.begin().await?;
 
     let active = transaction
-        .query_one(postgres(
+        .query_one_raw(postgres(
             ACTIVE_DEVICE_SQL,
             vec![request.account_id.into(), request.device_id.into()],
         ))
@@ -403,7 +396,7 @@ pub async fn publish_prekeys(
 
     let bundle = &request.bundle;
     let row = transaction
-        .query_one(postgres(
+        .query_one_raw(postgres(
             UPSERT_BUNDLE_SQL,
             vec![
                 request.device_id.into(),
@@ -435,7 +428,7 @@ pub async fn publish_prekeys(
     }
     for prekey in all_prekeys {
         let result = transaction
-            .execute(postgres(
+            .execute_raw(postgres(
                 INSERT_ONE_TIME_PREKEY_SQL,
                 vec![
                     request.device_id.into(),
@@ -448,7 +441,7 @@ pub async fn publish_prekeys(
     }
 
     let revision_row = transaction
-        .query_one(postgres(
+        .query_one_raw(postgres(
             BUMP_DEVICE_REVISION_SQL,
             vec![request.account_id.into()],
         ))
@@ -461,7 +454,7 @@ pub async fn publish_prekeys(
         "signed_prekey_rotated"
     };
     transaction
-        .execute(postgres(
+        .execute_raw(postgres(
             INSERT_PREKEY_EVENT_SQL,
             vec![
                 request.account_id.into(),
@@ -491,7 +484,7 @@ pub async fn claim_one_time_prekey(
     }
     let transaction = db.begin().await?;
     let row = transaction
-        .query_one(postgres(
+        .query_one_raw(postgres(
             CLAIM_ONE_TIME_PREKEY_SQL,
             vec![
                 account_id.into(),
@@ -529,35 +522,45 @@ pub async fn enqueue_envelope(
     let envelope_id = parse_uuid(&metadata.envelope_id, "envelope_id")?;
     let ciphertext_base64 = BASE64.encode(&envelope.ciphertext);
 
+    let values = vec![
+        account_id.into(),
+        sender_device_id.into(),
+        recipient_device_id.into(),
+        envelope_id.into(),
+        i64::from(metadata.version).into(),
+        metadata.session_id.clone().into(),
+        metadata.message_number.to_string().into(),
+        kind_wire_name(metadata.kind).into(),
+        metadata.created_at_ms.into(),
+        metadata.expires_at_ms.into(),
+        ciphertext_base64.into(),
+        i64::try_from(envelope.ciphertext.len())
+            .map_err(|_| {
+                SignalStoreError::Validation(SignalProtocolValidationError::InvalidCiphertextLength)
+            })?
+            .into(),
+    ];
+    if let Some(row) = db
+        .query_one_raw(postgres(ENQUEUE_ENVELOPE_SQL, values.clone()))
+        .await?
+    {
+        return Ok(EnqueueResult {
+            mailbox_seq: required_i64(&row, "mailbox_seq")?,
+            inserted: true,
+        });
+    }
+
+    // PostgreSQL may detect a concurrently committed ON CONFLICT row that was
+    // invisible to the INSERT statement's initial READ COMMITTED snapshot.
+    // Match in a fresh statement so an exact concurrent retry remains
+    // idempotent; a missing or non-identical row still fails closed.
     let row = db
-        .query_one(postgres(
-            ENQUEUE_ENVELOPE_SQL,
-            vec![
-                account_id.into(),
-                sender_device_id.into(),
-                recipient_device_id.into(),
-                envelope_id.into(),
-                i64::from(metadata.version).into(),
-                metadata.session_id.clone().into(),
-                metadata.message_number.to_string().into(),
-                kind_wire_name(metadata.kind).into(),
-                metadata.created_at_ms.into(),
-                metadata.expires_at_ms.into(),
-                ciphertext_base64.into(),
-                i64::try_from(envelope.ciphertext.len())
-                    .map_err(|_| {
-                        SignalStoreError::Validation(
-                            SignalProtocolValidationError::InvalidCiphertextLength,
-                        )
-                    })?
-                    .into(),
-            ],
-        ))
+        .query_one_raw(postgres(MATCH_ENVELOPE_SQL, values))
         .await?
         .ok_or(SignalStoreError::IdempotencyConflict)?;
     Ok(EnqueueResult {
         mailbox_seq: required_i64(&row, "mailbox_seq")?,
-        inserted: row.try_get("", "inserted")?,
+        inserted: false,
     })
 }
 
@@ -570,7 +573,7 @@ pub async fn pull_mailbox(
 ) -> Result<Vec<MailboxEnvelope>, SignalStoreError> {
     let limit = limit.clamp(1, MAX_MAILBOX_PULL);
     let rows = db
-        .query_all(postgres(
+        .query_all_raw(postgres(
             PULL_MAILBOX_SQL,
             vec![
                 account_id.into(),
@@ -591,7 +594,7 @@ pub async fn acknowledge_envelope(
     envelope_id: Uuid,
 ) -> Result<i64, SignalStoreError> {
     let row = db
-        .query_one(postgres(
+        .query_one_raw(postgres(
             ACKNOWLEDGE_ENVELOPE_SQL,
             vec![
                 account_id.into(),
@@ -616,7 +619,7 @@ pub async fn revoke_device(
     }
     let transaction = db.begin().await?;
     let actor = transaction
-        .query_one(postgres(
+        .query_one_raw(postgres(
             CHECK_ACTOR_SQL,
             vec![account_id.into(), actor_device_id.into()],
         ))
@@ -626,7 +629,7 @@ pub async fn revoke_device(
     }
 
     let revision = transaction
-        .query_one(postgres(
+        .query_one_raw(postgres(
             CAS_DEVICE_REVISION_SQL,
             vec![account_id.into(), expected_revision.into()],
         ))
@@ -635,7 +638,7 @@ pub async fn revoke_device(
     let new_revision = required_i64(&revision, "signal_device_revision")?;
 
     let revoked = transaction
-        .query_one(postgres(
+        .query_one_raw(postgres(
             REVOKE_DEVICE_SQL,
             vec![account_id.into(), subject_device_id.into()],
         ))
@@ -645,19 +648,19 @@ pub async fn revoke_device(
     }
 
     transaction
-        .execute(postgres(
+        .execute_raw(postgres(
             DELETE_REVOKED_PREKEYS_SQL,
             vec![subject_device_id.into()],
         ))
         .await?;
     transaction
-        .execute(postgres(
+        .execute_raw(postgres(
             DELETE_REVOKED_MAIL_SQL,
             vec![account_id.into(), subject_device_id.into()],
         ))
         .await?;
     transaction
-        .execute(postgres(
+        .execute_raw(postgres(
             INSERT_REVOCATION_EVENT_SQL,
             vec![
                 account_id.into(),
@@ -736,8 +739,8 @@ mod tests {
     #[test]
     fn envelope_idempotency_requires_an_exact_ciphertext_match() {
         assert!(ENQUEUE_ENVELOPE_SQL.contains("ON CONFLICT (envelope_id) DO NOTHING"));
-        assert!(ENQUEUE_ENVELOPE_SQL.contains("ciphertext_base64 = $11"));
-        assert!(ENQUEUE_ENVELOPE_SQL.contains("message_number = $7::numeric"));
+        assert!(MATCH_ENVELOPE_SQL.contains("ciphertext_base64 = $11"));
+        assert!(MATCH_ENVELOPE_SQL.contains("message_number = $7::numeric"));
         assert!(ENQUEUE_ENVELOPE_SQL.contains("recipient.lifecycle_state = 'active'"));
     }
 
@@ -745,6 +748,8 @@ mod tests {
     fn acknowledgement_is_separate_from_delivery() {
         assert!(PULL_MAILBOX_SQL.contains("delivered_at = COALESCE"));
         assert!(!PULL_MAILBOX_SQL.contains("acknowledged_at ="));
+        assert!(PULL_MAILBOX_SQL.contains("FOR UPDATE OF mailbox"));
+        assert!(!PULL_MAILBOX_SQL.contains("SKIP LOCKED"));
         assert!(ACKNOWLEDGE_ENVELOPE_SQL.contains("acknowledged_at = COALESCE"));
     }
 
