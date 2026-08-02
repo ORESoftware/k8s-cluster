@@ -24,24 +24,27 @@ jobs:
         with:
           ref: agent/den-1299-investor-browser-audit
           fetch-depth: 0
+          path: repo
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
           repository: fiducia-cloud/fiducia-interfaces
           ref: 487e470c45ab5851e8f6f3b1dc048fe067fbf408
-          path: ../fiducia-interfaces
+          path: fiducia-interfaces
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
           repository: fiducia-cloud/fiducia-test-config
           ref: 825220281fdc16bbf47a035177001d2fe29bdabf
-          path: ../fiducia-test-config
+          path: fiducia-test-config
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
           node-version: '22.22.1'
           cache: npm
+          cache-dependency-path: repo/package-lock.json
       - name: Repair the lockfile within declared semver ranges
         shell: bash
+        working-directory: repo
         run: |
           set -euo pipefail
           npm ci --ignore-scripts
@@ -60,6 +63,7 @@ jobs:
           fi
       - name: Publish the reviewed lockfile repair and remove this workflow
         shell: bash
+        working-directory: repo
         run: |
           set -euo pipefail
           git rm .github/workflows/fix-npm-audit-once.yml
