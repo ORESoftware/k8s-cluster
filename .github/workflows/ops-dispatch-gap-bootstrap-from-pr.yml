@@ -60,7 +60,7 @@ jobs:
 
           encoded="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/canonical-gap-bootstrap-dispatch-trigger?ref=${head_sha}" --jq .content)"
           marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
-          expected=$'target=canonical-gap-bootstrap-v1\nworkflow=825d5e5b297c8ea94a988834ca1664138b3eb37a\nscript=802c0e1bbb6ca7840a509af8efad04c811cc27cd\nfleet-source=5d9a0c2cb44dff607bc3953954ce4b9af08e5789\n'
+          expected=$'target=canonical-gap-bootstrap-v1\nworkflow=825d5e5b297c8ea94a988834ca1664138b3eb37a\nscript=802c0e1bbb6ca7840a509af8efad04c811cc27cd\nfleet-source=5d9a0c2cb44dff607bc3953954ce4b9af08e5789'
           test "$marker" = "$expected"
 
           workflow="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/ops-bootstrap-canonical-repository-gaps.yml?ref=main")"
