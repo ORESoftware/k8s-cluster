@@ -1,0 +1,167 @@
+name: Materialize dormant compute contract repairs
+
+on:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/materialize-dormant-compute-contracts.yml'
+      - 'remote/tests/general/runtime-split-config.test.ts'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-dormant-compute-contracts
+  cancel-in-progress: true
+
+jobs:
+  repair-and-verify:
+    if: github.repository == 'ORESoftware/k8s-cluster' && (github.event_name != 'pull_request' || github.head_ref == 'fix/den-406-dormant-compute-contracts')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact writable branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/den-406-dormant-compute-contracts
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Apply exact dormant-state expectations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/tests/general/runtime-split-config.test.ts')
+          text = path.read_text(encoding='utf-8')
+
+          def replace_once_or_done(old: str, new: str, label: str) -> None:
+              global text
+              if old in text:
+                  text = text.replace(old, new, 1)
+                  return
+              if new in text:
+                  return
+              raise SystemExit(f'{label}: expected old or new text, found neither')
+
+          replace_once_or_done(
+              '    { name: "dd-des-simulator", file: "dd-des-simulator.deployment.yaml" },\n',
+              '',
+              'remove dormant DES from active single-owner loop',
+          )
+
+          single_owner_end = '''  for (const { name, file } of singleOwnerDeployments) {
+            const deployment = await readRepoFile(`remote/argocd/dd-next-runtime/${file}`);
+            const escapedName = escapeRegExp(name);
+
+            assert.match(deployment, new RegExp(`name:\\s*${escapedName}`));
+            assert.match(deployment, /replicas:\\s*1/);
+            assert.match(deployment, /strategy:[\\s\\S]*type:\\s*Recreate/);
+          }
+          });'''
+          dormant_des = '''  for (const { name, file } of singleOwnerDeployments) {
+            const deployment = await readRepoFile(`remote/argocd/dd-next-runtime/${file}`);
+            const escapedName = escapeRegExp(name);
+
+            assert.match(deployment, new RegExp(`name:\\s*${escapedName}`));
+            assert.match(deployment, /replicas:\\s*1/);
+            assert.match(deployment, /strategy:[\\s\\S]*type:\\s*Recreate/);
+          }
+
+          const dormantDes = await readRepoFile(
+            "remote/argocd/dd-next-runtime/dd-des-simulator.deployment.yaml",
+          );
+          const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");
+          const kustomization = await readRepoFile(
+            "remote/argocd/dd-next-runtime/kustomization.yaml",
+          );
+          assert.match(dormantDes, /name:\\s*dd-des-simulator/);
+          assert.match(dormantDes, /replicas:\\s*0/);
+          assert.match(dormantDes, /strategy:[\\s\\S]*type:\\s*Recreate/);
+          assert.match(dormantDes, /readinessProbe:[\\s\\S]*httpGet:/);
+          assert.doesNotMatch(pdbs, /name:\\s*dd-des-simulator/);
+          assert.match(kustomization, /Fun compute servers \\(scaled to 0 by default\\)/);
+          assert.match(kustomization, /dd-des-simulator\\.deployment\\.yaml/);
+          });'''
+          replace_once_or_done(single_owner_end, dormant_des, 'dormant DES contract')
+
+          replace_once_or_done(
+              '  assert.match(deployment, /replicas:\\s*2/);\n  assert.match(deployment, /strategy:[\\s\\S]*type:\\s*Recreate/);',
+              '  assert.match(deployment, /replicas:\\s*0/);\n  assert.match(deployment, /minReadySeconds:\\s*5/);\n  assert.match(deployment, /progressDeadlineSeconds:\\s*1800/);\n  assert.match(deployment, /strategy:[\\s\\S]*type:\\s*Recreate/);',
+              'public-data dormant rollout',
+          )
+          replace_once_or_done(
+              '  const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");\n\n  assert.match(deployment, /name:\\s*dd-public-data-server/);',
+              '  const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");\n  const kustomization = await readRepoFile(\n    "remote/argocd/dd-next-runtime/kustomization.yaml",\n  );\n\n  assert.match(deployment, /name:\\s*dd-public-data-server/);',
+              'public-data kustomization ownership',
+          )
+          replace_once_or_done(
+              '  assert.match(deployment, /requests:[\\s\\S]*cpu:\\s*100m/);\n  assert.match(',
+              '  assert.match(deployment, /requests:[\\s\\S]*cpu:\\s*100m/);\n  assert.match(deployment, /readinessProbe:[\\s\\S]*path:\\s*\\/readyz/);\n  assert.match(kustomization, /Fun compute servers \\(scaled to 0 by default\\)/);\n  assert.match(kustomization, /dd-public-data-server\\.deployment\\.yaml/);\n  assert.match(',
+              'public-data readiness and ownership',
+          )
+
+          replace_once_or_done(
+              '  const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");\n\n  assert.match(deployment, /name:\\s*dd-fabrication-server/);',
+              '  const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");\n  const kustomization = await readRepoFile(\n    "remote/argocd/dd-next-runtime/kustomization.yaml",\n  );\n\n  assert.match(deployment, /name:\\s*dd-fabrication-server/);',
+              'fabrication kustomization ownership',
+          )
+          replace_once_or_done(
+              '  assert.match(deployment, /replicas:\\s*2/);',
+              '  assert.match(deployment, /replicas:\\s*0/);',
+              'fabrication dormant replicas',
+          )
+          replace_once_or_done(
+              '  assert.match(deployment, /maxSurge:\\s*0/);\n  assert.match(deployment, /maxUnavailable:\\s*1/);',
+              '  assert.match(deployment, /maxSurge:\\s*1/);\n  assert.match(deployment, /maxUnavailable:\\s*0/);',
+              'fabrication zero-unavailable activation profile',
+          )
+          replace_once_or_done(
+              '  assert.match(hpa, /name:\\s*memory[\\s\\S]*averageUtilization:\\s*80/);',
+              '  assert.match(hpa, /name:\\s*memory[\\s\\S]*averageUtilization:\\s*80/);\n  assert.match(kustomization, /Fun compute servers \\(scaled to 0 by default\\)/);\n  assert.match(kustomization, /dd-fabrication-server\\.deployment\\.yaml/);\n  assert.doesNotMatch(kustomization, /dd-fabrication-server\\.hpa\\.yaml/);',
+              'fabrication staged HPA ownership',
+          )
+
+          path.write_text(text, encoding='utf-8')
+          PY
+          git diff --check
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install locked dependencies
+        working-directory: remote/tests
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify dormant DES, public-data, and fabrication contracts
+        working-directory: remote/tests
+        run: >-
+          pnpm exec tsx --test
+          --test-name-pattern='single-owner runtime workloads|public data server|fabrication server runtime'
+          general/runtime-split-config.test.ts
+
+      - name: Publish test repair when changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add remote/tests/general/runtime-split-config.test.ts
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'Dormant compute contract is already materialized.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'test(DEN-406): preserve dormant compute ownership'
+          git push origin HEAD:fix/den-406-dormant-compute-contracts
