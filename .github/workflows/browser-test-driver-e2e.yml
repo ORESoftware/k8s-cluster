@@ -126,17 +126,34 @@ jobs:
           pnpm run typecheck
           pnpm run build
 
-      - name: Install Chromium and system dependencies
+      - name: Install browser dependencies
         working-directory: remote/deployments/browser-test-server
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: Resolve immutable test browser path
-        working-directory: remote/deployments/browser-test-server
-        shell: bash
+        env:
+          TOOL: ${{ matrix.tool }}
         run: |
           set -euo pipefail
-          chromium_path="$(node --input-type=module -e \
-            "import { chromium } from 'playwright'; process.stdout.write(chromium.executablePath())")"
+          if [[ "$TOOL" == selenium ]]; then
+            pnpm exec playwright install-deps chromium
+          else
+            pnpm exec playwright install --with-deps chromium
+          fi
+
+      - name: Resolve matched browser path
+        working-directory: remote/deployments/browser-test-server
+        shell: bash
+        env:
+          TOOL: ${{ matrix.tool }}
+        run: |
+          set -euo pipefail
+          if [[ "$TOOL" == selenium ]]; then
+            chromium_path="$(command -v google-chrome-stable || command -v google-chrome)"
+            chromedriver_path="$(command -v chromedriver)"
+            test -x "$chromedriver_path"
+            "$chromedriver_path" --version
+          else
+            chromium_path="$(node --input-type=module -e \
+              "import { chromium } from 'playwright'; process.stdout.write(chromium.executablePath())")"
+          fi
           test -x "$chromium_path"
           echo "BROWSER_TEST_CHROMIUM_PATH=$chromium_path" >>"$GITHUB_ENV"
           "$chromium_path" --version
