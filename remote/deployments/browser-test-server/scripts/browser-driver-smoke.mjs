@@ -48,7 +48,11 @@ function closeServer(server) {
 function fixtureHtml() {
   return `<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>browser driver fixture</title></head>
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" href="data:,">
+  <title>browser driver fixture</title>
+</head>
 <body>
   <label>Name <input id="name" autocomplete="off"></label>
   <label>Flavor
