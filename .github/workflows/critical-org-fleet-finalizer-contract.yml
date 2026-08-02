@@ -1,50 +1,199 @@
-name: critical org fleet finalizer contract
+name: Repair extracted repository visibility contract
 
 on:
-  pull_request:
-    paths:
-      - 'scripts/ops/finalize_missing_org_repositories.py'
-      - 'scripts/ops/tests/test_finalize_missing_org_repositories.py'
-      - '.github/workflows/critical-org-fleet-finalizer-contract.yml'
   push:
-    branches: [main]
+    branches:
+      - fix/den-1058-extracted-visibility-contract
     paths:
-      - 'scripts/ops/finalize_missing_org_repositories.py'
-      - 'scripts/ops/tests/test_finalize_missing_org_repositories.py'
       - '.github/workflows/critical-org-fleet-finalizer-contract.yml'
-  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: critical-org-fleet-finalizer-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: repair-extracted-repository-visibility-contract
+  cancel-in-progress: false
 
 jobs:
-  contract:
+  repair:
+    if: >-
+      github.repository == 'ORESoftware/k8s-cluster' &&
+      github.ref == 'refs/heads/fix/den-1058-extracted-visibility-contract'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - name: Check out repository
+      - name: Check out exact repair branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false
+          ref: fix/den-1058-extracted-visibility-contract
+          fetch-depth: 0
+          persist-credentials: true
 
-      - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: '3.13'
-
-      - name: Compile the bounded finalizer and its tests
+      - name: Reconcile public Meta Agents and private File Tunnel contracts
+        shell: bash
         run: |
-          python -m py_compile \
+          set -Eeuo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          finalizer = Path('scripts/ops/finalize_missing_org_repositories.py')
+          text = finalizer.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  'The two\nextracted repositories remain private. Verification is read-first and\n',
+                  'The extracted Meta Agents repository remains public while File Tunnel remains\nprivate. Verification is read-first and\n',
+              ),
+              (
+                  'EXTRACTED = {\n'
+                  '    "meta-agents-demo/meta-agent-control-plane.rs": ".meta-agent-ci.yml.pending",\n'
+                  '    "file-tunnel/ftnl-mcp-server.rs": ".ftnl-mcp-ci.yml.pending",\n'
+                  '}\n',
+                  'EXTRACTED = {\n'
+                  '    "meta-agents-demo/meta-agent-control-plane.rs": {\n'
+                  '        "pending_path": ".meta-agent-ci.yml.pending",\n'
+                  '        "visibility": "public",\n'
+                  '    },\n'
+                  '    "file-tunnel/ftnl-mcp-server.rs": {\n'
+                  '        "pending_path": ".ftnl-mcp-ci.yml.pending",\n'
+                  '        "visibility": "private",\n'
+                  '    },\n'
+                  '}\n',
+              ),
+              (
+                  '    for slug, pending_path in EXTRACTED.items():\n'
+                  '        repository = api("GET", f"/repos/{slug}", credential)\n',
+                  '    for slug, contract in EXTRACTED.items():\n'
+                  '        pending_path = contract["pending_path"]\n'
+                  '        expected_visibility = contract["visibility"]\n'
+                  '        repository = api("GET", f"/repos/{slug}", credential)\n',
+              ),
+              (
+                  '            expected_visibility="private",\n'
+                  '        )\n'
+                  '        inspect_ci_state(slug, pending_path, credential)\n',
+                  '            expected_visibility=expected_visibility,\n'
+                  '        )\n'
+                  '        inspect_ci_state(slug, pending_path, credential)\n',
+              ),
+              (
+                  '    for slug, pending_path in EXTRACTED.items():\n'
+                  '        action = activate_ci(slug, pending_path, credential)\n',
+                  '    for slug, contract in EXTRACTED.items():\n'
+                  '        pending_path = contract["pending_path"]\n'
+                  '        action = activate_ci(slug, pending_path, credential)\n',
+              ),
+              (
+                  '            "extracted_private": 2,\n'
+                  '            "total": 34,\n',
+                  '            "extracted": 2,\n'
+                  '            "extracted_public": 1,\n'
+                  '            "extracted_private": 1,\n'
+                  '            "total": 34,\n',
+              ),
+              (
+                  '                "- visibility: private",\n',
+                  '                f"- visibility: {repository[\'visibility\']}",\n',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'finalizer replacement boundary changed: count={count} for {old[:80]!r}')
+              text = text.replace(old, new, 1)
+          finalizer.write_text(text, encoding='utf-8')
+
+          tests = Path('scripts/ops/tests/test_finalize_missing_org_repositories.py')
+          test_text = tests.read_text(encoding='utf-8')
+          old_report = '''                "meta-agents-demo/meta-agent-control-plane.rs": {
+                    "id": 3,
+                    "main_sha": "c" * 40,
+                    "ci": "active",
+                    "ci_action": "already-active",
+                }
+'''
+          new_report = '''                "meta-agents-demo/meta-agent-control-plane.rs": {
+                    "id": 3,
+                    "main_sha": "c" * 40,
+                    "visibility": "public",
+                    "ci": "active",
+                    "ci_action": "already-active",
+                },
+                "file-tunnel/ftnl-mcp-server.rs": {
+                    "id": 4,
+                    "main_sha": "d" * 40,
+                    "visibility": "private",
+                    "ci": "active",
+                    "ci_action": "activated",
+                }
+'''
+          if test_text.count(old_report) != 1:
+              raise SystemExit('markdown fixture boundary changed')
+          test_text = test_text.replace(old_report, new_report, 1)
+          old_assertions = '''        self.assertIn("visibility: private", rendered)
+        self.assertIn("All 34 approved repositories", rendered)
+'''
+          new_assertions = '''        self.assertIn("## meta-agents-demo/meta-agent-control-plane.rs", rendered)
+        self.assertIn("visibility: public", rendered)
+        self.assertIn("## file-tunnel/ftnl-mcp-server.rs", rendered)
+        self.assertIn("visibility: private", rendered)
+        self.assertIn("All 34 approved repositories", rendered)
+'''
+          if test_text.count(old_assertions) != 1:
+              raise SystemExit('markdown assertion boundary changed')
+          test_text = test_text.replace(old_assertions, new_assertions, 1)
+
+          insertion = '''
+    def test_extracted_visibility_contract_is_explicit(self) -> None:
+        self.assertEqual(
+            finalizer.EXTRACTED["meta-agents-demo/meta-agent-control-plane.rs"]["visibility"],
+            "public",
+        )
+        self.assertEqual(
+            finalizer.EXTRACTED["file-tunnel/ftnl-mcp-server.rs"]["visibility"],
+            "private",
+        )
+
+'''
+          marker = '\n\nif __name__ == "__main__":\n'
+          if test_text.count(marker) != 1:
+              raise SystemExit('test insertion boundary changed')
+          test_text = test_text.replace(marker, insertion + marker, 1)
+          tests.write_text(test_text, encoding='utf-8')
+          PY
+
+          git show origin/main:.github/workflows/critical-org-fleet-finalizer-contract.yml \
+            > .github/workflows/critical-org-fleet-finalizer-contract.yml
+
+      - name: Validate the corrected contract
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile \
             scripts/ops/finalize_missing_org_repositories.py \
             scripts/ops/tests/test_finalize_missing_org_repositories.py
+          python3 -m unittest discover \
+            -s scripts/ops/tests \
+            -p 'test_finalize_missing_org_repositories.py' \
+            -v
+          git diff --check
+          test -z "$(git diff --name-only -- .github/workflows/critical-org-fleet-finalizer-contract.yml)"
 
-      - name: Run fail-closed publication contracts
-        run: >-
-          python -m unittest discover
-          -s scripts/ops/tests
-          -p 'test_finalize_missing_org_repositories.py'
-          -v
+      - name: Commit only the source contract correction
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git add \
+            scripts/ops/finalize_missing_org_repositories.py \
+            scripts/ops/tests/test_finalize_missing_org_repositories.py
+          actual="$(git diff --cached --name-only | LC_ALL=C sort)"
+          expected="$(printf '%s\n' \
+            scripts/ops/finalize_missing_org_repositories.py \
+            scripts/ops/tests/test_finalize_missing_org_repositories.py | LC_ALL=C sort)"
+          test "$actual" = "$expected"
+          git diff --cached --check
+          git config user.name ORESoftware
+          git config user.email 11139560+ORESoftware@users.noreply.github.com
+          git commit -m 'fix(DEN-1058): make Meta Agents public and File Tunnel private'
+          git push origin HEAD:fix/den-1058-extracted-visibility-contract
