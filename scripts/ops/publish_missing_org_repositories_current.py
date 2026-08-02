@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from repository_fleet_visibility import project_private_execution_manifest
+
 MODULE_PATH = Path(__file__).with_name("publish_missing_org_repositories.py")
 SPEC = importlib.util.spec_from_file_location("bounded_missing_repo_publisher", MODULE_PATH)
 if SPEC is None or SPEC.loader is None:
@@ -88,7 +90,7 @@ def ensure_private_repository(owner: str, name: str, description: str) -> dict[s
         )
         if status != 201 or not isinstance(current, dict):
             fail(f"failed to create {owner}/{name}: HTTP {status}")
-        print(f"CREATED {owner}/{name}")
+        print(f"CREATED_PRIVATE {owner}/{name}")
 
     if not isinstance(current, dict):
         fail(f"invalid repository response for {owner}/{name}")
@@ -101,7 +103,7 @@ def ensure_private_repository(owner: str, name: str, description: str) -> dict[s
 
 
 def publish_current_hypesiege_and_streempilot(work: Path) -> None:
-    """Publish the exact reviewed schema-v2 fleet one repository at a time."""
+    """Publish exact reviewed histories under the fail-closed private policy."""
 
     carrier = work / "fleet-carrier"
     MODULE.run(
@@ -143,6 +145,7 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
     publisher = carrier / "scripts/publish_hypesiege_streempilot_fleet.py"
     source_root = work / "hypesiege-streempilot-fleet"
     generated_manifest_path = work / "hypesiege-streempilot-manifest.json"
+    execution_manifest_path = work / "hypesiege-streempilot-private-execution.json"
 
     MODULE.run(
         [
@@ -193,13 +196,34 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
     records = generated_manifest.get("repositories")
     if not isinstance(records, list) or len(records) != 32:
         fail("reviewed fleet repository ledger is malformed")
+    if any(
+        not isinstance(record, dict) or record.get("visibility") != "public"
+        for record in records
+    ):
+        fail("sealed product-intent ledger is no longer uniformly public")
+
+    # Keep the sealed reviewed ledger unchanged as provenance. The operational
+    # manifest is a deep-copy projection, and the helper proves that visibility
+    # is the only field that moved.
+    execution_manifest = project_private_execution_manifest(generated_manifest)
+    execution_manifest_path.write_text(
+        json.dumps(execution_manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    execution_records = execution_manifest.get("repositories")
+    if not isinstance(execution_records, list) or len(execution_records) != 32:
+        fail("private execution manifest repository ledger is malformed")
+    if any(
+        not isinstance(record, dict) or record.get("visibility") != "private"
+        for record in execution_records
+    ):
+        fail("private execution manifest contains a non-private repository")
+    print("VERIFIED private execution projection for 32 reviewed histories")
 
     environment = os.environ.copy()
     environment["GITHUB_REPOSITORY_ADMIN_TOKEN"] = MODULE.TOKEN
 
-    for record in records:
-        if not isinstance(record, dict):
-            fail("reviewed fleet contains a non-object repository record")
+    for record in execution_records:
         full_name = record.get("full_name")
         if not isinstance(full_name, str):
             fail("reviewed fleet contains an invalid repository identity")
@@ -208,7 +232,7 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
                 sys.executable,
                 str(publisher),
                 "--manifest",
-                str(generated_manifest_path),
+                str(execution_manifest_path),
                 "--source-root",
                 str(source_root),
                 "--repository",
@@ -220,7 +244,7 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
             env=environment,
         )
 
-    for record in records:
+    for record in execution_records:
         full_name = str(record["full_name"])
         expected = str(record["commit"])
         actual = MODULE.main_ref(full_name)
@@ -229,8 +253,16 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
                 f"fleet verification failed for {full_name}: "
                 f"{actual!r} != {expected}"
             )
-        print(f"VERIFIED {full_name} {actual}")
-    print("VERIFIED 32/32 HypeSiege and StreemPilot repositories")
+        status, remote = MODULE.api("GET", f"/repos/{full_name}")
+        if status != 200 or not isinstance(remote, dict):
+            fail(f"remote verification failed for {full_name}: HTTP {status}")
+        if remote.get("private") is not True or remote.get("visibility") != "private":
+            fail(
+                f"remote visibility drift for {full_name}: "
+                f"private={remote.get('private')!r}, visibility={remote.get('visibility')!r}"
+            )
+        print(f"VERIFIED_PRIVATE {full_name} {actual}")
+    print("VERIFIED 32/32 private HypeSiege and StreemPilot repositories")
 
 
 MODULE.repair_publisher = repair_or_validate_publisher
