@@ -49,15 +49,11 @@ jobs:
           from pathlib import Path
 
           def replace_once_or_done(text: str, old: str, new: str, label: str) -> str:
-              old_count = text.count(old)
-              new_count = text.count(new)
-              if old_count >= 1:
+              if old in text:
                   return text.replace(old, new, 1)
-              if new_count >= 1:
+              if new in text:
                   return text
-              raise SystemExit(
-                  f'{label}: expected old or new contract text, found neither'
-              )
+              raise SystemExit(f'{label}: expected old or new token, found neither')
 
           nats_path = Path('remote/tests/general/nats-shadow-handoff.test.ts')
           nats = nats_path.read_text(encoding='utf-8')
@@ -65,14 +61,14 @@ jobs:
           prefix, section = nats.split(marker, 1)
           section = replace_once_or_done(
               section,
-              r'/resources:[\s\S]*requests:[\s\S]*cpu:\s*100m[\s\S]*memory:\s*128Mi/',
-              r'/resources:[\s\S]*requests:[\s\S]*cpu:\s*25m[\s\S]*memory:\s*128Mi/',
+              r'cpu:\s*100m[\s\S]*memory:\s*128Mi',
+              r'cpu:\s*25m[\s\S]*memory:\s*128Mi',
               'REST request budget',
           )
           section = replace_once_or_done(
               section,
-              r'/resources:[\s\S]*limits:[\s\S]*cpu:\s*[\'\"]?1[\'\"]?[\s\S]*memory:\s*1Gi/',
-              r'/resources:[\s\S]*limits:[\s\S]*cpu:\s*[\'\"]?1[\'\"]?[\s\S]*memory:\s*2Gi/',
+              r'memory:\s*1Gi',
+              r'memory:\s*2Gi',
               'REST cold-build limit',
           )
           nats_path.write_text(prefix + marker + section, encoding='utf-8')
@@ -88,14 +84,14 @@ jobs:
           )
           web_section = replace_once_or_done(
               web_section,
-              r'assert.match(deployment, /maxSurge:\s*0/);',
-              r'assert.match(deployment, /maxSurge:\s*1/);',
+              r'/maxSurge:\s*0/',
+              r'/maxSurge:\s*1/',
               'web-home maxSurge',
           )
           web_section = replace_once_or_done(
               web_section,
-              r'assert.match(deployment, /maxUnavailable:\s*1/);',
-              r'assert.match(deployment, /maxUnavailable:\s*0/);',
+              r'/maxUnavailable:\s*1/',
+              r'/maxUnavailable:\s*0/',
               'web-home maxUnavailable',
           )
 
@@ -106,14 +102,14 @@ jobs:
           )
           ha_section = replace_once_or_done(
               ha_section,
-              r'assert.match(deployment, /maxSurge:\s*0/);',
-              r'assert.match(deployment, /maxSurge:\s*1/);',
+              r'/maxSurge:\s*0/',
+              r'/maxSurge:\s*1/',
               'HA fleet maxSurge',
           )
           ha_section = replace_once_or_done(
               ha_section,
-              r'assert.match(deployment, /maxUnavailable:\s*1/);',
-              r'assert.match(deployment, /maxUnavailable:\s*0/);',
+              r'/maxUnavailable:\s*1/',
+              r'/maxUnavailable:\s*0/',
               'HA fleet maxUnavailable',
           )
 
