@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import Fastify from 'fastify';
+import { z } from 'zod';
+
+import { ApiContractRegistry } from './api-contract.js';
 import { buildApp } from './server.js';
 
 type JsonObject = Record<string, unknown>;
@@ -133,4 +137,63 @@ test('invalid authenticated requests are rejected before a browser is launched',
   assert.equal(response.statusCode, 400);
   assert.equal(response.json().error, 'invalid_request');
   assert.ok(Array.isArray(response.json().issues));
+});
+
+test('Zod discriminated-union bodies reach handlers without AJV branch mutation', async (context) => {
+  const app = Fastify();
+  context.after(() => app.close());
+
+  const body = z.discriminatedUnion('action', [
+    z
+      .object({
+        action: z.literal('goto'),
+        url: z.string().url(),
+      })
+      .strict(),
+    z
+      .object({
+        action: z.literal('fill'),
+        selector: z.string().min(1),
+        value: z.string(),
+      })
+      .strict(),
+  ]);
+  const response = z
+    .object({
+      action: z.literal('fill'),
+      selector: z.string(),
+      value: z.string(),
+    })
+    .strict();
+
+  const registry = new ApiContractRegistry();
+  registry.register(app, {
+    method: 'POST',
+    path: '/union',
+    operationId: 'echoDiscriminatedUnion',
+    summary: 'Echo a discriminated-union request.',
+    tags: ['test'],
+    visibility: 'internal',
+    auth: 'public',
+    routeType: 'user-generated',
+    body,
+    responses: {
+      '200': {
+        description: 'Echoed fill request.',
+        schema: response,
+      },
+    },
+    handler: async (request) => request.body,
+  });
+  await app.ready();
+
+  const payload = { action: 'fill', selector: '#name', value: 'Ada' };
+  const result = await app.inject({
+    method: 'POST',
+    url: '/union',
+    payload,
+  });
+
+  assert.equal(result.statusCode, 200, result.body);
+  assert.deepEqual(result.json(), payload);
 });
