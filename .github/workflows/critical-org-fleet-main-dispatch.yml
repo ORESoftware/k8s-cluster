@@ -180,6 +180,7 @@ jobs:
     env:
       TRIGGER_PR: ${{ github.event.pull_request.number }}
       TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+      TRUSTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
       TRACKING_PR: '471'
       EXPECTED_LOGIN: ORESoftware
       MARKER_PATH: .github/canonical-gap-bootstrap-dispatch-trigger
@@ -189,18 +190,22 @@ jobs:
       GH_CONFIG_DIR: ${{ runner.temp }}/canonical-repository-gap-owner-auth
 
     steps:
-      - name: Validate exact gap carrier and trusted-main source pins
+      - name: Validate exact gap carrier and trusted-base source pins
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$TRUSTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+
           pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRIGGER_PR}")"
-          jq -e '
+          jq -e --arg base_sha "$TRUSTED_BASE_SHA" '
             .state == "open" and
             .draft == true and
             .user.login == "ORESoftware" and
             .base.ref == "main" and
+            .base.sha == $base_sha and
             .head.repo.full_name == "ORESoftware/k8s-cluster" and
             .head.ref == "agent/dispatch-canonical-gap-bootstrap-20260801-v1" and
             .title == "DO NOT MERGE: dispatch safe canonical repository-gap bootstrap" and
@@ -238,15 +243,15 @@ jobs:
             .changed_files == 1
           ' <<<"$canonical" >/dev/null
 
-          workflow="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/ops-bootstrap-canonical-repository-gaps.yml?ref=main")"
+          workflow="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/ops-bootstrap-canonical-repository-gaps.yml?ref=${TRUSTED_BASE_SHA}")"
           test "$(jq -er .sha <<<"$workflow")" = "$WORKFLOW_BLOB_SHA"
-          script="$(gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/ops/bootstrap_missing_canonical_repositories.py?ref=main")"
+          script="$(gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/ops/bootstrap_missing_canonical_repositories.py?ref=${TRUSTED_BASE_SHA}")"
           test "$(jq -er .sha <<<"$script")" = "$SCRIPT_BLOB_SHA"
 
-      - name: Check out trusted main
+      - name: Check out exact trusted base
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
+          ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 1
           persist-credentials: false
 
