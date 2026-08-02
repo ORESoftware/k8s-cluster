@@ -59,7 +59,7 @@ jobs:
           npm audit --json > test-results/npm-audit.json || true
       - name: Reject high-severity production dependency advisories
         working-directory: repo
-        run: npm audit --omit=dev --audit-level=high
+        run: npm run audit
       # Fast source contracts, including the public investor-evidence schema.
       - run: npm test
         working-directory: repo
