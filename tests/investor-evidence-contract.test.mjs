@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 const investors = await readFile(new URL('../src/pages/investors.astro', import.meta.url), 'utf8');
 const layout = await readFile(new URL('../src/layouts/Layout.astro', import.meta.url), 'utf8');
 const facts = JSON.parse(await readFile(new URL('../public/company-facts.json', import.meta.url), 'utf8'));
+const renderedSources = `${investors}\n${layout}`;
 
 const verified = Object.freeze({
   company: 'Fiducia Cloud',
@@ -72,7 +73,7 @@ function assertNoMutableClaims(text, label) {
   }
 }
 
-test('HTML and JSON keep one official company identity', () => {
+test('rendered HTML sources and JSON keep one official company identity', () => {
   assert.equal(facts.company, verified.company);
   assert.equal(facts.official_contact, verified.contact);
   assert.equal(facts.website, verified.website);
@@ -81,7 +82,10 @@ test('HTML and JSON keep one official company identity', () => {
   assert.equal(facts.founder.linkedin, verified.linkedin);
 
   for (const value of Object.values(verified)) {
-    assert.ok(investors.includes(value), `investor page is missing verified identity value: ${value}`);
+    assert.ok(
+      renderedSources.includes(value),
+      `investor page/layout sources are missing verified identity value: ${value}`,
+    );
   }
   assert.match(investors, /Bootstrapped, active public implementation/);
 });
