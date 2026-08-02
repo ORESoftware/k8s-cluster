@@ -1,0 +1,40 @@
+name: DEN-1335 Shared Auth assurance migration v3
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+          components: rustfmt,clippy
+      - name: Apply and publish the locked Shared Auth assurance change
+        run: |
+          set -euo pipefail
+          if git log -1 --pretty=%B | grep -Fq '[shared-auth-amr-hardened]'; then
+            echo 'migration already published'
+            exit 0
+          fi
+          python3 scripts/den-1335-migrate.py
+          bash scripts/den-1335-interface-fixture.sh
+          cargo fmt --all
+          cargo clippy --locked --all-targets --all-features -- -D warnings
+          cargo test --locked --all-features
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/service.rs
+          git commit -m 'DEN-1335 enforce passwordless Shared Auth AMR policy [shared-auth-amr-hardened]'
+          git push origin HEAD:${{ github.head_ref }}
