@@ -52,13 +52,16 @@ jobs:
           git diff --check
 
           workflow=.github/workflows/slack-agent-command-browser-e2e.yml
+          fixture=remote/tests/fixtures/slack-command-coordinator.yaml
           grep -Fq 'default: main' "$workflow"
           test "$(grep -Fc 'default: main' "$workflow")" -eq 2
           ! grep -Fq 'agent/den-1041-ores-slash-commands' "$workflow"
           ! grep -Fq 'agent/den-1231-slack-run-envelope' "$workflow"
-          grep -Fq "app ID: A0BMBAMM5NJ" remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs
-          grep -Fq "team ID: T01B3C83PMK" remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs
-          grep -Fq "channel ID: C0BKP2N3LG7" remote/tests/general/ai-agent-bridge-k8s-contract.test.mjs
+          grep -Fq 'required: true' "$fixture"
+          grep -Fq 'token_env: COORDINATOR_API_TOKEN' "$fixture"
+          grep -Fq 'base_url: http://127.0.0.1:8199/v1' "$fixture"
+          grep -Fq 'trust: local' "$fixture"
+          grep -Fq 'deny_remote_when_secrets_cannot_be_redacted: true' "$fixture"
 
       - name: Validate workflow syntax
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
