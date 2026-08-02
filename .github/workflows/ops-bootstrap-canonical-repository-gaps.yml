@@ -25,6 +25,7 @@ jobs:
     env:
       TRACKING_PR: '471'
       EXPECTED_LOGIN: ORESoftware
+      FLEET_SOURCE_SHA: 5d9a0c2cb44dff607bc3953954ce4b9af08e5789
       GH_CONFIG_DIR: ${{ runner.temp }}/canonical-repository-gap-owner-auth
 
     steps:
@@ -53,6 +54,20 @@ jobs:
             .commits == 1 and
             .changed_files == 1
           ' <<<"$pull" >/dev/null
+
+          head_sha="$(jq -er .head.sha <<<"$pull")"
+          files="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRACKING_PR}/files?per_page=100")"
+          test "$(jq 'length' <<<"$files")" -eq 1
+          jq -e '
+            .[0].filename == ".github/critical-org-fleet-device-auth-trigger" and
+            .[0].status == "added" and
+            .[0].changes == 3
+          ' <<<"$files" >/dev/null
+
+          encoded="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/critical-org-fleet-device-auth-trigger?ref=${head_sha}" --jq .content)"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
+          test "$(sed -n 's/^target=//p' <<<"$marker")" = critical-org-fleet-v1
+          test "$(sed -n 's/^fleet-source=//p' <<<"$marker")" = "$FLEET_SOURCE_SHA"
 
       - name: Authorize owner and materialize repository gaps
         shell: bash
@@ -101,7 +116,7 @@ jobs:
           fi
 
           GH_TOKEN="$COMMENT_TOKEN" gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body \
-            "**Fresh gap-bootstrap authorization:** open https://github.com/login/device and enter **\`$code\`**. Ignore all earlier codes. This run creates only missing/empty canonical repositories, reconciles approved visibility, and never overwrites an existing history. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            "**Fresh gap-bootstrap authorization:** open https://github.com/login/device and enter **\`$code\`**. Ignore all earlier codes. This run creates only missing/empty canonical repositories as private repositories, preserves every existing visibility and history, and never force-pushes. Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           echo "::notice title=GitHub device authorization::Open https://github.com/login/device and enter $code"
 
           set +e
@@ -140,7 +155,7 @@ jobs:
           unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN token
           run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           GH_TOKEN="$COMMENT_TOKEN" gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body \
-            "Canonical repository-gap bootstrap completed without overwriting existing histories. Missing repositories were created with sealed mains; divergent existing mains remain queued for semantic merge. ${run_url}"
+            "Canonical repository-gap bootstrap completed without overwriting existing histories or visibility. Missing repositories were created privately with sealed mains; divergent existing mains remain queued for semantic merge. ${run_url}"
 
       - name: Record failed bootstrap
         if: ${{ failure() }}
@@ -149,4 +164,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body \
-            "Canonical repository-gap bootstrap failed before safe completion. No force push is permitted. Inspect: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >/dev/null || true
+            "Canonical repository-gap bootstrap failed before safe completion. No force push or visibility change is permitted. Inspect: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >/dev/null || true
