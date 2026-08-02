@@ -137,8 +137,8 @@ test("web home route has rollout and gateway guards against transient 502s", asy
   assert.match(deployment, /minReadySeconds:\s*5/);
   assert.match(deployment, /progressDeadlineSeconds:\s*1800/);
   assert.match(deployment, /type:\s*RollingUpdate/);
-  assert.match(deployment, /maxSurge:\s*0/);
-  assert.match(deployment, /maxUnavailable:\s*1/);
+  assert.match(deployment, /maxSurge:\s*1/);
+  assert.match(deployment, /maxUnavailable:\s*0/);
   assert.match(deployment, /readinessProbe:[\s\S]*path:\s*\/healthz[\s\S]*port:\s*http/);
 
   assert.match(pdb, /kind:\s*PodDisruptionBudget/);
@@ -167,9 +167,7 @@ test("gateway-backed stateless services use HA rolling deployment profile", asyn
     "dd-agent-worker-broker",
     "dd-des-rs",
     "dd-contract-service",
-    "dd-mdp-optimizer",
     "dd-trading-server",
-    "dd-web-scraper",
     "dd-browser-test-server",
     "dd-selenium-server",
     "dd-rust-vapi-phone",
@@ -187,8 +185,8 @@ test("gateway-backed stateless services use HA rolling deployment profile", asyn
     assert.match(deployment, /minReadySeconds:\s*5/);
     assert.match(deployment, /progressDeadlineSeconds:\s*1800/);
     assert.match(deployment, /type:\s*RollingUpdate/);
-    assert.match(deployment, /maxSurge:\s*0/);
-    assert.match(deployment, /maxUnavailable:\s*1/);
+    assert.match(deployment, /maxSurge:\s*1/);
+    assert.match(deployment, /maxUnavailable:\s*0/);
     assert.match(deployment, /readinessProbe:[\s\S]*httpGet:/);
     assert.match(
       pdbs,
@@ -197,6 +195,32 @@ test("gateway-backed stateless services use HA rolling deployment profile", asyn
       ),
     );
   }
+
+  const persistentScraper = await readRepoFile(
+  "remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml",
+);
+assert.match(persistentScraper, /name:\s*dd-web-scraper/);
+assert.match(persistentScraper, /replicas:\s*1/);
+assert.match(persistentScraper, /minReadySeconds:\s*5/);
+assert.match(persistentScraper, /progressDeadlineSeconds:\s*600/);
+assert.match(persistentScraper, /type:\s*RollingUpdate/);
+assert.match(persistentScraper, /maxSurge:\s*1/);
+assert.match(persistentScraper, /maxUnavailable:\s*0/);
+assert.match(persistentScraper, /readinessProbe:[\s\S]*httpGet:/);
+assert.match(
+  pdbs,
+  /kind:\s*PodDisruptionBudget[\s\S]*name:\s*dd-web-scraper[\s\S]*minAvailable:\s*1[\s\S]*app:\s*dd-web-scraper/,
+);
+
+const dormantMdp = await readRepoFile(
+  "remote/argocd/dd-next-runtime/dd-mdp-optimizer.deployment.yaml",
+);
+assert.match(dormantMdp, /name:\s*dd-mdp-optimizer/);
+assert.match(dormantMdp, /replicas:\s*0/);
+assert.match(dormantMdp, /type:\s*RollingUpdate/);
+assert.match(dormantMdp, /maxSurge:\s*1/);
+assert.match(dormantMdp, /maxUnavailable:\s*0/);
+assert.match(dormantMdp, /readinessProbe:[\s\S]*httpGet:/);
 
   const desRs = await readRepoFile("remote/argocd/dd-next-runtime/dd-des-rs.deployment.yaml");
   const desRsHpa = await readRepoFile("remote/argocd/dd-next-runtime/dd-des-rs.hpa.yaml");
