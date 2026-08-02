@@ -1,0 +1,61 @@
+name: DEN-1335 Shared Auth assurance migration v4
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: stable
+          components: rustfmt,clippy
+      - name: Apply, update the full-path fixture, and publish
+        run: |
+          set -euo pipefail
+          if git log -1 --pretty=%B | grep -Fq '[shared-auth-amr-hardened]'; then
+            echo 'migration already published'
+            exit 0
+          fi
+          python3 scripts/den-1335-migrate.py
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/service.rs')
+          text = path.read_text()
+          old = '''        let body = r#"{\"active\":true,\"sub\":\"7bbbfce1-d3b0-41e3-ab93-2e4f4e62ba89\",\"email\":\"verified@example.com\",\"email_verified\":true,\"aal\":2}"#;
+                  let (base_url, requests, handle) = spawn_json_server(body);
+          '''
+          new = '''        let issued_at = SystemTime::now()
+                      .duration_since(UNIX_EPOCH)
+                      .unwrap()
+                      .as_secs();
+                  let body = format!(
+                      r#"{{\"active\":true,\"sub\":\"7bbbfce1-d3b0-41e3-ab93-2e4f4e62ba89\",\"email\":\"verified@example.com\",\"email_verified\":true,\"aal\":2,\"acr\":\"urn:oresoftware:loa:2\",\"amr\":[\"federated\",\"totp\"],\"iat\":{issued_at}}}"#
+                  );
+                  let (base_url, requests, handle) = spawn_json_server(&body);
+          '''
+          if old not in text:
+              raise SystemExit('Shared Auth success fixture not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          bash scripts/den-1335-interface-fixture.sh
+          cargo fmt --all
+          cargo clippy --locked --all-targets --all-features -- -D warnings
+          cargo test --locked --all-features
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/service.rs
+          git commit -m 'DEN-1335 enforce passwordless Shared Auth AMR policy [shared-auth-amr-hardened]'
+          git push origin HEAD:${{ github.head_ref }}
