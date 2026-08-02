@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
-"""Materialize missing canonical repositories without overwriting live history.
+"""Materialize canonical repository gaps without overwriting live Git history.
 
-This is a deliberately narrow bootstrap phase:
+This bounded bootstrap phase has four rules:
 
-* create missing HypeSiege/StreemPilot repositories as private repositories;
-* initialize only missing or empty ``main`` refs from the pinned sealed fleet;
-* preserve every existing repository's visibility and Git history;
-* never force-push, rename, delete, or replace a divergent branch;
-* create the two extracted repositories privately when absent or empty;
-* report divergent repositories for later repository-specific semantic merges.
+* HypeSiege and StreemPilot repositories follow the sealed public schema-v2 ledger;
+* missing or empty ``main`` refs receive only their exact sealed commit;
+* existing nonempty/divergent histories are preserved for repository-specific merges;
+* Meta Agents is managed by its exact public publisher, while File Tunnel remains private.
 
-The strict publisher/finalizer remains the completion gate. This phase only makes
-all canonical repository objects real on GitHub so divergence can be reconciled
-one repository at a time.
+The strict publisher/finalizer remains the completion gate. No force push, deletion,
+rename, or blanket history replacement is permitted here.
 """
 
 from __future__ import annotations
@@ -25,7 +22,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 CORE_PATH = Path(__file__).with_name("publish_missing_org_repositories.py")
 SPEC = importlib.util.spec_from_file_location("critical_org_core", CORE_PATH)
@@ -37,12 +34,19 @@ SPEC.loader.exec_module(CORE)
 
 FLEET_SOURCE_REPOSITORY = "ORESoftware/ai-agent-coordinator.rs"
 FLEET_SOURCE_SHA = "5d9a0c2cb44dff607bc3953954ce4b9af08e5789"
+FLEET_SOURCE_ARCHIVE_URL = (
+    "https://github.com/ORESoftware/ai-agent-coordinator.rs/archive/"
+    "5d9a0c2cb44dff607bc3953954ce4b9af08e5789.tar.gz"
+)
 FLEET_GENERATOR_SHA256 = (
     "a57b00961ee57ae09bf3bb2e2d09afbdd1ddbbbde832b027802f82a1fc5dfa84"
 )
 EXPECTED_REPOSITORIES = 32
 EXPECTED_FILES = 888
 EXPECTED_GITLINKS = 30
+EXPECTED_ORGANIZATIONS = {"hypesiege": 15, "streempilot": 17}
+META_AGENT = "meta-agents-demo/meta-agent-control-plane.rs"
+FILE_TUNNEL = "file-tunnel/ftnl-mcp-server.rs"
 
 
 def fail(message: str) -> None:
@@ -73,18 +77,62 @@ def run(
     return completed.stdout
 
 
-def ensure_private_repository(owner: str, name: str, description: str) -> dict[str, Any]:
-    """Create a missing private repository; never change existing visibility."""
+def expected_private(visibility: str) -> bool:
+    if visibility not in {"public", "private"}:
+        fail(f"unsupported repository visibility: {visibility}")
+    return visibility == "private"
+
+
+def reconcile_visibility(
+    full_name: str,
+    current: dict[str, Any],
+    visibility: str,
+    *,
+    api: Callable[..., tuple[int, object | None]] | None = None,
+) -> dict[str, Any]:
+    """Change approved metadata only; never touch Git refs."""
+    api_call = api or CORE.api
+    private = expected_private(visibility)
+    if current.get("visibility") == visibility and current.get("private") is private:
+        return current
+    status, updated = api_call(
+        "PATCH",
+        f"/repos/{full_name}",
+        {"private": private, "visibility": visibility},
+    )
+    if status != 200 or not isinstance(updated, dict):
+        fail(f"failed to reconcile {full_name} visibility: HTTP {status}")
+    if updated.get("visibility") != visibility or updated.get("private") is not private:
+        fail(
+            f"{full_name}: visibility reconciliation returned "
+            f"private={updated.get('private')!r}, visibility={updated.get('visibility')!r}"
+        )
+    print(f"VISIBILITY {full_name} {visibility}")
+    return updated
+
+
+def ensure_repository(
+    owner: str,
+    name: str,
+    description: str,
+    visibility: str,
+    *,
+    api: Callable[..., tuple[int, object | None]] | None = None,
+) -> dict[str, Any]:
+    """Create a missing repository with approved visibility or reconcile metadata."""
+    api_call = api or CORE.api
     full_name = f"{owner}/{name}"
-    status, current = CORE.api("GET", f"/repos/{full_name}")
+    status, current = api_call("GET", f"/repos/{full_name}")
     if status == 404:
-        status, current = CORE.api(
+        private = expected_private(visibility)
+        status, current = api_call(
             "POST",
             f"/orgs/{owner}/repos",
             {
                 "name": name,
                 "description": description,
-                "private": True,
+                "private": private,
+                "visibility": visibility,
                 "has_issues": True,
                 "has_projects": False,
                 "has_wiki": False,
@@ -97,28 +145,30 @@ def ensure_private_repository(owner: str, name: str, description: str) -> dict[s
         )
         if status != 201 or not isinstance(current, dict):
             fail(f"failed to create {full_name}: HTTP {status}")
-        print(f"CREATED_PRIVATE {full_name}")
+        print(f"CREATED_{visibility.upper()} {full_name}")
     if not isinstance(current, dict):
         fail(f"invalid repository metadata for {full_name}")
-    return current
+    return reconcile_visibility(full_name, current, visibility, api=api_call)
 
 
 def load_reconstructed_fleet(work: Path) -> tuple[Path, dict[str, Any]]:
-    carrier = work / "fleet-carrier"
+    archive = work / "fleet-source.tar.gz"
     run(
         [
-            "git",
-            "clone",
-            "--filter=blob:none",
-            "--no-checkout",
-            f"https://github.com/{FLEET_SOURCE_REPOSITORY}.git",
-            str(carrier),
+            "curl",
+            "--fail",
+            "--location",
+            "--silent",
+            "--show-error",
+            FLEET_SOURCE_ARCHIVE_URL,
+            "--output",
+            str(archive),
         ]
     )
-    run(["git", "-C", str(carrier), "fetch", "--depth=1", "origin", FLEET_SOURCE_SHA])
-    run(["git", "-C", str(carrier), "checkout", "--detach", FLEET_SOURCE_SHA])
-    if run(["git", "-C", str(carrier), "rev-parse", "HEAD"]).strip() != FLEET_SOURCE_SHA:
-        fail("fleet source checkout drifted")
+    run(["tar", "-xzf", str(archive), "-C", str(work)])
+    carrier = work / f"ai-agent-coordinator.rs-{FLEET_SOURCE_SHA}"
+    if not carrier.is_dir():
+        fail(f"commit-pinned fleet archive extracted to an unexpected path: {carrier}")
 
     payload_dir = carrier / "repository-fleets/hypesiege-streempilot"
     checked_manifest_path = carrier / "repository-fleets/hypesiege-streempilot.json"
@@ -144,21 +194,22 @@ def load_reconstructed_fleet(work: Path) -> tuple[Path, dict[str, Any]]:
     generated = json.loads(generated_manifest_path.read_text(encoding="utf-8"))
     if generated != checked:
         fail("reconstructed fleet differs from the checked-in schema-v2 ledger")
-    if generated.get("schema_version") != 2:
-        fail("fleet schema version changed")
-    if generated.get("generator_sha256") != FLEET_GENERATOR_SHA256:
-        fail("fleet generator identity changed")
-    if generated.get("repository_count") != EXPECTED_REPOSITORIES:
-        fail("fleet repository count changed")
-    if generated.get("total_tracked_files") != EXPECTED_FILES:
-        fail("fleet tracked-file count changed")
-    if generated.get("total_gitlinks") != EXPECTED_GITLINKS:
-        fail("fleet gitlink count changed")
-    if generated.get("organizations") != {"hypesiege": 15, "streempilot": 17}:
-        fail("fleet organization counts changed")
+    expected = {
+        "schema_version": 2,
+        "generator_sha256": FLEET_GENERATOR_SHA256,
+        "repository_count": EXPECTED_REPOSITORIES,
+        "total_tracked_files": EXPECTED_FILES,
+        "total_gitlinks": EXPECTED_GITLINKS,
+        "organizations": EXPECTED_ORGANIZATIONS,
+    }
+    for key, value in expected.items():
+        if generated.get(key) != value:
+            fail(f"fleet {key} changed: {generated.get(key)!r} != {value!r}")
     records = generated.get("repositories")
     if not isinstance(records, list) or len(records) != EXPECTED_REPOSITORIES:
         fail("fleet repository ledger is malformed")
+    if any(record.get("visibility") != "public" for record in records):
+        fail("sealed product fleet must remain public")
     return source_root, generated
 
 
@@ -190,11 +241,7 @@ def local_repository(source_root: Path, full_name: str) -> Path:
     if direct.is_dir():
         return direct
     owner, name = full_name.split("/", 1)
-    candidates = [
-        source_root / owner.lower() / name,
-        source_root / owner / name,
-    ]
-    for candidate in candidates:
+    for candidate in (source_root / owner.lower() / name, source_root / owner / name):
         if candidate.is_dir():
             return candidate
     fail(f"reconstructed repository directory is missing for {full_name}")
@@ -202,27 +249,13 @@ def local_repository(source_root: Path, full_name: str) -> Path:
 
 
 def push_exact_main(
-    work: Path,
     source_root: Path,
     record: dict[str, Any],
     environment: dict[str, str],
 ) -> None:
     full_name = str(record["full_name"])
-    owner, name = full_name.split("/", 1)
     repository = local_repository(source_root, full_name)
     expected = str(record["commit"])
-
-    ensure_private_repository(
-        owner,
-        name,
-        f"Canonical {full_name} repository bootstrapped from sealed schema-v2 source.",
-    )
-    existing = CORE.main_ref(full_name)
-    if existing is not None:
-        if existing != expected:
-            fail(f"{full_name}: refusing to overwrite existing main {existing}")
-        return
-
     local_head = run(["git", "-C", str(repository), "rev-parse", "HEAD"]).strip()
     if local_head != expected:
         fail(f"{full_name}: reconstructed HEAD {local_head} != sealed {expected}")
@@ -242,11 +275,10 @@ def push_exact_main(
     observed = CORE.main_ref(full_name)
     if observed != expected:
         fail(f"{full_name}: remote main {observed!r} != sealed {expected}")
-
     status, _ = CORE.api("PATCH", f"/repos/{full_name}", {"default_branch": "main"})
     if status != 200:
         fail(f"{full_name}: failed to set default branch main: HTTP {status}")
-    print(f"PUSHED_EXACT_PRIVATE_MAIN {full_name} {expected}")
+    print(f"PUSHED_EXACT_PUBLIC_MAIN {full_name} {expected}")
 
 
 def bootstrap_fleet(work: Path) -> dict[str, Any]:
@@ -255,33 +287,25 @@ def bootstrap_fleet(work: Path) -> dict[str, Any]:
     missing_or_empty: list[dict[str, Any]] = []
     exact: list[str] = []
     divergent: list[dict[str, str]] = []
-    visibility_drift: list[dict[str, str]] = []
+    visibility_reconciled: list[str] = []
 
     for record in records:
         if not isinstance(record, dict):
             fail("fleet contains a non-object record")
         full_name = str(record["full_name"])
-        status, current = CORE.api("GET", f"/repos/{full_name}")
-        if status == 404:
-            missing_or_empty.append(record)
-            continue
-        if not isinstance(current, dict):
-            fail(f"invalid repository metadata for {full_name}")
-
-        manifest_visibility = str(record.get("visibility", "public"))
-        live_visibility = str(current.get("visibility", "unknown"))
-        if manifest_visibility != live_visibility:
-            visibility_drift.append(
-                {
-                    "repository": full_name,
-                    "manifest": manifest_visibility,
-                    "live": live_visibility,
-                }
-            )
-            print(
-                f"PRESERVED_VISIBILITY {full_name} live={live_visibility} "
-                f"manifest={manifest_visibility}"
-            )
+        owner, name = full_name.split("/", 1)
+        status, before = CORE.api("GET", f"/repos/{full_name}")
+        before_visibility = (
+            str(before.get("visibility")) if isinstance(before, dict) else "missing"
+        )
+        current = ensure_repository(
+            owner,
+            name,
+            f"Canonical {full_name} repository bootstrapped from sealed schema-v2 source.",
+            "public",
+        )
+        if before_visibility != "public" and current.get("visibility") == "public":
+            visibility_reconciled.append(full_name)
 
         actual = CORE.main_ref(full_name)
         if actual is None:
@@ -298,14 +322,13 @@ def bootstrap_fleet(work: Path) -> dict[str, Any]:
             )
             print(f"PRESERVED_DIVERGENT {full_name} remote={actual} sealed={record['commit']}")
 
-    # Child repositories must exist before either monorepo is initialized.
     missing_or_empty.sort(
         key=lambda item: (item.get("kind") == "monorepo", str(item["full_name"]))
     )
     environment = git_environment(work)
     created: list[str] = []
     for record in missing_or_empty:
-        push_exact_main(work, source_root, record, environment)
+        push_exact_main(source_root, record, environment)
         created.append(str(record["full_name"]))
 
     missing_after = [
@@ -320,7 +343,7 @@ def bootstrap_fleet(work: Path) -> dict[str, Any]:
         "created_or_initialized": created,
         "already_exact": exact,
         "preserved_divergent": divergent,
-        "preserved_visibility_drift": visibility_drift,
+        "visibility_reconciled_to_public": visibility_reconciled,
         "repository_objects_with_main": EXPECTED_REPOSITORIES,
     }
     print(json.dumps({"fleet_bootstrap": summary}, sort_keys=True))
@@ -328,30 +351,39 @@ def bootstrap_fleet(work: Path) -> dict[str, Any]:
 
 
 def bootstrap_extracted(work: Path) -> dict[str, str]:
-    # The shared publishers call ensure_repository; replace it with a private,
-    # create-only implementation that never changes an existing repository.
-    CORE.ensure_repository = ensure_private_repository
     results: dict[str, str] = {}
 
-    meta = "meta-agents-demo/meta-agent-control-plane.rs"
-    status, current = CORE.api("GET", f"/repos/{meta}")
-    if status == 404 or CORE.main_ref(meta) is None:
-        CORE.publish_meta_agents(work)
-        results[meta] = "created_or_initialized"
+    status, meta = CORE.api("GET", f"/repos/{META_AGENT}")
+    if status == 404:
+        results[META_AGENT] = "managed_by_exact_public_publisher"
+    elif isinstance(meta, dict):
+        reconcile_visibility(META_AGENT, meta, "public")
+        results[META_AGENT] = "preserved_public"
     else:
-        if not isinstance(current, dict):
-            fail(f"invalid repository metadata for {meta}")
-        results[meta] = "preserved"
+        fail(f"invalid repository metadata for {META_AGENT}")
 
-    file_tunnel = "file-tunnel/ftnl-mcp-server.rs"
-    status, current = CORE.api("GET", f"/repos/{file_tunnel}")
-    if status == 404 or CORE.main_ref(file_tunnel) is None:
-        CORE.publish_file_tunnel_mcp(work)
-        results[file_tunnel] = "created_or_initialized"
+    owner, name = FILE_TUNNEL.split("/", 1)
+    ensure_repository(
+        owner,
+        name,
+        "Private File Tunnel MCP server extracted from the canonical fleet.",
+        "private",
+    )
+    if CORE.main_ref(FILE_TUNNEL) is None:
+        original = CORE.ensure_repository
+        try:
+            CORE.ensure_repository = lambda target_owner, target_name, description: ensure_repository(
+                target_owner,
+                target_name,
+                description,
+                "private",
+            )
+            CORE.publish_file_tunnel_mcp(work)
+        finally:
+            CORE.ensure_repository = original
+        results[FILE_TUNNEL] = "created_or_initialized_private"
     else:
-        if not isinstance(current, dict):
-            fail(f"invalid repository metadata for {file_tunnel}")
-        results[file_tunnel] = "preserved"
+        results[FILE_TUNNEL] = "preserved_private"
 
     print(json.dumps({"extracted_bootstrap": results}, sort_keys=True))
     return results
