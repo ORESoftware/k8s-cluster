@@ -5,6 +5,8 @@ use serde::Deserialize;
 use crate::config::TwilioVerifyConfig;
 use crate::error::AuthError;
 
+const TWILIO_VERIFY_BASE_URL: &str = "https://verify.twilio.com/v2";
+
 #[derive(Deserialize)]
 struct VerificationResponse {
     status: String,
@@ -15,8 +17,20 @@ pub async fn start_sms_verification(
     config: &TwilioVerifyConfig,
     phone_e164: &str,
 ) -> Result<(), AuthError> {
+    start_sms_verification_at(http, config, TWILIO_VERIFY_BASE_URL, phone_e164).await
+}
+
+async fn start_sms_verification_at(
+    http: &reqwest::Client,
+    config: &TwilioVerifyConfig,
+    base_url: &str,
+    phone_e164: &str,
+) -> Result<(), AuthError> {
     let (account_sid, auth_token, service_sid) = credentials(config)?;
-    let url = format!("https://verify.twilio.com/v2/Services/{service_sid}/Verifications");
+    let url = format!(
+        "{}/Services/{service_sid}/Verifications",
+        base_url.trim_end_matches('/')
+    );
     let response = http
         .post(url)
         .basic_auth(account_sid, Some(auth_token))
@@ -50,8 +64,21 @@ pub async fn check_sms_verification(
     phone_e164: &str,
     code: &str,
 ) -> Result<bool, AuthError> {
+    check_sms_verification_at(http, config, TWILIO_VERIFY_BASE_URL, phone_e164, code).await
+}
+
+async fn check_sms_verification_at(
+    http: &reqwest::Client,
+    config: &TwilioVerifyConfig,
+    base_url: &str,
+    phone_e164: &str,
+    code: &str,
+) -> Result<bool, AuthError> {
     let (account_sid, auth_token, service_sid) = credentials(config)?;
-    let url = format!("https://verify.twilio.com/v2/Services/{service_sid}/VerificationCheck");
+    let url = format!(
+        "{}/Services/{service_sid}/VerificationCheck",
+        base_url.trim_end_matches('/')
+    );
     let response = http
         .post(url)
         .basic_auth(account_sid, Some(auth_token))
@@ -91,3 +118,7 @@ fn credentials(config: &TwilioVerifyConfig) -> Result<(&str, &str, &str), AuthEr
         _ => Err(AuthError::Unavailable),
     }
 }
+
+#[cfg(test)]
+#[path = "twilio_tests.rs"]
+mod tests;
