@@ -57,12 +57,28 @@ jobs:
               raise SystemExit(f'{label}: expected old or new token, found neither')
 
           prefix, single, suffix = section_between(text, single_marker, queue_marker)
-          des_entry = '    { name: "dd-des-simulator", file: "dd-des-simulator.deployment.yaml" },\n'
-          single = single.replace(des_entry, '', 1)
-          if 'const dormantDes = await readRepoFile' not in single:
+          for entry in (
+              '    { name: "dd-des-simulator", file: "dd-des-simulator.deployment.yaml" },\n',
+              '    { name: "dd-remote-gateway", file: "dd-remote-gateway.deployment.yaml" },\n',
+          ):
+              single = single.replace(entry, '', 1)
+          close = single.rfind('\n});')
+          if close < 0:
+              raise SystemExit('single-owner test closure is missing')
+          if 'const nodeLocalGateway = await readRepoFile' not in single:
+              gateway = (
+                  '\n\n  const nodeLocalGateway = await readRepoFile(\n'
+                  '    "remote/argocd/dd-next-runtime/dd-remote-gateway.deployment.yaml",\n'
+                  '  );\n'
+                  '  assert.match(nodeLocalGateway, /kind:\\s*DaemonSet/);\n'
+                  '  assert.match(nodeLocalGateway, /name:\\s*dd-remote-gateway/);\n'
+                  '  assert.match(nodeLocalGateway, /updateStrategy:[\\s\\S]*type:\\s*RollingUpdate/);\n'
+                  '  assert.match(nodeLocalGateway, /maxUnavailable:\\s*1/);\n'
+                  '  assert.match(nodeLocalGateway, /readinessProbe:[\\s\\S]*path:\\s*\\/browser-mcp\\/healthz[\\s\\S]*port:\\s*https[\\s\\S]*scheme:\\s*HTTPS/);'
+              )
+              single = single[:close] + gateway + single[close:]
               close = single.rfind('\n});')
-              if close < 0:
-                  raise SystemExit('single-owner test closure is missing')
+          if 'const dormantDes = await readRepoFile' not in single:
               dormant_des = (
                   '\n\n  const dormantDes = await readRepoFile(\n'
                   '    "remote/argocd/dd-next-runtime/dd-des-simulator.deployment.yaml",\n'
@@ -223,5 +239,5 @@ jobs:
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'test(DEN-406): preserve dormant compute and durable queue ownership'
+          git commit -m 'test(DEN-406): preserve dormant compute, durable queue, and node-local gateway ownership'
           git push origin HEAD:fix/den-406-dormant-compute-contracts
