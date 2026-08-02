@@ -36,7 +36,8 @@ path:       deploy/overlays/cross-org-linear-pilot
 
 That revision contains the signed multi-organization push intake, protected
 Linear delivery worker, dry-run-only Sonus Auris/Daedalus Fab overlay, reusable
-manifest validator, and locked-down container canary.
+manifest validator, locked-down container canary, and the bounded one-shot
+Meta Agents repository-bootstrap Job reviewed under DEN-1058.
 
 ## Bootstrap order
 
@@ -50,6 +51,21 @@ Each cloud cluster root includes two Applications:
 The workload Application does not use `CreateNamespace=true`. If the platform
 boundary is absent, the workload remains unhealthy rather than widening its own
 permissions.
+
+## Meta Agents repository bootstrap
+
+The pinned revision includes a fixed-name, no-retry Job that can create only
+`meta-agents-demo/meta-agent-control-plane.rs`. It must verify the exact
+`ORESoftware` identity and active organization-admin membership before mutation,
+and it accepts an existing repository only when the canonical full name and
+public visibility match.
+
+Promotion to the live `dev` branch is not completion evidence. After Argo CD
+reconciles the revision, verify the repository directly through GitHub, including
+visibility and default branch, before publishing source or closing DEN-1058. Then
+remove the bootstrap Job and its narrow deployment-contract exception through a
+separate reviewed revision; do not leave repository-administration machinery in
+steady-state configuration.
 
 ## Protected prerequisite
 
@@ -103,7 +119,8 @@ After cluster credentials are available, record only redacted evidence for:
 4. one disposable `Refs` push from Sonus Auris and one from Daedalus Fab;
 5. duplicate-commit idempotency and invalid-signature/repository/branch cases;
 6. dry-run plans resolving to the matching Linear projects;
-7. `/v1/linear/deliver-next` remaining blocked.
+7. `/v1/linear/deliver-next` remaining blocked;
+8. the canonical Meta Agents repository existing publicly before bootstrap cleanup.
 
 ## Rollback
 
