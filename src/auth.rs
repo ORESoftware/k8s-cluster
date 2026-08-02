@@ -11,7 +11,7 @@ use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use axum::http::HeaderMap;
 use base64::Engine;
-use rand::RngCore;
+use rand::TryRng;
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -49,7 +49,14 @@ impl FromRequestParts<AppState> for AuthedDevice {
 /// SHA-256 hex digest.
 pub fn issue_token() -> (String, String) {
     let mut raw = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut raw);
+    // rand 0.10 renamed `OsRng` to `SysRng` and made it fallible: it implements
+    // only `TryRng`, so the OS entropy read no longer panics inside the crate.
+    // Panicking here preserves the previous behaviour exactly and is the only
+    // safe option — issuing a bearer token from anything less than a working
+    // system CSPRNG would hand out a guessable credential.
+    rand::rngs::SysRng
+        .try_fill_bytes(&mut raw)
+        .expect("system entropy source failed while issuing a bearer token");
     let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw);
     let hash = token_hash(&token);
     (token, hash)

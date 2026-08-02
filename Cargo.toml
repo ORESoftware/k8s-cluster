@@ -20,7 +20,7 @@ flags2env = { git = "https://github.com/ORESoftware/flags-2-env.git", rev = "377
 axum = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "net", "sync"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["trace", "limit", "timeout", "set-header"] }
+tower-http = { version = "0.7", features = ["trace", "limit", "timeout", "set-header"] }
 # Per-client rate limiting (GCRA) for the unauthenticated auth endpoints.
 tower_governor = "0.8"
 tracing = "0.1"
@@ -48,10 +48,10 @@ uuid = { version = "1", features = ["v4", "serde"] }
 time = { version = "0.3", features = ["serde-well-known"] }
 
 # Service-local per-device sync tokens; human auth is owned by shared-auth.
-rand = "0.8"
-base64 = "0.22"
+rand = "0.10"
+base64 = "0.23"
 hex = "0.4"
-sha2 = "0.10"
+sha2 = "0.11"
 
 # Human identity is verified by the centralized github.com/shared-auth service.
 # reqwest uses rustls and carries W3C trace context on exchange/introspection.
