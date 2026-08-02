@@ -55,6 +55,10 @@ jobs:
                   '  assert.match(jsonFfi, /tool_name\\(Params\\)/);',
               ),
               (
+                  '  assert.doesNotMatch(jsonFfi, /re:run\\(Body, Pattern/);',
+                  '  assert.match(jsonFfi, /case decode_json\\(Body\\) of[\\s\\S]*\\{ok, Decoded\\} -> from_decoded\\(Decoded\\);[\\s\\S]*no_json -> legacy_parse\\(Body\\)/);\n  assert.match(jsonFfi, /legacy_id\\(Body\\) ->[\\s\\S]*re:run\\(Body, Pattern/);',
+              ),
+              (
                   '  // Warm worker containers spawned by `dd-container-pool` reach MCP from\n  // the EC2 node host network, so the policy must allow RFC1918 ingress\n  // on :8090 in addition to the labelled podSelector clauses above.',
                   '  // Warm worker containers spawned by `dd-container-pool` reach MCP from\n  // the EC2 node host network. Restrict that exception to the exact VPC\n  // CIDR; broad RFC1918 ranges would also admit unrelated pod networks.',
               ),
