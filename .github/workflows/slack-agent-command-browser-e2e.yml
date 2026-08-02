@@ -27,11 +27,11 @@ on:
       bridge_ref:
         description: ai-agent-bridge.rs branch, tag, or commit
         required: false
-        default: agent/den-1041-ores-slash-commands
+        default: main
       coordinator_ref:
         description: ai-agent-coordinator.rs branch, tag, or commit
         required: false
-        default: agent/den-1231-slack-run-envelope
+        default: main
 
 permissions:
   contents: read
@@ -79,7 +79,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ORESoftware/ai-agent-bridge.rs
-          ref: ${{ github.event_name == 'push' && 'main' || (inputs.bridge_ref || 'agent/den-1041-ores-slash-commands') }}
+          ref: ${{ github.event_name == 'push' && 'main' || (inputs.bridge_ref || 'main') }}
           path: .e2e/bridge
           fetch-depth: 1
           persist-credentials: false
@@ -89,7 +89,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: ORESoftware/ai-agent-coordinator.rs
-          ref: ${{ github.event_name == 'push' && 'main' || (inputs.coordinator_ref || 'agent/den-1231-slack-run-envelope') }}
+          ref: ${{ github.event_name == 'push' && 'main' || (inputs.coordinator_ref || 'main') }}
           path: .e2e/coordinator
           fetch-depth: 1
           persist-credentials: false
@@ -152,8 +152,8 @@ jobs:
 
       - name: Record tested revisions
         env:
-          BRIDGE_REF: ${{ github.event_name == 'push' && 'main' || (inputs.bridge_ref || 'agent/den-1041-ores-slash-commands') }}
-          COORDINATOR_REF: ${{ github.event_name == 'push' && 'main' || (inputs.coordinator_ref || 'agent/den-1231-slack-run-envelope') }}
+          BRIDGE_REF: ${{ github.event_name == 'push' && 'main' || (inputs.bridge_ref || 'main') }}
+          COORDINATOR_REF: ${{ github.event_name == 'push' && 'main' || (inputs.coordinator_ref || 'main') }}
         run: |
           set -euo pipefail
           jq -n \

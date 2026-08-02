@@ -26,15 +26,25 @@ function envBlock(name) {
   return deployment.slice(start, next === -1 ? deployment.length : next);
 }
 
-test('bridge deployment executes the current Rust binary', () => {
+test('bridge deployment executes the current Rust binary through the guarded build path', () => {
   assert.match(
     deployment,
-    /\/release\/fiducia-ai-agent-bridge(?:["'\s]|$)/,
-    'the deployment must execute fiducia-ai-agent-bridge',
+    /bin_name="fiducia-ai-agent-bridge"/,
+    'the guarded build path must select fiducia-ai-agent-bridge',
+  );
+  assert.match(
+    deployment,
+    /built="\$\{CARGO_TARGET_DIR:-target\}\/release\/\$\{bin_name\}"/,
+    'the executable path must be derived from the reviewed binary name',
+  );
+  assert.match(
+    deployment,
+    /exec "\$\{built\}"/,
+    'the deployment must execute the validated build artifact',
   );
   assert.doesNotMatch(
     deployment,
-    /\/release\/ai-agent-bridge(?:["'\s]|$)/,
+    /bin_name="ai-agent-bridge"/,
     'the retired ai-agent-bridge binary name must not return',
   );
 });
@@ -91,7 +101,9 @@ const audit = {
   deployment: deploymentPath,
   service: servicePath,
   startup_contract: {
-    current_binary: deployment.includes('fiducia-ai-agent-bridge'),
+    current_binary:
+      deployment.includes('bin_name="fiducia-ai-agent-bridge"') &&
+      deployment.includes('exec "${built}"'),
     required_api_bearer: !envBlock('API_AUTH_BEARER').includes('optional: true'),
     healthz: deployment.includes('path: /healthz'),
     readyz: deployment.includes('path: /readyz'),
