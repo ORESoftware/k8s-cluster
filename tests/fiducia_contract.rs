@@ -118,7 +118,5 @@ fn shared_auth_postgres_contract_owns_users_sessions_roles_and_provider_links() 
     assert!(compact.contains("unique (provider, provider_tenant, provider_subject)"));
     assert!(compact.contains("refresh_token_hash text not null unique"));
     assert!(compact.contains("unique (shared_user_id, role_name)"));
-    assert!(compact.contains(
-        "references shared_auth.principals(shared_user_id) on delete cascade"
-    ));
+    assert!(compact.contains("references shared_auth.principals(shared_user_id) on delete cascade"));
 }
