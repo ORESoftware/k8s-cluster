@@ -1,0 +1,95 @@
+name: DEN-1335 passwordless RLS fixture repair v2
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - name: Synchronize the compliant fixture with the passwordless RLS audit
+        run: |
+          set -euo pipefail
+          if git log -1 --pretty=%B | grep -Fq '[rls-fixture-repaired]'; then
+            exit 0
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('.github/workflows/security-audit.yml')
+          text = path.read_text()
+          text = text.replace(
+              "auth.jwt()->>'aal' = 'aal2'",
+              "public.sonus_passwordless_aal2()",
+          )
+          pattern = re.compile(
+              r"(?m)^(?P<i>[ ]*)create function auth[.]jwt[(][)] returns jsonb\n"
+              r"(?P=i)language sql stable\n"
+              r"(?P=i)as [$][$] select jsonb_build_object[(]'aal', 'aal2'[)] [$][$];$"
+          )
+          match = pattern.search(text)
+          if match is None:
+              raise SystemExit('auth.jwt fixture block not found')
+          indent = match.group('i')
+          lines = [
+              "create function auth.jwt() returns jsonb",
+              "language sql stable",
+              "as $$",
+              "  select jsonb_build_object(",
+              "    'aal', 'aal2',",
+              "    'amr', jsonb_build_array(jsonb_build_object('method', 'otp'))",
+              "  )",
+              "$$;",
+              "create function public.sonus_passwordless_aal2() returns boolean",
+              "language sql stable",
+              "set search_path = ''",
+              "as $$",
+              "  select",
+              "    auth.jwt()->>'aal' = 'aal2'",
+              "    and not exists (",
+              "      select 1",
+              "      from jsonb_array_elements(coalesce(auth.jwt()->'amr', '[]'::jsonb)) item",
+              "      where lower(coalesce(item->>'method', '')) = 'password'",
+              "    )",
+              "    and exists (",
+              "      select 1",
+              "      from jsonb_array_elements(coalesce(auth.jwt()->'amr', '[]'::jsonb)) item",
+              "      where lower(coalesce(item->>'method', '')) in ('otp', 'magiclink')",
+              "    )",
+              "$$;",
+          ]
+          replacement = '\n'.join(indent + line for line in lines)
+          text = pattern.sub(replacement, text, count=1)
+          path.write_text(text)
+          PY
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('.github/workflows/security-audit.yml').read_text()
+          required = [
+              'create function public.sonus_passwordless_aal2()',
+              "set search_path = ''",
+              "method', '')) = 'password'",
+              "in ('otp', 'magiclink')",
+          ]
+          if any(marker not in text for marker in required):
+              raise SystemExit('passwordless fixture markers are incomplete')
+          policy_lines = [line for line in text.splitlines() if line.strip().startswith('create policy ')]
+          if not policy_lines or any('public.sonus_passwordless_aal2()' not in line for line in policy_lines):
+              raise SystemExit('every representative owner policy must call the shared guard')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/security-audit.yml
+          git commit -m 'DEN-1335 synchronize passwordless RLS audit fixture [rls-fixture-repaired]'
+          git push origin HEAD:${{ github.head_ref }}
