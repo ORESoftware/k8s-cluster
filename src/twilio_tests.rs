@@ -44,9 +44,7 @@ async fn mock_server(
         requests: requests.clone(),
     };
     let app = Router::new().fallback(mock_handler).with_state(state);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
@@ -82,14 +80,9 @@ fn assert_basic_auth(headers: &HeaderMap) {
 #[tokio::test]
 async fn twilio_start_contract_uses_basic_auth_and_sms_form() {
     let (base, requests) = mock_server(StatusCode::OK, r#"{"status":"pending"}"#).await;
-    start_sms_verification_at(
-        &reqwest::Client::new(),
-        &config(),
-        &base,
-        "+14155550100",
-    )
-    .await
-    .unwrap();
+    start_sms_verification_at(&reqwest::Client::new(), &config(), &base, "+14155550100")
+        .await
+        .unwrap();
 
     let requests = requests.lock().unwrap();
     assert_eq!(requests.len(), 1);
@@ -146,12 +139,7 @@ async fn twilio_unknown_or_expired_verification_is_false() {
 #[tokio::test]
 async fn twilio_provider_error_fails_closed() {
     let (base, _) = mock_server(StatusCode::TOO_MANY_REQUESTS, "rate limited").await;
-    let result = start_sms_verification_at(
-        &reqwest::Client::new(),
-        &config(),
-        &base,
-        "+14155550100",
-    )
-    .await;
+    let result =
+        start_sms_verification_at(&reqwest::Client::new(), &config(), &base, "+14155550100").await;
     assert!(matches!(result, Err(AuthError::Upstream)));
 }
