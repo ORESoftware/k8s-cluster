@@ -192,11 +192,11 @@ pub struct AuthzPolicy {
 ///   2. **Financial step-up** — a *human mutation* of a named tenant additionally
 ///      requires a genuine, *fresh* AAL2 session and an explicit financial scope.
 ///
-/// Reads, unscoped provisioning calls, and (for now) service principals are not
-/// subject to step-up; service principals are governed by the migration flag in
-/// step 1 and will gain their own least-privilege scopes in a follow-up. `now`
-/// is the current Unix time, used only to measure step-up freshness. Pure, so it
-/// is exhaustively unit-tested without standing up a router.
+/// Reads and unscoped provisioning calls are not subject to step-up. The legacy
+/// shared service credential carries no tenant, role, assurance, or scope, so
+/// mutation hardening denies it on every named tenant write until tenant-bound
+/// service identities exist. `now` is the current Unix time, used only to measure
+/// step-up freshness. Pure, so it is exhaustively unit-tested without a router.
 pub fn authorize_request(
     principal: &Principal,
     scope: TenantScope,
@@ -214,9 +214,11 @@ pub fn authorize_request(
         return Ok(());
     };
     let Principal::User(identity) = principal else {
-        // Service callers carry no user assurance; they are already constrained
-        // by `require_user_jwt` in step 1 (and get scoped principals later).
-        return Ok(());
+        tracing::warn!(
+            tenant.id = %tenant_id,
+            "rejected tenant mutation: shared service credential has no tenant, assurance, or write scope"
+        );
+        return Err(StatusCode::FORBIDDEN);
     };
 
     if !identity.assurance.is_aal2() {
@@ -1084,6 +1086,34 @@ mod tests {
                 Action::Mutate
             ),
             Err(StatusCode::FORBIDDEN)
+        );
+    }
+
+    #[test]
+    fn mutation_hardening_denies_shared_service_credential_during_user_jwt_migration() {
+        let policy = AuthzPolicy {
+            require_user_jwt: false,
+            require_step_up_for_mutations: true,
+        };
+        assert_eq!(
+            authorize_request(
+                &Principal::Service,
+                TenantScope::Tenant(uuid_a()),
+                Action::Mutate,
+                policy,
+                NOW,
+            ),
+            Err(StatusCode::FORBIDDEN)
+        );
+        assert_eq!(
+            authorize_request(
+                &Principal::Service,
+                TenantScope::Tenant(uuid_a()),
+                Action::Read,
+                policy,
+                NOW,
+            ),
+            Ok(())
         );
     }
 
