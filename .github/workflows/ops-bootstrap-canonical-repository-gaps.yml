@@ -1,5 +1,6 @@
 name: Bootstrap canonical organization repository gaps
 run-name: Materialize missing canonical repositories without overwriting existing histories
+# Retrigger after the initial workflow-introduction merge did not emit an owner authorization session.
 
 on:
   push:
