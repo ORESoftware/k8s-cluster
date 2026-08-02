@@ -25,7 +25,8 @@
   "architecture": [
     "sharded-raft-groups",
     "quorum-commit",
-    "multi-region-control-plane"
+    "multi-region-control-plane",
+    "crash-fault-tolerance-cft-not-byzantine"
   ],
   "public_evidence": {
     "investor_page": "/investors",
