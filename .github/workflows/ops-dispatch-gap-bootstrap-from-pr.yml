@@ -60,18 +60,18 @@ jobs:
 
           encoded="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/canonical-gap-bootstrap-dispatch-trigger?ref=${head_sha}" --jq .content)"
           marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
-          expected=$'target=canonical-gap-bootstrap-v1\nworkflow=825d5e5b297c8ea94a988834ca1664138b3eb37a\nscript=802c0e1bbb6ca7840a509af8efad04c811cc27cd\nfleet-source=5d9a0c2cb44dff607bc3953954ce4b9af08e5789'
+          expected=$'target=canonical-gap-bootstrap-v1\nworkflow=112cb7e8249c6a2a41de9799fca870f5cabde055\nscript=9d9021a0584de8e3f7def2f32a067b4f6701e6c2\nfleet-source=5d9a0c2cb44dff607bc3953954ce4b9af08e5789'
           test "$marker" = "$expected"
 
           workflow="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/ops-bootstrap-canonical-repository-gaps.yml?ref=main")"
           test "$(jq -er .name <<<"$workflow")" = ops-bootstrap-canonical-repository-gaps.yml
-          test "$(jq -er .sha <<<"$workflow")" = 825d5e5b297c8ea94a988834ca1664138b3eb37a
+          test "$(jq -er .sha <<<"$workflow")" = 112cb7e8249c6a2a41de9799fca870f5cabde055
 
           script="$(gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/ops/bootstrap_missing_canonical_repositories.py?ref=main")"
           test "$(jq -er .name <<<"$script")" = bootstrap_missing_canonical_repositories.py
-          test "$(jq -er .sha <<<"$script")" = 802c0e1bbb6ca7840a509af8efad04c811cc27cd
+          test "$(jq -er .sha <<<"$script")" = 9d9021a0584de8e3f7def2f32a067b4f6701e6c2
 
-      - name: Dispatch pinned no-overwrite bootstrap from trusted main
+      - name: Dispatch pinned safe bootstrap from trusted main
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -82,6 +82,6 @@ jobs:
           gh workflow run ops-bootstrap-canonical-repository-gaps.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref main
-          body="Dispatched the pinned no-overwrite canonical repository-gap bootstrap from trusted main after ${before}. The child workflow will post one fresh owner code on PR #471; ignore all earlier codes."
+          body="Dispatched the pinned safe public canonical repository-gap bootstrap from trusted main after ${before}. The child workflow will post one fresh owner code on PR #471; ignore all earlier codes."
           gh pr comment "$TRIGGER_PR" --repo "$GITHUB_REPOSITORY" --body "$body"
           gh pr comment 471 --repo "$GITHUB_REPOSITORY" --body "$body"
