@@ -51,7 +51,7 @@ time = { version = "0.3", features = ["serde-well-known"] }
 rand = "0.8"
 base64 = "0.23"
 hex = "0.4"
-sha2 = "0.10"
+sha2 = "0.11"
 
 # Human identity is verified by the centralized github.com/shared-auth service.
 # reqwest uses rustls and carries W3C trace context on exchange/introspection.
