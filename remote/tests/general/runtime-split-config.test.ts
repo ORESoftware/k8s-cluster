@@ -260,7 +260,6 @@ test("single-owner runtime workloads stay intentionally recreate", async () => {
     { name: "dd-browser-job-runner", file: "dd-browser-job-runner.deployment.yaml" },
     { name: "dd-build-server", file: "dd-build-server.deployment.yaml" },
     { name: "dd-container-pool", file: "dd-container-pool.deployment.yaml" },
-    { name: "dd-des-simulator", file: "dd-des-simulator.deployment.yaml" },
     { name: "dd-dev-server-api", file: "dd-dev-server-home.deployment.yaml" },
     { name: "dd-go-wss-server", file: "dd-go-wss-server.deployment.yaml" },
     { name: "dd-idle-reaper", file: "dd-idle-reaper.deployment.yaml" },
@@ -269,7 +268,6 @@ test("single-owner runtime workloads stay intentionally recreate", async () => {
     { name: "dd-music-rs", file: "dd-music-rs.deployment.yaml" },
     { name: "dd-sound-recorder-rs", file: "dd-sound-recorder-rs.deployment.yaml" },
     { name: "dd-redis-cache", file: "dd-redis-cache.deployment.yaml" },
-    { name: "dd-remote-gateway", file: "dd-remote-gateway.deployment.yaml" },
     { name: "dd-runtime-config", file: "dd-runtime-config.deployment.yaml" },
     { name: "dd-rust-network-mutex", file: "dd-rust-network-mutex.deployment.yaml" },
     { name: "dd-rust-wss-server", file: "dd-rust-wss-server.deployment.yaml" },
@@ -285,6 +283,32 @@ test("single-owner runtime workloads stay intentionally recreate", async () => {
     assert.match(deployment, /replicas:\s*1/);
     assert.match(deployment, /strategy:[\s\S]*type:\s*Recreate/);
   }
+
+  const nodeLocalGateway = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-remote-gateway.deployment.yaml",
+  );
+  assert.match(nodeLocalGateway, /kind:\s*DaemonSet/);
+  assert.match(nodeLocalGateway, /name:\s*dd-remote-gateway/);
+  assert.match(nodeLocalGateway, /updateStrategy:[\s\S]*type:\s*RollingUpdate/);
+  assert.match(nodeLocalGateway, /maxUnavailable:\s*1/);
+  assert.match(nodeLocalGateway, /readinessProbe:[\s\S]*path:\s*\/browser-mcp\/healthz[\s\S]*port:\s*https[\s\S]*scheme:\s*HTTPS/);
+
+  const dormantDes = await readRepoFile(
+    "remote/argocd/dd-next-runtime/dd-des-simulator.deployment.yaml",
+  );
+  const dormantPdbs = await readRepoFile(
+    "remote/argocd/dd-next-runtime/availability-pdbs.yaml",
+  );
+  const dormantKustomization = await readRepoFile(
+    "remote/argocd/dd-next-runtime/kustomization.yaml",
+  );
+  assert.match(dormantDes, /name:\s*dd-des-simulator/);
+  assert.match(dormantDes, /replicas:\s*0/);
+  assert.match(dormantDes, /strategy:[\s\S]*type:\s*Recreate/);
+  assert.match(dormantDes, /readinessProbe:[\s\S]*httpGet:/);
+  assert.doesNotMatch(dormantPdbs, /name:\s*dd-des-simulator/);
+  assert.match(dormantKustomization, /Fun compute servers \(scaled to 0 by default\)/);
+  assert.match(dormantKustomization, /dd-des-simulator\.deployment\.yaml/);
 });
 
 test("queue consumer rolls within single-node capacity", async () => {
@@ -296,8 +320,11 @@ test("queue consumer rolls within single-node capacity", async () => {
   assert.match(deployment, /minReadySeconds:\s*5/);
   assert.match(deployment, /progressDeadlineSeconds:\s*1800/);
   assert.match(deployment, /type:\s*RollingUpdate/);
-  assert.match(deployment, /maxSurge:\s*0/);
-  assert.match(deployment, /maxUnavailable:\s*1/);
+  assert.match(deployment, /maxSurge:\s*1/);
+  assert.match(deployment, /maxUnavailable:\s*0/);
+  assert.match(deployment, /NATS_QUEUE_GROUP[\s\S]*dd-remote-thread-preparer/);
+  assert.match(deployment, /NATS_TASK_CONSUMER[\s\S]*dd-remote-thread-preparer/);
+  assert.match(deployment, /readinessProbe:[\s\S]*path:\s*\/readyz/);
 });
 
 test("public data server uses source-build rollout and disruption guardrails", async () => {
@@ -305,12 +332,20 @@ test("public data server uses source-build rollout and disruption guardrails", a
     "remote/argocd/dd-next-runtime/dd-public-data-server.deployment.yaml",
   );
   const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");
+  const kustomization = await readRepoFile(
+    "remote/argocd/dd-next-runtime/kustomization.yaml",
+  );
 
   assert.match(deployment, /name:\s*dd-public-data-server/);
-  assert.match(deployment, /replicas:\s*2/);
+  assert.match(deployment, /replicas:\s*0/);
+  assert.match(deployment, /minReadySeconds:\s*5/);
+  assert.match(deployment, /progressDeadlineSeconds:\s*1800/);
   assert.match(deployment, /strategy:[\s\S]*type:\s*Recreate/);
   assert.match(deployment, /CARGO_BUILD_JOBS[\s\S]*value:\s*'1'/);
   assert.match(deployment, /requests:[\s\S]*cpu:\s*100m/);
+  assert.match(deployment, /readinessProbe:[\s\S]*path:\s*\/readyz/);
+  assert.match(kustomization, /Fun compute servers \(scaled to 0 by default\)/);
+  assert.match(kustomization, /dd-public-data-server\.deployment\.yaml/);
   assert.match(
     pdbs,
     /kind:\s*PodDisruptionBudget[\s\S]*name:\s*dd-public-data-server[\s\S]*minAvailable:\s*1[\s\S]*app:\s*dd-public-data-server/,
@@ -332,14 +367,17 @@ test("fabrication server runtime keeps planner replicas hardened and observable"
     "remote/argocd/dd-next-runtime/dd-fabrication-server.serviceaccount.yaml",
   );
   const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");
+  const kustomization = await readRepoFile(
+    "remote/argocd/dd-next-runtime/kustomization.yaml",
+  );
 
   assert.match(deployment, /name:\s*dd-fabrication-server/);
-  assert.match(deployment, /replicas:\s*2/);
+  assert.match(deployment, /replicas:\s*0/);
   assert.match(deployment, /minReadySeconds:\s*5/);
   assert.match(deployment, /progressDeadlineSeconds:\s*1800/);
   assert.match(deployment, /type:\s*RollingUpdate/);
-  assert.match(deployment, /maxSurge:\s*0/);
-  assert.match(deployment, /maxUnavailable:\s*1/);
+  assert.match(deployment, /maxSurge:\s*1/);
+  assert.match(deployment, /maxUnavailable:\s*0/);
   assert.match(deployment, /serviceAccountName:\s*dd-fabrication-server/);
   assert.match(deployment, /automountServiceAccountToken:\s*false/);
   assert.match(deployment, /enableServiceLinks:\s*false/);
@@ -381,6 +419,9 @@ test("fabrication server runtime keeps planner replicas hardened and observable"
   assert.match(hpa, /maxReplicas:\s*2/);
   assert.match(hpa, /name:\s*cpu[\s\S]*averageUtilization:\s*70/);
   assert.match(hpa, /name:\s*memory[\s\S]*averageUtilization:\s*80/);
+  assert.match(kustomization, /Fun compute servers \(scaled to 0 by default\)/);
+  assert.match(kustomization, /dd-fabrication-server\.deployment\.yaml/);
+  assert.doesNotMatch(kustomization, /dd-fabrication-server\.hpa\.yaml/);
 
   assert.match(
     pdbs,
