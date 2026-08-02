@@ -1,0 +1,157 @@
+name: Materialize resource and HA contract repairs
+
+on:
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/materialize-resource-ha-contracts.yml'
+      - 'remote/tests/general/nats-shadow-handoff.test.ts'
+      - 'remote/tests/general/runtime-split-config.test.ts'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-resource-ha-contracts
+  cancel-in-progress: true
+
+jobs:
+  repair-and-verify:
+    if: github.repository == 'ORESoftware/k8s-cluster' && (github.event_name != 'pull_request' || github.head_ref == 'fix/den-406-resource-and-ha-contracts')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Require private libraries deploy key
+        env:
+          K8S_LIBS_DEPLOY_KEY: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+        run: test -n "$K8S_LIBS_DEPLOY_KEY"
+
+      - name: Checkout exact writable branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: fix/den-406-resource-and-ha-contracts
+          fetch-depth: 0
+          persist-credentials: true
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
+
+      - name: Initialize exact shared-library gitlink
+        env:
+          SUBMODULE_AUTH_MODE: ssh
+        run: bash scripts/ci/init-submodules-with-report.sh remote/libs
+
+      - name: Apply exact documented contract repairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          rules = {
+              Path('remote/tests/general/nats-shadow-handoff.test.ts'): [
+                  (
+                      """  assert.match(
+            restDeployment,
+            /resources:[\\s\\S]*requests:[\\s\\S]*cpu:\\s*100m[\\s\\S]*memory:\\s*128Mi/,
+          );
+          assert.match(
+            restDeployment,
+            /resources:[\\s\\S]*limits:[\\s\\S]*cpu:\\s*['\"]?1['\"]?[\\s\\S]*memory:\\s*1Gi/,
+          );""",
+                      """  assert.match(
+            restDeployment,
+            /resources:[\\s\\S]*requests:[\\s\\S]*cpu:\\s*25m[\\s\\S]*memory:\\s*128Mi/,
+          );
+          assert.match(
+            restDeployment,
+            /resources:[\\s\\S]*limits:[\\s\\S]*cpu:\\s*['\"]?1['\"]?[\\s\\S]*memory:\\s*2Gi/,
+          );""",
+                  ),
+              ],
+              Path('remote/tests/general/runtime-split-config.test.ts'): [
+                  (
+                      """  assert.match(deployment, /type:\\s*RollingUpdate/);
+          assert.match(deployment, /maxSurge:\\s*0/);
+          assert.match(deployment, /maxUnavailable:\\s*1/);
+          assert.match(deployment, /readinessProbe:[\\s\\S]*path:\\s*\\/healthz[\\s\\S]*port:\\s*http/);""",
+                      """  assert.match(deployment, /type:\\s*RollingUpdate/);
+          assert.match(deployment, /maxSurge:\\s*1/);
+          assert.match(deployment, /maxUnavailable:\\s*0/);
+          assert.match(deployment, /readinessProbe:[\\s\\S]*path:\\s*\\/healthz[\\s\\S]*port:\\s*http/);""",
+                  ),
+                  (
+                      """    assert.match(deployment, /type:\\s*RollingUpdate/);
+            assert.match(deployment, /maxSurge:\\s*0/);
+            assert.match(deployment, /maxUnavailable:\\s*1/);
+            assert.match(deployment, /readinessProbe:[\\s\\S]*httpGet:/);""",
+                      """    assert.match(deployment, /type:\\s*RollingUpdate/);
+            assert.match(deployment, /maxSurge:\\s*1/);
+            assert.match(deployment, /maxUnavailable:\\s*0/);
+            assert.match(deployment, /readinessProbe:[\\s\\S]*httpGet:/);""",
+                  ),
+              ],
+          }
+
+          def apply(path: Path, old: str, new: str) -> None:
+              text = path.read_text(encoding='utf-8')
+              old_count = text.count(old)
+              new_count = text.count(new)
+              if old_count == 1 and new_count == 0:
+                  path.write_text(text.replace(old, new, 1), encoding='utf-8')
+                  return
+              if old_count == 0 and new_count == 1:
+                  return
+              raise SystemExit(
+                  f'{path}: unexpected source state old={old_count} new={new_count}'
+              )
+
+          for path, replacements in rules.items():
+              for old, new in replacements:
+                  apply(path, old, new)
+          PY
+          git diff --check
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Install locked dependencies
+        working-directory: remote/tests
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify REST source-build resource budget
+        working-directory: remote/tests
+        run: >-
+          pnpm exec tsx --test
+          --test-name-pattern='runtime deployments avoid routing to half-started rust services'
+          general/nats-shadow-handoff.test.ts
+
+      - name: Verify two-replica zero-unavailable rollout profiles
+        working-directory: remote/tests
+        run: >-
+          pnpm exec tsx --test
+          --test-name-pattern='web home route has rollout|gateway-backed stateless services'
+          general/runtime-split-config.test.ts
+
+      - name: Publish repaired tests when changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add remote/tests/general/nats-shadow-handoff.test.ts \
+            remote/tests/general/runtime-split-config.test.ts
+          git diff --cached --check
+          if git diff --cached --quiet; then
+            echo 'Resource and HA contracts are already materialized.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'test(DEN-406): preserve documented resource and HA contracts'
+          git push origin HEAD:fix/den-406-resource-and-ha-contracts
