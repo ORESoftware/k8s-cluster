@@ -1,5 +1,7 @@
 name: DEN-255 current static diagnostic
 
+# This comment intentionally triggers a current-dev inventory run. It changes no
+# assertion, runtime, credential boundary, or pass/fail behavior.
 on:
   pull_request:
     paths:
