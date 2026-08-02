@@ -53,7 +53,7 @@ test('revocation credentials remain distinct and cloud-backed', async () => {
   assert.doesNotMatch(externalSecret, /(?:admin|reader)-secret-reader-secret|fdc_(?:live|test)_/);
 });
 
-test('revocation authority renders hardened and pinned', async () => {
+test('revocation authority renders hardened and immutably pinned', async () => {
   const [rendered, source] = await Promise.all([
     Promise.resolve(renderFiducia()),
     readRepoFile('remote/argocd/fiducia/fiducia-revocation-admin.deployment.yaml'),
@@ -74,13 +74,18 @@ test('revocation authority renders hardened and pinned', async () => {
   assert.match(deployment, /path:\s*\/healthz/);
   assert.match(service, /port:\s*8098/);
 
+  assert.match(
+    source,
+    /image:\s*docker\.io\/library\/rust:1\.95\.0-bookworm@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1/,
+  );
   for (const commit of [
-    'bd718cd72d72aa330534f3688f8fb1ce90c19d10',
-    'ff635ebee5fcdde6c9c56492a2265eedad7bdd25',
+    '6081bc3f3b7cbe0312870968b61acc38ca91c66a',
+    '06892d230f4e14184ea3dbf2d40aa313597398b3',
   ]) {
     assert.match(source, new RegExp(`fetch --depth 1 origin ${commit}`));
-    assert.match(source, /checkout --detach FETCH_HEAD/);
+    assert.match(source, new RegExp(`rev-parse HEAD\\)\" = \"${commit}`));
   }
+  assert.match(source, /checkout --detach FETCH_HEAD/);
   assert.match(source, /cargo run[\s\S]*--locked[\s\S]*--release[\s\S]*--bin fiducia-revocation-admin/);
   assert.doesNotMatch(source, /--branch\s+(?:main|dev)|git checkout\s+(?:main|dev)/);
 });
