@@ -998,14 +998,20 @@ mod tests {
     #[test]
     fn aal2_scoped_fresh_user_may_mutate_own_tenant() {
         let user = user_full(&[uuid_a()], Aal::Aal2, &[SCOPE_FINANCIAL_WRITE], Some(NOW));
-        assert_eq!(authz(&user, TenantScope::Tenant(uuid_a()), Action::Mutate), Ok(()));
+        assert_eq!(
+            authz(&user, TenantScope::Tenant(uuid_a()), Action::Mutate),
+            Ok(())
+        );
     }
 
     #[test]
     fn reads_never_require_step_up() {
         // An AAL1 user with no scope may still *read* their own tenant.
         let user = user_full(&[uuid_a()], Aal::Aal1, &[], None);
-        assert_eq!(authz(&user, TenantScope::Tenant(uuid_a()), Action::Read), Ok(()));
+        assert_eq!(
+            authz(&user, TenantScope::Tenant(uuid_a()), Action::Read),
+            Ok(())
+        );
     }
 
     #[test]
@@ -1041,7 +1047,10 @@ mod tests {
             &[SCOPE_FINANCIAL_WRITE],
             Some(NOW - MAX_STEP_UP_AGE_SECS),
         );
-        assert_eq!(authz(&boundary, TenantScope::Tenant(uuid_a()), Action::Mutate), Ok(()));
+        assert_eq!(
+            authz(&boundary, TenantScope::Tenant(uuid_a()), Action::Mutate),
+            Ok(())
+        );
     }
 
     #[test]
@@ -1069,7 +1078,11 @@ mod tests {
         // Service/user confusion: the shared bearer names no tenant and carries
         // no assurance; step-up mode does not loosen the migration rule.
         assert_eq!(
-            authz(&Principal::Service, TenantScope::Tenant(uuid_a()), Action::Mutate),
+            authz(
+                &Principal::Service,
+                TenantScope::Tenant(uuid_a()),
+                Action::Mutate
+            ),
             Err(StatusCode::FORBIDDEN)
         );
     }
@@ -1092,7 +1105,13 @@ mod tests {
         };
         let user = user_full(&[uuid_a()], Aal::Aal1, &[], None);
         assert_eq!(
-            authorize_request(&user, TenantScope::Tenant(uuid_a()), Action::Mutate, policy, NOW),
+            authorize_request(
+                &user,
+                TenantScope::Tenant(uuid_a()),
+                Action::Mutate,
+                policy,
+                NOW
+            ),
             Ok(())
         );
     }
