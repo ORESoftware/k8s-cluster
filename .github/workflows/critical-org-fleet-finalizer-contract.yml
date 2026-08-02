@@ -6,6 +6,11 @@ on:
       - fix/den-1058-extracted-visibility-contract
     paths:
       - '.github/workflows/critical-org-fleet-finalizer-contract.yml'
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches: [main]
+    paths:
+      - '.github/workflows/critical-org-fleet-finalizer-contract.yml'
 
 permissions:
   contents: write
@@ -18,7 +23,11 @@ jobs:
   repair:
     if: >-
       github.repository == 'ORESoftware/k8s-cluster' &&
-      github.ref == 'refs/heads/fix/den-1058-extracted-visibility-contract'
+      github.actor == 'ORESoftware' &&
+      (
+        github.ref == 'refs/heads/fix/den-1058-extracted-visibility-contract' ||
+        github.event.pull_request.head.ref == 'fix/den-1058-extracted-visibility-contract'
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -38,7 +47,6 @@ jobs:
 
           finalizer = Path('scripts/ops/finalize_missing_org_repositories.py')
           text = finalizer.read_text(encoding='utf-8')
-
           replacements = [
               (
                   'The two\nextracted repositories remain private. Verification is read-first and\n',
@@ -96,11 +104,9 @@ jobs:
                   '                f"- visibility: {repository[\'visibility\']}",\n',
               ),
           ]
-
           for old, new in replacements:
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'finalizer replacement boundary changed: count={count} for {old[:80]!r}')
+              if text.count(old) != 1:
+                  raise SystemExit(f'finalizer replacement boundary changed for {old[:80]!r}')
               text = text.replace(old, new, 1)
           finalizer.write_text(text, encoding='utf-8')
 
@@ -143,7 +149,6 @@ jobs:
           if test_text.count(old_assertions) != 1:
               raise SystemExit('markdown assertion boundary changed')
           test_text = test_text.replace(old_assertions, new_assertions, 1)
-
           insertion = '''
     def test_extracted_visibility_contract_is_explicit(self) -> None:
         self.assertEqual(
