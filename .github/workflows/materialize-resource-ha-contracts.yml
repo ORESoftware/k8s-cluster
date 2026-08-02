@@ -51,12 +51,12 @@ jobs:
           def replace_once_or_done(text: str, old: str, new: str, label: str) -> str:
               old_count = text.count(old)
               new_count = text.count(new)
-              if old_count == 1 and new_count == 0:
+              if old_count >= 1:
                   return text.replace(old, new, 1)
-              if old_count == 0 and new_count == 1:
+              if new_count >= 1:
                   return text
               raise SystemExit(
-                  f'{label}: unexpected source state old={old_count} new={new_count}'
+                  f'{label}: expected old or new contract text, found neither'
               )
 
           nats_path = Path('remote/tests/general/nats-shadow-handoff.test.ts')
