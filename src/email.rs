@@ -17,15 +17,7 @@ pub async fn send_magic_link(
     token: &str,
     otp: &str,
 ) -> Result<(), AuthError> {
-    send_magic_link_to(
-        http,
-        config,
-        SENDGRID_MAIL_SEND_URL,
-        recipient,
-        token,
-        otp,
-    )
-    .await
+    send_magic_link_to(http, config, SENDGRID_MAIL_SEND_URL, recipient, token, otp).await
 }
 
 async fn send_magic_link_to(
