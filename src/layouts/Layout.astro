@@ -1,6 +1,6 @@
 ---
 // Base HTML shell for every page: sets <head> metadata (title, description, OG
-// tags, favicon), the /fiducia base URL, and renders page content via <slot />.
+// tags, favicon), canonical URLs, and the /fiducia base URL.
 import '../styles/global.css';
 
 interface Props {
@@ -16,6 +16,12 @@ const {
 // Normalize BASE_URL to always end in exactly one slash (Astro returns it
 // without a trailing slash when `base` is configured without one).
 const base = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/';
+const site = Astro.site ?? new URL('https://fiducia.cloud');
+const investorPath = `${base}investors/`.replace(/\/{2,}/g, '/');
+const isInvestorEvidence = title === 'Fiducia for investors and startup programs';
+const canonicalPath = isInvestorEvidence ? investorPath : Astro.url.pathname;
+const canonicalUrl = new URL(canonicalPath, site).toString();
+const companyFactsUrl = new URL(`${base}company-facts.json`.replace(/\/{2,}/g, '/'), site).toString();
 ---
 
 <!doctype html>
@@ -29,11 +35,22 @@ const base = import.meta.env.BASE_URL.replace(/\/+$/, '') + '/';
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <meta name="description" content={description} />
     <meta name="theme-color" content="#070b1a" />
+    <meta name="fiducia:consensus-model" content="crash-fault tolerant (CFT), not Byzantine" />
+    <link rel="canonical" href={canonicalUrl} />
+    {isInvestorEvidence && (
+      <link
+        rel="alternate"
+        type="application/json"
+        title="Verified Fiducia Cloud company facts"
+        href={companyFactsUrl}
+      />
+    )}
     <link rel="icon" type="image/svg+xml" href={`${base}favicon.svg`} />
     <title>{title}</title>
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonicalUrl} />
   </head>
   <body>
     <slot />
