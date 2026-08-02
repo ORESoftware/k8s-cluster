@@ -30,6 +30,10 @@ The complete internal contract is available only to authenticated service caller
 
 `POST /run`, tool inventory, status, and compatibility aliases remain internal. Kubernetes liveness and Prometheus metrics retain their intended public operational routes.
 
+## Security defaults
+
+Scenario execution requires the shared `SERVER_AUTH_SECRET` presented through the internal gateway. Arbitrary JavaScript evaluation is fail-closed: `BROWSER_TEST_ALLOW_EVALUATE` defaults to `false` and must be enabled explicitly only for a bounded trusted workflow. The deployment also caps concurrent scenarios, step count, and per-scenario timeout.
+
 ## Local contract checks
 
 ```bash
