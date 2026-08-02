@@ -146,7 +146,6 @@ jobs:
         env:
           BROWSER_TEST_TOOL: ${{ matrix.tool }}
           BROWSER_DRIVER_ARTIFACT_DIR: ${{ runner.temp }}/browser-driver-${{ matrix.tool }}
-          SE_MANAGER_PATH: ${{ runner.temp }}/selenium-manager
         run: node scripts/browser-driver-smoke.mjs
 
       - name: Upload sanitized driver evidence
