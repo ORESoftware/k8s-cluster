@@ -4,16 +4,21 @@ This runbook is the production gate for DEN-1119. It covers the two direct raw-J
 
 ## Dependency and rollout order
 
-1. Merge and deploy the revocation storage/cache foundation from `fiducia-auth.rs#29`.
-2. Merge the shared verifier contract and authority binary from `fiducia-auth.rs#32`.
+1. Confirm the merged revocation authority/cache/gate/fault-model stack in `fiducia-auth.rs`:
+   - cache foundation `64709f5fc1da02db72835ff7645033370035611c`;
+   - reusable gate `3b5321e82fd74ae130120aa6ca28d74643357ca3`;
+   - two-verifier model `06892d230f4e14184ea3dbf2d40aa313597398b3`.
+2. Confirm the merged direct-verifier implementations:
+   - load balancer `437a7901c4a333dff1e8f9930e011c053cd3cc94`;
+   - edge Worker `08e2d0d51b7e5a4def676d0b9749d06887f2050f`.
 3. Provision two cryptographically random credentials in `dd/remote-dev/fiducia-revocation`:
    - `FIDUCIA_REVOCATION_ADMIN_SECRET`
    - `FIDUCIA_REVOCATION_READER_SECRET`
 4. Confirm both values contain at least 32 non-whitespace bytes and are not equal.
 5. Sync the `fiducia-revocation-secrets` ExternalSecret and verify the target Secret exists without printing either value.
 6. Deploy `fiducia-revocation-admin`; require `/healthz` to become ready.
-7. Merge and deploy `fiducia-load-balance.rs#16` with the reader URL and reader-only Secret reference from this GitOps change.
-8. Deploy `fiducia-edge#12` with its separate reader credential mechanism.
+7. Roll the load balancer with the reader URL and reader-only Secret reference from this GitOps change.
+8. Deploy the edge Worker with its separate reader credential mechanism.
 9. Run the two-verifier propagation and fault tests below before considering DEN-1119 complete.
 
 Do not enable raw JWT authentication on a verifier that lacks its reader credential or cannot reach the authority. Both verifiers are designed to fail closed, so missing authority state causes a controlled denial rather than an implicit allow.
@@ -33,7 +38,8 @@ Do not enable raw JWT authentication on a verifier that lacks its reader credent
   - both authority secret references are `optional: false`;
   - the load balancer references only `reader-secret`;
   - no literal credential material is present;
-  - source checkouts are pinned to exact 40-character commits;
+  - the Rust builder image is pinned by digest;
+  - the interface and authority source checkouts are pinned to exact 40-character commits and verified with `rev-parse`;
   - the authority has no service-account token and runs non-root with a read-only root filesystem;
   - the authority ingress and load-balancer egress policies agree on port 8098.
 - Verify the authority can reach the load balancer storage path on port 8088 and DNS, but cannot reach unrelated private workloads.
@@ -99,8 +105,8 @@ A future enhancement should support overlapping current/next reader credentials 
 
 DEN-1119 may be closed only after attaching:
 
-- green hosted CI for `fiducia-auth.rs#32`, `fiducia-edge#12`, `fiducia-load-balance.rs#16`, and this GitOps PR;
-- rendered secret/network-policy contract results;
+- green hosted CI for auth cache/gate/fault-model, edge, load balancer, and this GitOps PR;
+- rendered secret/network-policy/image/source-pin contract results;
 - two-verifier exact-token and subject-revocation propagation results;
 - authority-loss, timeout, malformed-response, concurrency, and clock-regression results;
 - a credential-rotation exercise;
