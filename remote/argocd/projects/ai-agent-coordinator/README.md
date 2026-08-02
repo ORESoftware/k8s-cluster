@@ -2,7 +2,7 @@
 
 This directory is the cluster-owned half of the coordinator deployment boundary.
 The workload manifests remain in
-`ORESoftware/ai-agent-coordinator.rs@a6fb1f89e064c21dc1e435931c75e9871746d0f7`
+`ORESoftware/ai-agent-coordinator.rs@d25e04e50be4a9fad039cfcfa6c321e9c99a1e02`
 at `deploy/overlays/cross-org-linear-pilot`.
 
 The bundle is self-contained so Argo CD and `kubectl kustomize` can render it
@@ -30,7 +30,7 @@ The workload Application is pinned to:
 
 ```text
 repository: https://github.com/ORESoftware/ai-agent-coordinator.rs.git
-revision:   a6fb1f89e064c21dc1e435931c75e9871746d0f7
+revision:   d25e04e50be4a9fad039cfcfa6c321e9c99a1e02
 path:       deploy/overlays/cross-org-linear-pilot
 ```
 
