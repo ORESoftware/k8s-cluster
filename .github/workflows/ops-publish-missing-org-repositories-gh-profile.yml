@@ -1,3 +1,4 @@
+# Retriggered 2026-08-02 for the exact reviewed schema-v2 fleet ledger.
 name: Publish missing organization repositories from protected gh profile
 run-name: Publish missing organization repositories from protected gh profile after live secret-source diagnosis @ ${{ github.sha }}
 
