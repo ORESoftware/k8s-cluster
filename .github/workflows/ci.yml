@@ -29,7 +29,10 @@ jobs:
       - name: Validate GitHub Actions
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
-          args: repo/.github/workflows/ci.yml repo/.github/workflows/pages.yml
+          args: >-
+            repo/.github/workflows/ci.yml
+            repo/.github/workflows/pages.yml
+            repo/.github/workflows/investor-browser-audit.yml
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
@@ -47,7 +50,7 @@ jobs:
           node-version: "22.22.1"
       - run: npm ci --ignore-scripts
         working-directory: repo
-      # Node --test contract specs (site-contract.test.mjs).
+      # Fast source contracts, including the public investor-evidence schema.
       - run: npm test
         working-directory: repo
       # Astro production build — the gating step.
@@ -74,7 +77,7 @@ jobs:
   # @fiducia/test-config dependency. Failures block the change.
   browser-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -105,4 +108,5 @@ jobs:
         working-directory: repo
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+          PUBLIC_BASE: /fiducia
         run: npm run test:browser
