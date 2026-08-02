@@ -130,6 +130,17 @@ class GapBootstrapContractTests(unittest.TestCase):
         self.assertEqual(args[3], "private")
         publish.assert_not_called()
 
+    def test_fleet_source_archive_is_commit_pinned(self) -> None:
+        self.assertEqual(len(bootstrap.FLEET_SOURCE_SHA), 40)
+        self.assertIn(
+            f"/archive/{bootstrap.FLEET_SOURCE_SHA}.tar.gz",
+            bootstrap.FLEET_SOURCE_ARCHIVE_URL,
+        )
+        source = MODULE_PATH.read_text(encoding="utf-8")
+        self.assertNotIn('"git",\n            "clone"', source)
+        self.assertNotIn('"git", "fetch"', source)
+        self.assertIn("FLEET_SOURCE_ARCHIVE_URL", source)
+
     def test_source_forbids_force_push_and_orders_children_before_monorepos(self) -> None:
         source = MODULE_PATH.read_text(encoding="utf-8")
         self.assertNotIn("--force", source)
