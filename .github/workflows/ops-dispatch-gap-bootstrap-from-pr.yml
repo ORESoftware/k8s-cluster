@@ -1,0 +1,87 @@
+name: Dispatch safe canonical repository-gap bootstrap from exact PR
+
+on:
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: dispatch-safe-canonical-gap-bootstrap-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: >-
+      github.event.pull_request.user.login == 'ORESoftware' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == 'ORESoftware/k8s-cluster' &&
+      github.event.pull_request.head.ref == 'agent/dispatch-canonical-gap-bootstrap-20260801-v1' &&
+      github.event.pull_request.title == 'DO NOT MERGE: dispatch safe canonical repository-gap bootstrap'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate exact execution carrier and pinned trusted-main sources
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -Eeuo pipefail
+          pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRIGGER_PR}")"
+          jq -e '
+            .state == "open" and
+            .draft == true and
+            .user.login == "ORESoftware" and
+            .base.ref == "main" and
+            .head.repo.full_name == "ORESoftware/k8s-cluster" and
+            .head.ref == "agent/dispatch-canonical-gap-bootstrap-20260801-v1" and
+            .title == "DO NOT MERGE: dispatch safe canonical repository-gap bootstrap" and
+            .commits == 1 and
+            .changed_files == 1 and
+            .additions == 4 and
+            .deletions == 0
+          ' <<<"$pull" >/dev/null
+
+          head_sha="$(jq -er .head.sha <<<"$pull")"
+          files="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRIGGER_PR}/files?per_page=100")"
+          test "$(jq 'length' <<<"$files")" -eq 1
+          jq -e '
+            .[0].filename == ".github/canonical-gap-bootstrap-dispatch-trigger" and
+            .[0].status == "added" and
+            .[0].additions == 4 and
+            .[0].deletions == 0 and
+            .[0].changes == 4
+          ' <<<"$files" >/dev/null
+
+          encoded="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/canonical-gap-bootstrap-dispatch-trigger?ref=${head_sha}" --jq .content)"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
+          expected=$'target=canonical-gap-bootstrap-v1\nworkflow=825d5e5b297c8ea94a988834ca1664138b3eb37a\nscript=802c0e1bbb6ca7840a509af8efad04c811cc27cd\nfleet-source=5d9a0c2cb44dff607bc3953954ce4b9af08e5789'
+          test "$marker" = "$expected"
+
+          workflow="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/ops-bootstrap-canonical-repository-gaps.yml?ref=main")"
+          test "$(jq -er .name <<<"$workflow")" = ops-bootstrap-canonical-repository-gaps.yml
+          test "$(jq -er .sha <<<"$workflow")" = 825d5e5b297c8ea94a988834ca1664138b3eb37a
+
+          script="$(gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/ops/bootstrap_missing_canonical_repositories.py?ref=main")"
+          test "$(jq -er .name <<<"$script")" = bootstrap_missing_canonical_repositories.py
+          test "$(jq -er .sha <<<"$script")" = 802c0e1bbb6ca7840a509af8efad04c811cc27cd
+
+      - name: Dispatch pinned no-overwrite bootstrap from trusted main
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRIGGER_PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -Eeuo pipefail
+          before="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run ops-bootstrap-canonical-repository-gaps.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main
+          body="Dispatched the pinned no-overwrite canonical repository-gap bootstrap from trusted main after ${before}. The child workflow will post one fresh owner code on PR #471; ignore all earlier codes."
+          gh pr comment "$TRIGGER_PR" --repo "$GITHUB_REPOSITORY" --body "$body"
+          gh pr comment 471 --repo "$GITHUB_REPOSITORY" --body "$body"
