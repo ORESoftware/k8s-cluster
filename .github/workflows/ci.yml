@@ -1,5 +1,6 @@
-# CI: fmt, clippy, unit tests (--bins), and audit. Checks out the sibling
-# fiducia-interfaces repo so the path-dependency crates resolve.
+# CI: fmt, clippy, unit tests, audit, production image build, and real-browser E2E.
+# Sibling repositories are pinned so path dependencies and test fixtures resolve
+# to the same reviewed revisions used by the production container graph.
 name: ci
 
 on:
@@ -76,6 +77,79 @@ jobs:
       - name: audit
         working-directory: repo
         run: cargo audit
+
+  browser-e2e:
+    name: browser e2e (Playwright + Puppeteer)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fiducia_customer
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U postgres -d fiducia_customer"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:${{ job.services.postgres.ports[5432] }}/fiducia_customer
+      CHROME_BIN: /usr/bin/google-chrome
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          path: repo
+          submodules: recursive
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          repository: fiducia-cloud/fiducia-interfaces
+          ref: 6081bc3f3b7cbe0312870968b61acc38ca91c66a
+          path: fiducia-interfaces
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          repository: fiducia-cloud/fiducia-payments.rs
+          ref: 126dc5d1b3fcba289f95139284dc0f3c54b56a8a
+          path: fiducia-payments.rs
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          repository: fiducia-cloud/fiducia-test-config
+          ref: 026fcf28193c7baeb7f5feb68480a91539c1f0fa
+          path: fiducia-test-config
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: "1.97.0"
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: repo
+      - name: Apply canonical customer schema
+        run: psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file fiducia-interfaces/sql/customer.sql
+      - name: Install browser test dependencies without install scripts
+        working-directory: repo
+        run: npm install --ignore-scripts --no-audit --no-fund
+      - name: Verify browser prerequisite
+        run: |
+          test -x "$CHROME_BIN"
+          "$CHROME_BIN" --version
+          node --version
+          npm --version
+      - name: Run real-browser customer journeys
+        working-directory: repo
+        run: npm run test:browser
 
   container-build:
     name: production container graph
