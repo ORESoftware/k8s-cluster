@@ -15,15 +15,23 @@ export { chromeExecutablePath, launchOptions } from "@fiducia/test-config/harnes
 
 const testsDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(testsDir, "..");
+const CUSTOMER_SURFACE_AUDIENCE = "fiducia-customer";
+const CUSTOMER_ROLE = "customer";
+const CUSTOMER_CAPABILITY = "customer:self-service";
+const AUTHORIZATION_CONTEXT_VERSION = 1;
 
 /** The one account the stub Supabase accepts. `user_id` must be a UUID because
  * the store keys customer rows on it; the org matches the FIDUCIA_E2E static
- * customer so either auth mode admits the same tenant. */
+ * customer so either auth mode admits the same tenant. Roles are trusted app
+ * metadata, matching the only source accepted by the real fiducia-auth service. */
 export const CUSTOMER = {
   id: "22222222-2222-4222-8222-222222222222",
   email: "dev@acme.com",
   password: "customer-pw",
-  app_metadata: { orgs: ["00000000-0000-4000-8000-000000000001"] },
+  app_metadata: {
+    orgs: ["00000000-0000-4000-8000-000000000001"],
+    roles: [CUSTOMER_ROLE],
+  },
 };
 
 /** The fixed email/SMS one-time code the stub Supabase accepts (stubs.mjs). */
@@ -70,11 +78,30 @@ function cargoEnv() {
   return { PATH: `${dirname(cargo)}${delimiter}${process.env.PATH ?? ""}` };
 }
 
+function normalizedCustomerAuthorization(claims) {
+  const rawRoles = claims.app_metadata?.roles;
+  if (
+    !Array.isArray(rawRoles) ||
+    rawRoles.length !== 1 ||
+    rawRoles[0] !== CUSTOMER_ROLE
+  ) {
+    return null;
+  }
+  return {
+    version: AUTHORIZATION_CONTEXT_VERSION,
+    surface_audiences: [CUSTOMER_SURFACE_AUDIENCE],
+    roles: [CUSTOMER_ROLE],
+    capabilities: [CUSTOMER_CAPABILITY],
+  };
+}
+
 /**
  * Stub fiducia-auth: exactly the `GET /v1/me` contract src/auth.rs consumes.
  * Verifies the presented bearer against the stub Supabase's public JWK — the
  * same trust chain as the real service, minus the org-sync machinery — and
- * answers `{ user: { user_id, email, orgs, aal } }` from the verified claims.
+ * emits the versioned customer authorization context from trusted app metadata.
+ * A missing, unknown, or admin role fails closed rather than manufacturing a
+ * customer audience in the test harness.
  */
 function startStubFiduciaAuth(stubSupabase) {
   const server = createServer((req, res) => {
@@ -93,12 +120,18 @@ function startStubFiduciaAuth(stubSupabase) {
       if (!claims || claims.exp <= Math.floor(Date.now() / 1000)) {
         return respond(401, { ok: false, error: "invalid_or_expired_session" });
       }
+      const authorization = normalizedCustomerAuthorization(claims);
+      if (!authorization) {
+        return respond(403, { ok: false, error: "customer_surface_forbidden" });
+      }
       return respond(200, {
         user: {
           user_id: claims.sub,
           email: claims.email ?? null,
           orgs: claims.app_metadata?.orgs ?? [],
           aal: claims.aal ?? "aal1",
+          roles: authorization.roles,
+          authorization,
         },
       });
     }
@@ -154,6 +187,11 @@ export async function startCustomer() {
         SUPABASE_PUBLISHABLE_KEY: "stub-publishable-key",
         FIDUCIA_AUTH_URL: auth.url,
         FIDUCIA_SITE_MODE: "customer",
+        // The canonical test schema is applied to PostgreSQL's public schema.
+        // Production defaults to the isolated `fiducia` schema, so pinning this
+        // fixture explicitly prevents a successful login from landing on a
+        // database error page while preserving the production isolation default.
+        FIDUCIA_DB_SCHEMA: "public",
         // Debug-only: emit non-Secure session/CSRF/MFA cookies so the browser
         // jar is inspectable over http://127.0.0.1 (both drivers filter Secure
         // cookies out of http origins). Mirrors the admin harness.

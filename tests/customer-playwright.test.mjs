@@ -33,7 +33,24 @@ test("playwright drives the customer portal login, CSRF boundary, and live strea
 
   // Login page: Maud SSR renders all three first-factor forms, and the vendored
   // htmx asset is both served correctly and actually executing in the page.
-  await page.goto(`${server.url}/login`, { waitUntil: "networkidle" });
+  const loginResponse = await page.goto(`${server.url}/login`, {
+    waitUntil: "networkidle",
+  });
+  assert.ok(loginResponse, "login navigation must return an HTTP response");
+  const loginHeaders = loginResponse.headers();
+  assert.equal(loginHeaders["cache-control"], "no-store");
+  assert.equal(loginHeaders.pragma, "no-cache");
+  assert.equal(loginHeaders["x-content-type-options"], "nosniff");
+  assert.equal(loginHeaders["x-frame-options"], "DENY");
+  assert.equal(loginHeaders["referrer-policy"], "same-origin");
+  const csp = loginHeaders["content-security-policy"] ?? "";
+  assert.match(csp, /default-src 'self'/);
+  assert.match(csp, /frame-ancestors 'none'/);
+  assert.match(csp, /base-uri 'none'/);
+  assert.match(csp, /form-action 'self'/);
+  assert.match(csp, /object-src 'none'/);
+  assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/);
+
   await assertVisibleText(page, "Sign in to Fiducia");
   await assertVisibleText(page, "Email a sign-in code");
   const htmxAsset = await page.request.get(`${server.url}/assets/htmx.min.js`);
@@ -101,6 +118,25 @@ test("playwright drives the customer portal login, CSRF boundary, and live strea
   assert.equal(rejected.login.body.error, "customer_request_rejected");
   assert.equal(rejected.session.status, 403);
   assert.equal(rejected.session.body.error, "customer_request_rejected");
+
+  // A context-sharing API request proves that an authenticated ambient cookie
+  // cannot be borrowed by a different Origin, even when the attacker supplies a
+  // syntactically valid form body.
+  const crossOrigin = await page.request.post(
+    `${server.url}/app/notifications/read`,
+    {
+      headers: { origin: "https://attacker.example" },
+      form: {
+        csrf_token: "forged",
+        id: "00000000-0000-4000-8000-000000000009",
+      },
+    },
+  );
+  assert.equal(crossOrigin.status(), 403);
+  assert.equal(
+    (await crossOrigin.json()).error,
+    "customer_request_rejected",
+  );
 
   // WebSocket /app/ws: connects under the cookie + exact-origin gate, announces
   // itself, and answers the JSON heartbeat ping with a pong.
