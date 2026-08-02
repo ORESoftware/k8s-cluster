@@ -7,25 +7,34 @@ fn run_server_with(arg: &str) -> Output {
         .expect("threefa-sync-server should start far enough to validate CLI flags")
 }
 
-#[test]
-fn secret_bearing_database_url_is_not_accepted_as_a_cli_flag() {
-    let output = run_server_with("--database-url=postgres://redacted.invalid/threefa");
-
+fn assert_rejected_without_stdout(output: &Output) -> String {
     assert_eq!(output.status.code(), Some(2), "unexpected status: {output:?}");
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.stdout.is_empty(), "CLI errors must not write to stdout");
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+#[test]
+fn secret_bearing_database_url_is_rejected_without_echoing_the_secret() {
+    const SECRET: &str = "postgres://must-remain-environment-only@redacted.invalid/threefa";
+    let argument = format!("--database-url={SECRET}");
+    let output = run_server_with(&argument);
+    let stderr = assert_rejected_without_stdout(&output);
+
     assert!(
         stderr.contains("unknown command-line option"),
         "unexpected stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains(SECRET) && !stderr.contains("must-remain-environment-only"),
+        "rejected secret-bearing argument was echoed: {stderr}"
     );
 }
 
 #[test]
 fn arbitrary_unknown_flags_fail_before_server_startup() {
     let output = run_server_with("--definitely-not-a-threefa-option=1");
+    let stderr = assert_rejected_without_stdout(&output);
 
-    assert_eq!(output.status.code(), Some(2), "unexpected status: {output:?}");
-    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("invalid command-line configuration"));
     assert!(stderr.contains("unknown command-line option"));
-    assert!(output.stdout.is_empty(), "CLI errors must not write to stdout");
 }
