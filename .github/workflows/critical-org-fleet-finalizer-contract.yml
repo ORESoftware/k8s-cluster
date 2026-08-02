@@ -1,13 +1,7 @@
-name: Repair extracted repository visibility contract
+name: One-shot extracted visibility contract repair
 
 on:
   push:
-    branches:
-      - fix/den-1058-extracted-visibility-contract
-    paths:
-      - '.github/workflows/critical-org-fleet-finalizer-contract.yml'
-  pull_request:
-    types: [opened, reopened, synchronize]
     branches: [main]
     paths:
       - '.github/workflows/critical-org-fleet-finalizer-contract.yml'
@@ -16,26 +10,23 @@ permissions:
   contents: write
 
 concurrency:
-  group: repair-extracted-repository-visibility-contract
+  group: one-shot-extracted-visibility-contract-repair
   cancel-in-progress: false
 
 jobs:
   repair:
     if: >-
       github.repository == 'ORESoftware/k8s-cluster' &&
-      github.actor == 'ORESoftware' &&
-      (
-        github.ref == 'refs/heads/fix/den-1058-extracted-visibility-contract' ||
-        github.event.pull_request.head.ref == 'fix/den-1058-extracted-visibility-contract'
-      )
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'ORESoftware'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - name: Check out exact repair branch
+      - name: Check out exact trusted main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: fix/den-1058-extracted-visibility-contract
-          fetch-depth: 0
+          ref: main
+          fetch-depth: 2
           persist-credentials: true
 
       - name: Reconcile public Meta Agents and private File Tunnel contracts
@@ -168,7 +159,7 @@ jobs:
           tests.write_text(test_text, encoding='utf-8')
           PY
 
-          git show origin/main:.github/workflows/critical-org-fleet-finalizer-contract.yml \
+          git show HEAD^1:.github/workflows/critical-org-fleet-finalizer-contract.yml \
             > .github/workflows/critical-org-fleet-finalizer-contract.yml
 
       - name: Validate the corrected contract
@@ -183,17 +174,18 @@ jobs:
             -p 'test_finalize_missing_org_repositories.py' \
             -v
           git diff --check
-          test -z "$(git diff --name-only -- .github/workflows/critical-org-fleet-finalizer-contract.yml)"
 
-      - name: Commit only the source contract correction
+      - name: Commit the ordinary final state to main
         shell: bash
         run: |
           set -Eeuo pipefail
           git add \
+            .github/workflows/critical-org-fleet-finalizer-contract.yml \
             scripts/ops/finalize_missing_org_repositories.py \
             scripts/ops/tests/test_finalize_missing_org_repositories.py
           actual="$(git diff --cached --name-only | LC_ALL=C sort)"
           expected="$(printf '%s\n' \
+            .github/workflows/critical-org-fleet-finalizer-contract.yml \
             scripts/ops/finalize_missing_org_repositories.py \
             scripts/ops/tests/test_finalize_missing_org_repositories.py | LC_ALL=C sort)"
           test "$actual" = "$expected"
@@ -201,4 +193,4 @@ jobs:
           git config user.name ORESoftware
           git config user.email 11139560+ORESoftware@users.noreply.github.com
           git commit -m 'fix(DEN-1058): make Meta Agents public and File Tunnel private'
-          git push origin HEAD:fix/den-1058-extracted-visibility-contract
+          git push origin HEAD:main
