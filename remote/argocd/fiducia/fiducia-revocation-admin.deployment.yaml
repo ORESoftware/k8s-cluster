@@ -41,7 +41,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: revocation-admin
-          image: docker.io/library/rust:1.95.0-bookworm
+          image: docker.io/library/rust:1.95.0-bookworm@sha256:6258907abe69656e41cd992e0b705cdcfabcbbe3db374f92ed2d47121282d4a1
           imagePullPolicy: IfNotPresent
           command: ["/bin/bash", "-ceu"]
           args:
@@ -51,12 +51,14 @@ spec:
               cd /workspace/src
 
               git clone --filter=blob:none --no-checkout https://github.com/fiducia-cloud/fiducia-interfaces.git fiducia-interfaces
-              git -C fiducia-interfaces fetch --depth 1 origin bd718cd72d72aa330534f3688f8fb1ce90c19d10
+              git -C fiducia-interfaces fetch --depth 1 origin 6081bc3f3b7cbe0312870968b61acc38ca91c66a
               git -C fiducia-interfaces checkout --detach FETCH_HEAD
+              test "$(git -C fiducia-interfaces rev-parse HEAD)" = "6081bc3f3b7cbe0312870968b61acc38ca91c66a"
 
               git clone --filter=blob:none --no-checkout https://github.com/fiducia-cloud/fiducia-auth.rs.git fiducia-auth.rs
-              git -C fiducia-auth.rs fetch --depth 1 origin ff635ebee5fcdde6c9c56492a2265eedad7bdd25
+              git -C fiducia-auth.rs fetch --depth 1 origin 06892d230f4e14184ea3dbf2d40aa313597398b3
               git -C fiducia-auth.rs checkout --detach FETCH_HEAD
+              test "$(git -C fiducia-auth.rs rev-parse HEAD)" = "06892d230f4e14184ea3dbf2d40aa313597398b3"
 
               exec cargo run \
                 --manifest-path fiducia-auth.rs/Cargo.toml \
