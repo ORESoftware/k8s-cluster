@@ -1,0 +1,70 @@
+name: fix npm audit once
+
+on:
+  push:
+    branches:
+      - agent/den-1299-investor-browser-audit
+    paths:
+      - '.github/workflows/fix-npm-audit-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1299-fix-npm-audit-once
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: agent/den-1299-investor-browser-audit
+          fetch-depth: 0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          repository: fiducia-cloud/fiducia-interfaces
+          ref: 487e470c45ab5851e8f6f3b1dc048fe067fbf408
+          path: ../fiducia-interfaces
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          repository: fiducia-cloud/fiducia-test-config
+          ref: 825220281fdc16bbf47a035177001d2fe29bdabf
+          path: ../fiducia-test-config
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: '22.22.1'
+          cache: npm
+      - name: Repair the lockfile within declared semver ranges
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm audit fix --package-lock-only --ignore-scripts
+          npm ci --ignore-scripts
+          npm audit --omit=dev --audit-level=high
+          npm test
+          PUBLIC_BASE=/ npm run build
+          PUBLIC_BASE=/fiducia npm run build
+          git diff --check
+
+          changed="$(git diff --name-only)"
+          if test "$changed" != 'package-lock.json'; then
+            printf 'Expected only package-lock.json to change, got:\n%s\n' "$changed" >&2
+            exit 1
+          fi
+      - name: Publish the reviewed lockfile repair and remove this workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/fix-npm-audit-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package-lock.json
+          git commit -m 'build: refresh audited npm dependency lockfile'
+          git push origin HEAD:agent/den-1299-investor-browser-audit
