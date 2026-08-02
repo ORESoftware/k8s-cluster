@@ -698,7 +698,7 @@ async function runScenario(
     outcome = await Promise.race([work, overallTimer]);
   } catch (error) {
     abortController.abort(error);
-    const driver = activeDriver;
+    const driver = activeDriver as ScenarioDriver | null;
     if (driver) await driver.close().catch(() => undefined);
     await work.catch(() => undefined);
     const message = error instanceof Error ? error.message : String(error);
