@@ -43,12 +43,8 @@ jobs:
                   '  assert.match(main, /http_server\\.supervised\\(metrics_name, nats_handle\\)/);',
               ),
               (
-                  """  // Warm worker containers spawned by `dd-container-pool` reach MCP from
-          // the EC2 node host network, so the policy must allow RFC1918 ingress
-          // on :8090 in addition to the labelled podSelector clauses above.""",
-                  """  // Warm worker containers spawned by `dd-container-pool` reach MCP from
-          // the EC2 node host network. Restrict that exception to the exact VPC
-          // CIDR; broad RFC1918 ranges would also admit unrelated pod networks.""",
+                  '  // Warm worker containers spawned by `dd-container-pool` reach MCP from\n  // the EC2 node host network, so the policy must allow RFC1918 ingress\n  // on :8090 in addition to the labelled podSelector clauses above.',
+                  '  // Warm worker containers spawned by `dd-container-pool` reach MCP from\n  // the EC2 node host network. Restrict that exception to the exact VPC\n  // CIDR; broad RFC1918 ranges would also admit unrelated pod networks.',
               ),
               (
                   '    /ipBlock:\\s*\\n\\s+cidr:\\s*10\\.0\\.0\\.0\\/8[\\s\\S]*ipBlock:\\s*\\n\\s+cidr:\\s*172\\.16\\.0\\.0\\/12[\\s\\S]*ipBlock:\\s*\\n\\s+cidr:\\s*192\\.168\\.0\\.0\\/16[\\s\\S]*ports:[\\s\\S]*port:\\s*8090/,',
