@@ -1,6 +1,6 @@
 # Browser test server
 
-`browser-test-server` runs bounded Playwright, Puppeteer, or Selenium scenarios for trusted cluster callers.
+`browser-test-server` runs bounded Playwright, Puppeteer, or Selenium scenarios for trusted cluster callers. It is packaged and deployed as `dd-browser-test-server`, separately from `dd-web-scraper`, while reusing the same hardened browser runtime image.
 
 ## Executable API contract
 
