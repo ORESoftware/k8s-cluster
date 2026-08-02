@@ -139,9 +139,7 @@ def find_public_boundary_violations(raw: str) -> list[str]:
     return violations
 
 
-def find_unregistered_owners(
-    catalog: Mapping[str, Any], repo_root: Path
-) -> list[str]:
+def find_unregistered_owners(catalog: Mapping[str, Any], repo_root: Path) -> list[str]:
     owners_path = repo_root / OWNERS_CATALOG
     if not owners_path.exists():
         return [f"{OWNERS_CATALOG} is missing"]
