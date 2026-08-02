@@ -47,16 +47,16 @@ jobs:
                   '  assert.match(httpServer, /@external\\(erlang, "gleam_mcp_json", "parse_request"\\)/);\n  assert.match(httpServer, /fn parse_request\\(body: String\\) -> #\\(String, String, String, String\\)/);',
               ),
               (
-                  '  assert.match(jsonFfi, /method\\/1/);',
-                  '  assert.match(jsonFfi, /parse_request\\/1/);',
-              ),
-              (
-                  '  assert.match(jsonFfi, /tool_name\\/1/);',
-                  '  assert.match(jsonFfi, /tool_name\\(Params\\)/);',
+                  '  assert.match(jsonFfi, /request_id\\/1/);\n  assert.match(jsonFfi, /method\\/1/);\n  assert.match(jsonFfi, /tool_name\\/1/);',
+                  '  assert.match(jsonFfi, /parse_request\\/1/);\n  assert.match(jsonFfi, /tool_name\\(Params\\)/);',
               ),
               (
                   '  assert.doesNotMatch(jsonFfi, /re:run\\(Body, Pattern/);',
                   '  assert.match(jsonFfi, /case decode_json\\(Body\\) of[\\s\\S]*\\{ok, Decoded\\} -> from_decoded\\(Decoded\\);[\\s\\S]*no_json -> legacy_parse\\(Body\\)/);\n  assert.match(jsonFfi, /legacy_id\\(Body\\) ->[\\s\\S]*re:run\\(Body, Pattern/);',
+              ),
+              (
+                  '  assert.match(httpServer, /initialize_result\\(request_id\\)/);\n  assert.match(httpServer, /tools_list_result\\(request_id\\)/);\n  assert.match(httpServer, /tools_call_result\\(json_tool_name\\(body\\), request_id\\)/);',
+                  '  assert.match(httpServer, /let #\\(status, method, id_json, tool\\) = parse_request\\(body\\)/);\n  assert.match(httpServer, /initialize_result\\(id_json\\)/);\n  assert.match(httpServer, /tools_list_result\\(id_json\\)/);\n  assert.match(httpServer, /tools_call_result\\(tool, id_json\\)/);\n  assert.match(httpServer, /json_rpc_error_with_id\\("method not found", -32_601, id_json\\)/);',
               ),
               (
                   '  // Warm worker containers spawned by `dd-container-pool` reach MCP from\n  // the EC2 node host network, so the policy must allow RFC1918 ingress\n  // on :8090 in addition to the labelled podSelector clauses above.',
@@ -116,5 +116,5 @@ jobs:
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'test(DEN-421): preserve NATS and VPC-scoped MCP hardening'
+          git commit -m 'test(DEN-421): preserve parsed JSON-RPC and VPC-scoped MCP hardening'
           git push origin HEAD:fix/den-421-gleam-mcp-contract-drift
