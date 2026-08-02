@@ -154,6 +154,11 @@ export async function startCustomer() {
         SUPABASE_PUBLISHABLE_KEY: "stub-publishable-key",
         FIDUCIA_AUTH_URL: auth.url,
         FIDUCIA_SITE_MODE: "customer",
+        // The canonical test schema is applied to PostgreSQL's public schema.
+        // Production defaults to the isolated `fiducia` schema, so pinning this
+        // fixture explicitly prevents a successful login from landing on a
+        // database error page while preserving the production isolation default.
+        FIDUCIA_DB_SCHEMA: "public",
         // Debug-only: emit non-Secure session/CSRF/MFA cookies so the browser
         // jar is inspectable over http://127.0.0.1 (both drivers filter Secure
         // cookies out of http origins). Mirrors the admin harness.
