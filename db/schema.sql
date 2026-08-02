@@ -75,6 +75,8 @@ create table if not exists shared_auth.sessions (
     provider            text        not null,
     provider_tenant     text        not null default 'default',
     provider_subject    text        not null,
+    auth_level          smallint    not null default 1 check (auth_level in (1, 2)),
+    auth_methods        jsonb       not null default '[]'::jsonb,
     created_at          timestamptz not null default now(),
     updated_at          timestamptz not null default now(),
     last_seen_at        timestamptz not null default now(),
@@ -82,6 +84,7 @@ create table if not exists shared_auth.sessions (
     revoked_at          timestamptz,
     rotated_from        uuid        references shared_auth.sessions(session_id) on delete set null,
     check (length(refresh_token_hash) = 43),
+    check (jsonb_typeof(auth_methods) = 'array'),
     check (expires_at > created_at)
 );
 
@@ -90,6 +93,45 @@ create index if not exists sessions_user_idx
 create index if not exists sessions_active_expiry_idx
     on shared_auth.sessions (expires_at)
     where revoked_at is null;
+
+-- Passwordless email tokens are opaque, single-use, short-lived credentials.
+-- Only the SHA-256 hash is persisted; the plaintext exists only long enough to
+-- be placed in the SendGrid message.
+create table if not exists shared_auth.magic_link_tokens (
+    token_hash          text        primary key check (length(token_hash) = 43),
+    otp_hash            text        not null check (length(otp_hash) = 43),
+    shared_user_id      uuid        not null references shared_auth.principals(shared_user_id) on delete cascade,
+    identifier_hash     text        not null check (length(identifier_hash) = 43),
+    failed_attempts     integer     not null default 0 check (failed_attempts between 0 and 5),
+    created_at          timestamptz not null default now(),
+    expires_at          timestamptz not null,
+    consumed_at         timestamptz,
+    check (expires_at > created_at)
+);
+
+create index if not exists magic_link_tokens_user_idx
+    on shared_auth.magic_link_tokens (shared_user_id);
+create index if not exists magic_link_tokens_active_expiry_idx
+    on shared_auth.magic_link_tokens (expires_at)
+    where consumed_at is null;
+create index if not exists magic_link_tokens_identifier_created_idx
+    on shared_auth.magic_link_tokens (identifier_hash, created_at desc);
+
+create table if not exists shared_auth.mfa_sms_challenges (
+    challenge_id        uuid        primary key default gen_random_uuid(),
+    shared_user_id      uuid        not null references shared_auth.principals(shared_user_id) on delete cascade,
+    phone_e164          text        not null check (phone_e164 ~ '^\+[1-9][0-9]{7,14}$'),
+    created_at          timestamptz not null default now(),
+    expires_at          timestamptz not null,
+    verified_at         timestamptz,
+    check (expires_at > created_at)
+);
+
+create index if not exists mfa_sms_challenges_user_idx
+    on shared_auth.mfa_sms_challenges (shared_user_id, created_at desc);
+create index if not exists mfa_sms_challenges_active_expiry_idx
+    on shared_auth.mfa_sms_challenges (expires_at)
+    where verified_at is null;
 
 create table if not exists shared_auth.roles (
     role_id           uuid        primary key default gen_random_uuid(),

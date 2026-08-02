@@ -15,11 +15,13 @@
 mod docs;
 mod exchange;
 mod health;
-mod introspect;
+pub(crate) mod introspect;
 mod jwks;
 mod local;
 mod metrics;
-mod session_tokens;
+mod mfa;
+mod passwordless;
+pub(crate) mod session_tokens;
 mod ui;
 pub mod webhook;
 
@@ -27,7 +29,7 @@ use std::time::Duration;
 
 use axum::{
     http::{header, HeaderValue, Method},
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use tower_http::cors::CorsLayer;
@@ -59,6 +61,48 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/exchange", post(exchange::exchange))
         .route("/auth/register", post(local::register))
         .route("/auth/login", post(local::login))
+        .route("/auth/passwordless/request", post(passwordless::request))
+        .route("/auth/passwordless/consume", post(passwordless::consume))
+        .route("/auth/mfa/sms/request", post(mfa::request_sms))
+        .route("/auth/mfa/sms/verify", post(mfa::verify_sms))
+        .route("/auth/capabilities", get(crate::factors::capabilities))
+        .route("/auth/factors", get(crate::factors::list))
+        .route(
+            "/auth/factors/{factorId}",
+            delete(crate::factors::delete),
+        )
+        .route(
+            "/auth/factors/totp/enroll",
+            post(crate::factors::enroll_totp),
+        )
+        .route(
+            "/auth/factors/totp/confirm",
+            post(crate::factors::confirm_totp),
+        )
+        .route(
+            "/auth/challenges",
+            post(crate::factors::create_challenge),
+        )
+        .route(
+            "/auth/challenges/{challengeId}/verify",
+            post(crate::factors::verify_challenge),
+        )
+        .route(
+            "/auth/passkeys/registration/options",
+            post(crate::factors::start_passkey_registration),
+        )
+        .route(
+            "/auth/passkeys/registration/verify",
+            post(crate::factors::finish_passkey_registration),
+        )
+        .route(
+            "/auth/passkeys/authentication/options",
+            post(crate::factors::start_passkey_authentication),
+        )
+        .route(
+            "/auth/passkeys/authentication/verify",
+            post(crate::factors::finish_passkey_authentication),
+        )
         .route("/auth/refresh", post(local::refresh))
         .route("/auth/logout", post(local::logout))
         .route("/auth/introspect", post(introspect::introspect))
@@ -107,7 +151,7 @@ fn build_cors(state: &AppState) -> CorsLayer {
         .collect::<Vec<_>>();
     CorsLayer::new()
         .allow_origin(origins)
-        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
         .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
 }
 

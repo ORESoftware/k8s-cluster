@@ -44,6 +44,9 @@ pub struct SessionResponse {
     shared_user_id: String,
     provider: String,
     roles: Vec<String>,
+    amr: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    acr: Option<String>,
 }
 
 pub async fn register(
@@ -131,6 +134,8 @@ pub async fn refresh(
         shared_user_id: session.identity.shared_user_id.to_string(),
         provider: session.identity.provider,
         roles: session.identity.roles,
+        amr: access.amr,
+        acr: access.acr,
     }))
 }
 
@@ -156,14 +161,34 @@ pub async fn logout(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn response_from_issued(
+pub(crate) async fn response_from_issued(
     state: &AppState,
     identity: crate::db::AuthenticatedIdentity,
+) -> Result<SessionResponse, AuthError> {
+    let method = match identity.provider.as_str() {
+        "local" => "password",
+        "magic_link" => "email",
+        "supabase" => "federated",
+        _ => "external",
+    };
+    response_from_issued_with_assurance(state, identity, 1, vec![method.to_owned()]).await
+}
+
+pub(crate) async fn response_from_issued_with_assurance(
+    state: &AppState,
+    identity: crate::db::AuthenticatedIdentity,
+    auth_level: u8,
+    auth_methods: Vec<String>,
 ) -> Result<SessionResponse, AuthError> {
     let shared_user_id = identity.shared_user_id.to_string();
     let provider = identity.provider.clone();
     let roles = identity.roles.clone();
-    let issued = session_tokens::issue(state, identity).await?;
+    let issued = session_tokens::issue_with_assurance(
+        state,
+        identity,
+        crate::token::AuthenticationAssurance::from_level_and_methods(auth_level, &auth_methods),
+    )
+    .await?;
     Ok(SessionResponse {
         access_token: issued.access.token,
         token_type: "Bearer",
@@ -173,6 +198,8 @@ async fn response_from_issued(
         shared_user_id,
         provider,
         roles,
+        amr: issued.access.amr,
+        acr: issued.access.acr,
     })
 }
 
@@ -199,7 +226,7 @@ async fn enforce_limit(
     }
 }
 
-fn normalize_email(input: &str) -> Result<String, AuthError> {
+pub(crate) fn normalize_email(input: &str) -> Result<String, AuthError> {
     let email = input.trim().to_ascii_lowercase();
     let mut parts = email.split('@');
     let local = parts.next().unwrap_or_default();

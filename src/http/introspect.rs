@@ -108,6 +108,7 @@ pub async fn introspect(
             "email": claims.email,
             "email_verified": claims.email_verified,
             "roles": claims.roles,
+            "aal": claims.aal,
             "amr": claims.amr,
             "acr": claims.acr,
         }))
@@ -131,7 +132,10 @@ pub async fn verify(State(state): State<AppState>, headers: HeaderMap) -> impl I
                 &claims.provider_tenant,
             );
             insert_header(&mut output, "x-auth-roles", &claims.roles.join(","));
-            insert_header(&mut output, "x-auth-amr", &claims.amr.join(","));
+            insert_header(&mut output, "x-auth-aal", &claims.aal.to_string());
+            if !claims.amr.is_empty() {
+                insert_header(&mut output, "x-auth-amr", &claims.amr.join(","));
+            }
             if let Some(acr) = &claims.acr {
                 insert_header(&mut output, "x-auth-acr", acr);
             }

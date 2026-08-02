@@ -9,6 +9,7 @@ use anyhow::Context;
 use crate::cache::Cache;
 use crate::config::AppConfig;
 use crate::db::DbStore;
+use crate::factors::FactorService;
 use crate::metrics::Metrics;
 use crate::supabase::ProjectRegistry;
 use crate::token::TokenMinter;
@@ -22,6 +23,10 @@ pub struct AppState {
     pub minter: Arc<TokenMinter>,
     /// Postgres identity/session authority (optional only in explicit DB-less development).
     pub db: Option<DbStore>,
+    /// Durable factor and ceremony authority. It is absent only in explicit
+    /// DB-less development mode; individual methods remain disabled unless
+    /// their encryption or WebAuthn configuration is present.
+    pub factors: Option<FactorService>,
     /// Optional, non-authoritative Redis/Valkey acceleration.
     pub cache: Option<Cache>,
     /// Outbound client for JWKS fetches (kept warm; connection-pooled).
@@ -45,15 +50,19 @@ impl AppState {
 
         let minter = TokenMinter::from_config(&config.signing).context("building token minter")?;
 
-        let db = match &config.db {
-            Some(db_cfg) => Some(
-                DbStore::connect(db_cfg)
+        let (db, factors) = match &config.db {
+            Some(db_cfg) => {
+                let db = DbStore::connect(db_cfg)
                     .await
-                    .context("connecting to RDS")?,
-            ),
+                    .context("connecting to RDS")?;
+                let factors = FactorService::connect(db_cfg)
+                    .await
+                    .context("initializing durable factor service")?;
+                (Some(db), Some(factors))
+            }
             None => {
                 tracing::warn!("AUTH_DATABASE_URL unset — explicit DB-less development mode");
-                None
+                (None, None)
             }
         };
 
@@ -73,6 +82,7 @@ impl AppState {
             supabase: Arc::new(supabase),
             minter: Arc::new(minter),
             db,
+            factors,
             cache,
             http,
             metrics: Metrics::new(),

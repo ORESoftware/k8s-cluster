@@ -23,7 +23,9 @@
 pub mod cache;
 pub mod config;
 pub mod db;
+pub mod email;
 pub mod error;
+pub mod factors;
 pub mod flags;
 pub mod http;
 pub mod metrics;
@@ -33,6 +35,7 @@ pub mod state;
 pub mod supabase;
 pub mod telemetry;
 pub mod token;
+pub mod twilio;
 pub mod views;
 
 use anyhow::Context;

@@ -119,6 +119,7 @@ impl SupabaseVerifier {
             return Err(AuthError::Unauthorized);
         }
 
+        let (auth_level, auth_methods) = claims.assurance();
         Ok(VerifiedIdentity {
             project: self.project.clone(),
             supabase_user_id: claims.sub.clone(),
@@ -134,6 +135,8 @@ impl SupabaseVerifier {
                 .app_metadata
                 .clone()
                 .unwrap_or(serde_json::Value::Null),
+            auth_level,
+            auth_methods,
         })
     }
 

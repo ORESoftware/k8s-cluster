@@ -8,7 +8,8 @@ use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use shared_auth_server::config::{
-    AppConfig, SessionConfig, SigningConfig, SupabaseApiKeys, SupabaseProject,
+    AppConfig, MagicLinkConfig, SessionConfig, SigningConfig, SupabaseApiKeys, SupabaseProject,
+    TwilioVerifyConfig,
 };
 use shared_auth_server::state::AppState;
 use tower::ServiceExt;
@@ -55,6 +56,20 @@ fn config() -> AppConfig {
             refresh_ttl_secs: 3600,
             allow_registration: false,
         },
+        magic_links: MagicLinkConfig {
+            sendgrid_api_key: None,
+            otp_pepper: None,
+            from_email: None,
+            from_name: "OreSoftware".into(),
+            link_base_url: None,
+            ttl_secs: 900,
+            allow_signup: false,
+        },
+        twilio_verify: TwilioVerifyConfig {
+            account_sid: None,
+            auth_token: None,
+            service_sid: None,
+        },
         webhook_secret: None,
         introspect_secret: None,
         cors_allow_origins: vec![],
@@ -78,6 +93,25 @@ fn supabase_token(sub: &str, email: &str) -> String {
         "sub": sub, "aud": "authenticated", "iss": SUPA_ISS,
         "exp": chrono::Utc::now().timestamp() + 3600,
         "email": email, "email_verified": true,
+    });
+    jsonwebtoken::encode(
+        &Header::new(Algorithm::HS256),
+        &claims,
+        &EncodingKey::from_secret(SUPA_SECRET.as_bytes()),
+    )
+    .unwrap()
+}
+
+fn supabase_aal2_token(sub: &str, email: &str) -> String {
+    let claims = serde_json::json!({
+        "sub": sub, "aud": "authenticated", "iss": SUPA_ISS,
+        "exp": chrono::Utc::now().timestamp() + 3600,
+        "email": email, "email_verified": true,
+        "aal": "aal2",
+        "amr": [
+            {"method": "password", "timestamp": chrono::Utc::now().timestamp() - 30},
+            {"method": "otp", "timestamp": chrono::Utc::now().timestamp()}
+        ]
     });
     jsonwebtoken::encode(
         &Header::new(Algorithm::HS256),
@@ -155,6 +189,47 @@ async fn exchange_then_introspect_roundtrip() {
     assert_eq!(intro["active"], true);
     assert_eq!(intro["project"], "fiducia-cloud");
     assert_eq!(intro["supabase_user_id"], "supa-user-1");
+    assert_eq!(intro["aal"], 1);
+    assert_eq!(intro["amr"], serde_json::json!(["federated"]));
+}
+
+#[tokio::test]
+async fn exchange_preserves_supabase_aal2() {
+    let app = app().await;
+    let supa = supabase_aal2_token("supa-mfa-user", "mfa@example.com");
+
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::post("/auth/exchange")
+                .header("authorization", format!("Bearer {supa}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let out: serde_json::Value = serde_json::from_str(&body_string(resp).await).unwrap();
+
+    let resp = app
+        .oneshot(
+            Request::post("/auth/introspect")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({ "token": out["access_token"] }).to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let intro: serde_json::Value = serde_json::from_str(&body_string(resp).await).unwrap();
+    assert_eq!(intro["active"], true);
+    assert_eq!(intro["aal"], 2);
+    // AMR values are canonicalized on the way in, so the upstream "password"
+    // is recorded as the RFC 8176 registered value "pwd" rather than verbatim.
+    // Downstream policy therefore matches one spelling instead of every
+    // provider's variant. See AuthenticationAssurance::from_supabase.
+    assert_eq!(intro["amr"], serde_json::json!(["federated", "pwd", "otp"]));
 }
 
 #[tokio::test]
@@ -281,6 +356,8 @@ async fn verify_endpoint_accepts_our_token_and_sets_headers() {
         "fiducia-cloud"
     );
     assert!(resp.headers().get("x-auth-user-id").is_some());
+    assert_eq!(resp.headers().get("x-auth-aal").unwrap(), "1");
+    assert_eq!(resp.headers().get("x-auth-amr").unwrap(), "federated");
 }
 
 #[tokio::test]
@@ -456,4 +533,31 @@ async fn dbless_shared_id_is_deterministic() {
     let out: serde_json::Value = serde_json::from_str(&body_string(resp).await).unwrap();
     let first = out["shared_user_id"].as_str().unwrap();
     assert!(uuid::Uuid::parse_str(first).is_ok());
+}
+
+#[tokio::test]
+async fn optional_passwordless_and_sms_endpoints_fail_closed_without_configuration() {
+    let app = app().await;
+    let passwordless = app
+        .clone()
+        .oneshot(
+            Request::post("/auth/passwordless/request")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"email":"person@example.com"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(passwordless.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+    let sms = app
+        .oneshot(
+            Request::post("/auth/mfa/sms/request")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"phone":"+14155550100"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(sms.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
