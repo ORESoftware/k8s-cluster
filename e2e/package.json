@@ -1,13 +1,19 @@
 {
   "name": "t2v-web-e2e",
   "private": true,
+  "type": "module",
   "version": "0.1.0",
-  "description": "Playwright browser end-to-end tests for the t2v-web MASH dashboard.",
+  "description": "Browser e2e for the t2v-web MASH dashboard — Playwright + Puppeteer + Selenium, driven by node --test (fleet convention).",
   "scripts": {
-    "test": "playwright test",
+    "test": "node --test --test-concurrency=1 --test-timeout=300000 site-playwright.test.mjs site-puppeteer.test.mjs site-selenium.test.mjs",
+    "test:playwright": "node --test --test-timeout=300000 site-playwright.test.mjs",
+    "test:puppeteer": "node --test --test-timeout=300000 site-puppeteer.test.mjs",
+    "test:selenium": "node --test --test-timeout=300000 site-selenium.test.mjs",
     "install-browsers": "playwright install --with-deps chromium"
   },
   "devDependencies": {
-    "@playwright/test": "^1.48.0"
+    "playwright": "^1.48.0",
+    "puppeteer": "^25.3.0",
+    "selenium-webdriver": "^4.25.0"
   }
 }
