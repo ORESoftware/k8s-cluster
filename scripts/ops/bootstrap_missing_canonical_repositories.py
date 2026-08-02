@@ -34,6 +34,10 @@ SPEC.loader.exec_module(CORE)
 
 FLEET_SOURCE_REPOSITORY = "ORESoftware/ai-agent-coordinator.rs"
 FLEET_SOURCE_SHA = "5d9a0c2cb44dff607bc3953954ce4b9af08e5789"
+FLEET_SOURCE_ARCHIVE_URL = (
+    "https://github.com/ORESoftware/ai-agent-coordinator.rs/archive/"
+    "5d9a0c2cb44dff607bc3953954ce4b9af08e5789.tar.gz"
+)
 FLEET_GENERATOR_SHA256 = (
     "a57b00961ee57ae09bf3bb2e2d09afbdd1ddbbbde832b027802f82a1fc5dfa84"
 )
@@ -148,21 +152,23 @@ def ensure_repository(
 
 
 def load_reconstructed_fleet(work: Path) -> tuple[Path, dict[str, Any]]:
-    carrier = work / "fleet-carrier"
+    archive = work / "fleet-source.tar.gz"
     run(
         [
-            "git",
-            "clone",
-            "--filter=blob:none",
-            "--no-checkout",
-            f"https://github.com/{FLEET_SOURCE_REPOSITORY}.git",
-            str(carrier),
+            "curl",
+            "--fail",
+            "--location",
+            "--silent",
+            "--show-error",
+            FLEET_SOURCE_ARCHIVE_URL,
+            "--output",
+            str(archive),
         ]
     )
-    run(["git", "-C", str(carrier), "fetch", "--depth=1", "origin", FLEET_SOURCE_SHA])
-    run(["git", "-C", str(carrier), "checkout", "--detach", FLEET_SOURCE_SHA])
-    if run(["git", "-C", str(carrier), "rev-parse", "HEAD"]).strip() != FLEET_SOURCE_SHA:
-        fail("fleet source checkout drifted")
+    run(["tar", "-xzf", str(archive), "-C", str(work)])
+    carrier = work / f"ai-agent-coordinator.rs-{FLEET_SOURCE_SHA}"
+    if not carrier.is_dir():
+        fail(f"commit-pinned fleet archive extracted to an unexpected path: {carrier}")
 
     payload_dir = carrier / "repository-fleets/hypesiege-streempilot"
     checked_manifest_path = carrier / "repository-fleets/hypesiege-streempilot.json"
