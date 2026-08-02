@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: one-shot-extracted-visibility-contract-repair
@@ -21,6 +22,8 @@ jobs:
       github.actor == 'ORESoftware'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      PRODUCT_BRANCH: fix/den-1058-extracted-visibility-product
     steps:
       - name: Check out exact trusted main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -28,6 +31,12 @@ jobs:
           ref: main
           fetch-depth: 2
           persist-credentials: true
+
+      - name: Create isolated product branch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git switch -c "$PRODUCT_BRANCH"
 
       - name: Reconcile public Meta Agents and private File Tunnel contracts
         shell: bash
@@ -175,8 +184,10 @@ jobs:
             -v
           git diff --check
 
-      - name: Commit the ordinary final state to main
+      - name: Commit product branch and open review PR
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -Eeuo pipefail
           git add \
@@ -193,4 +204,10 @@ jobs:
           git config user.name ORESoftware
           git config user.email 11139560+ORESoftware@users.noreply.github.com
           git commit -m 'fix(DEN-1058): make Meta Agents public and File Tunnel private'
-          git push origin HEAD:main
+          git push origin "HEAD:${PRODUCT_BRANCH}"
+          gh pr create \
+            --repo "$GITHUB_REPOSITORY" \
+            --base main \
+            --head "$PRODUCT_BRANCH" \
+            --title 'fix(DEN-1058): correct extracted repository visibility contract' \
+            --body 'Tested product correction generated from trusted main. Meta Agents is public; File Tunnel remains private. The normal finalizer workflow is restored in this branch. Refs DEN-1057, DEN-1058, DEN-319, DEN-973.'
