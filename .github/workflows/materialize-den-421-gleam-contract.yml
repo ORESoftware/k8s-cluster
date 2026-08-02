@@ -43,6 +43,18 @@ jobs:
                   '  assert.match(main, /http_server\\.supervised\\(metrics_name, nats_handle\\)/);',
               ),
               (
+                  '  assert.match(httpServer, /@external\\(erlang, "gleam_mcp_json", "request_id"\\)/);',
+                  '  assert.match(httpServer, /@external\\(erlang, "gleam_mcp_json", "parse_request"\\)/);\n  assert.match(httpServer, /fn parse_request\\(body: String\\) -> #\\(String, String, String, String\\)/);',
+              ),
+              (
+                  '  assert.match(jsonFfi, /method\\/1/);',
+                  '  assert.match(jsonFfi, /parse_request\\/1/);',
+              ),
+              (
+                  '  assert.match(jsonFfi, /tool_name\\/1/);',
+                  '  assert.match(jsonFfi, /tool_name\\(Params\\)/);',
+              ),
+              (
                   '  // Warm worker containers spawned by `dd-container-pool` reach MCP from\n  // the EC2 node host network, so the policy must allow RFC1918 ingress\n  // on :8090 in addition to the labelled podSelector clauses above.',
                   '  // Warm worker containers spawned by `dd-container-pool` reach MCP from\n  // the EC2 node host network. Restrict that exception to the exact VPC\n  // CIDR; broad RFC1918 ranges would also admit unrelated pod networks.',
               ),
