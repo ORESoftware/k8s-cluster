@@ -592,13 +592,33 @@ async function runScenario(
     500,
     config.maxTimeoutMs,
   );
-  const overallTimer = setTimeoutPromise(overallTimeoutMs).then(() => {
-    throw new Error(`scenario exceeded overall timeout of ${overallTimeoutMs}ms`);
+  const abortController = new AbortController();
+  let activeDriver: ScenarioDriver | null = null;
+  let overallTimerHandle: NodeJS.Timeout | null = null;
+  const timeoutError = new Error(
+    `scenario exceeded overall timeout of ${overallTimeoutMs}ms`,
+  );
+  const overallTimer = new Promise<never>((_resolve, reject) => {
+    overallTimerHandle = setTimeout(() => {
+      abortController.abort(timeoutError);
+      const driver = activeDriver;
+      if (!driver) {
+        reject(timeoutError);
+        return;
+      }
+      void driver
+        .close()
+        .catch(() => undefined)
+        .finally(() => reject(timeoutError));
+    }, overallTimeoutMs);
+    overallTimerHandle.unref?.();
   });
 
   const work = (async (): Promise<{ finalUrl?: string; finalTitle?: string; ok: boolean; error?: string }> => {
     const driver = await openDriver(tool, input);
+    activeDriver = driver;
     try {
+      throwIfAborted(abortController.signal);
       // Optional opening goto: if the request specifies a top-level url and
       // the first step isn't a goto, navigate first to keep the scenario
       // declarative.
@@ -611,7 +631,7 @@ async function runScenario(
       for (const step of input.steps) {
         const stepStart = Date.now();
         try {
-          await runStep(driver, step, extracted, screenshots);
+          await runStep(driver, step, extracted, screenshots, abortController.signal);
           steps.push({
             index: stepIndex,
             action: step.action,
@@ -668,6 +688,7 @@ async function runScenario(
 
       return { ok: true, finalUrl, finalTitle };
     } finally {
+      if (activeDriver === driver) activeDriver = null;
       await driver.close().catch(() => undefined);
     }
   })();
@@ -676,8 +697,14 @@ async function runScenario(
   try {
     outcome = await Promise.race([work, overallTimer]);
   } catch (error) {
+    abortController.abort(error);
+    const driver = activeDriver;
+    if (driver) await driver.close().catch(() => undefined);
+    await work.catch(() => undefined);
     const message = error instanceof Error ? error.message : String(error);
     outcome = { ok: false, error: message };
+  } finally {
+    if (overallTimerHandle) clearTimeout(overallTimerHandle);
   }
 
   const finishedAtIso = new Date().toISOString();
@@ -713,7 +740,7 @@ interface ScenarioDriver {
     timeoutMs: number,
   ): Promise<void>;
   waitForUrl(pattern: string, timeoutMs: number): Promise<void>;
-  waitForTimeout(ms: number): Promise<void>;
+  waitForTimeout(ms: number, signal: AbortSignal): Promise<void>;
   extractText(selector: string, timeoutMs: number): Promise<string>;
   extractAttribute(selector: string, attribute: string, timeoutMs: number): Promise<string>;
   screenshot(name: string, fullPage: boolean): Promise<ScreenshotPayload | null>;
@@ -736,7 +763,9 @@ async function runStep(
   step: Step,
   extracted: Record<string, string>,
   screenshots: ScreenshotPayload[],
+  signal: AbortSignal,
 ): Promise<void> {
+  throwIfAborted(signal);
   const timeoutMs = step.timeoutMs ?? config.defaultStepTimeoutMs;
   switch (step.action) {
     case 'goto':
@@ -761,7 +790,7 @@ async function runStep(
       await driver.waitForUrl(step.url, timeoutMs);
       return;
     case 'waitForTimeout':
-      await driver.waitForTimeout(step.ms);
+      await driver.waitForTimeout(step.ms, signal);
       return;
     case 'extractText': {
       const value = await driver.extractText(step.selector, timeoutMs);
@@ -865,8 +894,8 @@ async function openPlaywrightDriver(input: RunRequest): Promise<ScenarioDriver> 
     waitForUrl: async (urlPattern, timeoutMs) => {
       await page.waitForURL(urlPattern, { timeout: timeoutMs });
     },
-    waitForTimeout: async (ms) => {
-      await page.waitForTimeout(ms);
+    waitForTimeout: async (ms, signal) => {
+      await abortableDelay(ms, signal);
     },
     extractText: async (selector, timeoutMs) => {
       const handle = await page.waitForSelector(selector, { state: 'attached', timeout: timeoutMs });
@@ -1002,8 +1031,8 @@ async function openPuppeteerDriver(input: RunRequest): Promise<ScenarioDriver> {
         urlPattern,
       );
     },
-    waitForTimeout: async (ms) => {
-      await new Promise((resolve) => setTimeout(resolve, ms));
+    waitForTimeout: async (ms, signal) => {
+      await abortableDelay(ms, signal);
     },
     extractText: async (selector, timeoutMs) => {
       await page.waitForSelector(selector, { timeout: timeoutMs });
@@ -1161,8 +1190,8 @@ async function openSeleniumDriver(input: RunRequest): Promise<ScenarioDriver> {
           : seleniumUntil.urlContains(urlPattern);
       await driver.wait(condition, timeoutMs);
     },
-    waitForTimeout: async (ms) => {
-      await driver.sleep(ms);
+    waitForTimeout: async (ms, signal) => {
+      await abortableDelay(ms, signal);
     },
     extractText: async (selector, timeoutMs) => {
       const element = await findOne(selector, 0, timeoutMs);
@@ -1197,6 +1226,34 @@ async function openSeleniumDriver(input: RunRequest): Promise<ScenarioDriver> {
 
 // --- Helpers -------------------------------------------------------------
 
+function abortSignalError(signal: AbortSignal): Error {
+  const reason = signal.reason;
+  return reason instanceof Error ? reason : new Error(reason ? String(reason) : 'scenario aborted');
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw abortSignalError(signal);
+}
+
+function abortableDelay(ms: number, signal: AbortSignal): Promise<void> {
+  throwIfAborted(signal);
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      callback();
+    };
+    const timer = setTimeout(() => finish(resolve), ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      finish(() => reject(abortSignalError(signal)));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) onAbort();
+  });
+}
 function clampScreenshot(
   name: string,
   contentType: 'image/png' | 'image/jpeg',
@@ -1377,13 +1434,6 @@ function readBooleanEnv(name: string, fallback: boolean): boolean {
 function clampNumber(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, value));
-}
-
-function setTimeoutPromise(ms: number): Promise<never> {
-  return new Promise((_resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`timeout after ${ms}ms`)), ms);
-    timer.unref?.();
-  });
 }
 
 async function closeBrowsers(): Promise<void> {
