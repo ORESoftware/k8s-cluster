@@ -2,10 +2,10 @@
 """Finalize and verify the fixed critical cross-organization repository fleet.
 
 The 32 HypeSiege/StreemPilot repositories are public and must exactly match the
-schema-v2 manifest pinned in ``ORESoftware/ai-agent-coordinator.rs``. The two
-extracted repositories remain private. Verification is read-first and
-fail-closed; CI carrier activation happens only after every non-mutating fleet
-preflight succeeds.
+schema-v2 manifest pinned in ``ORESoftware/ai-agent-coordinator.rs``. The
+extracted Meta Agents repository remains public while File Tunnel remains
+private. Verification is read-first and fail-closed; CI carrier activation
+happens only after every non-mutating fleet preflight succeeds.
 """
 
 from __future__ import annotations
@@ -36,8 +36,14 @@ EXPECTED_GENERATOR_SHA256 = (
 EXPECTED_ORGS = {"hypesiege": 15, "streempilot": 17}
 REPORT_ORG_KEYS = {"hypesiege": "hypesiege", "streempilot": "StreemPilot"}
 EXTRACTED = {
-    "meta-agents-demo/meta-agent-control-plane.rs": ".meta-agent-ci.yml.pending",
-    "file-tunnel/ftnl-mcp-server.rs": ".ftnl-mcp-ci.yml.pending",
+    "meta-agents-demo/meta-agent-control-plane.rs": {
+        "pending_path": ".meta-agent-ci.yml.pending",
+        "visibility": "public",
+    },
+    "file-tunnel/ftnl-mcp-server.rs": {
+        "pending_path": ".ftnl-mcp-ci.yml.pending",
+        "visibility": "private",
+    },
 }
 TRIGGER_PULLS = (227, 229, 230, 231)
 SHA_RE = re.compile(r"[0-9a-f]{40}")
@@ -393,7 +399,9 @@ def build_report(credential: str) -> dict[str, Any]:
     organizations = verify_public_fleet(manifest, credential)
 
     extracted_preflight: dict[str, dict[str, Any]] = {}
-    for slug, pending_path in EXTRACTED.items():
+    for slug, contract in EXTRACTED.items():
+        pending_path = contract["pending_path"]
+        expected_visibility = contract["visibility"]
         repository = api("GET", f"/repos/{slug}", credential)
         if not isinstance(repository, dict):
             raise PublicationError(f"{slug}: repository metadata is missing")
@@ -401,7 +409,7 @@ def build_report(credential: str) -> dict[str, Any]:
             slug,
             repository,
             credential,
-            expected_visibility="private",
+            expected_visibility=expected_visibility,
         )
         inspect_ci_state(slug, pending_path, credential)
         extracted_preflight[slug] = verified
@@ -413,7 +421,8 @@ def build_report(credential: str) -> dict[str, Any]:
         )
 
     extracted: dict[str, dict[str, Any]] = {}
-    for slug, pending_path in EXTRACTED.items():
+    for slug, contract in EXTRACTED.items():
+        pending_path = contract["pending_path"]
         action = activate_ci(slug, pending_path, credential)
         if get_content(slug, ".github/workflows/ci.yml", credential) is None:
             raise PublicationError(f"{slug}: canonical CI is missing after activation")
@@ -437,7 +446,9 @@ def build_report(credential: str) -> dict[str, Any]:
             "hypesiege": 15,
             "streempilot": 17,
             "public_fleet": 32,
-            "extracted_private": 2,
+            "extracted": 2,
+            "extracted_public": 1,
+            "extracted_private": 1,
             "total": 34,
         },
         "organizations": organizations
@@ -482,7 +493,7 @@ def markdown(report: dict[str, Any]) -> str:
                 "",
                 f"- repository ID: `{repository['id']}`",
                 f"- `main`: `{repository['main_sha']}`",
-                "- visibility: private",
+                f"- visibility: {repository['visibility']}",
                 f"- canonical CI: {repository['ci']} ({repository['ci_action']})",
                 "- staged CI carrier: removed",
                 "",
