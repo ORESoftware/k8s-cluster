@@ -6,11 +6,13 @@ on:
     branches: [main]
     paths:
       - .github/critical-org-publish-trigger-main
+      - .github/canonical-gap-bootstrap-dispatch-trigger
 
 permissions:
   actions: write
   contents: read
   issues: write
+  pull-requests: write
   statuses: write
 
 concurrency:
@@ -166,3 +168,185 @@ jobs:
           gh pr comment "$PR_NUMBER" --repo "$repository" \
             --body "Publisher v2 completed with **${conclusion:-unknown}**: ${run_url}" >/dev/null || true
           test "$conclusion" = success
+
+  bootstrap_canonical_gaps:
+    if: >-
+      github.event.pull_request.user.login == 'ORESoftware' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/dispatch-canonical-gap-bootstrap-20260801-v1' &&
+      github.event.pull_request.title == 'DO NOT MERGE: dispatch safe canonical repository-gap bootstrap'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      TRIGGER_PR: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha }}
+      TRACKING_PR: '471'
+      EXPECTED_LOGIN: ORESoftware
+      MARKER_PATH: .github/canonical-gap-bootstrap-dispatch-trigger
+      FLEET_SOURCE_SHA: 5d9a0c2cb44dff607bc3953954ce4b9af08e5789
+      WORKFLOW_BLOB_SHA: 825d5e5b297c8ea94a988834ca1664138b3eb37a
+      SCRIPT_BLOB_SHA: 802c0e1bbb6ca7840a509af8efad04c811cc27cd
+      GH_CONFIG_DIR: ${{ runner.temp }}/canonical-repository-gap-owner-auth
+
+    steps:
+      - name: Validate exact gap carrier and trusted-main source pins
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          pull="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRIGGER_PR}")"
+          jq -e '
+            .state == "open" and
+            .draft == true and
+            .user.login == "ORESoftware" and
+            .base.ref == "main" and
+            .head.repo.full_name == "ORESoftware/k8s-cluster" and
+            .head.ref == "agent/dispatch-canonical-gap-bootstrap-20260801-v1" and
+            .title == "DO NOT MERGE: dispatch safe canonical repository-gap bootstrap" and
+            .commits == 1 and
+            .changed_files == 1 and
+            .additions == 4 and
+            .deletions == 0
+          ' <<<"$pull" >/dev/null
+
+          files="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRIGGER_PR}/files?per_page=100")"
+          test "$(jq 'length' <<<"$files")" -eq 1
+          jq -e --arg marker "$MARKER_PATH" '
+            .[0].filename == $marker and
+            .[0].status == "added" and
+            .[0].additions == 4 and
+            .[0].deletions == 0 and
+            .[0].changes == 4
+          ' <<<"$files" >/dev/null
+
+          encoded="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${MARKER_PATH}?ref=${TARGET_SHA}" --jq .content)"
+          marker="$(printf '%s' "$encoded" | tr -d '\n' | base64 --decode)"
+          expected=$'target=canonical-gap-bootstrap-v1\nworkflow=825d5e5b297c8ea94a988834ca1664138b3eb37a\nscript=802c0e1bbb6ca7840a509af8efad04c811cc27cd\nfleet-source=5d9a0c2cb44dff607bc3953954ce4b9af08e5789'
+          test "$marker" = "$expected"
+
+          canonical="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${TRACKING_PR}")"
+          jq -e '
+            .state == "open" and
+            .draft == true and
+            .user.login == "ORESoftware" and
+            .base.ref == "main" and
+            .head.repo.full_name == "ORESoftware/k8s-cluster" and
+            .head.ref == "agent/critical-org-fleet-device-auth-20260731-v1" and
+            .title == "DO NOT MERGE: publish exact 34-repository organization fleet" and
+            .commits == 1 and
+            .changed_files == 1
+          ' <<<"$canonical" >/dev/null
+
+          workflow="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/ops-bootstrap-canonical-repository-gaps.yml?ref=main")"
+          test "$(jq -er .sha <<<"$workflow")" = "$WORKFLOW_BLOB_SHA"
+          script="$(gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/ops/bootstrap_missing_canonical_repositories.py?ref=main")"
+          test "$(jq -er .sha <<<"$script")" = "$SCRIPT_BLOB_SHA"
+
+      - name: Check out trusted main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Authorize owner and materialize only missing or empty repositories
+        shell: bash
+        env:
+          COMMENT_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          rm -rf "$GH_CONFIG_DIR"
+          mkdir -p "$GH_CONFIG_DIR"
+          auth_log="$RUNNER_TEMP/canonical-repository-gap-owner-auth.log"
+          : > "$auth_log"
+          auth_pid=''
+
+          cleanup() {
+            if [[ -n "${auth_pid:-}" ]] && kill -0 "$auth_pid" 2>/dev/null; then
+              kill "$auth_pid" 2>/dev/null || true
+              wait "$auth_pid" 2>/dev/null || true
+            fi
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN token
+            rm -f "$auth_log"
+            rm -rf "$GH_CONFIG_DIR"
+          }
+          trap cleanup EXIT
+
+          (
+            env -u GH_TOKEN -u GITHUB_TOKEN \
+              GH_PROMPT_DISABLED=1 NO_COLOR=1 BROWSER=/bin/false \
+              gh auth login --hostname github.com --git-protocol https --web \
+                --scopes repo,read:org --insecure-storage
+          ) > "$auth_log" 2>&1 &
+          auth_pid=$!
+
+          code=''
+          for _ in $(seq 1 45); do
+            code="$(tr -d '\r' < "$auth_log" | grep -Eo '[A-Z0-9]{4}-[A-Z0-9]{4}' | head -n1 || true)"
+            test -z "$code" || break
+            kill -0 "$auth_pid" 2>/dev/null || break
+            sleep 1
+          done
+          if [[ -z "$code" ]]; then
+            wait "$auth_pid" 2>/dev/null || true
+            auth_pid=''
+            sed -E 's/[A-Z0-9]{4}-[A-Z0-9]{4}/[REDACTED-CODE]/g' "$auth_log" >&2 || true
+            exit 1
+          fi
+
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body="**Fresh gap-bootstrap authorization:** open https://github.com/login/device and enter **\`$code\`**. Ignore all earlier codes. This run creates only missing/empty canonical repositories as private repositories, preserves every existing visibility and history, and never force-pushes. Run: ${run_url}"
+          GH_TOKEN="$COMMENT_TOKEN" gh pr comment "$TRIGGER_PR" --repo "$GITHUB_REPOSITORY" --body "$body"
+          GH_TOKEN="$COMMENT_TOKEN" gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body "$body"
+          echo "::notice title=GitHub device authorization::Open https://github.com/login/device and enter $code"
+
+          set +e
+          wait "$auth_pid"
+          auth_rc=$?
+          set -e
+          auth_pid=''
+          if [[ "$auth_rc" -ne 0 ]]; then
+            sed -E 's/[A-Z0-9]{4}-[A-Z0-9]{4}/[REDACTED-CODE]/g' "$auth_log" >&2 || true
+            exit "$auth_rc"
+          fi
+          rm -f "$auth_log"
+
+          test "$(env -u GH_TOKEN -u GITHUB_TOKEN gh api user --jq .login)" = "$EXPECTED_LOGIN"
+          for organization in hypesiege StreemPilot meta-agents-demo file-tunnel unreal-unity-poc; do
+            membership="$(env -u GH_TOKEN -u GITHUB_TOKEN gh api "user/memberships/orgs/${organization}")"
+            test "$(jq -er .role <<<"$membership")" = admin
+            test "$(jq -er .state <<<"$membership")" = active
+          done
+
+          token="$(env -u GH_TOKEN -u GITHUB_TOKEN gh auth token)"
+          test -n "$token"
+          [[ "$token" != *$'\n'* && "$token" != *$'\r'* && "$token" != *$'\t'* && "$token" != *' '* ]]
+          echo "::add-mask::$token"
+          export GH_TOKEN="$token"
+          export GITHUB_TOKEN="$token"
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$token"
+          export GIT_TERMINAL_PROMPT=0
+
+          python3 -m py_compile \
+            scripts/ops/publish_missing_org_repositories.py \
+            scripts/ops/bootstrap_missing_canonical_repositories.py
+          python3 scripts/ops/bootstrap_missing_canonical_repositories.py \
+            | tee "$RUNNER_TEMP/canonical-repository-gap-bootstrap.log"
+
+          unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN token
+          success="Canonical repository-gap bootstrap completed without overwriting existing histories or visibility. Missing repositories were created privately with sealed mains; divergent existing mains remain queued for semantic merge. ${run_url}"
+          GH_TOKEN="$COMMENT_TOKEN" gh pr comment "$TRIGGER_PR" --repo "$GITHUB_REPOSITORY" --body "$success"
+          GH_TOKEN="$COMMENT_TOKEN" gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body "$success"
+
+      - name: Record failed safe bootstrap
+        if: ${{ failure() }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body="Canonical repository-gap bootstrap failed before safe completion. No force push or visibility change is permitted. Inspect: ${run_url}"
+          gh pr comment "$TRIGGER_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+          gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
