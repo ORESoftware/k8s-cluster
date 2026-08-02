@@ -1,0 +1,112 @@
+name: Apply meta-agent bootstrap promotion to dev once
+
+on:
+  push:
+    branches:
+      - agent/promote-meta-agent-bootstrap-dev-den-1058
+    paths:
+      - .github/workflows/apply-meta-agent-bootstrap-dev-promotion-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-meta-agent-bootstrap-dev-promotion-den-1058
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    if: github.actor == 'ORESoftware'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out exact dev promotion branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/promote-meta-agent-bootstrap-dev-den-1058
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Apply only the coordinator revision contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          old = 'a6fb1f89e064c21dc1e435931c75e9871746d0f7'
+          new = 'd25e04e50be4a9fad039cfcfa6c321e9c99a1e02'
+          paths = [
+              Path('.github/workflows/ai-agent-coordinator-gitops.yml'),
+              Path('remote/argocd/apps/ai-agent-coordinator.application.yaml'),
+              Path('remote/argocd/clusters/aws/ai-agent-coordinator.applications.yaml'),
+              Path('remote/argocd/clusters/gcp/ai-agent-coordinator.applications.yaml'),
+              Path('remote/argocd/clusters/hetzner/ai-agent-coordinator.applications.yaml'),
+              Path('remote/argocd/projects/ai-agent-coordinator/README.md'),
+              Path('remote/tests/general/ai-agent-coordinator-gitops.test.ts'),
+          ]
+          for path in paths:
+              text = path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count < 1:
+                  raise SystemExit(f'{path}: expected the old coordinator revision')
+              if new in text:
+                  raise SystemExit(f'{path}: new revision already present beside old revision')
+              path.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+
+      - name: Regenerate the dev application catalog
+        shell: bash
+        run: |
+          set -euo pipefail
+          go install github.com/mikefarah/yq/v4@v4.45.1
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          yq --version
+          python3 tools/application_catalog.py generate catalog/applications.json
+          python3 tools/application_catalog.py check catalog/applications.json
+
+      - name: Validate focused dev result
+        shell: bash
+        run: |
+          set -euo pipefail
+          old='a6fb1f89e064c21dc1e435931c75e9871746d0f7'
+          new='d25e04e50be4a9fad039cfcfa6c321e9c99a1e02'
+          files=(
+            .github/workflows/ai-agent-coordinator-gitops.yml
+            catalog/applications.json
+            remote/argocd/apps/ai-agent-coordinator.application.yaml
+            remote/argocd/clusters/aws/ai-agent-coordinator.applications.yaml
+            remote/argocd/clusters/gcp/ai-agent-coordinator.applications.yaml
+            remote/argocd/clusters/hetzner/ai-agent-coordinator.applications.yaml
+            remote/argocd/projects/ai-agent-coordinator/README.md
+            remote/tests/general/ai-agent-coordinator-gitops.test.ts
+          )
+          ! grep -F "$old" "${files[@]}"
+          grep -F "$new" .github/workflows/ai-agent-coordinator-gitops.yml >/dev/null
+          grep -F "$new" remote/argocd/apps/ai-agent-coordinator.application.yaml >/dev/null
+          for cloud in aws gcp hetzner; do
+            grep -F "$new" "remote/argocd/clusters/${cloud}/ai-agent-coordinator.applications.yaml" >/dev/null
+          done
+          git diff --check
+          git diff --stat
+          git rm .github/workflows/apply-meta-agent-bootstrap-dev-promotion-once.yml
+          expected=$' M .github/workflows/ai-agent-coordinator-gitops.yml\n M catalog/applications.json\nD  .github/workflows/apply-meta-agent-bootstrap-dev-promotion-once.yml\n M remote/argocd/apps/ai-agent-coordinator.application.yaml\n M remote/argocd/clusters/aws/ai-agent-coordinator.applications.yaml\n M remote/argocd/clusters/gcp/ai-agent-coordinator.applications.yaml\n M remote/argocd/clusters/hetzner/ai-agent-coordinator.applications.yaml\n M remote/argocd/projects/ai-agent-coordinator/README.md\n M remote/tests/general/ai-agent-coordinator-gitops.test.ts'
+          test "$(git status --short | sort)" = "$(printf '%s\n' "$expected" | sort)"
+
+      - name: Commit the semantic dev promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            .github/workflows/ai-agent-coordinator-gitops.yml \
+            catalog/applications.json \
+            remote/argocd/apps/ai-agent-coordinator.application.yaml \
+            remote/argocd/clusters/aws/ai-agent-coordinator.applications.yaml \
+            remote/argocd/clusters/gcp/ai-agent-coordinator.applications.yaml \
+            remote/argocd/clusters/hetzner/ai-agent-coordinator.applications.yaml \
+            remote/argocd/projects/ai-agent-coordinator/README.md \
+            remote/tests/general/ai-agent-coordinator-gitops.test.ts
+          git commit -m 'ops(DEN-1058): promote meta-agent bootstrap on dev'
+          git push origin HEAD:refs/heads/agent/promote-meta-agent-bootstrap-dev-den-1058
