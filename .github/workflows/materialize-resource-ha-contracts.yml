@@ -113,6 +113,27 @@ jobs:
               'HA fleet maxUnavailable',
           )
 
+          dormant_line = '    "dd-mdp-optimizer",\n'
+          if dormant_line in ha_section:
+              ha_section = ha_section.replace(dormant_line, '', 1)
+
+          dormant_block = '''  const dormantMdp = await readRepoFile(
+            "remote/argocd/dd-next-runtime/dd-mdp-optimizer.deployment.yaml",
+          );
+          assert.match(dormantMdp, /name:\\s*dd-mdp-optimizer/);
+          assert.match(dormantMdp, /replicas:\\s*0/);
+          assert.match(dormantMdp, /type:\\s*RollingUpdate/);
+          assert.match(dormantMdp, /maxSurge:\\s*1/);
+          assert.match(dormantMdp, /maxUnavailable:\\s*0/);
+          assert.match(dormantMdp, /readinessProbe:[\\s\\S]*httpGet:/);
+
+          '''
+          if 'const dormantMdp = await readRepoFile' not in ha_section:
+              anchor = '  const desRs = await readRepoFile('
+              if anchor not in ha_section:
+                  raise SystemExit('dormant MDP insertion anchor is missing')
+              ha_section = ha_section.replace(anchor, dormant_block + anchor, 1)
+
           runtime_path.write_text(
               web_prefix
               + web_marker
@@ -147,7 +168,7 @@ jobs:
           --test-name-pattern='runtime deployments avoid routing to half-started rust services'
           general/nats-shadow-handoff.test.ts
 
-      - name: Verify two-replica zero-unavailable rollout profiles
+      - name: Verify active HA and dormant MDP rollout profiles
         working-directory: remote/tests
         run: >-
           pnpm exec tsx --test
