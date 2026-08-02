@@ -59,7 +59,7 @@ jobs:
       github.event.issue.pull_request != null &&
       github.event.issue.number == 471 &&
       github.event.comment.user.login == 'ORESoftware' &&
-      github.event.comment.body == 'ops-run-canonical-gap-bootstrap:825d5e5b297c8ea94a988834ca1664138b3eb37a'
+      github.event.comment.body == 'ops-run-canonical-gap-bootstrap:112cb7e8249c6a2a41de9799fca870f5cabde055'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -98,13 +98,13 @@ jobs:
 
           workflow="$(gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/ops-bootstrap-canonical-repository-gaps.yml?ref=main")"
           test "$(jq -er .name <<<"$workflow")" = ops-bootstrap-canonical-repository-gaps.yml
-          test "$(jq -er .sha <<<"$workflow")" = 825d5e5b297c8ea94a988834ca1664138b3eb37a
+          test "$(jq -er .sha <<<"$workflow")" = 112cb7e8249c6a2a41de9799fca870f5cabde055
 
           script="$(gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/ops/bootstrap_missing_canonical_repositories.py?ref=main")"
           test "$(jq -er .name <<<"$script")" = bootstrap_missing_canonical_repositories.py
-          test "$(jq -er .sha <<<"$script")" = 802c0e1bbb6ca7840a509af8efad04c811cc27cd
+          test "$(jq -er .sha <<<"$script")" = 9d9021a0584de8e3f7def2f32a067b4f6701e6c2
 
-      - name: Dispatch the pinned no-overwrite gap bootstrap
+      - name: Dispatch the pinned safe public gap bootstrap
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -116,4 +116,4 @@ jobs:
             --ref main
           gh api --method POST \
             "repos/${GITHUB_REPOSITORY}/issues/471/comments" \
-            -f body="Dispatched the pinned no-overwrite canonical repository-gap bootstrap from trusted main after ${before}. The child workflow will post one fresh owner code and exact run URL here; ignore all earlier codes." >/dev/null
+            -f body="Dispatched the pinned safe public canonical repository-gap bootstrap from trusted main after ${before}. The child workflow will post one fresh owner code and exact run URL here; ignore all earlier codes." >/dev/null
