@@ -36,7 +36,7 @@ test('rust discrete event simulator declares, validates, and runs async DES jobs
   );
   const prometheus = await readRepoFile('remote/argocd/observability/prometheus.configmap.yaml');
   const otel = await readRepoFile('remote/argocd/observability/otel-collector.configmap.yaml');
-  const home = await readRepoFile('remote/deployments/web-home-rs/src/main.rs');
+  const home = await readRepoFile('remote/deployments/web-home-rs/src/home.rs');
   const runtimeReadme = await readRepoFile('remote/argocd/dd-next-runtime/readme.md');
 
   assert.match(cargo, /name = "dd-des-simulator"/);
