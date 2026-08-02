@@ -1,0 +1,272 @@
+name: Create Meta Agents repository with protected GitHub App once
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - .github/workflows/ops-create-meta-agent-repo-with-github-app-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: create-meta-agent-repo-with-github-app-den-1058
+  cancel-in-progress: false
+
+jobs:
+  create:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+    steps:
+      - name: Check out trusted dev
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Mint a short-lived installation token and create only the canonical repository
+        shell: bash
+        run: |
+          set -uo pipefail
+          umask 077
+
+          evidence="$RUNNER_TEMP/meta-agent-github-app-bootstrap.json"
+          key_file="$RUNNER_TEMP/github-app-private-key.pem"
+          install_response="$RUNNER_TEMP/installation.json"
+          token_response="$RUNNER_TEMP/installation-token.json"
+          repo_response="$RUNNER_TEMP/repository.json"
+          create_response="$RUNNER_TEMP/create-repository.json"
+          public_response="$RUNNER_TEMP/public-repository.json"
+          cleanup() {
+            unset jwt installation_token APP_PRIVATE_KEY APP_ID
+            rm -f "$key_file" "$install_response" "$token_response" \
+              "$repo_response" "$create_response" "$public_response"
+          }
+          trap cleanup EXIT
+
+          app_id_present=false
+          private_key_present=false
+          private_key_valid=false
+          installation_lookup_http=''
+          installation_id=''
+          installation_account=''
+          token_issue_http=''
+          token_permissions='{}'
+          token_expires_at=''
+          authenticated_repo_lookup_http=''
+          create_attempted=false
+          create_http=''
+          public_lookup_http=''
+          repository_exists_public=false
+          repository_full_name=''
+          repository_visibility=''
+          repository_default_branch=''
+
+          if [[ -n "${APP_ID:-}" ]]; then
+            app_id_present=true
+          fi
+          if [[ -n "${APP_PRIVATE_KEY:-}" ]]; then
+            private_key_present=true
+            printf '%s\n' "$APP_PRIVATE_KEY" > "$key_file"
+            chmod 600 "$key_file"
+            if openssl pkey -in "$key_file" -noout >/dev/null 2>&1; then
+              private_key_valid=true
+            fi
+          fi
+
+          b64url() {
+            openssl base64 -A | tr '+/' '-_' | tr -d '='
+          }
+
+          if [[ "$app_id_present" == true && "$private_key_valid" == true ]]; then
+            now="$(date +%s)"
+            iat=$((now - 60))
+            exp=$((now + 540))
+            header="$(printf '%s' '{"alg":"RS256","typ":"JWT"}' | b64url)"
+            payload="$(jq -nc \
+              --argjson iat "$iat" \
+              --argjson exp "$exp" \
+              --arg iss "$APP_ID" \
+              '{iat:$iat,exp:$exp,iss:$iss}' | b64url)"
+            unsigned="${header}.${payload}"
+            signature="$(printf '%s' "$unsigned" \
+              | openssl dgst -sha256 -sign "$key_file" -binary \
+              | b64url)"
+            jwt="${unsigned}.${signature}"
+            echo "::add-mask::${jwt}"
+
+            installation_lookup_http="$(curl --silent --show-error \
+              --output "$install_response" \
+              --write-out '%{http_code}' \
+              --header 'Accept: application/vnd.github+json' \
+              --header "Authorization: Bearer ${jwt}" \
+              --header 'X-GitHub-Api-Version: 2022-11-28' \
+              --header 'User-Agent: meta-agent-repository-bootstrap' \
+              https://api.github.com/orgs/meta-agents-demo/installation \
+              || true)"
+
+            if [[ "$installation_lookup_http" == 200 ]]; then
+              installation_id="$(jq -r '.id // empty' "$install_response")"
+              installation_account="$(jq -r '.account.login // empty' "$install_response")"
+            fi
+
+            if [[ "$installation_id" =~ ^[0-9]+$ ]]; then
+              token_issue_http="$(curl --silent --show-error \
+                --output "$token_response" \
+                --write-out '%{http_code}' \
+                --request POST \
+                --header 'Accept: application/vnd.github+json' \
+                --header "Authorization: Bearer ${jwt}" \
+                --header 'X-GitHub-Api-Version: 2022-11-28' \
+                --header 'User-Agent: meta-agent-repository-bootstrap' \
+                "https://api.github.com/app/installations/${installation_id}/access_tokens" \
+                || true)"
+            fi
+
+            if [[ "$token_issue_http" == 201 ]]; then
+              installation_token="$(jq -r '.token // empty' "$token_response")"
+              token_permissions="$(jq -c '.permissions // {}' "$token_response")"
+              token_expires_at="$(jq -r '.expires_at // empty' "$token_response")"
+              if [[ -n "$installation_token" ]]; then
+                echo "::add-mask::${installation_token}"
+
+                authenticated_repo_lookup_http="$(curl --silent --show-error \
+                  --output "$repo_response" \
+                  --write-out '%{http_code}' \
+                  --header 'Accept: application/vnd.github+json' \
+                  --header "Authorization: Bearer ${installation_token}" \
+                  --header 'X-GitHub-Api-Version: 2022-11-28' \
+                  --header 'User-Agent: meta-agent-repository-bootstrap' \
+                  https://api.github.com/repos/meta-agents-demo/meta-agent-control-plane.rs \
+                  || true)"
+
+                if [[ "$authenticated_repo_lookup_http" == 404 ]]; then
+                  create_attempted=true
+                  create_http="$(curl --silent --show-error \
+                    --output "$create_response" \
+                    --write-out '%{http_code}' \
+                    --request POST \
+                    --header 'Accept: application/vnd.github+json' \
+                    --header "Authorization: Bearer ${installation_token}" \
+                    --header 'X-GitHub-Api-Version: 2022-11-28' \
+                    --header 'User-Agent: meta-agent-repository-bootstrap' \
+                    --header 'Content-Type: application/json' \
+                    --data '{"name":"meta-agent-control-plane.rs","description":"Single-binary Rust control plane and Leptos UI for observable AI-agent progress, reflection, and bounded learning.","visibility":"public","auto_init":true,"has_issues":true,"has_projects":false,"has_wiki":false,"allow_squash_merge":true,"allow_merge_commit":true,"allow_rebase_merge":false,"delete_branch_on_merge":true}' \
+                    https://api.github.com/orgs/meta-agents-demo/repos \
+                    || true)"
+                elif [[ "$authenticated_repo_lookup_http" == 200 ]]; then
+                  cp "$repo_response" "$create_response"
+                fi
+              fi
+            fi
+          fi
+
+          public_lookup_http="$(curl --silent --show-error \
+            --output "$public_response" \
+            --write-out '%{http_code}' \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --header 'User-Agent: meta-agent-repository-bootstrap' \
+            https://api.github.com/repos/meta-agents-demo/meta-agent-control-plane.rs \
+            || true)"
+
+          if [[ "$public_lookup_http" == 200 ]]; then
+            repository_full_name="$(jq -r '.full_name // empty' "$public_response")"
+            repository_visibility="$(jq -r '.visibility // empty' "$public_response")"
+            repository_default_branch="$(jq -r '.default_branch // empty' "$public_response")"
+            if [[ "$repository_full_name" == 'meta-agents-demo/meta-agent-control-plane.rs' \
+               && "$repository_visibility" == public ]]; then
+              repository_exists_public=true
+            fi
+          fi
+
+          jq -n \
+            --arg observed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson app_id_present "$app_id_present" \
+            --argjson private_key_present "$private_key_present" \
+            --argjson private_key_valid "$private_key_valid" \
+            --arg installation_lookup_http "$installation_lookup_http" \
+            --arg installation_id "$installation_id" \
+            --arg installation_account "$installation_account" \
+            --arg token_issue_http "$token_issue_http" \
+            --argjson token_permissions "$token_permissions" \
+            --arg token_expires_at "$token_expires_at" \
+            --arg authenticated_repo_lookup_http "$authenticated_repo_lookup_http" \
+            --argjson create_attempted "$create_attempted" \
+            --arg create_http "$create_http" \
+            --arg public_lookup_http "$public_lookup_http" \
+            --argjson repository_exists_public "$repository_exists_public" \
+            --arg repository_full_name "$repository_full_name" \
+            --arg repository_visibility "$repository_visibility" \
+            --arg repository_default_branch "$repository_default_branch" \
+            '{
+              schema_version: 1,
+              observed_at: $observed_at,
+              protected_app_credentials: {
+                app_id_present: $app_id_present,
+                private_key_present: $private_key_present,
+                private_key_valid: $private_key_valid
+              },
+              installation: {
+                lookup_http_status: $installation_lookup_http,
+                id: $installation_id,
+                account: $installation_account
+              },
+              installation_token: {
+                issue_http_status: $token_issue_http,
+                permissions: $token_permissions,
+                expires_at: $token_expires_at
+              },
+              repository_operation: {
+                authenticated_lookup_http_status: $authenticated_repo_lookup_http,
+                create_attempted: $create_attempted,
+                create_http_status: $create_http,
+                public_lookup_http_status: $public_lookup_http,
+                exists_public: $repository_exists_public,
+                full_name: $repository_full_name,
+                visibility: $repository_visibility,
+                default_branch: $repository_default_branch
+              }
+            }' > "$evidence"
+
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path(os.environ['RUNNER_TEMP']) / 'meta-agent-github-app-bootstrap.json'
+          payload = json.loads(path.read_text(encoding='utf-8'))
+          assert payload['schema_version'] == 1
+          operation = payload['repository_operation']
+          if operation['exists_public']:
+              assert operation['full_name'] == 'meta-agents-demo/meta-agent-control-plane.rs'
+              assert operation['visibility'] == 'public'
+          text = path.read_text(encoding='utf-8')
+          forbidden = re.compile(r'(gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)')
+          if forbidden.search(text):
+              raise SystemExit('credential-like material appeared in redacted evidence')
+          path.write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+
+      - name: Commit redacted evidence and remove bootstrap workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/meta-agent-github-app-bootstrap.json"
+          git fetch origin dev
+          git checkout -B dev origin/dev
+          install -d ops/evidence
+          cp "$evidence" ops/evidence/meta-agent-github-app-bootstrap.json
+          git rm .github/workflows/ops-create-meta-agent-repo-with-github-app-once.yml
+          git diff --check
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add ops/evidence/meta-agent-github-app-bootstrap.json
+          git commit -m 'ops(DEN-1058): record GitHub App repository bootstrap evidence'
+          git push origin HEAD:refs/heads/dev
