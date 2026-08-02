@@ -89,6 +89,35 @@ jobs:
           });'''
           replace_once_or_done(single_owner_end, dormant_des, 'dormant DES contract')
 
+          queue_old = '''test("queue consumer rolls within single-node capacity", async () => {
+            const deployment = await readRepoFile(
+              "remote/argocd/dd-next-runtime/dd-remote-queue-consumer.deployment.yaml",
+            );
+
+            assert.match(deployment, /replicas:\\s*1/);
+            assert.match(deployment, /minReadySeconds:\\s*5/);
+            assert.match(deployment, /progressDeadlineSeconds:\\s*1800/);
+            assert.match(deployment, /type:\\s*RollingUpdate/);
+            assert.match(deployment, /maxSurge:\\s*0/);
+            assert.match(deployment, /maxUnavailable:\\s*1/);
+          });'''
+          queue_new = '''test("queue consumer rolls within single-node capacity", async () => {
+            const deployment = await readRepoFile(
+              "remote/argocd/dd-next-runtime/dd-remote-queue-consumer.deployment.yaml",
+            );
+
+            assert.match(deployment, /replicas:\\s*1/);
+            assert.match(deployment, /minReadySeconds:\\s*5/);
+            assert.match(deployment, /progressDeadlineSeconds:\\s*1800/);
+            assert.match(deployment, /type:\\s*RollingUpdate/);
+            assert.match(deployment, /maxSurge:\\s*1/);
+            assert.match(deployment, /maxUnavailable:\\s*0/);
+            assert.match(deployment, /NATS_QUEUE_GROUP[\\s\\S]*dd-remote-thread-preparer/);
+            assert.match(deployment, /NATS_TASK_CONSUMER[\\s\\S]*dd-remote-thread-preparer/);
+            assert.match(deployment, /readinessProbe:[\\s\\S]*path:\\s*\\/readyz/);
+          });'''
+          replace_once_or_done(queue_old, queue_new, 'durable queue zero-unavailable rollout')
+
           replace_once_or_done(
               '  assert.match(deployment, /replicas:\\s*2/);\n  assert.match(deployment, /strategy:[\\s\\S]*type:\\s*Recreate/);',
               '  assert.match(deployment, /replicas:\\s*0/);\n  assert.match(deployment, /minReadySeconds:\\s*5/);\n  assert.match(deployment, /progressDeadlineSeconds:\\s*1800/);\n  assert.match(deployment, /strategy:[\\s\\S]*type:\\s*Recreate/);',
@@ -144,11 +173,11 @@ jobs:
         working-directory: remote/tests
         run: pnpm install --frozen-lockfile
 
-      - name: Verify dormant DES, public-data, and fabrication contracts
+      - name: Verify dormant and durable single-node contracts
         working-directory: remote/tests
         run: >-
           pnpm exec tsx --test
-          --test-name-pattern='single-owner runtime workloads|public data server|fabrication server runtime'
+          --test-name-pattern='single-owner runtime workloads|queue consumer rolls|public data server|fabrication server runtime'
           general/runtime-split-config.test.ts
 
       - name: Publish test repair when changed
@@ -163,5 +192,5 @@ jobs:
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'test(DEN-406): preserve dormant compute ownership'
+          git commit -m 'test(DEN-406): preserve dormant compute and durable queue ownership'
           git push origin HEAD:fix/den-406-dormant-compute-contracts
