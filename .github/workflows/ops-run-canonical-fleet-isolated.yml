@@ -1,5 +1,5 @@
 name: Run canonical critical organization fleet publication isolated
-run-name: Owner-authorize and publish the exact 34-repository fleet in an isolated run v2
+run-name: Owner-authorize and publish the exact 34-repository fleet in an isolated run v3
 
 on:
   push:
