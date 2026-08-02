@@ -113,11 +113,27 @@ jobs:
               'HA fleet maxUnavailable',
           )
 
-          dormant_line = '    "dd-mdp-optimizer",\n'
-          if dormant_line in ha_section:
-              ha_section = ha_section.replace(dormant_line, '', 1)
+          for special in ('    "dd-mdp-optimizer",\n', '    "dd-web-scraper",\n'):
+              if special in ha_section:
+                  ha_section = ha_section.replace(special, '', 1)
 
-          dormant_block = '''  const dormantMdp = await readRepoFile(
+          special_block = '''  const persistentScraper = await readRepoFile(
+            "remote/argocd/dd-next-runtime/dd-web-scraper.deployment.yaml",
+          );
+          assert.match(persistentScraper, /name:\\s*dd-web-scraper/);
+          assert.match(persistentScraper, /replicas:\\s*1/);
+          assert.match(persistentScraper, /minReadySeconds:\\s*5/);
+          assert.match(persistentScraper, /progressDeadlineSeconds:\\s*600/);
+          assert.match(persistentScraper, /type:\\s*RollingUpdate/);
+          assert.match(persistentScraper, /maxSurge:\\s*1/);
+          assert.match(persistentScraper, /maxUnavailable:\\s*0/);
+          assert.match(persistentScraper, /readinessProbe:[\\s\\S]*httpGet:/);
+          assert.match(
+            pdbs,
+            /kind:\\s*PodDisruptionBudget[\\s\\S]*name:\\s*dd-web-scraper[\\s\\S]*minAvailable:\\s*1[\\s\\S]*app:\\s*dd-web-scraper/,
+          );
+
+          const dormantMdp = await readRepoFile(
             "remote/argocd/dd-next-runtime/dd-mdp-optimizer.deployment.yaml",
           );
           assert.match(dormantMdp, /name:\\s*dd-mdp-optimizer/);
@@ -128,11 +144,17 @@ jobs:
           assert.match(dormantMdp, /readinessProbe:[\\s\\S]*httpGet:/);
 
           '''
-          if 'const dormantMdp = await readRepoFile' not in ha_section:
-              anchor = '  const desRs = await readRepoFile('
+          if 'const persistentScraper = await readRepoFile' not in ha_section:
+              old_dormant_start = '  const dormantMdp = await readRepoFile('
+              anchor = old_dormant_start if old_dormant_start in ha_section else '  const desRs = await readRepoFile('
               if anchor not in ha_section:
-                  raise SystemExit('dormant MDP insertion anchor is missing')
-              ha_section = ha_section.replace(anchor, dormant_block + anchor, 1)
+                  raise SystemExit('special rollout insertion anchor is missing')
+              if anchor == old_dormant_start:
+                  start = ha_section.index(old_dormant_start)
+                  end = ha_section.index('  const desRs = await readRepoFile(', start)
+                  ha_section = ha_section[:start] + special_block + ha_section[end:]
+              else:
+                  ha_section = ha_section.replace(anchor, special_block + anchor, 1)
 
           runtime_path.write_text(
               web_prefix
@@ -168,7 +190,7 @@ jobs:
           --test-name-pattern='runtime deployments avoid routing to half-started rust services'
           general/nats-shadow-handoff.test.ts
 
-      - name: Verify active HA and dormant MDP rollout profiles
+      - name: Verify active HA, persistent scraper, and dormant MDP profiles
         working-directory: remote/tests
         run: >-
           pnpm exec tsx --test
