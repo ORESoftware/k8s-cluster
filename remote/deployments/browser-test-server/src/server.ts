@@ -990,7 +990,8 @@ async function openPuppeteerDriver(input: RunRequest): Promise<ScenarioDriver> {
     },
     waitForUrl: async (urlPattern, timeoutMs) => {
       await page.waitForFunction(
-        (pattern: string, current: string) => {
+        (pattern: string) => {
+          const current = window.location.href;
           if (pattern.startsWith('/') && pattern.endsWith('/')) {
             const re = new RegExp(pattern.slice(1, -1));
             return re.test(current);
@@ -999,7 +1000,6 @@ async function openPuppeteerDriver(input: RunRequest): Promise<ScenarioDriver> {
         },
         { timeout: timeoutMs },
         urlPattern,
-        page.url(),
       );
     },
     waitForTimeout: async (ms) => {

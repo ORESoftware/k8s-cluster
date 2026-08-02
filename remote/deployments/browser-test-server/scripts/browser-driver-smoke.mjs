@@ -62,6 +62,7 @@ function fixtureHtml() {
     </select>
   </label>
   <button id="apply" type="button">Apply</button>
+  <button id="navigate" type="button">Navigate later</button>
   <output id="result" data-state="idle">idle</output>
   <script>
     console.log('browser-driver-fixture-ready');
@@ -72,6 +73,9 @@ function fixtureHtml() {
       result.textContent = name + ':' + flavor;
       result.dataset.state = 'done';
       document.title = 'done:' + name;
+    });
+    document.querySelector('#navigate').addEventListener('click', () => {
+      setTimeout(() => { window.location.hash = 'delayed'; }, 150);
     });
   </script>
 </body>
@@ -220,6 +224,8 @@ try {
         { action: 'waitForSelector', selector: '#result[data-state="done"]', state: 'visible' },
         { action: 'extractText', selector: '#result', name: 'result' },
         { action: 'extractAttribute', selector: '#result', attribute: 'data-state', name: 'state' },
+        { action: 'click', selector: '#navigate' },
+        { action: 'waitForUrl', url: `${fixtureOrigin}/fixture#delayed`, timeoutMs: 5_000 },
         { action: 'screenshot', name: 'interaction' },
       ],
     }),
@@ -230,9 +236,10 @@ try {
   assert.equal(run.body.requestId, requestId);
   assert.equal(run.body.tool, tool);
   assert.equal(run.body.finalTitle, 'done:Ada');
+  assert.equal(run.body.finalUrl, `${fixtureOrigin}/fixture#delayed`);
   assert.equal(run.body.extracted.result, 'Ada:chocolate');
   assert.equal(run.body.extracted.state, 'done');
-  assert.equal(run.body.steps.length, 8);
+  assert.equal(run.body.steps.length, 10);
   assert.ok(run.body.steps.every((step) => step.status === 'ok'));
   assert.equal(run.body.pageErrors.length, 0);
   assert.ok(run.body.screenshots.length >= 2, 'step and final screenshots must both be returned');
