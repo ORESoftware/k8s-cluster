@@ -236,7 +236,7 @@ jobs:
         working-directory: remote/tests
 
       - name: Verify pinned backend architecture and NATS subjects
-        run: pnpm exec tsx --test general/backend-architecture-contract.test.ts general/nats-subject-contract.test.ts
+        run: pnpm exec tsx --test general/backend-architecture-contract.test.ts general/nats-subject-contract.test.ts general/workflow-branch-trigger-contract.test.ts
         working-directory: remote/tests
 
       - name: Verify contracts that read private deployment sources

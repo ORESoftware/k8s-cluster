@@ -46,6 +46,7 @@
     "test:cli:gleam-pg-defs-wiring": "pnpm exec tsx --test general/gleam-pg-defs-wiring.test.ts",
     "test:cli:local-k8s-cleanup": "pnpm exec tsx --test general/local-k8s-cleanup.test.ts",
     "test:cli:live-mutex-config": "pnpm exec tsx --test general/live-mutex-config.test.ts",
+    "test:cli:workflow-branch-trigger": "pnpm exec tsx --test general/workflow-branch-trigger-contract.test.ts",
     "test:lmx:admin-public-smoke": "node lmx-admin-public-smoke.mjs",
     "test:cli:nats-config": "pnpm exec tsx --test general/nats-config.test.ts",
     "test:cli:nats-subject-contract": "pnpm exec tsx --test general/nats-subject-contract.test.ts",
