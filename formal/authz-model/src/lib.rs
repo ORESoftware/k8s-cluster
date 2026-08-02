@@ -1,17 +1,37 @@
 #![forbid(unsafe_code)]
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Strength { Strong, Weak }
+pub enum Strength {
+    Strong,
+    Weak,
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Caller { Service, Member(Strength), NonMember(Strength) }
+pub enum Caller {
+    Service,
+    Member(Strength),
+    NonMember(Strength),
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Scope { None, Named, Invalid }
+pub enum Scope {
+    None,
+    Named,
+    Invalid,
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Operation { Read, Write }
+pub enum Operation {
+    Read,
+    Write,
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Policy { pub users_only: bool, pub strong_write: bool }
+pub struct Policy {
+    pub users_only: bool,
+    pub strong_write: bool,
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Decision { Allow, Deny }
+pub enum Decision {
+    Allow,
+    Deny,
+}
 
 pub fn decide(caller: Caller, scope: Scope, operation: Operation, policy: Policy) -> Decision {
     match scope {
@@ -57,7 +77,10 @@ mod tests {
                     Caller::Service,
                     Scope::Named,
                     Operation::Write,
-                    Policy { users_only, strong_write: true },
+                    Policy {
+                        users_only,
+                        strong_write: true,
+                    },
                 ),
                 Decision::Deny,
             );
@@ -66,14 +89,20 @@ mod tests {
 
     #[test]
     fn only_strong_members_write_named_scope_under_full_policy() {
-        let policy = Policy { users_only: true, strong_write: true };
+        let policy = Policy {
+            users_only: true,
+            strong_write: true,
+        };
         for caller in CALLERS {
             let expected = if caller == Caller::Member(Strength::Strong) {
                 Decision::Allow
             } else {
                 Decision::Deny
             };
-            assert_eq!(decide(caller, Scope::Named, Operation::Write, policy), expected);
+            assert_eq!(
+                decide(caller, Scope::Named, Operation::Write, policy),
+                expected
+            );
         }
     }
 
@@ -84,7 +113,15 @@ mod tests {
                 for users_only in BOOLS {
                     for strong_write in BOOLS {
                         assert_eq!(
-                            decide(caller, Scope::Invalid, operation, Policy { users_only, strong_write }),
+                            decide(
+                                caller,
+                                Scope::Invalid,
+                                operation,
+                                Policy {
+                                    users_only,
+                                    strong_write,
+                                },
+                            ),
                             Decision::Deny,
                         );
                     }
@@ -101,8 +138,14 @@ mod tests {
                 for operation in OPERATIONS {
                     for users_only in BOOLS {
                         for strong_write in BOOLS {
-                            let policy = Policy { users_only, strong_write };
-                            assert_eq!(decide(caller, scope, operation, policy), decide(caller, scope, operation, policy));
+                            let policy = Policy {
+                                users_only,
+                                strong_write,
+                            };
+                            assert_eq!(
+                                decide(caller, scope, operation, policy),
+                                decide(caller, scope, operation, policy)
+                            );
                             visited += 1;
                         }
                     }
