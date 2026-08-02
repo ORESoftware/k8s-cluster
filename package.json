@@ -7,6 +7,7 @@
     "dev": "astro dev",
     "start": "astro dev",
     "build": "astro build",
+    "audit": "npm audit --omit=dev --audit-level=high",
     "test": "node --test tests/*contract.test.mjs",
     "test:browser": "npm run build && rm -rf test-results && mkdir -p test-results && node --test --test-concurrency=1 tests/site-*.test.mjs",
     "preview": "astro preview",
