@@ -32,9 +32,9 @@ jobs:
         with:
           context: .
           build-args: |
-            INTERFACES_SHA=bd718cd72d72aa330534f3688f8fb1ce90c19d10
-            PAYMENTS_REF=0c8b735949f90514545fd03dadcf3ba337a1e948
-            MARKETING_REF=a12a224aa78712786105ca80654cfb15993b97d8
+            INTERFACES_SHA=6081bc3f3b7cbe0312870968b61acc38ca91c66a
+            PAYMENTS_REF=126dc5d1b3fcba289f95139284dc0f3c54b56a8a
+            MARKETING_REF=f3fd0e63b3c0898bed33c66817847056067f7ca8
             TEST_CONFIG_REF=026fcf28193c7baeb7f5feb68480a91539c1f0fa
           push: true
           pull: true
