@@ -20,6 +20,7 @@ const maxLogBytes = 128 * 1024;
 let serviceStdout = '';
 let serviceStderr = '';
 let lastFixtureHeaders = {};
+let leakRequests = 0;
 
 function appendBounded(current, chunk) {
   const next = `${current}${String(chunk)}`;
@@ -97,6 +98,12 @@ const fixtureServer = createServer((request, response) => {
       'x-content-type-options': 'nosniff',
     });
     response.end(fixtureHtml());
+    return;
+  }
+  if (url.pathname === '/leak') {
+    leakRequests += 1;
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end('<!doctype html><title>leaked work</title>');
     return;
   }
   response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
@@ -254,6 +261,30 @@ try {
     );
   }
 
+  const timeoutStartedAt = Date.now();
+  const timedOut = await requestJson(serviceOrigin, '/run', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${authSecret}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      requestId: `browser-timeout-${tool}`,
+      tool,
+      captureFinalScreenshot: false,
+      timeoutMs: 500,
+      steps: [
+        { action: 'waitForTimeout', ms: 1_200 },
+        { action: 'goto', url: `${fixtureOrigin}/leak` },
+      ],
+    }),
+  });
+  assert.equal(timedOut.status, 422, JSON.stringify(timedOut.body, null, 2));
+  assert.equal(timedOut.body.ok, false);
+  assert.match(timedOut.body.error, /overall timeout|scenario exceeded/i);
+  assert.ok(Date.now() - timeoutStartedAt < 2_500, 'timeout response must not wait for the full step');
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 1_500));
+  assert.equal(leakRequests, 0, 'timed-out browser work must not continue to the leak route');
   const metricsResponse = await fetch(`${serviceOrigin}/metrics`, {
     signal: AbortSignal.timeout(5_000),
   });
