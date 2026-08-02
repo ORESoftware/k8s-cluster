@@ -48,67 +48,85 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          rules = {
-              Path('remote/tests/general/nats-shadow-handoff.test.ts'): [
-                  (
-                      """  assert.match(
-            restDeployment,
-            /resources:[\\s\\S]*requests:[\\s\\S]*cpu:\\s*100m[\\s\\S]*memory:\\s*128Mi/,
-          );
-          assert.match(
-            restDeployment,
-            /resources:[\\s\\S]*limits:[\\s\\S]*cpu:\\s*['\"]?1['\"]?[\\s\\S]*memory:\\s*1Gi/,
-          );""",
-                      """  assert.match(
-            restDeployment,
-            /resources:[\\s\\S]*requests:[\\s\\S]*cpu:\\s*25m[\\s\\S]*memory:\\s*128Mi/,
-          );
-          assert.match(
-            restDeployment,
-            /resources:[\\s\\S]*limits:[\\s\\S]*cpu:\\s*['\"]?1['\"]?[\\s\\S]*memory:\\s*2Gi/,
-          );""",
-                  ),
-              ],
-              Path('remote/tests/general/runtime-split-config.test.ts'): [
-                  (
-                      """  assert.match(deployment, /type:\\s*RollingUpdate/);
-          assert.match(deployment, /maxSurge:\\s*0/);
-          assert.match(deployment, /maxUnavailable:\\s*1/);
-          assert.match(deployment, /readinessProbe:[\\s\\S]*path:\\s*\\/healthz[\\s\\S]*port:\\s*http/);""",
-                      """  assert.match(deployment, /type:\\s*RollingUpdate/);
-          assert.match(deployment, /maxSurge:\\s*1/);
-          assert.match(deployment, /maxUnavailable:\\s*0/);
-          assert.match(deployment, /readinessProbe:[\\s\\S]*path:\\s*\\/healthz[\\s\\S]*port:\\s*http/);""",
-                  ),
-                  (
-                      """    assert.match(deployment, /type:\\s*RollingUpdate/);
-            assert.match(deployment, /maxSurge:\\s*0/);
-            assert.match(deployment, /maxUnavailable:\\s*1/);
-            assert.match(deployment, /readinessProbe:[\\s\\S]*httpGet:/);""",
-                      """    assert.match(deployment, /type:\\s*RollingUpdate/);
-            assert.match(deployment, /maxSurge:\\s*1/);
-            assert.match(deployment, /maxUnavailable:\\s*0/);
-            assert.match(deployment, /readinessProbe:[\\s\\S]*httpGet:/);""",
-                  ),
-              ],
-          }
-
-          def apply(path: Path, old: str, new: str) -> None:
-              text = path.read_text(encoding='utf-8')
+          def replace_once_or_done(text: str, old: str, new: str, label: str) -> str:
               old_count = text.count(old)
               new_count = text.count(new)
               if old_count == 1 and new_count == 0:
-                  path.write_text(text.replace(old, new, 1), encoding='utf-8')
-                  return
+                  return text.replace(old, new, 1)
               if old_count == 0 and new_count == 1:
-                  return
+                  return text
               raise SystemExit(
-                  f'{path}: unexpected source state old={old_count} new={new_count}'
+                  f'{label}: unexpected source state old={old_count} new={new_count}'
               )
 
-          for path, replacements in rules.items():
-              for old, new in replacements:
-                  apply(path, old, new)
+          nats_path = Path('remote/tests/general/nats-shadow-handoff.test.ts')
+          nats = nats_path.read_text(encoding='utf-8')
+          marker = "test('runtime deployments avoid routing to half-started rust services', async () => {"
+          prefix, section = nats.split(marker, 1)
+          section = replace_once_or_done(
+              section,
+              r'/resources:[\s\S]*requests:[\s\S]*cpu:\s*100m[\s\S]*memory:\s*128Mi/',
+              r'/resources:[\s\S]*requests:[\s\S]*cpu:\s*25m[\s\S]*memory:\s*128Mi/',
+              'REST request budget',
+          )
+          section = replace_once_or_done(
+              section,
+              r'/resources:[\s\S]*limits:[\s\S]*cpu:\s*[\'\"]?1[\'\"]?[\s\S]*memory:\s*1Gi/',
+              r'/resources:[\s\S]*limits:[\s\S]*cpu:\s*[\'\"]?1[\'\"]?[\s\S]*memory:\s*2Gi/',
+              'REST cold-build limit',
+          )
+          nats_path.write_text(prefix + marker + section, encoding='utf-8')
+
+          runtime_path = Path('remote/tests/general/runtime-split-config.test.ts')
+          runtime = runtime_path.read_text(encoding='utf-8')
+
+          web_marker = 'test("web home route has rollout and gateway guards against transient 502s", async () => {'
+          web_prefix, web_tail = runtime.split(web_marker, 1)
+          web_section, after_web = web_tail.split(
+              'test("gateway-backed stateless services use HA rolling deployment profile", async () => {',
+              1,
+          )
+          web_section = replace_once_or_done(
+              web_section,
+              r'assert.match(deployment, /maxSurge:\s*0/);',
+              r'assert.match(deployment, /maxSurge:\s*1/);',
+              'web-home maxSurge',
+          )
+          web_section = replace_once_or_done(
+              web_section,
+              r'assert.match(deployment, /maxUnavailable:\s*1/);',
+              r'assert.match(deployment, /maxUnavailable:\s*0/);',
+              'web-home maxUnavailable',
+          )
+
+          ha_marker = 'test("gateway-backed stateless services use HA rolling deployment profile", async () => {'
+          ha_section, after_ha = after_web.split(
+              'test("clone-first Rust services tolerate missing EC2 hostPath checkout", async () => {',
+              1,
+          )
+          ha_section = replace_once_or_done(
+              ha_section,
+              r'assert.match(deployment, /maxSurge:\s*0/);',
+              r'assert.match(deployment, /maxSurge:\s*1/);',
+              'HA fleet maxSurge',
+          )
+          ha_section = replace_once_or_done(
+              ha_section,
+              r'assert.match(deployment, /maxUnavailable:\s*1/);',
+              r'assert.match(deployment, /maxUnavailable:\s*0/);',
+              'HA fleet maxUnavailable',
+          )
+
+          runtime_path.write_text(
+              web_prefix
+              + web_marker
+              + web_section
+              + ha_marker
+              + ha_section
+              + 'test("clone-first Rust services tolerate missing EC2 hostPath checkout", async () => {'
+              + after_ha,
+              encoding='utf-8',
+          )
           PY
           git diff --check
 
