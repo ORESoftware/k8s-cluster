@@ -29,7 +29,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Apply exact dormant-state expectations
+      - name: Apply section-scoped dormant-state expectations
         shell: bash
         run: |
           set -euo pipefail
@@ -39,121 +39,152 @@ jobs:
           path = Path('remote/tests/general/runtime-split-config.test.ts')
           text = path.read_text(encoding='utf-8')
 
-          def replace_once_or_done(old: str, new: str, label: str) -> None:
-              global text
-              if old in text:
-                  text = text.replace(old, new, 1)
-                  return
-              if new in text:
-                  return
-              raise SystemExit(f'{label}: expected old or new text, found neither')
+          single_marker = 'test("single-owner runtime workloads stay intentionally recreate", async () => {'
+          queue_marker = 'test("queue consumer rolls within single-node capacity", async () => {'
+          public_marker = 'test("public data server uses source-build rollout and disruption guardrails", async () => {'
+          fabrication_marker = 'test("fabrication server runtime keeps planner replicas hardened and observable", async () => {'
 
-          replace_once_or_done(
-              '    { name: "dd-des-simulator", file: "dd-des-simulator.deployment.yaml" },\n',
-              '',
-              'remove dormant DES from active single-owner loop',
+          def section_between(source: str, start: str, end: str | None):
+              start_index = source.index(start)
+              end_index = source.index(end, start_index + len(start)) if end else len(source)
+              return source[:start_index], source[start_index:end_index], source[end_index:]
+
+          def replace_token(section: str, old: str, new: str, label: str) -> str:
+              if old in section:
+                  return section.replace(old, new, 1)
+              if new in section:
+                  return section
+              raise SystemExit(f'{label}: expected old or new token, found neither')
+
+          prefix, single, suffix = section_between(text, single_marker, queue_marker)
+          des_entry = '    { name: "dd-des-simulator", file: "dd-des-simulator.deployment.yaml" },\n'
+          single = single.replace(des_entry, '', 1)
+          if 'const dormantDes = await readRepoFile' not in single:
+              close = single.rfind('\n});')
+              if close < 0:
+                  raise SystemExit('single-owner test closure is missing')
+              dormant_des = (
+                  '\n\n  const dormantDes = await readRepoFile(\n'
+                  '    "remote/argocd/dd-next-runtime/dd-des-simulator.deployment.yaml",\n'
+                  '  );\n'
+                  '  const dormantPdbs = await readRepoFile(\n'
+                  '    "remote/argocd/dd-next-runtime/availability-pdbs.yaml",\n'
+                  '  );\n'
+                  '  const dormantKustomization = await readRepoFile(\n'
+                  '    "remote/argocd/dd-next-runtime/kustomization.yaml",\n'
+                  '  );\n'
+                  '  assert.match(dormantDes, /name:\\s*dd-des-simulator/);\n'
+                  '  assert.match(dormantDes, /replicas:\\s*0/);\n'
+                  '  assert.match(dormantDes, /strategy:[\\s\\S]*type:\\s*Recreate/);\n'
+                  '  assert.match(dormantDes, /readinessProbe:[\\s\\S]*httpGet:/);\n'
+                  '  assert.doesNotMatch(dormantPdbs, /name:\\s*dd-des-simulator/);\n'
+                  '  assert.match(dormantKustomization, /Fun compute servers \\(scaled to 0 by default\\)/);\n'
+                  '  assert.match(dormantKustomization, /dd-des-simulator\\.deployment\\.yaml/);'
+              )
+              single = single[:close] + dormant_des + single[close:]
+          text = prefix + single + suffix
+
+          prefix, queue, suffix = section_between(text, queue_marker, public_marker)
+          queue = replace_token(
+              queue,
+              '  assert.match(deployment, /maxSurge:\\s*0/);',
+              '  assert.match(deployment, /maxSurge:\\s*1/);',
+              'queue maxSurge',
           )
-
-          single_owner_end = '''  for (const { name, file } of singleOwnerDeployments) {
-            const deployment = await readRepoFile(`remote/argocd/dd-next-runtime/${file}`);
-            const escapedName = escapeRegExp(name);
-
-            assert.match(deployment, new RegExp(`name:\\s*${escapedName}`));
-            assert.match(deployment, /replicas:\\s*1/);
-            assert.match(deployment, /strategy:[\\s\\S]*type:\\s*Recreate/);
-          }
-          });'''
-          dormant_des = '''  for (const { name, file } of singleOwnerDeployments) {
-            const deployment = await readRepoFile(`remote/argocd/dd-next-runtime/${file}`);
-            const escapedName = escapeRegExp(name);
-
-            assert.match(deployment, new RegExp(`name:\\s*${escapedName}`));
-            assert.match(deployment, /replicas:\\s*1/);
-            assert.match(deployment, /strategy:[\\s\\S]*type:\\s*Recreate/);
-          }
-
-          const dormantDes = await readRepoFile(
-            "remote/argocd/dd-next-runtime/dd-des-simulator.deployment.yaml",
-          );
-          const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");
-          const kustomization = await readRepoFile(
-            "remote/argocd/dd-next-runtime/kustomization.yaml",
-          );
-          assert.match(dormantDes, /name:\\s*dd-des-simulator/);
-          assert.match(dormantDes, /replicas:\\s*0/);
-          assert.match(dormantDes, /strategy:[\\s\\S]*type:\\s*Recreate/);
-          assert.match(dormantDes, /readinessProbe:[\\s\\S]*httpGet:/);
-          assert.doesNotMatch(pdbs, /name:\\s*dd-des-simulator/);
-          assert.match(kustomization, /Fun compute servers \\(scaled to 0 by default\\)/);
-          assert.match(kustomization, /dd-des-simulator\\.deployment\\.yaml/);
-          });'''
-          replace_once_or_done(single_owner_end, dormant_des, 'dormant DES contract')
-
-          queue_old = '''test("queue consumer rolls within single-node capacity", async () => {
-            const deployment = await readRepoFile(
-              "remote/argocd/dd-next-runtime/dd-remote-queue-consumer.deployment.yaml",
-            );
-
-            assert.match(deployment, /replicas:\\s*1/);
-            assert.match(deployment, /minReadySeconds:\\s*5/);
-            assert.match(deployment, /progressDeadlineSeconds:\\s*1800/);
-            assert.match(deployment, /type:\\s*RollingUpdate/);
-            assert.match(deployment, /maxSurge:\\s*0/);
-            assert.match(deployment, /maxUnavailable:\\s*1/);
-          });'''
-          queue_new = '''test("queue consumer rolls within single-node capacity", async () => {
-            const deployment = await readRepoFile(
-              "remote/argocd/dd-next-runtime/dd-remote-queue-consumer.deployment.yaml",
-            );
-
-            assert.match(deployment, /replicas:\\s*1/);
-            assert.match(deployment, /minReadySeconds:\\s*5/);
-            assert.match(deployment, /progressDeadlineSeconds:\\s*1800/);
-            assert.match(deployment, /type:\\s*RollingUpdate/);
-            assert.match(deployment, /maxSurge:\\s*1/);
-            assert.match(deployment, /maxUnavailable:\\s*0/);
-            assert.match(deployment, /NATS_QUEUE_GROUP[\\s\\S]*dd-remote-thread-preparer/);
-            assert.match(deployment, /NATS_TASK_CONSUMER[\\s\\S]*dd-remote-thread-preparer/);
-            assert.match(deployment, /readinessProbe:[\\s\\S]*path:\\s*\\/readyz/);
-          });'''
-          replace_once_or_done(queue_old, queue_new, 'durable queue zero-unavailable rollout')
-
-          replace_once_or_done(
-              '  assert.match(deployment, /replicas:\\s*2/);\n  assert.match(deployment, /strategy:[\\s\\S]*type:\\s*Recreate/);',
-              '  assert.match(deployment, /replicas:\\s*0/);\n  assert.match(deployment, /minReadySeconds:\\s*5/);\n  assert.match(deployment, /progressDeadlineSeconds:\\s*1800/);\n  assert.match(deployment, /strategy:[\\s\\S]*type:\\s*Recreate/);',
-              'public-data dormant rollout',
+          queue = replace_token(
+              queue,
+              '  assert.match(deployment, /maxUnavailable:\\s*1/);',
+              '  assert.match(deployment, /maxUnavailable:\\s*0/);',
+              'queue maxUnavailable',
           )
-          replace_once_or_done(
-              '  const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");\n\n  assert.match(deployment, /name:\\s*dd-public-data-server/);',
-              '  const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");\n  const kustomization = await readRepoFile(\n    "remote/argocd/dd-next-runtime/kustomization.yaml",\n  );\n\n  assert.match(deployment, /name:\\s*dd-public-data-server/);',
-              'public-data kustomization ownership',
-          )
-          replace_once_or_done(
-              '  assert.match(deployment, /requests:[\\s\\S]*cpu:\\s*100m/);\n  assert.match(',
-              '  assert.match(deployment, /requests:[\\s\\S]*cpu:\\s*100m/);\n  assert.match(deployment, /readinessProbe:[\\s\\S]*path:\\s*\\/readyz/);\n  assert.match(kustomization, /Fun compute servers \\(scaled to 0 by default\\)/);\n  assert.match(kustomization, /dd-public-data-server\\.deployment\\.yaml/);\n  assert.match(',
-              'public-data readiness and ownership',
-          )
+          if 'NATS_TASK_CONSUMER' not in queue:
+              anchor = '  assert.match(deployment, /maxUnavailable:\\s*0/);\n'
+              additions = (
+                  '  assert.match(deployment, /NATS_QUEUE_GROUP[\\s\\S]*dd-remote-thread-preparer/);\n'
+                  '  assert.match(deployment, /NATS_TASK_CONSUMER[\\s\\S]*dd-remote-thread-preparer/);\n'
+                  '  assert.match(deployment, /readinessProbe:[\\s\\S]*path:\\s*\\/readyz/);\n'
+              )
+              if anchor not in queue:
+                  raise SystemExit('queue insertion anchor is missing')
+              queue = queue.replace(anchor, anchor + additions, 1)
+          text = prefix + queue + suffix
 
-          replace_once_or_done(
-              '  const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");\n\n  assert.match(deployment, /name:\\s*dd-fabrication-server/);',
-              '  const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");\n  const kustomization = await readRepoFile(\n    "remote/argocd/dd-next-runtime/kustomization.yaml",\n  );\n\n  assert.match(deployment, /name:\\s*dd-fabrication-server/);',
-              'fabrication kustomization ownership',
-          )
-          replace_once_or_done(
+          prefix, public, suffix = section_between(text, public_marker, fabrication_marker)
+          public = replace_token(
+              public,
               '  assert.match(deployment, /replicas:\\s*2/);',
               '  assert.match(deployment, /replicas:\\s*0/);',
-              'fabrication dormant replicas',
+              'public-data replicas',
           )
-          replace_once_or_done(
-              '  assert.match(deployment, /maxSurge:\\s*0/);\n  assert.match(deployment, /maxUnavailable:\\s*1/);',
-              '  assert.match(deployment, /maxSurge:\\s*1/);\n  assert.match(deployment, /maxUnavailable:\\s*0/);',
-              'fabrication zero-unavailable activation profile',
+          if 'minReadySeconds' not in public:
+              anchor = '  assert.match(deployment, /replicas:\\s*0/);\n'
+              additions = (
+                  '  assert.match(deployment, /minReadySeconds:\\s*5/);\n'
+                  '  assert.match(deployment, /progressDeadlineSeconds:\\s*1800/);\n'
+              )
+              public = public.replace(anchor, anchor + additions, 1)
+          if 'const kustomization = await readRepoFile' not in public:
+              anchor = '  const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");\n'
+              additions = (
+                  '  const kustomization = await readRepoFile(\n'
+                  '    "remote/argocd/dd-next-runtime/kustomization.yaml",\n'
+                  '  );\n'
+              )
+              if anchor not in public:
+                  raise SystemExit('public-data kustomization anchor is missing')
+              public = public.replace(anchor, anchor + additions, 1)
+          if 'dd-public-data-server\\.deployment\\.yaml' not in public:
+              anchor = '  assert.match(deployment, /requests:[\\s\\S]*cpu:\\s*100m/);\n'
+              additions = (
+                  '  assert.match(deployment, /readinessProbe:[\\s\\S]*path:\\s*\\/readyz/);\n'
+                  '  assert.match(kustomization, /Fun compute servers \\(scaled to 0 by default\\)/);\n'
+                  '  assert.match(kustomization, /dd-public-data-server\\.deployment\\.yaml/);\n'
+              )
+              if anchor not in public:
+                  raise SystemExit('public-data assertion anchor is missing')
+              public = public.replace(anchor, anchor + additions, 1)
+          text = prefix + public + suffix
+
+          prefix, fabrication, suffix = section_between(text, fabrication_marker, None)
+          fabrication = replace_token(
+              fabrication,
+              '  assert.match(deployment, /replicas:\\s*2/);',
+              '  assert.match(deployment, /replicas:\\s*0/);',
+              'fabrication replicas',
           )
-          replace_once_or_done(
-              '  assert.match(hpa, /name:\\s*memory[\\s\\S]*averageUtilization:\\s*80/);',
-              '  assert.match(hpa, /name:\\s*memory[\\s\\S]*averageUtilization:\\s*80/);\n  assert.match(kustomization, /Fun compute servers \\(scaled to 0 by default\\)/);\n  assert.match(kustomization, /dd-fabrication-server\\.deployment\\.yaml/);\n  assert.doesNotMatch(kustomization, /dd-fabrication-server\\.hpa\\.yaml/);',
-              'fabrication staged HPA ownership',
+          fabrication = replace_token(
+              fabrication,
+              '  assert.match(deployment, /maxSurge:\\s*0/);',
+              '  assert.match(deployment, /maxSurge:\\s*1/);',
+              'fabrication maxSurge',
           )
+          fabrication = replace_token(
+              fabrication,
+              '  assert.match(deployment, /maxUnavailable:\\s*1/);',
+              '  assert.match(deployment, /maxUnavailable:\\s*0/);',
+              'fabrication maxUnavailable',
+          )
+          if 'const kustomization = await readRepoFile' not in fabrication:
+              anchor = '  const pdbs = await readRepoFile("remote/argocd/dd-next-runtime/availability-pdbs.yaml");\n'
+              additions = (
+                  '  const kustomization = await readRepoFile(\n'
+                  '    "remote/argocd/dd-next-runtime/kustomization.yaml",\n'
+                  '  );\n'
+              )
+              if anchor not in fabrication:
+                  raise SystemExit('fabrication kustomization anchor is missing')
+              fabrication = fabrication.replace(anchor, anchor + additions, 1)
+          if 'dd-fabrication-server\\.deployment\\.yaml' not in fabrication:
+              anchor = '  assert.match(hpa, /name:\\s*memory[\\s\\S]*averageUtilization:\\s*80/);\n'
+              additions = (
+                  '  assert.match(kustomization, /Fun compute servers \\(scaled to 0 by default\\)/);\n'
+                  '  assert.match(kustomization, /dd-fabrication-server\\.deployment\\.yaml/);\n'
+                  '  assert.doesNotMatch(kustomization, /dd-fabrication-server\\.hpa\\.yaml/);\n'
+              )
+              if anchor not in fabrication:
+                  raise SystemExit('fabrication ownership assertion anchor is missing')
+              fabrication = fabrication.replace(anchor, anchor + additions, 1)
+          text = prefix + fabrication + suffix
 
           path.write_text(text, encoding='utf-8')
           PY
