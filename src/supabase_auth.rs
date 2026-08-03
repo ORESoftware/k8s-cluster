@@ -509,8 +509,17 @@ impl SupabaseVerifier {
             return Err(AuthError::Unauthorized);
         }
 
+        // Derive every authorization input before consuming any owned claim.
+        // This keeps the mapping visibly atomic and prevents field-order changes
+        // from reintroducing a partial-move bug.
         let assurance = claims.assurance();
         let step_up_at = claims.trusted_auth_time(assurance);
+        let tenant_ids = claims.tenant_ids();
+        let scopes = claims.scopes();
+        let role = claims
+            .role
+            .filter(|role| role.len() <= 64 && !role.chars().any(char::is_control));
+
         Ok(SupabaseIdentity {
             subject,
             email: claims
@@ -519,12 +528,10 @@ impl SupabaseVerifier {
                 .map(str::trim)
                 .filter(|email| !email.is_empty() && email.len() <= 320)
                 .map(str::to_string),
-            role: claims
-                .role
-                .filter(|role| role.len() <= 64 && !role.chars().any(char::is_control)),
-            tenant_ids: claims.tenant_ids(),
+            role,
+            tenant_ids,
             assurance,
-            scopes: claims.scopes(),
+            scopes,
             step_up_at,
         })
     }
