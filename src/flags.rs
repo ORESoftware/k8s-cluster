@@ -18,6 +18,12 @@ pub enum CliFlagError {
     InvalidValues(String),
 }
 
+fn redact_unknown_option(option: &str) -> String {
+    option
+        .split_once('=')
+        .map_or_else(|| option.to_owned(), |(name, _)| format!("{name}=<redacted>"))
+}
+
 pub fn parse_cli_flags(
     argv: &[String],
     config_path: Option<&str>,
@@ -31,7 +37,12 @@ pub fn parse_cli_flags(
         .map_err(|error| CliFlagError::Parse(error.to_string()))?;
     if !parsed.unknown_options.is_empty() {
         return Err(CliFlagError::UnknownOptions(
-            parsed.unknown_options.join(", "),
+            parsed
+                .unknown_options
+                .iter()
+                .map(|option| redact_unknown_option(option))
+                .collect::<Vec<_>>()
+                .join(", "),
         ));
     }
     if !parsed.errors.is_empty() {
@@ -113,7 +124,7 @@ default = "0.0.0.0:9091"
     }
 
     #[test]
-    fn unknown_flags_fail_closed() {
+    fn unknown_flags_fail_closed_without_echoing_values() {
         let dir = config();
         let path = dir.path().join(".cli-flags.toml");
         let argv = vec![
@@ -122,5 +133,8 @@ default = "0.0.0.0:9091"
         ];
         let error = parse_cli_flags(&argv, path.to_str()).expect_err("unknown flag");
         assert!(matches!(error, CliFlagError::UnknownOptions(_)));
+        let rendered = error.to_string();
+        assert!(rendered.contains("--database-url=<redacted>"));
+        assert!(!rendered.contains("should-not-be-a-flag"));
     }
 }
