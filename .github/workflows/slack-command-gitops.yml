@@ -205,7 +205,7 @@ jobs:
             echo
             echo '- source revision: `7f1ad57126231c0a27da19799a27aa71f4ffaf5d`'
             echo '- installed app identity: enforced'
-            echo '- focused source contracts: 12'
+            echo '- focused source contracts: 13'
             echo '- rendered resource inventory: exact'
             echo '- public surface: three exact Slack-signed POST routes'
             echo '- routing registry: thirteen reviewed channel bindings'
