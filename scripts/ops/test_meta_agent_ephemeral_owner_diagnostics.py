@@ -102,7 +102,9 @@ class MetaAgentEphemeralOwnerDiagnosticsTests(unittest.TestCase):
         ):
             with self.subTest(snippet=snippet):
                 self.assertIn(snippet, preflight)
-        self.assertNotIn("owner_token", preflight)
+        self.assertNotIn('export GH_TOKEN="$owner_token"', preflight)
+        self.assertNotIn("gh api user", preflight)
+        self.assertNotIn("/user/memberships/orgs/meta-agents-demo", preflight)
         self.assertNotIn("recursive=1", preflight)
 
     def test_publication_reuses_verified_outputs_without_source_network_fetch(self) -> None:
