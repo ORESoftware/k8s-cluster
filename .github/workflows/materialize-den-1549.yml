@@ -7,6 +7,12 @@ on:
     paths:
       - ".github/den1549/payload.part.*"
       - ".github/workflows/materialize-den-1549.yml"
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - ".github/den1549/payload.part.*"
+      - ".github/workflows/materialize-den-1549.yml"
 
 permissions:
   contents: write
@@ -17,6 +23,7 @@ concurrency:
 
 jobs:
   materialize:
+    if: github.event_name == 'push' || github.head_ref == 'agent/den-1549-sonus-gha-failover-20260803'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
