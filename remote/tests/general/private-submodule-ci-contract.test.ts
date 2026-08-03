@@ -28,6 +28,7 @@ const tokenMinter = readFileSync(
   resolve(root, 'scripts/ci/mint-github-app-installation-token.sh'),
   'utf8',
 );
+const appRunbook = readFileSync(resolve(root, 'docs/k8s-submodule-github-app.md'), 'utf8');
 const allowlist = JSON.parse(
   readFileSync(resolve(root, 'config/ci/k8s-submodule-github-app-allowlist.json'), 'utf8'),
 ) as AppAllowlist;
@@ -204,4 +205,39 @@ test('the helper verifies checkout commits match superproject gitlinks', () => {
   assert.match(helper, /git ls-files --stage/);
   assert.match(helper, /git -C "\$path" rev-parse HEAD/);
   assert.match(helper, /pinned-commit-mismatch/);
+});
+
+test('the GitHub App recovery runbook is current and fail closed', () => {
+  for (const required of [
+    'Linear: DEN-255, DEN-370, DEN-1537',
+    'K8S_SUBMODULE_APP_ID',
+    'K8S_SUBMODULE_APP_PRIVATE_KEY',
+    'backend pins + private deployment contracts',
+    'backend-submodule-access-report',
+    'trusted runs',
+    'untrusted fork',
+    'Re-run only the failed job first',
+    'complete `repo checks`',
+    'at least every 90 days',
+    'Do not fall back to an exposed or broadly scoped PAT',
+    'A personal access token supplied in chat',
+    'current authoritative commit',
+  ]) {
+    assert.ok(appRunbook.includes(required), `GitHub App runbook missing ${required}`);
+  }
+
+  assert.match(appRunbook, /\| Metadata \| Read \|/);
+  assert.match(appRunbook, /\| Contents \| Read \|/);
+  assert.match(
+    appRunbook,
+    /config\/ci\/k8s-submodule-github-app-allowlist\.json/,
+  );
+  assert.match(appRunbook, /mode-`0600` temporary file/);
+  assert.match(appRunbook, /Never put either value in Linear, chat/);
+  assert.match(appRunbook, /leave the required check red/);
+  assert.doesNotMatch(appRunbook, /\bPR #\d+\b/);
+  assert.doesNotMatch(
+    appRunbook,
+    /ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY/,
+  );
 });
