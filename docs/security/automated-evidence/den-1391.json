@@ -18,8 +18,8 @@
       "status": "automated",
       "repository": "fiducia-cloud/fiducia-e2e",
       "pull_request": 17,
-      "commit": "7fe0182e4e4a97446fe20b9aad74c08b962233fe",
-      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30836549214",
+      "commit": "22abde8ac740935e325be777e7b54e2cc7285917",
+      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30838774885",
       "workflow": ".github/workflows/production-security-system.yml",
       "source_tests": [
         "tests/system/security-boundaries.test.mjs",
@@ -35,15 +35,15 @@
         "Local process composition, not the exact production image digests or external ingress.",
         "Does not yet cover project/environment scopes, customer API-key issuance, live network policy, globally complete cross-shard listing, or independent reviewer acceptance."
       ],
-      "executed_at": "2026-08-03T17:28:00Z"
+      "executed_at": "2026-08-03T18:00:00Z"
     },
     {
       "id": "AUTH-002",
       "status": "automated",
       "repository": "fiducia-cloud/fiducia-e2e",
       "pull_request": 17,
-      "commit": "7fe0182e4e4a97446fe20b9aad74c08b962233fe",
-      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30836549214",
+      "commit": "22abde8ac740935e325be777e7b54e2cc7285917",
+      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30838774885",
       "workflow": ".github/workflows/production-security-system.yml",
       "source_tests": [
         "tests/system/security-boundaries.test.mjs"
@@ -57,7 +57,7 @@
         "Does not prove Kubernetes NetworkPolicy, public ingress reachability, peer-port policy, or exact production secrets/certificates.",
         "No packet capture or independent live-environment review is attached yet."
       ],
-      "executed_at": "2026-08-03T17:28:00Z"
+      "executed_at": "2026-08-03T18:00:00Z"
     },
     {
       "id": "AUTH-005",
@@ -89,8 +89,8 @@
       "status": "automated",
       "repository": "fiducia-cloud/fiducia-e2e",
       "pull_request": 17,
-      "commit": "7fe0182e4e4a97446fe20b9aad74c08b962233fe",
-      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30836549214",
+      "commit": "22abde8ac740935e325be777e7b54e2cc7285917",
+      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30838774885",
       "workflow": ".github/workflows/production-security-system.yml",
       "source_tests": [
         "tests/system/security-boundaries.test.mjs"
@@ -104,15 +104,40 @@
         "Does not yet exercise an external CDN/edge product, malicious DNS, unregistered redirect targets, or production egress policy.",
         "The exact production release and live packet/evidence bundle remain pending."
       ],
-      "executed_at": "2026-08-03T17:28:00Z"
+      "executed_at": "2026-08-03T18:00:00Z"
+    },
+    {
+      "id": "KV-001",
+      "status": "automated",
+      "repository": "fiducia-cloud/fiducia-e2e",
+      "pull_request": 17,
+      "commit": "22abde8ac740935e325be777e7b54e2cc7285917",
+      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30838774885",
+      "workflow": ".github/workflows/production-security-system.yml",
+      "source_tests": [
+        "tests/system/plaintext-policy.test.mjs"
+      ],
+      "environment": "Three real durable fiducia-node Raft processes at node candidate 06bbda3efd18d1e791bf933047f6baf28984959e behind the real fiducia-load-balance process; the workflow also ran the focused node policy unit test before route-level tests.",
+      "assertions": [
+        "An ordinary kv:write identity receives HTTP 403 for plaintext:true and the canary remains absent from authoritative reads.",
+        "Wildcard data-plane authority is not admin plaintext authority and cannot persist the canary.",
+        "Explicit admin:write can opt out only for a non-secret key and readback reports plaintext protection metadata.",
+        "The reserved secret keyspace rejects plaintext:true even with explicit admin authority.",
+        "The stable denial response does not echo the submitted canary value."
+      ],
+      "limitations": [
+        "The node source is a draft pull-request candidate, not the exact immutable production image and GitOps configuration.",
+        "External ingress, NetworkPolicy, Raft/PVC/snapshot/backup inspection, complete telemetry and support-artifact canary scans, restore evidence, and independent review remain pending."
+      ],
+      "executed_at": "2026-08-03T18:00:00Z"
     },
     {
       "id": "KV-002",
       "status": "automated",
       "repository": "fiducia-cloud/fiducia-e2e",
       "pull_request": 17,
-      "commit": "7fe0182e4e4a97446fe20b9aad74c08b962233fe",
-      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30836549214",
+      "commit": "22abde8ac740935e325be777e7b54e2cc7285917",
+      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30838774885",
       "workflow": ".github/workflows/production-security-system.yml",
       "source_tests": [
         "tests/system/kv-isolation.test.mjs"
@@ -126,15 +151,15 @@
         "Partial KV-002 proof: percent/double encoding, Unicode normalization, empty/root prefix, path ACLs, ESO namespace/service-account identity, and exact production ingress remain pending.",
         "The current list route is not proven globally complete across shards; DEN-1517 owns that separate contract and implementation."
       ],
-      "executed_at": "2026-08-03T17:28:00Z"
+      "executed_at": "2026-08-03T18:00:00Z"
     },
     {
       "id": "KV-004",
       "status": "automated",
       "repository": "fiducia-cloud/fiducia-e2e",
       "pull_request": 17,
-      "commit": "7fe0182e4e4a97446fe20b9aad74c08b962233fe",
-      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30836549214",
+      "commit": "22abde8ac740935e325be777e7b54e2cc7285917",
+      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30838774885",
       "workflow": ".github/workflows/production-security-system.yml",
       "source_tests": [
         "tests/system/kv-isolation.test.mjs"
@@ -148,7 +173,7 @@
         "Partial redaction proof only; it does not scan production logs, metrics, traces, audit sinks, browser artifacts, exports, support bundles, Raft storage, snapshots, or backups.",
         "ESO/TLS paths, exact release images/configuration, retention window scans, and independent review remain pending."
       ],
-      "executed_at": "2026-08-03T17:28:00Z"
+      "executed_at": "2026-08-03T18:00:00Z"
     }
   ]
 }
