@@ -29,6 +29,14 @@ public repository idempotently, pushes only the reviewed `main` and feature
 refs without force, verifies the live metadata and SHAs, and opens the normal
 implementation PR.
 
+Bundle verification must run inside the initialized source repository. `git
+bundle verify` consults repository state even for a self-contained bundle, so
+invoking it from the Actions workspace can fail before publication despite a
+valid digest and exact ref inventory. The workflow therefore proves the source
+checkout is a work tree and runs `git -C "$source_root" bundle verify` before the
+sealed publisher is allowed to execute. Focused tests reject a regression to an
+unscoped workspace-level invocation.
+
 ## Rotation and audit
 
 Because a credential was disclosed in chat, rotate the credential immediately
