@@ -26,6 +26,11 @@ resources:
   - dd-build-server.deployment.yaml
   - dd-build-server.service.yaml
   - dd-build-server.networkpolicy.yaml
+  - dd-gha-clone-server.configmap.yaml
+  - dd-gha-clone-server.externalsecret.yaml
+  - dd-gha-clone-server.deployment.yaml
+  - dd-gha-clone-server.service.yaml
+  - dd-gha-clone-server.networkpolicy.yaml
   - dd-image-builder.deployment.yaml
   - dd-image-builder.service.yaml
   - dd-image-builder.networkpolicy.yaml
@@ -267,3 +272,9 @@ patches:
       version: v1
       kind: Deployment
       name: dd-athleto-backend
+  - path: dd-build-server-gha-continuity.patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: dd-build-server
