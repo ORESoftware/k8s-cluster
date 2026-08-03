@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
-"""Credential-free validation for the inert Sonus Auris ARC scaffold."""
+"""Credential-free contract checks for DEN-381 and DEN-1549."""
 
 from __future__ import annotations
 
 import re
 import sys
-from collections.abc import Callable
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-SCAFFOLD = ROOT / "remote/argocd/ci-runners/sonus-auris"
-TEMPLATE = SCAFFOLD / "sonus-ci-runner-set.application.template.yaml"
-EXTERNAL_SECRET = SCAFFOLD / "sonus-arc-github.externalsecret.template.yaml"
-SMOKE_WORKFLOW = SCAFFOLD / "sonus-ci-smoke.workflow.template.yml"
-RUNNER_DOCKERFILE = ROOT / "remote/deployments/sonus-auris-ci-runner/Dockerfile"
-RUNNER_README = ROOT / "remote/deployments/sonus-auris-ci-runner/README.md"
-CONTROLLER_APP = ROOT / "remote/argocd/apps/canonical-ci-arc-controller.application.yaml"
+ARC_VERSION = "0.14.2"
+RUNNER_VERSION = "2.334.0"
+SONUS = ROOT / "remote/argocd/ci-runners/sonus-auris"
+AWS = ROOT / "remote/argocd/clusters/aws/gha-ci.applications.yaml"
+HETZNER = ROOT / "remote/argocd/clusters/hetzner/gha-ci.applications.yaml"
+BROKER = ROOT / "remote/deployments/gha-clone-server-rs"
+RUNNER = ROOT / "remote/deployments/sonus-auris-ci-runner"
+WORKFLOW = ROOT / ".github/workflows/sonus-arc-scaffold.yml"
+DOC = ROOT / "docs/github-actions-self-hosted-failover.md"
 
 
 def fail(message: str) -> None:
@@ -28,205 +29,392 @@ def require(condition: bool, message: str) -> None:
         fail(message)
 
 
-def flattened(text: str) -> str:
-    """Normalize prose whitespace without altering code/token checks."""
-    return " ".join(text.split())
-
-
 def read(path: Path) -> str:
-    require(path.is_file(), f"missing scaffold file: {path.relative_to(ROOT)}")
+    require(path.is_file(), f"missing file: {path.relative_to(ROOT)}")
     return path.read_text(encoding="utf-8")
 
 
-def extract_chart_version(text: str) -> str:
-    match = re.search(r"(?m)^\s*targetRevision:\s*([0-9]+\.[0-9]+\.[0-9]+)\s*$", text)
-    require(match is not None, "missing pinned ARC chart targetRevision")
-    return match.group(1)
+def documents(text: str) -> list[str]:
+    return [part.strip() for part in re.split(r"(?m)^---\s*$", text) if part.strip()]
 
 
-def version_tuple(value: str) -> tuple[int, int, int]:
-    parts = value.split(".")
-    require(len(parts) == 3 and all(part.isdigit() for part in parts), f"invalid version: {value}")
-    return int(parts[0]), int(parts[1]), int(parts[2])
+def app_document(text: str, name: str) -> str:
+    for document in documents(text):
+        if re.search(rf"(?m)^\s*name:\s*{re.escape(name)}\s*$", document):
+            return document
+    fail(f"missing Argo Application {name}")
 
 
 def check_files() -> None:
     for path in (
-        SCAFFOLD / "README.md",
-        TEMPLATE,
-        EXTERNAL_SECRET,
-        SMOKE_WORKFLOW,
-        RUNNER_DOCKERFILE,
-        RUNNER_README,
-        CONTROLLER_APP,
+        SONUS / "README.md",
+        SONUS / "base/kustomization.yaml",
+        SONUS / "base/namespace.yaml",
+        SONUS / "base/externalsecrets.yaml",
+        SONUS / "base/resource-policy.yaml",
+        SONUS / "base/runner-networkpolicy.yaml",
+        SONUS / "gha-clone-server-policy.configmap.template.yaml",
+        SONUS / "gha-clone-server.deployment.template.yaml",
+        SONUS / "sonus-ci-runner-set.application.template.yaml",
+        SONUS / "sonus-arc-github.externalsecret.template.yaml",
+        SONUS / "sonus-ci-smoke.workflow.template.yml",
+        ROOT / "remote/argocd/ci-runners/sonus-auris-arc-plan.md",
+        AWS,
+        HETZNER,
+        BROKER / "Cargo.toml",
+        BROKER / "src/lib.rs",
+        BROKER / "src/main.rs",
+        BROKER / "Dockerfile",
+        BROKER / "README.md",
+        RUNNER / "Dockerfile",
+        RUNNER / "README.md",
+        WORKFLOW,
+        DOC,
     ):
         read(path)
 
 
 def check_inert() -> None:
-    template = read(TEMPLATE)
-    external_secret = read(EXTERNAL_SECRET)
-    design = flattened(read(SCAFFOLD / "README.md"))
-    require("template-only" in template, "runner template must declare template-only promotion state")
-    require("template-only" in external_secret, "ExternalSecret must declare template-only promotion state")
-    require("REPLACE_IMAGE_DIGEST" in template, "template must retain an obvious image-digest placeholder")
-    require("remote/argocd/apps/" in design, "design must explain explicit promotion into active apps")
-    require("does not register runners" in design, "design must state that merge alone is inert")
+    base = read(SONUS / "base/kustomization.yaml")
+    for template in (
+        "gha-clone-server-policy.configmap.template.yaml",
+        "gha-clone-server.deployment.template.yaml",
+        "sonus-ci-runner-set.application.template.yaml",
+        "sonus-arc-github.externalsecret.template.yaml",
+    ):
+        require(template not in base, f"template must remain inactive: {template}")
+
+    for cloud, path in (("aws", AWS), ("hetzner", HETZNER)):
+        text = read(path)
+        controller = app_document(text, "dd-sonus-ci-arc-controller")
+        runner = app_document(text, "dd-sonus-ci-runner-set")
+        require("automated:" not in controller, f"{cloud} controller must be audit-gated")
+        require("automated:" not in runner, f"{cloud} scale set must be credential-gated")
+        require(
+            "controller-and-crd-audit-gated" in controller,
+            f"{cloud} controller lacks the activation gate",
+        )
+        require(
+            "credential-runner-group-and-smoke-gated" in runner,
+            f"{cloud} scale set lacks the activation gate",
+        )
+
+    deployment = read(SONUS / "gha-clone-server.deployment.template.yaml")
+    require(
+        "REPLACE_GHA_CLONE_SERVER_IMAGE_DIGEST" in deployment,
+        "broker deployment must remain digest-gated",
+    )
+    require('value: "false"' in deployment, "broker mutation must default false")
 
 
 def check_versions() -> None:
-    template_version = extract_chart_version(read(TEMPLATE))
-    controller_version = extract_chart_version(read(CONTROLLER_APP))
+    for cloud, path in (("aws", AWS), ("hetzner", HETZNER)):
+        text = read(path)
+        controller = app_document(text, "dd-sonus-ci-arc-controller")
+        runner = app_document(text, "dd-sonus-ci-runner-set")
+        require(
+            f"targetRevision: {ARC_VERSION}" in controller,
+            f"{cloud} controller must pin ARC {ARC_VERSION}",
+        )
+        require(
+            f"targetRevision: {ARC_VERSION}" in runner,
+            f"{cloud} runner must pin ARC {ARC_VERSION}",
+        )
+        require(
+            f"image: ghcr.io/actions/actions-runner:{RUNNER_VERSION}" in runner,
+            f"{cloud} runner must pin {RUNNER_VERSION}",
+        )
+
+    template = read(SONUS / "sonus-ci-runner-set.application.template.yaml")
     require(
-        template_version == controller_version,
-        f"runner chart {template_version} must match controller chart {controller_version}",
+        f"targetRevision: {ARC_VERSION}" in template,
+        "single-cluster template must track the reviewed ARC version",
+    )
+    dockerfile = read(RUNNER / "Dockerfile")
+    require(
+        f"ARG RUNNER_VERSION={RUNNER_VERSION}" in dockerfile,
+        "custom runner Dockerfile must track the reviewed runner version",
     )
 
 
 def check_template() -> None:
-    template = read(TEMPLATE)
-    required_tokens = (
+    template = read(SONUS / "sonus-ci-runner-set.application.template.yaml")
+    for token in (
+        "promotion-state: template-only",
+        'runnerGroup: "REPLACE_RUNNER_GROUP"',
+        "REPLACE_IMAGE_DIGEST",
         "githubConfigUrl: https://github.com/sonus-auris",
         "githubConfigSecret: sonus-auris-arc-github",
         "runnerScaleSetName: sonus-ci",
-        "minRunners: 0",
-        "maxRunners: 2",
+        "name: sonus-ci-arc-gha-rs-controller",
         "automountServiceAccountToken: false",
-        "runAsNonRoot: true",
-        "allowPrivilegeEscalation: false",
-        'drop: ["ALL"]',
-        "seccompProfile:",
-        "ephemeral-storage:",
-        "emptyDir:",
-    )
-    for token in required_tokens:
-        require(token in template, f"runner template is missing safety control: {token}")
-
-    forbidden_tokens = (
+        "tool-cache",
+        "sizeLimit: 10Gi",
+    ):
+        require(token in template, f"custom-image template missing: {token}")
+    require("automated:" not in template, "custom-image template must remain manual")
+    for forbidden in (
         "hostPath:",
-        "/var/run/docker.sock",
+        "docker.sock",
+        "containerd.sock",
         "privileged: true",
         "github_token:",
-        "github_app_private_key:",
-        "personal_access_token:",
-    )
-    for token in forbidden_tokens:
-        require(token not in template, f"runner template contains forbidden capability/secret: {token}")
+        "BEGIN PRIVATE KEY",
+        ":latest",
+    ):
+        require(forbidden not in template, f"custom-image template contains: {forbidden}")
+
+    aws = read(AWS)
+    hetzner = read(HETZNER)
+    for cloud, text, group in (
+        ("aws", aws, "sonus-aws"),
+        ("hetzner", hetzner, "sonus-hetzner"),
+    ):
+        runner = app_document(text, "dd-sonus-ci-runner-set")
+        for token in (
+            "githubConfigUrl: https://github.com/sonus-auris",
+            "githubConfigSecret: sonus-auris-arc-github",
+            f'runnerGroup: "{group}"',
+            "runnerScaleSetName: sonus-ci",
+            "minRunners: 0",
+            "maxRunners: 4",
+            "controllerServiceAccount:",
+            "namespace: arc-systems",
+            "name: sonus-ci-arc-gha-rs-controller",
+            "automountServiceAccountToken: false",
+            "runAsNonRoot: true",
+            "allowPrivilegeEscalation: false",
+            'drop: ["ALL"]',
+            "emptyDir:",
+            "sizeLimit: 20Gi",
+            "sizeLimit: 4Gi",
+        ):
+            require(token in runner, f"{cloud} runner missing contract: {token}")
+        for forbidden in (
+            "hostPath:",
+            "docker.sock",
+            "containerd.sock",
+            "privileged: true",
+            "github_token:",
+            "BEGIN PRIVATE KEY",
+        ):
+            require(forbidden not in runner, f"{cloud} runner contains forbidden token: {forbidden}")
+
+    require('runnerGroup: "sonus-aws"' not in hetzner, "Hetzner cannot use AWS group")
+    require('runnerGroup: "sonus-hetzner"' not in aws, "AWS cannot use Hetzner group")
+    for cloud in ("aws", "hetzner"):
+        kustomization = read(ROOT / f"remote/argocd/clusters/{cloud}/kustomization.yaml")
+        require(
+            "- gha-ci.applications.yaml" in kustomization,
+            f"{cloud} overlay does not include CI Applications",
+        )
 
 
-def check_activation_templates() -> None:
-    external_secret = read(EXTERNAL_SECRET)
+def check_activation() -> None:
+    external = read(SONUS / "base/externalsecrets.yaml")
     for token in (
-        "kind: ExternalSecret",
+        "apiVersion: external-secrets.io/v1",
         "name: sonus-auris-arc-github",
-        "namespace: arc-runners",
-        "kind: ClusterSecretStore",
-        "name: aws-secrets",
-        "key: sonus-auris/arc-github",
+        "name: sonus-auris-gha-capacity-broker",
+        "name: dd-cluster-secrets",
+        "key: dd/ci/github-apps/sonus-auris-arc",
+        "key: dd/ci/github-apps/sonus-auris-capacity-broker",
         "secretKey: github_app_id",
         "secretKey: github_app_installation_id",
         "secretKey: github_app_private_key",
-        "property: github_app_id",
-        "property: github_app_installation_id",
-        "property: github_app_private_key",
+        "property: server_auth_secret",
     ):
-        require(token in external_secret, f"ExternalSecret template is missing: {token}")
-    require("BEGIN PRIVATE KEY" not in external_secret, "ExternalSecret template contains private key material")
+        require(token in external, f"ExternalSecret contract missing: {token}")
 
-    smoke = read(SMOKE_WORKFLOW)
+    policy = read(SONUS / "gha-clone-server-policy.configmap.template.yaml")
+    for token in (
+        '"includedMinutes": 2000',
+        '"selfHostedReady": false',
+        '"selfHostedRunsOn": ["sonus-ci"]',
+        '"selectedRepositoryIds": [1294558398]',
+    ):
+        require(token in policy, f"capacity policy missing: {token}")
+
+    deployment = read(SONUS / "gha-clone-server.deployment.template.yaml")
+    for token in (
+        "GHA_ORGANIZATION",
+        "value: sonus-auris",
+        "GHA_ORG_POLICY_JSON",
+        "GITHUB_APP_PRIVATE_KEY_PATH",
+        "automountServiceAccountToken: false",
+        "readOnlyRootFilesystem: true",
+    ):
+        require(token in deployment, f"broker deployment missing: {token}")
+
+
+def check_runner() -> None:
+    network = read(SONUS / "base/runner-networkpolicy.yaml")
+    for token in (
+        "dd.dev/ci-runner: sonus-ci",
+        "ingress: []",
+        "169.254.0.0/16",
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+        "port: 443",
+        "port: 53",
+    ):
+        require(token in network, f"runner NetworkPolicy missing: {token}")
+
+    dockerfile = read(RUNNER / "Dockerfile")
+    for token in (
+        f"ARG RUNNER_VERSION={RUNNER_VERSION}",
+        "FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION}",
+        "openjdk-17-jdk-headless",
+        "libgtk-3-dev",
+    ):
+        require(token in dockerfile, f"custom runner image missing: {token}")
+    for forbidden in (
+        "docker.sock",
+        "containerd.sock",
+        "--privileged",
+        "github_token",
+        "ghp_",
+        ":latest",
+    ):
+        require(
+            forbidden not in dockerfile,
+            f"custom runner image contains forbidden token: {forbidden}",
+        )
+    user_instructions = [
+        line.strip()
+        for line in dockerfile.splitlines()
+        if re.match(r"^\s*USER\s+\S+", line)
+    ]
+    require(user_instructions, "custom runner image must declare a USER")
+    final_user = user_instructions[-1].split(maxsplit=1)[1]
+    require(
+        final_user in {"runner", "1001", "1001:1001"},
+        "custom runner image must finish under a reviewed non-root runner identity",
+    )
+
+    smoke = read(SONUS / "sonus-ci-smoke.workflow.template.yml")
     for token in (
         "workflow_dispatch:",
-        "contents: read",
         "runs-on: sonus-ci",
-        "timeout-minutes: 5",
-        "test ! -e /var/run/docker.sock",
-        "test ! -e /var/run/secrets/kubernetes.io/serviceaccount/token",
         'test "$(id -u)" != 0',
+        "test ! -e /var/run/docker.sock",
+        "test ! -e /run/containerd/containerd.sock",
+        "test ! -e /var/run/secrets/kubernetes.io/serviceaccount/token",
+        "test -x /usr/bin/git",
+        "test -x /usr/bin/curl",
+        "test -x /usr/bin/python3",
+        "Exercise bounded workspace lifecycle",
+        "Report non-sensitive runner evidence",
     ):
-        require(token in smoke, f"smoke workflow template is missing: {token}")
-    require("pull_request:" not in smoke, "initial self-hosted smoke must not run on pull requests")
-    require("secrets." not in smoke, "initial self-hosted smoke must not consume repository secrets")
-
-
-def check_runner_image() -> None:
-    dockerfile = read(RUNNER_DOCKERFILE)
-    base_match = re.search(
-        r"(?m)^ARG RUNNER_VERSION=([0-9]+\.[0-9]+\.[0-9]+)\s*$",
-        dockerfile,
-    )
-    require(base_match is not None, "Dockerfile must pin an exact Actions runner version")
-    runner_version = base_match.group(1)
-    require(version_tuple(runner_version) >= (2, 329, 0), "runner version is below GitHub's enforced minimum")
-    require(
-        "FROM ghcr.io/actions/actions-runner:${RUNNER_VERSION}" in dockerfile,
-        "Dockerfile must derive from the official version-pinned runner image",
-    )
-    require("USER 1001" in dockerfile, "final image must run as the non-root runner uid")
-    require("latest" not in dockerfile.lower(), "Dockerfile must not use mutable latest tags")
-    require("docker.sock" not in dockerfile, "non-privileged image must not reference the host Docker socket")
-    require(" chromium " not in flattened(dockerfile), "system Chromium must not replace lockfile-selected browser binaries")
-    require("rm -rf" not in dockerfile, "runner image must not use broad raw deletion")
+        require(token in smoke, f"smoke workflow missing: {token}")
+    require("pull_request" not in smoke, "self-hosted smoke must remain manual-only")
+    require("secrets." not in smoke, "self-hosted smoke must not consume repo secrets")
 
 
 def check_docs() -> None:
-    prose = flattened(read(SCAFFOLD / "README.md") + "\n" + read(RUNNER_README))
+    combined = "\n".join(
+        read(path)
+        for path in (
+            DOC,
+            SONUS / "README.md",
+            ROOT / "remote/argocd/ci-runners/sonus-auris-arc-plan.md",
+            BROKER / "README.md",
+            RUNNER / "README.md",
+        )
+    )
     for phrase in (
-        "2,000 included",
-        "August 1, 2026",
-        "cannot execute the iOS",
-        "Android emulator",
-        "positive hosted Actions budget",
-        "Do not migrate required checks",
+        "not a clone of GitHub's proprietary workflow service",
+        "sonus-aws",
+        "sonus-hetzner",
+        "selected-repository",
+        "macOS",
+        "Android/KVM",
+        "Revoke",
+        "hosted-vs-ARC parity",
+        "personal GitHub account",
+        "current UTC year and month",
+        "dd-build-server",
     ):
-        require(phrase in prose, f"missing operational limitation: {phrase}")
+        require(phrase.lower() in combined.lower(), f"documentation missing: {phrase}")
 
 
 def check_secrets() -> None:
-    combined = "\n".join(
-        (
-            read(TEMPLATE),
-            read(EXTERNAL_SECRET),
-            read(SMOKE_WORKFLOW),
-            read(RUNNER_DOCKERFILE),
-            read(SCAFFOLD / "README.md"),
-            read(RUNNER_README),
-        )
-    )
-    require("BEGIN PRIVATE KEY" not in combined, "private key material is forbidden")
-    require(
-        not re.search(r"(?im)^\s*(token|password|private_key)\s*:\s*[^<\s]", combined),
-        "possible committed credential",
-    )
+    paths = [
+        *SONUS.rglob("*.*"),
+        AWS,
+        HETZNER,
+        BROKER / "src/main.rs",
+        BROKER / "README.md",
+        DOC,
+        WORKFLOW,
+    ]
+    combined = "\n".join(read(path) for path in paths if path.is_file())
+    for forbidden in (
+        "BEGIN RSA PRIVATE KEY",
+        "BEGIN PRIVATE KEY",
+        "ghp_",
+        "github_pat_",
+        "GH_PAT",
+        "personal_access_token",
+    ):
+        require(forbidden not in combined, f"possible committed secret marker: {forbidden}")
+
+    main = read(BROKER / "src/main.rs")
+    lib = read(BROKER / "src/lib.rs")
+    for forbidden in (
+        "std::process::Command",
+        "tokio::process::Command",
+        "Command::new",
+        "GITHUB_TOKEN",
+    ):
+        require(forbidden not in main, f"broker violates bounded control-plane contract: {forbidden}")
+    for token in (
+        "/organizations/{org}/settings/billing/usage",
+        '("year", now.year().to_string())',
+        '("month", (now.month() as u8).to_string())',
+        "/orgs/{org}/actions/variables/{}",
+        "GHA_ORGANIZATION",
+        "GHA_ORG_POLICY_JSON",
+        "arbitrary_command_execution: false",
+    ):
+        require(token in main, f"broker implementation missing: {token}")
+    for token in (
+        "moves_to_arc_at_threshold",
+        "uses_bounded_build_server_only_at_hard_stop",
+        "billing_failure_fails_closed_to_validated_arc",
+        "broad_variable_visibility_is_impossible_without_repo_ids",
+        "prefer_self_hosted_overrides_low_usage_after_certification",
+        "prefer_self_hosted_does_not_bypass_readiness",
+        "unavailable_billing_holds_before_arc_certification",
+        "negative_usage_is_clamped_and_product_matching_is_case_insensitive",
+        "self_hosted_label_must_be_explicit",
+        "rejects_non_finite_policy_numbers",
+    ):
+        require(token in lib, f"broker unit test missing: {token}")
 
 
-CHECKS: dict[str, Callable[[], None]] = {
+CHECKS = {
     "files": check_files,
     "inert": check_inert,
     "versions": check_versions,
     "template": check_template,
-    "activation": check_activation_templates,
-    "runner": check_runner_image,
+    "activation": check_activation,
+    "runner": check_runner,
     "docs": check_docs,
     "secrets": check_secrets,
 }
 
 
 def main() -> None:
-    selected = sys.argv[1:] or list(CHECKS)
-    unknown = [name for name in selected if name not in CHECKS]
-    require(not unknown, f"unknown checks: {unknown}; choose from {sorted(CHECKS)}")
-    for name in selected:
-        CHECKS[name]()
+    requested = sys.argv[1:] or list(CHECKS)
+    for name in requested:
+        check = CHECKS.get(name)
+        if check is None:
+            fail(f"unknown check {name}; expected one of {', '.join(CHECKS)}")
+        check()
         print(f"PASS: {name}")
-
-    template_version = extract_chart_version(read(TEMPLATE))
-    runner_match = re.search(
-        r"(?m)^ARG RUNNER_VERSION=([0-9]+\.[0-9]+\.[0-9]+)\s*$",
-        read(RUNNER_DOCKERFILE),
-    )
-    require(runner_match is not None, "runner version disappeared after validation")
-    print("Sonus Auris ARC scaffold is inert, pinned, and policy-compliant.")
-    print(f"ARC chart: {template_version}; runner: {runner_match.group(1)}")
+    print(f"Sonus ARC failover contract is coherent: ARC {ARC_VERSION}, runner {RUNNER_VERSION}")
 
 
 if __name__ == "__main__":
