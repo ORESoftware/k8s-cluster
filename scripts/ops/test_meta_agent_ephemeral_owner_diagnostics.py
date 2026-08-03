@@ -15,18 +15,27 @@ class MetaAgentEphemeralOwnerDiagnosticsTests(unittest.TestCase):
         cls.workflow = WORKFLOW.read_text(encoding="utf-8")
         cls.doc = DOC.read_text(encoding="utf-8")
 
-    def test_decrypt_and_authorization_stages_are_distinct_and_ordered(self) -> None:
+    def test_preflight_decrypt_and_authorization_stages_are_distinct_and_ordered(
+        self,
+    ) -> None:
         names = [
+            "source-helper",
+            "source-preflight",
+            "challenge-bootstrap",
+            "await-encrypted-response",
             "decrypt-ciphertext",
             "validate-owner-token-shape",
             "validate-owner-identity",
             "validate-owner-membership",
-            "reconstruct-reviewed-history",
             "create-and-push-exact-repository",
+            "verify-live-repository",
+            "ensure-review-pull-request",
+            "complete",
         ]
         offsets = [self.workflow.index(f"stage={name}") for name in names]
         self.assertEqual(offsets, sorted(offsets))
         self.assertNotIn("stage=decrypt-and-validate-owner", self.workflow)
+        self.assertNotIn("stage=reconstruct-reviewed-history", self.workflow)
 
     def test_oaep_and_mgf1_are_both_explicit_sha256(self) -> None:
         decrypt = self.workflow[
@@ -50,7 +59,9 @@ class MetaAgentEphemeralOwnerDiagnosticsTests(unittest.TestCase):
 
     def test_token_shape_is_checked_before_export_or_network_use(self) -> None:
         stage = self.workflow.index("stage=validate-owner-token-shape")
-        shape = self.workflow.index('[[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]')
+        shape = self.workflow.index(
+            '[[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]'
+        )
         mask = self.workflow.index('echo "::add-mask::$owner_token"')
         export = self.workflow.index('export GH_TOKEN="$owner_token"')
         identity = self.workflow.index("stage=validate-owner-identity")
@@ -62,7 +73,7 @@ class MetaAgentEphemeralOwnerDiagnosticsTests(unittest.TestCase):
     def test_identity_and_membership_requests_fail_closed_without_token_output(self) -> None:
         identity_block = self.workflow[
             self.workflow.index("stage=validate-owner-identity") :
-            self.workflow.index("stage=reconstruct-reviewed-history")
+            self.workflow.index("stage=create-and-push-exact-repository")
         ]
         self.assertIn("if ! owner_login=", identity_block)
         self.assertIn('test "$owner_login" = ORESoftware', identity_block)
@@ -72,23 +83,42 @@ class MetaAgentEphemeralOwnerDiagnosticsTests(unittest.TestCase):
         self.assertNotIn("echo $owner_token", identity_block)
         self.assertNotIn("printf $owner_token", identity_block)
 
-    def test_current_git_object_snapshot_survives_the_diagnostic_layer(self) -> None:
-        reconstruction = self.workflow[
-            self.workflow.index("stage=reconstruct-reviewed-history") :
-            self.workflow.index("stage=create-and-push-exact-repository")
+    def test_source_preflight_is_complete_before_challenge_and_owner_state(self) -> None:
+        preflight = self.workflow[
+            self.workflow.index("stage=source-helper") :
+            self.workflow.index("stage=challenge-bootstrap")
         ]
         for snippet in (
-            'git/commits/${SOURCE_SHA}',
-            'git/trees/${source_tree_sha}?recursive=1',
-            'git/blobs/${asset_sha}',
-            'bundle_base64="$work/meta-agent-control-plane-den-1057.bundle.b64"',
-            'git -C "$source_root" bundle verify "$bundle"',
+            "SOURCE_HELPER_BLOB_SHA",
+            "verify_meta_agent_source_snapshot.py?ref=${TRUSTED_SHA}",
+            'GH_TOKEN="$workflow_token" python3 "$helper"',
+            '--source-sha "$SOURCE_SHA"',
+            '--bundle-sha256 "$BUNDLE_SHA256"',
+            '--publisher-sha256 "$PUBLISHER_SHA256"',
+            '--expected-head "refs/heads/main=${EXPECTED_MAIN}"',
+            '--expected-head "refs/heads/${FEATURE_REF}=${EXPECTED_FEATURE}"',
+            'test -s "$bundle"',
+            'test -s "$publisher"',
         ):
             with self.subTest(snippet=snippet):
-                self.assertIn(snippet, reconstruction)
-        self.assertNotIn('fetch --depth=1 --no-tags origin "$SOURCE_SHA"', reconstruction)
+                self.assertIn(snippet, preflight)
+        self.assertNotIn("owner_token", preflight)
+        self.assertNotIn("recursive=1", preflight)
 
-    def test_cleanup_erases_derived_identity_state_and_plaintext_transport_remains_absent(self) -> None:
+    def test_publication_reuses_verified_outputs_without_source_network_fetch(self) -> None:
+        post_auth = self.workflow[
+            self.workflow.index("stage=create-and-push-exact-repository") :
+            self.workflow.index("stage=complete")
+        ]
+        self.assertIn('python3 "$publisher" "$bundle"', post_auth)
+        self.assertNotIn("git fetch", post_auth)
+        self.assertNotIn("git clone", post_auth)
+        self.assertNotIn("git/trees/", post_auth)
+        self.assertNotIn("git/blobs/", post_auth)
+
+    def test_cleanup_erases_derived_identity_state_and_plaintext_transport_remains_absent(
+        self,
+    ) -> None:
         self.assertIn(
             "unset owner_token owner_login membership GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN",
             self.workflow,
@@ -97,12 +127,13 @@ class MetaAgentEphemeralOwnerDiagnosticsTests(unittest.TestCase):
         self.assertNotIn("upload-artifact", self.workflow)
         self.assertNotIn("actions/cache", self.workflow)
 
-    def test_operator_documentation_merges_snapshot_and_failure_boundaries(self) -> None:
+    def test_operator_documentation_merges_preflight_and_failure_boundaries(self) -> None:
         for phrase in (
             "RSA-OAEP-SHA256",
             "MGF1-SHA256",
             "commit/tree/blob API snapshot",
             "two base64 layers",
+            "source preflight",
             "decrypt-ciphertext",
             "validate-owner-identity",
             "validate-owner-membership",
