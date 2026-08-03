@@ -188,6 +188,7 @@ class MetaAgentSourceSnapshotTests(unittest.TestCase):
 
             self.assertEqual(result.asset_count, 3)
             self.assertEqual(result.heads, expected_heads)
+            self.assertEqual(result.auxiliary_heads, {})
             self.assertEqual(result.bundle_path.read_bytes(), fixture.bundle_bytes)
             self.assertEqual(result.publisher_path.read_bytes(), fixture.publisher_bytes)
             self.assertEqual(result.bundle_path.stat().st_mode & 0o777, 0o600)
@@ -195,7 +196,37 @@ class MetaAgentSourceSnapshotTests(unittest.TestCase):
             evidence = json.loads(result.sanitized_json())
             self.assertEqual(evidence["status"], "verified")
             self.assertEqual(evidence["asset_count"], 3)
+            self.assertEqual(evidence["auxiliary_heads"], {})
             self.assertNotIn("token", result.sanitized_json().lower())
+
+    def test_allows_head_pseudo_ref_at_a_reviewed_branch_sha(self) -> None:
+        expected = {
+            "refs/heads/main": "1" * 40,
+            "refs/heads/agent/feature": "2" * 40,
+        }
+        branches, auxiliary = MODULE.validate_bundle_heads(
+            {**expected, "HEAD": expected["refs/heads/agent/feature"]}, expected
+        )
+        self.assertEqual(branches, expected)
+        self.assertEqual(auxiliary, {"HEAD": "2" * 40})
+
+    def test_rejects_head_pseudo_ref_at_an_unreviewed_sha(self) -> None:
+        expected = {"refs/heads/main": "1" * 40}
+        with self.assertRaisesRegex(
+            MODULE.VerificationError,
+            "auxiliary ref HEAD points outside the reviewed branch SHAs",
+        ):
+            MODULE.validate_bundle_heads({**expected, "HEAD": "2" * 40}, expected)
+
+    def test_rejects_non_head_auxiliary_refs(self) -> None:
+        expected = {"refs/heads/main": "1" * 40}
+        with self.assertRaisesRegex(
+            MODULE.VerificationError,
+            "unsupported auxiliary refs: refs/tags/not-publishable",
+        ):
+            MODULE.validate_bundle_heads(
+                {**expected, "refs/tags/not-publishable": "1" * 40}, expected
+            )
 
     def test_rejects_truncated_bounded_tree(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -220,13 +251,13 @@ class MetaAgentSourceSnapshotTests(unittest.TestCase):
                     output_dir=root / "output",
                 )
 
-    def test_rejects_exact_ref_mismatch(self) -> None:
+    def test_rejects_exact_branch_ref_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             fixture = SnapshotFixture(root)
             with self.assertRaisesRegex(
                 MODULE.VerificationError,
-                "bundle refs do not exactly match the reviewed ref inventory",
+                "bundle branch refs do not exactly match the reviewed branch inventory",
             ):
                 MODULE.reconstruct_and_verify(
                     client=fixture.client(),
