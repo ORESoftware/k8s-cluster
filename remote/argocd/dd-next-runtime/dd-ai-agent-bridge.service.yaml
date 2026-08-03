@@ -78,7 +78,8 @@ metadata:
   name: dd-slack-command
   namespace: default
   labels:
-    app: dd-slack-command
+    app: dd-ai-agent-bridge
+    app.kubernetes.io/component: slack-command
   annotations:
     denman.linear.app/issue: DEN-1298
 spec:
@@ -89,11 +90,13 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app: dd-slack-command
+      app: dd-ai-agent-bridge
+      app.kubernetes.io/component: slack-command
   template:
     metadata:
       labels:
-        app: dd-slack-command
+        app: dd-ai-agent-bridge
+        app.kubernetes.io/component: slack-command
       annotations:
         dd.dev/source-repository: ORESoftware/ai-agent-bridge.rs
         dd.dev/source-revision: 7f1ad57126231c0a27da19799a27aa71f4ffaf5d
@@ -281,7 +284,8 @@ metadata:
 spec:
   type: ClusterIP
   selector:
-    app: dd-slack-command
+    app: dd-ai-agent-bridge
+    app.kubernetes.io/component: slack-command
   ports:
     - name: http
       port: 8151
@@ -298,7 +302,8 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: dd-slack-command
+      app: dd-ai-agent-bridge
+      app.kubernetes.io/component: slack-command
   policyTypes:
     - Ingress
     - Egress
@@ -380,7 +385,8 @@ spec:
   minAvailable: 1
   selector:
     matchLabels:
-      app: dd-slack-command
+      app: dd-ai-agent-bridge
+      app.kubernetes.io/component: slack-command
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
