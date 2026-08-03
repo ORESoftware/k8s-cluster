@@ -27,8 +27,10 @@ metadata:
     app.kubernetes.io/part-of: argocd
 data:
   # Use a composable policy.*.csv key instead of replacing policy.csv. The
-  # account can inspect status/resources/logs and initiate a sync, but cannot
-  # edit app specs, delete resources, execute in pods, or run resource actions.
+  # account can inspect status/resources/logs and initiate a sync, but has no
+  # application update/delete, pod-exec, or direct resource-action permission.
+  # Sync is still an operational write and may prune resources when the target
+  # Application's configured sync options request pruning.
   policy.mobile.csv: |
     p, argocd-mobile, applications, get, */*, allow
     p, argocd-mobile, applications, sync, */*, allow
