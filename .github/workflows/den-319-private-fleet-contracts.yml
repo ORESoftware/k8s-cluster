@@ -1,0 +1,77 @@
+name: DEN-319 private fleet contracts
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/den-319-private-fleet-contracts.yml
+      - .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml
+      - scripts/ops/publish_missing_org_repositories.py
+      - scripts/ops/publish_missing_org_repositories_current.py
+      - scripts/ops/repository_fleet_visibility.py
+      - scripts/ops/test_repository_fleet_visibility.py
+      - scripts/ops/test_private_fleet_publisher_contract.py
+      - scripts/ops/finalize_missing_org_repositories.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/den-319-private-fleet-contracts.yml
+      - .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml
+      - scripts/ops/publish_missing_org_repositories.py
+      - scripts/ops/publish_missing_org_repositories_current.py
+      - scripts/ops/repository_fleet_visibility.py
+      - scripts/ops/test_repository_fleet_visibility.py
+      - scripts/ops/test_private_fleet_publisher_contract.py
+      - scripts/ops/finalize_missing_org_repositories.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: den-319-private-fleet-contracts-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the exact event revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Compile publisher contract sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile \
+            scripts/ops/repository_fleet_visibility.py \
+            scripts/ops/test_repository_fleet_visibility.py \
+            scripts/ops/test_private_fleet_publisher_contract.py \
+            scripts/ops/publish_missing_org_repositories_current.py
+
+      - name: Run visibility projection negative fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/test_repository_fleet_visibility.py -v
+
+      - name: Run protected publisher wiring contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/test_private_fleet_publisher_contract.py -v
+
+      - name: Reject whitespace errors and conflict markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check HEAD^ HEAD
+          ! git grep -nE '^(<{7}|={7}|>{7})' -- \
+            .github/workflows/den-319-private-fleet-contracts.yml \
+            .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml \
+            scripts/ops/repository_fleet_visibility.py \
+            scripts/ops/test_repository_fleet_visibility.py \
+            scripts/ops/test_private_fleet_publisher_contract.py
