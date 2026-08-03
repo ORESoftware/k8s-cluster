@@ -5,12 +5,16 @@
 # persistent volume, and is erased whenever its pod is replaced. NetworkPolicy
 # admits connections only from the two Zed server workloads.
 #
+# The registry migration creates the `vector` extension, so even this disposable
+# profile must use the reviewed pgvector/Postgres image exercised by registry CI.
 # Remove this file and restore each app's ExternalSecret before production.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: zed-postgres
   namespace: zed
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
   labels:
     app: zed-postgres
     app.kubernetes.io/name: zed-postgres
@@ -38,7 +42,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: postgres
-          image: postgres:16-alpine
+          image: pgvector/pgvector:0.8.2-pg17-bookworm
           imagePullPolicy: IfNotPresent
           ports:
             - { name: postgres, containerPort: 5432 }
@@ -77,6 +81,8 @@ kind: Service
 metadata:
   name: zed-postgres
   namespace: zed
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
   labels:
     app: zed-postgres
     app.kubernetes.io/part-of: zed
@@ -91,6 +97,8 @@ kind: NetworkPolicy
 metadata:
   name: zed-postgres
   namespace: zed
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
 spec:
   podSelector:
     matchLabels:
