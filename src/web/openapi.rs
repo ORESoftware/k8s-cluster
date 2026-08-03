@@ -151,6 +151,25 @@ mod tests {
     }
 
     #[test]
+    fn scope_selection_returns_the_exact_internal_and_public_documents() {
+        let internal = super::super::openapi_document().expect("internal OpenAPI document");
+        let public = public_document(&internal).expect("public OpenAPI document");
+        let selected_internal =
+            document_for_scope(&internal, "internal").expect("select internal document");
+        let selected_public =
+            document_for_scope(&internal, "public").expect("select public document");
+
+        assert_eq!(
+            serde_json::to_value(selected_internal).expect("serialize selected internal"),
+            serde_json::to_value(&internal).expect("serialize expected internal")
+        );
+        assert_eq!(
+            serde_json::to_value(selected_public).expect("serialize selected public"),
+            serde_json::to_value(public).expect("serialize expected public")
+        );
+    }
+
+    #[test]
     fn unknown_contract_scope_is_rejected() {
         let internal = super::super::openapi_document().expect("internal OpenAPI document");
         let error = match document_for_scope(&internal, "partner") {
