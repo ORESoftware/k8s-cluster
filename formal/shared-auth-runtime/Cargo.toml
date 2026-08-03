@@ -1,0 +1,10 @@
+[package]
+name = "quaestor-shared-auth-runtime-contract"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+anyhow = "=1.0.102"
+tracing = "=0.1.44"
+url = "2"
