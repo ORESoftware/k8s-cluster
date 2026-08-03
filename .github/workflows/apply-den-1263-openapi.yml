@@ -73,14 +73,57 @@ jobs:
           fi
           rm -f "$diagnostic"
 
-      - name: Format, compile, lint, and test the live router
+      - name: Format and capture locked check, Clippy, or test evidence
+        shell: bash
         run: |
           set -euo pipefail
           cargo fmt --all
           cargo fmt --all -- --check
-          cargo check --locked -p t2v-api --all-targets
-          cargo clippy --locked -p t2v-api --all-targets -- -D warnings
-          cargo test --locked -p t2v-api --all-targets
+
+          diagnostic='docs/den-1263-openapi-diagnostic.txt'
+          : > "$diagnostic"
+          persist_failure() {
+            local stage="$1"
+            local status="$2"
+            printf '\nDEN-1263 stage=%s status=%s\n' "$stage" "$status" >> "$diagnostic"
+            cat "$diagnostic"
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$diagnostic"
+            if ! git diff --cached --quiet; then
+              git commit -m "chore(DEN-1263): capture ${stage} diagnostics"
+              git push origin HEAD:agent/den-1263-executable-openapi
+            fi
+            exit "$status"
+          }
+
+          set +e
+          printf '=== cargo check --locked -p t2v-api --all-targets ===\n' >> "$diagnostic"
+          cargo check --locked -p t2v-api --all-targets >> "$diagnostic" 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            persist_failure locked-check "$status"
+          fi
+
+          set +e
+          printf '\n=== cargo clippy --locked -p t2v-api --all-targets -- -D warnings ===\n' >> "$diagnostic"
+          cargo clippy --locked -p t2v-api --all-targets -- -D warnings >> "$diagnostic" 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            persist_failure clippy "$status"
+          fi
+
+          set +e
+          printf '\n=== cargo test --locked -p t2v-api --all-targets ===\n' >> "$diagnostic"
+          cargo test --locked -p t2v-api --all-targets >> "$diagnostic" 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            persist_failure tests "$status"
+          fi
+          rm -f "$diagnostic"
 
       - name: Generate deterministic public and internal artifacts
         run: |
