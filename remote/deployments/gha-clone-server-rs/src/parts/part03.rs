@@ -268,3 +268,17 @@ async fn dispatch_build_profile(
     let response = state
         .http
         .post(format!("{}/builds", state.config.build_server_url))
+        .header("x-server-auth", auth)
+        .json(&request)
+        .send()
+        .await
+        .map_err(|error| format!("build-server request failed: {error}"))?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "build-server returned status {}",
+            response.status().as_u16()
+        ))
+    }
+}
