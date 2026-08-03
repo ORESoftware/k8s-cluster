@@ -10,6 +10,7 @@ already match. Never patch visibility or overwrite repository contents.
 
 from __future__ import annotations
 
+import re
 from typing import Callable, TypeAlias
 
 
@@ -62,6 +63,26 @@ def _create_payload(name: str, description: str) -> dict[str, object]:
     }
 
 
+def _create_repository(
+    api: RepositoryApi,
+    owner: str,
+    name: str,
+    description: str,
+) -> tuple[int, object | None]:
+    path = f"/orgs/{owner}/repos"
+    try:
+        return api("POST", path, _create_payload(name, description))
+    except RuntimeError as error:
+        match = re.fullmatch(
+            rf"GitHub API (409|422) for POST {re.escape(path)}:.*",
+            str(error),
+            flags=re.DOTALL,
+        )
+        if match is None:
+            raise
+        return int(match.group(1)), None
+
+
 def ensure_private_repository(
     api: RepositoryApi,
     owner: str,
@@ -88,9 +109,7 @@ def ensure_private_repository(
             f"failed to inspect {full_name} before creation: HTTP {status}"
         )
 
-    create_status, created = api(
-        "POST", f"/orgs/{owner}/repos", _create_payload(name, description)
-    )
+    create_status, created = _create_repository(api, owner, name, description)
     if create_status == 201:
         metadata = _private_repository_metadata(owner, name, created)
         emit(f"CREATED_PRIVATE {full_name}")
