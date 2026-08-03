@@ -32,7 +32,7 @@ The release ledger record was emitted by the `main` publishing workflow from the
 
 Do not begin the shared-package cleanup in DEN-1351 until this rollout and live evidence are complete.
 
-## Capability and credential boundaries
+## Capability and runtime credential boundaries
 
 Provision two independently generated values in `dd/remote-dev/fiducia-revocation`:
 
@@ -48,6 +48,23 @@ Both values must contain at least 32 non-whitespace bytes and must not be equal.
 * General applications, CI, dashboards, support tooling, and browser artifacts must receive neither value.
 * Secret values, raw JWTs, tenants, subjects, and JTIs must never enter logs, metrics labels, traces, screenshots, or evidence attachments.
 
+## Registry pull boundary
+
+Treat the GHCR package as private unless a separate reviewed change proves anonymous pull access for the exact digest.
+
+Provision `dd/remote-dev/fiducia-revocation-ghcr-pull` in the cluster secret store with one property:
+
+* `dockerconfigjson`: a valid Docker config JSON document for `ghcr.io`, using a machine-owned credential with package-read access only.
+
+External Secrets materializes it as `fiducia-revocation-ghcr-pull` with type `kubernetes.io/dockerconfigjson`. The Pod references that Secret only through `imagePullSecrets`.
+
+This credential is registry-only:
+
+* never reuse `admin-secret`, `reader-secret`, `FIDUCIA_INTERNAL_SECRET`, the CI GitHub App key, a personal access token, or a human account credential;
+* never expose it through container environment variables, mounts, logs, issue comments, Linear, test fixtures, or support artifacts;
+* scope it to package reads required by this workload and document its machine owner and rotation procedure;
+* if the package is deliberately made public, prove anonymous pull of the exact digest in hosted CI and remove both the ExternalSecret and `imagePullSecrets` in a separate reviewed change. Do not silently rely on public visibility.
+
 ## Hosted-CI preflight
 
 Before merge:
@@ -57,6 +74,7 @@ Before merge:
 3. Configure `K8S_SUBMODULE_APP_ID` and `K8S_SUBMODULE_APP_PRIVATE_KEY` for the private-backend contract job. Missing GitHub App credentials are a repository configuration failure, not permission to skip or weaken the job.
 4. Confirm every third-party action remains commit-pinned and no credential is embedded in a URL, manifest, workflow, or test fixture.
 5. Confirm the exact source SHA and digest match the release-ledger record for target `revocation-admin`.
+6. Confirm the registry ExternalSecret is registry-only, uses `dd-cluster-secrets`, produces `kubernetes.io/dockerconfigjson`, and is not referenced as a runtime Secret.
 
 ## Rendered-manifest preflight
 
@@ -67,25 +85,29 @@ Render `remote/argocd/fiducia` and verify:
 * the release SHA and digest annotations match the image record;
 * there is no Rust builder image, shell command, command override, args override, Git clone/fetch, Cargo invocation, compiler cache, source checkout, writable build workspace, hostPath, or build emptyDir;
 * the Pod has no service-account token, runs as UID/GID 65532, uses RuntimeDefault seccomp, drops every capability, forbids privilege escalation, and has a read-only root filesystem;
+* the Pod has exactly one `imagePullSecrets` entry named `fiducia-revocation-ghcr-pull`;
+* the registry ExternalSecret uses `dd-cluster-secrets`, remote key `dd/remote-dev/fiducia-revocation-ghcr-pull`, property `dockerconfigjson`, target key `.dockerconfigjson`, and type `kubernetes.io/dockerconfigjson`;
+* the registry Secret is not mounted or injected into the running container and does not reference the revocation admin, reader, or internal KV credentials;
 * `admin-secret`, `reader-secret`, and the internal KV credential are required (`optional: false`);
 * the load balancer references only `reader-secret` and cannot reference `admin-secret`;
 * the authority NetworkPolicy permits only DNS and the load-balancer KV path on 8088 for egress;
 * no authority egress rule contains `ipBlock`, `0.0.0.0/0`, public port 80, or public port 443;
 * authority ingress and load-balancer egress agree on port 8098;
-* the ExternalSecret is cloud-backed, retains deletion safety, and contains no literal value;
+* both ExternalSecrets are cloud-backed and contain no literal value;
 * rendered YAML contains no credential-shaped value.
 
 ## Argo CD rollout
 
-1. Reconcile the `fiducia-revocation-secrets` ExternalSecret.
-2. Verify the target Secret contains `admin-secret` and `reader-secret` keys without printing, exporting, or base64-decoding their values.
-3. Confirm the two keys are non-empty and distinct using only length/equality exit status; do not log either value.
-4. Sync the immutable authority Deployment.
-5. Require the image ID observed on the ready Pod to include `sha256:b9377ca8bc5f1298b7adf705563e7a80ab97727337a301578dea42b208102d6c`.
-6. Require `/healthz` to become ready before rolling reader clients.
-7. Roll `fiducia-load-balance` with the reader-only patch.
-8. Deploy the edge reader configuration.
-9. Record Argo application revision, Pod UID, node, image ID, rollout timestamps, and health status without recording protected identifiers.
+1. Reconcile `fiducia-revocation-ghcr-pull` and verify the resulting Secret has type `kubernetes.io/dockerconfigjson` and the `.dockerconfigjson` key without printing, exporting, mounting, or base64-decoding its value.
+2. Reconcile the `fiducia-revocation-secrets` ExternalSecret.
+3. Verify the target runtime Secret contains `admin-secret` and `reader-secret` keys without printing, exporting, or base64-decoding their values.
+4. Confirm the two runtime keys are non-empty and distinct using only length/equality exit status; do not log either value.
+5. Sync the immutable authority Deployment.
+6. Require a successful registry pull and require the image ID observed on the ready Pod to include `sha256:b9377ca8bc5f1298b7adf705563e7a80ab97727337a301578dea42b208102d6c`.
+7. Require `/healthz` to become ready before rolling reader clients.
+8. Roll `fiducia-load-balance` with the reader-only patch.
+9. Deploy the edge reader configuration.
+10. Record Argo application revision, Pod UID, node, image ID, rollout timestamps, and health status without recording protected identifiers.
 
 ## Reader-path smoke tests
 
@@ -124,7 +146,7 @@ Acceptance: both verifiers deny within the declared freshness budget plus measur
 8. Restart each verifier independently during authority availability and outage; behavior must match the deterministic two-verifier model.
 9. Partition one verifier from the authority while leaving the other connected and record bounded divergence and convergence.
 
-## Credential rotation
+## Runtime credential rotation
 
 1. Generate separate new admin and reader credentials.
 2. Update the backing store without logging values.
@@ -139,13 +161,23 @@ Acceptance: both verifiers deny within the declared freshness budget plus measur
 
 A future dual-current/next credential scheme may remove this interruption. Do not weaken fail-closed behavior to simulate overlap.
 
+## Registry credential rotation
+
+1. Create a replacement machine-owned package-read credential without changing runtime credentials.
+2. Update only `dd/remote-dev/fiducia-revocation-ghcr-pull.dockerconfigjson` and trigger ExternalSecret reconciliation.
+3. Verify the Secret resource version changes without reading or logging its value.
+4. Force a controlled image pull of the already pinned digest on a new Pod and require success.
+5. Revoke the old registry credential and repeat the pull check.
+6. Record credential owner, scope, rotation time, Secret resource version, Pod/image ID, and generic success only.
+
 ## Rollback
 
+* If the image cannot be pulled, restore or rotate the registry-only pull credential; do not add a broad PAT to the manifest or container environment.
 * If the authority cannot become healthy, disable or roll back raw-JWT traffic at the affected verifier. Do not bypass revocation.
 * Reverting this GitOps change is safe only after every raw-JWT verifier using this authority is disabled or reverted.
 * Preserve the revocation ledger and historical encryption-key material. Rollback must not delete backing ExternalSecret data or discard active revocations.
 * API-key introspection and trusted edge-hop paths are separate boundaries; verify their behavior explicitly.
-* Capture rollback revision, timings, health, and generic denial behavior.
+* Capture rollback revision, timings, image-pull outcome, health, and generic denial behavior.
 
 ## Completion evidence
 
@@ -153,10 +185,11 @@ DEN-1119 may be completed only after attaching:
 
 * green hosted CI for cache/gate/fault model, edge, load balancer, immutable image publisher, and this current-`dev` GitOps PR;
 * the release-ledger record and exact rendered image digest;
-* sanitized ExternalSecret, security-context, and NetworkPolicy contract output;
+* sanitized runtime and registry ExternalSecret, security-context, and NetworkPolicy contract output;
+* successful pull of the exact digest through the dedicated registry-only Secret;
 * exact-token and subject-wide two-verifier propagation timings;
 * tenant/JTI isolation evidence;
 * authority-loss, stale-state, timeout, malformed/oversized response, concurrency, clock-regression, restart, and partition results;
-* credential-rotation and rollback exercises;
+* runtime and registry credential-rotation plus rollback exercises;
 * confirmation that logs, metrics, traces, screenshots, CI artifacts, and support evidence contain no protected identifiers or secrets;
 * independent reviewer acceptance of the exact source SHA, image digest, GitOps commit, environment, assertions, timings, and limitations.
