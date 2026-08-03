@@ -162,10 +162,14 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
+      - name: Build the isolated API fixture before Playwright starts its timeout
+        run: cargo build --locked -p t2v-api --example openapi_fixture
+
       - name: Run Chromium docs, projection, and auth parity tests
         working-directory: e2e
         env:
           T2V_OPENAPI_PORT: '18130'
+          T2V_OPENAPI_FIXTURE_COMMAND: ../target/debug/examples/openapi_fixture
           PLAYWRIGHT_HTML_OPEN: never
         run: >-
           npx playwright test
