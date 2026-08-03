@@ -86,7 +86,8 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
         self.assertNotIn("VERIFIED 32/32 private", self.publisher)
 
     def test_existing_divergent_histories_are_explicitly_preserved(self) -> None:
-        self.assertIn("PRESERVE_DIVERGENT_REVIEWED", self.publisher)
+        self.assertIn('"DIVERGENT_REVIEWED"', self.publisher)
+        self.assertIn('print(f"PRESERVE_{disposition}', self.publisher)
         self.assertIn("VERIFIED_PRESERVED_PRIVATE", self.publisher)
         self.assertIn("existing repository", self.remote_state)
         self.assertIn("changed during gap publication", self.remote_state)
