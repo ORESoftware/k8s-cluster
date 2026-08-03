@@ -36,15 +36,33 @@ const GITHUB_API_VERSION: &str = "2026-03-10";
 const DEFAULT_GITHUB_API_BASE: &str = "https://api.github.com";
 const DEFAULT_PORT: u16 = 8117;
 
+#[derive(Clone, Debug)]
+struct GitHubAppCredentials {
+    app_id: String,
+    installation_id: u64,
+    private_key_path: PathBuf,
+}
+
+impl GitHubAppCredentials {
+    fn from_env(prefix: &str) -> Result<Self, String> {
+        let app_id_key = format!("{prefix}_ID");
+        let installation_id_key = format!("{prefix}_INSTALLATION_ID");
+        let private_key_path_key = format!("{prefix}_PRIVATE_KEY_PATH");
+        Ok(Self {
+            app_id: required_env(&app_id_key)?,
+            installation_id: required_positive_u64(&installation_id_key)?,
+            private_key_path: PathBuf::from(required_env(&private_key_path_key)?),
+        })
+    }
+}
+
 #[derive(Clone)]
 struct Config {
     host: String,
     port: u16,
     github_api_base: String,
-    github_app_id: String,
-    github_app_installation_id: u64,
-    github_app_private_key_path: PathBuf,
-    billing_token_path: Option<PathBuf>,
+    mutation_app: GitHubAppCredentials,
+    billing_app: GitHubAppCredentials,
     operator_secret: String,
     mutation_enabled: bool,
     reconcile_interval: Duration,
@@ -74,10 +92,9 @@ impl Config {
             return Err("SERVER_AUTH_SECRET must contain at least 32 characters".to_string());
         }
 
-        let github_app_private_key_path =
-            PathBuf::from(required_env("GITHUB_APP_PRIVATE_KEY_PATH")?);
-        let billing_token_path = optional_env("GITHUB_BILLING_TOKEN_PATH").map(PathBuf::from);
-        validate_credential_paths(&github_app_private_key_path, billing_token_path.as_ref())?;
+        let mutation_app = GitHubAppCredentials::from_env("GITHUB_MUTATION_APP")?;
+        let billing_app = GitHubAppCredentials::from_env("GITHUB_BILLING_APP")?;
+        validate_app_separation(&mutation_app, &billing_app)?;
 
         Ok(Self {
             host: optional_env("HOST").unwrap_or_else(|| "0.0.0.0".to_string()),
@@ -87,22 +104,14 @@ impl Config {
                 .map_err(|error| format!("invalid PORT: {error}"))?
                 .unwrap_or(DEFAULT_PORT),
             github_api_base,
-            github_app_id: required_env("GITHUB_APP_ID")?,
-            github_app_installation_id: required_env("GITHUB_APP_INSTALLATION_ID")?
-                .parse::<u64>()
-                .map_err(|error| format!("invalid GITHUB_APP_INSTALLATION_ID: {error}"))
-                .and_then(|value| {
-                    if value == 0 {
-                        Err("GITHUB_APP_INSTALLATION_ID must be positive".to_string())
-                    } else {
-                        Ok(value)
-                    }
-                })?,
-            github_app_private_key_path,
-            billing_token_path,
+            mutation_app,
+            billing_app,
             operator_secret,
             mutation_enabled: env_bool("GHA_MUTATION_ENABLED", false),
-            reconcile_interval: Duration::from_secs(env_u64("GHA_RECONCILE_INTERVAL_SECONDS", 900)),
+            reconcile_interval: Duration::from_secs(env_u64(
+                "GHA_RECONCILE_INTERVAL_SECONDS",
+                900,
+            )),
             organization,
             policy,
         })
@@ -128,9 +137,100 @@ struct AppState {
 
 #[derive(Clone)]
 struct GitHubClient {
-    config: Config,
+    api_base: String,
     http: reqwest::Client,
+    billing_auth: GitHubAppAuth,
+    mutation_auth: GitHubAppAuth,
+}
+
+#[derive(Clone)]
+struct GitHubAppAuth {
+    credentials: GitHubAppCredentials,
     installation_token_cache: Arc<Mutex<Option<CachedInstallationToken>>>,
+}
+
+impl GitHubAppAuth {
+    fn new(credentials: GitHubAppCredentials) -> Self {
+        Self {
+            credentials,
+            installation_token_cache: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    async fn installation_token(
+        &self,
+        http: &reqwest::Client,
+        api_base: &str,
+    ) -> Result<String, ApiError> {
+        let mut guard = self.installation_token_cache.lock().await;
+        if let Some(cached) = guard.as_ref() {
+            if Instant::now() < cached.refresh_at {
+                return Ok(cached.token.clone());
+            }
+        }
+
+        let private_key = tokio::fs::read(&self.credentials.private_key_path)
+            .await
+            .map_err(|error| {
+                ApiError::internal(format!(
+                    "failed to read GitHub App private key from {}: {error}",
+                    self.credentials.private_key_path.display()
+                ))
+            })?;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let claims = AppJwtClaims {
+            iat: now.saturating_sub(60),
+            exp: now.saturating_add(540),
+            iss: &self.credentials.app_id,
+        };
+        let jwt = encode(
+            &Header::new(Algorithm::RS256),
+            &claims,
+            &EncodingKey::from_rsa_pem(&private_key).map_err(|error| {
+                ApiError::internal(format!("invalid GitHub App RSA private key: {error}"))
+            })?,
+        )
+        .map_err(|error| ApiError::internal(format!("failed to sign GitHub App JWT: {error}")))?;
+
+        let url = format!(
+            "{api_base}/app/installations/{}/access_tokens",
+            self.credentials.installation_id
+        );
+        let response = http
+            .post(url)
+            .header(header::ACCEPT, "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", GITHUB_API_VERSION)
+            .bearer_auth(jwt)
+            .json(&json!({}))
+            .send()
+            .await
+            .map_err(|error| {
+                ApiError::bad_gateway(format!("GitHub token request failed: {error}"))
+            })?;
+        let status = response.status();
+        let body = response.text().await.map_err(|error| {
+            ApiError::bad_gateway(format!("failed to read GitHub token response: {error}"))
+        })?;
+        if !status.is_success() {
+            return Err(ApiError::bad_gateway(format!(
+                "GitHub installation token request returned {status}: {}",
+                github_error_summary(&body)
+            )));
+        }
+        let token: InstallationTokenResponse = serde_json::from_str(&body).map_err(|error| {
+            ApiError::bad_gateway(format!(
+                "invalid GitHub installation token response: {error}"
+            ))
+        })?;
+        *guard = Some(CachedInstallationToken {
+            token: token.token.clone(),
+            refresh_at: Instant::now() + Duration::from_secs(50 * 60),
+        });
+        Ok(token.token)
+    }
 }
 
 struct CachedInstallationToken {
@@ -205,7 +305,8 @@ struct HealthResponse {
     ok: bool,
     service: &'static str,
     mutation_enabled: bool,
-    billing_token_configured: bool,
+    billing_app_configured: bool,
+    mutation_app_configured: bool,
     organization: String,
 }
 
@@ -275,6 +376,19 @@ fn required_env(key: &str) -> Result<String, String> {
     optional_env(key).ok_or_else(|| format!("{key} is required"))
 }
 
+fn required_positive_u64(key: &str) -> Result<u64, String> {
+    required_env(key)?
+        .parse::<u64>()
+        .map_err(|error| format!("invalid {key}: {error}"))
+        .and_then(|value| {
+            if value == 0 {
+                Err(format!("{key} must be positive"))
+            } else {
+                Ok(value)
+            }
+        })
+}
+
 fn env_bool(key: &str, fallback: bool) -> bool {
     optional_env(key)
         .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
@@ -301,34 +415,21 @@ fn validate_org(value: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_credential_paths(
-    app_private_key_path: &PathBuf,
-    billing_token_path: Option<&PathBuf>,
+fn validate_app_separation(
+    mutation: &GitHubAppCredentials,
+    billing: &GitHubAppCredentials,
 ) -> Result<(), String> {
-    if billing_token_path.is_some_and(|path| path == app_private_key_path) {
+    if mutation.private_key_path == billing.private_key_path {
         return Err(
-            "GITHUB_BILLING_TOKEN_PATH must be distinct from GITHUB_APP_PRIVATE_KEY_PATH"
-                .to_string(),
+            "billing and mutation GitHub Apps must use distinct private-key files".to_string(),
+        );
+    }
+    if mutation.app_id == billing.app_id && mutation.installation_id == billing.installation_id {
+        return Err(
+            "billing and mutation GitHub Apps must use distinct App installations".to_string(),
         );
     }
     Ok(())
-}
-
-fn normalize_billing_token(raw: &str) -> Result<String, String> {
-    let token = raw.trim_end_matches(|ch| ch == '\r' || ch == '\n');
-    if token.trim() != token {
-        return Err("billing token file contains surrounding whitespace".to_string());
-    }
-    if !(20..=512).contains(&token.len()) {
-        return Err("billing token length is outside the accepted bounds".to_string());
-    }
-    if token
-        .chars()
-        .any(|ch| ch.is_whitespace() || ch.is_control())
-    {
-        return Err("billing token contains whitespace or control characters".to_string());
-    }
-    Ok(token.to_string())
 }
 
 fn billing_usage_url(api_base: &str, org: &str) -> String {
@@ -347,7 +448,7 @@ fn authorized(headers: &HeaderMap, expected: &str) -> bool {
 }
 
 impl GitHubClient {
-    fn new(config: Config) -> Result<Self, String> {
+    fn new(config: &Config) -> Result<Self, String> {
         let http = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30))
@@ -356,110 +457,25 @@ impl GitHubClient {
             .build()
             .map_err(|error| format!("failed to build GitHub HTTP client: {error}"))?;
         Ok(Self {
-            config,
+            api_base: config.github_api_base.clone(),
             http,
-            installation_token_cache: Arc::new(Mutex::new(None)),
+            billing_auth: GitHubAppAuth::new(config.billing_app.clone()),
+            mutation_auth: GitHubAppAuth::new(config.mutation_app.clone()),
         })
-    }
-
-    async fn installation_token(&self) -> Result<String, ApiError> {
-        let mut guard = self.installation_token_cache.lock().await;
-        if let Some(cached) = guard.as_ref() {
-            if Instant::now() < cached.refresh_at {
-                return Ok(cached.token.clone());
-            }
-        }
-
-        let private_key = tokio::fs::read(&self.config.github_app_private_key_path)
-            .await
-            .map_err(|error| {
-                ApiError::internal(format!(
-                    "failed to read GitHub App private key from {}: {error}",
-                    self.config.github_app_private_key_path.display()
-                ))
-            })?;
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let claims = AppJwtClaims {
-            iat: now.saturating_sub(60),
-            exp: now.saturating_add(540),
-            iss: &self.config.github_app_id,
-        };
-        let jwt = encode(
-            &Header::new(Algorithm::RS256),
-            &claims,
-            &EncodingKey::from_rsa_pem(&private_key).map_err(|error| {
-                ApiError::internal(format!("invalid GitHub App RSA private key: {error}"))
-            })?,
-        )
-        .map_err(|error| ApiError::internal(format!("failed to sign GitHub App JWT: {error}")))?;
-
-        let url = format!(
-            "{}/app/installations/{}/access_tokens",
-            self.config.github_api_base, self.config.github_app_installation_id
-        );
-        let response = self
-            .http
-            .post(url)
-            .header(header::ACCEPT, "application/vnd.github+json")
-            .header("X-GitHub-Api-Version", GITHUB_API_VERSION)
-            .bearer_auth(jwt)
-            .json(&json!({}))
-            .send()
-            .await
-            .map_err(|error| {
-                ApiError::bad_gateway(format!("GitHub token request failed: {error}"))
-            })?;
-        let status = response.status();
-        let body = response.text().await.map_err(|error| {
-            ApiError::bad_gateway(format!("failed to read GitHub token response: {error}"))
-        })?;
-        if !status.is_success() {
-            return Err(ApiError::bad_gateway(format!(
-                "GitHub installation token request returned {status}: {}",
-                github_error_summary(&body)
-            )));
-        }
-        let token: InstallationTokenResponse = serde_json::from_str(&body).map_err(|error| {
-            ApiError::bad_gateway(format!(
-                "invalid GitHub installation token response: {error}"
-            ))
-        })?;
-        *guard = Some(CachedInstallationToken {
-            token: token.token.clone(),
-            refresh_at: Instant::now() + Duration::from_secs(50 * 60),
-        });
-        Ok(token.token)
-    }
-
-    async fn billing_token(&self) -> Result<String, ApiError> {
-        let path = self.config.billing_token_path.as_ref().ok_or_else(|| {
-            ApiError::internal(
-                "GitHub billing credential is not configured; capacity must fail closed",
-            )
-        })?;
-        let raw = tokio::fs::read_to_string(path).await.map_err(|error| {
-            ApiError::internal(format!(
-                "failed to read GitHub billing credential from {}: {error}",
-                path.display()
-            ))
-        })?;
-        normalize_billing_token(&raw).map_err(ApiError::internal)
     }
 
     async fn billing_usage(&self, org: &str) -> Result<BillingUsageResponse, ApiError> {
         validate_org(org).map_err(ApiError::not_found)?;
-        // GitHub's organization billing summary endpoint is user/billing-manager
-        // authorized. The App installation token is deliberately reserved for
-        // organization-variable mutation and is never used for billing reads.
-        let token = self.billing_token().await?;
-        let url = billing_usage_url(&self.config.github_api_base, org);
+        let token = self
+            .billing_auth
+            .installation_token(&self.http, &self.api_base)
+            .await?;
+        let url = billing_usage_url(&self.api_base, org);
         let now = time::OffsetDateTime::now_utc();
         let period = [
             ("year", now.year().to_string()),
             ("month", (now.month() as u8).to_string()),
+            ("product", "Actions".to_string()),
         ];
         let response = self
             .http
@@ -489,11 +505,11 @@ impl GitHubClient {
     }
 
     async fn upsert_variable(&self, org: &str, value: &VariableMutation) -> Result<(), ApiError> {
-        let token = self.installation_token().await?;
-        let patch_url = format!(
-            "{}/orgs/{org}/actions/variables/{}",
-            self.config.github_api_base, value.name
-        );
+        let token = self
+            .mutation_auth
+            .installation_token(&self.http, &self.api_base)
+            .await?;
+        let patch_url = format!("{}/orgs/{org}/actions/variables/{}", self.api_base, value.name);
         let body = json!({
             "name": &value.name,
             "value": &value.value,
@@ -524,10 +540,7 @@ impl GitHubClient {
             )));
         }
 
-        let create_url = format!(
-            "{}/orgs/{org}/actions/variables",
-            self.config.github_api_base
-        );
+        let create_url = format!("{}/orgs/{org}/actions/variables", self.api_base);
         let create = self
             .http
             .post(create_url)
@@ -582,7 +595,17 @@ async fn decision_for_org(state: &AppState, org: &str) -> Result<CapacityDecisio
         .billing_reads_total
         .fetch_add(1, Ordering::Relaxed);
     let usage = match state.github.billing_usage(&state.config.organization).await {
-        Ok(usage) => Some(usage.actions_minutes()),
+        Ok(usage) => {
+            let gross_minutes = usage.actions_gross_minutes();
+            let billable_minutes = usage.actions_billable_minutes();
+            info!(
+                organization = org,
+                gross_actions_minutes = gross_minutes,
+                billable_actions_minutes = billable_minutes,
+                "current-month Actions billing summary"
+            );
+            Some(gross_minutes)
+        }
         Err(error) => {
             state
                 .metrics
@@ -610,7 +633,8 @@ async fn healthz(State(state): State<AppState>) -> Json<HealthResponse> {
         ok: true,
         service: SERVICE,
         mutation_enabled: state.config.mutation_enabled,
-        billing_token_configured: state.config.billing_token_path.is_some(),
+        billing_app_configured: true,
+        mutation_app_configured: true,
         organization: state.config.organization.clone(),
     })
 }
@@ -626,14 +650,13 @@ async fn readyz(State(state): State<AppState>) -> Response {
         .metrics
         .http_requests_total
         .fetch_add(1, Ordering::Relaxed);
-    let key_exists = tokio::fs::metadata(&state.config.github_app_private_key_path)
+    let mutation_key_exists = tokio::fs::metadata(&state.config.mutation_app.private_key_path)
         .await
         .is_ok();
-    let billing_token_ready = match state.config.billing_token_path.as_ref() {
-        Some(path) => tokio::fs::metadata(path).await.is_ok(),
-        None => true,
-    };
-    let ok = key_exists && billing_token_ready && !state.config.operator_secret.is_empty();
+    let billing_key_exists = tokio::fs::metadata(&state.config.billing_app.private_key_path)
+        .await
+        .is_ok();
+    let ok = mutation_key_exists && billing_key_exists && !state.config.operator_secret.is_empty();
     let status = if ok {
         StatusCode::OK
     } else {
@@ -645,7 +668,8 @@ async fn readyz(State(state): State<AppState>) -> Response {
             ok,
             service: SERVICE,
             mutation_enabled: state.config.mutation_enabled,
-            billing_token_configured: state.config.billing_token_path.is_some(),
+            billing_app_configured: billing_key_exists,
+            mutation_app_configured: mutation_key_exists,
             organization: state.config.organization.clone(),
         }),
     )
@@ -672,7 +696,7 @@ async fn capabilities(State(state): State<AppState>) -> Json<CapabilityResponse>
         variable_names: vec!["CI_EXECUTION_MODE", "CI_LINUX_RUNS_ON_JSON"],
         notes: vec![
             "ARC preserves normal GitHub Actions workflow and action compatibility on Linux",
-            "billing reads use a separate billing-authorized file credential; the GitHub App token is mutation-only",
+            "billing reads and organization-variable mutation use separate least-privilege GitHub Apps",
             "build-server mode is advisory and accepts only separately reviewed profiles",
             "macOS, Windows, Android/KVM, and public-fork workloads require separate lanes",
         ],
@@ -917,7 +941,7 @@ async fn main() -> Result<(), String> {
         .init();
 
     let config = Config::from_env()?;
-    let github = GitHubClient::new(config.clone())?;
+    let github = GitHubClient::new(&config)?;
     let state = AppState {
         config: config.clone(),
         github,
@@ -945,7 +969,6 @@ async fn main() -> Result<(), String> {
         %address,
         organization = config.organization,
         mutation_enabled = config.mutation_enabled,
-        billing_token_configured = config.billing_token_path.is_some(),
         "gha-capacity-broker listening"
     );
     axum::serve(listener, router(state))
@@ -960,6 +983,14 @@ async fn main() -> Result<(), String> {
 mod tests {
     use super::*;
 
+    fn app(app_id: &str, installation_id: u64, path: &str) -> GitHubAppCredentials {
+        GitHubAppCredentials {
+            app_id: app_id.to_string(),
+            installation_id,
+            private_key_path: PathBuf::from(path),
+        }
+    }
+
     #[test]
     fn billing_url_uses_current_summary_endpoint() {
         assert_eq!(
@@ -969,31 +1000,32 @@ mod tests {
     }
 
     #[test]
-    fn billing_token_accepts_only_bounded_single_line_file_content() {
-        let token = "ghp_abcdefghijklmnopqrstuvwx";
-        assert_eq!(
-            normalize_billing_token(&format!("{token}\n")).expect("token"),
-            token
-        );
-        assert!(normalize_billing_token("ghp_short").is_err());
-        assert!(normalize_billing_token(" ghp_abcdefghijklmnopqrstuvwx").is_err());
-        assert!(normalize_billing_token("ghp_abcdefghij klmnopqrstuvwx").is_err());
-    }
+    fn billing_and_mutation_apps_must_be_distinct() {
+        let mutation = app("mutation-app", 10, "/var/run/gha-mutation-app/key.pem");
+        let billing = app("billing-app", 20, "/var/run/gha-billing-app/key.pem");
+        assert!(validate_app_separation(&mutation, &billing).is_ok());
 
-    #[test]
-    fn billing_and_app_credentials_must_use_distinct_files() {
-        let app = PathBuf::from("/var/run/gha-app/github_app_private_key");
-        let billing = PathBuf::from("/var/run/gha-billing/token");
-        assert!(validate_credential_paths(&app, Some(&billing)).is_ok());
-        assert!(validate_credential_paths(&app, Some(&app)).is_err());
-        assert!(validate_credential_paths(&app, None).is_ok());
+        let shared_path = app("billing-app", 20, "/var/run/gha-mutation-app/key.pem");
+        assert!(validate_app_separation(&mutation, &shared_path).is_err());
+
+        let shared_identity = app("mutation-app", 10, "/var/run/other/key.pem");
+        assert!(validate_app_separation(&mutation, &shared_identity).is_err());
     }
 
     #[test]
     fn github_error_summary_omits_non_message_fields() {
-        let body = r#"{"message":"Bad credentials","token":"ghp_do_not_echo"}"#;
+        let body = r#"{"message":"Bad credentials","token":"do-not-echo"}"#;
         let summary = github_error_summary(body);
         assert_eq!(summary, "Bad credentials");
-        assert!(!summary.contains("ghp_"));
+        assert!(!summary.contains("do-not-echo"));
+    }
+
+    #[test]
+    fn github_error_summary_is_bounded_and_control_free() {
+        let message = format!("line-one\n{}", "x".repeat(300));
+        let body = serde_json::to_string(&json!({"message": message})).expect("JSON");
+        let summary = github_error_summary(&body);
+        assert!(summary.len() <= 200);
+        assert!(!summary.contains('\n'));
     }
 }
