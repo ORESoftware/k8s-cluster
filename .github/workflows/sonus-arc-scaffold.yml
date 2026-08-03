@@ -14,6 +14,7 @@ on:
       - "remote/argocd/clusters/hetzner/kustomization.yaml"
       - "remote/deployments/gha-clone-server-rs/**"
       - "remote/deployments/sonus-auris-ci-runner/**"
+      - ".github/actionlint.yaml"
       - ".github/workflows/sonus-arc-scaffold.yml"
   push:
     branches: [dev, main]
@@ -28,6 +29,7 @@ on:
       - "remote/argocd/clusters/hetzner/kustomization.yaml"
       - "remote/deployments/gha-clone-server-rs/**"
       - "remote/deployments/sonus-auris-ci-runner/**"
+      - ".github/actionlint.yaml"
       - ".github/workflows/sonus-arc-scaffold.yml"
   workflow_dispatch:
     inputs:
@@ -62,7 +64,7 @@ jobs:
       - name: Validate workflow syntax
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
-          args: .github/workflows/sonus-arc-scaffold.yml
+          args: -config-file .github/actionlint.yaml .github/workflows/sonus-arc-scaffold.yml
       - name: Check whitespace and conflict markers
         run: |
           git diff --check HEAD^ HEAD
