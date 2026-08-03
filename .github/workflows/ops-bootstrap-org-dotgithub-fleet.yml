@@ -12,8 +12,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
-  issues: write
 
 concurrency:
   group: ops-bootstrap-organization-dotgithub-fleet
@@ -38,6 +36,10 @@ jobs:
           python3 -m unittest tests/ops/test_bootstrap_org_dotgithub_repositories.py -v
 
   publish:
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
     if: >-
       !github.event.issue.pull_request &&
       github.event.issue.number == 615 &&
@@ -78,6 +80,7 @@ jobs:
             --query SecretString \
             --output text)"
           token="$(jq -er '.GH_PAT | select(type == "string" and length > 0)' <<<"$secret_json")"
+          [[ "$token" != *$'\n'* && "$token" != *$'\r'* ]]
           printf '::add-mask::%s\n' "$token"
           printf 'GH_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
           unset token secret_json
