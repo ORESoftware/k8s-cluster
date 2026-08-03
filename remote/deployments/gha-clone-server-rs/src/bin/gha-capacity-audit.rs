@@ -37,16 +37,15 @@ impl Config {
         let token = optional_env("GHA_CAPACITY_GITHUB_TOKEN")
             .or_else(|| optional_env("GHA_CLONE_GITHUB_TOKEN"))
             .ok_or_else(|| {
-                "GHA_CAPACITY_GITHUB_TOKEN or GHA_CLONE_GITHUB_TOKEN is required"
-                    .to_string()
+                "GHA_CAPACITY_GITHUB_TOKEN or GHA_CLONE_GITHUB_TOKEN is required".to_string()
             })?;
         let included_minutes = optional_positive_f64("GHA_CAPACITY_INCLUDED_MINUTES")?;
-        let warn_percent = optional_positive_f64("GHA_CAPACITY_WARN_PERCENT")?
-            .unwrap_or(DEFAULT_WARN_PERCENT);
+        let warn_percent =
+            optional_positive_f64("GHA_CAPACITY_WARN_PERCENT")?.unwrap_or(DEFAULT_WARN_PERCENT);
         let critical_percent = optional_positive_f64("GHA_CAPACITY_CRITICAL_PERCENT")?
             .unwrap_or(DEFAULT_CRITICAL_PERCENT);
-        let hard_percent = optional_positive_f64("GHA_CAPACITY_HARD_PERCENT")?
-            .unwrap_or(DEFAULT_HARD_PERCENT);
+        let hard_percent =
+            optional_positive_f64("GHA_CAPACITY_HARD_PERCENT")?.unwrap_or(DEFAULT_HARD_PERCENT);
         if !(warn_percent < critical_percent && critical_percent <= hard_percent) {
             return Err("capacity thresholds must satisfy warn < critical <= hard".to_string());
         }
@@ -54,9 +53,8 @@ impl Config {
             return Err("GHA_CAPACITY_HARD_PERCENT must be at least 100".to_string());
         }
         let mutation_enabled = env_bool("GHA_CAPACITY_MUTATION_ENABLED", false);
-        let selected_repository_ids = parse_repository_ids(
-            optional_env("GHA_CAPACITY_SELECTED_REPOSITORY_IDS").as_deref(),
-        )?;
+        let selected_repository_ids =
+            parse_repository_ids(optional_env("GHA_CAPACITY_SELECTED_REPOSITORY_IDS").as_deref())?;
         if mutation_enabled && selected_repository_ids.is_empty() {
             return Err(
                 "GHA_CAPACITY_SELECTED_REPOSITORY_IDS is required when mutation is enabled"
@@ -350,7 +348,11 @@ fn summarize_usage(response: &UsageResponse) -> UsageTotals {
         net_amount_usd: 0.0,
         repositories: BTreeMap::new(),
     };
-    for item in response.usage_items.iter().filter(|item| is_actions_usage(item)) {
+    for item in response
+        .usage_items
+        .iter()
+        .filter(|item| is_actions_usage(item))
+    {
         let minutes = if item.unit_type.eq_ignore_ascii_case("minutes") {
             item.quantity.max(0.0)
         } else {
@@ -524,7 +526,9 @@ fn evaluate(
 
 fn planned_mutations(report: &CapacityReport) -> Result<Vec<VariableMutation>, String> {
     if report.state == CapacityState::Unknown {
-        return Err("routing variables are not mutated while capacity state is unknown".to_string());
+        return Err(
+            "routing variables are not mutated while capacity state is unknown".to_string(),
+        );
     }
     if report.routing.selected_repository_ids.is_empty() {
         return Err("selected repository ids are required for variable mutation".to_string());
@@ -554,9 +558,8 @@ fn civil_from_days(days_since_epoch: i64) -> (i32, u8, u8) {
     let z = days_since_epoch + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
     let day_of_era = z - era * 146_097;
-    let year_of_era = (day_of_era - day_of_era / 1_460 + day_of_era / 36_524
-        - day_of_era / 146_096)
-        / 365;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
     let mut year = year_of_era + era * 400;
     let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
     let month_prime = (5 * day_of_year + 2) / 153;
@@ -682,10 +685,7 @@ async fn upsert_variable(
             .map_err(|error| format!("variable {} update failed: {error}", mutation.name));
     }
 
-    let create_url = format!(
-        "{API_BASE}/orgs/{}/actions/variables",
-        config.organization
-    );
+    let create_url = format!("{API_BASE}/orgs/{}/actions/variables", config.organization);
     let create = client
         .post(create_url)
         .header("Accept", "application/vnd.github+json")
@@ -710,14 +710,7 @@ async fn run() -> Result<CapacityReport, String> {
     let (year, month) = utc_year_month(SystemTime::now())?;
     let usage = fetch_usage(&client, &config, year, month).await?;
     let budgets = fetch_budgets(&client, &config).await?;
-    let mut report = evaluate(
-        &config.organization,
-        year,
-        month,
-        &usage,
-        &budgets,
-        &config,
-    );
+    let mut report = evaluate(&config.organization, year, month, &usage, &budgets, &config);
     if config.mutation_enabled {
         for mutation in planned_mutations(&report)? {
             upsert_variable(&client, &config, &mutation).await?;
@@ -877,14 +870,7 @@ mod tests {
 
     #[test]
     fn missing_allowance_and_budget_is_unknown() {
-        let report = evaluate(
-            "sonus-auris",
-            2026,
-            8,
-            &usage(0.0, 0.0),
-            &[],
-            &config(None),
-        );
+        let report = evaluate("sonus-auris", 2026, 8, &usage(0.0, 0.0), &[], &config(None));
         assert_eq!(report.state, CapacityState::Unknown);
         assert_eq!(report.routing.mode, "hold");
         assert!(planned_mutations(&report).is_err());
