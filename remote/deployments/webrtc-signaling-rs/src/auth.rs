@@ -120,8 +120,8 @@ impl SignalAuthConfig {
             .proxy_secret
             .as_deref()
             .ok_or(SignalAuthError::UntrustedProxy)?;
-        let supplied_secret = header_text(headers, PROXY_SECRET_HEADER)
-            .ok_or(SignalAuthError::UntrustedProxy)?;
+        let supplied_secret =
+            header_text(headers, PROXY_SECRET_HEADER).ok_or(SignalAuthError::UntrustedProxy)?;
         if !constant_time_eq(configured_secret.as_bytes(), supplied_secret.as_bytes()) {
             return Err(SignalAuthError::UntrustedProxy);
         }
@@ -190,9 +190,7 @@ pub fn sanitize_client_metadata(value: Value) -> Result<Value, &'static str> {
 
     let mut clean = Map::new();
     for (key, value) in object {
-        if key.is_empty()
-            || key.len() > MAX_METADATA_KEY_BYTES
-            || key.chars().any(char::is_control)
+        if key.is_empty() || key.len() > MAX_METADATA_KEY_BYTES || key.chars().any(char::is_control)
         {
             return Err("metadata contains an invalid key");
         }
