@@ -174,8 +174,10 @@ The mobile endpoint uses a dedicated local Argo CD account named `argocd-mobile`
 - pod-log reads
 - explicit application syncs
 
-It does not grant application-spec updates, Kubernetes resource deletion, pod exec, or resource
-actions. The password is intentionally absent from Git and must be established interactively.
+It does not grant application-spec updates, direct application/resource deletion, pod exec, or
+resource actions. A sync is still an operational write and can reconcile or prune resources when
+the target Application's configured sync options request pruning. The password is intentionally
+absent from Git and must be established interactively.
 
 1. In wg-easy, set the client DNS server to `10.8.0.1`. `INIT_DNS` handles new installations, but
    wg-easy keeps initialized settings in SQLite, so update the UI setting and re-export an existing
