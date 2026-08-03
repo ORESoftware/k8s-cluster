@@ -234,7 +234,7 @@ test('the GitHub App recovery runbook is current and fail closed', () => {
   );
   assert.match(appRunbook, /mode-`0600` temporary file/);
   assert.match(appRunbook, /Never put either value in Linear, chat/);
-  assert.match(appRunbook, /leave the required check red/);
+  assert.match(appRunbook, /Leave the required check red\./);
   assert.doesNotMatch(appRunbook, /\bPR #\d+\b/);
   assert.doesNotMatch(
     appRunbook,
