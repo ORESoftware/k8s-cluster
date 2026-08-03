@@ -108,10 +108,7 @@ impl Config {
             billing_app,
             operator_secret,
             mutation_enabled: env_bool("GHA_MUTATION_ENABLED", false),
-            reconcile_interval: Duration::from_secs(env_u64(
-                "GHA_RECONCILE_INTERVAL_SECONDS",
-                900,
-            )),
+            reconcile_interval: Duration::from_secs(env_u64("GHA_RECONCILE_INTERVAL_SECONDS", 900)),
             organization,
             policy,
         })
@@ -509,7 +506,10 @@ impl GitHubClient {
             .mutation_auth
             .installation_token(&self.http, &self.api_base)
             .await?;
-        let patch_url = format!("{}/orgs/{org}/actions/variables/{}", self.api_base, value.name);
+        let patch_url = format!(
+            "{}/orgs/{org}/actions/variables/{}",
+            self.api_base, value.name
+        );
         let body = json!({
             "name": &value.name,
             "value": &value.value,
