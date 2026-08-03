@@ -28,9 +28,6 @@ jobs:
           persist-credentials: false
           path: repo
           submodules: recursive
-      # The crate depends on sibling path crates under fiducia-interfaces
-      # (../fiducia-interfaces/generated/rust and .../generated/rust-db), so the
-      # interfaces repo must sit alongside for cargo to resolve them.
       - name: Validate GitHub Actions
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
         with:
@@ -42,7 +39,7 @@ jobs:
         with:
           persist-credentials: false
           repository: fiducia-cloud/fiducia-interfaces
-          ref: 6081bc3f3b7cbe0312870968b61acc38ca91c66a
+          ref: f64cefd987ed16173c526b33a92fb90cbdfcac45
           path: fiducia-interfaces
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -118,7 +115,7 @@ jobs:
         with:
           persist-credentials: false
           repository: fiducia-cloud/fiducia-interfaces
-          ref: 6081bc3f3b7cbe0312870968b61acc38ca91c66a
+          ref: f64cefd987ed16173c526b33a92fb90cbdfcac45
           path: fiducia-interfaces
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -159,6 +156,49 @@ jobs:
           } > artifacts/browser/environment.txt
       - name: Apply canonical customer schema
         run: psql "$DATABASE_URL" --set ON_ERROR_STOP=1 --file fiducia-interfaces/sql/customer.sql
+      - name: Apply customer Shared Auth session assurance migration
+        run: >-
+          psql "$DATABASE_URL" --set ON_ERROR_STOP=1
+          --file fiducia-interfaces/sql/migrations/20260802_customer_shared_auth_session_assurance.sql
+      - name: Reapply assurance migration to prove idempotency
+        run: >-
+          psql "$DATABASE_URL" --set ON_ERROR_STOP=1
+          --file fiducia-interfaces/sql/migrations/20260802_customer_shared_auth_session_assurance.sql
+      - name: Verify migrated customer session columns
+        run: |
+          psql "$DATABASE_URL" --set ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          declare
+            column_count integer;
+            validated_count integer;
+          begin
+            select count(*) into column_count
+              from information_schema.columns
+             where table_schema = 'public'
+               and table_name = 'customer_sessions'
+               and column_name in (
+                 'shared_auth_session_id',
+                 'provider_project',
+                 'assurance_level',
+                 'assurance_verified_at',
+                 'expires_at'
+               );
+            if column_count <> 5 then
+              raise exception 'customer session assurance columns are incomplete';
+            end if;
+            select count(*) into validated_count
+              from pg_constraint
+             where conrelid = 'customer_sessions'::regclass
+               and conname in (
+                 'customer_sessions_assurance_level_chk',
+                 'customer_sessions_shared_auth_assurance_chk'
+               )
+               and convalidated;
+            if validated_count <> 2 then
+              raise exception 'customer assurance constraints are missing or unvalidated';
+            end if;
+          end $$;
+          SQL
       - name: Install exact browser test dependencies without install scripts
         working-directory: repo
         run: |
@@ -171,6 +211,7 @@ jobs:
           node --check tests/customer-browser-harness.mjs
           node --check tests/customer-playwright.test.mjs
           node --check tests/customer-puppeteer.test.mjs
+          node --check tests/customer-session-lifecycle.test.mjs
       - name: Run real-browser customer journeys
         working-directory: repo
         shell: bash
@@ -201,7 +242,7 @@ jobs:
       - name: Build the non-publishing production image
         run: |
           docker build \
-            --build-arg INTERFACES_SHA=6081bc3f3b7cbe0312870968b61acc38ca91c66a \
+            --build-arg INTERFACES_SHA=f64cefd987ed16173c526b33a92fb90cbdfcac45 \
             --build-arg PAYMENTS_REF=126dc5d1b3fcba289f95139284dc0f3c54b56a8a \
             --build-arg MARKETING_REF=f3fd0e63b3c0898bed33c66817847056067f7ca8 \
             --build-arg TEST_CONFIG_REF=026fcf28193c7baeb7f5feb68480a91539c1f0fa \
