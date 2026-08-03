@@ -109,11 +109,7 @@ impl AuthenticationAssurance {
     /// caller must derive `auth_time` from the same provider token whose
     /// signature/issuer/audience/expiry were verified; request JSON must never
     /// supply it independently.
-    pub fn from_supabase_at(
-        aal: Option<&str>,
-        methods: &[String],
-        auth_time: Option<u64>,
-    ) -> Self {
+    pub fn from_supabase_at(aal: Option<&str>, methods: &[String], auth_time: Option<u64>) -> Self {
         let mut amr = vec!["federated".to_owned()];
         for method in methods.iter().filter_map(|method| normalize_method(method)) {
             if !amr.contains(&method) {
