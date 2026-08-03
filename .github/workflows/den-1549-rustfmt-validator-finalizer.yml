@@ -43,13 +43,30 @@ jobs:
 
           path = Path('remote/argocd/ci-runners/validate-sonus-arc-scaffold.py')
           text = path.read_text(encoding='utf-8')
-          for brittle_literal in (
+
+          for brittle_token in (
               '            "billing_auth.installation_token",\n',
               '            "mutation_auth.installation_token",\n',
           ):
-              if brittle_literal not in text:
-                  raise SystemExit(f'expected validator literal missing: {brittle_literal!r}')
-              text = text.replace(brittle_literal, '', 1)
+              text = text.replace(brittle_token, '', 1)
+
+          replacements = {
+              '            "cargo fmt --manifest-path remote/deployments/gha-capacity-broker-rs/Cargo.toml -- --check",\n': (
+                  '            "working-directory: remote/deployments/gha-capacity-broker-rs",\n'
+                  '            "run: cargo fmt --check",\n'
+              ),
+              '            "cargo test --manifest-path remote/deployments/gha-capacity-broker-rs/Cargo.toml",\n': (
+                  '            "run: cargo test --all-features",\n'
+              ),
+              '            "cargo clippy --manifest-path remote/deployments/gha-capacity-broker-rs/Cargo.toml",\n': (
+                  '            "run: cargo clippy --all-targets --all-features -- -D warnings",\n'
+              ),
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f'expected workflow-validator contract missing: {old!r}')
+              text = text.replace(old, new, 1)
+
           path.write_text(text, encoding='utf-8')
           PY
 
@@ -80,5 +97,5 @@ jobs:
           }
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'DEN-1549 format broker and harden authority validator'
+          git commit -m 'DEN-1549 format broker and align workflow validation'
           git push origin HEAD:agent/den-1549-semantic-capacity-broker-20260803
