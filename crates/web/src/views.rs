@@ -50,9 +50,13 @@ pub fn layout(title: &str, body: Markup) -> Markup {
     }
 }
 
-pub fn metric_card(id: &str, value: u64, label: &str) -> Markup {
+/// A live metric card. `oob` puts `hx-swap-oob="true"` on the card itself so
+/// the websocket can replace it by id — the card element carries the marker
+/// directly rather than being wrapped in a second element with the same id
+/// (which would leave two `#id` nodes in the DOM after each swap).
+pub fn metric_card(id: &str, value: u64, label: &str, oob: bool) -> Markup {
     html! {
-        div .card id=(id) {
+        div .card id=(id) hx-swap-oob=[oob.then_some("true")] {
             div .metric { (value) }
             div .metric-label { (label) }
         }
@@ -77,10 +81,10 @@ pub fn dashboard(stats: &DashboardStats) -> Markup {
             }
             div hx-ext="ws" ws-connect="/ws/stats" {
                 section .cards {
-                    (metric_card("stat-transcriptions", stats.transcriptions, "transcriptions"))
-                    (metric_card("stat-translations", stats.translations, "translations"))
-                    (metric_card("stat-syntheses", stats.syntheses, "syntheses"))
-                    (metric_card("stat-vapi", stats.vapi_calls, "vapi calls"))
+                    (metric_card("stat-transcriptions", stats.transcriptions, "transcriptions", false))
+                    (metric_card("stat-translations", stats.translations, "translations", false))
+                    (metric_card("stat-syntheses", stats.syntheses, "syntheses", false))
+                    (metric_card("stat-vapi", stats.vapi_calls, "vapi calls", false))
                 }
                 p .ticker id="live-ticker" { "live · streaming over websocket" }
             }

@@ -124,7 +124,7 @@ transcript + summary; every event is audited to `t2v.vapi_events`.
 - **The Vapi webhook fails closed.** With no `VAPI_WEBHOOK_SECRET` it rejects all posts unless `T2V_ALLOW_INSECURE_WEBHOOK=true`. With a secret it checks `x-vapi-secret` in constant time.
 - **Request body limits:** 25 MB on audio uploads (Whisper's cap), 1 MB on JSON and the webhook.
 - **LLM concurrency ceiling** sheds load with 503 instead of piling up unbounded upstream calls.
-- **Web dashboard** ships a strict CSP (`default-src 'self'`, no external hosts), `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and a Permissions-Policy. htmx is **vendored into the binary** and served from our own origin — no CDN, so the page needs no third-party script source.
+- **Web dashboard** ships a CSP with `default-src 'self'` and strict **`script-src 'self'`** (no external hosts, no inline/eval scripts) — htmx is **vendored into the binary** and served from our own origin, no CDN. `style-src` also allows `'unsafe-inline'` because htmx injects a small inline indicator `<style>` at runtime (inline styles are low-risk; blocking them breaks htmx's UI — caught by the browser e2e). Plus `nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, and a Permissions-Policy.
 
 Missing provider keys are tolerated at startup and reported per-request, so a
 deployment with only one key still serves that provider.
