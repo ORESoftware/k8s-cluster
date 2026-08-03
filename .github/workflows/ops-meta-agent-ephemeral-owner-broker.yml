@@ -33,6 +33,7 @@ jobs:
       REPOSITORY: ${{ github.repository }}
       MARKER_PATH: .github/meta-agent-ephemeral-publish-trigger
       SOURCE_SHA: 55ee15c190b7cfa4e075f6984c7cb551acd4b9d3
+      SOURCE_HELPER_BLOB_SHA: 5accfab2d09fdda1ee0564c1fd28be1ecf6b91e9
       BUNDLE_SHA256: 1ddaa03743b864348162149b7d2d2e2dce7eab585cf092ea14547c647fcec031
       PUBLISHER_SHA256: e2fe6eaa622db02a54f83e27a822f64ad4b54971c883f97bbda4ac0a4db5d278
       EXPECTED_MAIN: 4d6ec3ad0ec7b688f0e777129eee7e0f0d999df1
@@ -101,7 +102,7 @@ jobs:
           printf 'head_sha=%s\n' "$head_sha" >> "$GITHUB_OUTPUT"
           printf 'trusted_sha=%s\n' "$main_sha" >> "$GITHUB_OUTPUT"
 
-      - name: Issue one-time challenge, decrypt in memory, publish, and verify
+      - name: Verify source, issue one-time challenge, publish, and verify
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -110,7 +111,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           umask 077
-          stage=challenge-bootstrap
+          stage=source-helper
           workflow_token="$GH_TOKEN"
           work="$(mktemp -d "$RUNNER_TEMP/meta-agent-credential-broker.XXXXXX")"
           owner_token=''
@@ -129,6 +130,36 @@ jobs:
           trap cleanup EXIT
           trap report_failure ERR
 
+          helper_response="$(
+            GH_TOKEN="$workflow_token" gh api \
+              "repos/${REPOSITORY}/contents/scripts/ops/verify_meta_agent_source_snapshot.py?ref=${TRUSTED_SHA}"
+          )"
+          test "$(jq -er '.sha' <<<"$helper_response")" = "$SOURCE_HELPER_BLOB_SHA"
+          test "$(jq -er '.encoding' <<<"$helper_response")" = base64
+          helper="$work/verify_meta_agent_source_snapshot.py"
+          jq -er '.content' <<<"$helper_response" \
+            | tr -d '\n' \
+            | base64 --decode > "$helper"
+          test -s "$helper"
+          chmod 700 "$helper"
+          python3 -m py_compile "$helper"
+
+          stage=source-preflight
+          source_root="$work/source-snapshot"
+          GH_TOKEN="$workflow_token" python3 "$helper" \
+            --repository ORESoftware/k8s-cluster \
+            --source-sha "$SOURCE_SHA" \
+            --bundle-sha256 "$BUNDLE_SHA256" \
+            --publisher-sha256 "$PUBLISHER_SHA256" \
+            --expected-head "refs/heads/main=${EXPECTED_MAIN}" \
+            --expected-head "refs/heads/${FEATURE_REF}=${EXPECTED_FEATURE}" \
+            --output-dir "$source_root"
+          bundle="$source_root/meta-agent-control-plane-den-1057.bundle"
+          publisher="$source_root/publish_meta_control_plane.py"
+          test -s "$bundle"
+          test -s "$publisher"
+
+          stage=challenge-bootstrap
           private_key="$work/private.pem"
           public_key="$work/public.pem"
           ciphertext_file="$work/ciphertext.bin"
@@ -141,7 +172,7 @@ jobs:
           challenge_body="$work/challenge.md"
           {
             printf '<!-- meta-agent-credential-challenge:%s -->\n' "$nonce"
-            printf 'One-time RSA-OAEP-SHA256 challenge for %s. The private key exists only in this runner and is destroyed on exit. Reply with the matching encrypted ciphertext marker.\n\n' "$TARGET_REPOSITORY"
+            printf 'One-time RSA-OAEP-SHA256 challenge for %s. Immutable source preflight already passed. The private key exists only in this runner and is destroyed on exit. Reply with the matching encrypted ciphertext marker.\n\n' "$TARGET_REPOSITORY"
             printf '```pem\n'
             cat "$public_key"
             printf '```\n'
@@ -201,90 +232,8 @@ jobs:
           membership="$(gh api /user/memberships/orgs/meta-agents-demo --jq '.role + ":" + .state')"
           test "$membership" = admin:active
 
-          stage=reconstruct-reviewed-history
-          source_root="$work/source"
-          mkdir -p "$source_root/scripts/critical-org-fleet/assets"
-          git init "$source_root"
-          source_repository='ORESoftware/k8s-cluster'
-          source_commit="$(
-            GH_TOKEN="$workflow_token" \
-              gh api "repos/${source_repository}/git/commits/${SOURCE_SHA}"
-          )"
-          test "$(jq -er '.sha' <<<"$source_commit")" = "$SOURCE_SHA"
-          source_tree_sha="$(
-            jq -er '.tree.sha | select(test("^[0-9a-f]{40}$"))' <<<"$source_commit"
-          )"
-          source_tree="$(
-            GH_TOKEN="$workflow_token" \
-              gh api "repos/${source_repository}/git/trees/${source_tree_sha}?recursive=1"
-          )"
-          test "$(jq -r '.truncated' <<<"$source_tree")" = false
-
-          asset_rows="$(
-            jq -r '
-              [
-                .tree[]
-                | select(.type == "blob")
-                | select(.path | test("^scripts/critical-org-fleet/assets/meta\\.part[^/]+$"))
-                | [.path, .sha]
-              ]
-              | sort_by(.[0])
-              | .[]
-              | @tsv
-            ' <<<"$source_tree"
-          )"
-          test -n "$asset_rows"
-          asset_count="$(wc -l <<<"$asset_rows" | tr -d ' ')"
-          test "$asset_count" -ge 1
-
-          bundle_base64="$work/meta-agent-control-plane-den-1057.bundle.b64"
-          bundle="$work/meta-agent-control-plane-den-1057.bundle"
-          : > "$bundle_base64"
-          while IFS=$'\t' read -r asset_path asset_sha; do
-            [[ "$asset_path" =~ ^scripts/critical-org-fleet/assets/meta\.part[^/]+$ ]]
-            [[ "$asset_sha" =~ ^[0-9a-f]{40}$ ]]
-            asset_blob="$(
-              GH_TOKEN="$workflow_token" \
-                gh api "repos/${source_repository}/git/blobs/${asset_sha}"
-            )"
-            test "$(jq -er '.encoding' <<<"$asset_blob")" = base64
-            jq -er '.content' <<<"$asset_blob" \
-              | tr -d '\n' \
-              | base64 --decode >> "$bundle_base64"
-          done <<<"$asset_rows"
-          test -s "$bundle_base64"
-          base64 --decode "$bundle_base64" > "$bundle"
-          test -s "$bundle"
-          printf '%s  %s\n' "$BUNDLE_SHA256" "$bundle" | sha256sum --check --strict
-          test "$(git -C "$source_root" rev-parse --is-inside-work-tree)" = true
-          git -C "$source_root" bundle verify "$bundle" >/dev/null
-          observed_heads="$(git bundle list-heads "$bundle" | awk '{print $2 " " $1}' | LC_ALL=C sort)"
-          expected_heads="$(printf 'refs/heads/main %s\nrefs/heads/%s %s\n' "$EXPECTED_MAIN" "$FEATURE_REF" "$EXPECTED_FEATURE" | LC_ALL=C sort)"
-          test "$observed_heads" = "$expected_heads"
-
-          publisher_relative='scripts/critical-org-fleet/publish_meta_control_plane.py'
-          publisher_blob_sha="$(
-            jq -er --arg path "$publisher_relative" '
-              [.tree[] | select(.type == "blob" and .path == $path)]
-              | if length == 1 then .[0].sha else error("publisher blob mismatch") end
-              | select(test("^[0-9a-f]{40}$"))
-            ' <<<"$source_tree"
-          )"
-          publisher_blob="$(
-            GH_TOKEN="$workflow_token" \
-              gh api "repos/${source_repository}/git/blobs/${publisher_blob_sha}"
-          )"
-          test "$(jq -er '.encoding' <<<"$publisher_blob")" = base64
-          publisher="$source_root/$publisher_relative"
-          mkdir -p "$(dirname "$publisher")"
-          jq -er '.content' <<<"$publisher_blob" \
-            | tr -d '\n' \
-            | base64 --decode > "$publisher"
-          test -s "$publisher"
-          printf '%s  %s\n' "$PUBLISHER_SHA256" "$publisher" | sha256sum --check --strict
-          python3 -m py_compile "$publisher"
-
           stage=create-and-push-exact-repository
+          export GIT_TERMINAL_PROMPT=0
           python3 "$publisher" "$bundle"
 
           stage=verify-live-repository
@@ -330,10 +279,11 @@ jobs:
           ' <<<"$pr_json" >/dev/null
 
           stage=complete
-          gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" --body \
+          GH_TOKEN="$workflow_token" gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" --body \
             "Created and verified \`${TARGET_REPOSITORY}\`: \`main\` \`${main_sha}\`, \`${FEATURE_REF}\` \`${feature_sha}\`. Review PR: ${pr_url}" >/dev/null
-          gh api --method POST "repos/${REPOSITORY}/statuses/${CARRIER_HEAD_SHA}" \
+          GH_TOKEN="$workflow_token" gh api --method POST "repos/${REPOSITORY}/statuses/${CARRIER_HEAD_SHA}" \
             -f state=success \
             -f context='ops/meta-agent-ephemeral-publication' \
             -f description='repository and exact refs verified' >/dev/null
-          gh api --method PATCH "repos/${REPOSITORY}/pulls/${PR_NUMBER}" -f state=closed >/dev/null
+          GH_TOKEN="$workflow_token" gh api --method PATCH \
+            "repos/${REPOSITORY}/pulls/${PR_NUMBER}" -f state=closed >/dev/null
