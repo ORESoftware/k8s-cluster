@@ -1,9 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 pub const DEFAULT_HOSTED_RUNS_ON: &str = "ubuntu-latest";
+pub const CI_HOLD_RUNNER_LABEL: &str = "ci-capacity-hold-no-runner";
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -70,29 +71,57 @@ impl OrgPolicy {
         {
             return Err("includedMinutes must be positive when configured".to_string());
         }
-        validate_runs_on(&self.hosted_runs_on, "hostedRunsOn")?;
-        validate_runs_on(&self.self_hosted_runs_on, "selfHostedRunsOn")?;
+
+        let hosted = validate_runs_on(&self.hosted_runs_on, "hostedRunsOn")?;
+        let self_hosted = validate_runs_on(&self.self_hosted_runs_on, "selfHostedRunsOn")?;
+        if !hosted.is_disjoint(&self_hosted) {
+            return Err("hostedRunsOn and selfHostedRunsOn must not overlap".to_string());
+        }
+        validate_repository_ids(&self.selected_repository_ids)?;
         Ok(())
     }
 }
 
-fn validate_runs_on(values: &[String], field: &str) -> Result<(), String> {
+fn validate_runs_on(values: &[String], field: &str) -> Result<BTreeSet<String>, String> {
     if values.is_empty() {
         return Err(format!("{field} must contain at least one label"));
     }
     if values.len() > 8 {
         return Err(format!("{field} must contain no more than eight labels"));
     }
+
+    let mut normalized = BTreeSet::new();
     for value in values {
         let trimmed = value.trim();
         if trimmed.is_empty() || trimmed.len() > 100 {
             return Err(format!("{field} contains an empty or oversized label"));
+        }
+        if trimmed != value {
+            return Err(format!("{field} labels must not contain surrounding whitespace"));
         }
         if !trimmed
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
         {
             return Err(format!("{field} contains an invalid label: {trimmed}"));
+        }
+        if !normalized.insert(trimmed.to_ascii_lowercase()) {
+            return Err(format!("{field} contains a duplicate label: {trimmed}"));
+        }
+    }
+    Ok(normalized)
+}
+
+fn validate_repository_ids(values: &[u64]) -> Result<(), String> {
+    let mut seen = BTreeSet::new();
+    for value in values {
+        if *value == 0 {
+            return Err("selectedRepositoryIds must contain only positive IDs".to_string());
+        }
+        if !seen.insert(*value) {
+            return Err(format!(
+                "selectedRepositoryIds contains duplicate repository ID {value}"
+            ));
         }
     }
     Ok(())
@@ -273,13 +302,26 @@ pub fn decision_variables(
     policy: &OrgPolicy,
     decision: &CapacityDecision,
 ) -> Result<BTreeMap<String, VariableMutation>, String> {
+    policy.validate()?;
     if policy.selected_repository_ids.is_empty() {
         return Err(
             "selectedRepositoryIds must be non-empty before organization variables can mutate"
                 .to_string(),
         );
     }
-    let runs_on = serde_json::to_string(&decision.runs_on)
+
+    let effective_runs_on = match decision.mode {
+        ExecutionMode::Hosted | ExecutionMode::SelfHosted => {
+            if decision.runs_on.is_empty() {
+                return Err("an executable capacity decision must include a runner label".to_string());
+            }
+            decision.runs_on.clone()
+        }
+        ExecutionMode::BuildServer | ExecutionMode::Hold => {
+            vec![CI_HOLD_RUNNER_LABEL.to_string()]
+        }
+    };
+    let runs_on = serde_json::to_string(&effective_runs_on)
         .map_err(|error| format!("failed to serialize runs-on labels: {error}"))?;
     let mode = match decision.mode {
         ExecutionMode::Hosted => "hosted",
@@ -287,6 +329,7 @@ pub fn decision_variables(
         ExecutionMode::BuildServer => "build-server",
         ExecutionMode::Hold => "hold",
     };
+
     let mut values = BTreeMap::new();
     values.insert(
         "CI_EXECUTION_MODE".to_string(),
@@ -417,6 +460,28 @@ mod tests {
     }
 
     #[test]
+    fn non_github_modes_publish_a_nonexistent_runner_label() {
+        let mut value = policy();
+        value.self_hosted_ready = false;
+        let build_server = decide_capacity(&value, Some(2_000.0));
+        let variables = decision_variables(&value, &build_server).expect("variables");
+        assert_eq!(variables["CI_EXECUTION_MODE"].value, "build-server");
+        assert_eq!(
+            variables["CI_LINUX_RUNS_ON_JSON"].value,
+            "[\"ci-capacity-hold-no-runner\"]"
+        );
+
+        value.build_server_enabled = false;
+        let hold = decide_capacity(&value, Some(2_000.0));
+        let variables = decision_variables(&value, &hold).expect("variables");
+        assert_eq!(variables["CI_EXECUTION_MODE"].value, "hold");
+        assert_eq!(
+            variables["CI_LINUX_RUNS_ON_JSON"].value,
+            "[\"ci-capacity-hold-no-runner\"]"
+        );
+    }
+
+    #[test]
     fn prefer_self_hosted_overrides_low_usage_after_certification() {
         let mut value = policy();
         value.prefer_self_hosted = true;
@@ -465,6 +530,32 @@ mod tests {
             ],
         };
         assert_eq!(usage.actions_minutes(), 12.5);
+    }
+
+    #[test]
+    fn runner_labels_are_trimmed_unique_and_lane_distinct() {
+        let mut value = policy();
+        value.self_hosted_runs_on = vec![" sonus-ci".to_string()];
+        assert!(value.validate().is_err());
+
+        value = policy();
+        value.self_hosted_runs_on = vec!["sonus-ci".to_string(), "SONUS-CI".to_string()];
+        assert!(value.validate().is_err());
+
+        value = policy();
+        value.self_hosted_runs_on = vec!["ubuntu-latest".to_string()];
+        assert!(value.validate().is_err());
+    }
+
+    #[test]
+    fn repository_ids_must_be_positive_and_unique() {
+        let mut value = policy();
+        value.selected_repository_ids = vec![1, 1];
+        assert!(value.validate().is_err());
+
+        value = policy();
+        value.selected_repository_ids = vec![0, 2];
+        assert!(value.validate().is_err());
     }
 
     #[test]
