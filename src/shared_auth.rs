@@ -12,7 +12,7 @@ use std::net::IpAddr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::http::HeaderValue;
-use reqwest::{redirect::Policy, Client, StatusCode, Url};
+use reqwest::{Client, StatusCode, Url, redirect::Policy};
 use serde::Deserialize;
 
 pub const ACR_LOA1: &str = "urn:oresoftware:loa:1";
@@ -642,11 +642,15 @@ mod tests {
 
     #[test]
     fn plain_http_is_limited_to_local_or_cluster_hosts() {
-        assert!(protected_http_host(&Url::parse("http://shared-auth:8080").unwrap()));
+        assert!(protected_http_host(
+            &Url::parse("http://shared-auth:8080").unwrap()
+        ));
         assert!(protected_http_host(
             &Url::parse("http://shared-auth.default.svc.cluster.local:8080").unwrap()
         ));
-        assert!(protected_http_host(&Url::parse("http://127.0.0.1:8080").unwrap()));
+        assert!(protected_http_host(
+            &Url::parse("http://127.0.0.1:8080").unwrap()
+        ));
         assert!(!protected_http_host(
             &Url::parse("http://auth.example.com").unwrap()
         ));

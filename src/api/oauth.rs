@@ -47,8 +47,7 @@ pub async fn start(
     auth::require_embedded_tenant_write(&state, &principal, q.tenant_id).await?;
     let user = principal.user()?;
     let initiating_shared_user_id = user.identity.subject.clone();
-    let auth_time_unix = i64::try_from(user.identity.issued_at)
-        .map_err(|_| AppError::Forbidden)?;
+    let auth_time_unix = i64::try_from(user.identity.issued_at).map_err(|_| AppError::Forbidden)?;
 
     // 256 bits keeps the callback capability comfortably above the strength of
     // the access token and provider authorization code it protects.
@@ -79,12 +78,8 @@ pub async fn start(
         .await?;
 
     let url = match provider {
-        ProviderKind::Stripe => {
-            stripe::StripeOAuth::new(&state.cfg).authorize_url(&state_token)?
-        }
-        ProviderKind::Paypal => {
-            paypal::PaypalOAuth::new(&state.cfg).authorize_url(&state_token)?
-        }
+        ProviderKind::Stripe => stripe::StripeOAuth::new(&state.cfg).authorize_url(&state_token)?,
+        ProviderKind::Paypal => paypal::PaypalOAuth::new(&state.cfg).authorize_url(&state_token)?,
         ProviderKind::Braintree => {
             braintree::BraintreeOAuth::new(&state.cfg).authorize_url(&state_token)?
         }
@@ -142,8 +137,7 @@ pub async fn callback(
     })?;
     let tenant_id: Uuid = row.try_get("", "tenant_id")?;
     let return_to: Option<String> = row.try_get("", "return_to")?;
-    let initiating_shared_user_id: Option<String> =
-        row.try_get("", "initiating_shared_user_id")?;
+    let initiating_shared_user_id: Option<String> = row.try_get("", "initiating_shared_user_id")?;
     let auth_time_unix: Option<i64> = row.try_get("", "auth_time_unix")?;
     let initiating_shared_user_id = initiating_shared_user_id
         .map(|value| value.trim().to_owned())
@@ -549,10 +543,7 @@ mod tests {
     fn callback_step_up_freshness_uses_original_ceremony_time() {
         let now = 1_000_000;
         assert!(authorization_time_is_fresh(now, now));
-        assert!(authorization_time_is_fresh(
-            now - MAX_STEP_UP_AGE_SECS,
-            now
-        ));
+        assert!(authorization_time_is_fresh(now - MAX_STEP_UP_AGE_SECS, now));
         assert!(!authorization_time_is_fresh(
             now - MAX_STEP_UP_AGE_SECS - 1,
             now
