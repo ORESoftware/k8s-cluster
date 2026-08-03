@@ -12,6 +12,19 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Exhaustively check the bounded ledger posting model
         run: cargo test --manifest-path formal/ledger-model/Cargo.toml --locked -- --nocapture
+  auth-contract:
+    # Compile the exact production JWT verifier and authorization middleware in
+    # a self-contained crate. This closes the security-critical portion of the
+    # root-crate CI gap without requiring a cross-org checkout credential.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Formatting
+        run: cargo fmt --manifest-path formal/auth-contract/Cargo.toml --check
+      - name: Clippy
+        run: cargo clippy --manifest-path formal/auth-contract/Cargo.toml --all-targets -- -D warnings
+      - name: Shared Auth signature and billing authorization matrix
+        run: cargo test --manifest-path formal/auth-contract/Cargo.toml --all-targets -- --nocapture
   hygiene:
     runs-on: ubuntu-latest
     steps:
@@ -71,7 +84,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - run: cargo fmt --check
 
-# ── NOT COVERED HERE: the main crate's test suite ────────────────────────────
+# ── NOT COVERED HERE: the main crate's full test suite ───────────────────────
 # `cargo test` at the repo root cannot run in this workflow. The crate has three
 # path dependencies that resolve outside the repo:
 #
@@ -81,10 +94,10 @@ jobs:
 #
 # They live in ORESoftware/k8s-libs-and-shared-defs — a different org, so the
 # per-repo GITHUB_TOKEN cannot read them. Wiring this up needs a cross-org
-# credential (PAT or deploy key) as a secret, plus a checkout of that repo at
-# `$GITHUB_WORKSPACE/../../libs` and its submodules.
+# credential (GitHub App installation token or read-only deploy key), plus a
+# checkout of that repo at `$GITHUB_WORKSPACE/../../libs` and its submodules.
 #
-# The gap is worth naming plainly: the webhook signature verification and
-# replay-protection tests are part of that suite, so a regression in either
-# currently merges green. Until the credential exists, run `cargo test` locally
-# from a checkout that has the sibling `libs/` tree before trusting a green PR.
+# Authentication is no longer part of that blind spot: `auth-contract` imports
+# the exact production verifier and middleware source and exercises the signed
+# Shared Auth / tenant / AAL2 matrix above. Provider, webhook, database, and
+# scheduler integration tests still require the full sibling dependency tree.
