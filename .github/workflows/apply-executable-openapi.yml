@@ -76,6 +76,27 @@ jobs:
       - name: Apply code-first route and contract transformation
         run: python3 scripts/apply-executable-openapi.py
 
+      - name: Pin the reviewed Utoipa pastey migration
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('Cargo.toml')
+          source = path.read_text()
+          before = '''utoipa = "=5.5.0"
+          utoipa-axum = "=0.2.0"
+          utoipa-scalar = "=0.3.0"'''
+          after = '''# crates.io utoipa-axum 0.2.0 still pulls the archived `paste` crate.
+          # Pin the complete type family to the reviewed upstream pastey migration.
+          utoipa = { version = "=5.5.0", git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa" }
+          utoipa-axum = { version = "=0.2.0", git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa-axum" }
+          utoipa-scalar = { version = "=0.3.0", git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa-scalar" }'''
+          if source.count(before) != 1:
+              raise SystemExit('unexpected Utoipa dependency block')
+          path.write_text(source.replace(before, after, 1))
+          PY
+
       - name: Resolve and validate the complete Rust application
         run: |
           set -euo pipefail
@@ -150,7 +171,7 @@ jobs:
             echo 'git conflict marker detected' >&2
             exit 1
           fi
-          mapfile -t changed < <(git status --short | sed -E 's/^.. //' | sort)
+          mapfile -t changed < <(git status --short --untracked-files=all | sed -E 's/^.. //' | sort)
           test "${#changed[@]}" -gt 0
           for path in "${changed[@]}"; do
             case "$path" in
