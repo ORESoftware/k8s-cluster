@@ -384,6 +384,7 @@ test('GitHub Actions tracks the complete contract and pins every dependency', ()
     '.github/workflows/slack-command-gitops.yml',
     'docs/alex-main-agent-slack-command-gitops.md',
     bundlePath,
+    kustomizationPath,
     'remote/tests/general/slack-command-gitops.test.mjs',
   ]) {
     assert.equal(count(workflow, `'${path}'`), 2, `${path} must trigger PR and push CI`);
