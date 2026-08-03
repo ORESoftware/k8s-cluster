@@ -3,7 +3,9 @@ name: Production contract and safety gate
 on:
   pull_request:
     paths:
+      - 'README.md'
       - 'docs/production/**'
+      - 'docs/operations/**'
       - 'docs/security/**'
       - 'tools/validate-production-gates.mjs'
       - '.github/workflows/production-gates.yml'
@@ -11,7 +13,9 @@ on:
   push:
     branches: [main]
     paths:
+      - 'README.md'
       - 'docs/production/**'
+      - 'docs/operations/**'
       - 'docs/security/**'
       - 'tools/validate-production-gates.mjs'
       - '.github/workflows/production-gates.yml'
