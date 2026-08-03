@@ -1,0 +1,38 @@
+# Partial, server-side-applied configuration for the mobile endpoint. Pruning is
+# disabled because these ConfigMaps are foundational Argo CD objects that may
+# contain keys owned by other installation/configuration paths.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+  labels:
+    app.kubernetes.io/name: argocd-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  accounts.argocd-mobile: login
+  accounts.argocd-mobile.enabled: "true"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-rbac-cm
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+  labels:
+    app.kubernetes.io/name: argocd-rbac-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  # Use a composable policy.*.csv key instead of replacing policy.csv. The
+  # account can inspect status/resources/logs and initiate a sync, but cannot
+  # edit app specs, delete resources, execute in pods, or run resource actions.
+  policy.mobile.csv: |
+    p, argocd-mobile, applications, get, */*, allow
+    p, argocd-mobile, applications, sync, */*, allow
+    p, argocd-mobile, logs, get, */*, allow
+    p, argocd-mobile, projects, get, *, allow
+    p, argocd-mobile, clusters, get, *, allow
+    p, argocd-mobile, repositories, get, *, allow
