@@ -16,7 +16,12 @@ data:
   # v15 unattended setup. These values are used only on first boot, before
   # /etc/wireguard/wg-easy.db exists on the persistent volume.
   INIT_ENABLED: "true"
+  # Bootstrap value only. Resolve the live EC2 EIP/DNS before a clean install;
+  # wg-easy keeps the initialized endpoint in its persistent SQLite database.
   INIT_HOST: "54.91.17.58"
   INIT_PORT: "51820"
-  INIT_DNS: "10.96.0.10,1.1.1.1"
+  # New profiles use the DNS sidecar on the WireGuard gateway. It gives the
+  # mobile-only Argo CD hostname a private answer, then forwards every other
+  # query to kube-dns. Existing profiles must be updated/re-exported once.
+  INIT_DNS: "10.8.0.1"
   INIT_ALLOWED_IPS: "10.8.0.0/24,10.96.0.0/12,10.244.0.0/16"
