@@ -105,10 +105,7 @@ impl SupabaseConfig {
     }
 
     pub fn shared_auth_jwks_url_for(base_url: &str) -> String {
-        format!(
-            "{}/.well-known/jwks.json",
-            base_url.trim_end_matches('/')
-        )
+        format!("{}/.well-known/jwks.json", base_url.trim_end_matches('/'))
     }
 
     /// Shared Auth is the production default. Direct Supabase verification is
@@ -180,7 +177,12 @@ fn shared_auth_env_selected() -> bool {
 
 fn env_bool(name: &str, default: bool) -> bool {
     env::var(name)
-        .map(|raw| matches!(raw.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .map(|raw| {
+            matches!(
+                raw.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
         .unwrap_or(default)
 }
 
@@ -319,10 +321,7 @@ struct AuthorityClaims {
 
 impl AuthorityClaims {
     fn assurance(&self) -> Aal {
-        let aal_asserts_two = self
-            .aal
-            .as_ref()
-            .is_some_and(AalClaim::asserts_aal2);
+        let aal_asserts_two = self.aal.as_ref().is_some_and(AalClaim::asserts_aal2);
 
         match self.acr.as_deref().map(str::trim) {
             // Shared Auth emits both numeric `aal` and OIDC `acr`. Requiring
@@ -366,11 +365,7 @@ impl AuthorityClaims {
         // app_metadata, so this cannot broaden the canonical path.
         if let Some(metadata) = &self.app_metadata {
             let single = metadata.tenant_id.iter().map(String::as_str);
-            let many = metadata
-                .tenant_ids
-                .iter()
-                .flatten()
-                .map(String::as_str);
+            let many = metadata.tenant_ids.iter().flatten().map(String::as_str);
             for raw in single.chain(many) {
                 if let Ok(tenant_id) = Uuid::parse_str(raw.trim())
                     && !out.contains(&tenant_id)
@@ -421,9 +416,7 @@ fn valid_role(role: &str) -> bool {
     !role.is_empty()
         && role.len() <= 64
         && role.bytes().all(|byte| {
-            byte.is_ascii_lowercase()
-                || byte.is_ascii_digit()
-                || matches!(byte, b':' | b'_' | b'-')
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b':' | b'_' | b'-')
         })
 }
 
@@ -431,9 +424,7 @@ fn valid_scope(scope: &str) -> bool {
     !scope.is_empty()
         && scope.len() <= 64
         && scope.bytes().all(|byte| {
-            byte.is_ascii_lowercase()
-                || byte.is_ascii_digit()
-                || matches!(byte, b':' | b'_' | b'-')
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b':' | b'_' | b'-')
         })
 }
 
@@ -566,26 +557,17 @@ impl SupabaseVerifier {
     }
 
     async fn jwk_for_kid(&self, kid: &str, algorithm: Algorithm) -> Result<Jwk, AuthError> {
-        if let Some(jwk) = self
-            .cached_jwk(kid, algorithm, JWKS_CACHE_TTL)
-            .await
-        {
+        if let Some(jwk) = self.cached_jwk(kid, algorithm, JWKS_CACHE_TTL).await {
             return Ok(jwk);
         }
 
         match self.try_refresh_jwks().await {
             Ok(refreshed) => {
-                if let Some(jwk) = self
-                    .cached_jwk(kid, algorithm, JWKS_CACHE_TTL)
-                    .await
-                {
+                if let Some(jwk) = self.cached_jwk(kid, algorithm, JWKS_CACHE_TTL).await {
                     return Ok(jwk);
                 }
                 if !refreshed {
-                    if let Some(jwk) = self
-                        .cached_jwk(kid, algorithm, JWKS_STALE_GRACE)
-                        .await
-                    {
+                    if let Some(jwk) = self.cached_jwk(kid, algorithm, JWKS_STALE_GRACE).await {
                         warn!(
                             key.id = kid,
                             "using recently stale Shared Auth signing key while refresh is throttled"
@@ -604,10 +586,7 @@ impl SupabaseVerifier {
             Err(error) => {
                 // Resilience without key-confusion: only a key with the same
                 // kid and algorithm from the bounded stale cache may be used.
-                if let Some(jwk) = self
-                    .cached_jwk(kid, algorithm, JWKS_STALE_GRACE)
-                    .await
-                {
+                if let Some(jwk) = self.cached_jwk(kid, algorithm, JWKS_STALE_GRACE).await {
                     warn!(
                         key.id = kid,
                         "using recently stale Shared Auth signing key during JWKS outage"
@@ -634,12 +613,7 @@ impl SupabaseVerifier {
         Ok(true)
     }
 
-    async fn cached_jwk(
-        &self,
-        kid: &str,
-        algorithm: Algorithm,
-        max_age: Duration,
-    ) -> Option<Jwk> {
+    async fn cached_jwk(&self, kid: &str, algorithm: Algorithm, max_age: Duration) -> Option<Jwk> {
         let cache = self.jwks_cache.read().await;
         let entry = cache.as_ref()?;
         if entry.fetched_at.elapsed() > max_age {
@@ -653,10 +627,15 @@ impl SupabaseVerifier {
         let jwks_url = self.config.jwks_url.as_deref().ok_or_else(|| {
             AuthError::Unavailable("identity JWKS URL is not configured".to_string())
         })?;
-        let response = self.http.get(jwks_url).send().await.map_err(|fetch_error| {
-            error!(error = %fetch_error, "Shared Auth JWKS fetch failed");
-            AuthError::Unavailable("identity JWKS fetch failed".to_string())
-        })?;
+        let response = self
+            .http
+            .get(jwks_url)
+            .send()
+            .await
+            .map_err(|fetch_error| {
+                error!(error = %fetch_error, "Shared Auth JWKS fetch failed");
+                AuthError::Unavailable("identity JWKS fetch failed".to_string())
+            })?;
         if !response.status().is_success() {
             return Err(AuthError::Unavailable(format!(
                 "identity JWKS fetch returned status {}",
@@ -826,7 +805,9 @@ mod tests {
     #[test]
     fn role_and_scope_grammars_are_bounded() {
         assert!(valid_role("quaestor:billing:write"));
-        assert!(valid_role("quaestor:tenant:00000000-0000-0000-0000-000000000000"));
+        assert!(valid_role(
+            "quaestor:tenant:00000000-0000-0000-0000-000000000000"
+        ));
         assert!(!valid_role("Quaestor:billing:write"));
         assert!(!valid_role("quaestor/billing/write"));
         assert!(!valid_scope("<script>"));
