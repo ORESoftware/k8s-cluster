@@ -4,6 +4,7 @@ pub mod customers;
 pub mod health;
 pub mod ledger;
 pub mod locks;
+pub mod memberships;
 pub mod notifications;
 pub mod oauth;
 pub mod scheduler;
@@ -36,38 +37,45 @@ async fn api_docs_json() -> impl IntoResponse {
     )
 }
 
-pub fn build_router(state: AppState) -> Router {
+pub fn build_router(state: AppState) -> anyhow::Result<Router> {
     let admin_enabled = state.cfg.admin_ui_enabled;
-    let api_auth = auth::ApiAuth::from_config(&state.cfg);
+    let api_auth = auth::ApiAuth::from_state(&state)?;
     if api_auth.bearer.is_none() {
-        // Single boot-time warning so operators know they're in
-        // open-API mode. Production manifests inject the bearer via
-        // SealedSecrets; this catches the misconfig.
         tracing::warn!(
-            "BILLING_API_AUTH_BEARER is unset — the service-to-service bearer is \
-             disabled. Set it for any reachable-from-network deployment."
+            "BILLING_API_AUTH_BEARER is unset — legacy service authentication is disabled"
         );
     } else {
-        tracing::info!("service-to-service bearer auth enabled");
+        tracing::info!(
+            "legacy service bearer enabled for migration-only, non-user control-plane calls"
+        );
     }
-    if api_auth.supabase.is_some() {
-        tracing::info!("per-user Supabase JWT verification enabled");
+    if api_auth.shared_auth.is_some() {
+        tracing::info!(
+            "Shared Auth revocation-aware introspection enabled; tenant authorization is database-backed"
+        );
     } else {
         tracing::warn!(
-            "BILLING_SUPABASE_URL is unset — per-user JWT verification is disabled. \
-             Tenant ownership is delegated to the upstream gateway, so any holder of \
-             BILLING_API_AUTH_BEARER can act on any tenant."
+            "Shared Auth is disabled. This is permitted only while \
+             BILLING_TENANT_ROUTES_REQUIRE_USER_JWT=false or in explicit insecure development."
         );
     }
     if api_auth.require_user_jwt {
         tracing::info!(
-            "tenant-scoped routes require a verified Supabase JWT and per-tenant entitlement"
+            "tenant routes require an active Shared Auth session and exact tenant membership"
         );
     } else {
         tracing::warn!(
-            "BILLING_TENANT_ROUTES_REQUIRE_USER_JWT=false — the shared service bearer is \
-             accepted on /v1/tenants/{{tenant_id}}/... routes, which leaves the \
-             cross-tenant IDOR open. This is a migration window, not a steady state."
+            "BILLING_TENANT_ROUTES_REQUIRE_USER_JWT=false — legacy service credentials can read \
+             tenant routes. Keep this migration window short."
+        );
+    }
+    if api_auth.require_step_up {
+        tracing::info!(
+            "tenant mutations require fresh Shared Auth LOA2 plus tenant-local billing:write"
+        );
+    } else {
+        tracing::warn!(
+            "tenant mutation step-up is disabled; enable the production hardening flag after rollout"
         );
     }
 
@@ -81,6 +89,19 @@ pub fn build_router(state: AppState) -> Router {
         // Tenants
         .route("/v1/tenants", post(tenants::create))
         .route("/v1/tenants/{id}", get(tenants::get_by_id))
+        // Shared Auth principal grants (Quaestor-owned authorization)
+        .route(
+            "/v1/tenants/{tenant_id}/memberships",
+            get(memberships::list),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/memberships/{shared_user_id}",
+            axum::routing::put(memberships::upsert),
+        )
+        .route(
+            "/v1/tenants/{tenant_id}/memberships/{shared_user_id}",
+            axum::routing::delete(memberships::revoke),
+        )
         // Users (per-tenant customers/vendors)
         .route("/v1/tenants/{tenant_id}/users", post(users::upsert))
         .route(
@@ -224,13 +245,8 @@ pub fn build_router(state: AppState) -> Router {
         .layer(RequestBodyLimitLayer::new(2 * 1024 * 1024));
 
     if admin_enabled {
-        // Mount the HTMX admin UI under /admin. Disable via
-        // `BILLING_ADMIN_UI_ENABLED=false` for prod gateways that have not
-        // wired `dd-remote-auth` in front yet. The admin router uses
-        // `route("/", ...)` for its index so nesting at `/admin` registers
-        // both `GET /admin` and `GET /admin/` through axum's normalization.
         router = router.nest("/admin", crate::admin::build_router(state.clone()));
     }
 
-    router.with_state(state)
+    Ok(router.with_state(state))
 }
