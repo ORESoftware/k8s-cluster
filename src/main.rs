@@ -20,11 +20,13 @@ mod fiducia;
 mod jobs;
 mod ledger;
 mod locks;
+mod memberships;
 mod money;
 mod notifications;
 mod providers;
 mod scheduler;
 mod shard;
+mod shared_auth;
 mod solana;
 mod state;
 mod supabase_auth;
@@ -90,7 +92,7 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(async move { events::run_sync_command_loop(s).await });
     }
 
-    let app = api::build_router(state).layer(dd_telemetry::http_trace_layer());
+    let app = api::build_router(state)?.layer(dd_telemetry::http_trace_layer());
     // Strip trailing slashes before routing so `/admin/` matches the same
     // handler as `/admin` (which `Router::nest` does not provide on its own).
     // Applied to the entire surface — JSON routes do not use trailing
