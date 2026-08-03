@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gha-clone-server-rules
+  namespace: default
+  labels:
+    app: gha-clone-server
+data:
+  rules.json: |
+    [
+      {
+        "repo": "ORESoftware/k8s-cluster",
+        "workflow": "repo checks",
+        "branches": ["main", "dev"],
+        "sourceEvents": ["push"],
+        "conclusions": [
+          "action_required",
+          "cancelled",
+          "failure",
+          "startup_failure",
+          "timed_out"
+        ],
+        "action": {
+          "kind": "workflowDispatch",
+          "workflowFile": "self-hosted-fallback.yml",
+          "workflowName": "Self-hosted fallback",
+          "dispatchRef": "main",
+          "runner": "oresoftware-ci"
+        }
+      }
+    ]
