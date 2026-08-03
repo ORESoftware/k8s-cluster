@@ -232,15 +232,13 @@ impl SharedAuthVerifier {
                 "introspection response exceeded size limit".to_owned(),
             ));
         }
-        let claims: Introspection = serde_json::from_slice(&bytes)
-            .map_err(|error| AuthError::Unavailable(format!("invalid introspection JSON: {error}")))?;
+        let claims: Introspection = serde_json::from_slice(&bytes).map_err(|error| {
+            AuthError::Unavailable(format!("invalid introspection JSON: {error}"))
+        })?;
         self.identity_from_claims(claims)
     }
 
-    fn identity_from_claims(
-        &self,
-        claims: Introspection,
-    ) -> Result<SharedAuthIdentity, AuthError> {
+    fn identity_from_claims(&self, claims: Introspection) -> Result<SharedAuthIdentity, AuthError> {
         if !claims.active {
             return Err(AuthError::Unauthorized);
         }
@@ -266,9 +264,9 @@ impl SharedAuthVerifier {
         }
 
         let subject = bounded_identifier(claims.sub, 200)?;
-        let provider = bounded_identifier(claims.provider, 64)?;
-        let provider_tenant = bounded_identifier(claims.provider_tenant, 200)?;
-        let provider_subject = bounded_identifier(claims.provider_subject, 512)?;
+        let provider = bounded_text(claims.provider, 64)?;
+        let provider_tenant = bounded_text(claims.provider_tenant, 200)?;
+        let provider_subject = bounded_text(claims.provider_subject, 512)?;
         let session_id = claims
             .sid
             .map(|value| bounded_identifier(Some(value), 200))
@@ -373,6 +371,18 @@ fn bounded_identifier(value: Option<String>, max: usize) -> Result<String, AuthE
     Ok(value.to_owned())
 }
 
+fn bounded_text(value: Option<String>, max: usize) -> Result<String, AuthError> {
+    let value = value.unwrap_or_default();
+    let value = value.trim();
+    if value.is_empty()
+        || value.len() > max
+        || value.chars().any(|character| character.is_control())
+    {
+        return Err(AuthError::Unauthorized);
+    }
+    Ok(value.to_owned())
+}
+
 fn normalize_tokens(
     values: Vec<String>,
     max_items: usize,
@@ -413,7 +423,7 @@ pub fn bearer_token(raw: Option<&str>) -> Option<&str> {
     let token = token.trim();
     if token.is_empty()
         || token.chars().any(char::is_whitespace)
-        || HeaderValue::from_str(token).is_err()
+        || HeaderValue::try_from(token).is_err()
     {
         return None;
     }
@@ -526,6 +536,36 @@ mod tests {
         assert!(matches!(
             verifier.identity_from_claims(claims),
             Err(AuthError::Unavailable(_))
+        ));
+    }
+
+    #[test]
+    fn provider_identity_fields_remain_opaque_but_bounded() {
+        let verifier = SharedAuthVerifier {
+            config: config(),
+            http: Client::new(),
+        };
+        let mut claims = active();
+        claims.provider_tenant = Some("https://issuer.example/tenant/acme".to_owned());
+        claims.provider_subject = Some("auth0|customers/acme/user-1".to_owned());
+        let identity = verifier.identity_from_claims(claims).unwrap();
+        assert_eq!(
+            identity.provider_subject,
+            "auth0|customers/acme/user-1"
+        );
+    }
+
+    #[test]
+    fn canonical_subject_and_session_identifiers_remain_strict() {
+        let verifier = SharedAuthVerifier {
+            config: config(),
+            http: Client::new(),
+        };
+        let mut claims = active();
+        claims.sub = Some("../other-tenant".to_owned());
+        assert!(matches!(
+            verifier.identity_from_claims(claims),
+            Err(AuthError::Unauthorized)
         ));
     }
 
