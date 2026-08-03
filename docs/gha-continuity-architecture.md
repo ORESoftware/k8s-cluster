@@ -146,3 +146,20 @@ The first implementation remains in `ORESoftware/k8s-cluster` so source,
 executor profiles, manifests and policy contracts are reviewed atomically.
 Extraction is tracked through the protected repository-bootstrap workflow after
 the API and golden fixtures stabilize.
+
+## Failure webhook contract
+
+GitHub sends `workflow_run` completion events for every conclusion. The independent
+lane therefore accepts only `action=completed`, a configured failure conclusion,
+an exact allowlisted workflow path, and a workflow name not present in the loop
+exclusion set. A UUID `X-GitHub-Delivery` is inserted into a bounded TTL store only
+after workflow retrieval and planning succeed, execution prerequisites are ready,
+and every plan is independently executable. Transient fetch, planning, policy, or
+readiness errors therefore remain retryable.
+
+Repository hooks are used for repositories owned by the `ORESoftware` user account;
+organization hooks are used only for actual GitHub organizations. Registration is
+performed with the secret-safe script in `gha-clone-server-rs/scripts` after ingress,
+GitHub App permissions, and External Secrets are reconciled. The initial deployment
+remains single-replica and disabled; horizontal scaling requires shared delivery
+persistence or a fenced claim before activation.

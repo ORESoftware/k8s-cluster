@@ -1,0 +1,834 @@
+name: DEN-1550 webhook hardening helper
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/workflows/den-1550-webhook-hardening-helper.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1550-webhook-hardening-helper-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  apply-validate-and-commit:
+    if: github.event.pull_request.head.ref == 'agent/den-1550-failure-webhook-hardening-20260803'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1550-failure-webhook-hardening-20260803
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Apply failure-only webhook and delivery dedupe patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
+              return text.replace(old, new, 1)
+
+          main_path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
+          main = main_path.read_text(encoding='utf-8')
+
+          main = replace_once(
+              main,
+              '''struct AppState {
+              config: Arc<Config>,
+              client: reqwest::Client,
+              runs: Arc<RwLock<BTreeMap<Uuid, RunRecord>>>,
+          }
+          ''',
+              '''struct AppState {
+              config: Arc<Config>,
+              client: reqwest::Client,
+              runs: Arc<RwLock<BTreeMap<Uuid, RunRecord>>>,
+              webhook_deliveries: Arc<RwLock<BTreeMap<String, Instant>>>,
+          }
+          ''',
+              'AppState delivery store',
+          )
+
+          main = replace_once(
+              main,
+              '''    build_timeout_seconds: u64,
+              max_runs: usize,
+          }
+          ''',
+              '''    build_timeout_seconds: u64,
+              max_runs: usize,
+              webhook_failure_conclusions: BTreeSet<String>,
+              webhook_ignored_workflows: BTreeSet<String>,
+              webhook_delivery_ttl_seconds: u64,
+              max_webhook_deliveries: usize,
+          }
+          ''',
+              'Config webhook policy fields',
+          )
+
+          main = replace_once(
+              main,
+              '''            max_runs: env_usize("GHA_CLONE_MAX_RUNS", 256)?,
+          ''',
+              '''            max_runs: env_usize("GHA_CLONE_MAX_RUNS", 256)?,
+              webhook_failure_conclusions: csv_lower_set_or_default(
+                  "GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS",
+                  &[
+                      "failure",
+                      "cancelled",
+                      "timed_out",
+                      "action_required",
+                      "startup_failure",
+                      "stale",
+                  ],
+              ),
+              webhook_ignored_workflows: csv_set_or_default(
+                  "GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS",
+                  &["GHA continuity server"],
+              ),
+              webhook_delivery_ttl_seconds: env_u64(
+                  "GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS",
+                  86_400,
+              )?
+              .max(1),
+              max_webhook_deliveries: env_usize(
+                  "GHA_CLONE_MAX_WEBHOOK_DELIVERIES",
+                  4_096,
+              )?
+              .max(1),
+          ''',
+              'Config webhook policy initialization',
+          )
+
+          main = replace_once(
+              main,
+              '''        runs: Arc::new(RwLock::new(BTreeMap::new())),
+              };
+          ''',
+              '''        runs: Arc::new(RwLock::new(BTreeMap::new())),
+              webhook_deliveries: Arc::new(RwLock::new(BTreeMap::new())),
+              };
+          ''',
+              'AppState initialization',
+          )
+
+          main = replace_once(
+              main,
+              '''        "workflowRules": state.config.workflow_rules.len(),
+              "runsRetained": state.runs.read().await.len()
+          ''',
+              '''        "workflowRules": state.config.workflow_rules.len(),
+              "runsRetained": state.runs.read().await.len(),
+              "webhookDeliveriesRetained": state.webhook_deliveries.read().await.len(),
+              "webhookFailureConclusions": state.config.webhook_failure_conclusions,
+              "webhookIgnoredWorkflows": state.config.webhook_ignored_workflows
+          ''',
+              'health webhook policy',
+          )
+
+          main = replace_once(
+              main,
+              '''    let event = headers
+                  .get("x-github-event")
+          ''',
+              '''    let Some(delivery) = github_delivery(&headers) else {
+              return (
+                  StatusCode::BAD_REQUEST,
+                  Json(json!({ "error": "missing or invalid X-GitHub-Delivery UUID" })),
+              )
+                  .into_response();
+              };
+              let event = headers
+                  .get("x-github-event")
+          ''',
+              'delivery header validation',
+          )
+
+          old_rules = '''    let Some(paths) = state.config.workflow_rules.get(&repository) else {
+              return (
+                  StatusCode::ACCEPTED,
+                  Json(json!({
+                      "accepted": false,
+                      "repository": repository,
+                      "revision": revision,
+                      "reason": "no workflow mirror rules are configured for this repository"
+                  })),
+              )
+                  .into_response();
+              };
+              let mut plans = Vec::new();
+              for path in paths {
+          '''
+          new_rules = '''    let Some(configured_paths) = state.config.workflow_rules.get(&repository) else {
+              return (
+                  StatusCode::ACCEPTED,
+                  Json(json!({
+                      "accepted": false,
+                      "repository": repository,
+                      "revision": revision,
+                      "reason": "no workflow mirror rules are configured for this repository"
+                  })),
+              )
+                  .into_response();
+              };
+              let paths = match webhook_paths(
+              event,
+              &payload,
+              configured_paths,
+              &state.config.webhook_failure_conclusions,
+              &state.config.webhook_ignored_workflows,
+              ) {
+              Ok(paths) => paths,
+              Err(reason) => {
+                  return (
+                      StatusCode::ACCEPTED,
+                      Json(json!({
+                          "accepted": false,
+                          "event": event,
+                          "delivery": delivery,
+                          "repository": repository,
+                          "revision": revision,
+                          "reason": reason
+                      })),
+                  )
+                      .into_response()
+              }
+              };
+              let mut plans = Vec::new();
+              for path in &paths {
+          '''
+          main = replace_once(main, old_rules, new_rules, 'workflow path selection')
+
+          main = replace_once(
+              main,
+              '''    if state.config.webhook_execution_enabled {
+          ''',
+              '''    if !remember_webhook_delivery(&state, &delivery).await {
+              return (
+                  StatusCode::ACCEPTED,
+                  Json(json!({
+                      "accepted": false,
+                      "event": event,
+                      "delivery": delivery,
+                      "repository": repository,
+                      "revision": revision,
+                      "reason": "duplicate GitHub delivery was already planned or dispatched"
+                  })),
+              )
+                  .into_response();
+              }
+
+              if state.config.webhook_execution_enabled {
+          ''',
+              'delivery dedupe gate',
+          )
+
+          helper_functions = r'''
+          fn webhook_paths(
+              event: &str,
+              payload: &Value,
+              configured_paths: &[String],
+              failure_conclusions: &BTreeSet<String>,
+              ignored_workflows: &BTreeSet<String>,
+          ) -> Result<Vec<String>, String> {
+              if event != "workflow_run" {
+                  return Ok(configured_paths.to_vec());
+              }
+
+              let action = payload.get("action").and_then(Value::as_str).unwrap_or("");
+              if action != "completed" {
+                  return Err(format!(
+                      "workflow_run action {action:?} is not the completed terminal phase"
+                  ));
+              }
+
+              let workflow_name = payload
+                  .pointer("/workflow_run/name")
+                  .and_then(Value::as_str)
+                  .unwrap_or("");
+              if ignored_workflows.contains(workflow_name) {
+                  return Err(format!(
+                      "workflow {workflow_name:?} is excluded to prevent fallback recursion"
+                  ));
+              }
+
+              let conclusion = payload
+                  .pointer("/workflow_run/conclusion")
+                  .and_then(Value::as_str)
+                  .ok_or_else(|| "completed workflow_run is missing a conclusion".to_string())?
+                  .to_ascii_lowercase();
+              if !failure_conclusions.contains(&conclusion) {
+                  return Err(format!(
+                      "workflow_run conclusion {conclusion:?} is not configured for failure fallback"
+                  ));
+              }
+
+              let workflow_path = payload
+                  .pointer("/workflow_run/path")
+                  .and_then(Value::as_str)
+                  .ok_or_else(|| "workflow_run is missing workflow_run.path".to_string())?;
+              if !configured_paths.iter().any(|path| path == workflow_path) {
+                  return Err(format!(
+                      "failed workflow path {workflow_path:?} is not configured for this repository"
+                  ));
+              }
+              Ok(vec![workflow_path.to_string()])
+          }
+
+          fn github_delivery(headers: &HeaderMap) -> Option<String> {
+              headers
+                  .get("x-github-delivery")
+                  .and_then(|value| value.to_str().ok())
+                  .and_then(|value| Uuid::parse_str(value).ok())
+                  .map(|value| value.to_string())
+          }
+
+          async fn remember_webhook_delivery(state: &AppState, delivery: &str) -> bool {
+              let now = Instant::now();
+              let ttl = Duration::from_secs(state.config.webhook_delivery_ttl_seconds);
+              let mut deliveries = state.webhook_deliveries.write().await;
+              prune_webhook_deliveries(
+                  &mut deliveries,
+                  now,
+                  ttl,
+                  state.config.max_webhook_deliveries,
+              );
+              if deliveries.contains_key(delivery) {
+                  return false;
+              }
+              deliveries.insert(delivery.to_string(), now);
+              prune_webhook_deliveries(
+                  &mut deliveries,
+                  now,
+                  ttl,
+                  state.config.max_webhook_deliveries,
+              );
+              true
+          }
+
+          fn prune_webhook_deliveries(
+              deliveries: &mut BTreeMap<String, Instant>,
+              now: Instant,
+              ttl: Duration,
+              max_deliveries: usize,
+          ) {
+              deliveries.retain(|_, seen_at| now.duration_since(*seen_at) < ttl);
+              let remove = deliveries.len().saturating_sub(max_deliveries);
+              if remove == 0 {
+                  return;
+              }
+              let mut oldest = deliveries
+                  .iter()
+                  .map(|(delivery, seen_at)| (*seen_at, delivery.clone()))
+                  .collect::<Vec<_>>();
+              oldest.sort_by_key(|(seen_at, _)| *seen_at);
+              for (_, delivery) in oldest.into_iter().take(remove) {
+                  deliveries.remove(&delivery);
+              }
+          }
+
+          '''
+          main = replace_once(
+              main,
+              'fn webhook_revision(event: &str, payload: &Value) -> Option<String> {\n',
+              helper_functions + 'fn webhook_revision(event: &str, payload: &Value) -> Option<String> {\n',
+              'webhook helper functions',
+          )
+
+          main = replace_once(
+              main,
+              '''fn csv_set(name: &str) -> BTreeSet<String> {
+              env::var(name)
+                  .unwrap_or_default()
+                  .split(',')
+                  .map(str::trim)
+                  .filter(|value| !value.is_empty())
+                  .map(str::to_string)
+                  .collect()
+              }
+
+          ''',
+              '''fn csv_set(name: &str) -> BTreeSet<String> {
+              env::var(name)
+                  .unwrap_or_default()
+                  .split(',')
+                  .map(str::trim)
+                  .filter(|value| !value.is_empty())
+                  .map(str::to_string)
+                  .collect()
+              }
+
+              fn csv_set_or_default(name: &str, defaults: &[&str]) -> BTreeSet<String> {
+              let configured = csv_set(name);
+              if configured.is_empty() {
+                  defaults.iter().map(|value| (*value).to_string()).collect()
+              } else {
+                  configured
+              }
+              }
+
+              fn csv_lower_set_or_default(name: &str, defaults: &[&str]) -> BTreeSet<String> {
+              csv_set_or_default(name, defaults)
+                  .into_iter()
+                  .map(|value| value.to_ascii_lowercase())
+                  .collect()
+              }
+
+          ''',
+              'CSV defaults',
+          )
+
+          new_tests = r'''
+              #[test]
+              fn workflow_run_fallback_is_completed_failure_only_and_exact_path() {
+                  let configured = vec![".github/workflows/ci.yml".to_string()];
+                  let failures = BTreeSet::from([
+                      "failure".to_string(),
+                      "timed_out".to_string(),
+                  ]);
+                  let ignored = BTreeSet::from(["GHA continuity server".to_string()]);
+                  let failed = json!({
+                      "action": "completed",
+                      "workflow_run": {
+                          "name": "CI",
+                          "path": ".github/workflows/ci.yml",
+                          "conclusion": "failure"
+                      }
+                  });
+                  assert_eq!(
+                      webhook_paths("workflow_run", &failed, &configured, &failures, &ignored)
+                          .unwrap(),
+                      configured
+                  );
+
+                  let mut success = failed.clone();
+                  success["workflow_run"]["conclusion"] = json!("success");
+                  assert!(webhook_paths(
+                      "workflow_run",
+                      &success,
+                      &configured,
+                      &failures,
+                      &ignored
+                  )
+                  .unwrap_err()
+                  .contains("not configured for failure fallback"));
+
+                  let mut in_progress = failed.clone();
+                  in_progress["action"] = json!("in_progress");
+                  assert!(webhook_paths(
+                      "workflow_run",
+                      &in_progress,
+                      &configured,
+                      &failures,
+                      &ignored
+                  )
+                  .unwrap_err()
+                  .contains("not the completed terminal phase"));
+
+                  let mut recursive = failed.clone();
+                  recursive["workflow_run"]["name"] = json!("GHA continuity server");
+                  assert!(webhook_paths(
+                      "workflow_run",
+                      &recursive,
+                      &configured,
+                      &failures,
+                      &ignored
+                  )
+                  .unwrap_err()
+                  .contains("excluded to prevent fallback recursion"));
+
+                  let mut unrelated = failed;
+                  unrelated["workflow_run"]["path"] = json!(".github/workflows/release.yml");
+                  assert!(webhook_paths(
+                      "workflow_run",
+                      &unrelated,
+                      &configured,
+                      &failures,
+                      &ignored
+                  )
+                  .unwrap_err()
+                  .contains("is not configured for this repository"));
+              }
+
+              #[test]
+              fn github_delivery_requires_a_uuid() {
+                  let mut headers = HeaderMap::new();
+                  headers.insert(
+                      "x-github-delivery",
+                      "4f5f1f6e-68a6-4d95-90b4-c0a892938f0f".parse().unwrap(),
+                  );
+                  assert_eq!(
+                      github_delivery(&headers).as_deref(),
+                      Some("4f5f1f6e-68a6-4d95-90b4-c0a892938f0f")
+                  );
+                  headers.insert("x-github-delivery", "not-a-uuid".parse().unwrap());
+                  assert_eq!(github_delivery(&headers), None);
+              }
+
+              #[test]
+              fn delivery_retention_expires_old_entries_and_bounds_memory() {
+                  let now = Instant::now();
+                  let mut deliveries = BTreeMap::from([
+                      (
+                          "expired".to_string(),
+                          now.checked_sub(Duration::from_secs(120)).unwrap(),
+                      ),
+                      (
+                          "older".to_string(),
+                          now.checked_sub(Duration::from_secs(20)).unwrap(),
+                      ),
+                      (
+                          "newer".to_string(),
+                          now.checked_sub(Duration::from_secs(5)).unwrap(),
+                      ),
+                  ]);
+                  prune_webhook_deliveries(
+                      &mut deliveries,
+                      now,
+                      Duration::from_secs(60),
+                      1,
+                  );
+                  assert_eq!(deliveries.len(), 1);
+                  assert!(deliveries.contains_key("newer"));
+              }
+
+          '''
+          main = replace_once(
+              main,
+              '''    #[test]
+              fn terminal_run_pruning_never_discards_active_runs() {
+          ''',
+              new_tests + '''    #[test]
+              fn terminal_run_pruning_never_discards_active_runs() {
+          ''',
+              'webhook unit tests',
+          )
+
+          main_path.write_text(main, encoding='utf-8')
+
+          deployment_path = Path(
+              'remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml'
+          )
+          deployment = deployment_path.read_text(encoding='utf-8')
+          deployment = replace_once(
+              deployment,
+              '''            - name: GHA_CLONE_WEBHOOK_EXECUTION_ENABLED
+                  value: "false"
+          ''',
+              '''            - name: GHA_CLONE_WEBHOOK_EXECUTION_ENABLED
+                  value: "false"
+                  - name: GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS
+                  value: failure,cancelled,timed_out,action_required,startup_failure,stale
+                  - name: GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS
+                  value: GHA continuity server
+                  - name: GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS
+                  value: "86400"
+                  - name: GHA_CLONE_MAX_WEBHOOK_DELIVERIES
+                  value: "4096"
+          ''',
+              'deployment webhook defaults',
+          )
+          deployment_path.write_text(deployment, encoding='utf-8')
+
+          readme_path = Path('remote/deployments/gha-clone-server-rs/README.md')
+          readme = readme_path.read_text(encoding='utf-8')
+          readme = readme.replace(
+              '- `POST /webhooks/github` — verify `X-Hub-Signature-256`, fetch allowlisted\n  workflow files at the event\'s exact SHA, and plan or execute them.',
+              '- `POST /webhooks/github` — verify `X-Hub-Signature-256` and a UUID\n  `X-GitHub-Delivery`, accept only configured completed failure conclusions for\n  `workflow_run`, match the failed workflow path exactly, reject fallback-loop\n  workflow names, and deduplicate deliveries before planning or dispatch.',
+          )
+          readme = readme.replace(
+              '| `GHA_CLONE_WEBHOOK_EXECUTION_ENABLED` | webhook execution, default `false` |',
+              '''| `GHA_CLONE_WEBHOOK_EXECUTION_ENABLED` | webhook execution, default `false` |
+              | `GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS` | comma-separated terminal conclusions eligible for fallback |
+              | `GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS` | exact workflow names excluded from fallback recursion |
+              | `GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS` | in-memory GitHub delivery dedupe TTL |
+              | `GHA_CLONE_MAX_WEBHOOK_DELIVERIES` | bounded retained delivery IDs |''',
+          )
+          readme = readme.replace(
+              '7. enable webhook execution only after HMAC and idempotency evidence.',
+              '7. register the failure-only `workflow_run` webhook and prove HMAC, exact-path filtering, loop exclusion, and delivery dedupe before enabling execution.',
+          )
+          registration = '''
+
+          ## Register the GitHub failure webhook
+
+          Use `scripts/register-github-webhook.sh` after the ingress URL and ExternalSecret
+          value exist. The script reads `GH_TOKEN` and `GITHUB_WEBHOOK_SECRET` from the
+          environment, sends the hook body through stdin, and never prints either secret.
+
+          `ORESoftware` is a GitHub user account, so register the repository-scoped hook:
+
+          ```console
+          GH_TOKEN=... GITHUB_WEBHOOK_SECRET=... \\
+            scripts/register-github-webhook.sh \\
+            --repo ORESoftware/k8s-cluster \\
+            --url https://ci.example.com/webhooks/github
+          ```
+
+          For a real GitHub organization, use `--org <organization>` instead. The GitHub
+          App or token must have hook-administration permission at the selected scope.
+          Configure only the `workflow_run` event; GitHub sends every completed conclusion,
+          and this server performs the failure-only and exact-workflow checks.
+          '''.strip()
+          if '## Register the GitHub failure webhook' not in readme:
+              readme = readme.rstrip() + '\n\n' + registration + '\n'
+          readme_path.write_text(readme, encoding='utf-8')
+
+          architecture_path = Path('docs/gha-continuity-architecture.md')
+          architecture = architecture_path.read_text(encoding='utf-8').rstrip()
+          webhook_section = '''
+
+          ## Failure webhook contract
+
+          GitHub sends `workflow_run` completion events for every conclusion. The independent
+          lane therefore accepts only `action=completed`, a configured failure conclusion,
+          an exact allowlisted workflow path, and a workflow name not present in the loop
+          exclusion set. A UUID `X-GitHub-Delivery` is retained in a bounded TTL store before
+          any build-server dispatch, preventing redelivery from creating duplicate fallback
+          runs. Planning or fetching failures are not recorded as completed deliveries, so a
+          legitimate GitHub retry can recover transient errors.
+
+          Repository hooks are used for repositories owned by the `ORESoftware` user account;
+          organization hooks are used only for actual GitHub organizations. Registration is
+          performed with the secret-safe script in `gha-clone-server-rs/scripts` after ingress,
+          GitHub App permissions, and External Secrets are reconciled.
+          '''.strip()
+          if '## Failure webhook contract' not in architecture:
+              architecture_path.write_text(
+                  architecture + '\n\n' + webhook_section + '\n', encoding='utf-8'
+              )
+
+          workflow_path = Path('.github/workflows/gha-clone-server.yml')
+          workflow = workflow_path.read_text(encoding='utf-8')
+          workflow = workflow.replace(
+              "      - 'remote/tests/general/gha-clone-server-config.test.ts'",
+              "      - 'remote/tests/general/gha-clone-server-config.test.ts'\n      - 'remote/tests/general/gha-clone-webhook-config.test.ts'",
+          )
+          workflow = workflow.replace(
+              'run: pnpm exec tsx --test general/gha-clone-server-config.test.ts',
+              'run: pnpm exec tsx --test general/gha-clone-server-config.test.ts general/gha-clone-webhook-config.test.ts',
+          )
+          workflow_path.write_text(workflow, encoding='utf-8')
+
+          script_path = Path(
+              'remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh'
+          )
+          script_path.parent.mkdir(parents=True, exist_ok=True)
+          script_path.write_text(
+              r'''#!/usr/bin/env bash
+          set -euo pipefail
+
+          usage() {
+            cat >&2 <<'USAGE'
+          usage: register-github-webhook.sh (--repo owner/repo | --org organization) --url https://host/webhooks/github
+
+          Required environment:
+            GH_TOKEN                  token or GitHub App installation token with hook admin permission
+            GITHUB_WEBHOOK_SECRET     HMAC secret already stored in the cluster secret manager
+          USAGE
+          }
+
+          scope=''
+          target=''
+          webhook_url=''
+          while (($#)); do
+            case "$1" in
+              --repo|--org)
+                test -z "$scope" || { echo 'choose exactly one of --repo or --org' >&2; exit 2; }
+                scope="${1#--}"
+                target="${2:-}"
+                shift 2
+                ;;
+              --url)
+                webhook_url="${2:-}"
+                shift 2
+                ;;
+              -h|--help)
+                usage
+                exit 0
+                ;;
+              *)
+                usage
+                exit 2
+                ;;
+            esac
+          done
+
+          test -n "${GH_TOKEN:-}" || { echo 'GH_TOKEN is required' >&2; exit 2; }
+          test -n "${GITHUB_WEBHOOK_SECRET:-}" || { echo 'GITHUB_WEBHOOK_SECRET is required' >&2; exit 2; }
+          test -n "$scope" && test -n "$target" && test -n "$webhook_url" || { usage; exit 2; }
+          case "$webhook_url" in
+            https://*) ;;
+            *) echo 'webhook URL must use HTTPS' >&2; exit 2 ;;
+          esac
+
+          if [[ "$scope" == repo ]]; then
+            [[ "$target" == */* ]] || { echo '--repo requires owner/repo' >&2; exit 2; }
+            endpoint="repos/${target}/hooks"
+          else
+            [[ "$target" != */* ]] || { echo '--org requires an organization login' >&2; exit 2; }
+            endpoint="orgs/${target}/hooks"
+          fi
+
+          payload="$({
+            jq -n \
+              --arg url "$webhook_url" \
+              --arg secret "$GITHUB_WEBHOOK_SECRET" \
+              '{
+                name: "web",
+                active: true,
+                events: ["workflow_run"],
+                config: {
+                  url: $url,
+                  content_type: "json",
+                  secret: $secret,
+                  insecure_ssl: "0"
+                }
+              }'
+          })"
+          printf '%s' "$payload" | gh api --method POST "$endpoint" --input - >/dev/null
+          printf 'registered failure webhook for %s %s\n' "$scope" "$target"
+          ''',
+              encoding='utf-8',
+          )
+          script_path.chmod(0o755)
+
+          test_path = Path('remote/tests/general/gha-clone-webhook-config.test.ts')
+          test_path.write_text(
+              '''import { test } from 'node:test';
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          import { join } from 'node:path';
+
+          const root = join(import.meta.dirname, '../../..');
+          const read = (path: string) => readFileSync(join(root, path), 'utf8');
+
+          test('workflow_run fallback is failure-only, exact-path, loop-safe, and deduplicated', () => {
+            const server = read('remote/deployments/gha-clone-server-rs/src/main.rs');
+            assert.match(server, /action != "completed"/);
+            assert.match(server, /workflow_run\\/conclusion/);
+            assert.match(server, /workflow_run\\/path/);
+            assert.match(server, /excluded to prevent fallback recursion/);
+            assert.match(server, /x-github-delivery/);
+            assert.match(server, /remember_webhook_delivery/);
+            assert.match(server, /duplicate GitHub delivery/);
+          });
+
+          test('deployment declares bounded webhook policy while execution remains disabled', () => {
+            const deployment = read(
+              'remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml',
+            );
+            for (const name of [
+              'GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS',
+              'GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS',
+              'GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS',
+              'GHA_CLONE_MAX_WEBHOOK_DELIVERIES',
+            ]) {
+              assert.match(deployment, new RegExp(`name: ${name}`));
+            }
+            assert.match(deployment, /GHA_CLONE_WEBHOOK_EXECUTION_ENABLED\\s+value: "false"/);
+            assert.match(deployment, /GHA continuity server/);
+          });
+
+          test('registration script submits only workflow_run through stdin without echoing secrets', () => {
+            const script = read(
+              'remote/deployments/gha-clone-server-rs/scripts/register-github-webhook.sh',
+            );
+            assert.match(script, /events: \\["workflow_run"\\]/);
+            assert.match(script, /--repo\\|--org/);
+            assert.match(script, /gh api --method POST "\\$endpoint" --input -/);
+            assert.doesNotMatch(script, /set -x|echo .*GITHUB_WEBHOOK_SECRET|echo .*GH_TOKEN/);
+            assert.doesNotMatch(script, /events:.*push|events:.*pull_request/);
+          });
+          ''',
+              encoding='utf-8',
+          )
+          PY
+
+          cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all
+          git diff --check
+
+      - name: Validate Rust webhook behavior
+        working-directory: remote/deployments/gha-clone-server-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo test --locked --all-targets
+          cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Validate TypeScript deployment and registration contracts
+        working-directory: remote/tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm exec tsx --test \
+            general/gha-clone-server-config.test.ts \
+            general/gha-clone-webhook-config.test.ts
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: -config-file .github/actionlint.yaml .github/workflows/gha-clone-server.yml .github/workflows/den-1550-webhook-hardening-helper.yml
+
+      - name: Reject credentials and conflict markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- \
+            remote/deployments/gha-clone-server-rs \
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml \
+            remote/tests/general/gha-clone-webhook-config.test.ts \
+            docs/gha-continuity-architecture.md \
+            .github/workflows/gha-clone-server.yml; then
+            echo 'conflict marker found' >&2
+            exit 1
+          fi
+          if grep -RIE \
+            --exclude='den-1550-webhook-hardening-helper.yml' \
+            'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (RSA |EC )?PRIVATE KEY' \
+            remote/deployments/gha-clone-server-rs \
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml \
+            docs/gha-continuity-architecture.md; then
+            echo 'credential-like material found' >&2
+            exit 1
+          fi
+
+      - name: Commit validated hardening and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/den-1550-webhook-hardening-helper.yml
+          git add -A
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-1550 harden failure webhook delivery semantics'
+          git push origin HEAD:agent/den-1550-failure-webhook-hardening-20260803
