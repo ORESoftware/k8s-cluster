@@ -9,16 +9,23 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "ops-bootstrap-org-dotgithub-fleet.yml"
 RUNNER = ROOT / "scripts" / "ops" / "run_protected_org_dotgithub_publisher.sh"
+SELECTOR = ROOT / "scripts" / "ops" / "select_org_dotgithub_owner_token.py"
+SELECTOR_TEST = ROOT / "tests" / "ops" / "test_bootstrap_org_dotgithub_repositories_owner_token_selector.py"
 
 
 class ProtectedOrgDotgithubPublisherTests(unittest.TestCase):
     def test_runner_is_valid_bash(self) -> None:
         subprocess.run(["bash", "-n", str(RUNNER)], check=True)
 
+    def test_selector_is_valid_python(self) -> None:
+        subprocess.run(["python3", "-m", "py_compile", str(SELECTOR)], check=True)
+
     def test_runner_uses_only_fixed_protected_credential_sources(self) -> None:
         text = RUNNER.read_text(encoding="utf-8")
         for phrase in (
             "dd/remote-dev/agent-secrets",
+            "select_org_dotgithub_owner_token.py",
+            "aws-secrets-manager-validated-owner-admin-fleet",
             "dd-agent-secrets",
             "jsonpath='{.data.GH_PAT}'",
             "gh auth token --hostname github.com",
@@ -31,11 +38,43 @@ class ProtectedOrgDotgithubPublisherTests(unittest.TestCase):
         self.assertNotIn("${3", text)
         self.assertNotIn('GH_TOKEN="${3', text)
         self.assertNotIn('GH_TOKEN="$3', text)
+        self.assertNotIn('payload.get("GH_PAT")', text)
+
+    def test_selector_recurses_and_requires_full_fleet_owner_admin(self) -> None:
+        text = SELECTOR.read_text(encoding="utf-8")
+        for phrase in (
+            "iter_candidates",
+            "EXPECTED_LOGIN = \"ORESoftware\"",
+            "TOKEN_NAME_PATTERN",
+            "len(selector.ORGANIZATIONS)",
+            'membership.get("role") == "admin"',
+            'membership.get("state") == "active"',
+            "fixed 36-organization fleet",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(
+                    phrase,
+                    text if phrase != "len(selector.ORGANIZATIONS)" else SELECTOR_TEST.read_text(encoding="utf-8"),
+                )
+
+    def test_selector_has_focused_behavioral_tests(self) -> None:
+        text = SELECTOR_TEST.read_text(encoding="utf-8")
+        for phrase in (
+            "test_recursively_selects_nested_owner_token",
+            "test_prefers_gh_pat_over_generic_nested_token",
+            "test_rejects_wrong_identity_without_leaking_token",
+            "test_rejects_candidate_missing_one_admin_membership",
+            "test_duplicate_token_is_validated_only_once",
+        ):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, text)
 
     def test_runner_executes_exact_hardened_fleet_and_certifies_36(self) -> None:
         text = RUNNER.read_text(encoding="utf-8")
         for phrase in (
             "bootstrap_org_dotgithub_repositories_hardened.py",
+            "select_org_dotgithub_owner_token.py",
+            "test_bootstrap_org_dotgithub_repositories_owner_token_selector.py",
             "--execute",
             "len(organizations) != 36",
             'repository != f"{organization}/.github"',
@@ -64,6 +103,15 @@ class ProtectedOrgDotgithubPublisherTests(unittest.TestCase):
         self.assertNotIn('echo "$GH_TOKEN"', text)
         self.assertNotIn('printf \'%s\\n\' "$GH_TOKEN"', text)
 
+    def test_selector_never_prints_candidate_diagnostics(self) -> None:
+        text = SELECTOR.read_text(encoding="utf-8")
+        self.assertNotIn("print(token", text)
+        self.assertNotIn("print(candidate", text)
+        self.assertNotIn("repr(token", text)
+        self.assertNotIn("repr(candidate", text)
+        self.assertIn("sys.stdout.write(token)", text)
+        self.assertIn("error.read(4096)", text)
+
     def test_workflow_routes_secretless_request_to_protected_ssm_host(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")
         for phrase in (
@@ -71,6 +119,8 @@ class ProtectedOrgDotgithubPublisherTests(unittest.TestCase):
             "aws ssm send-command",
             "AWS-RunShellScript",
             "run_protected_org_dotgithub_publisher.sh",
+            "select_org_dotgithub_owner_token.py",
+            "test_bootstrap_org_dotgithub_repositories_owner_token_selector.py",
             "git -C \"$work/repository\" archive FETCH_HEAD",
             "org-dotgithub-governance-report-complete",
         ):
