@@ -278,7 +278,7 @@ jobs:
           test "$(git -C "$source_root" rev-parse --is-inside-work-tree)" = true
           git -C "$source_root" bundle verify "$bundle" >/dev/null
           observed_heads="$(git bundle list-heads "$bundle" | awk '{print $2 " " $1}' | LC_ALL=C sort)"
-          expected_heads="$(printf 'refs/heads/main %s\nrefs/heads/%s %s\n' "$EXPECTED_MAIN" "$FEATURE_REF" "$EXPECTED_FEATURE" | LC_ALL=C sort)"
+          expected_heads="$(printf 'HEAD %s\nrefs/heads/main %s\nrefs/heads/%s %s\n' "$EXPECTED_FEATURE" "$EXPECTED_MAIN" "$FEATURE_REF" "$EXPECTED_FEATURE" | LC_ALL=C sort)"
           test "$observed_heads" = "$expected_heads"
 
           publisher_relative='scripts/critical-org-fleet/publish_meta_control_plane.py'
