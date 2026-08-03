@@ -166,6 +166,7 @@ jobs:
       - name: Verify bounded product scope and repository hygiene
         run: |
           set -euo pipefail
+          rm -rf scripts/__pycache__
           git diff --check
           if git grep -nE '^(<<<<<<< |=======|>>>>>>> )' -- Cargo.toml generated src; then
             echo 'git conflict marker detected' >&2
@@ -187,6 +188,7 @@ jobs:
       - name: Remove one-shot transport and commit product tree
         run: |
           set -euo pipefail
+          rm -rf scripts/__pycache__
           rm -f \
             .github/workflows/apply-executable-openapi.yml \
             scripts/apply-executable-openapi.py \
@@ -195,6 +197,6 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git diff --cached --check
-          test -z "$(git diff --cached --name-only | grep -E 'apply-executable-openapi|apply_executable_openapi' || true)"
+          test -z "$(git diff --cached --name-only | grep -E 'apply-executable-openapi|apply_executable_openapi|__pycache__|\.pyc$' || true)"
           git commit -m 'feat(DEN-465): add executable Tor dashboard OpenAPI routes'
           git push origin HEAD:agent/executable-openapi-dashboard
