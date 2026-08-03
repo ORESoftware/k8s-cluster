@@ -41,6 +41,7 @@ jobs:
 
     steps:
       - name: Validate exact same-repository carrier and publisher provenance
+        id: provenance
         env:
           GH_TOKEN: ${{ github.token }}
           CARRIER_PR: ${{ github.event.pull_request.number }}
@@ -60,7 +61,7 @@ jobs:
           marker="$(
             gh api \
               "repos/${GITHUB_REPOSITORY}/contents/ops/den-319-private-fleet-execution.trigger?ref=${CARRIER_HEAD_SHA}" \
-              --jq -r '.content' | tr -d '\n' | base64 --decode
+              --jq '.content' | tr -d '\n' | base64 --decode
           )"
           test "$marker" = "$EXPECTED_MARKER"
 
@@ -148,6 +149,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CARRIER_PR: ${{ github.event.pull_request.number }}
+          PROVENANCE_OUTCOME: ${{ steps.provenance.outcome }}
           DISPATCH_OUTCOME: ${{ steps.dispatch.outcome }}
           JOB_RESULT: ${{ job.status }}
           RUN_ID: ${{ steps.dispatch.outputs.run_id }}
@@ -155,14 +157,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ "$DISPATCH_OUTCOME" = success && -n "$RUN_ID" && "$JOB_RESULT" = success ]]; then
+          if [[ "$PROVENANCE_OUTCOME" = success && "$DISPATCH_OUTCOME" = success && -n "$RUN_ID" && "$JOB_RESULT" = success ]]; then
             body="Protected gap-aware private fleet publisher completed successfully: ${RUN_URL}"
           else
-            body="Protected gap-aware private fleet publisher did not complete successfully. Dispatch=${DISPATCH_OUTCOME}; job=${JOB_RESULT}; run=${RUN_URL:-unavailable}"
+            body="Protected gap-aware private fleet publisher did not complete successfully. Validation=${PROVENANCE_OUTCOME}; dispatch=${DISPATCH_OUTCOME}; job=${JOB_RESULT}; run=${RUN_URL:-unavailable}"
           fi
           gh pr comment "$CARRIER_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
           gh pr comment "$TRACKING_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
           gh pr comment "$PORTFOLIO_PR" --repo "$GITHUB_REPOSITORY" --body "$body" >/dev/null || true
+          test "$PROVENANCE_OUTCOME" = success
           test "$DISPATCH_OUTCOME" = success
           test -n "$RUN_ID"
           test "$JOB_RESULT" = success
