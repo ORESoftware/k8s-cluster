@@ -89,6 +89,9 @@ class PrivateFleetGapDispatchContractTests(unittest.TestCase):
             "publisher_merge=0cdb72ec06cff74a4cb5d6062777b619703be12b",
             self.carrier,
         )
+        self.assertIn("id: provenance", self.carrier)
+        self.assertIn("--jq '.content'", self.carrier)
+        self.assertNotIn("--jq -r '.content'", self.carrier)
         self.assertIn('test "$marker" = "$EXPECTED_MARKER"', self.carrier)
 
     def test_pr_target_carrier_revalidates_exact_merged_publisher_provenance(self) -> None:
@@ -110,6 +113,9 @@ class PrivateFleetGapDispatchContractTests(unittest.TestCase):
         self.assertIn("candidate=", self.carrier)
         self.assertIn("gh run watch \"$RUN_ID\"", self.carrier)
         self.assertIn("--exit-status", self.carrier)
+        self.assertIn("PROVENANCE_OUTCOME: ${{ steps.provenance.outcome }}", self.carrier)
+        self.assertIn("Validation=${PROVENANCE_OUTCOME}", self.carrier)
+        self.assertIn("test \"$PROVENANCE_OUTCOME\" = success", self.carrier)
         self.assertIn("test \"$JOB_RESULT\" = success", self.carrier)
         self.assertNotIn("actions/checkout", self.carrier)
         self.assertNotIn("github.event.pull_request.head.sha }}\n          fetch-depth", self.carrier)
