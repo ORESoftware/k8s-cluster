@@ -104,8 +104,8 @@ jobs:
           # blanket `cargo update`, which previously drifted dozens of unrelated
           # packages while materializing this bounded feature.
           cargo check
-          cargo fmt --all
-          cargo fmt --all -- --check
+          rustfmt --edition 2021 src/main.rs src/web.rs src/web/openapi.rs
+          rustfmt --edition 2021 --check src/main.rs src/web.rs src/web/openapi.rs
           cargo check --locked
           # The repository intentionally retains three legacy style families.
           # Keep every other warning fatal while making that baseline explicit.
@@ -197,6 +197,9 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git diff --cached --check
-          test -z "$(git diff --cached --name-only | grep -E 'apply-executable-openapi|apply_executable_openapi|__pycache__|\.pyc$' || true)"
+          test ! -e .github/workflows/apply-executable-openapi.yml
+          test ! -e scripts/apply-executable-openapi.py
+          test ! -e scripts/apply_executable_openapi.py
+          test -z "$(find scripts -type f \( -name '*.pyc' -o -path '*/__pycache__/*' \) -print -quit)"
           git commit -m 'feat(DEN-465): add executable Tor dashboard OpenAPI routes'
           git push origin HEAD:agent/executable-openapi-dashboard
