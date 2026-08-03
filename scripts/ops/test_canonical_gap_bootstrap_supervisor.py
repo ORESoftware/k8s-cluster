@@ -94,11 +94,17 @@ class CanonicalGapBootstrapSupervisorContractTests(unittest.TestCase):
             with self.subTest(snippet=snippet):
                 self.assertIn(snippet, self.workflow)
 
-    def test_supervisor_never_checks_out_or_executes_pull_request_code(self) -> None:
+    def test_head_sha_is_metadata_only_and_pr_code_is_never_checked_out(self) -> None:
         self.assertNotIn("actions/checkout@", self.workflow)
         self.assertNotIn("pull_request.head.repo.clone_url", self.workflow)
-        self.assertNotIn("pull_request.head.ref }}", self.workflow)
-        self.assertNotIn("pull_request.head.sha }}", self.workflow)
+        self.assertIn(
+            "TARGET_SHA: ${{ github.event.pull_request.head.sha }}",
+            self.workflow,
+        )
+        self.assertIn(".head.sha == $head_sha", self.workflow)
+        self.assertIn("contents/${MARKER_PATH}?ref=${TARGET_SHA}", self.workflow)
+        self.assertNotIn("git checkout", self.workflow)
+        self.assertNotIn("git clone", self.workflow)
 
     def test_child_dispatch_is_registered_active_and_main_only(self) -> None:
         self.assertIn("actions/workflows/${CHILD_WORKFLOW}", self.workflow)
