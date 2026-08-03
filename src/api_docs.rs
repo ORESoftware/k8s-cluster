@@ -6,6 +6,7 @@
 //! authenticated internal routes retain the full push and contact surface for
 //! private SDK generation.
 
+use std::collections::{BTreeSet, VecDeque};
 use std::sync::Arc;
 
 use axum::Router;
@@ -13,6 +14,7 @@ use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use serde_json::{Map, Value};
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::openapi::{Components, OpenApi};
 use utoipa_axum::{router::OpenApiRouter, routes};
@@ -31,6 +33,7 @@ const PUBLIC_PATHS: &[&str] = &[
     "/api/docs",
     "/docs/api",
 ];
+const SCHEMA_REF_PREFIX: &str = "#/components/schemas/";
 
 #[derive(Clone)]
 struct DocsState {
@@ -110,6 +113,16 @@ fn finalize(mut openapi: OpenApi) -> OpenApi {
         "Provider-neutral push, email, and SMS delivery API. The contract is generated from the same annotated handlers and Serde DTOs mounted by the running Axum process."
             .to_owned(),
     );
+    openapi.info.contact = None;
+    openapi.info.license = None;
+    openapi
+        .extensions
+        .get_or_insert_with(Default::default)
+        .insert(
+            "x-dd-contract-scope".to_owned(),
+            Value::String("internal".to_owned()),
+        );
+
     let components = openapi.components.get_or_insert_with(Components::new);
     components.add_security_scheme(
         "bearer_auth",
@@ -127,21 +140,74 @@ fn finalize(mut openapi: OpenApi) -> OpenApi {
     openapi
 }
 
+fn collect_schema_refs(value: &Value, refs: &mut BTreeSet<String>) {
+    match value {
+        Value::Object(object) => {
+            if let Some(reference) = object.get("$ref").and_then(Value::as_str)
+                && let Some(name) = reference.strip_prefix(SCHEMA_REF_PREFIX)
+            {
+                refs.insert(name.to_owned());
+            }
+            for child in object.values() {
+                collect_schema_refs(child, refs);
+            }
+        }
+        Value::Array(items) => {
+            for child in items {
+                collect_schema_refs(child, refs);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn reachable_public_schemas(paths: &Map<String, Value>, all_schemas: &Map<String, Value>) -> Map<String, Value> {
+    let mut required = BTreeSet::new();
+    collect_schema_refs(&Value::Object(paths.clone()), &mut required);
+
+    let mut pending: VecDeque<String> = required.iter().cloned().collect();
+    let mut expanded = BTreeSet::new();
+    while let Some(name) = pending.pop_front() {
+        if !expanded.insert(name.clone()) {
+            continue;
+        }
+        let Some(schema) = all_schemas.get(&name) else {
+            continue;
+        };
+        let mut nested = BTreeSet::new();
+        collect_schema_refs(schema, &mut nested);
+        for dependency in nested {
+            if required.insert(dependency.clone()) {
+                pending.push_back(dependency);
+            }
+        }
+    }
+
+    required
+        .into_iter()
+        .filter_map(|name| all_schemas.get(&name).cloned().map(|schema| (name, schema)))
+        .collect()
+}
+
 fn public_projection(openapi: &OpenApi) -> Result<OpenApi, serde_json::Error> {
-    let mut public = openapi.clone();
-    public
-        .paths
-        .paths
-        .retain(|path, _| PUBLIC_PATHS.contains(&path.as_str()));
-    public.info.title = "push-notification-server API (public)".to_owned();
-    public
-        .extensions
-        .get_or_insert_with(Default::default)
-        .insert(
-            "x-dd-contract-scope".to_owned(),
-            serde_json::Value::String("public".to_owned()),
-        );
-    Ok(public)
+    let mut value = serde_json::to_value(openapi)?;
+    let paths = value["paths"]
+        .as_object_mut()
+        .expect("OpenAPI paths serialize as an object");
+    paths.retain(|path, _| PUBLIC_PATHS.contains(&path.as_str()));
+    let public_paths = paths.clone();
+
+    let all_schemas = value["components"]["schemas"]
+        .as_object()
+        .cloned()
+        .unwrap_or_default();
+    let schemas = reachable_public_schemas(&public_paths, &all_schemas);
+    value["components"] = serde_json::json!({ "schemas": schemas });
+    value["info"]["title"] = Value::String("push-notification-server API (public)".to_owned());
+    value["info"].as_object_mut().expect("OpenAPI info object").remove("contact");
+    value["info"].as_object_mut().expect("OpenAPI info object").remove("license");
+    value["x-dd-contract-scope"] = Value::String("public".to_owned());
+    serde_json::from_value(value)
 }
 
 pub fn canonical_json(openapi: &OpenApi) -> Result<String, serde_json::Error> {
@@ -268,5 +334,27 @@ mod tests {
                 "missing public path {path}"
             );
         }
+
+        let internal_value = serde_json::to_value(&internal).expect("internal JSON");
+        let public_value = serde_json::to_value(&public).expect("public JSON");
+        assert_eq!(internal_value["x-dd-contract-scope"], "internal");
+        assert_eq!(public_value["x-dd-contract-scope"], "public");
+        assert!(internal_value["info"]["contact"].is_null());
+        assert!(internal_value["info"]["license"].is_null());
+        assert!(public_value["components"]["securitySchemes"].is_null());
+        assert!(public_value["components"]["schemas"]["PushJob"].is_null());
+        assert!(public_value["components"]["schemas"]["ContactJob"].is_null());
+        assert!(!public_value["components"]["schemas"]["ServiceHealth"].is_null());
+        assert!(!public_value["components"]["schemas"]["ReadinessResponse"].is_null());
+        assert!(!public_value["components"]["schemas"]["ContactReadinessResponse"].is_null());
+    }
+
+    #[test]
+    fn canonical_contract_exports_are_deterministic() {
+        let internal = openapi_document();
+        let first = canonical_json(&internal).expect("first export");
+        let second = canonical_json(&internal).expect("second export");
+        assert_eq!(first, second);
+        assert!(first.ends_with('\n'));
     }
 }
