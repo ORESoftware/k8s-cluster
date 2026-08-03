@@ -4,7 +4,7 @@ FROM node:26-slim@sha256:715e55e4b84e4bb0ff48e49b398a848f08e55daed8eb6a0ea1839ae
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates
 ARG MARKETING_REF=f3fd0e63b3c0898bed33c66817847056067f7ca8
-ARG INTERFACES_SHA=6081bc3f3b7cbe0312870968b61acc38ca91c66a
+ARG INTERFACES_SHA=f64cefd987ed16173c526b33a92fb90cbdfcac45
 ARG TEST_CONFIG_REF=026fcf28193c7baeb7f5feb68480a91539c1f0fa
 WORKDIR /web
 RUN for value in "$MARKETING_REF" "$INTERFACES_SHA" "$TEST_CONFIG_REF"; do \
@@ -35,7 +35,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git ca-certificates
 WORKDIR /build
 # Immutable cross-repository input. Bump this SHA together with the CI checkout.
-ARG INTERFACES_SHA=6081bc3f3b7cbe0312870968b61acc38ca91c66a
+ARG INTERFACES_SHA=f64cefd987ed16173c526b33a92fb90cbdfcac45
 ARG PAYMENTS_REF=126dc5d1b3fcba289f95139284dc0f3c54b56a8a
 RUN for value in "$INTERFACES_SHA" "$PAYMENTS_REF"; do \
       test "${#value}" -eq 40 \
