@@ -8,10 +8,11 @@
 
 use std::env;
 use std::fmt;
+use std::net::IpAddr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::http::HeaderValue;
-use reqwest::{Client, StatusCode, Url, redirect::Policy};
+use reqwest::{redirect::Policy, Client, StatusCode, Url};
 use serde::Deserialize;
 
 pub const ACR_LOA1: &str = "urn:oresoftware:loa:1";
@@ -71,17 +72,31 @@ impl SharedAuthConfig {
 
         let parsed = Url::parse(&base_url)
             .map_err(|error| anyhow::anyhow!("invalid BILLING_SHARED_AUTH_BASE_URL: {error}"))?;
-        if parsed.username() != "" || parsed.password().is_some() || parsed.query().is_some() {
+        if parsed.username() != ""
+            || parsed.password().is_some()
+            || parsed.query().is_some()
+            || parsed.fragment().is_some()
+            || !matches!(parsed.path(), "" | "/")
+        {
             anyhow::bail!(
-                "BILLING_SHARED_AUTH_BASE_URL must not contain userinfo or a query string"
+                "BILLING_SHARED_AUTH_BASE_URL must be an origin without userinfo, path, query, or fragment"
             );
         }
         let allow_http = env_bool("BILLING_SHARED_AUTH_ALLOW_HTTP", false);
-        if parsed.scheme() != "https" && !(parsed.scheme() == "http" && allow_http) {
-            anyhow::bail!(
-                "BILLING_SHARED_AUTH_BASE_URL must use https; set \
-                 BILLING_SHARED_AUTH_ALLOW_HTTP=true only for a protected local/in-cluster hop"
-            );
+        match parsed.scheme() {
+            "https" => {}
+            "http" if allow_http && protected_http_host(&parsed) => {}
+            "http" if allow_http => {
+                anyhow::bail!(
+                    "plain-http Shared Auth is limited to loopback or in-cluster service hosts"
+                );
+            }
+            _ => {
+                anyhow::bail!(
+                    "BILLING_SHARED_AUTH_BASE_URL must use https; set \
+                     BILLING_SHARED_AUTH_ALLOW_HTTP=true only for a protected local/in-cluster hop"
+                );
+            }
         }
 
         let allow_insecure_dev = env_bool("BILLING_ALLOW_INSECURE_DEV", false);
@@ -135,9 +150,9 @@ pub struct SharedAuthIdentity {
     pub assurance: Aal,
     pub amr: Vec<String>,
     pub acr: Option<String>,
-    /// `iat` of the active Shared Auth access token. Shared Auth downgrades a
-    /// refreshed session to LOA1, so an LOA2 token's `iat` is the completed
-    /// step-up ceremony time and can be used for Quaestor's freshness window.
+    /// Compatibility field used by the existing authorization layer. For LOA2
+    /// this is Shared Auth's signed `auth_time` (the actual factor ceremony),
+    /// never the access-token `iat`. For LOA1 it falls back to token issuance.
     pub issued_at: u64,
     pub expires_at: u64,
 }
@@ -251,14 +266,14 @@ impl SharedAuthVerifier {
         }
 
         let now = now_seconds();
-        let issued_at = claims.iat.ok_or_else(|| {
+        let token_issued_at = claims.iat.ok_or_else(|| {
             AuthError::Unavailable("active token omitted required iat".to_owned())
         })?;
         let expires_at = claims.exp.ok_or_else(|| {
             AuthError::Unavailable("active token omitted required exp".to_owned())
         })?;
         if expires_at.saturating_add(CLOCK_SKEW_SECONDS) < now
-            || issued_at > now.saturating_add(CLOCK_SKEW_SECONDS)
+            || token_issued_at > now.saturating_add(CLOCK_SKEW_SECONDS)
         {
             return Err(AuthError::Unauthorized);
         }
@@ -299,6 +314,19 @@ impl SharedAuthVerifier {
             }
         };
 
+        let auth_time = claims.auth_time;
+        if assurance.is_aal2() && auth_time.is_none() {
+            return Err(AuthError::Unavailable(
+                "active LOA2 token omitted authoritative auth_time".to_owned(),
+            ));
+        }
+        if auth_time.is_some_and(|value| {
+            value > now.saturating_add(CLOCK_SKEW_SECONDS)
+                || value > token_issued_at.saturating_add(CLOCK_SKEW_SECONDS)
+        }) {
+            return Err(AuthError::Unauthorized);
+        }
+
         let email = claims
             .email
             .map(|value| value.trim().to_owned())
@@ -316,7 +344,7 @@ impl SharedAuthVerifier {
             assurance,
             amr,
             acr,
-            issued_at,
+            issued_at: auth_time.unwrap_or(token_issued_at),
             expires_at,
         })
     }
@@ -335,6 +363,8 @@ struct Introspection {
     exp: Option<u64>,
     #[serde(default)]
     iat: Option<u64>,
+    #[serde(default)]
+    auth_time: Option<u64>,
     #[serde(default)]
     sid: Option<String>,
     #[serde(default)]
@@ -430,6 +460,23 @@ pub fn bearer_token(raw: Option<&str>) -> Option<&str> {
     Some(token)
 }
 
+fn protected_http_host(url: &Url) -> bool {
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    if host.eq_ignore_ascii_case("localhost")
+        || host.eq_ignore_ascii_case("host.docker.internal")
+        || !host.contains('.')
+        || host.ends_with(".svc")
+        || host.ends_with(".svc.cluster.local")
+    {
+        return true;
+    }
+    host.parse::<IpAddr>()
+        .map(|ip| ip.is_loopback())
+        .unwrap_or(false)
+}
+
 fn optional_env(name: &str) -> Option<String> {
     env::var(name)
         .ok()
@@ -479,6 +526,7 @@ mod tests {
             aud: Some("quaestor".to_owned()),
             exp: Some(now + 300),
             iat: Some(now),
+            auth_time: Some(now),
             sid: Some("session-1".to_owned()),
             provider: Some("supabase".to_owned()),
             provider_tenant: Some("quaestor-ledger".to_owned()),
@@ -493,14 +541,17 @@ mod tests {
     }
 
     #[test]
-    fn active_revocation_aware_identity_preserves_assurance() {
+    fn active_revocation_aware_identity_preserves_assurance_time() {
         let verifier = SharedAuthVerifier {
             config: config(),
             http: Client::new(),
         };
-        let identity = verifier.identity_from_claims(active()).unwrap();
+        let claims = active();
+        let expected_auth_time = claims.auth_time.unwrap();
+        let identity = verifier.identity_from_claims(claims).unwrap();
         assert_eq!(identity.subject, "shared-user-1");
         assert!(identity.assurance.is_aal2());
+        assert_eq!(identity.issued_at, expected_auth_time);
         assert_eq!(identity.session_id.as_deref(), Some("session-1"));
         assert_eq!(identity.amr, ["pwd", "totp"]);
     }
@@ -522,6 +573,20 @@ mod tests {
         assert!(matches!(
             verifier.identity_from_claims(sessionless),
             Err(AuthError::Unauthorized)
+        ));
+    }
+
+    #[test]
+    fn loa2_without_authoritative_auth_time_is_rejected() {
+        let verifier = SharedAuthVerifier {
+            config: config(),
+            http: Client::new(),
+        };
+        let mut claims = active();
+        claims.auth_time = None;
+        assert!(matches!(
+            verifier.identity_from_claims(claims),
+            Err(AuthError::Unavailable(_))
         ));
     }
 
@@ -573,5 +638,17 @@ mod tests {
         assert_eq!(bearer_token(Some("Basic abc")), None);
         assert_eq!(bearer_token(Some("Bearer a b")), None);
         assert_eq!(bearer_token(Some("Bearer ")), None);
+    }
+
+    #[test]
+    fn plain_http_is_limited_to_local_or_cluster_hosts() {
+        assert!(protected_http_host(&Url::parse("http://shared-auth:8080").unwrap()));
+        assert!(protected_http_host(
+            &Url::parse("http://shared-auth.default.svc.cluster.local:8080").unwrap()
+        ));
+        assert!(protected_http_host(&Url::parse("http://127.0.0.1:8080").unwrap()));
+        assert!(!protected_http_host(
+            &Url::parse("http://auth.example.com").unwrap()
+        ));
     }
 }
