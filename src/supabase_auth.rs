@@ -111,10 +111,18 @@ impl SupabaseConfig {
         )
     }
 
-    /// True when either Shared Auth aliases or the direct-provider migration
-    /// config supply a pinned issuer, audience, and signature-verification path.
+    /// Shared Auth is the production default. Direct Supabase verification is
+    /// accepted only under an explicit migration flag (or in tests/local
+    /// insecure development), preventing an old provider-specific config from
+    /// silently bypassing the centralized authority.
     pub fn is_enabled(&self) -> bool {
-        self.effective().is_structurally_enabled()
+        if shared_auth_env_selected() {
+            return self.effective().is_structurally_enabled();
+        }
+        let direct_migration_allowed = cfg!(test)
+            || env_bool("BILLING_ALLOW_DIRECT_SUPABASE_AUTH", false)
+            || env_bool("BILLING_ALLOW_INSECURE_DEV", false);
+        direct_migration_allowed && self.is_structurally_enabled()
     }
 
     fn is_structurally_enabled(&self) -> bool {
@@ -140,8 +148,7 @@ impl SupabaseConfig {
         let shared_jwks = optional_env("BILLING_SHARED_AUTH_JWKS_URL")
             .or_else(|| shared_base.as_deref().map(Self::shared_auth_jwks_url_for));
 
-        let shared_auth_selected = shared_issuer.is_some() || shared_jwks.is_some();
-        if !shared_auth_selected {
+        if !shared_auth_env_selected() {
             return self.clone();
         }
 
@@ -163,6 +170,18 @@ fn optional_env(name: &str) -> Option<String> {
         let value = raw.trim();
         (!value.is_empty()).then(|| value.to_string())
     })
+}
+
+fn shared_auth_env_selected() -> bool {
+    optional_env("BILLING_SHARED_AUTH_URL").is_some()
+        || optional_env("BILLING_SHARED_AUTH_ISSUER").is_some()
+        || optional_env("BILLING_SHARED_AUTH_JWKS_URL").is_some()
+}
+
+fn env_bool(name: &str, default: bool) -> bool {
+    env::var(name)
+        .map(|raw| matches!(raw.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(default)
 }
 
 /// Authenticator Assurance Level.
@@ -441,10 +460,10 @@ impl fmt::Debug for SupabaseVerifier {
 
 impl SupabaseVerifier {
     pub fn from_config(config: &SupabaseConfig) -> Option<Self> {
-        let config = config.effective();
-        if !config.is_structurally_enabled() {
+        if !config.is_enabled() {
             return None;
         }
+        let config = config.effective();
         let http = match reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .timeout(JWKS_HTTP_TIMEOUT)
