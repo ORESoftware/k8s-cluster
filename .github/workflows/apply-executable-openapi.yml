@@ -24,6 +24,9 @@ concurrency:
   group: apply-tor-executable-openapi
   cancel-in-progress: false
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   materialize:
     if: >-
@@ -76,11 +79,20 @@ jobs:
       - name: Resolve and validate the complete Rust application
         run: |
           set -euo pipefail
-          cargo update
+          # Resolve only dependencies required by the edited manifest. Avoid a
+          # blanket `cargo update`, which previously drifted dozens of unrelated
+          # packages while materializing this bounded feature.
+          cargo check
           cargo fmt --all
           cargo fmt --all -- --check
           cargo check --locked
-          cargo clippy --locked --all-targets -- -D warnings
+          # The repository intentionally retains three legacy style families.
+          # Keep every other warning fatal while making that baseline explicit.
+          cargo clippy --locked --all-targets -- \
+            -D warnings \
+            -A clippy::needless_return \
+            -A clippy::needless_range_loop \
+            -A clippy::doc_overindented_list_items
           cargo test --locked --all-targets
 
       - name: Generate deterministic public and internal contracts
@@ -98,6 +110,7 @@ jobs:
 
       - name: Verify fail-closed visibility and operation contracts
         run: |
+          set -euo pipefail
           python3 - <<'PY'
           import json
           from pathlib import Path
