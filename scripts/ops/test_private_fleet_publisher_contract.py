@@ -20,6 +20,13 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
         cls.publisher = PUBLISHER_PATH.read_text(encoding="utf-8")
         cls.remote_state = REMOTE_STATE_PATH.read_text(encoding="utf-8")
 
+    def test_workflow_retriggers_when_publisher_contracts_change(self) -> None:
+        self.assertIn(
+            "- scripts/ops/test_private_fleet_publisher_contract.py",
+            self.workflow,
+        )
+        self.assertIn("push:\n    branches:\n      - main", self.workflow)
+
     def test_workflow_checks_out_and_binds_the_exact_main_event_sha(self) -> None:
         self.assertIn("ref: ${{ github.sha }}", self.workflow)
         self.assertNotIn("ref: main\n          fetch-depth", self.workflow)
