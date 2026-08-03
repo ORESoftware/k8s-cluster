@@ -149,7 +149,6 @@ pub struct BillingUsageItem {
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct BillingUsageResponse {
-    #[serde(default)]
     pub usage_items: Vec<BillingUsageItem>,
 }
 
@@ -446,6 +445,14 @@ mod tests {
         assert_eq!(usage.actions_gross_minutes(), 1_000.0);
         assert_eq!(usage.actions_billable_minutes(), 100.0);
         assert_eq!(usage.actions_minutes(), 1_000.0);
+    }
+
+    #[test]
+    fn missing_usage_items_is_rejected() {
+        let result = serde_json::from_str::<BillingUsageResponse>(
+            r#"{"timePeriod":{"year":2026},"organization":"sonus-auris"}"#,
+        );
+        assert!(result.is_err());
     }
 
     #[test]
