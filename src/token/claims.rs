@@ -16,6 +16,14 @@ pub struct OreClaims {
     pub exp: u64,
     pub nbf: u64,
     pub jti: String,
+    /// Time at which the current authentication assurance was established.
+    ///
+    /// This is emitted only for AAL2 tokens. For a local step-up ceremony it is
+    /// the ceremony completion time; for an exchanged provider token it is the
+    /// newest verified upstream AMR timestamp. Consumers must compare it with
+    /// their own freshness policy rather than assuming every AAL2 token is fresh.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_time: Option<u64>,
     /// Opaque session id used for revocation checks. Old stateless tokens may
     /// omit it during migration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
