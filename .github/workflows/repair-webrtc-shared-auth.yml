@@ -3,6 +3,12 @@ name: repair-webrtc-shared-auth
 on:
   push:
     branches: [agent/webrtc-shared-auth-upgrade]
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/repair-webrtc-shared-auth.yml
+      - docs/streempilot-shared-auth-webrtc.md
+      - remote/deployments/webrtc-signaling-rs/**
 
 permissions:
   contents: write
@@ -29,6 +35,10 @@ jobs:
 
           path = Path('remote/deployments/webrtc-signaling-rs/src/main.rs')
           text = path.read_text()
+
+          if 'mod auth;\n\nuse std::{' in text and 'signal_auth: SignalAuthConfig' in text:
+              print('WebRTC shared-auth integration is already present.')
+              raise SystemExit(0)
 
           def replace_exact(old: str, new: str) -> None:
               global text
@@ -252,8 +262,8 @@ jobs:
       - name: Commit verified integration
         run: |
           if git diff --quiet -- remote/deployments/webrtc-signaling-rs; then
-            echo "No integration diff was produced."
-            exit 1
+            echo "WebRTC shared-auth integration is already committed."
+            exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
