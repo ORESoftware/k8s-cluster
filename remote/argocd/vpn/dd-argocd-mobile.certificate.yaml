@@ -13,7 +13,7 @@ spec:
   secretName: argocd-mobile-tls
   issuerRef:
     kind: ClusterIssuer
-    name: letsencrypt-prod-dns01
+    name: letsencrypt-prod-dns01-argocd-mobile
   dnsNames:
     - argocd-vpn.fiducia.cloud
   privateKey:
