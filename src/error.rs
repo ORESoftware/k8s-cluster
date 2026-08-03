@@ -247,8 +247,7 @@ mod tests {
         assert!(!message.contains('\n'));
         assert!(!message.contains('\0'));
         assert!(
-            message.chars().count()
-                <= "bad request: ".chars().count() + MAX_PUBLIC_MESSAGE_CHARS
+            message.chars().count() <= "bad request: ".chars().count() + MAX_PUBLIC_MESSAGE_CHARS
         );
         assert_eq!(headers.get(header::CACHE_CONTROL).unwrap(), "no-store");
     }
