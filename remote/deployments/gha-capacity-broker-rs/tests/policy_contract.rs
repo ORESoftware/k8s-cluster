@@ -41,7 +41,7 @@ fn threshold_boundaries_preserve_warn_route_and_hard_stop_semantics() {
     assert!(at_hard_stop
         .warnings
         .iter()
-        .any(|warning| warning.contains("hard stop")));
+        .any(|warning| warning.contains("allocation may be blocked")));
 }
 
 #[test]
