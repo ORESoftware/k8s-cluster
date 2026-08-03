@@ -104,6 +104,7 @@ pub async fn introspect(
             "aud": claims.aud,
             "exp": claims.exp,
             "iat": claims.iat,
+            "auth_time": claims.auth_time,
             "sid": claims.sid,
             "provider": claims.provider,
             "provider_tenant": claims.provider_tenant,
@@ -143,6 +144,9 @@ pub async fn verify(State(state): State<AppState>, headers: HeaderMap) -> impl I
             }
             if let Some(acr) = &claims.acr {
                 insert_header(&mut output, "x-auth-acr", acr);
+            }
+            if let Some(auth_time) = claims.auth_time {
+                insert_header(&mut output, "x-auth-time", &auth_time.to_string());
             }
             if let Some(project) = &claims.project {
                 insert_header(&mut output, "x-auth-project", project);
