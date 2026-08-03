@@ -1,0 +1,262 @@
+name: repair-webrtc-shared-auth
+
+on:
+  push:
+    branches: [agent/webrtc-shared-auth-upgrade]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-webrtc-shared-auth-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apply-and-test:
+    if: ${{ !contains(github.event.head_commit.message, '[webrtc-auth-applied]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/webrtc-shared-auth-upgrade
+          fetch-depth: 0
+      - name: Patch signaling server integration
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/webrtc-signaling-rs/src/main.rs')
+          text = path.read_text()
+
+          def replace_exact(old: str, new: str) -> None:
+              global text
+              if old not in text:
+                  raise SystemExit(f'expected source block not found:\n{old}')
+              text = text.replace(old, new, 1)
+
+          replace_exact(
+              'use std::{\n',
+              'mod auth;\n\nuse std::{\n',
+          )
+          replace_exact(
+              'use tokio::sync::{mpsc, RwLock};\n',
+              'use tokio::sync::{mpsc, RwLock};\n\nuse crate::auth::{\n    sanitize_client_metadata, PeerIdentity, SignalAuthConfig, SignalAuthError,\n};\n',
+          )
+          replace_exact(
+              'static PEER_SEQUENCE: AtomicU64 = AtomicU64::new(1);\n',
+              'static PEER_SEQUENCE: AtomicU64 = AtomicU64::new(1);\nconst MAX_SIGNAL_FRAME_BYTES: usize = 64 * 1024;\n',
+          )
+          replace_exact(
+              '''struct AppState {
+              rooms: Arc<RwLock<HashMap<String, RoomState>>>,
+              admin_runtime_clients: Arc<RwLock<HashMap<u64, mpsc::UnboundedSender<Message>>>>,
+          }
+          ''',
+              '''struct AppState {
+              rooms: Arc<RwLock<HashMap<String, RoomState>>>,
+              admin_runtime_clients: Arc<RwLock<HashMap<u64, mpsc::UnboundedSender<Message>>>>,
+              signal_auth: SignalAuthConfig,
+          }
+          ''',
+          )
+          replace_exact(
+              '''    #[serde(skip_serializing_if = "Option::is_none", rename = "userAgent")]
+              user_agent: Option<String>,
+              metadata: Value,
+          ''',
+              '''    #[serde(skip_serializing_if = "Option::is_none", rename = "userAgent")]
+              user_agent: Option<String>,
+              #[serde(skip_serializing_if = "Option::is_none")]
+              identity: Option<PeerIdentity>,
+              metadata: Value,
+          ''',
+          )
+          replace_exact(
+              '''            if !metadata.is_null() {
+                  update_peer_metadata(state, room_id, peer_id, metadata).await;
+              }
+          ''',
+              '''            if !metadata.is_null() {
+                  match sanitize_client_metadata(metadata) {
+                      Ok(metadata) => {
+                          update_peer_metadata(state, room_id, peer_id, metadata).await;
+                      }
+                      Err(message) => {
+                          SIGNAL_ERRORS.with_label_values(&["invalid_metadata"]).inc();
+                          send_json(
+                              own_tx,
+                              json!({
+                                  "type": "error",
+                                  "code": "invalid_metadata",
+                                  "message": message,
+                                  "atMs": now_ms(),
+                              }),
+                          );
+                          return true;
+                      }
+                  }
+              }
+          ''',
+          )
+          replace_exact(
+              '''async fn signal_socket(
+              mut socket: WebSocket,
+              state: AppState,
+              room_id: String,
+              peer_id: String,
+              user_agent: Option<String>,
+          ) {
+          ''',
+              '''async fn signal_socket(
+              mut socket: WebSocket,
+              state: AppState,
+              room_id: String,
+              peer_id: String,
+              user_agent: Option<String>,
+              identity: Option<PeerIdentity>,
+          ) {
+          ''',
+          )
+          replace_exact(
+              '''        connected_at_ms,
+                  user_agent,
+                  metadata: Value::Null,
+          ''',
+              '''        connected_at_ms,
+                  user_agent,
+                  identity,
+                  metadata: Value::Null,
+          ''',
+          )
+          replace_exact(
+              '''async fn signal_ws(
+              ws: WebSocketUpgrade,
+              Query(query): Query<SignalQuery>,
+              State(state): State<AppState>,
+              headers: HeaderMap,
+          ) -> Response {
+              let room_id = match normalize_id(query.room, "room") {
+                  Ok(room_id) => room_id,
+                  Err(message) => {
+                      record_http("GET", "/signal", StatusCode::BAD_REQUEST);
+                      return (StatusCode::BAD_REQUEST, message).into_response();
+                  }
+              };
+              let peer_id = match normalize_id(query.peer, "peer") {
+                  Ok(peer_id) => peer_id,
+                  Err(message) => {
+                      record_http("GET", "/signal", StatusCode::BAD_REQUEST);
+                      return (StatusCode::BAD_REQUEST, message).into_response();
+                  }
+              };
+              let user_agent = headers
+                  .get(header::USER_AGENT)
+                  .and_then(|value| value.to_str().ok())
+                  .map(str::to_string);
+
+              record_http("GET", "/signal", StatusCode::SWITCHING_PROTOCOLS);
+              ws.on_upgrade(move |socket| signal_socket(socket, state, room_id, peer_id, user_agent))
+          }
+          ''',
+              '''async fn signal_ws(
+              ws: WebSocketUpgrade,
+              Query(query): Query<SignalQuery>,
+              State(state): State<AppState>,
+              headers: HeaderMap,
+          ) -> Response {
+              let identity = match state.signal_auth.identity_from_headers(&headers) {
+                  Ok(identity) => identity,
+                  Err(error @ (SignalAuthError::AuthenticationRequired
+                  | SignalAuthError::UntrustedProxy
+                  | SignalAuthError::InvalidIdentity)) => {
+                      record_http("GET", "/signal", StatusCode::UNAUTHORIZED);
+                      return (StatusCode::UNAUTHORIZED, error.public_message()).into_response();
+                  }
+              };
+              let room_id = match normalize_id(query.room, "room") {
+                  Ok(room_id) => room_id,
+                  Err(message) => {
+                      record_http("GET", "/signal", StatusCode::BAD_REQUEST);
+                      return (StatusCode::BAD_REQUEST, message).into_response();
+                  }
+              };
+              let peer_id = match normalize_id(query.peer, "peer") {
+                  Ok(peer_id) => peer_id,
+                  Err(message) => {
+                      record_http("GET", "/signal", StatusCode::BAD_REQUEST);
+                      return (StatusCode::BAD_REQUEST, message).into_response();
+                  }
+              };
+              let user_agent = headers
+                  .get(header::USER_AGENT)
+                  .and_then(|value| value.to_str().ok())
+                  .map(str::to_string);
+
+              record_http("GET", "/signal", StatusCode::SWITCHING_PROTOCOLS);
+              ws.max_message_size(MAX_SIGNAL_FRAME_BYTES)
+                  .max_frame_size(MAX_SIGNAL_FRAME_BYTES)
+                  .on_upgrade(move |socket| {
+                      signal_socket(socket, state, room_id, peer_id, user_agent, identity)
+                  })
+          }
+          ''',
+          )
+          replace_exact(
+              '''    let state = AppState {
+                  rooms: Arc::new(RwLock::new(HashMap::new())),
+                  admin_runtime_clients: Arc::new(RwLock::new(HashMap::new())),
+              };
+          ''',
+              '''    let signal_auth = SignalAuthConfig::from_env()
+                  .expect("invalid WebRTC shared-auth configuration");
+              tracing::info!(auth_mode = ?signal_auth.mode, "configured WebRTC upgrade authentication");
+              let state = AppState {
+                  rooms: Arc::new(RwLock::new(HashMap::new())),
+                  admin_runtime_clients: Arc::new(RwLock::new(HashMap::new())),
+                  signal_auth,
+              };
+          ''',
+          )
+          replace_exact(
+              '''        AppState {
+                      rooms: Arc::new(RwLock::new(HashMap::new())),
+                      admin_runtime_clients: Arc::new(RwLock::new(HashMap::new())),
+                  }
+          ''',
+              '''        AppState {
+                      rooms: Arc::new(RwLock::new(HashMap::new())),
+                      admin_runtime_clients: Arc::new(RwLock::new(HashMap::new())),
+                      signal_auth: SignalAuthConfig::disabled(),
+                  }
+          ''',
+          )
+          replace_exact(
+              '''                    user_agent: None,
+                          metadata: Value::Null,
+          ''',
+              '''                    user_agent: None,
+                          identity: None,
+                          metadata: Value::Null,
+          ''',
+          )
+
+          path.write_text(text)
+          PY
+      - name: Format and test signaling crate
+        run: |
+          cargo fmt --manifest-path remote/deployments/webrtc-signaling-rs/Cargo.toml -- --check || \
+            cargo fmt --manifest-path remote/deployments/webrtc-signaling-rs/Cargo.toml
+          cargo test --manifest-path remote/deployments/webrtc-signaling-rs/Cargo.toml
+      - name: Commit verified integration
+        run: |
+          if git diff --quiet -- remote/deployments/webrtc-signaling-rs; then
+            echo "No integration diff was produced."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add remote/deployments/webrtc-signaling-rs
+          git commit -m "Authenticate WebRTC upgrades with shared-auth [webrtc-auth-applied]"
+          git push origin HEAD:agent/webrtc-shared-auth-upgrade
