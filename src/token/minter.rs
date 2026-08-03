@@ -2,9 +2,9 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
-use p256::pkcs8::{DecodePrivateKey, EncodePublicKey, LineEnding};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use p256::SecretKey;
+use p256::pkcs8::{DecodePrivateKey, EncodePublicKey, LineEnding};
 
 use crate::config::SigningConfig;
 use crate::error::AuthError;
@@ -111,9 +111,8 @@ impl TokenMinter {
             tracing::warn!("refusing to mint LOA2 token without auth_time");
             return Err(AuthError::Unauthorized);
         }
-        if auth_time.is_some_and(|value| {
-            value > now.saturating_add(MAX_AUTH_TIME_FUTURE_SKEW_SECS)
-        }) {
+        if auth_time.is_some_and(|value| value > now.saturating_add(MAX_AUTH_TIME_FUTURE_SKEW_SECS))
+        {
             tracing::warn!("refusing to mint token with future auth_time");
             return Err(AuthError::Unauthorized);
         }
@@ -167,7 +166,7 @@ fn now_secs() -> u64 {
 mod tests {
     use super::*;
     use crate::config::SigningConfig;
-    use crate::token::{AuthenticationAssurance, ACR_LOA1};
+    use crate::token::{ACR_LOA1, AuthenticationAssurance};
 
     use p256::pkcs8::{EncodePrivateKey, LineEnding};
 
@@ -233,8 +232,8 @@ mod tests {
             Some("aal2"),
             &["password".into(), "totp".into()],
         );
-        assert!(
-            m.mint(MintContext {
+        assert!(m
+            .mint(MintContext {
                 shared_user_id: "shared-42".into(),
                 session_id: Some(uuid::Uuid::from_u128(42)),
                 provider: "supabase".into(),
@@ -245,8 +244,7 @@ mod tests {
                 roles: vec![],
                 assurance,
             })
-            .is_err()
-        );
+            .is_err());
     }
 
     #[test]
