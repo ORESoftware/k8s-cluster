@@ -7,6 +7,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 DISPATCHER = ROOT / ".github/workflows/ops-dispatch-private-fleet-gaps-comment.yml"
+OBSERVER = ROOT / ".github/workflows/observe-private-fleet-publisher.yml"
 PUBLISHER = ROOT / ".github/workflows/ops-publish-missing-org-repositories-gh-profile.yml"
 
 
@@ -14,6 +15,7 @@ class PrivateFleetGapDispatchContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.dispatcher = DISPATCHER.read_text(encoding="utf-8")
+        cls.observer = OBSERVER.read_text(encoding="utf-8")
         cls.publisher = PUBLISHER.read_text(encoding="utf-8")
 
     def test_dispatch_is_bound_to_exact_owner_comment_and_merged_pr(self) -> None:
@@ -67,6 +69,35 @@ class PrivateFleetGapDispatchContractTests(unittest.TestCase):
         self.assertIn("stage=bounded-repository-publication", self.publisher)
         self.assertIn("created-exact-preserved-unchanged", self.publisher)
         self.assertNotIn("finalize_missing_org_repositories.py", self.publisher)
+
+    def test_observer_is_bound_to_the_exact_protected_workflow(self) -> None:
+        self.assertIn(
+            "- Publish missing organization repositories from protected gh profile",
+            self.observer,
+        )
+        self.assertIn("types:\n      - requested\n      - completed", self.observer)
+        self.assertIn("RUN_ID: ${{ github.event.workflow_run.id }}", self.observer)
+        self.assertIn("RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}", self.observer)
+        self.assertIn('test "$RUN_HEAD_BRANCH" = main', self.observer)
+        self.assertIn("push|workflow_dispatch", self.observer)
+
+    def test_observer_reports_bounded_metadata_without_raw_logs_or_credentials(self) -> None:
+        self.assertIn("actions: read", self.observer)
+        self.assertIn("issues: write", self.observer)
+        self.assertIn("failed_jobs", self.observer)
+        self.assertIn("actions/runs/${RUN_ID}/jobs", self.observer)
+        self.assertNotIn("gh run view --log", self.observer)
+        self.assertNotIn("fetch_workflow_job_logs", self.observer)
+        for marker in (
+            "GITHUB_REPOSITORY_ADMIN_TOKEN",
+            "REMOTE_DEV_GH_PAT",
+            "AWS_SSM_INSTANCE_ID",
+            "GIT_ASKPASS",
+            "Authorization: Bearer",
+        ):
+            self.assertNotIn(marker, self.observer)
+        self.assertIn("gh pr comment 595", self.observer)
+        self.assertIn("gh pr comment 291", self.observer)
 
 
 if __name__ == "__main__":
