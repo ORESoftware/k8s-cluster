@@ -372,11 +372,12 @@ fn map_maintenance_error(error: SignalMaintenanceError) -> ApiError {
     }
 }
 
-fn map_store_error(error: SignalStoreError) -> ApiError {
+pub(crate) fn map_store_error(error: SignalStoreError) -> ApiError {
     match error {
         SignalStoreError::Validation(_)
         | SignalStoreError::InvalidUuid(_)
         | SignalStoreError::DeviceUnavailable => ApiError::BadRequest,
+        SignalStoreError::RecipientUnavailable => ApiError::Gone,
         SignalStoreError::RevisionConflict | SignalStoreError::IdempotencyConflict => {
             ApiError::Conflict
         }
@@ -566,6 +567,10 @@ mod tests {
         assert!(matches!(
             map_store_error(SignalStoreError::RevisionConflict),
             ApiError::Conflict
+        ));
+        assert!(matches!(
+            map_store_error(SignalStoreError::RecipientUnavailable),
+            ApiError::Gone
         ));
     }
 }

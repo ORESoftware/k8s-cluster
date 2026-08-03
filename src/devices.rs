@@ -5,10 +5,11 @@ use crate::auth::{self, AuthedDevice};
 use crate::entity::device;
 use crate::error::ApiError;
 use crate::json::JsonBody;
+use crate::signal_api::map_store_error;
+use crate::signal_store;
 use crate::state::AppState;
 use axum::extract::State;
 use axum::Json;
-use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, Set,
@@ -43,8 +44,11 @@ pub(crate) async fn list_handler(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct RevokeRequest {
     device_id: Uuid,
+    #[serde(default)]
+    expected_revision: Option<i64>,
 }
 
 // Credential first, body second — see `vault_blob::push_handler`.
@@ -53,7 +57,16 @@ pub(crate) async fn revoke_handler(
     who: AuthedDevice,
     JsonBody(request): JsonBody<RevokeRequest>,
 ) -> Result<(), ApiError> {
-    revoke(state.database(), who.account_id, request.device_id).await
+    signal_store::revoke_device(
+        state.database(),
+        who.account_id,
+        who.device_id,
+        request.device_id,
+        request.expected_revision,
+    )
+    .await
+    .map(|_| ())
+    .map_err(map_store_error)
 }
 
 /// Insert a new device for an account and return `(device_id, raw_token)`.
@@ -113,21 +126,4 @@ where
         .filter(device::Column::Revoked.eq(false))
         .count(db)
         .await?)
-}
-
-/// Revoke a device (its sync token stops working immediately).
-pub async fn revoke<C>(db: &C, account_id: Uuid, device_id: Uuid) -> Result<(), ApiError>
-where
-    C: ConnectionTrait,
-{
-    let result = device::Entity::update_many()
-        .col_expr(device::Column::Revoked, Expr::value(true))
-        .filter(device::Column::Id.eq(device_id))
-        .filter(device::Column::AccountId.eq(account_id))
-        .exec(db)
-        .await?;
-    if result.rows_affected == 0 {
-        return Err(ApiError::BadRequest);
-    }
-    Ok(())
 }

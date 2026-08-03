@@ -12,6 +12,8 @@ pub enum ApiError {
     BadRequest,
     #[error("conflict")]
     Conflict,
+    #[error("gone")]
+    Gone,
     #[error("too many requests")]
     TooManyRequests,
     // Returned when human-identity enrollment is disabled because shared-auth
@@ -89,6 +91,7 @@ impl IntoResponse for ApiError {
             ApiError::Unauthorized => StatusCode::UNAUTHORIZED,
             ApiError::BadRequest => StatusCode::BAD_REQUEST,
             ApiError::Conflict => StatusCode::CONFLICT,
+            ApiError::Gone => StatusCode::GONE,
             ApiError::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
             ApiError::NotImplemented => StatusCode::NOT_IMPLEMENTED,
             ApiError::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
@@ -109,6 +112,7 @@ mod tests {
             (ApiError::Unauthorized, StatusCode::UNAUTHORIZED),
             (ApiError::BadRequest, StatusCode::BAD_REQUEST),
             (ApiError::Conflict, StatusCode::CONFLICT),
+            (ApiError::Gone, StatusCode::GONE),
             (ApiError::TooManyRequests, StatusCode::TOO_MANY_REQUESTS),
             (ApiError::NotImplemented, StatusCode::NOT_IMPLEMENTED),
             (ApiError::Unavailable, StatusCode::SERVICE_UNAVAILABLE),

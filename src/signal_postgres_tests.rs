@@ -6,7 +6,7 @@
 use crate::device_sync_protocol::SignalCiphertextEnvelope;
 use crate::signal_bundle_store::claim_prekey_bundle;
 use crate::signal_maintenance::{acknowledge_batch, cleanup_expired_state};
-use crate::signal_store::{enqueue_envelope, pull_mailbox, SignalStoreError};
+use crate::signal_store::{enqueue_envelope, pull_mailbox, revoke_device, SignalStoreError};
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use sea_orm::{
@@ -46,7 +46,9 @@ CREATE TABLE threefa.devices (
     id UUID PRIMARY KEY,
     account_id UUID NOT NULL,
     revoked BOOLEAN NOT NULL DEFAULT FALSE,
-    lifecycle_state TEXT NOT NULL DEFAULT 'active'
+    lifecycle_state TEXT NOT NULL DEFAULT 'active',
+    suspended_at TIMESTAMPTZ,
+    revoked_at TIMESTAMPTZ
 );
 
 CREATE TABLE threefa.device_prekey_bundles (
@@ -89,6 +91,16 @@ CREATE TABLE threefa.device_mailbox (
     ciphertext_size_bytes INTEGER,
     delivered_at TIMESTAMPTZ,
     acknowledged_at TIMESTAMPTZ
+);
+
+CREATE TABLE threefa.device_security_events (
+    event_seq BIGSERIAL PRIMARY KEY,
+    account_id UUID NOT NULL,
+    actor_device_id UUID,
+    subject_device_id UUID,
+    device_revision BIGINT NOT NULL,
+    event_kind TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 "#,
     )
@@ -293,6 +305,146 @@ async fn envelope_idempotency_and_mailbox_cursors_are_postgres_enforced() {
         .await
         .expect("cross-account pull closes to an empty page")
         .is_empty());
+}
+
+#[tokio::test]
+#[ignore = "requires THREEFA_SIGNAL_TEST_DATABASE_URL"]
+async fn revoked_recipient_is_terminal_not_an_idempotency_collision() {
+    let db = database().await;
+    reset_schema(&db).await;
+
+    let mut envelope = canonical_envelope();
+    let now_ms = OffsetDateTime::now_utc().unix_timestamp() * 1_000;
+    envelope.metadata.created_at_ms = now_ms;
+    envelope.metadata.expires_at_ms = now_ms + 60_000;
+    let account_id = Uuid::parse_str(&envelope.metadata.account_id).unwrap();
+    let sender_id = Uuid::parse_str(&envelope.metadata.sender_device_id).unwrap();
+    let recipient_id = Uuid::parse_str(&envelope.metadata.recipient_device_id).unwrap();
+    execute(
+        &db,
+        format!(
+            "INSERT INTO threefa.accounts (id) VALUES ('{account_id}'); INSERT INTO threefa.devices (id, account_id) VALUES ('{sender_id}', '{account_id}'), ('{recipient_id}', '{account_id}');"
+        ),
+    )
+    .await;
+
+    enqueue_envelope(&db, &envelope)
+        .await
+        .expect("initial envelope reaches an active recipient");
+    execute(
+        &db,
+        format!(
+            "UPDATE threefa.devices SET revoked = true, lifecycle_state = 'revoked', revoked_at = now() WHERE id = '{recipient_id}';"
+        ),
+    )
+    .await;
+
+    assert!(matches!(
+        enqueue_envelope(&db, &envelope).await,
+        Err(SignalStoreError::RecipientUnavailable)
+    ));
+
+    envelope.metadata.envelope_id = Uuid::new_v4().to_string();
+    envelope.metadata.message_number += 1;
+    assert!(matches!(
+        enqueue_envelope(&db, &envelope).await,
+        Err(SignalStoreError::RecipientUnavailable)
+    ));
+}
+
+#[tokio::test]
+#[ignore = "requires THREEFA_SIGNAL_TEST_DATABASE_URL"]
+async fn revocation_advances_revision_reaps_signal_state_and_records_audit_event() {
+    let db = database().await;
+    reset_schema(&db).await;
+
+    let account_id = Uuid::new_v4();
+    let actor_id = Uuid::new_v4();
+    let subject_id = Uuid::new_v4();
+    let envelope_id = Uuid::new_v4();
+    let public_key = BASE64.encode([7_u8; 32]);
+    let signature = BASE64.encode([8_u8; 64]);
+    execute(
+        &db,
+        format!(
+            "INSERT INTO threefa.accounts (id, signal_device_revision) VALUES ('{account_id}', 3); \
+             INSERT INTO threefa.devices (id, account_id) VALUES ('{actor_id}', '{account_id}'), ('{subject_id}', '{account_id}'); \
+             INSERT INTO threefa.device_prekey_bundles (device_id, bundle_revision, protocol_version, registration_id, identity_key_base64, signed_prekey_id, signed_prekey_base64, signed_prekey_signature_base64, pq_signed_prekey_id, pq_signed_prekey_base64, pq_signed_prekey_signature_base64, expires_at) VALUES ('{subject_id}', 1, 1, 42, '{public_key}', 1, '{public_key}', '{signature}', 2, '{public_key}', '{signature}', clock_timestamp() + interval '1 day'); \
+             INSERT INTO threefa.device_one_time_prekeys (device_id, prekey_id, public_key_base64) VALUES ('{subject_id}', 101, '{public_key}'); \
+             INSERT INTO threefa.device_mailbox (envelope_id, account_id, sender_device_id, recipient_device_id, expires_at_ms) VALUES ('{envelope_id}', '{account_id}', '{actor_id}', '{subject_id}', 9999999999999);"
+        ),
+    )
+    .await;
+
+    let new_revision = revoke_device(&db, account_id, actor_id, subject_id, Some(3))
+        .await
+        .expect("revoke active sibling at the expected revision");
+    assert_eq!(new_revision, 4);
+
+    let state = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT revoked, lifecycle_state, revoked_at IS NOT NULL AS has_revoked_at, suspended_at IS NULL AS cleared_suspension FROM threefa.devices WHERE id = $1",
+            vec![subject_id.into()],
+        ))
+        .await
+        .expect("query revoked device")
+        .expect("revoked device remains auditable");
+    assert!(state.try_get::<bool>("", "revoked").unwrap());
+    assert_eq!(
+        state.try_get::<String>("", "lifecycle_state").unwrap(),
+        "revoked"
+    );
+    assert!(state.try_get::<bool>("", "has_revoked_at").unwrap());
+    assert!(state.try_get::<bool>("", "cleared_suspension").unwrap());
+
+    let counts = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT (SELECT count(*)::bigint FROM threefa.device_prekey_bundles WHERE device_id = $1) AS bundles, (SELECT count(*)::bigint FROM threefa.device_one_time_prekeys WHERE device_id = $1) AS prekeys, (SELECT count(*)::bigint FROM threefa.device_mailbox WHERE sender_device_id = $1 OR recipient_device_id = $1) AS mail",
+            vec![subject_id.into()],
+        ))
+        .await
+        .expect("query reaped Signal state")
+        .expect("cleanup count row");
+    assert_eq!(required_i64(&counts, "bundles"), 0);
+    assert_eq!(required_i64(&counts, "prekeys"), 0);
+    assert_eq!(required_i64(&counts, "mail"), 0);
+
+    let event = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT actor_device_id, subject_device_id, device_revision, event_kind FROM threefa.device_security_events WHERE account_id = $1",
+            vec![account_id.into()],
+        ))
+        .await
+        .expect("query revocation audit event")
+        .expect("revocation emits an audit event");
+    assert_eq!(event.try_get::<Uuid>("", "actor_device_id").unwrap(), actor_id);
+    assert_eq!(
+        event.try_get::<Uuid>("", "subject_device_id").unwrap(),
+        subject_id
+    );
+    assert_eq!(required_i64(&event, "device_revision"), 4);
+    assert_eq!(
+        event.try_get::<String>("", "event_kind").unwrap(),
+        "device_revoked"
+    );
+
+    assert!(matches!(
+        revoke_device(&db, account_id, actor_id, subject_id, Some(4)).await,
+        Err(SignalStoreError::DeviceUnavailable)
+    ));
+    let revision = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT signal_device_revision FROM threefa.accounts WHERE id = $1",
+            vec![account_id.into()],
+        ))
+        .await
+        .expect("query revision after duplicate revoke")
+        .expect("account remains present");
+    assert_eq!(required_i64(&revision, "signal_device_revision"), 4);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

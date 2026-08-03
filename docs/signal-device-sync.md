@@ -65,6 +65,8 @@ The route names below are the intended contract; they remain disabled until hand
 - treats `envelope_id` as the idempotency/replay key;
 - inserts ciphertext once and returns the existing cursor on an exact duplicate;
 - rejects a conflicting reuse of an envelope id;
+- returns `410 Gone` when the recipient is no longer active, which tells clients
+  to refresh the device list and stop retrying rather than minting envelope ids;
 - does not parse or infer plaintext purpose beyond the authenticated metadata enum.
 
 ### Pull and acknowledge
