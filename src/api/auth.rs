@@ -229,7 +229,7 @@ impl ApiAuth {
         }
         if state.cfg.step_up_required_for_mutations && shared_auth.is_none() {
             anyhow::bail!(
-                "BILLING_REQUIRE_STEP_UP_FOR_MUTATIONS=true requires Shared Auth"
+                "BILLING_TENANT_MUTATIONS_REQUIRE_STEP_UP=true requires Shared Auth"
             );
         }
         Ok(Arc::new(Self {
@@ -262,8 +262,7 @@ pub fn is_exempt_path(uri: &Uri) -> bool {
 }
 
 fn unauthorized() -> Response {
-    let mut response =
-        (StatusCode::UNAUTHORIZED, "api authentication required\n").into_response();
+    let mut response = (StatusCode::UNAUTHORIZED, "api authentication required\n").into_response();
     response.headers_mut().insert(
         header::WWW_AUTHENTICATE,
         HeaderValue::from_static("Bearer realm=\"quaestor-ledger\""),
@@ -298,8 +297,7 @@ pub async fn require_api_auth(
         .and_then(|value| value.to_str().ok());
     let service_match = match (auth.bearer.as_deref(), raw_authorization) {
         (Some(expected), Some(raw)) => raw.strip_prefix("Bearer ").is_some_and(|presented| {
-            !presented.is_empty()
-                && const_time_eq(presented.as_bytes(), expected.as_bytes())
+            !presented.is_empty() && const_time_eq(presented.as_bytes(), expected.as_bytes())
         }),
         _ => false,
     };
@@ -381,24 +379,9 @@ pub async fn require_embedded_tenant_write(
     principal: &Principal,
     tenant_id: Uuid,
 ) -> AppResult<TenantGrant> {
-    let user = principal.user()?;
-    let grant = require_embedded_tenant_scope(
-        state,
-        principal,
-        tenant_id,
-        SCOPE_BILLING_WRITE,
-    )
-    .await?;
-    if state.cfg.step_up_required_for_mutations {
-        if !user.identity.assurance.is_aal2()
-            || user
-                .identity
-                .step_up_age_secs(now_seconds())
-                .is_none_or(|age| age > MAX_STEP_UP_AGE_SECS)
-        {
-            return Err(AppError::Forbidden);
-        }
-    }
+    let grant =
+        require_embedded_tenant_scope(state, principal, tenant_id, SCOPE_BILLING_WRITE).await?;
+    require_fresh_user_step_up(state, principal)?;
     Ok(grant)
 }
 
@@ -407,25 +390,29 @@ pub async fn require_embedded_tenant_admin(
     principal: &Principal,
     tenant_id: Uuid,
 ) -> AppResult<TenantGrant> {
-    let user = principal.user()?;
-    let grant = require_embedded_tenant_scope(
-        state,
-        principal,
-        tenant_id,
-        SCOPE_BILLING_ADMIN,
-    )
-    .await?;
-    if state.cfg.step_up_required_for_mutations {
-        if !user.identity.assurance.is_aal2()
-            || user
-                .identity
-                .step_up_age_secs(now_seconds())
-                .is_none_or(|age| age > MAX_STEP_UP_AGE_SECS)
-        {
-            return Err(AppError::Forbidden);
-        }
-    }
+    let grant =
+        require_embedded_tenant_scope(state, principal, tenant_id, SCOPE_BILLING_ADMIN).await?;
+    require_fresh_user_step_up(state, principal)?;
     Ok(grant)
+}
+
+/// Require the active Shared Auth user to have completed a recent LOA2
+/// ceremony. Used for unscoped control-plane mutations such as creating a new
+/// billing tenant, as well as embedded-tenant routes.
+pub fn require_fresh_user_step_up(state: &AppState, principal: &Principal) -> AppResult<()> {
+    let user = principal.user()?;
+    if !state.cfg.step_up_required_for_mutations {
+        return Ok(());
+    }
+    let fresh = matches!(
+        user.identity.step_up_age_secs(now_seconds()),
+        Some(age) if age <= MAX_STEP_UP_AGE_SECS
+    );
+    if user.identity.assurance.is_aal2() && fresh {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden)
+    }
 }
 
 fn now_seconds() -> u64 {
@@ -496,7 +483,7 @@ pub fn is_private_ip(ip: IpAddr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shared_auth::{Aal, ACR_LOA1, ACR_LOA2};
+    use crate::shared_auth::{ACR_LOA1, ACR_LOA2, Aal};
     use chrono::Utc;
 
     const TENANT_A: &str = "11111111-1111-4111-8111-111111111111";
@@ -644,12 +631,7 @@ mod tests {
             ),
             Ok(())
         );
-        let read_only = user(
-            tenant(TENANT_A),
-            &[SCOPE_BILLING_READ],
-            Aal::Aal2,
-            NOW,
-        );
+        let read_only = user(tenant(TENANT_A), &[SCOPE_BILLING_READ], Aal::Aal2, NOW);
         let weak = user(
             tenant(TENANT_A),
             &[SCOPE_BILLING_READ, SCOPE_BILLING_WRITE],
