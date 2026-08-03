@@ -28,54 +28,41 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
           source = path.read_text()
 
-          old_create = '''    {
-              let mut runs = state.runs.write().await;
-              prune_runs(&mut runs, state.config.max_runs);
-              runs.insert(record.id, record.clone());
-          }'''
-          new_create = '''    {
-              let mut runs = state.runs.write().await;
-              runs.insert(record.id, record.clone());
-              prune_runs(&mut runs, state.config.max_runs);
-          }'''
-          if old_create not in source:
-              raise SystemExit('create_run retention block not found')
-          source = source.replace(old_create, new_create, 1)
+          source, create_count = re.subn(
+              r'(?m)^(\s*)prune_runs\(&mut runs, state\.config\.max_runs\);\n\1runs\.insert\(record\.id, record\.clone\(\)\);$',
+              lambda match: (
+                  f'{match.group(1)}runs.insert(record.id, record.clone());\n'
+                  f'{match.group(1)}prune_runs(&mut runs, state.config.max_runs);'
+              ),
+              source,
+              count=1,
+          )
+          if create_count != 1:
+              raise SystemExit(f'expected one create_run retention sequence, found {create_count}')
 
-          old_webhook = '''            let run_id = record.id;
-              state.runs.write().await.insert(run_id, record);
-              let task_state = state.clone();'''
-          new_webhook = '''            let run_id = record.id;
-              {
-                  let mut runs = state.runs.write().await;
-                  runs.insert(run_id, record);
-                  prune_runs(&mut runs, state.config.max_runs);
-              }
-              let task_state = state.clone();'''
-          if old_webhook not in source:
-              raise SystemExit('webhook retention block not found')
-          source = source.replace(old_webhook, new_webhook, 1)
+          source, webhook_count = re.subn(
+              r'(?m)^(\s*)state\.runs\.write\(\)\.await\.insert\(run_id, record\);$',
+              lambda match: (
+                  f'{match.group(1)}{{\n'
+                  f'{match.group(1)}    let mut runs = state.runs.write().await;\n'
+                  f'{match.group(1)}    runs.insert(run_id, record);\n'
+                  f'{match.group(1)}    prune_runs(&mut runs, state.config.max_runs);\n'
+                  f'{match.group(1)}}}'
+              ),
+              source,
+              count=1,
+          )
+          if webhook_count != 1:
+              raise SystemExit(f'expected one webhook retention insertion, found {webhook_count}')
 
-          old_prune = '''fn prune_runs(runs: &mut BTreeMap<Uuid, RunRecord>, max_runs: usize) {
-              if runs.len() < max_runs {
-                  return;
-              }
-              let mut candidates = runs
-                  .values()
-                  .filter(|run| matches!(run.status, RunStatus::Succeeded | RunStatus::Failed))
-                  .map(|run| (run.updated_at_ms, run.id))
-                  .collect::<Vec<_>>();
-              candidates.sort_by_key(|(updated_at_ms, _)| *updated_at_ms);
-              let remove = runs.len().saturating_sub(max_runs).saturating_add(1);
-              for (_, id) in candidates.into_iter().take(remove) {
-                  runs.remove(&id);
-              }
-          }'''
-          new_prune = '''fn prune_runs(runs: &mut BTreeMap<Uuid, RunRecord>, max_runs: usize) {
+          start = source.index('fn prune_runs(')
+          end = source.index('\nfn csv_set(', start)
+          replacement = '''fn prune_runs(runs: &mut BTreeMap<Uuid, RunRecord>, max_runs: usize) {
               let remove = runs.len().saturating_sub(max_runs);
               if remove == 0 {
                   return;
@@ -89,10 +76,9 @@ jobs:
               for (_, id) in candidates.into_iter().take(remove) {
                   runs.remove(&id);
               }
-          }'''
-          if old_prune not in source:
-              raise SystemExit('prune_runs implementation not found')
-          path.write_text(source.replace(old_prune, new_prune, 1))
+          }
+          '''
+          path.write_text(source[:start] + replacement + source[end:])
           PY
           cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all
       - name: Commit exact retention fix
