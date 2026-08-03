@@ -409,7 +409,11 @@ fn normalize_scopes(mut scopes: Vec<String>, role: &str) -> AppResult<Vec<String
         .map(|scope| scope.trim().to_ascii_lowercase())
         .collect();
     scopes.sort_unstable();
-    scopes.dedup();
+    if scopes.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err(AppError::BadRequest(
+            "membership scopes must not contain duplicates".to_owned(),
+        ));
+    }
     if scopes.is_empty()
         || scopes
             .iter()
@@ -468,6 +472,20 @@ mod tests {
         assert!(normalize_role("owner").is_ok());
         assert!(normalize_role("superuser").is_err());
         assert!(normalize_scopes(vec![SCOPE_BILLING_READ.into()], "reader").is_ok());
+        assert!(
+            normalize_scopes(
+                vec![SCOPE_BILLING_READ.into(), SCOPE_BILLING_READ.into()],
+                "reader"
+            )
+            .is_err()
+        );
+        assert!(
+            normalize_scopes(
+                vec![" Billing:Read ".into(), "billing:read".into()],
+                "reader"
+            )
+            .is_err()
+        );
         assert!(normalize_scopes(vec![SCOPE_BILLING_WRITE.into()], "billing").is_err());
         assert!(
             normalize_scopes(
