@@ -1,0 +1,106 @@
+name: DEN-1550 prune repair
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/gha-clone-prune-repair.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    if: github.head_ref == 'agent/den-1550-gha-continuity-20260803'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.head_ref }}
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt
+      - name: Repair bounded run retention
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('remote/deployments/gha-clone-server-rs/src/main.rs')
+          source = path.read_text()
+
+          old_create = '''    {
+              let mut runs = state.runs.write().await;
+              prune_runs(&mut runs, state.config.max_runs);
+              runs.insert(record.id, record.clone());
+          }'''
+          new_create = '''    {
+              let mut runs = state.runs.write().await;
+              runs.insert(record.id, record.clone());
+              prune_runs(&mut runs, state.config.max_runs);
+          }'''
+          if old_create not in source:
+              raise SystemExit('create_run retention block not found')
+          source = source.replace(old_create, new_create, 1)
+
+          old_webhook = '''            let run_id = record.id;
+              state.runs.write().await.insert(run_id, record);
+              let task_state = state.clone();'''
+          new_webhook = '''            let run_id = record.id;
+              {
+                  let mut runs = state.runs.write().await;
+                  runs.insert(run_id, record);
+                  prune_runs(&mut runs, state.config.max_runs);
+              }
+              let task_state = state.clone();'''
+          if old_webhook not in source:
+              raise SystemExit('webhook retention block not found')
+          source = source.replace(old_webhook, new_webhook, 1)
+
+          old_prune = '''fn prune_runs(runs: &mut BTreeMap<Uuid, RunRecord>, max_runs: usize) {
+              if runs.len() < max_runs {
+                  return;
+              }
+              let mut candidates = runs
+                  .values()
+                  .filter(|run| matches!(run.status, RunStatus::Succeeded | RunStatus::Failed))
+                  .map(|run| (run.updated_at_ms, run.id))
+                  .collect::<Vec<_>>();
+              candidates.sort_by_key(|(updated_at_ms, _)| *updated_at_ms);
+              let remove = runs.len().saturating_sub(max_runs).saturating_add(1);
+              for (_, id) in candidates.into_iter().take(remove) {
+                  runs.remove(&id);
+              }
+          }'''
+          new_prune = '''fn prune_runs(runs: &mut BTreeMap<Uuid, RunRecord>, max_runs: usize) {
+              let remove = runs.len().saturating_sub(max_runs);
+              if remove == 0 {
+                  return;
+              }
+              let mut candidates = runs
+                  .values()
+                  .filter(|run| matches!(run.status, RunStatus::Succeeded | RunStatus::Failed))
+                  .map(|run| (run.updated_at_ms, run.id))
+                  .collect::<Vec<_>>();
+              candidates.sort_by_key(|(updated_at_ms, _)| *updated_at_ms);
+              for (_, id) in candidates.into_iter().take(remove) {
+                  runs.remove(&id);
+              }
+          }'''
+          if old_prune not in source:
+              raise SystemExit('prune_runs implementation not found')
+          path.write_text(source.replace(old_prune, new_prune, 1))
+          PY
+          cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all
+      - name: Commit exact retention fix
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add remote/deployments/gha-clone-server-rs/src/main.rs
+          git diff --cached --check
+          git commit -m 'DEN-1550 retain active runs while pruning terminal history'
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
