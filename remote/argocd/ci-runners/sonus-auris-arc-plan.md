@@ -10,13 +10,15 @@ On July 27, 2026, the private `sonus-auris` organization recorded exhaustion of 
 
 Included usage resets by billing period. On August 3, 2026, multiple `ORESoftware/k8s-cluster` jobs entered execution and completed successfully, proving hosted Actions are not globally exhausted. The connected repository surface still cannot establish the exact current Sonus numeric balance.
 
-`gha-capacity-broker-rs` queries the current UTC year and month from:
+`gha-capacity-broker-rs` queries the current UTC year and month from the public-preview endpoint:
 
 ```text
-GET /organizations/{org}/settings/billing/usage/summary
+GET /organizations/{org}/settings/billing/usage/summary?year=YYYY&month=M&product=Actions
 ```
 
-GitHub requires a billing-authorized classic PAT for this organization usage summary. A GitHub App installation token is reserved for selected-repository variable mutation and is not used for billing.
+The endpoint-specific GitHub contract supports installation access tokens with organization `Administration: read`. The broker uses a dedicated billing-read App, not the ARC registration App, variable-mutation App, or the PAT pasted into chat.
+
+The response reports gross, discounted, and net quantities. Capacity thresholds use gross Actions minutes because included usage is represented as a discount; net minutes are retained separately for cost telemetry.
 
 ## Architecture decision
 
@@ -24,7 +26,7 @@ GitHub requires a billing-authorized classic PAT for this organization usage sum
 2. Deploy ARC independently in AWS and Hetzner after a controller/CRD audit.
 3. Register two scale sets with `runnerScaleSetName: sonus-ci` and groups `sonus-aws` and `sonus-hetzner`.
 4. Keep runners ephemeral, non-root, token-free, socket-free, hostPath-free, network-bounded, and resource-bounded.
-5. Run one `gha-capacity-broker-rs` instance per organization. It reads billing through a separate billing identity and writes only two selected-repository variables through a least-privilege App.
+5. Run one `gha-capacity-broker-rs` instance per organization. It reads billing through a dedicated read-only App and writes only two selected-repository variables through a distinct mutation App.
 6. Preserve `gha-clone-server-rs` as the independent fail-closed workflow planner and fixed-profile dispatcher.
 7. Preserve `dd-build-server` as the pre-existing bounded executor for approved run profiles, artifacts, image builds, NATS/Postgres-backed work, and controlled deploys.
 
@@ -56,21 +58,23 @@ Before syncing ARC `0.14.2`:
 
 The controller and scale-set Applications remain manual. Only prerequisites reconcile automatically.
 
-## Authentication and secret delivery
+## Three-App authentication
 
 ### ARC registration App
 
 Install a dedicated App on `sonus-auris` with required self-hosted-runner permissions. Store App ID, installation ID, and private key at `dd/ci/github-apps/sonus-auris-arc`; project `sonus-auris-arc-github`.
 
+### Billing-read App
+
+Install a separate App with organization `Administration: read`. Store it at `dd/ci/github-apps/sonus-auris-billing`; project `sonus-auris-gha-billing`; mount its key only at `/var/run/gha-billing-app/github_app_private_key`.
+
 ### Capacity-mutation App
 
-Install a separate least-privilege App for the two selected-repository Actions variables. Store it at `dd/ci/github-apps/sonus-auris-capacity-broker`; project `sonus-auris-gha-capacity-broker`.
+Install a third least-privilege App for the two selected-repository Actions variables. Store it at `dd/ci/github-apps/sonus-auris-capacity-broker`; project `sonus-auris-gha-capacity-broker`; mount its key only at `/var/run/gha-mutation-app/github_app_private_key`.
 
-### Billing read identity
+The broker mints and caches separate short-lived installation tokens. It rejects a shared App installation or shared private-key path at startup. App secrets are never present in runner pods.
 
-Create a dedicated organization owner or billing-manager identity and a new classic PAT used only for billing summaries. Store it at `dd/ci/github-billing/sonus-auris`; project `sonus-auris-gha-billing` and mount it only as `/var/run/gha-billing/token`.
-
-The billing token and App private key must never share a Secret key, file, environment variable, log, workflow input, or rotation schedule. Revoke the classic PAT pasted into chat under DEN-27; it is not used by these manifests.
+Revoke the PAT pasted into chat under DEN-27; it is not used by this plan.
 
 ## Scale-set defaults
 
@@ -90,16 +94,18 @@ AWS uses `runnerGroup: sonus-aws`; Hetzner uses `runnerGroup: sonus-hetzner`. Jo
 
 The broker filters current-month summary items where `product=Actions` and `unitType=minutes`.
 
-- 75%: warning.
-- 90%: route opted-in trusted Linux jobs to certified ARC.
-- 100%: do not assume hosted allocation succeeds.
-- billing unavailable + ARC certified: use `sonus-ci`.
-- billing unavailable + ARC unready: hold.
+- capacity numerator: nonnegative finite `grossQuantity`;
+- cost telemetry: nonnegative finite `netQuantity`;
+- 75% gross usage: warning;
+- 90% gross usage: route opted-in trusted Linux jobs to certified ARC;
+- 100% gross usage: do not assume hosted allocation succeeds;
+- billing unavailable + ARC certified: use `sonus-ci`;
+- billing unavailable + ARC unready: hold;
 - hard stop + ARC unready + reviewed build-server path: report `build-server` for independent fixed-profile dispatch.
 
 Mutation defaults false. The only variables are `CI_EXECUTION_MODE` and `CI_LINUX_RUNS_ON_JSON`, with selected visibility and explicit positive unique repository IDs.
 
-Hosted and self-hosted labels must be nonempty, unique, whitespace-free, and non-overlapping. For `build-server` or `hold`, the broker publishes `ci-capacity-hold-no-runner` rather than an invalid empty runner list. Workflows must gate on mode:
+Hosted and self-hosted labels must be nonempty, unique, whitespace-free, valid, and non-overlapping. For `build-server` or `hold`, the broker publishes `ci-capacity-hold-no-runner` rather than an invalid empty runner list. Workflows must gate on mode:
 
 ```yaml
 if: vars.CI_EXECUTION_MODE == 'hosted' || vars.CI_EXECUTION_MODE == 'self-hosted'
@@ -124,7 +130,7 @@ runs-on: ${{ fromJSON(vars.CI_LINUX_RUNS_ON_JSON || '["ubuntu-latest"]') }}
 
 ### Stage 2 — Hetzner active-active and failover
 
-- `sonus-hetzner` and App verified;
+- `sonus-hetzner` and ARC App verified;
 - Hetzner registers the same scale-set name;
 - both clouds acquire manual jobs;
 - pausing AWS proves Hetzner continues without workflow edits.
@@ -136,7 +142,7 @@ Run hosted, AWS ARC, and Hetzner ARC on the same commit for Rust, Node, Dart/Flu
 ### Stage 4 — selected routing and continuity
 
 - build, scan, attest, publish, and digest-pin `gha-capacity-broker-rs` and `gha-clone-server-rs`;
-- reconcile all three secrets without printing values;
+- reconcile all three App secrets without printing values;
 - deploy with mutation and execution disabled;
 - set `selfHostedReady=true` after stages 1–3;
 - enable selected-repository mutation;
@@ -148,9 +154,9 @@ Run hosted, AWS ARC, and Hetzner ARC on the same commit for Rust, Node, Dart/Flu
 
 - Hosted allocation failure before steps: capacity failure, not test failure.
 - One ARC cluster unavailable: the other continues acquisition.
-- Billing unavailable: explicit ARC-or-hold policy.
+- Billing unavailable or schema drift: explicit ARC-or-hold policy.
 - GitHub control plane unavailable: ARC cannot acquire new jobs; only independent reviewed profiles continue.
-- Runner or credential compromise: pause scale sets, disable mutation/dispatch, rotate affected credentials, preserve evidence.
+- Runner or App compromise: pause scale sets, disable mutation/dispatch, rotate affected keys, preserve evidence.
 
 ## Rollback
 
@@ -159,9 +165,9 @@ Run hosted, AWS ARC, and Hetzner ARC on the same commit for Rust, Node, Dart/Flu
 3. Pause both scale-set Applications.
 4. Remove or retain controllers only through upstream procedures; do not strand CRDs.
 5. Disable continuity webhooks and fixed-profile dispatch.
-6. Rotate affected App or billing credentials.
+6. Rotate affected App keys.
 7. Preserve workflow history, logs, artifacts, decisions, and parity evidence.
 
 ## Acceptance evidence
 
-Completion requires current-month numeric billing usage, controller/CRD ownership, runner-group restrictions, credential inventories without values, three ExternalSecrets Ready in both clouds, AWS/Hetzner smokes and failover, hosted/AWS/Hetzner parity, fixed-profile continuity E2E, immutable image digests/SBOM/provenance, specialized-lane decisions, mutation/webhook audit, rollback drill, and proof that public-fork workflows cannot reach self-hosted or build-server lanes.
+Completion requires current-month gross and net Actions minutes, controller/CRD ownership, runner-group restrictions, App inventories without values, three ExternalSecrets Ready in both clouds, AWS/Hetzner smokes and failover, hosted/AWS/Hetzner parity, fixed-profile continuity E2E, immutable image digests/SBOM/provenance, specialized-lane decisions, mutation/webhook audit, rollback drill, and proof that public-fork workflows cannot reach self-hosted or build-server capacity.
