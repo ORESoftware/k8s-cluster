@@ -13,6 +13,18 @@ class OrgDotgithubAppCapabilityWorkflowTests(unittest.TestCase):
     def setUp(self) -> None:
         self.text = WORKFLOW.read_text(encoding="utf-8")
 
+    def test_pull_request_validation_is_credential_free(self) -> None:
+        for phrase in (
+            "pull_request:",
+            "validate-pr:",
+            "if: github.event_name == 'pull_request'",
+            "python3 tests/ops/test_probe_org_dotgithub_app_capabilities.py -v",
+        ):
+            self.assertIn(phrase, self.text)
+        validate = self.text.split("  validate-pr:", 1)[1].split("\n  probe:", 1)[0]
+        self.assertNotIn("K8S_SUBMODULE_APP_ID", validate)
+        self.assertNotIn("K8S_SUBMODULE_APP_PRIVATE_KEY", validate)
+
     def test_exact_bounded_trigger(self) -> None:
         for phrase in (
             "github.event.issue.number == 615",
