@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -16,6 +17,7 @@ SPEC = importlib.util.spec_from_file_location("meta_agent_source_snapshot", MODU
 if SPEC is None or SPEC.loader is None:
     raise RuntimeError(f"unable to load {MODULE_PATH}")
 MODULE = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 
@@ -99,7 +101,11 @@ class SnapshotFixture:
         encoded = base64.b64encode(self.bundle_bytes)
         split_one = len(encoded) // 3
         split_two = 2 * len(encoded) // 3
-        self.parts = (encoded[:split_one], encoded[split_one:split_two], encoded[split_two:])
+        self.parts = (
+            encoded[:split_one],
+            encoded[split_one:split_two],
+            encoded[split_two:],
+        )
         self.publisher_bytes = b"#!/usr/bin/env python3\nprint('fixture publisher')\n"
 
     def client(self, *, truncated_assets: bool = False) -> FakeClient:
