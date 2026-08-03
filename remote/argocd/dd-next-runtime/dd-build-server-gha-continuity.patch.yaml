@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-build-server
+  namespace: default
+spec:
+  template:
+    spec:
+      containers:
+        - name: build-server
+          env:
+            - name: BUILD_SERVER_ALLOWED_PROFILES
+              value: rust-verify,node-verify,python-verify,flutter-verify,flutter-android-debug,flutter-web-release,flutter-linux-release,flutter-linux-desktop-entrypoint,flutter-web-e2e,playwright,puppeteer,browser-e2e
