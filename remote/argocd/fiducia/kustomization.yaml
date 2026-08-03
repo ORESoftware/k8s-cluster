@@ -20,6 +20,7 @@ resources:
   - fiducia-runtime-secrets.externalsecret.yaml
   - fiducia-kv-protection.externalsecret.yaml
   - fiducia-revocation-secrets.externalsecret.yaml
+  - fiducia-revocation-registry.externalsecret.yaml
   - fiducia-node.statefulset.yaml
   - fiducia-node.service.yaml
   - fiducia-node.networkpolicy.yaml
