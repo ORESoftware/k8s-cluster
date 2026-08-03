@@ -33,6 +33,11 @@ on:
         type: boolean
         required: true
         default: false
+      repair_candidate:
+        description: One-shot branch-scoped formatter and bounded CI repair
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read
@@ -42,6 +47,78 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  repair-candidate:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.repair_candidate &&
+      github.ref == 'refs/heads/agent/den-1550-gha-continuity-20260803'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref_name }}
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt
+      - name: Apply bounded compiler and contract fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          lib = Path('remote/deployments/gha-clone-server-rs/src/lib.rs')
+          source = lib.read_text()
+          replacements = {
+              'mapping.get(&Value::String(key.to_string()))':
+                  'mapping.get(Value::String(key.to_string()))',
+              '''let mut request = request("jobs: {}");
+                  request.workflow_path = "../ci.yml".into();
+                  let errors = build_plan(&request, &PlannerLimits::default())''':
+              '''let mut invalid_path_request = request("jobs: {}");
+                  invalid_path_request.workflow_path = "../ci.yml".into();
+                  let errors = build_plan(&invalid_path_request, &PlannerLimits::default())''',
+          }
+          for old, new in replacements.items():
+              if old not in source:
+                  raise SystemExit(f'expected Rust repair target not found: {old!r}')
+              source = source.replace(old, new, 1)
+          lib.write_text(source)
+
+          contract = Path('remote/tests/general/gha-clone-server-config.test.ts')
+          lines = contract.read_text().splitlines()
+          repaired = []
+          replaced = False
+          for line in lines:
+              if 'resource.replaceAll' in line:
+                  repaired.append(r"    const escaped = resource.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');")
+                  repaired.append('    assert.match(kustomization, new RegExp(`- ${escaped}`));')
+                  replaced = True
+              else:
+                  repaired.append(line)
+          if not replaced:
+              raise SystemExit('expected TypeScript regex repair target not found')
+          contract.write_text('\n'.join(repaired) + '\n')
+          PY
+          cargo generate-lockfile --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml
+          cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all
+      - name: Commit exact formatter output
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            remote/deployments/gha-clone-server-rs/Cargo.lock \
+            remote/deployments/gha-clone-server-rs/src/lib.rs \
+            remote/deployments/gha-clone-server-rs/src/main.rs \
+            remote/tests/general/gha-clone-server-config.test.ts
+          git diff --cached --check
+          git commit -m 'DEN-1550 apply formatter and CI fixes'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
   rust:
     runs-on: ubuntu-latest
     timeout-minutes: 30
