@@ -420,7 +420,10 @@ async fn revocation_advances_revision_reaps_signal_state_and_records_audit_event
         .await
         .expect("query revocation audit event")
         .expect("revocation emits an audit event");
-    assert_eq!(event.try_get::<Uuid>("", "actor_device_id").unwrap(), actor_id);
+    assert_eq!(
+        event.try_get::<Uuid>("", "actor_device_id").unwrap(),
+        actor_id
+    );
     assert_eq!(
         event.try_get::<Uuid>("", "subject_device_id").unwrap(),
         subject_id

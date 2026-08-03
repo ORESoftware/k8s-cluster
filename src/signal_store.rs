@@ -701,10 +701,7 @@ pub async fn revoke_device(
             .await?
             .ok_or(SignalStoreError::RevisionConflict)?,
         None => transaction
-            .query_one_raw(postgres(
-                BUMP_DEVICE_REVISION_SQL,
-                vec![account_id.into()],
-            ))
+            .query_one_raw(postgres(BUMP_DEVICE_REVISION_SQL, vec![account_id.into()]))
             .await?
             .ok_or(SignalStoreError::RevisionConflict)?,
     };
