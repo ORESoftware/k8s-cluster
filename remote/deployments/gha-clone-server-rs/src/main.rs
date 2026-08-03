@@ -1,4 +1,7 @@
-// The executable is split into reviewed source fragments so GitHub's contents
-// API can publish the implementation without opaque archives. build.rs joins
-// them byte-for-byte into OUT_DIR before rustc runs.
-include!(concat!(env!("OUT_DIR"), "/main_generated.rs"));
+// Keep each included file at complete Rust item boundaries. The fragments share
+// one crate scope, making validation logic directly testable without widening
+// visibility merely to satisfy a module split.
+include!("parts/part01.rs");
+include!("parts/part02.rs");
+include!("parts/part03.rs");
+include!("parts/part04.rs");
