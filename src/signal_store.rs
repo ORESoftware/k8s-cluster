@@ -236,6 +236,21 @@ WHERE account_id = $1
 FOR UPDATE
 "#;
 
+const LOCK_DEVICE_STATE_SQL: &str = r#"
+SELECT revoked, lifecycle_state
+FROM threefa.devices
+WHERE account_id = $1
+  AND id = $2
+FOR UPDATE
+"#;
+
+const CURRENT_DEVICE_REVISION_SQL: &str = r#"
+SELECT signal_device_revision
+FROM threefa.accounts
+WHERE id = $1
+FOR UPDATE
+"#;
+
 const CAS_DEVICE_REVISION_SQL: &str = r#"
 UPDATE threefa.accounts
 SET signal_device_revision = signal_device_revision + 1
@@ -653,6 +668,28 @@ pub async fn revoke_device(
         .await?;
     if actor.is_none() {
         return Err(SignalStoreError::DeviceUnavailable);
+    }
+
+    let subject = transaction
+        .query_one_raw(postgres(
+            LOCK_DEVICE_STATE_SQL,
+            vec![account_id.into(), subject_device_id.into()],
+        ))
+        .await?
+        .ok_or(SignalStoreError::DeviceUnavailable)?;
+    let already_revoked = subject.try_get::<bool>("", "revoked")?
+        && subject.try_get::<String>("", "lifecycle_state")? == "revoked";
+    if already_revoked {
+        let revision = transaction
+            .query_one_raw(postgres(
+                CURRENT_DEVICE_REVISION_SQL,
+                vec![account_id.into()],
+            ))
+            .await?
+            .ok_or(SignalStoreError::RevisionConflict)?;
+        let revision = required_i64(&revision, "signal_device_revision")?;
+        transaction.commit().await?;
+        return Ok(revision);
     }
 
     let revision = match expected_revision {

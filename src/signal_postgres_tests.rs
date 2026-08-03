@@ -431,10 +431,12 @@ async fn revocation_advances_revision_reaps_signal_state_and_records_audit_event
         "device_revoked"
     );
 
-    assert!(matches!(
-        revoke_device(&db, account_id, actor_id, subject_id, Some(4)).await,
-        Err(SignalStoreError::DeviceUnavailable)
-    ));
+    assert_eq!(
+        revoke_device(&db, account_id, actor_id, subject_id, Some(4))
+            .await
+            .expect("duplicate revoke is an idempotent success"),
+        4
+    );
     let revision = db
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Postgres,
@@ -445,6 +447,16 @@ async fn revocation_advances_revision_reaps_signal_state_and_records_audit_event
         .expect("query revision after duplicate revoke")
         .expect("account remains present");
     assert_eq!(required_i64(&revision, "signal_device_revision"), 4);
+    let event_count = db
+        .query_one_raw(Statement::from_sql_and_values(
+            DatabaseBackend::Postgres,
+            "SELECT count(*)::bigint AS events FROM threefa.device_security_events WHERE account_id = $1",
+            vec![account_id.into()],
+        ))
+        .await
+        .expect("query events after duplicate revoke")
+        .expect("event count row");
+    assert_eq!(required_i64(&event_count, "events"), 1);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
