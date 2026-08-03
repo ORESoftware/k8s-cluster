@@ -8,7 +8,8 @@ resources:
   - dd-vpn-secrets.externalsecret.yaml
   - dd-vpn.pv.yaml
   - dd-vpn.pvc.yaml
-  - dd-argocd-mobile-prereqs.application.yaml
+  - dd-argocd-mobile-cloudflare.externalsecret.yaml
+  - dd-argocd-mobile.clusterissuer.yaml
   - dd-argocd-mobile.configmap.yaml
   - dd-argocd-mobile.certificate.yaml
   - dd-argocd-mobile.argocd-config.yaml
