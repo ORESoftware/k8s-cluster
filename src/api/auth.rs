@@ -228,9 +228,7 @@ impl ApiAuth {
             );
         }
         if state.cfg.step_up_required_for_mutations && shared_auth.is_none() {
-            anyhow::bail!(
-                "BILLING_TENANT_MUTATIONS_REQUIRE_STEP_UP=true requires Shared Auth"
-            );
+            anyhow::bail!("BILLING_TENANT_MUTATIONS_REQUIRE_STEP_UP=true requires Shared Auth");
         }
         Ok(Arc::new(Self {
             bearer: state.cfg.api_auth_bearer.clone(),
