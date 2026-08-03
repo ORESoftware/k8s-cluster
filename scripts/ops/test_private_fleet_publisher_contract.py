@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_PATH = (
     ROOT / ".github/workflows/ops-publish-missing-org-repositories-gh-profile.yml"
 )
+OBSERVER_PATH = ROOT / ".github/workflows/observe-private-fleet-publisher.yml"
 PUBLISHER_PATH = ROOT / "scripts/ops/publish_missing_org_repositories_current.py"
 REMOTE_STATE_PATH = ROOT / "scripts/ops/repository_fleet_remote_state.py"
 
@@ -17,6 +18,7 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+        cls.observer = OBSERVER_PATH.read_text(encoding="utf-8")
         cls.publisher = PUBLISHER_PATH.read_text(encoding="utf-8")
         cls.remote_state = REMOTE_STATE_PATH.read_text(encoding="utf-8")
 
@@ -26,6 +28,19 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
             self.workflow,
         )
         self.assertIn("push:\n    branches:\n      - main", self.workflow)
+
+    def test_publisher_observer_uses_exact_workflow_and_bounded_evidence(self) -> None:
+        self.assertIn(
+            "- Publish missing organization repositories from protected gh profile",
+            self.observer,
+        )
+        self.assertIn("types:\n      - requested\n      - completed", self.observer)
+        self.assertIn("actions: read", self.observer)
+        self.assertIn("issues: write", self.observer)
+        self.assertIn("failed_jobs", self.observer)
+        self.assertNotIn("--log", self.observer)
+        self.assertNotIn("AWS_SSM_INSTANCE_ID", self.observer)
+        self.assertNotIn("GITHUB_REPOSITORY_ADMIN_TOKEN", self.observer)
 
     def test_workflow_checks_out_and_binds_the_exact_main_event_sha(self) -> None:
         self.assertIn("ref: ${{ github.sha }}", self.workflow)
