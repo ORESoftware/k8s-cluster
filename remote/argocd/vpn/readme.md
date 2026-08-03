@@ -3,8 +3,9 @@
 GitOps manifests for `dd-vpn`, a WireGuard VPN endpoint managed by
 [`wg-easy`](https://wg-easy.github.io/wg-easy/latest/getting-started/), plus `dd-bastion`, a
 Rust access broker/jump-host service reachable through that VPN. Together they create a small
-cluster-private VPN address space (`10.8.0.0/24`), an admin UI for creating WireGuard clients, and
-an authenticated place to retrieve cluster access profiles.
+cluster-private VPN address space (`10.8.0.0/24`), an admin UI for creating WireGuard clients, an
+authenticated place to retrieve cluster access profiles, and a VPN-only Argo CD endpoint suitable
+for a phone dashboard.
 
 The app uses `ghcr.io/wg-easy/wg-easy:15`; the wg-easy docs recommend pinning the major `15` tag
 and avoiding `latest`, because `latest` still points at v14.
@@ -17,16 +18,24 @@ and avoiding `latest`, because `latest` still points at v14.
 - Public VPN listener: UDP `51820` on the EC2 node via Kubernetes `hostPort`
 - Admin UI: `dd-vpn-ui.vpn.svc.cluster.local:51821`, ClusterIP only
 - Bastion/access broker: `dd-bastion.vpn.svc.cluster.local:8111`, ClusterIP only
+- VPN DNS: `10.8.0.1:53`, implemented by a CoreDNS sidecar
+- Phone Argo CD endpoint: `https://argocd-vpn.fiducia.cloud:8443`
 - Persistent config: PVC `dd-vpn-config`, mounted at `/etc/wireguard`
 - Secret source: AWS Secrets Manager key `dd/remote-dev/vpn-secrets`
 - Bastion auth source: AWS Secrets Manager key `dd/remote-dev/agent-secrets`, synced into
   `dd-bastion-secrets`
 
 The deployment uses a short privileged init container to set the network namespace sysctls that
-WireGuard needs. The main wg-easy container gets Linux networking capabilities (`NET_ADMIN`,
-`SYS_MODULE`) and a read-only mount of `/lib/modules` so WireGuard can use the host kernel module.
-It runs as a single replica with `Recreate` rollout strategy so only one pod ever owns the host UDP
-port and WireGuard state.
+WireGuard needs and prepare a private writable tmpfs for the non-root TLS proxy. The main wg-easy
+container gets Linux networking capabilities (`NET_ADMIN`, `SYS_MODULE`) and a read-only mount of
+`/lib/modules` so WireGuard can use the host kernel module. It runs as a single replica with
+`Recreate` rollout strategy so only one pod ever owns the host UDP port and WireGuard state.
+
+The CoreDNS and nginx sidecars share the pod network namespace with WireGuard. CoreDNS gives
+`argocd-vpn.fiducia.cloud` the private answer `10.8.0.1` and forwards all other queries to kube-dns.
+nginx listens on `8443`, accepts only `10.8.0.0/24`, terminates a public-trust certificate, and
+proxies to the cluster-local `argocd-server`. There is deliberately no Service, NodePort, Ingress,
+or hostPort for the phone endpoint.
 
 `dd-bastion` is not a broad public SSH server. It is an authenticated Rust HTTP service that
 operators reach either directly through WireGuard or indirectly through the public gateway's
@@ -72,7 +81,8 @@ For day-to-day operations:
    the gateway `/bastion/...` paths with the operator `Auth` header / `dd_auth` cookie value.
    Use `/profile`, `/kubeconfig`, and `/runtime/deployments`.
 3. Use the generated kubeconfig for read-only `kubectl get/list/watch` work.
-4. Use normal key-based SSH or AWS Systems Manager Session Manager for host shell access. Do not
+4. Use the mobile Argo CD account for app status, resource inspection, logs, and explicit syncs.
+5. Use normal key-based SSH or AWS Systems Manager Session Manager for host shell access. Do not
    make the Kubernetes MCP endpoint a public SSH/AWS credential broker.
 
 ## Secret setup
@@ -94,18 +104,36 @@ you intentionally want a clean reinitialization.
 The bastion service also expects `SERVER_AUTH_SECRET` in `dd/remote-dev/agent-secrets`, matching
 the rest of the remote runtime.
 
+The phone endpoint additionally needs a Cloudflare API token scoped to `Zone:DNS:Edit` for the
+`fiducia.cloud` zone. Store it in AWS Secrets Manager at `dd/remote-dev/cloudflare`, property
+`CLOUDFLARE_DNS_API_TOKEN`. The child Argo CD app `argocd-mobile-dns01` includes only the
+ExternalSecret and `letsencrypt-prod-dns01` ClusterIssuer from
+`remote/argocd/cert-manager/dns01-cloudflare`; it deliberately does not apply the separate AWS
+gateway certificate migration.
+
 ## Bootstrap
 
-1. Confirm `external-secrets-operator` and `dd-secrets` are already synced.
-2. Update `INIT_HOST` in `dd-vpn.configmap.yaml` if the EC2 public IP or DNS name changes.
-3. Apply the Argo CD app:
+1. Confirm `external-secrets-operator`, `dd-secrets`, and cert-manager are running.
+2. Seed `CLOUDFLARE_DNS_API_TOKEN` as described above.
+3. Update `INIT_HOST` in `dd-vpn.configmap.yaml` if the EC2 public IP or DNS name changes.
+4. Apply the Argo CD app:
 
 ```bash
 kubectl apply -f remote/argocd/apps/dd-vpn.application.yaml
 ```
 
-4. Open UDP `51820` on the EC2 security group.
-5. Open the admin UI through a local port-forward:
+5. Open UDP `51820` on the EC2 security group.
+6. Watch the prerequisite app and mobile certificate become healthy:
+
+```bash
+kubectl -n argocd get application argocd-mobile-dns01
+kubectl -n vpn wait \
+  --for=condition=Ready \
+  certificate/argocd-mobile-tls \
+  --timeout=10m
+```
+
+7. Open the wg-easy admin UI through a local port-forward:
 
 ```bash
 kubectl -n vpn port-forward svc/dd-vpn-ui 51821:51821
@@ -128,17 +156,79 @@ curl -H "X-Bastion-Auth: $SERVER_AUTH_SECRET" \
   http://dd-bastion.vpn.svc.cluster.local:8111/runtime/deployments
 ```
 
+## Phone setup for Argo CD
+
+The mobile endpoint uses a dedicated local Argo CD account named `argocd-mobile`. Its RBAC allows:
+
+- application/project/cluster/repository inspection
+- pod-log reads
+- explicit application syncs
+
+It does not grant application-spec updates, Kubernetes resource deletion, pod exec, or resource
+actions. The password is intentionally absent from Git and must be established interactively.
+
+1. In wg-easy, set the client DNS server to `10.8.0.1`. `INIT_DNS` handles new installations, but
+   wg-easy keeps initialized settings in SQLite, so update the UI setting and re-export an existing
+   phone profile when necessary. An existing profile can also be edited so its `DNS` line is
+   `10.8.0.1`.
+2. Import/refresh the profile in the WireGuard phone app and activate the tunnel.
+3. From a VPN-connected operator machine, establish the local-account password without putting it
+   in shell history:
+
+```bash
+argocd login argocd-vpn.fiducia.cloud:8443 \
+  --username admin \
+  --grpc-web
+
+argocd account update-password \
+  --account argocd-mobile \
+  --grpc-web
+```
+
+4. Verify the private name and TLS endpoint through the VPN:
+
+```bash
+nslookup argocd-vpn.fiducia.cloud 10.8.0.1
+curl --fail --show-error --silent \
+  https://argocd-vpn.fiducia.cloud:8443/healthz
+```
+
+5. In **Dashboard For Argo CD**, add:
+
+```text
+Server:   https://argocd-vpn.fiducia.cloud:8443
+Username: argocd-mobile
+Password: <the interactively established password>
+```
+
+The WireGuard tunnel must be active while the app is in use. On Android, strict Private DNS may
+bypass a VPN-provided resolver; set Private DNS to `Automatic` if the private hostname does not
+resolve. Do not work around a DNS or certificate problem by publishing port `8443`, opening the
+existing Argo CD NodePort, or enabling an insecure/self-signed-certificate bypass.
+
+## Certificate renewal behavior
+
+cert-manager writes `Secret/vpn/argocd-mobile-tls`. The nginx sidecar watches the projected
+certificate/key hash every 30 seconds and reloads nginx in-place when either changes. WireGuard
+continues running during certificate renewal; there is no whole-pod restart and no phone tunnel
+interruption.
+
+The TLS proxy waits harmlessly when the secret is absent. This keeps the existing VPN and bastion
+available while the Cloudflare token or issuer is being prepared. A missing/failed certificate
+makes only the phone endpoint unavailable.
+
 ## Routing model
 
 The first-boot config uses split-tunnel client routes:
 
-- `10.8.0.0/24` for VPN clients
+- `10.8.0.0/24` for VPN clients and the VPN-local DNS/Argo CD listeners
 - `10.96.0.0/12` for Kubernetes Services
 - `10.244.0.0/16` for Kubernetes Pods
 
-It also advertises `10.96.0.10` as the first DNS server so VPN clients can resolve cluster service
-names through kube-dns. For full-tunnel egress, change `INIT_ALLOWED_IPS` to `0.0.0.0/0` before
-first boot, or update the setting in the UI after the VPN has initialized.
+It advertises `10.8.0.1` as the DNS server. The DNS sidecar answers the private Argo CD hostname
+itself and forwards other queries to kube-dns at `10.96.0.10`. For full-tunnel egress, change
+`INIT_ALLOWED_IPS` to `0.0.0.0/0` before first boot, or update the setting in the UI after the VPN
+has initialized.
 
 This creates a VPC-like overlay into the cluster. It does not create or manage AWS VPC resources;
 use Terraform or another AWS IaC path if the goal is a real AWS VPC.
