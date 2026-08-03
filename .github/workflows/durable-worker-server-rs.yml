@@ -1,0 +1,128 @@
+name: durable-worker-server-rs
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/durable-worker-server-rs.yml'
+      - 'remote/deployments/durable-worker-server-rs/**'
+      - 'remote/argocd/dd-next-runtime/dd-durable-worker-server.*.yaml'
+      - 'remote/argocd/dd-next-runtime/kustomization.yaml'
+      - 'remote/tests/general/durable-worker-server-config.test.mjs'
+  push:
+    branches:
+      - dev
+    paths:
+      - '.github/workflows/durable-worker-server-rs.yml'
+      - 'remote/deployments/durable-worker-server-rs/**'
+      - 'remote/argocd/dd-next-runtime/dd-durable-worker-server.*.yaml'
+      - 'remote/argocd/dd-next-runtime/kustomization.yaml'
+      - 'remote/tests/general/durable-worker-server-config.test.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: durable-worker-server-rs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-contract-and-e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      MANIFEST: remote/deployments/durable-worker-server-rs/Cargo.toml
+      DURABLE_WORKER_AUTH_SECRET: 0123456789abcdef-test
+      DURABLE_WORKER_URL: http://127.0.0.1:8152
+      NATS_URL: nats://127.0.0.1:4222
+      PORT: '8152'
+      DURABLE_WORKER_NATS_REPLICAS: '1'
+      DURABLE_WORKER_SHADOW_MODE: 'true'
+      RUST_BACKTRACE: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust 1.90 with lint components
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.90.0
+          components: rustfmt, clippy
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: remote/deployments/durable-worker-server-rs
+
+      - name: Rust format
+        run: cargo fmt --manifest-path "$MANIFEST" -- --check
+
+      - name: Rust clippy
+        run: cargo clippy --manifest-path "$MANIFEST" --all-targets --all-features -- -D warnings
+
+      - name: Rust unit and state-machine tests
+        run: cargo test --manifest-path "$MANIFEST" --all-features
+
+      - name: Deterministic executable OpenAPI export
+        run: |
+          cargo run --quiet --manifest-path "$MANIFEST" -- --export-openapi > /tmp/durable-openapi-1.json
+          cargo run --quiet --manifest-path "$MANIFEST" -- --export-openapi > /tmp/durable-openapi-2.json
+          cmp /tmp/durable-openapi-1.json /tmp/durable-openapi-2.json
+          cargo run --quiet --manifest-path "$MANIFEST" -- --export-public-openapi > /tmp/durable-openapi-public.json
+          node --input-type=module <<'NODE'
+          import { readFile } from 'node:fs/promises';
+          const internal = JSON.parse(await readFile('/tmp/durable-openapi-1.json', 'utf8'));
+          const publicDoc = JSON.parse(await readFile('/tmp/durable-openapi-public.json', 'utf8'));
+          if (!internal.openapi.startsWith('3.1.')) throw new Error('internal OpenAPI is not 3.1');
+          if (!internal.paths['/api/v1/runs']) throw new Error('internal run route missing');
+          if (publicDoc.paths['/api/v1/runs']) throw new Error('private route leaked publicly');
+          if (publicDoc['x-dd-contract-scope'] !== 'public') throw new Error('public scope missing');
+          NODE
+
+      - name: Repository contract test
+        run: node --test remote/tests/general/durable-worker-server-config.test.mjs
+
+      - name: Install kustomize
+        uses: imranismail/setup-kustomize@v2
+        with:
+          kustomize-version: '5.6.0'
+
+      - name: Render dd-next-runtime manifests
+        run: kustomize build remote/argocd/dd-next-runtime > /tmp/dd-next-runtime-rendered.yaml
+
+      - name: Start isolated JetStream
+        run: |
+          docker run --detach --name dd-durable-worker-nats \
+            --publish 4222:4222 --publish 8222:8222 \
+            docker.io/library/nats:2.11-alpine -js -m 8222
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8222/healthz > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs dd-durable-worker-nats
+          exit 1
+
+      - name: End-to-end worker protocol smoke
+        run: |
+          cargo run --manifest-path "$MANIFEST" > /tmp/dd-durable-worker-server.log 2>&1 &
+          server_pid=$!
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:8152/readyz > /dev/null; then
+              break
+            fi
+            if ! kill -0 "$server_pid" 2>/dev/null; then
+              cat /tmp/dd-durable-worker-server.log
+              exit 1
+            fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:8152/readyz > /dev/null
+          node remote/deployments/durable-worker-server-rs/tests/gha_smoke.mjs
+          kill "$server_pid"
+          cat /tmp/dd-durable-worker-server.log
+
+      - name: Build production container image
+        run: docker build --file remote/deployments/durable-worker-server-rs/Dockerfile remote/deployments/durable-worker-server-rs
