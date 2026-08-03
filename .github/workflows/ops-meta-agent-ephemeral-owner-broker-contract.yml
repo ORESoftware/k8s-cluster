@@ -5,16 +5,20 @@ on:
     paths:
       - .github/workflows/ops-meta-agent-ephemeral-owner-broker.yml
       - .github/workflows/ops-meta-agent-ephemeral-owner-broker-contract.yml
+      - scripts/ops/verify_meta_agent_source_snapshot.py
       - scripts/ops/test_meta_agent_ephemeral_owner_broker.py
       - scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py
+      - scripts/ops/test_verify_meta_agent_source_snapshot.py
       - docs/operations/meta-agent-ephemeral-credential-publication.md
   push:
     branches: [main]
     paths:
       - .github/workflows/ops-meta-agent-ephemeral-owner-broker.yml
       - .github/workflows/ops-meta-agent-ephemeral-owner-broker-contract.yml
+      - scripts/ops/verify_meta_agent_source_snapshot.py
       - scripts/ops/test_meta_agent_ephemeral_owner_broker.py
       - scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py
+      - scripts/ops/test_verify_meta_agent_source_snapshot.py
       - docs/operations/meta-agent-ephemeral-credential-publication.md
 
 permissions:
@@ -27,7 +31,7 @@ concurrency:
 jobs:
   contract:
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 12
     steps:
       - name: Check out proposed tree without persisted credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,18 +50,41 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile \
+            scripts/ops/verify_meta_agent_source_snapshot.py \
             scripts/ops/test_meta_agent_ephemeral_owner_broker.py \
-            scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py
+            scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py \
+            scripts/ops/test_verify_meta_agent_source_snapshot.py
           python3 -m unittest -v \
             scripts/ops/test_meta_agent_ephemeral_owner_broker.py \
-            scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py
+            scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py \
+            scripts/ops/test_verify_meta_agent_source_snapshot.py
           git diff --check
           if git grep -nE '^(<{7}|={7}|>{7})' -- \
             .github/workflows/ops-meta-agent-ephemeral-owner-broker.yml \
             .github/workflows/ops-meta-agent-ephemeral-owner-broker-contract.yml \
+            scripts/ops/verify_meta_agent_source_snapshot.py \
             scripts/ops/test_meta_agent_ephemeral_owner_broker.py \
             scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py \
+            scripts/ops/test_verify_meta_agent_source_snapshot.py \
             docs/operations/meta-agent-ephemeral-credential-publication.md; then
             echo 'Git conflict markers are forbidden.' >&2
             exit 1
           fi
+
+      - name: Prove the immutable source snapshot before owner authorization
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/meta-agent-source-snapshot"
+          python3 scripts/ops/verify_meta_agent_source_snapshot.py \
+            --repository ORESoftware/k8s-cluster \
+            --source-sha 55ee15c190b7cfa4e075f6984c7cb551acd4b9d3 \
+            --bundle-sha256 1ddaa03743b864348162149b7d2d2e2dce7eab585cf092ea14547c647fcec031 \
+            --publisher-sha256 e2fe6eaa622db02a54f83e27a822f64ad4b54971c883f97bbda4ac0a4db5d278 \
+            --expected-head refs/heads/main=4d6ec3ad0ec7b688f0e777129eee7e0f0d999df1 \
+            --expected-head refs/heads/agent/den-1057-meta-agent-control-plane=789d48039da232faed985d4f8de176959f117e08 \
+            --output-dir "$output"
+          test -s "$output/meta-agent-control-plane-den-1057.bundle"
+          test -s "$output/publish_meta_control_plane.py"
