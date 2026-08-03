@@ -17,6 +17,8 @@ from typing import Any
 
 _FULL_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+_KIND_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_CONTROL_CHARACTER_RE = re.compile(r"[\x00-\x1f\x7f]")
 
 
 class VisibilityProjectionError(ValueError):
@@ -40,6 +42,10 @@ def _validate_reviewed_manifest(
     schema_version = reviewed_manifest.get("schema_version")
     if type(schema_version) is not int or schema_version != 2:
         raise VisibilityProjectionError("fleet manifest must use schema version 2")
+
+    default_branch = reviewed_manifest.get("default_branch")
+    if default_branch != "main":
+        raise VisibilityProjectionError("fleet manifest default_branch must be main")
 
     expected_count = reviewed_manifest.get("repository_count")
     if type(expected_count) is not int or expected_count != len(repositories):
@@ -111,8 +117,45 @@ def _validate_reviewed_manifest(
             )
         seen_full_names.add(normalized_full_name)
 
-        organization, _ = full_name.split("/", 1)
+        organization, repository_name = full_name.split("/", 1)
         actual_organization_counts[organization.casefold()] += 1
+
+        if record.get("org") != organization:
+            raise VisibilityProjectionError(
+                f"repository record {index} org does not match full_name"
+            )
+        if record.get("name") != repository_name:
+            raise VisibilityProjectionError(
+                f"repository record {index} name does not match full_name"
+            )
+
+        expected_remote = f"https://github.com/{full_name}.git"
+        if record.get("remote") != expected_remote:
+            raise VisibilityProjectionError(
+                f"repository record {index} remote does not match full_name"
+            )
+
+        if record.get("default_branch") != default_branch:
+            raise VisibilityProjectionError(
+                f"repository record {index} default_branch does not match fleet"
+            )
+
+        kind = record.get("kind")
+        if not isinstance(kind, str) or _KIND_RE.fullmatch(kind) is None:
+            raise VisibilityProjectionError(
+                f"repository record {index} has invalid kind {kind!r}"
+            )
+
+        description = record.get("description")
+        if (
+            not isinstance(description, str)
+            or not description
+            or description != description.strip()
+            or _CONTROL_CHARACTER_RE.search(description) is not None
+        ):
+            raise VisibilityProjectionError(
+                f"repository record {index} has invalid description"
+            )
 
         commit = record.get("commit")
         if not isinstance(commit, str) or _COMMIT_RE.fullmatch(commit) is None:
@@ -163,10 +206,11 @@ def project_private_execution_manifest(
     """Return a deep-copied execution manifest with every repository private.
 
     The function validates schema version, repository cardinality, organization
-    accounting, immutable identities, commits, file/gitlink counts, and aggregate
-    totals before projecting visibility. It then proves that the projection
-    changed no field other than each repository's ``visibility`` value. The
-    reviewed manifest is never mutated.
+    accounting, redundant repository identities and remotes, source metadata,
+    commits, file/gitlink counts, and aggregate totals before projecting
+    visibility. It then proves that the projection changed no field other than
+    each repository's ``visibility`` value. The reviewed manifest is never
+    mutated.
     """
 
     repositories = _validate_reviewed_manifest(reviewed_manifest)
