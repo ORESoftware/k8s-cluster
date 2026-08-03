@@ -8,23 +8,47 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, '..');
 const requirePass = process.argv.includes('--require-pass');
 
-const contractPath = resolve(
-  repoRoot,
-  'docs/production/managed-public-beta-service-contract-v0.1.md',
-);
-const matrixPath = resolve(
-  repoRoot,
-  'docs/security/production-safety-release-gate.json',
-);
-const gateDocPath = resolve(
-  repoRoot,
-  'docs/security/production-safety-release-gate.md',
-);
+const paths = {
+  contract: resolve(
+    repoRoot,
+    'docs/production/managed-public-beta-service-contract-v0.1.md',
+  ),
+  matrix: resolve(
+    repoRoot,
+    'docs/security/production-safety-release-gate.json',
+  ),
+  gateDoc: resolve(
+    repoRoot,
+    'docs/security/production-safety-release-gate.md',
+  ),
+  incidentRunbook: resolve(
+    repoRoot,
+    'docs/operations/managed-beta-incident-runbook.md',
+  ),
+  communicationTemplates: resolve(
+    repoRoot,
+    'docs/operations/managed-beta-communication-templates.md',
+  ),
+  evidenceTemplate: resolve(
+    repoRoot,
+    'docs/security/production-gate-evidence-template.md',
+  ),
+};
 
-const [contract, matrixText, gateDoc] = await Promise.all([
-  readFile(contractPath, 'utf8'),
-  readFile(matrixPath, 'utf8'),
-  readFile(gateDocPath, 'utf8'),
+const [
+  contract,
+  matrixText,
+  gateDoc,
+  incidentRunbook,
+  communicationTemplates,
+  evidenceTemplate,
+] = await Promise.all([
+  readFile(paths.contract, 'utf8'),
+  readFile(paths.matrix, 'utf8'),
+  readFile(paths.gateDoc, 'utf8'),
+  readFile(paths.incidentRunbook, 'utf8'),
+  readFile(paths.communicationTemplates, 'utf8'),
+  readFile(paths.evidenceTemplate, 'utf8'),
 ]);
 
 const errors = [];
@@ -39,7 +63,15 @@ try {
   matrix = {};
 }
 
-const requiredContractHeadings = [
+function requireText(documentName, text, requiredValues) {
+  for (const required of requiredValues) {
+    if (!text.includes(required)) {
+      fail(`${documentName} is missing required text: ${required}`);
+    }
+  }
+}
+
+requireText('Service contract', contract, [
   '# Managed Fiducia Public Beta Service Contract v0.1',
   '## 1. Product boundary',
   '## 2. Deployment and availability truth',
@@ -51,15 +83,6 @@ const requiredContractHeadings = [
   '## 9. Maintenance and change policy',
   '## 11. Launch exceptions',
   '## 12. Approval and evidence',
-];
-
-for (const heading of requiredContractHeadings) {
-  if (!contract.includes(heading)) {
-    fail(`Service contract is missing required heading: ${heading}`);
-  }
-}
-
-const requiredPhrases = [
   'not a contractual SLA',
   'synthetic provider names are placement/test labels only',
   'fencing token',
@@ -68,16 +91,65 @@ const requiredPhrases = [
   'Sev-0',
   '99.5%',
   '60-second positive introspection cache',
+]);
+
+requireText('Human-readable gate document', gateDoc, [
+  'Fail closed: no real-user launch',
+  '## 3. Trust boundaries and route classes',
+  '## 5. Non-negotiable invariants',
+  '## 6. Evidence requirements',
+  'node tools/validate-production-gates.mjs --require-pass',
+]);
+
+requireText('Incident runbook', incidentRunbook, [
+  '# Managed Fiducia Beta Incident Runbook',
+  '## 2. Automatic stop and containment conditions',
+  'Safety takes priority over availability.',
+  '## 3. First 15 minutes',
+  '## 5. Incident-specific containment playbooks',
+  'one healthy follower at a time',
+  '## 8. Required pre-launch tabletop',
+]);
+
+requireText('Communication templates', communicationTemplates, [
+  '# Managed Fiducia Beta Communication Templates',
+  '## 1. Initial incident notice',
+  '## 4. Resolution notice',
+  '## 5. Planned maintenance notice',
+  '## 6. Emergency maintenance notice',
+  '**Next update:**',
+  'calling engineering SLO targets contractual SLAs',
+]);
+
+requireText('Evidence bundle template', evidenceTemplate, [
+  '# Fiducia Production Gate Evidence Bundle Template',
+  '## 1. Candidate identity',
+  '## 3. Service contract measurements',
+  '## 4. Safety matrix execution',
+  '## 8. Backup, clean-room restore, and rollback proof',
+  '## 11. Final decision',
+  'node tools/validate-production-gates.mjs --require-pass',
+]);
+
+const requiredSloIds = [
+  'SLO-AVAIL-01',
+  'SLO-SUCCESS-01',
+  'SLO-READ-01',
+  'SLO-WRITE-01',
+  'SLO-RENEW-01',
+  'SLO-FAILOVER-01',
+  'SLO-REVOKE-01',
+  'SLO-SECRET-01',
+  'SLO-WATCH-01',
+  'SLO-SUPPORT-01',
 ];
-
-for (const phrase of requiredPhrases) {
-  if (!contract.includes(phrase)) {
-    fail(`Service contract is missing required policy phrase: ${phrase}`);
+for (const sloId of requiredSloIds) {
+  if (!contract.includes(`\`${sloId}\``)) {
+    fail(`Service contract is missing required SLO ID ${sloId}.`);
   }
-}
-
-if (!gateDoc.includes('Fail closed: no real-user launch')) {
-  fail('Human-readable gate document must explicitly fail closed before launch.');
+  if (!evidenceTemplate.includes(`\`${sloId}\``)) {
+    fail(`Evidence bundle template is missing required SLO ID ${sloId}.`);
+  }
 }
 
 if (matrix.schema_version !== 1) {
@@ -106,6 +178,22 @@ const expectedStatuses = new Set([
 for (const status of expectedStatuses) {
   if (!allowedStatuses.has(status)) {
     fail(`allowed_statuses is missing ${status}.`);
+  }
+}
+
+const automaticNoGo = new Set(matrix.automatic_no_go_invariants ?? []);
+for (const invariant of [
+  'cross_tenant_access',
+  'credential_plane_bypass',
+  'secret_disclosure',
+  'stale_fencing_accepted',
+  'committed_state_regression',
+  'unrecoverable_authoritative_state',
+  'mutable_or_unverified_production_artifact',
+  'missing_accountable_operator',
+]) {
+  if (!automaticNoGo.has(invariant)) {
+    fail(`automatic_no_go_invariants is missing ${invariant}.`);
   }
 }
 
@@ -141,10 +229,7 @@ for (const [index, row] of tests.entries()) {
       fail(`${label} is missing field ${field}.`);
       continue;
     }
-    if (
-      typeof row[field] === 'string' &&
-      row[field].trim().length === 0
-    ) {
+    if (typeof row[field] === 'string' && row[field].trim().length === 0) {
       fail(`${label}.${field} must not be empty.`);
     }
   }
@@ -167,6 +252,10 @@ for (const [index, row] of tests.entries()) {
     fail(`${label} uses unsupported status ${row.status}.`);
   }
   statusCounts.set(row.status, (statusCounts.get(row.status) ?? 0) + 1);
+
+  if (!automaticNoGo.has(row.invariant)) {
+    fail(`${label} uses undeclared invariant ${row.invariant}.`);
+  }
 
   if (!Array.isArray(row.blockers)) {
     fail(`${label}.blockers must be an array.`);
@@ -210,9 +299,10 @@ for (const [index, row] of tests.entries()) {
     if (!/^DEN-\d+$/.test(row.remediation_issue ?? '')) {
       fail(`${label}.remediation_issue must be a Linear issue identifier.`);
     }
-    const automaticNoGo = new Set(matrix.automatic_no_go_invariants ?? []);
     if (automaticNoGo.has(row.invariant)) {
-      fail(`${label} covers automatic no-go invariant ${row.invariant} and cannot be accepted_risk.`);
+      fail(
+        `${label} covers automatic no-go invariant ${row.invariant} and cannot be accepted_risk.`,
+      );
     }
   }
 
@@ -260,6 +350,9 @@ console.log(
   `Validated ${tests.length} production-gate rows across ${coveredRoutes.size}/${requiredRouteClasses.size} required route classes.`,
 );
 console.log(
+  `Validated ${requiredSloIds.length} SLO IDs plus the incident, communication, and evidence controls.`,
+);
+console.log(
   `Statuses: ${[...statusCounts.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([status, count]) => `${status}=${count}`)
@@ -280,6 +373,6 @@ if (errors.length > 0) {
   console.log(
     requirePass
       ? 'Production release gate is evidence-complete.'
-      : 'Production gate schema and policy documents are structurally valid.',
+      : 'Production contract, operations controls, and gate schema are structurally valid.',
   );
 }
