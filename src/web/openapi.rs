@@ -100,3 +100,58 @@ pub fn canonical_json(openapi: &OpenApi) -> Result<String, serde_json::Error> {
 }
 
 pub type SharedApiDocs = Arc<ApiDocs>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn path_set(value: &serde_json::Value) -> BTreeSet<String> {
+        value["paths"]
+            .as_object()
+            .expect("OpenAPI paths object")
+            .keys()
+            .cloned()
+            .collect()
+    }
+
+    #[test]
+    fn public_projection_uses_the_runtime_sensitivity_classifier() {
+        let internal = super::super::openapi_document().expect("internal OpenAPI document");
+        let public = public_document(&internal).expect("public OpenAPI document");
+        let internal_value = serde_json::to_value(&internal).expect("serialize internal document");
+        let public_value = serde_json::to_value(&public).expect("serialize public document");
+        let internal_paths = path_set(&internal_value);
+        let public_paths = path_set(&public_value);
+
+        for path in &internal_paths {
+            assert_eq!(
+                public_paths.contains(path),
+                !super::super::requires_ui_token(path),
+                "runtime auth and public contract disagree for {path}"
+            );
+        }
+
+        assert_eq!(public_value["x-dd-contract-scope"], "public");
+        assert_eq!(internal_value["x-dd-contract-scope"], "internal");
+        assert!(public_value["components"]["securitySchemes"].is_null());
+        assert!(!internal_value["components"]["securitySchemes"]["ui_token"].is_null());
+    }
+
+    #[test]
+    fn canonical_exports_are_stable_and_newline_terminated() {
+        let internal = super::super::openapi_document().expect("internal OpenAPI document");
+        let first = canonical_json(&internal).expect("first export");
+        let second = canonical_json(&internal).expect("second export");
+        assert_eq!(first, second);
+        assert!(first.ends_with('\n'));
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&first).unwrap()["openapi"], "3.1.0");
+    }
+
+    #[test]
+    fn unknown_contract_scope_is_rejected() {
+        let internal = super::super::openapi_document().expect("internal OpenAPI document");
+        let error = document_for_scope(&internal, "partner").expect_err("unknown scope must fail");
+        assert!(error.to_string().contains("expected public|internal"));
+    }
+}
