@@ -1,0 +1,143 @@
+name: Slack agent command browser security
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/slack-agent-command-browser-security.yml'
+      - 'scripts/ci/run-slack-command-security-e2e.sh'
+      - 'remote/tests/fixtures/slack-command-mock.mjs'
+      - 'remote/tests/fixtures/slack-command-registry.json'
+      - 'remote/tests/ui/slack-agent-command-security.playwright.test.mjs'
+      - 'remote/tests/package.json'
+      - 'remote/tests/pnpm-lock.yaml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/slack-agent-command-browser-security.yml'
+      - 'scripts/ci/run-slack-command-security-e2e.sh'
+      - 'remote/tests/fixtures/slack-command-mock.mjs'
+      - 'remote/tests/fixtures/slack-command-registry.json'
+      - 'remote/tests/ui/slack-agent-command-security.playwright.test.mjs'
+      - 'remote/tests/package.json'
+      - 'remote/tests/pnpm-lock.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: slack-agent-command-browser-security-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: 'true'
+  CARGO_INCREMENTAL: '0'
+  NODE_OPTIONS: '--unhandled-rejections=strict'
+  RUST_BACKTRACE: '1'
+  BRIDGE_REF: 7f1ad57126231c0a27da19799a27aa71f4ffaf5d
+
+jobs:
+  rejection-boundary:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout integration harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Checkout exact bridge source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ORESoftware/ai-agent-bridge.rs
+          ref: ${{ env.BRIDGE_REF }}
+          path: .e2e/bridge
+          fetch-depth: 1
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Validate focused workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/slack-agent-command-browser-security.yml
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.97.1'
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Initialize private evidence directories
+        run: |
+          umask 077
+          mkdir -p \
+            "$RUNNER_TEMP/slack-command-security-results" \
+            "$RUNNER_TEMP/slack-command-security-logs" \
+            "$RUNNER_TEMP/slack-command-security-state"
+          chmod 700 \
+            "$RUNNER_TEMP/slack-command-security-results" \
+            "$RUNNER_TEMP/slack-command-security-logs" \
+            "$RUNNER_TEMP/slack-command-security-state"
+
+      - name: Install browser-test dependencies without lifecycle scripts
+        working-directory: remote/tests
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Validate harness syntax and exact source revision
+        run: |
+          set -euo pipefail
+          bash -n scripts/ci/run-slack-command-security-e2e.sh
+          node --check remote/tests/fixtures/slack-command-mock.mjs
+          node --check remote/tests/ui/slack-agent-command-security.playwright.test.mjs
+          test "$(git -C .e2e/bridge rev-parse HEAD)" = "$BRIDGE_REF"
+
+      - name: Install pinned Chromium runtime
+        working-directory: remote/tests
+        run: |
+          set -euo pipefail
+          pnpm exec playwright --version \
+            | tee "$RUNNER_TEMP/slack-command-security-results/playwright-version.txt"
+          pnpm exec playwright install --with-deps chromium
+
+      - name: Run the production signed-ingress rejection canary
+        env:
+          BRIDGE_DIR: ${{ github.workspace }}/.e2e/bridge
+          SLACK_SECURITY_LOG_DIR: ${{ runner.temp }}/slack-command-security-logs
+          PLAYWRIGHT_OUTPUT_DIR: ${{ runner.temp }}/slack-command-security-results
+          SLACK_COMMAND_STATE_DIR: ${{ runner.temp }}/slack-command-security-state
+        run: timeout --signal=TERM --kill-after=20s 20m bash scripts/ci/run-slack-command-security-e2e.sh
+
+      - name: Publish run summary
+        if: always()
+        run: |
+          {
+            echo '## Slack signed-ingress browser security'
+            echo
+            echo "- Harness: \`${GITHUB_SHA}\`"
+            echo "- Bridge: \`${BRIDGE_REF}\`"
+            echo "- Run attempt: \`${GITHUB_RUN_ATTEMPT}\`"
+            echo "- Evidence artifact: \`slack-agent-command-browser-security-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}\`"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Upload sanitized browser evidence and service logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: slack-agent-command-browser-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/slack-command-security-results
+            ${{ runner.temp }}/slack-command-security-logs
+          if-no-files-found: error
+          retention-days: 14
