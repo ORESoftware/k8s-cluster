@@ -151,8 +151,7 @@ TOML
 pub const BILLING_ANCHORS_SUBJECT: &str = "dd.remote.billing.anchors";
 pub const BILLING_CONNECTION_EVENTS_SUBJECT: &str = "dd.remote.billing.connections.events";
 pub const BILLING_LEDGER_POSTINGS_SUBJECT: &str = "dd.remote.billing.ledger.postings";
-pub const BILLING_RECONCILIATION_BREAKS_SUBJECT: &str =
-    "dd.remote.billing.reconciliation.breaks";
+pub const BILLING_RECONCILIATION_BREAKS_SUBJECT: &str = "dd.remote.billing.reconciliation.breaks";
 pub const BILLING_SYNC_COMMANDS_QUEUE_GROUP: &str = "dd-billing-server";
 pub const BILLING_SYNC_COMMANDS_SUBJECT: &str = "dd.remote.billing.commands.sync";
 pub const BILLING_WEBHOOK_RECEIPTS_SUBJECT: &str = "dd.remote.billing.webhook.receipts";
