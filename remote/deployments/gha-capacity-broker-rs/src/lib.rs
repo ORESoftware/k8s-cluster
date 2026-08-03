@@ -135,11 +135,15 @@ pub struct BillingUsageItem {
     pub product: String,
     pub sku: String,
     pub unit_type: String,
-    pub quantity: f64,
+    pub price_per_unit: f64,
+    pub gross_quantity: f64,
+    pub gross_amount: f64,
+    pub discount_quantity: f64,
+    pub discount_amount: f64,
+    pub net_quantity: f64,
+    pub net_amount: f64,
     #[serde(default)]
-    pub organization_name: Option<String>,
-    #[serde(default)]
-    pub repository_name: Option<String>,
+    pub model: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, ToSchema)]
@@ -150,15 +154,39 @@ pub struct BillingUsageResponse {
 }
 
 impl BillingUsageResponse {
+    fn actions_minute_items(&self) -> impl Iterator<Item = &BillingUsageItem> {
+        self.usage_items.iter().filter(|item| {
+            item.product.eq_ignore_ascii_case("Actions")
+                && item.unit_type.eq_ignore_ascii_case("minutes")
+        })
+    }
+
+    /// Total Actions minutes consumed before included-usage and other discounts.
+    /// This is the capacity-routing numerator for an included-minute allowance.
     pub fn actions_minutes(&self) -> f64 {
-        self.usage_items
-            .iter()
-            .filter(|item| {
-                item.product.eq_ignore_ascii_case("Actions")
-                    && item.unit_type.eq_ignore_ascii_case("minutes")
-            })
-            .map(|item| item.quantity.max(0.0))
+        self.actions_gross_minutes()
+    }
+
+    pub fn actions_gross_minutes(&self) -> f64 {
+        self.actions_minute_items()
+            .map(|item| nonnegative_finite(item.gross_quantity))
             .sum()
+    }
+
+    /// Actions minutes remaining after quantity discounts. This is useful for
+    /// cost reporting, but it must not replace gross minutes in capacity policy.
+    pub fn actions_billable_minutes(&self) -> f64 {
+        self.actions_minute_items()
+            .map(|item| nonnegative_finite(item.net_quantity))
+            .sum()
+    }
+}
+
+fn nonnegative_finite(value: f64) -> f64 {
+    if value.is_finite() {
+        value.max(0.0)
+    } else {
+        0.0
     }
 }
 
@@ -375,37 +403,62 @@ mod tests {
         }
     }
 
+    fn usage_item(product: &str, unit_type: &str, gross: f64, net: f64) -> BillingUsageItem {
+        BillingUsageItem {
+            product: product.to_string(),
+            sku: "test-sku".to_string(),
+            unit_type: unit_type.to_string(),
+            price_per_unit: 0.008,
+            gross_quantity: gross,
+            gross_amount: gross * 0.008,
+            discount_quantity: (gross - net).max(0.0),
+            discount_amount: ((gross - net).max(0.0)) * 0.008,
+            net_quantity: net,
+            net_amount: net * 0.008,
+            model: None,
+        }
+    }
+
     #[test]
-    fn sums_only_actions_minutes() {
+    fn parses_current_public_preview_summary_schema() {
+        let usage: BillingUsageResponse = serde_json::from_str(
+            r#"{
+                "timePeriod": {"year": 2026, "month": 8},
+                "organization": "sonus-auris",
+                "usageItems": [
+                    {
+                        "product": "Actions",
+                        "sku": "actions_linux",
+                        "unitType": "minutes",
+                        "pricePerUnit": 0.008,
+                        "grossQuantity": 1000,
+                        "grossAmount": 8,
+                        "discountQuantity": 900,
+                        "discountAmount": 7.2,
+                        "netQuantity": 100,
+                        "netAmount": 0.8
+                    }
+                ]
+            }"#,
+        )
+        .expect("current billing summary fixture");
+
+        assert_eq!(usage.actions_gross_minutes(), 1_000.0);
+        assert_eq!(usage.actions_billable_minutes(), 100.0);
+        assert_eq!(usage.actions_minutes(), 1_000.0);
+    }
+
+    #[test]
+    fn sums_only_actions_minutes_and_keeps_gross_separate_from_billable() {
         let usage = BillingUsageResponse {
             usage_items: vec![
-                BillingUsageItem {
-                    product: "Actions".to_string(),
-                    sku: "Actions Linux".to_string(),
-                    unit_type: "minutes".to_string(),
-                    quantity: 125.5,
-                    organization_name: None,
-                    repository_name: None,
-                },
-                BillingUsageItem {
-                    product: "Packages".to_string(),
-                    sku: "storage".to_string(),
-                    unit_type: "gigabytes".to_string(),
-                    quantity: 900.0,
-                    organization_name: None,
-                    repository_name: None,
-                },
-                BillingUsageItem {
-                    product: "Actions".to_string(),
-                    sku: "Actions Windows".to_string(),
-                    unit_type: "minutes".to_string(),
-                    quantity: 24.5,
-                    organization_name: None,
-                    repository_name: None,
-                },
+                usage_item("Actions", "minutes", 125.5, 25.5),
+                usage_item("Packages", "gigabytes", 900.0, 900.0),
+                usage_item("Actions", "minutes", 24.5, 4.5),
             ],
         };
         assert_eq!(usage.actions_minutes(), 150.0);
+        assert_eq!(usage.actions_billable_minutes(), 30.0);
     }
 
     #[test]
@@ -512,28 +565,16 @@ mod tests {
     }
 
     #[test]
-    fn negative_usage_is_clamped_and_product_matching_is_case_insensitive() {
+    fn negative_or_nonfinite_usage_is_clamped_and_matching_is_case_insensitive() {
         let usage = BillingUsageResponse {
             usage_items: vec![
-                BillingUsageItem {
-                    product: "actions".to_string(),
-                    sku: "Actions Linux".to_string(),
-                    unit_type: "MINUTES".to_string(),
-                    quantity: -50.0,
-                    organization_name: None,
-                    repository_name: None,
-                },
-                BillingUsageItem {
-                    product: "ACTIONS".to_string(),
-                    sku: "Actions Linux".to_string(),
-                    unit_type: "minutes".to_string(),
-                    quantity: 12.5,
-                    organization_name: None,
-                    repository_name: None,
-                },
+                usage_item("actions", "MINUTES", -50.0, -10.0),
+                usage_item("ACTIONS", "minutes", 12.5, 2.5),
+                usage_item("Actions", "minutes", f64::INFINITY, f64::NAN),
             ],
         };
         assert_eq!(usage.actions_minutes(), 12.5);
+        assert_eq!(usage.actions_billable_minutes(), 2.5);
     }
 
     #[test]
