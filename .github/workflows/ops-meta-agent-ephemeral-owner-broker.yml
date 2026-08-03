@@ -141,7 +141,7 @@ jobs:
           challenge_body="$work/challenge.md"
           {
             printf '<!-- meta-agent-credential-challenge:%s -->\n' "$nonce"
-            printf 'One-time RSA-OAEP-SHA256 challenge for `%s`. The private key exists only in this runner and is destroyed on exit. Reply with the matching encrypted ciphertext marker.\n\n' "$TARGET_REPOSITORY"
+            printf 'One-time RSA-OAEP-SHA256 challenge for %s. The private key exists only in this runner and is destroyed on exit. Reply with the matching encrypted ciphertext marker.\n\n' "$TARGET_REPOSITORY"
             printf '```pem\n'
             cat "$public_key"
             printf '```\n'
