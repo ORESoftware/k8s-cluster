@@ -67,7 +67,7 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
             'test "$marker_main" = "$parent_sha"',
             '(.status == "ahead" or .status == "identical") and .behind_by == 0',
             "SOURCE_SHA: 55ee15c190b7cfa4e075f6984c7cb551acd4b9d3",
-            "SOURCE_HELPER_BLOB_SHA: 600e3d46c7604573af29a125ebfd43f0178844e3",
+            "SOURCE_HELPER_BLOB_SHA: ad74d368b46fca575115972eabcda4358d27a23d",
             "BUNDLE_SHA256: 1ddaa03743b864348162149b7d2d2e2dce7eab585cf092ea14547c647fcec031",
             "PUBLISHER_SHA256: e2fe6eaa622db02a54f83e27a822f64ad4b54971c883f97bbda4ac0a4db5d278",
             "EXPECTED_MAIN: 4d6ec3ad0ec7b688f0e777129eee7e0f0d999df1",
@@ -223,16 +223,27 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
             "if observed_bundle_sha256 != expected_bundle_sha256:", self.helper
         )
 
-    def test_helper_verifies_bundle_in_repository_context_and_exact_refs(self) -> None:
+    def test_helper_verifies_publishable_branches_and_safe_auxiliary_refs(self) -> None:
         init = self.helper.index('run_git(["init", "--bare", "--quiet"')
         verify = self.helper.index(
             'run_git(["-C", str(repository_context), "bundle", "verify"'
         )
         heads = self.helper.index("observed_heads = parse_bundle_heads(bundle_path)")
-        exact = self.helper.index("if observed_heads != dict(expected_heads):")
+        classify = self.helper.index(
+            "branch_heads, auxiliary_heads = validate_bundle_heads"
+        )
         self.assertLess(init, verify)
         self.assertLess(verify, heads)
-        self.assertLess(heads, exact)
+        self.assertLess(heads, classify)
+        for snippet in (
+            'ALLOWED_AUXILIARY_REFS = frozenset({"HEAD"})',
+            'ref.startswith("refs/heads/")',
+            "bundle branch refs do not exactly match the reviewed branch inventory",
+            "bundle contains unsupported auxiliary refs",
+            "points outside the reviewed branch SHAs",
+        ):
+            with self.subTest(snippet=snippet):
+                self.assertIn(snippet, self.helper)
 
     def test_contract_runs_diagnostics_unit_and_live_read_only_preflight(self) -> None:
         required = (
@@ -251,7 +262,7 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
                 self.assertIn(snippet, self.contract)
         self.assertIn("SnapshotFixture", self.helper_test)
         self.assertIn(
-            "test_reconstructs_two_layer_bundle_and_verifies_exact_refs",
+            "test_allows_head_pseudo_ref_at_a_reviewed_branch_sha",
             self.helper_test,
         )
 
