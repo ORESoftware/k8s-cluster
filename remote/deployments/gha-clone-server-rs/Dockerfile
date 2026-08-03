@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 FROM rust:1.90-bookworm AS build
 WORKDIR /src
-COPY Cargo.toml build.rs ./
+COPY Cargo.toml ./
 COPY src ./src
 RUN --mount=type=cache,target=/usr/local/cargo/registry,id=gha-clone-cargo-registry,sharing=locked \
     --mount=type=cache,target=/src/target,id=gha-clone-target,sharing=locked \
