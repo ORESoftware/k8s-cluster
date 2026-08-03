@@ -790,6 +790,7 @@ fn webhook_revision(event: &str, payload: &Value) -> Option<String> {
     .map(str::to_string)
 }
 
+#[allow(clippy::result_large_err)] // Axum guard returns a response only when a request is rejected.
 fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Response> {
     let Some(expected) = state.config.auth_secret.as_deref() else {
         return Err((
@@ -813,6 +814,7 @@ fn require_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Response> {
     }
 }
 
+#[allow(clippy::result_large_err)] // Preserve direct Axum rejection responses without heap boxing.
 fn require_allowed_repository(repository: &str, state: &AppState) -> Result<(), Response> {
     if state.config.allowed_repositories.contains(repository) {
         Ok(())
