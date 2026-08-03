@@ -48,3 +48,5 @@ jobs:
         run: node tools/validate-production-gates.mjs
       - name: Validate SLO raw and derived series references
         run: node tools/validate-slo-series.mjs
+      - name: Validate bounded automated evidence overlay
+        run: node tools/validate-automated-evidence.mjs
