@@ -27,6 +27,10 @@ jobs:
         with:
           ref: agent/webrtc-shared-auth-upgrade
           fetch-depth: 0
+      - name: Check out pinned remote/libs
+        uses: ./.github/actions/checkout-remote-libs
+        with:
+          ssh-key: ${{ secrets.K8S_LIBS_DEPLOY_KEY }}
       - name: Patch signaling server integration
         shell: bash
         run: |
