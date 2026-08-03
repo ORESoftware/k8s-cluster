@@ -162,13 +162,9 @@ async fn incomplete_twilio_configuration_fails_before_network() {
         ("service SID", missing_service),
     ] {
         let (base, requests) = mock_server(StatusCode::OK, r#"{"status":"pending"}"#).await;
-        let start = start_sms_verification_at(
-            &reqwest::Client::new(),
-            &incomplete,
-            &base,
-            "+14155550100",
-        )
-        .await;
+        let start =
+            start_sms_verification_at(&reqwest::Client::new(), &incomplete, &base, "+14155550100")
+                .await;
         assert!(
             matches!(start, Err(AuthError::Unavailable)),
             "missing {field} must disable SMS start"
