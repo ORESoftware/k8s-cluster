@@ -356,8 +356,8 @@ async fn create_run(
     };
     {
         let mut runs = state.runs.write().await;
-        prune_runs(&mut runs, state.config.max_runs);
         runs.insert(record.id, record.clone());
+        prune_runs(&mut runs, state.config.max_runs);
     }
     let run_id = record.id;
     tokio::spawn(async move {
@@ -551,7 +551,11 @@ async fn github_webhook(
                 updated_at_ms: now,
             };
             let run_id = record.id;
-            state.runs.write().await.insert(run_id, record);
+            {
+                let mut runs = state.runs.write().await;
+                runs.insert(run_id, record);
+                prune_runs(&mut runs, state.config.max_runs);
+            }
             let task_state = state.clone();
             tokio::spawn(async move {
                 if let Err(error) = execute_plan(&task_state, run_id, plan).await {
@@ -847,7 +851,8 @@ where
 }
 
 fn prune_runs(runs: &mut BTreeMap<Uuid, RunRecord>, max_runs: usize) {
-    if runs.len() < max_runs {
+    let remove = runs.len().saturating_sub(max_runs);
+    if remove == 0 {
         return;
     }
     let mut candidates = runs
@@ -856,7 +861,6 @@ fn prune_runs(runs: &mut BTreeMap<Uuid, RunRecord>, max_runs: usize) {
         .map(|run| (run.updated_at_ms, run.id))
         .collect::<Vec<_>>();
     candidates.sort_by_key(|(updated_at_ms, _)| *updated_at_ms);
-    let remove = runs.len().saturating_sub(max_runs).saturating_add(1);
     for (_, id) in candidates.into_iter().take(remove) {
         runs.remove(&id);
     }
