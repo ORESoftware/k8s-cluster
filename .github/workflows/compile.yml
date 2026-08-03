@@ -50,3 +50,100 @@ jobs:
           cargo test --locked shared_auth::
           cargo test --locked memberships::
           cargo test --locked api::auth::
+
+  membership-invariants:
+    name: postgres-membership-invariants
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install PostgreSQL client
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends postgresql-client
+
+      - name: Prove tenant membership invariants under concurrency
+        shell: bash
+        run: bash scripts/ci/test-tenant-membership-invariants.sh
+
+  real-shared-libs:
+    name: real-shared-libs-contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Require a read-only cross-repository credential
+        shell: bash
+        env:
+          SHARED_REPOS_TOKEN: ${{ secrets.QUAESTOR_SHARED_REPOS_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SHARED_REPOS_TOKEN:-}" ]]; then
+            echo 'Configure QUAESTOR_SHARED_REPOS_READ_TOKEN with read-only Contents access to ORESoftware/k8s-libs-and-shared-defs.' >&2
+            exit 1
+          fi
+
+      - name: Check out Quaestor at the pull-request revision
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          path: workspace/services/quaestor-ledger-server.rs
+          persist-credentials: false
+
+      - name: Check out pinned real shared crates
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: ORESoftware/k8s-libs-and-shared-defs
+          ref: 823ba65f8f032595880b801a7458596828ea31da
+          token: ${{ secrets.QUAESTOR_SHARED_REPOS_READ_TOKEN }}
+          path: workspace/libs
+          persist-credentials: false
+          sparse-checkout: |
+            telemetry-rs
+            wal-consumer-rs
+            nats/subject-defs/generated/rust
+          sparse-checkout-cone-mode: false
+
+      - name: Select stable Rust
+        shell: bash
+        working-directory: workspace/services/quaestor-ledger-server.rs
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - name: Compile against pinned real shared crates
+        working-directory: workspace/services/quaestor-ledger-server.rs
+        run: cargo check --locked --all-targets
+
+      - name: Compile and run the authorization tests against real shared crates
+        shell: bash
+        working-directory: workspace/services/quaestor-ledger-server.rs
+        run: |
+          set -euo pipefail
+          cargo test --locked --no-run
+          cargo test --locked shared_auth::
+          cargo test --locked memberships::
+          cargo test --locked api::auth::
