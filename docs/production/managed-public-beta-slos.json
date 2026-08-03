@@ -1,0 +1,478 @@
+{
+  "schema_version": 1,
+  "contract_issue": "DEN-1390",
+  "allowed_source_statuses": [
+    "specified",
+    "instrumented",
+    "queryable",
+    "measured"
+  ],
+  "label_policy": {
+    "allowed_grouping_labels": [
+      "cell",
+      "operation_class",
+      "result",
+      "outcome",
+      "fault_class",
+      "credential_kind",
+      "severity",
+      "le"
+    ],
+    "forbidden_customer_labels": [
+      "organization",
+      "org_id",
+      "tenant",
+      "tenant_id",
+      "project",
+      "project_id",
+      "environment",
+      "environment_id",
+      "key",
+      "lock_key",
+      "path",
+      "secret",
+      "credential",
+      "api_key",
+      "token",
+      "request_id",
+      "trace_id"
+    ],
+    "note": "The managed-beta SLO layer is cell/operation aggregate telemetry. Customer identifiers and unbounded resource names belong only in access-controlled audit/support systems, never Prometheus labels."
+  },
+  "slos": [
+    {
+      "id": "SLO-AVAIL-01",
+      "name": "Public API availability",
+      "objective": "At least 99.5% successful eligible external probes per approved cell over a rolling 28-day window.",
+      "source_type": "prometheus",
+      "source_status": "specified",
+      "source_series": [
+        {
+          "name": "fiducia_external_probe_total",
+          "type": "counter",
+          "required_labels": ["cell", "operation_class", "result"],
+          "producer": "Independent black-box probes from at least two failure-independent locations",
+          "eligibility": "Only configured approved-capability probes enter this series; invalid-customer-input probes use a separate diagnostic series."
+        }
+      ],
+      "objective_queries": [
+        {
+          "name": "availability_ratio_28d",
+          "language": "promql",
+          "expression": "sum by (cell) (increase(fiducia_external_probe_total{result=\"success\"}[28d])) / clamp_min(sum by (cell) (increase(fiducia_external_probe_total[28d])), 1)",
+          "pass_condition": ">= 0.995"
+        }
+      ],
+      "alert_queries": [
+        {
+          "name": "FiduciaPublicAvailabilityFastBurn",
+          "severity": "critical",
+          "for": "5m",
+          "expression": "((1 - (sum by (cell) (increase(fiducia_external_probe_total{result=\"success\"}[1h])) / clamp_min(sum by (cell) (increase(fiducia_external_probe_total[1h])), 1))) / 0.005) > 14.4"
+        },
+        {
+          "name": "FiduciaPublicAvailabilitySlowBurn",
+          "severity": "warning",
+          "for": "30m",
+          "expression": "((1 - (sum by (cell) (increase(fiducia_external_probe_total{result=\"success\"}[6h])) / clamp_min(sum by (cell) (increase(fiducia_external_probe_total[6h])), 1))) / 0.005) > 6"
+        }
+      ],
+      "owner": "reliability-owner",
+      "review_cadence": "Daily and in the weekly design-partner review",
+      "blocking_issues": ["DEN-667", "DEN-946", "DEN-1392"],
+      "evidence": []
+    },
+    {
+      "id": "SLO-SUCCESS-01",
+      "name": "Eligible data-plane operation success",
+      "objective": "At least 99.9% successful eligible data-plane operations per approved cell over a rolling 28-day window.",
+      "source_type": "prometheus",
+      "source_status": "specified",
+      "source_series": [
+        {
+          "name": "fiducia_data_plane_requests_total",
+          "type": "counter",
+          "required_labels": ["cell", "operation_class", "outcome"],
+          "producer": "Regional load balancer canonical request instrumentation after auth and route classification",
+          "eligibility": "Outcomes use bounded classes: success, expected_conflict, customer_rejected, server_error, timeout, ambiguous. The SLI denominator excludes customer_rejected and includes server_error, timeout, and ambiguous."
+        }
+      ],
+      "objective_queries": [
+        {
+          "name": "eligible_operation_success_ratio_28d",
+          "language": "promql",
+          "expression": "sum by (cell) (increase(fiducia_data_plane_requests_total{outcome=~\"success|expected_conflict\"}[28d])) / clamp_min(sum by (cell) (increase(fiducia_data_plane_requests_total{outcome!~\"customer_rejected\"}[28d])), 1)",
+          "pass_condition": ">= 0.999"
+        }
+      ],
+      "alert_queries": [
+        {
+          "name": "FiduciaDataPlaneSuccessCritical",
+          "severity": "critical",
+          "for": "5m",
+          "expression": "sum by (cell) (rate(fiducia_data_plane_requests_total{outcome=~\"success|expected_conflict\"}[5m])) / clamp_min(sum by (cell) (rate(fiducia_data_plane_requests_total{outcome!~\"customer_rejected\"}[5m])), 0.001) < 0.99"
+        },
+        {
+          "name": "FiduciaDataPlaneSuccessWarning",
+          "severity": "warning",
+          "for": "15m",
+          "expression": "sum by (cell) (rate(fiducia_data_plane_requests_total{outcome=~\"success|expected_conflict\"}[1h])) / clamp_min(sum by (cell) (rate(fiducia_data_plane_requests_total{outcome!~\"customer_rejected\"}[1h])), 0.001) < 0.995"
+        }
+      ],
+      "owner": "data-plane-owner",
+      "review_cadence": "Daily and after every deployment",
+      "blocking_issues": ["DEN-667", "DEN-1392"],
+      "evidence": []
+    },
+    {
+      "id": "SLO-READ-01",
+      "name": "Linearizable read latency",
+      "objective": "Linearizable reads complete with p95 at or below 500 ms and p99 at or below 2 seconds.",
+      "source_type": "prometheus",
+      "source_status": "specified",
+      "source_series": [
+        {
+          "name": "fiducia_data_plane_request_duration_seconds",
+          "type": "histogram",
+          "required_labels": ["cell", "operation_class", "outcome", "le"],
+          "producer": "Regional load balancer latency measured from accepted request to completed response",
+          "eligibility": "operation_class is one of linearizable_read, status_read, secret_read, or watch_reconcile; the read SLI selects linearizable_read and successful outcomes."
+        }
+      ],
+      "objective_queries": [
+        {
+          "name": "linearizable_read_p95_28d",
+          "language": "promql",
+          "expression": "histogram_quantile(0.95, sum by (cell, le) (increase(fiducia_data_plane_request_duration_seconds_bucket{operation_class=\"linearizable_read\",outcome=\"success\"}[28d])))",
+          "pass_condition": "<= 0.5"
+        },
+        {
+          "name": "linearizable_read_p99_28d",
+          "language": "promql",
+          "expression": "histogram_quantile(0.99, sum by (cell, le) (increase(fiducia_data_plane_request_duration_seconds_bucket{operation_class=\"linearizable_read\",outcome=\"success\"}[28d])))",
+          "pass_condition": "<= 2"
+        }
+      ],
+      "alert_queries": [
+        {
+          "name": "FiduciaLinearizableReadLatencyHigh",
+          "severity": "critical",
+          "for": "10m",
+          "expression": "histogram_quantile(0.99, sum by (cell, le) (rate(fiducia_data_plane_request_duration_seconds_bucket{operation_class=\"linearizable_read\",outcome=\"success\"}[5m]))) > 4"
+        }
+      ],
+      "owner": "data-plane-owner",
+      "review_cadence": "Daily and per release candidate",
+      "blocking_issues": ["DEN-667", "DEN-1392"],
+      "evidence": []
+    },
+    {
+      "id": "SLO-WRITE-01",
+      "name": "Committed write latency",
+      "objective": "Committed mutations complete with p95 at or below 1.5 seconds and p99 at or below 4 seconds.",
+      "source_type": "prometheus",
+      "source_status": "specified",
+      "source_series": [
+        {
+          "name": "fiducia_data_plane_request_duration_seconds",
+          "type": "histogram",
+          "required_labels": ["cell", "operation_class", "outcome", "le"],
+          "producer": "Regional load balancer plus a canonical committed-response classification from the data plane",
+          "eligibility": "The SLI selects operation_class=committed_write and outcome=success; customer rejections and expected conflicts are not latency successes."
+        }
+      ],
+      "objective_queries": [
+        {
+          "name": "committed_write_p95_28d",
+          "language": "promql",
+          "expression": "histogram_quantile(0.95, sum by (cell, le) (increase(fiducia_data_plane_request_duration_seconds_bucket{operation_class=\"committed_write\",outcome=\"success\"}[28d])))",
+          "pass_condition": "<= 1.5"
+        },
+        {
+          "name": "committed_write_p99_28d",
+          "language": "promql",
+          "expression": "histogram_quantile(0.99, sum by (cell, le) (increase(fiducia_data_plane_request_duration_seconds_bucket{operation_class=\"committed_write\",outcome=\"success\"}[28d])))",
+          "pass_condition": "<= 4"
+        }
+      ],
+      "alert_queries": [
+        {
+          "name": "FiduciaCommittedWriteLatencyHigh",
+          "severity": "critical",
+          "for": "10m",
+          "expression": "histogram_quantile(0.99, sum by (cell, le) (rate(fiducia_data_plane_request_duration_seconds_bucket{operation_class=\"committed_write\",outcome=\"success\"}[5m]))) > 8"
+        }
+      ],
+      "owner": "data-plane-owner",
+      "review_cadence": "Daily and per release candidate",
+      "blocking_issues": ["DEN-667", "DEN-1392"],
+      "evidence": []
+    },
+    {
+      "id": "SLO-RENEW-01",
+      "name": "Eligible lock and lease renewal success",
+      "objective": "At least 99.9% of eligible renewals submitted with at least one third of TTL remaining commit successfully.",
+      "source_type": "prometheus",
+      "source_status": "specified",
+      "source_series": [
+        {
+          "name": "fiducia_renewal_attempts_total",
+          "type": "counter",
+          "required_labels": ["cell", "operation_class", "result"],
+          "producer": "Data-plane renewal handler after classifying TTL safety margin and current-holder/token validity",
+          "eligibility": "operation_class is lock_renew or lease_renew; eligible attempts have a valid current holder/token and at least one third of TTL remaining."
+        }
+      ],
+      "objective_queries": [
+        {
+          "name": "eligible_renewal_success_ratio_28d",
+          "language": "promql",
+          "expression": "sum by (cell) (increase(fiducia_renewal_attempts_total{result=\"committed\"}[28d])) / clamp_min(sum by (cell) (increase(fiducia_renewal_attempts_total{result=~\"committed|server_error|timeout|not_leader\"}[28d])), 1)",
+          "pass_condition": ">= 0.999"
+        }
+      ],
+      "alert_queries": [
+        {
+          "name": "FiduciaRenewalSuccessLow",
+          "severity": "critical",
+          "for": "5m",
+          "expression": "sum by (cell) (rate(fiducia_renewal_attempts_total{result=\"committed\"}[5m])) / clamp_min(sum by (cell) (rate(fiducia_renewal_attempts_total{result=~\"committed|server_error|timeout|not_leader\"}[5m])), 0.001) < 0.99"
+        }
+      ],
+      "owner": "data-plane-and-partner-workload-owner",
+      "review_cadence": "Continuous paging plus weekly partner review",
+      "blocking_issues": ["DEN-566", "DEN-667", "DEN-1154", "DEN-1392"],
+      "evidence": []
+    },
+    {
+      "id": "SLO-FAILOVER-01",
+      "name": "One-site and current-leader recovery",
+      "objective": "Controlled and real one-site/current-leader loss events recover at p95 within 15 seconds, with no observed recovery above 30 seconds and no safety violation.",
+      "source_type": "prometheus",
+      "source_status": "specified",
+      "source_series": [
+        {
+          "name": "fiducia_failover_recovery_seconds",
+          "type": "histogram",
+          "required_labels": ["cell", "fault_class", "result", "le"],
+          "producer": "Failure-test harness and incident controller from fault-start timestamp to sustained successful committed probe",
+          "eligibility": "fault_class is bounded to leader_loss, follower_loss, site_power_loss, or site_network_loss; result is recovered or failed."
+        },
+        {
+          "name": "fiducia_failover_safety_violations_total",
+          "type": "counter",
+          "required_labels": ["cell", "fault_class", "result"],
+          "producer": "Failure-test harness safety assertions",
+          "eligibility": "result is a bounded violation class such as stale_fencing, committed_state_loss, dual_commit, or cross_tenant."
+        }
+      ],
+      "objective_queries": [
+        {
+          "name": "failover_recovery_p95_28d",
+          "language": "promql",
+          "expression": "histogram_quantile(0.95, sum by (cell, le) (increase(fiducia_failover_recovery_seconds_bucket{result=\"recovered\"}[28d])))",
+          "pass_condition": "<= 15"
+        },
+        {
+          "name": "failover_recovery_max_28d",
+          "language": "promql",
+          "expression": "max by (cell) (max_over_time(fiducia_failover_recovery_seconds_max[28d]))",
+          "pass_condition": "<= 30"
+        },
+        {
+          "name": "failover_safety_violations_28d",
+          "language": "promql",
+          "expression": "sum by (cell) (increase(fiducia_failover_safety_violations_total[28d]))",
+          "pass_condition": "== 0"
+        }
+      ],
+      "alert_queries": [
+        {
+          "name": "FiduciaFailoverRecoveryLate",
+          "severity": "critical",
+          "for": "0m",
+          "expression": "fiducia_failover_recovery_seconds_max > 30"
+        },
+        {
+          "name": "FiduciaFailoverSafetyViolation",
+          "severity": "critical",
+          "for": "0m",
+          "expression": "increase(fiducia_failover_safety_violations_total[5m]) > 0"
+        }
+      ],
+      "owner": "reliability-owner",
+      "review_cadence": "Every drill, incident, and release candidate",
+      "blocking_issues": ["DEN-85", "DEN-946", "DEN-1392"],
+      "evidence": []
+    },
+    {
+      "id": "SLO-REVOKE-01",
+      "name": "Credential rotation and revocation propagation",
+      "objective": "A rotated or revoked credential is rejected on every supported ingress at p99 within 60 seconds.",
+      "source_type": "prometheus",
+      "source_status": "specified",
+      "source_series": [
+        {
+          "name": "fiducia_credential_revocation_seconds",
+          "type": "histogram",
+          "required_labels": ["cell", "credential_kind", "result", "le"],
+          "producer": "Credential lifecycle conformance probe measuring authoritative-version timestamp to last accepted old-credential request",
+          "eligibility": "credential_kind is api_key, fiducia_jwt, human_session, internal_service, peer, or device; no credential identifiers appear in labels."
+        },
+        {
+          "name": "fiducia_credential_revocation_bound_violations_total",
+          "type": "counter",
+          "required_labels": ["cell", "credential_kind", "result"],
+          "producer": "Credential lifecycle conformance probe",
+          "eligibility": "Increment once per old credential accepted after its declared bound."
+        }
+      ],
+      "objective_queries": [
+        {
+          "name": "credential_revocation_p99_28d",
+          "language": "promql",
+          "expression": "histogram_quantile(0.99, sum by (cell, credential_kind, le) (increase(fiducia_credential_revocation_seconds_bucket{result=\"rejected\"}[28d])))",
+          "pass_condition": "<= 60"
+        },
+        {
+          "name": "credential_revocation_bound_violations_28d",
+          "language": "promql",
+          "expression": "sum by (cell, credential_kind) (increase(fiducia_credential_revocation_bound_violations_total[28d]))",
+          "pass_condition": "== 0"
+        }
+      ],
+      "alert_queries": [
+        {
+          "name": "FiduciaCredentialRevocationBoundViolated",
+          "severity": "critical",
+          "for": "0m",
+          "expression": "increase(fiducia_credential_revocation_bound_violations_total[5m]) > 0"
+        }
+      ],
+      "owner": "identity-owner",
+      "review_cadence": "Every release, credential drill, and security incident",
+      "blocking_issues": ["DEN-78", "DEN-252", "DEN-253", "DEN-946", "DEN-1392"],
+      "evidence": []
+    },
+    {
+      "id": "SLO-SECRET-01",
+      "name": "Encrypted secret read latency",
+      "objective": "Approved encrypted secret/KV reads complete with p95 at or below 1 second and p99 at or below 3 seconds.",
+      "source_type": "prometheus",
+      "source_status": "specified",
+      "source_series": [
+        {
+          "name": "fiducia_data_plane_request_duration_seconds",
+          "type": "histogram",
+          "required_labels": ["cell", "operation_class", "outcome", "le"],
+          "producer": "Customer and ESO synthetic probes measured at the supported ingress",
+          "eligibility": "The SLI selects operation_class=secret_read and outcome=success. Secret path/value, organization, and credential identifiers are forbidden labels."
+        }
+      ],
+      "objective_queries": [
+        {
+          "name": "secret_read_p95_28d",
+          "language": "promql",
+          "expression": "histogram_quantile(0.95, sum by (cell, le) (increase(fiducia_data_plane_request_duration_seconds_bucket{operation_class=\"secret_read\",outcome=\"success\"}[28d])))",
+          "pass_condition": "<= 1"
+        },
+        {
+          "name": "secret_read_p99_28d",
+          "language": "promql",
+          "expression": "histogram_quantile(0.99, sum by (cell, le) (increase(fiducia_data_plane_request_duration_seconds_bucket{operation_class=\"secret_read\",outcome=\"success\"}[28d])))",
+          "pass_condition": "<= 3"
+        }
+      ],
+      "alert_queries": [
+        {
+          "name": "FiduciaSecretReadLatencyHigh",
+          "severity": "critical",
+          "for": "10m",
+          "expression": "histogram_quantile(0.99, sum by (cell, le) (rate(fiducia_data_plane_request_duration_seconds_bucket{operation_class=\"secret_read\",outcome=\"success\"}[5m]))) > 6"
+        }
+      ],
+      "owner": "secret-delivery-owner",
+      "review_cadence": "Daily and after secret-delivery changes",
+      "blocking_issues": ["DEN-433", "DEN-438", "DEN-667", "DEN-1392"],
+      "evidence": []
+    },
+    {
+      "id": "SLO-WATCH-01",
+      "name": "Watch reconnect and reconciliation",
+      "objective": "After a planned LB/node interruption, p95 time from disconnect to reconnected and linearizably reconciled current state is at or below 15 seconds.",
+      "source_type": "prometheus",
+      "source_status": "specified",
+      "source_series": [
+        {
+          "name": "fiducia_watch_recovery_seconds",
+          "type": "histogram",
+          "required_labels": ["cell", "result", "le"],
+          "producer": "SDK conformance and external synthetic watcher harness",
+          "eligibility": "A successful sample requires stream reconnect plus a linearizable reconciliation read; merely reopening TCP/SSE is not success."
+        }
+      ],
+      "objective_queries": [
+        {
+          "name": "watch_recovery_p95_28d",
+          "language": "promql",
+          "expression": "histogram_quantile(0.95, sum by (cell, le) (increase(fiducia_watch_recovery_seconds_bucket{result=\"reconciled\"}[28d])))",
+          "pass_condition": "<= 15"
+        }
+      ],
+      "alert_queries": [
+        {
+          "name": "FiduciaWatchRecoverySlow",
+          "severity": "warning",
+          "for": "10m",
+          "expression": "histogram_quantile(0.95, sum by (cell, le) (rate(fiducia_watch_recovery_seconds_bucket{result=\"reconciled\"}[15m]))) > 30"
+        }
+      ],
+      "owner": "client-sdk-owner",
+      "review_cadence": "Per release candidate and SDK release",
+      "blocking_issues": ["DEN-709", "DEN-860", "DEN-1174", "DEN-1392"],
+      "evidence": []
+    },
+    {
+      "id": "SLO-SUPPORT-01",
+      "name": "Incident acknowledgement",
+      "objective": "Sev-0 incidents are acknowledged within 15 minutes and Sev-1 incidents within 60 minutes while beta workloads are live.",
+      "source_type": "incident_event_store",
+      "source_status": "specified",
+      "source_series": [
+        {
+          "name": "fiducia_incident_timeline",
+          "type": "event_table",
+          "required_labels": ["severity", "result"],
+          "producer": "Paging/incident system export with declared_at, acknowledged_at, resolved_at, incident_id, and severity fields",
+          "eligibility": "All Sev-0 and Sev-1 incidents during an approved live-workload window are included; drills are marked separately and do not replace real incident measurements."
+        }
+      ],
+      "objective_queries": [
+        {
+          "name": "incident_acknowledgement_bounds_28d",
+          "language": "sql",
+          "expression": "SELECT severity, count(*) AS incidents, max(extract(epoch FROM (acknowledged_at - declared_at))) AS max_ack_seconds FROM fiducia_incident_timeline WHERE declared_at >= now() - interval '28 days' AND severity IN ('Sev-0','Sev-1') GROUP BY severity",
+          "pass_condition": "Sev-0 max_ack_seconds <= 900 and Sev-1 max_ack_seconds <= 3600; zero incidents is reported as no-observation, not an invented 100% result"
+        }
+      ],
+      "alert_queries": [
+        {
+          "name": "FiduciaSev0Unacknowledged",
+          "severity": "critical",
+          "for": "0m",
+          "expression": "Incident-system timer: declared Sev-0 has no acknowledgement after 15 minutes"
+        },
+        {
+          "name": "FiduciaSev1Unacknowledged",
+          "severity": "critical",
+          "for": "0m",
+          "expression": "Incident-system timer: declared Sev-1 has no acknowledgement after 60 minutes"
+        }
+      ],
+      "owner": "incident-commander-on-call-owner",
+      "review_cadence": "Every incident and weekly while beta workloads are live",
+      "blocking_issues": ["DEN-1390", "DEN-1394"],
+      "evidence": []
+    }
+  ]
+}
