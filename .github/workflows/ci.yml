@@ -1,38 +1,159 @@
 name: ci
 
 on:
+  push:
+    branches: [main]
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  materialize-reviewed-hardening:
-    if: github.head_ref == 'agent/shared-auth-auth-time-claim'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: shared_auth_test
+          POSTGRES_USER: shared_auth
+          POSTGRES_PASSWORD: shared_auth_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U shared_auth -d shared_auth_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+      redis:
+        image: redis:8.2-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      AUTH_TEST_DATABASE_URL: postgres://shared_auth:shared_auth_test@127.0.0.1:5432/shared_auth_test
+      AUTH_TEST_REDIS_URL: redis://127.0.0.1:6379/
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          ref: agent/shared-auth-auth-time-claim
-          fetch-depth: 0
-          persist-credentials: true
-      - name: Apply reviewed source patch and push
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+      - name: Verify formatting
+        run: cargo fmt --all --check
+      - name: Apply declarative test schema
+        run: psql "$AUTH_TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
+      - name: Deny clippy warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Run the complete test graph
+        run: cargo test --all-targets --locked
+      - name: Re-run the downstream introspection contract explicitly
         shell: bash
         run: |
           set -euo pipefail
-          encoded=.github/agent-patches/0002-auth-time-introspection.patch.gz.b64
-          decoded=/tmp/0002-auth-time-introspection.patch
-          base64 --decode "$encoded" | gzip --decompress --stdout > "$decoded"
-          git apply --check "$decoded"
-          git apply "$decoded"
-          cargo fmt --all
-          rm -f "$encoded"
-          rmdir .github/agent-patches 2>/dev/null || true
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git diff --cached --check
-          git diff --cached --stat
-          git commit -m 'fix(auth): fail closed with authoritative introspection freshness'
-          git push origin HEAD:agent/shared-auth-auth-time-claim
+          cargo test --locked http::introspect::tests::
+          cargo test --locked --test integration exchange_then_introspect_roundtrip -- --exact
+          cargo test --locked --test integration exchange_preserves_supabase_aal2 -- --exact
+          cargo test --locked --test integration introspect_non_ore_token_is_inactive -- --exact
+          cargo test --locked --test integration introspect_authorized_caller_succeeds -- --exact
+          cargo test --locked --test integration introspect_rejects_unauthorized_caller -- --exact
+          cargo test --locked --test integration introspect_authorized_caller_invalid_token_is_inactive -- --exact
+          cargo test --locked --test integration introspect_fails_closed_when_secret_unset -- --exact
+      - name: Build the release binary with the committed lockfile
+        run: cargo build --release --locked
+
+  browser-webauthn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: check
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_DB: shared_auth_browser
+          POSTGRES_USER: shared_auth
+          POSTGRES_PASSWORD: shared_auth_browser
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U shared_auth -d shared_auth_browser"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      AUTH_DATABASE_URL: postgres://shared_auth:shared_auth_browser@127.0.0.1:5432/shared_auth_browser
+      AUTH_BIND_ADDR: 127.0.0.1:8120
+      AUTH_ALLOW_REGISTRATION: "true"
+      AUTH_FACTOR_ENCRYPTION_KEY_HEX: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+      AUTH_OTP_PEPPER: browser-ci-test-pepper-with-at-least-32-bytes
+      AUTH_WEBAUTHN_RP_ID: localhost
+      AUTH_WEBAUTHN_RP_ORIGIN: http://localhost:8120
+      AUTH_WEBAUTHN_RP_NAME: Shared Auth Browser CI
+      AUTH_ISSUER: http://localhost:8120
+      AUTH_AUDIENCE: shared-auth-browser-ci
+      AUTH_SIGNING_KEY_FILE: /tmp/shared-auth-browser-key.pem
+      AUTH_BASE_URL: http://localhost:8120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 22
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Apply browser-test schema
+        run: psql "$AUTH_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql
+      - name: Generate ephemeral ES256 signing key
+        run: >-
+          openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256
+          -out "$AUTH_SIGNING_KEY_FILE"
+      - name: Install pinned Playwright package
+        working-directory: e2e
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install Chromium runtime
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+      - name: Run real WebAuthn ceremonies in Chromium
+        run: |
+          set -euo pipefail
+          cargo build --locked --bin shared-auth-server
+          target/debug/shared-auth-server >/tmp/shared-auth-browser.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=0
+          for _ in $(seq 1 60); do
+            if curl --fail --silent http://localhost:8120/healthz >/dev/null; then
+              ready=1
+              break
+            fi
+            if ! kill -0 "$server_pid" 2>/dev/null; then
+              cat /tmp/shared-auth-browser.log
+              exit 1
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            cat /tmp/shared-auth-browser.log
+            exit 1
+          fi
+          (cd e2e && npm test)
+      - name: Print server log on failure
+        if: failure()
+        run: cat /tmp/shared-auth-browser.log || true
+
+  rustsec:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: check
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Build the container without publishing
+        run: docker build -t shared-auth-server:ci .
