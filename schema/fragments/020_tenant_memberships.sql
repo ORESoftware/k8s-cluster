@@ -29,8 +29,14 @@ create table if not exists tenant_memberships (
     and scopes @> array['billing:read']::text[]
   ),
   constraint tenant_memberships_role_scope check (
-    (role in ('owner', 'admin') and scopes @> array['billing:admin']::text[])
-    or (role = 'billing' and scopes <@ array['billing:read', 'billing:write']::text[])
+    (
+      role in ('owner', 'admin')
+      and scopes @> array['billing:read', 'billing:write', 'billing:admin']::text[]
+    )
+    or (
+      role = 'billing'
+      and scopes <@ array['billing:read', 'billing:write']::text[]
+    )
     or (role = 'reader' and scopes = array['billing:read']::text[])
   )
 );
@@ -86,13 +92,19 @@ create trigger tenant_membership_events_no_delete
 
 -- A tenant may never lose its final active owner. Deferred evaluation allows
 -- tenant creation and its first owner grant to commit atomically.
-create or replace function tenant_must_have_active_owner()
+create or replace function tenant_membership_change_must_retain_owner()
 returns trigger
 language plpgsql
 as $$
 declare
-  affected_tenant uuid := coalesce(new.tenant_id, old.tenant_id);
+  affected_tenant uuid;
 begin
+  if tg_op = 'DELETE' then
+    affected_tenant := old.tenant_id;
+  else
+    affected_tenant := new.tenant_id;
+  end if;
+
   if exists (select 1 from tenants where id = affected_tenant)
      and not exists (
        select 1
@@ -111,4 +123,32 @@ drop trigger if exists tenant_memberships_require_owner on tenant_memberships;
 create constraint trigger tenant_memberships_require_owner
   after insert or update or delete on tenant_memberships
   deferrable initially deferred
-  for each row execute function tenant_must_have_active_owner();
+  for each row execute function tenant_membership_change_must_retain_owner();
+
+-- Close the other side of the invariant: every newly-created tenant must gain
+-- its first owner in the same transaction. Existing tenants are intentionally
+-- not rejected at migration time; operators backfill them before enabling
+-- user-only routing (see scripts/bootstrap-tenant-owner.sql).
+create or replace function new_tenant_must_have_active_owner()
+returns trigger
+language plpgsql
+as $$
+begin
+  if not exists (
+    select 1
+    from tenant_memberships
+    where tenant_id = new.id
+      and role = 'owner'
+      and revoked_at is null
+  ) then
+    raise exception 'new tenant % must be created with an active owner', new.id;
+  end if;
+  return null;
+end;
+$$;
+
+drop trigger if exists tenants_require_owner_on_insert on tenants;
+create constraint trigger tenants_require_owner_on_insert
+  after insert on tenants
+  deferrable initially deferred
+  for each row execute function new_tenant_must_have_active_owner();
