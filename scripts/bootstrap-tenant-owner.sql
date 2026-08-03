@@ -25,29 +25,45 @@
   \quit 2
 \endif
 
+-- Validate through ordinary psql-substituted SQL. psql does not substitute
+-- variables inside dollar-quoted PL/pgSQL bodies, so do not hide these checks
+-- in a DO $$ block.
+select (
+  length(:'shared_user_id') between 1 and 200
+  and :'shared_user_id' !~ '[[:cntrl:]]'
+  and strpos(:'shared_user_id', '/') = 0
+  and strpos(:'shared_user_id', E'\\') = 0
+) as subject_valid
+\gset
+
+\if :subject_valid
+\else
+  \echo 'error: invalid Shared Auth subject'
+  \quit 2
+\endif
+
 begin;
 
--- Lock the tenant row so concurrent provisioning cannot race this bootstrap.
-select id, slug, display_name
-from tenants
-where id = :'tenant_id'::uuid
-for update;
+select exists (
+  select 1
+  from tenants
+  where id = :'tenant_id'::uuid
+) as tenant_exists
+\gset
 
-\if :ROW_COUNT
+\if :tenant_exists
 \else
   \echo 'error: tenant_id does not exist'
   rollback;
   \quit 3
 \endif
 
-do $$
-begin
-  if length(:'shared_user_id') not between 1 and 200
-     or :'shared_user_id' ~ '[[:cntrl:]/\\]' then
-    raise exception 'invalid Shared Auth subject';
-  end if;
-end;
-$$;
+-- Lock the tenant row so concurrent provisioning/deletion cannot race this
+-- bootstrap after the existence check.
+select id, slug, display_name
+from tenants
+where id = :'tenant_id'::uuid
+for update;
 
 insert into tenant_memberships (
   tenant_id,
