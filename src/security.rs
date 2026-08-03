@@ -148,10 +148,14 @@ pub(crate) async fn customer_mfa_assurance_gate(
 pub(crate) fn apply_sensitive_response_headers(headers: &mut HeaderMap) {
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     headers.insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
+    // The vendored htmx runtime injects one fixed indicator stylesheet. Authorize
+    // only that exact stylesheet digest rather than weakening the portal with
+    // `unsafe-inline`; a vendored-asset change must update both this hash and the
+    // real-browser assertion before CI can pass.
     headers.insert(
         header::CONTENT_SECURITY_POLICY,
         HeaderValue::from_static(
-            "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'; connect-src 'self'; img-src 'self' data:; style-src 'self'",
+            "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'sha256-faU7yAF8NxuMTNEwVmBz+VcYeIoBQ2EMHW3WaVxCvnk='",
         ),
     );
     // `same-origin`, NOT `no-referrer`: under `no-referrer` a browser

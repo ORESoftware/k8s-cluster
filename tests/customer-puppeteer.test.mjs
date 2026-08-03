@@ -5,6 +5,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import puppeteer from "puppeteer";
 import {
+  assertNoBrowserErrors,
+  captureBrowserEvidence,
+  observeBrowserErrors,
+} from "./customer-browser-evidence.mjs";
+import {
   chromeExecutablePath,
   CUSTOMER,
   startCustomer,
@@ -12,159 +17,238 @@ import {
   unavailableReason,
 } from "./customer-browser-harness.mjs";
 
-test("puppeteer drives the customer portal login, CSRF boundary, and live streams", async (t) => {
-  const unavailable = unavailableReason();
-  if (unavailable) {
-    t.skip(unavailable);
-    return;
-  }
-  const server = await startCustomer();
-  t.after(() => server.stop());
+test(
+  "puppeteer drives the customer portal login, CSRF boundary, and live streams",
+  { timeout: 180_000 },
+  async (t) => {
+    const unavailable = unavailableReason();
+    if (unavailable) {
+      t.skip(unavailable);
+      return;
+    }
 
-  const browser = await puppeteer.launch({
-    executablePath: chromeExecutablePath(),
-    headless: "new",
-  });
-  t.after(() => browser.close());
+    const server = await startCustomer();
+    let browser;
+    let page;
+    let browserErrors = [];
 
-  const page = await browser.newPage();
-  await page.setViewport({ height: 900, width: 1440 });
-  const pageErrors = [];
-  page.on("pageerror", (error) => pageErrors.push(error.message));
+    t.after(async () => {
+      await captureBrowserEvidence("puppeteer", page, browserErrors);
+      await page?.close().catch(() => {});
+      await browser?.close().catch(() => {});
+      await server.stop();
+    });
 
-  // Login page: Maud SSR renders all three first-factor forms, and the vendored
-  // htmx asset is both served correctly and actually executing in the page.
-  await page.goto(`${server.url}/login`, { waitUntil: "networkidle0" });
-  assert.match(await pageText(page), /Sign in to Fiducia/);
-  assert.match(await pageText(page), /Email a sign-in code/);
-  const htmxAsset = await page.evaluate(async () => {
-    const response = await fetch("/assets/htmx.min.js");
-    return { ok: response.ok, contentType: response.headers.get("content-type") };
-  });
-  assert.equal(htmxAsset.ok, true);
-  assert.match(htmxAsset.contentType ?? "", /javascript/);
-  await page.waitForFunction(() => typeof window.htmx !== "undefined");
+    browser = await puppeteer.launch({
+      executablePath: chromeExecutablePath(),
+      headless: true,
+    });
 
-  // Progressive enhancement: submitting the email-OTP form swaps the body in
-  // place via htmx. A surviving window marker proves no full navigation ran —
-  // the same form would still work no-JS through its method/action fallback.
-  await page.evaluate(() => {
-    window.__fiduciaNoReload = true;
-  });
-  await page.type("#magic-email", CUSTOMER.email);
-  await page.click('form:has(#magic-email) button[type="submit"]');
-  await page.waitForFunction(() =>
-    document.body.textContent?.includes("Check your email"),
-  );
-  assert.equal(
-    await page.evaluate(() => window.__fiduciaNoReload === true),
-    true,
-    "htmx must swap the OTP page in place, not navigate",
-  );
+    page = await browser.newPage();
+    await page.setViewport({ height: 900, width: 1440 });
+    browserErrors = observeBrowserErrors(page);
 
-  // Redeem the stub's fixed one-time code: /login/verify finalizes against the
-  // stub fiducia-auth and 303s to /app, which htmx follows and swaps in.
-  await page.type("#otp-code", STUB_OTP_CODE);
-  await page.click('form[action="/login/verify"] button[type="submit"]');
-  await page.waitForFunction(() =>
-    document.body.textContent?.includes("Fiducia Customer Portal"),
-  );
+    // Keep Puppeteer's security-header assertions in parity with Playwright so
+    // a driver-specific omission cannot make the suite falsely green.
+    const loginResponse = await page.goto(`${server.url}/login`, {
+      waitUntil: "networkidle0",
+    });
+    assert.ok(loginResponse, "login navigation must return an HTTP response");
+    const loginHeaders = loginResponse.headers();
+    assert.equal(loginHeaders["cache-control"], "no-store");
+    assert.equal(loginHeaders.pragma, "no-cache");
+    assert.equal(loginHeaders["x-content-type-options"], "nosniff");
+    assert.equal(loginHeaders["x-frame-options"], "DENY");
+    assert.equal(loginHeaders["referrer-policy"], "same-origin");
+    const csp = loginHeaders["content-security-policy"] ?? "";
+    assert.match(csp, /default-src 'self'/);
+    assert.match(csp, /frame-ancestors 'none'/);
+    assert.match(csp, /base-uri 'none'/);
+    assert.match(csp, /form-action 'self'/);
+    assert.match(csp, /object-src 'none'/);
+    assert.match(
+      csp,
+      /sha256-faU7yAF8NxuMTNEwVmBz\+VcYeIoBQ2EMHW3WaVxCvnk=/,
+    );
+    assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/);
 
-  // The issued session cookie is HttpOnly + SameSite=Strict (debug build:
-  // unprefixed name, non-Secure over loopback http).
-  const cookies = await page.cookies(server.url);
-  const session = cookies.find((cookie) => cookie.name === "fiducia_customer_session");
-  assert.ok(session, "session cookie must be set after OTP login");
-  assert.equal(session.httpOnly, true);
-  assert.equal(session.sameSite, "Strict");
+    assert.match(await pageText(page), /Sign in to Fiducia/);
+    assert.match(await pageText(page), /Email a sign-in code/);
+    const htmxAsset = await page.evaluate(async () => {
+      const response = await fetch("/assets/htmx.min.js");
+      return {
+        ok: response.ok,
+        contentType: response.headers.get("content-type"),
+      };
+    });
+    assert.equal(htmxAsset.ok, true);
+    assert.match(htmxAsset.contentType ?? "", /javascript/);
+    await page.waitForFunction(() => typeof window.htmx !== "undefined");
 
-  // The ambient cookie now authenticates a full navigation to the portal.
-  await page.goto(`${server.url}/app`, { waitUntil: "networkidle0" });
-  assert.match(await pageText(page), /Dashboard/);
-  assert.match(await pageText(page), new RegExp(CUSTOMER.email));
+    // Progressive enhancement: submitting the email-OTP form swaps the body in
+    // place via htmx. A surviving window marker proves no full navigation ran —
+    // the same form would still work no-JS through its method/action fallback.
+    await page.evaluate(() => {
+      window.__fiduciaNoReload = true;
+    });
+    await page.type("#magic-email", CUSTOMER.email);
+    await page.click('form:has(#magic-email) button[type="submit"]');
+    await page.waitForFunction(() =>
+      document.body.textContent?.includes("Check your email"),
+    );
+    assert.equal(
+      await page.evaluate(() => window.__fiduciaNoReload === true),
+      true,
+      "htmx must swap the OTP page in place, not navigate",
+    );
 
-  // CSRF negative paths: a mutating request without a valid token is rejected
-  // both pre-session (login flow nonce) and on the authenticated surface.
-  const rejected = await page.evaluate(async () => {
-    const post = async (path, fields) => {
-      const response = await fetch(path, {
-        method: "POST",
-        body: new URLSearchParams(fields),
-      });
-      return { status: response.status, body: await response.json() };
-    };
-    return {
-      login: await post("/login/otp", {
+    // Redeem the stub's fixed one-time code: /login/verify finalizes against the
+    // stub fiducia-auth and 303s to /app, which htmx follows and swaps in.
+    await page.type("#otp-code", STUB_OTP_CODE);
+    await page.click('form[action="/login/verify"] button[type="submit"]');
+    await page.waitForFunction(() =>
+      document.body.textContent?.includes("Fiducia Customer Portal"),
+    );
+
+    // The issued session cookie is HttpOnly + SameSite=Strict (debug build:
+    // unprefixed name, non-Secure over loopback http).
+    const cookies = await page.cookies(server.url);
+    const session = cookies.find(
+      (cookie) => cookie.name === "fiducia_customer_session",
+    );
+    assert.ok(session, "session cookie must be set after OTP login");
+    assert.equal(session.httpOnly, true);
+    assert.equal(session.sameSite, "Strict");
+    const cookieHeader = cookies
+      .map((cookie) => `${cookie.name}=${cookie.value}`)
+      .join("; ");
+
+    // The ambient cookie now authenticates a full navigation to the portal.
+    await page.goto(`${server.url}/app`, { waitUntil: "networkidle0" });
+    assert.match(await pageText(page), /Dashboard/);
+    assert.match(await pageText(page), new RegExp(CUSTOMER.email));
+
+    // Run deliberate rejection probes through Node fetch. The exact cookie and
+    // Origin boundaries are still exercised without treating expected 403s as
+    // product console failures in the rendered page.
+    const rejectedLogin = await postForm(
+      `${server.url}/login/otp`,
+      cookieHeader,
+      server.url,
+      {
         csrf_token: "forged",
         method: "email",
         identifier: "dev@acme.com",
-      }),
-      session: await post("/app/notifications/read", {
+      },
+    );
+    assert.equal(rejectedLogin.status, 403);
+    assert.equal(
+      (await rejectedLogin.json()).error,
+      "customer_request_rejected",
+    );
+
+    const rejectedSession = await postForm(
+      `${server.url}/app/notifications/read`,
+      cookieHeader,
+      server.url,
+      {
         csrf_token: "forged",
         id: "00000000-0000-4000-8000-000000000009",
-      }),
-    };
-  });
-  assert.equal(rejected.login.status, 403);
-  assert.equal(rejected.login.body.error, "customer_request_rejected");
-  assert.equal(rejected.session.status, 403);
-  assert.equal(rejected.session.body.error, "customer_request_rejected");
+      },
+    );
+    assert.equal(rejectedSession.status, 403);
+    assert.equal(
+      (await rejectedSession.json()).error,
+      "customer_request_rejected",
+    );
 
-  // WebSocket /app/ws: connects under the cookie + exact-origin gate, announces
-  // itself, and answers the JSON heartbeat ping with a pong.
-  const ws = await page.evaluate(
-    () =>
-      new Promise((resolve, reject) => {
-        const socket = new WebSocket(`ws://${location.host}/app/ws`);
-        const messages = [];
-        const timer = setTimeout(() => reject(new Error("websocket timed out")), 15000);
-        socket.onmessage = (event) => {
-          messages.push(JSON.parse(event.data));
-          if (messages.length === 1) socket.send("ping");
-          const pong = messages.find((message) => message.kind === "pong");
-          if (pong) {
+    // The same authenticated cookies must be rejected under a foreign Origin.
+    const crossOrigin = await postForm(
+      `${server.url}/app/notifications/read`,
+      cookieHeader,
+      "https://attacker.example",
+      {
+        csrf_token: "forged",
+        id: "00000000-0000-4000-8000-000000000009",
+      },
+    );
+    assert.equal(crossOrigin.status, 403);
+    assert.equal(
+      (await crossOrigin.json()).error,
+      "customer_request_rejected",
+    );
+
+    // WebSocket /app/ws: connects under the cookie + exact-origin gate, announces
+    // itself, and answers the JSON heartbeat ping with a pong.
+    const ws = await page.evaluate(
+      () =>
+        new Promise((resolve, reject) => {
+          const socket = new WebSocket(`ws://${location.host}/app/ws`);
+          const messages = [];
+          const timer = setTimeout(
+            () => reject(new Error("websocket timed out")),
+            15000,
+          );
+          socket.onmessage = (event) => {
+            messages.push(JSON.parse(event.data));
+            if (messages.length === 1) socket.send("ping");
+            const pong = messages.find((message) => message.kind === "pong");
+            if (pong) {
+              clearTimeout(timer);
+              socket.close();
+              resolve({ first: messages[0], pong });
+            }
+          };
+          socket.onerror = () => {
             clearTimeout(timer);
-            socket.close();
-            resolve({ first: messages[0], pong });
-          }
-        };
-        socket.onerror = () => {
-          clearTimeout(timer);
-          reject(new Error("websocket error"));
-        };
-      }),
-  );
-  assert.equal(ws.first.kind, "connected");
-  assert.equal(ws.first.transport, "websocket");
-  assert.equal(ws.pong.kind, "pong");
+            reject(new Error("websocket error"));
+          };
+        }),
+    );
+    assert.equal(ws.first.kind, "connected");
+    assert.equal(ws.first.transport, "websocket");
+    assert.equal(ws.pong.kind, "pong");
 
-  // SSE /app/events: the stream delivers its named refresh event immediately.
-  const sse = await page.evaluate(
-    () =>
-      new Promise((resolve, reject) => {
-        const source = new EventSource("/app/events");
-        const timer = setTimeout(() => {
-          source.close();
-          reject(new Error("sse timed out"));
-        }, 15000);
-        source.addEventListener("fiducia-refresh", (event) => {
-          clearTimeout(timer);
-          source.close();
-          resolve(JSON.parse(event.data));
-        });
-        source.onerror = () => {
-          clearTimeout(timer);
-          source.close();
-          reject(new Error("sse error"));
-        };
-      }),
-  );
-  assert.equal(sse.kind, "connected");
-  assert.equal(sse.transport, "sse");
-  assert.equal(sse.event, "fiducia:refresh");
+    // SSE /app/events: the stream delivers its named refresh event immediately.
+    const sse = await page.evaluate(
+      () =>
+        new Promise((resolve, reject) => {
+          const source = new EventSource("/app/events");
+          const timer = setTimeout(() => {
+            source.close();
+            reject(new Error("sse timed out"));
+          }, 15000);
+          source.addEventListener("fiducia-refresh", (event) => {
+            clearTimeout(timer);
+            source.close();
+            resolve(JSON.parse(event.data));
+          });
+          source.onerror = () => {
+            clearTimeout(timer);
+            source.close();
+            reject(new Error("sse error"));
+          };
+        }),
+    );
+    assert.equal(sse.kind, "connected");
+    assert.equal(sse.transport, "sse");
+    assert.equal(sse.event, "fiducia:refresh");
 
-  assert.deepEqual(pageErrors, []);
-});
+    assertNoBrowserErrors(browserErrors);
+  },
+);
+
+async function postForm(url, cookie, origin, fields) {
+  return fetch(url, {
+    method: "POST",
+    headers: {
+      cookie,
+      origin,
+      "content-type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams(fields),
+  });
+}
 
 async function pageText(page) {
   return page.$eval("body", (body) => body.textContent ?? "");
