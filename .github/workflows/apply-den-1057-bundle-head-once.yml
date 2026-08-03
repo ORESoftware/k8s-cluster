@@ -1,0 +1,124 @@
+name: Apply DEN-1057 exact bundle HEAD inventory once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apply-den-1057-bundle-head-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-den-1057-bundle-head-once
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Check out current main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Require the exact reviewed bundle inventory including symbolic HEAD
+        shell: python
+        run: |
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/ops-meta-agent-ephemeral-owner-broker.yml')
+          text = workflow.read_text(encoding='utf-8')
+          old = '''          expected_heads="$(printf 'refs/heads/main %s\\nrefs/heads/%s %s\\n' "$EXPECTED_MAIN" "$FEATURE_REF" "$EXPECTED_FEATURE" | LC_ALL=C sort)"
+          '''
+          new = '''          expected_heads="$(printf 'HEAD %s\\nrefs/heads/main %s\\nrefs/heads/%s %s\\n' "$EXPECTED_FEATURE" "$EXPECTED_MAIN" "$FEATURE_REF" "$EXPECTED_FEATURE" | LC_ALL=C sort)"
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one legacy two-entry bundle inventory, found {text.count(old)}')
+          workflow.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          tests = Path('scripts/ops/test_meta_agent_ephemeral_owner_broker.py')
+          text = tests.read_text(encoding='utf-8')
+          marker = '''    def test_no_force_or_generated_replacement_history_path_exists(self) -> None:
+          '''
+          addition = '''    def test_bundle_symbolic_head_is_exact_and_not_a_target_branch(self) -> None:
+              expected = (
+                  "expected_heads=\"$(printf 'HEAD %s\\\\nrefs/heads/main %s\\\\n"
+                  "refs/heads/%s %s\\\\n' \"$EXPECTED_FEATURE\" \"$EXPECTED_MAIN\" "
+                  "\"$FEATURE_REF\" \"$EXPECTED_FEATURE\" | LC_ALL=C sort)\""
+              )
+              self.assertIn(expected, self.workflow)
+              self.assertEqual(self.workflow.count("HEAD %s\\\\nrefs/heads/main"), 1)
+              self.assertNotIn('git push origin HEAD:refs/heads/HEAD', self.workflow)
+
+          '''
+          if text.count(marker) != 1:
+              raise SystemExit('bundle test insertion marker is not unique')
+          if 'test_bundle_symbolic_head_is_exact_and_not_a_target_branch' in text:
+              raise SystemExit('bundle HEAD regression test already exists')
+          tests.write_text(text.replace(marker, addition + marker, 1), encoding='utf-8')
+
+          document = Path('docs/operations/meta-agent-ephemeral-credential-publication.md')
+          text = document.read_text(encoding='utf-8')
+          marker = '''sealed publisher is allowed to execute. Focused tests reject both SHA-as-ref
+          fetching and an unscoped workspace-level verification invocation.
+          '''
+          addition = '''sealed publisher is allowed to execute. Focused tests reject both SHA-as-ref
+          fetching and an unscoped workspace-level verification invocation.
+
+          The reviewed bundle inventory contains exactly two branch refs plus symbolic
+          `HEAD`. `HEAD` must resolve to the exact DEN-1057 feature SHA; it is bundle
+          metadata used to select the default checkout when cloning the bundle, not a
+          third target branch to push. The broker rejects a missing, changed, or extra
+          `HEAD` entry while still pushing only `main` and the reviewed feature branch.
+          '''
+          if text.count(marker) != 1:
+              raise SystemExit('bundle documentation insertion marker is not unique')
+          if 'exactly two branch refs plus symbolic' in text:
+              raise SystemExit('bundle HEAD documentation already exists')
+          document.write_text(text.replace(marker, addition, 1), encoding='utf-8')
+
+          Path('.github/workflows/apply-den-1057-bundle-head-once.yml').unlink()
+
+      - name: Validate the permanent product tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD:/repo" \
+            -w /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            .github/workflows/ops-meta-agent-ephemeral-owner-broker.yml \
+            .github/workflows/ops-meta-agent-ephemeral-owner-broker-contract.yml
+          python3 -m py_compile \
+            scripts/ops/test_meta_agent_ephemeral_owner_broker.py \
+            scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py
+          python3 -m unittest -v \
+            scripts/ops/test_meta_agent_ephemeral_owner_broker.py \
+            scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py
+          git diff --check
+          test "$(grep -c "expected_heads=.*HEAD %s" .github/workflows/ops-meta-agent-ephemeral-owner-broker.yml)" -eq 1
+          ! grep -R --line-number -E '^(<{7}|={7}|>{7})' \
+            .github/workflows/ops-meta-agent-ephemeral-owner-broker.yml \
+            scripts/ops/test_meta_agent_ephemeral_owner_broker.py \
+            docs/operations/meta-agent-ephemeral-credential-publication.md
+
+      - name: Commit, rebase safely, revalidate, and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m 'fix(DEN-1057): require exact symbolic HEAD in sealed bundle'
+          git pull --rebase origin main
+          python3 -m unittest -v \
+            scripts/ops/test_meta_agent_ephemeral_owner_broker.py \
+            scripts/ops/test_meta_agent_ephemeral_owner_diagnostics.py
+          git diff --check
+          git push origin HEAD:main
+
+# trigger-generation: 1

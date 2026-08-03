@@ -10,6 +10,7 @@ WORKFLOW_PATH = (
     ROOT / ".github/workflows/ops-publish-missing-org-repositories-gh-profile.yml"
 )
 PUBLISHER_PATH = ROOT / "scripts/ops/publish_missing_org_repositories_current.py"
+REMOTE_STATE_PATH = ROOT / "scripts/ops/repository_fleet_remote_state.py"
 
 
 class PrivateFleetPublisherContractTests(unittest.TestCase):
@@ -17,6 +18,14 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
         cls.publisher = PUBLISHER_PATH.read_text(encoding="utf-8")
+        cls.remote_state = REMOTE_STATE_PATH.read_text(encoding="utf-8")
+
+    def test_workflow_retriggers_when_publisher_contracts_change(self) -> None:
+        self.assertIn(
+            "- scripts/ops/test_private_fleet_publisher_contract.py",
+            self.workflow,
+        )
+        self.assertIn("push:\n    branches:\n      - main", self.workflow)
 
     def test_workflow_checks_out_and_binds_the_exact_main_event_sha(self) -> None:
         self.assertIn("ref: ${{ github.sha }}", self.workflow)
@@ -26,16 +35,20 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
             'test "$(git rev-parse HEAD)" = "$GITHUB_SHA"', self.workflow
         )
 
-    def test_projection_tests_run_before_any_repository_publication(self) -> None:
-        test_command = (
+    def test_negative_contract_suites_run_before_any_repository_publication(self) -> None:
+        visibility_test = (
             'python3 "$work/k8s-cluster/scripts/ops/'
             'test_repository_fleet_visibility.py" -v'
         )
-        test_index = self.workflow.index(test_command)
+        remote_state_test = (
+            'python3 "$work/k8s-cluster/scripts/ops/'
+            'test_repository_fleet_remote_state.py" -v'
+        )
         publication_index = self.workflow.index(
             "stage=bounded-repository-publication"
         )
-        self.assertLess(test_index, publication_index)
+        self.assertLess(self.workflow.index(visibility_test), publication_index)
+        self.assertLess(self.workflow.index(remote_state_test), publication_index)
 
     def test_remote_process_rejects_ambient_credentials(self) -> None:
         inherited_guard = (
@@ -56,17 +69,36 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
         )
         self.assertLess(public_check, projection)
 
-    def test_only_private_execution_manifest_reaches_execute_loop(self) -> None:
+    def test_private_projection_and_remote_partition_precede_execute(self) -> None:
         projection = self.publisher.index(
             "execution_manifest = project_private_execution_manifest"
         )
+        partition = self.publisher.index(
+            "missing_records, existing_snapshot = classify_remote_fleet"
+        )
         execute = self.publisher.index('"--execute"')
-        self.assertLess(projection, execute)
+        self.assertLess(projection, partition)
+        self.assertLess(partition, execute)
         self.assertIn('str(execution_manifest_path)', self.publisher)
         self.assertNotIn(
             '"--manifest",\n                str(generated_manifest_path)',
             self.publisher,
         )
+
+    def test_only_missing_records_reach_the_live_publisher(self) -> None:
+        self.assertIn("for record in missing_records:", self.publisher)
+        self.assertIn("verify_created_repositories(", self.publisher)
+        self.assertIn("verify_preserved_existing(", self.publisher)
+        self.assertNotIn("for record in execution_records:\n        full_name", self.publisher)
+        self.assertNotIn("VERIFIED 32/32 private", self.publisher)
+
+    def test_existing_divergent_histories_are_explicitly_preserved(self) -> None:
+        self.assertIn('"DIVERGENT_REVIEWED"', self.publisher)
+        self.assertIn('print(f"PRESERVE_{disposition}', self.publisher)
+        self.assertIn("VERIFIED_PRESERVED_PRIVATE", self.publisher)
+        self.assertIn("existing repository", self.remote_state)
+        self.assertIn("changed during gap publication", self.remote_state)
+        self.assertIn("matches_sealed_commit", self.remote_state)
 
     def test_missing_repositories_are_created_private_without_visibility_patch(self) -> None:
         self.assertIn('"private": True', self.publisher)
@@ -79,21 +111,23 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
         self.assertNotIn("git push --force", self.workflow)
         self.assertNotIn("git push -f", self.workflow)
 
-    def test_remote_main_sha_and_private_visibility_are_both_verified(self) -> None:
-        sha_check = self.publisher.index("if actual != expected:")
-        metadata_fetch = self.publisher.index(
-            'status, remote = MODULE.api("GET", f"/repos/{full_name}")'
-        )
-        private_check = self.publisher.index(
-            'remote.get("private") is not True'
-        )
-        visibility_check = self.publisher.index(
-            'remote.get("visibility") != "private"'
-        )
-        self.assertLess(sha_check, metadata_fetch)
-        self.assertLess(metadata_fetch, private_check)
-        self.assertLess(metadata_fetch, visibility_check)
-        self.assertIn("VERIFIED 32/32 private", self.publisher)
+    def test_created_sha_and_preserved_head_are_distinct_final_contracts(self) -> None:
+        created = self.publisher.index("verify_created_repositories(")
+        preserved = self.publisher.index("verify_preserved_existing(")
+        created_evidence = self.publisher.index("VERIFIED_CREATED_PRIVATE")
+        preserved_evidence = self.publisher.index("VERIFIED_PRESERVED_PRIVATE")
+        self.assertLess(created, created_evidence)
+        self.assertLess(preserved, preserved_evidence)
+        self.assertIn("created repository", self.remote_state)
+        self.assertIn("main drift", self.remote_state)
+
+    def test_missing_monorepo_is_ordered_after_leaf_repositories(self) -> None:
+        self.assertIn('record.get("kind") == "monorepo"', self.remote_state)
+        self.assertIn("Missing leaf histories must be published", self.remote_state)
+
+    def test_obsolete_public_exact_root_finalizer_is_not_used(self) -> None:
+        self.assertNotIn("finalize_missing_org_repositories.py", self.workflow)
+        self.assertIn("created-exact-preserved-unchanged", self.workflow)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from repository_fleet_remote_state import (
+    RemoteFleetStateError,
+    classify_remote_fleet,
+    verify_created_repositories,
+    verify_preserved_existing,
+)
 from repository_fleet_visibility import project_private_execution_manifest
 
 MODULE_PATH = Path(__file__).with_name("publish_missing_org_repositories.py")
@@ -102,8 +108,12 @@ def ensure_private_repository(owner: str, name: str, description: str) -> dict[s
     return current
 
 
+def _repository_lookup(full_name: str) -> tuple[int, dict[str, Any] | None]:
+    return MODULE.api("GET", f"/repos/{full_name}")
+
+
 def publish_current_hypesiege_and_streempilot(work: Path) -> None:
-    """Publish exact reviewed histories under the fail-closed private policy."""
+    """Create only canonical gaps while preserving every existing history."""
 
     carrier = work / "fleet-carrier"
     MODULE.run(
@@ -220,10 +230,33 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
         fail("private execution manifest contains a non-private repository")
     print("VERIFIED private execution projection for 32 reviewed histories")
 
+    try:
+        missing_records, existing_snapshot = classify_remote_fleet(
+            execution_records,
+            repository_lookup=_repository_lookup,
+            main_ref_lookup=MODULE.main_ref,
+        )
+    except RemoteFleetStateError as error:
+        fail(str(error))
+
+    print(
+        "VERIFIED remote fleet partition "
+        f"missing={len(missing_records)} preserved={len(existing_snapshot)}"
+    )
+    for full_name in sorted(existing_snapshot, key=str.casefold):
+        state = existing_snapshot[full_name]
+        disposition = (
+            "SEALED" if state["matches_sealed_commit"] else "DIVERGENT_REVIEWED"
+        )
+        print(f"PRESERVE_{disposition} {full_name} {state['head']}")
+
     environment = os.environ.copy()
     environment["GITHUB_REPOSITORY_ADMIN_TOKEN"] = MODULE.TOKEN
 
-    for record in execution_records:
+    # Only missing canonical identities are eligible for creation. Existing
+    # repositories may contain later reviewed product work and must never be
+    # reset to the old deterministic root merely to make the fleet count match.
+    for record in missing_records:
         full_name = record.get("full_name")
         if not isinstance(full_name, str):
             fail("reviewed fleet contains an invalid repository identity")
@@ -244,25 +277,30 @@ def publish_current_hypesiege_and_streempilot(work: Path) -> None:
             env=environment,
         )
 
-    for record in execution_records:
+    try:
+        verify_created_repositories(
+            missing_records,
+            repository_lookup=_repository_lookup,
+            main_ref_lookup=MODULE.main_ref,
+        )
+        verify_preserved_existing(
+            existing_snapshot,
+            repository_lookup=_repository_lookup,
+            main_ref_lookup=MODULE.main_ref,
+        )
+    except RemoteFleetStateError as error:
+        fail(str(error))
+
+    for record in missing_records:
         full_name = str(record["full_name"])
-        expected = str(record["commit"])
-        actual = MODULE.main_ref(full_name)
-        if actual != expected:
-            fail(
-                f"fleet verification failed for {full_name}: "
-                f"{actual!r} != {expected}"
-            )
-        status, remote = MODULE.api("GET", f"/repos/{full_name}")
-        if status != 200 or not isinstance(remote, dict):
-            fail(f"remote verification failed for {full_name}: HTTP {status}")
-        if remote.get("private") is not True or remote.get("visibility") != "private":
-            fail(
-                f"remote visibility drift for {full_name}: "
-                f"private={remote.get('private')!r}, visibility={remote.get('visibility')!r}"
-            )
-        print(f"VERIFIED_PRIVATE {full_name} {actual}")
-    print("VERIFIED 32/32 private HypeSiege and StreemPilot repositories")
+        print(f"VERIFIED_CREATED_PRIVATE {full_name} {record['commit']}")
+    for full_name in sorted(existing_snapshot, key=str.casefold):
+        print(f"VERIFIED_PRESERVED_PRIVATE {full_name} {existing_snapshot[full_name]['head']}")
+    print(
+        "VERIFIED private canonical fleet remote state "
+        f"created={len(missing_records)} preserved={len(existing_snapshot)} "
+        f"total={len(missing_records) + len(existing_snapshot)}"
+    )
 
 
 MODULE.repair_publisher = repair_or_validate_publisher
