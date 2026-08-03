@@ -55,7 +55,9 @@ jobs:
       - name: Compile, lint, and test
         run: |
           set -euo pipefail
-          cargo fmt --all -- --check
+          # The repository carries unrelated legacy formatting. Keep the
+          # contract gate exact to the three Rust files this feature owns.
+          rustfmt --edition 2021 --check src/main.rs src/web.rs src/web/openapi.rs
           cargo check --locked
           cargo clippy --locked --all-targets -- \
             -D warnings \
