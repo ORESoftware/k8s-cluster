@@ -100,10 +100,21 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
     def test_plaintext_credential_is_memory_only_and_masked(self) -> None:
         self.assertIn('echo "::add-mask::$owner_token"', self.workflow)
         self.assertIn('export GH_TOKEN="$owner_token"', self.workflow)
-        self.assertIn(
-            "unset owner_token GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN",
+        cleanup_match = re.search(
+            r"(?ms)^          cleanup\(\) \{\n(?P<body>.*?)^          \}\n",
             self.workflow,
         )
+        self.assertIsNotNone(cleanup_match)
+        assert cleanup_match is not None
+        cleanup = cleanup_match.group("body")
+        for name in (
+            "owner_token",
+            "GH_TOKEN",
+            "GITHUB_TOKEN",
+            "GITHUB_REPOSITORY_ADMIN_TOKEN",
+        ):
+            with self.subTest(name=name):
+                self.assertRegex(cleanup, rf"\b{name}\b")
         self.assertNotIn("GITHUB_ENV", self.workflow)
         self.assertNotIn("upload-artifact", self.workflow)
         self.assertNotRegex(self.workflow, r"ghp_[A-Za-z0-9]{20,}")
@@ -161,7 +172,10 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
             "printf '%s  %s\\n' \"$BUNDLE_SHA256\" \"$bundle\" "
             "| sha256sum --check --strict"
         )
-        self.assertIn('bundle_base64="$work/meta-agent-control-plane-den-1057.bundle.b64"', self.workflow)
+        self.assertIn(
+            'bundle_base64="$work/meta-agent-control-plane-den-1057.bundle.b64"',
+            self.workflow,
+        )
         self.assertIn(outer_decode, self.workflow)
         self.assertIn('test -s "$bundle_base64"', self.workflow)
         self.assertIn(inner_decode, self.workflow)

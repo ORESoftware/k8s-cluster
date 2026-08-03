@@ -115,7 +115,7 @@ jobs:
           work="$(mktemp -d "$RUNNER_TEMP/meta-agent-credential-broker.XXXXXX")"
           owner_token=''
           cleanup() {
-            unset owner_token GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
+            unset owner_token owner_login membership GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN
             unset GIT_ASKPASS GIT_ASKPASS_REQUIRE GIT_TERMINAL_PROMPT
             rm -rf "$work"
           }
@@ -183,22 +183,41 @@ jobs:
           printf '%s' "$ciphertext" | base64 --decode > "$ciphertext_file"
           test -s "$ciphertext_file"
 
-          stage=decrypt-and-validate-owner
-          owner_token="$(
+          stage=decrypt-ciphertext
+          if ! owner_token="$(
             openssl pkeyutl -decrypt \
               -inkey "$private_key" \
               -in "$ciphertext_file" \
               -pkeyopt rsa_padding_mode:oaep \
-              -pkeyopt rsa_oaep_md:sha256
-          )"
+              -pkeyopt rsa_oaep_md:sha256 \
+              -pkeyopt rsa_mgf1_md:sha256 \
+              2>/dev/null
+          )"; then
+            false
+          fi
+
+          stage=validate-owner-token-shape
           test -n "$owner_token"
           [[ "$owner_token" != *$'\n'* && "$owner_token" != *$'\r'* && "$owner_token" != *$'\t'* && "$owner_token" != *' '* ]]
           [[ "$owner_token" == ghp_* || "$owner_token" == github_pat_* ]]
           echo "::add-mask::$owner_token"
           export GH_TOKEN="$owner_token"
           export GITHUB_REPOSITORY_ADMIN_TOKEN="$owner_token"
-          test "$(gh api user --jq '.login')" = ORESoftware
-          membership="$(gh api /user/memberships/orgs/meta-agents-demo --jq '.role + ":" + .state')"
+
+          stage=validate-owner-identity
+          if ! owner_login="$(gh api user --jq '.login' 2>/dev/null)"; then
+            false
+          fi
+          test "$owner_login" = ORESoftware
+
+          stage=validate-owner-membership
+          if ! membership="$(
+            gh api /user/memberships/orgs/meta-agents-demo \
+              --jq '.role + ":" + .state' \
+              2>/dev/null
+          )"; then
+            false
+          fi
           test "$membership" = admin:active
 
           stage=reconstruct-reviewed-history

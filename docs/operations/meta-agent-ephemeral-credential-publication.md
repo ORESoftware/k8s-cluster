@@ -9,9 +9,16 @@ The owner credential is **never committed**, added to a GitHub Actions secret,
 placed in a workflow input, written to an artifact, or copied into Linear. A
 trusted `pull_request_target` workflow on `ORESoftware/k8s-cluster` generates an
 ephemeral RSA key pair. Only the public key and a random nonce are posted to the
-execution carrier. The operator replies with RSA-OAEP-SHA256 ciphertext. The
-private key and decrypted value exist only in the runner's temporary directory
-and process memory and are destroyed on exit.
+execution carrier. The operator replies with RSA-OAEP-SHA256 ciphertext. Both
+the OAEP digest and mask-generation digest are fixed to SHA-256
+(`MGF1-SHA256`) so local encryption and runner decryption cannot depend on
+version-specific OpenSSL defaults. The private key and decrypted value exist
+only in the runner's temporary directory and process memory and are destroyed
+on exit.
+
+Each challenge is single-use. Never repost an old ciphertext to a later carrier
+or challenge: the earlier private key has been destroyed, and the nonce and
+public key no longer identify the active run.
 
 ## Trust boundary
 
@@ -64,6 +71,26 @@ valid digest and exact ref inventory. The workflow therefore proves the source
 checkout is a work tree and runs `git -C "$source_root" bundle verify` before the
 sealed publisher is allowed to execute. Focused tests reject both SHA-as-ref
 fetching and an unscoped workspace-level verification invocation.
+
+## Failure classification
+
+The broker reports bounded stage names rather than credential material or raw
+provider responses:
+
+- `decrypt-ciphertext`: RSA-OAEP/MGF1 decryption failed for the active key;
+- `validate-owner-token-shape`: plaintext was empty, whitespace-bearing, or not
+  a supported GitHub token shape;
+- `validate-owner-identity`: the GitHub `/user` request failed or did not resolve
+  to `ORESoftware`;
+- `validate-owner-membership`: the organization membership request failed or
+  was not `admin:active`;
+- `reconstruct-reviewed-history`: the pinned commit/tree/blob snapshot, bundle
+  digest, two-layer decode, repository context, exact ref inventory, or sealed
+  publisher validation failed.
+
+These stages preserve fail-closed operation while making retries actionable.
+They do not log the token, GitHub response body, ciphertext plaintext, private
+key, or credential-bearing transport configuration.
 
 ## Rotation and audit
 
