@@ -1,15 +1,15 @@
-
 # gha-capacity-broker-rs
 
-`gha-capacity-broker` is a per-organization GitHub Actions capacity and routing broker. It is deliberately **not** a replacement implementation of GitHub's proprietary Actions control plane.
+`gha-capacity-broker` is a per-organization GitHub Actions capacity and routing broker. It is deliberately **not** a clone of GitHub's proprietary workflow service.
 
 The compatibility boundary is:
 
-- GitHub's official ARC controller and runner execute normal trusted Linux workflow/action steps.
-- This service reads current-month organization Actions usage, evaluates an explicit policy, and can reconcile two selected-repository organization variables: `CI_EXECUTION_MODE` and `CI_LINUX_RUNS_ON_JSON`.
-- The existing `dd-build-server` remains an independent bounded fallback for reviewed `run-profile` requests. `gha-capacity-broker` never accepts or executes repository-supplied shell commands.
+- GitHub's official Actions Runner Controller (ARC) and runner execute normal trusted Linux workflow/action steps on AWS or Hetzner.
+- This service reads the current-month organization Actions billing summary, evaluates an explicit policy, and can reconcile two selected-repository organization variables: `CI_EXECUTION_MODE` and `CI_LINUX_RUNS_ON_JSON`.
+- `remote/deployments/gha-clone-server-rs` remains the independent fail-closed workflow planner and fixed-profile dispatcher.
+- The existing `dd-build-server` remains the bounded cluster-local fallback for reviewed `run-profile` requests. The capacity broker never accepts or executes repository-supplied shell commands.
 
-Linear: `DEN-1549`.
+Linear: `DEN-1549`; related: `DEN-1550`, `DEN-378`, `DEN-381`, and `DEN-27`.
 
 ## API
 
@@ -26,21 +26,20 @@ Decision and reconcile routes require `x-server-auth`. Reconciliation is dry-run
 
 ## Organization boundary
 
-One process represents exactly one GitHub organization and one GitHub App installation. `GHA_ORGANIZATION` names that organization and `GHA_ORG_POLICY_JSON` carries its policy. A request naming another organization receives `404`; do not model one installation ID as cross-organization authority.
+One process represents exactly one GitHub organization, one variable-mutation GitHub App installation, and one separately managed billing identity. `GHA_ORGANIZATION` names the organization and `GHA_ORG_POLICY_JSON` carries its policy. A request naming another organization receives `404`; do not model one installation ID or billing credential as cross-organization authority.
 
 A personal-account owner such as `ORESoftware` is not an organization and cannot use this organization billing/variable path. Use repository-scoped runners for personal repositories or move the repository under an organization.
 
-## Authentication
+## Authentication separation
 
-Only GitHub App authentication is implemented. The process signs a short-lived App JWT from a mounted private-key file and exchanges it for an installation access token. It does not read a PAT environment variable and does not assume installation tokens have a fixed length.
+GitHub currently requires a billing-authorized **classic PAT** for organization billing usage summaries. A GitHub App installation token is not used for that request. The service therefore has two independent credentials:
 
-The capacity-broker App needs:
+1. **Billing read credential** — a classic PAT owned by a dedicated organization owner or billing-manager identity, mounted as a read-only file at `GITHUB_BILLING_TOKEN_PATH`. It is used only for `GET /organizations/{org}/settings/billing/usage/summary` and is never copied into an environment variable, log, metric, response, workflow, or organization variable.
+2. **Variable mutation App** — a least-privilege GitHub App whose short-lived installation token is used only to create or update `CI_EXECUTION_MODE` and `CI_LINUX_RUNS_ON_JSON` for explicitly selected repositories.
 
-- organization Administration: read, for enhanced billing usage;
-- organization Variables: write, for the two routing variables;
-- repository access limited to selected repositories adopting the routing contract.
+ARC registration uses a third, separate App with organization self-hosted-runner permissions. Store the three credentials under separate Secrets Manager records and project them with External Secrets. The billing token and App private key must never share a file or Secret key.
 
-ARC uses a separate App with organization self-hosted-runner permissions. Store both Apps in AWS Secrets Manager and project them with External Secrets. Never commit private keys or long-lived tokens.
+The classic PAT pasted into chat is not an activation credential. Revoke and rotate it under `DEN-27`; create a dedicated billing-only credential through the approved secret-management process.
 
 ## Configuration
 
@@ -52,6 +51,10 @@ Required variables:
 - `GITHUB_APP_INSTALLATION_ID`
 - `GITHUB_APP_PRIVATE_KEY_PATH`
 - `SERVER_AUTH_SECRET` (at least 32 characters)
+
+Activation-required billing variable:
+
+- `GITHUB_BILLING_TOKEN_PATH` — mounted file containing the billing-authorized classic PAT. If absent or unreadable, billing is treated as unavailable and routing fails closed.
 
 Optional variables:
 
@@ -77,27 +80,41 @@ Example Sonus policy:
 }
 ```
 
-The billing request explicitly supplies the current UTC year and month. `selfHostedReady` is an operator-controlled certification bit and must remain false until runner groups exist, a scale set registers, the manual smoke passes, and hosted-vs-ARC parity is recorded.
+The billing request supplies the current UTC year and month. `selfHostedReady` is an operator-controlled certification bit and must remain false until runner groups exist, a scale set registers, the manual smoke passes, and hosted-vs-ARC parity is recorded.
 
-If billing cannot be read, policy fails closed: use validated ARC capacity when certified, otherwise hold. `build-server` mode is advisory and applies only to workflows already written to submit a reviewed `dd-build-server` profile.
+If billing cannot be read, policy fails closed: use validated ARC capacity when certified, otherwise hold. `build-server` mode is advisory and applies only to jobs already represented by a reviewed `dd-build-server` run profile.
 
-## Workflow adoption
+## Safe workflow adoption
 
-A compatible trusted Linux job uses:
+A compatible trusted Linux job must gate execution mode as well as selecting the runner label:
 
 ```yaml
-runs-on: ${{ fromJSON(vars.CI_LINUX_RUNS_ON_JSON || '["ubuntu-latest"]') }}
+jobs:
+  test:
+    if: vars.CI_EXECUTION_MODE == 'hosted' || vars.CI_EXECUTION_MODE == 'self-hosted'
+    runs-on: ${{ fromJSON(vars.CI_LINUX_RUNS_ON_JSON || '["ubuntu-latest"]') }}
+    steps:
+      - run: ./ci/test.sh
 ```
 
-Do not use the variable for macOS, Windows, iOS signing, Android emulator/KVM, service-container, privileged image-build, or public-fork jobs. Do not replace required checks before parity.
+For `build-server` and `hold`, the broker writes the deliberately nonexistent label `ci-capacity-hold-no-runner` instead of invalid empty JSON. The mode gate is still required: it makes the job skip immediately rather than waiting for a runner. The independent continuity server may dispatch an allowlisted build-server profile when `build-server` is selected.
+
+Do not use the variable for macOS, Windows, iOS signing, Android emulator/KVM, service-container, privileged image-build, or public-fork jobs. Do not replace required checks before hosted-vs-ARC parity and required-check semantics are proven.
 
 ## Image and deployment
 
-The Dockerfile creates an unprivileged runtime image. Publish it through the existing build server or a dedicated container-build lane, scan it, generate SBOM/provenance, and record the immutable digest. The deployment and policy templates remain excluded from active Kustomizations until that digest, App secret, and parity evidence exist.
+The Dockerfile creates an unprivileged runtime image. Publish it through the existing build server or a dedicated container-build lane, scan it, generate SBOM/provenance, and record the immutable digest. The deployment and policy templates remain excluded from active Kustomizations until the digest, all three credentials, runner groups, and parity evidence exist.
+
+The Sonus template mounts:
+
+- `/var/run/gha-app/github_app_private_key` from `sonus-auris-gha-capacity-broker`;
+- `/var/run/gha-billing/token` from the independent `sonus-auris-gha-billing` Secret.
 
 ## Local and CI checks
 
 ```sh
-cargo test
+cargo fmt --check
+cargo test --all-features
+cargo clippy --all-targets --all-features -- -D warnings
 python3 remote/argocd/ci-runners/validate-sonus-arc-scaffold.py
 ```
