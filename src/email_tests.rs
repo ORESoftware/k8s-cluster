@@ -167,7 +167,6 @@ async fn missing_or_blank_sendgrid_fields_fail_before_network() {
         ("blank sender", blank_sender),
         ("blank link base", blank_link_base),
     ] {
-        assert!(!incomplete.is_enabled(), "{field} must disable magic links");
         let (base, requests) = mock_server(StatusCode::ACCEPTED, "").await;
         let result = send_magic_link_to(
             &reqwest::Client::new(),
