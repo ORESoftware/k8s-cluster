@@ -46,7 +46,7 @@ spec:
             # cleanup removes that legacy requirement completely.
             - name: BILLING_TENANT_ROUTES_REQUIRE_USER_JWT
               value: 'true'
-            - name: BILLING_TENANT_MUTATIONS_REQUIRE_STEP_UP
+            - name: BILLING_REQUIRE_STEP_UP_FOR_MUTATIONS
               value: 'true'
 
             # The embedded HTMX admin still uses a separate static credential.
