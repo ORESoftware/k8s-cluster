@@ -69,20 +69,22 @@ def valid_secrets() -> str:
 
 def deployment(secret_name: str, *, inline: bool = False) -> str:
     if inline:
-        url_ref = (
-            f"secretKeyRef: {{ name: {secret_name}, key: supabase-url }}"
-        )
-        key_ref = (
-            "secretKeyRef: { name: "
-            f"{secret_name}, key: supabase-publishable-key }}"
-        )
-    else:
-        url_ref = f"""secretKeyRef:
-              name: {secret_name}
-              key: supabase-url"""
-        key_ref = f"""secretKeyRef:
-              name: {secret_name}
-              key: supabase-publishable-key"""
+        return f"""\
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          env:
+            - name: SUPABASE_URL
+              valueFrom:
+                secretKeyRef: {{ name: {secret_name}, key: supabase-url }}
+            - name: SUPABASE_PUBLISHABLE_KEY
+              valueFrom:
+                secretKeyRef: {{ name: {secret_name}, key: supabase-publishable-key }}
+"""
     return f"""\
 apiVersion: apps/v1
 kind: Deployment
@@ -94,10 +96,14 @@ spec:
           env:
             - name: SUPABASE_URL
               valueFrom:
-                {url_ref}
+                secretKeyRef:
+                  name: {secret_name}
+                  key: supabase-url
             - name: SUPABASE_PUBLISHABLE_KEY
               valueFrom:
-                {key_ref}
+                secretKeyRef:
+                  name: {secret_name}
+                  key: supabase-publishable-key
 """
 
 
