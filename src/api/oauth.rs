@@ -1,5 +1,5 @@
 use axum::Json;
-use axum::extract::{Path, Query, State};
+use axum::extract::{Extension, Path, Query, State};
 use axum::response::{IntoResponse, Redirect, Response};
 use chrono::{Duration, Utc};
 use rand::{RngExt, rng};
@@ -7,6 +7,7 @@ use sea_orm::ConnectionTrait;
 use serde::Deserialize;
 use uuid::Uuid;
 
+use crate::api::auth::{self, Principal};
 use crate::error::{AppError, AppResult};
 use crate::providers::connection::{CreateConnection, UpsertCredential};
 use crate::providers::oauth_common::CodeExchangeResult;
@@ -28,9 +29,15 @@ pub struct StartQuery {
 
 pub async fn start(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Path(provider): Path<String>,
     Query(q): Query<StartQuery>,
 ) -> AppResult<Response> {
+    // This route carries tenant_id in the query rather than the canonical path,
+    // so middleware cannot infer it. Resolve the exact membership explicitly
+    // before minting state or contacting a provider.
+    auth::require_embedded_tenant_write(&state, &principal, q.tenant_id).await?;
+
     let mut nonce = [0u8; 16];
     rng().fill(&mut nonce[..]);
     let state_token = hex::encode(nonce);
@@ -103,8 +110,8 @@ pub async fn callback(
         }));
     }
 
-    // Consume the one-time CSRF state row. Same-tx delete-returning gives
-    // single-use semantics.
+    // Consume the one-time CSRF state row. It could only have been minted after
+    // the initiating Shared Auth principal passed a tenant billing:write check.
     let row = state
         .pool
         .query_one(crate::db::stmt(
@@ -131,7 +138,6 @@ pub async fn callback(
 
     let provider = parse_provider(&provider_str)?;
 
-    // Exchange code -> sealed credential material.
     let exchanged: CodeExchangeResult = match provider {
         ProviderKind::Stripe => {
             stripe::StripeOAuth::new(&state.cfg)
@@ -186,8 +192,10 @@ pub struct PlaidLinkTokenResp {
 /// which then POSTs to `/v1/plaid/exchange`.
 pub async fn plaid_link_token(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Json(req): Json<PlaidLinkTokenReq>,
 ) -> AppResult<Json<PlaidLinkTokenResp>> {
+    auth::require_embedded_tenant_write(&state, &principal, req.tenant_id).await?;
     let plaid = crate::providers::plaid::PlaidLink::new(&state.cfg);
     let token = plaid.create_link_token(req.tenant_id).await?;
     Ok(Json(PlaidLinkTokenResp { link_token: token }))
@@ -203,8 +211,10 @@ pub struct PlaidExchangeReq {
 
 pub async fn plaid_exchange(
     State(state): State<AppState>,
+    Extension(principal): Extension<Principal>,
     Json(req): Json<PlaidExchangeReq>,
 ) -> AppResult<Json<CallbackResp>> {
+    auth::require_embedded_tenant_write(&state, &principal, req.tenant_id).await?;
     let plaid = crate::providers::plaid::PlaidLink::new(&state.cfg);
     let exchanged = plaid
         .exchange_public_token(
@@ -244,9 +254,6 @@ async fn persist_and_schedule(
     let tenant = state.tenants.by_id(tenant_id).await?;
     let region: Region = tenant.region()?;
 
-    // Find-or-create the connection row. We prefer the most recently created
-    // pending row for this tenant+provider so a user's "Connect Stripe" click
-    // flows into the same row through the redirect.
     let conn = match state
         .connections
         .find_pending_for_oauth(tenant_id, provider)
@@ -273,7 +280,6 @@ async fn persist_and_schedule(
         }
     };
 
-    // Seal + persist credential material; flips status to active.
     let _ = state
         .connections
         .attach_credential(
@@ -287,8 +293,6 @@ async fn persist_and_schedule(
         )
         .await?;
 
-    // If the OAuth response revealed a real external account id (e.g.
-    // Stripe Connect's `stripe_user_id`), persist it now so sync can scope.
     if !exchanged.external_account_id.is_empty() && exchanged.external_account_id != "pending" {
         let _ = state
             .connections
@@ -296,8 +300,6 @@ async fn persist_and_schedule(
             .await;
     }
 
-    // Auto-register the backstop sync.connection scheduled job. Default
-    // cadence 5x/day; tenants override per-connection.
     let backstop = state
         .scheduler
         .create(
@@ -360,24 +362,11 @@ fn parse_provider(s: &str) -> AppResult<ProviderKind> {
     }
 }
 
-/// Validate the optional `return_to` query param. The redirect happens
-/// in the browser, so an attacker who can influence `return_to` could
-/// otherwise turn a successful OAuth callback into an open redirect.
-///
-/// We require **every** `return_to` value — including site-relative
-/// paths — to match the explicit
-/// `BILLING_OAUTH_RETURN_TO_ALLOWED_PREFIXES` allowlist. The previous
-/// implementation auto-permitted any path starting with `/` (and not
-/// `//`), which trusted the entire site. Tenants today route OAuth
-/// completion to a small, known set of return URLs; the allowlist is
-/// the right mechanism even for paths.
 fn validate_return_to(state: &AppState, return_to: Option<&str>) -> AppResult<Option<String>> {
     let Some(return_to) = return_to.map(str::trim).filter(|s| !s.is_empty()) else {
         return Ok(None);
     };
 
-    // `//`-prefixed values are protocol-relative URLs and would be
-    // interpreted by the browser as cross-origin — disallow up front.
     if return_to.starts_with("//") {
         return Err(AppError::BadRequest(
             "return_to must not be protocol-relative".into(),
@@ -408,9 +397,6 @@ mod tests {
         std::sync::Arc::new(cfg)
     }
 
-    // We can't construct a full AppState without DB, but
-    // validate_return_to only reads cfg.oauth_return_to_allowed_prefixes.
-    // Re-implement the call with a stub.
     fn check(prefixes: &[&str], input: Option<&str>) -> Result<Option<String>, String> {
         let allowed: Vec<String> = prefixes.iter().map(|s| s.to_string()).collect();
         let Some(rt) = input.map(str::trim).filter(|s| !s.is_empty()) else {
@@ -434,33 +420,33 @@ mod tests {
 
     #[test]
     fn relative_path_no_longer_auto_allowed() {
-        // Used to pass; must now reject without an explicit allowlist
-        // entry — this is the fix.
         assert!(check(&[], Some("/dashboard")).is_err());
     }
 
     #[test]
     fn relative_path_allowed_when_listed() {
-        let r = check(&["/dashboard"], Some("/dashboard?ok=1"))
+        let result = check(&["/dashboard"], Some("/dashboard?ok=1"))
             .unwrap()
             .unwrap();
-        assert_eq!(r, "/dashboard?ok=1");
+        assert_eq!(result, "/dashboard?ok=1");
     }
 
     #[test]
     fn protocol_relative_rejected() {
         assert!(check(&[], Some("//evil.example/path")).is_err());
-        // …even when the host happens to be on the allowlist.
         assert!(check(&["//evil.example"], Some("//evil.example/x")).is_err());
     }
 
     #[test]
     fn absolute_url_allowed_only_via_allowlist() {
         assert!(check(&[], Some("https://app.example/done")).is_err());
-        let r = check(&["https://app.example/"], Some("https://app.example/done"))
-            .unwrap()
-            .unwrap();
-        assert_eq!(r, "https://app.example/done");
+        let result = check(
+            &["https://app.example/"],
+            Some("https://app.example/done"),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(result, "https://app.example/done");
     }
 
     #[test]
