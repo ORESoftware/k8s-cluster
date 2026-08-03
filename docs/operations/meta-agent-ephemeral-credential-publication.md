@@ -41,9 +41,17 @@ a commit/tree/blob API snapshot of the exact `SOURCE_SHA`:
 3. select and lexically order only `scripts/critical-org-fleet/assets/meta.part*`
    blobs;
 4. read each blob with the workflow-scoped token and concatenate the decoded
-   bytes;
-5. read the one exact publisher blob from the same tree;
-6. retain the bundle and publisher SHA-256 checks before any mutation.
+   file bytes;
+5. decode the resulting sealed text into the binary Git bundle;
+6. read the one exact publisher blob from the same tree;
+7. retain the bundle and publisher SHA-256 checks before any mutation.
+
+The asset path has two base64 layers by design. GitHub's blob response base64
+encodes each tracked file, and each `meta.part*` file contains a segment of the
+base64-encoded Git bundle. The broker first removes the GitHub transport layer
+into one ordered `.bundle.b64` file, then decodes that file into the binary
+bundle whose pinned SHA-256 is verified. Focused tests require both decodes in
+that order and reject direct transport decoding into the final bundle.
 
 The decrypted owner credential is not used to retrieve source. It remains
 reserved for exact identity/organization authorization and target publication;
