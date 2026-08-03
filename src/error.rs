@@ -106,10 +106,9 @@ impl IntoResponse for AppError {
             }),
         )
             .into_response();
-        response.headers_mut().insert(
-            header::CACHE_CONTROL,
-            HeaderValue::from_static("no-store"),
-        );
+        response
+            .headers_mut()
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
         if let Some(seconds) = retry_after
             && let Ok(value) = HeaderValue::from_str(&seconds.to_string())
         {
@@ -231,7 +230,10 @@ mod tests {
 
         assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(headers.get(header::RETRY_AFTER).unwrap(), "3600");
-        assert_eq!(body["message"], "upstream provider rate limited the request");
+        assert_eq!(
+            body["message"],
+            "upstream provider rate limited the request"
+        );
         assert!(!body.to_string().contains("upstream-secret-123"));
     }
 
@@ -244,7 +246,10 @@ mod tests {
         assert!(message.starts_with("bad request: line-one"));
         assert!(!message.contains('\n'));
         assert!(!message.contains('\0'));
-        assert!(message.chars().count() <= "bad request: ".chars().count() + MAX_PUBLIC_MESSAGE_CHARS);
+        assert!(
+            message.chars().count()
+                <= "bad request: ".chars().count() + MAX_PUBLIC_MESSAGE_CHARS
+        );
         assert_eq!(headers.get(header::CACHE_CONTROL).unwrap(), "no-store");
     }
 }
