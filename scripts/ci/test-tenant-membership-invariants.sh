@@ -11,13 +11,22 @@ done
 test_db="quaestor_memberships_${RANDOM}_$$"
 first_log="$(mktemp)"
 second_log="$(mktemp)"
+delete_log="$(mktemp)"
+demote_log="$(mktemp)"
 key_log="$(mktemp)"
 canonical_log="$(mktemp)"
 scopes_log="$(mktemp)"
 
 cleanup() {
   dropdb --if-exists "$test_db" >/dev/null 2>&1 || true
-  rm -f "$first_log" "$second_log" "$key_log" "$canonical_log" "$scopes_log"
+  rm -f \
+    "$first_log" \
+    "$second_log" \
+    "$delete_log" \
+    "$demote_log" \
+    "$key_log" \
+    "$canonical_log" \
+    "$scopes_log"
 }
 trap cleanup EXIT
 
@@ -58,6 +67,20 @@ insert into tenant_memberships (
     'owner',
     array['billing:read', 'billing:write', 'billing:admin']::text[],
     'owner-a'
+  ),
+  (
+    '22222222-2222-4222-8222-222222222222',
+    'owner-c',
+    'owner',
+    array['billing:read', 'billing:write', 'billing:admin']::text[],
+    'owner-c'
+  ),
+  (
+    '22222222-2222-4222-8222-222222222222',
+    'owner-d',
+    'owner',
+    array['billing:read', 'billing:write', 'billing:admin']::text[],
+    'owner-c'
   );
 SQL
 
@@ -111,6 +134,57 @@ remaining_owners="$(psql -Atqc "
 ")"
 [[ "$remaining_owners" == "1" ]] || {
   printf 'expected one active owner, found %s\n' "$remaining_owners" >&2
+  exit 1
+}
+
+# Exercise the trigger's DELETE branch as well. Deleting owner C may commit
+# because owner D still exists. A concurrent transaction that then demotes owner
+# D must wait on the same tenant row and fail rather than leaving tenant B
+# ownerless.
+psql -v ON_ERROR_STOP=1 >"$delete_log" 2>&1 <<'SQL' &
+begin;
+delete from tenant_memberships
+where tenant_id = '22222222-2222-4222-8222-222222222222'
+  and shared_user_id = 'owner-c';
+select pg_sleep(2);
+commit;
+SQL
+delete_pid=$!
+
+sleep 0.25
+set +e
+psql -v ON_ERROR_STOP=1 >"$demote_log" 2>&1 <<'SQL'
+begin;
+update tenant_memberships
+set role = 'admin',
+    scopes = array['billing:read', 'billing:write', 'billing:admin']::text[],
+    granted_by_shared_user_id = 'owner-d',
+    updated_at = now()
+where tenant_id = '22222222-2222-4222-8222-222222222222'
+  and shared_user_id = 'owner-d';
+commit;
+SQL
+demote_status=$?
+set -e
+wait "$delete_pid"
+
+if [[ "$demote_status" -eq 0 ]]; then
+  cat "$delete_log" "$demote_log" >&2
+  echo 'concurrent owner deletion and final-owner demotion both committed' >&2
+  exit 1
+fi
+grep -F 'must retain at least one active owner' "$demote_log" >/dev/null
+
+remaining_mixed_owners="$(psql -Atqc "
+  select count(*)
+  from tenant_memberships
+  where tenant_id = '22222222-2222-4222-8222-222222222222'
+    and role = 'owner'
+    and revoked_at is null
+")"
+[[ "$remaining_mixed_owners" == "1" ]] || {
+  printf 'expected one active owner after mixed mutation race, found %s\n' \
+    "$remaining_mixed_owners" >&2
   exit 1
 }
 
