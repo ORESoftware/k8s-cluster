@@ -19,11 +19,7 @@ pub const SCOPE_BILLING_WRITE: &str = "billing:write";
 pub const SCOPE_BILLING_ADMIN: &str = "billing:admin";
 
 const ALLOWED_ROLES: [&str; 4] = ["owner", "admin", "billing", "reader"];
-const ALLOWED_SCOPES: [&str; 3] = [
-    SCOPE_BILLING_READ,
-    SCOPE_BILLING_WRITE,
-    SCOPE_BILLING_ADMIN,
-];
+const ALLOWED_SCOPES: [&str; 3] = [SCOPE_BILLING_READ, SCOPE_BILLING_WRITE, SCOPE_BILLING_ADMIN];
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct TenantGrant {
@@ -257,10 +253,7 @@ impl MembershipService {
     /// reviewed membership migration must not receive protected traffic.
     pub async fn schema_ready(&self) -> bool {
         self.pool
-            .query_one(stmt(
-                "SELECT 1 FROM tenant_memberships LIMIT 1",
-                [],
-            ))
+            .query_one(stmt("SELECT 1 FROM tenant_memberships LIMIT 1", []))
             .await
             .is_ok()
     }
@@ -339,7 +332,9 @@ fn normalize_role(role: &str) -> AppResult<String> {
 
 fn normalize_scopes(mut scopes: Vec<String>, role: &str) -> AppResult<Vec<String>> {
     if scopes.len() > ALLOWED_SCOPES.len() {
-        return Err(AppError::BadRequest("too many membership scopes".to_owned()));
+        return Err(AppError::BadRequest(
+            "too many membership scopes".to_owned(),
+        ));
     }
     scopes = scopes
         .into_iter()
@@ -362,18 +357,37 @@ fn normalize_scopes(mut scopes: Vec<String>, role: &str) -> AppResult<Vec<String
             "every active membership must include billing:read".to_owned(),
         ));
     }
-    if matches!(role, "owner" | "admin")
-        && !scopes.iter().any(|scope| scope == SCOPE_BILLING_ADMIN)
-    {
-        return Err(AppError::BadRequest(
-            "owner/admin memberships must include billing:admin".to_owned(),
-        ));
+
+    match role {
+        "owner" | "admin" => {
+            if !scopes.iter().any(|scope| scope == SCOPE_BILLING_WRITE)
+                || !scopes.iter().any(|scope| scope == SCOPE_BILLING_ADMIN)
+            {
+                return Err(AppError::BadRequest(
+                    "owner/admin memberships require billing:read, billing:write, and billing:admin"
+                        .to_owned(),
+                ));
+            }
+        }
+        "billing" => {
+            if scopes.iter().any(|scope| scope == SCOPE_BILLING_ADMIN) {
+                return Err(AppError::BadRequest(
+                    "billing memberships may not carry billing:admin".to_owned(),
+                ));
+            }
+        }
+        "reader" => {
+            if scopes != [SCOPE_BILLING_READ] {
+                return Err(AppError::BadRequest(
+                    "reader memberships may only carry billing:read".to_owned(),
+                ));
+            }
+        }
+        _ => {
+            return Err(AppError::BadRequest("invalid membership role".to_owned()));
+        }
     }
-    if role == "reader" && scopes.len() != 1 {
-        return Err(AppError::BadRequest(
-            "reader memberships may only carry billing:read".to_owned(),
-        ));
-    }
+
     Ok(scopes)
 }
 
@@ -387,16 +401,38 @@ mod tests {
         assert!(normalize_role("superuser").is_err());
         assert!(normalize_scopes(vec![SCOPE_BILLING_READ.into()], "reader").is_ok());
         assert!(normalize_scopes(vec![SCOPE_BILLING_WRITE.into()], "billing").is_err());
-        assert!(normalize_scopes(
-            vec![SCOPE_BILLING_READ.into(), SCOPE_BILLING_WRITE.into()],
-            "reader"
-        )
-        .is_err());
-        assert!(normalize_scopes(
-            vec![SCOPE_BILLING_READ.into(), SCOPE_BILLING_ADMIN.into()],
-            "admin"
-        )
-        .is_ok());
+        assert!(
+            normalize_scopes(
+                vec![SCOPE_BILLING_READ.into(), SCOPE_BILLING_WRITE.into()],
+                "reader"
+            )
+            .is_err()
+        );
+        assert!(
+            normalize_scopes(
+                vec![SCOPE_BILLING_READ.into(), SCOPE_BILLING_ADMIN.into()],
+                "admin"
+            )
+            .is_err()
+        );
+        assert!(
+            normalize_scopes(
+                vec![
+                    SCOPE_BILLING_READ.into(),
+                    SCOPE_BILLING_WRITE.into(),
+                    SCOPE_BILLING_ADMIN.into(),
+                ],
+                "admin"
+            )
+            .is_ok()
+        );
+        assert!(
+            normalize_scopes(
+                vec![SCOPE_BILLING_READ.into(), SCOPE_BILLING_ADMIN.into()],
+                "billing"
+            )
+            .is_err()
+        );
     }
 
     #[test]
