@@ -4,8 +4,8 @@
 The script performs read-only GitHub Git Database API calls against one exact
 commit, walks only the bounded directory path that owns the sealed bundle and
 publisher, removes both base64 layers from the bundle carrier, and verifies all
-reviewed digests and publishable branch refs before any repository-
-administration credential is needed.
+reviewed digests, publishable branches, and declared auxiliary refs before any
+repository-administration credential is needed.
 """
 
 from __future__ import annotations
@@ -187,6 +187,22 @@ def parse_expected_heads(values: Iterable[str]) -> Mapping[str, str]:
     return result
 
 
+def parse_expected_auxiliary_heads(values: Iterable[str]) -> Mapping[str, str]:
+    result: dict[str, str] = {}
+    for value in values:
+        if "=" not in value:
+            raise VerificationError(
+                "expected auxiliary head must use ref=sha syntax"
+            )
+        ref, raw_sha = value.split("=", 1)
+        if ref not in ALLOWED_AUXILIARY_REFS or ref in result:
+            raise VerificationError(
+                f"invalid or duplicate expected auxiliary ref: {ref!r}"
+            )
+        result[ref] = require_sha(raw_sha, f"expected SHA for auxiliary ref {ref}")
+    return result
+
+
 def sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
@@ -235,6 +251,7 @@ def parse_bundle_heads(bundle_path: Path) -> Mapping[str, str]:
 def validate_bundle_heads(
     observed_heads: Mapping[str, str],
     expected_heads: Mapping[str, str],
+    expected_auxiliary_heads: Mapping[str, str],
 ) -> tuple[Mapping[str, str], Mapping[str, str]]:
     """Validate publishable branches separately from non-pushable pseudo-refs."""
 
@@ -254,6 +271,10 @@ def validate_bundle_heads(
         raise VerificationError(
             "bundle contains unsupported auxiliary refs: " + ", ".join(unsupported)
         )
+    if auxiliary_heads != dict(expected_auxiliary_heads):
+        raise VerificationError(
+            "bundle auxiliary refs do not exactly match the reviewed auxiliary inventory"
+        )
 
     expected_shas = frozenset(expected_heads.values())
     for ref, sha in auxiliary_heads.items():
@@ -272,7 +293,9 @@ def reconstruct_and_verify(
     expected_publisher_sha256: str,
     expected_heads: Mapping[str, str],
     output_dir: Path,
+    expected_auxiliary_heads: Mapping[str, str] | None = None,
 ) -> SnapshotResult:
+    expected_auxiliary_heads = dict(expected_auxiliary_heads or {})
     commit = client.commit(source_sha)
     if require_sha(commit.get("sha"), "source commit SHA") != source_sha:
         raise VerificationError("source commit response does not match requested SHA")
@@ -377,7 +400,9 @@ def reconstruct_and_verify(
     run_git(["-C", str(repository_context), "bundle", "verify", str(bundle_path)])
     observed_heads = parse_bundle_heads(bundle_path)
     branch_heads, auxiliary_heads = validate_bundle_heads(
-        observed_heads, expected_heads
+        observed_heads,
+        expected_heads,
+        expected_auxiliary_heads,
     )
 
     return SnapshotResult(
@@ -400,6 +425,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--bundle-sha256", required=True)
     parser.add_argument("--publisher-sha256", required=True)
     parser.add_argument("--expected-head", action="append", default=[])
+    parser.add_argument("--expected-auxiliary-head", action="append", default=[])
     parser.add_argument("--output-dir", type=Path, required=True)
     return parser.parse_args(argv)
 
@@ -414,12 +440,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.publisher_sha256, "publisher SHA-256"
         )
         expected_heads = parse_expected_heads(args.expected_head)
+        expected_auxiliary_heads = parse_expected_auxiliary_heads(
+            args.expected_auxiliary_head
+        )
+        for ref, sha in expected_auxiliary_heads.items():
+            if sha not in frozenset(expected_heads.values()):
+                raise VerificationError(
+                    f"expected auxiliary ref {ref} points outside expected branch SHAs"
+                )
         result = reconstruct_and_verify(
             client=GitHubClient(token, args.repository),
             source_sha=source_sha,
             expected_bundle_sha256=bundle_sha256,
             expected_publisher_sha256=publisher_sha256,
             expected_heads=expected_heads,
+            expected_auxiliary_heads=expected_auxiliary_heads,
             output_dir=args.output_dir.resolve(),
         )
     except VerificationError as error:
