@@ -139,11 +139,7 @@ fn verified_supabase_assurance(token: &str) -> AuthenticationAssurance {
     let Ok(claims) = serde_json::from_slice::<VerifiedSupabaseAssuranceClaims>(&decoded) else {
         return AuthenticationAssurance::from_supabase(None, &[]);
     };
-    let auth_time = claims
-        .amr
-        .iter()
-        .filter_map(|entry| entry.timestamp)
-        .max();
+    let auth_time = claims.amr.iter().filter_map(|entry| entry.timestamp).max();
     let methods = claims
         .amr
         .into_iter()
