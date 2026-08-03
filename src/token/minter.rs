@@ -94,10 +94,33 @@ impl TokenMinter {
     }
 
     /// Mint a token for a resolved OreSoftware identity.
+    ///
+    /// A local AAL2 token is minted only after this process completed a verified
+    /// step-up ceremony, so its `auth_time` is the current time. Provider
+    /// exchanges that need to preserve an upstream factor timestamp use
+    /// [`Self::mint_with_auth_time`] instead.
     pub fn mint(&self, context: MintContext) -> Result<MintedToken, AuthError> {
+        self.mint_with_auth_time(context, None)
+    }
+
+    /// Mint while preserving a verified upstream authentication timestamp.
+    ///
+    /// `verified_auth_time` is load-bearing only for AAL2. AAL1 tokens never
+    /// carry `auth_time`. For local AAL2 flows the caller passes `None`, and the
+    /// completion time of the server-owned ceremony is used. Exchange adapters
+    /// pass the newest timestamp extracted from the already verified provider
+    /// token; if they cannot establish one they must downgrade assurance before
+    /// calling this method.
+    pub fn mint_with_auth_time(
+        &self,
+        context: MintContext,
+        verified_auth_time: Option<u64>,
+    ) -> Result<MintedToken, AuthError> {
         let now = now_secs();
         let expires_at = now.saturating_add(self.ttl_secs);
         let is_supabase = context.provider == "supabase";
+        let assurance_level = context.assurance.level();
+        let auth_time = (assurance_level >= 2).then(|| verified_auth_time.unwrap_or(now));
         let claims = OreClaims {
             sub: context.shared_user_id,
             iss: self.issuer.clone(),
@@ -106,6 +129,7 @@ impl TokenMinter {
             exp: expires_at,
             nbf: now.saturating_sub(5),
             jti: uuid::Uuid::new_v4().to_string(),
+            auth_time,
             sid: context.session_id.map(|id| id.to_string()),
             project: is_supabase.then(|| context.provider_tenant.clone()),
             supabase_user_id: is_supabase.then(|| context.provider_subject.clone()),
@@ -116,7 +140,7 @@ impl TokenMinter {
             email_verified: context.email_verified,
             roles: context.roles,
             // Derived from the ACR so `aal` and `acr` can never disagree.
-            aal: context.assurance.level(),
+            aal: assurance_level,
             amr: context.assurance.amr.clone(),
             acr: context.assurance.acr.clone(),
         };
@@ -144,7 +168,7 @@ fn now_secs() -> u64 {
 mod tests {
     use super::*;
     use crate::config::SigningConfig;
-    use crate::token::{AuthenticationAssurance, ACR_LOA1};
+    use crate::token::{AuthenticationAssurance, ACR_LOA1, ACR_LOA2};
 
     use p256::pkcs8::{EncodePrivateKey, LineEnding};
 
@@ -196,9 +220,79 @@ mod tests {
         assert!(claims.email_verified);
         assert_eq!(claims.amr, vec!["pwd"]);
         assert_eq!(claims.acr.as_deref(), Some(ACR_LOA1));
+        assert_eq!(claims.auth_time, None);
         assert_eq!(minted.amr, vec!["pwd"]);
         assert_eq!(minted.acr.as_deref(), Some(ACR_LOA1));
         assert!(claims.exp > claims.iat);
+    }
+
+    #[test]
+    fn local_aal2_token_records_ceremony_completion_time() {
+        let m = minter();
+        let before = now_secs();
+        let minted = m
+            .mint(MintContext {
+                shared_user_id: "shared-42".into(),
+                session_id: Some(uuid::Uuid::from_u128(42)),
+                provider: "local".into(),
+                provider_tenant: "default".into(),
+                provider_subject: "shared-42".into(),
+                email: None,
+                email_verified: false,
+                roles: vec!["user".into()],
+                assurance: AuthenticationAssurance::step_up(&["pwd".into()], "totp"),
+            })
+            .unwrap();
+        let claims = m.verify(&minted.token).unwrap();
+        assert_eq!(claims.acr.as_deref(), Some(ACR_LOA2));
+        assert_eq!(claims.aal, 2);
+        assert!(claims.auth_time.is_some_and(|at| at >= before && at <= now_secs()));
+    }
+
+    #[test]
+    fn exchanged_aal2_token_preserves_verified_upstream_auth_time() {
+        let m = minter();
+        let upstream_auth_time = 1_700_000_003;
+        let minted = m
+            .mint_with_auth_time(
+                MintContext {
+                    shared_user_id: "shared-42".into(),
+                    session_id: Some(uuid::Uuid::from_u128(42)),
+                    provider: "supabase".into(),
+                    provider_tenant: "fiducia-cloud".into(),
+                    provider_subject: "sub-1".into(),
+                    email: None,
+                    email_verified: false,
+                    roles: vec!["user".into()],
+                    assurance: AuthenticationAssurance::step_up(&["pwd".into()], "totp"),
+                },
+                Some(upstream_auth_time),
+            )
+            .unwrap();
+        let claims = m.verify(&minted.token).unwrap();
+        assert_eq!(claims.auth_time, Some(upstream_auth_time));
+    }
+
+    #[test]
+    fn aal1_ignores_supplied_auth_time() {
+        let m = minter();
+        let minted = m
+            .mint_with_auth_time(
+                MintContext {
+                    shared_user_id: "shared-42".into(),
+                    session_id: None,
+                    provider: "local".into(),
+                    provider_tenant: "default".into(),
+                    provider_subject: "shared-42".into(),
+                    email: None,
+                    email_verified: false,
+                    roles: vec![],
+                    assurance: AuthenticationAssurance::local_password(),
+                },
+                Some(1_700_000_003),
+            )
+            .unwrap();
+        assert_eq!(m.verify(&minted.token).unwrap().auth_time, None);
     }
 
     #[test]
