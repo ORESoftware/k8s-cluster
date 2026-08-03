@@ -42,6 +42,18 @@ pub(super) async fn issue_with_assurance(
     identity: AuthenticatedIdentity,
     assurance: AuthenticationAssurance,
 ) -> Result<IssuedSession, AuthError> {
+    issue_with_assurance_at(state, identity, assurance, None).await
+}
+
+/// Provider-exchange variant that carries a timestamp extracted from the same
+/// already verified token as the assurance. Only AAL2 consumes this value; the
+/// minter omits `auth_time` from every AAL1 token.
+pub(super) async fn issue_with_assurance_at(
+    state: &AppState,
+    identity: AuthenticatedIdentity,
+    assurance: AuthenticationAssurance,
+    verified_auth_time: Option<u64>,
+) -> Result<IssuedSession, AuthError> {
     let (identity, session_id, refresh_token, refresh_expires_at) = if let Some(db) = &state.db {
         let refresh = RefreshToken::generate();
         let expires_at = chrono::Utc::now().fixed_offset()
@@ -69,17 +81,20 @@ pub(super) async fn issue_with_assurance(
         (identity, None, None, None)
     };
 
-    let access = state.minter.mint(MintContext {
-        shared_user_id: identity.shared_user_id.to_string(),
-        session_id,
-        provider: identity.provider,
-        provider_tenant: identity.provider_tenant,
-        provider_subject: identity.provider_subject,
-        email: identity.email,
-        email_verified: identity.email_verified,
-        roles: identity.roles,
-        assurance,
-    })?;
+    let access = state.minter.mint_with_auth_time(
+        MintContext {
+            shared_user_id: identity.shared_user_id.to_string(),
+            session_id,
+            provider: identity.provider,
+            provider_tenant: identity.provider_tenant,
+            provider_subject: identity.provider_subject,
+            email: identity.email,
+            email_verified: identity.email_verified,
+            roles: identity.roles,
+            assurance,
+        },
+        verified_auth_time,
+    )?;
     Ok(IssuedSession {
         access,
         refresh_token,
@@ -112,6 +127,8 @@ pub fn mint_for_session(
 /// `claims` must come from a token this server already verified — the caller
 /// carries the prior `amr` forward so the new token records the whole chain.
 ///
+/// The minter stamps `auth_time` at the completion of this server-owned AAL2
+/// ceremony.
 // Not yet routed: the step-up challenge endpoint lands with the MFA platform
 // work. `mfa.rs` currently issues a fresh session via
 // `response_from_issued_with_assurance` instead of re-minting for the existing
