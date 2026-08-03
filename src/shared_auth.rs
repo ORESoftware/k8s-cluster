@@ -29,22 +29,13 @@ impl ExpectedSharedAuth {
             return Ok(None);
         }
 
-        let base_url = env_or(
-            "BILLING_SHARED_AUTH_BASE_URL",
-            DEFAULT_SHARED_AUTH_BASE_URL,
-        );
+        let base_url = env_or("BILLING_SHARED_AUTH_BASE_URL", DEFAULT_SHARED_AUTH_BASE_URL);
         let issuer = env_or("BILLING_SHARED_AUTH_ISSUER", &base_url);
         let jwks_url = env_or(
             "BILLING_SHARED_AUTH_JWKS_URL",
-            &format!(
-                "{}/.well-known/jwks.json",
-                base_url.trim_end_matches('/')
-            ),
+            &format!("{}/.well-known/jwks.json", base_url.trim_end_matches('/')),
         );
-        let audience = env_or(
-            "BILLING_SHARED_AUTH_AUDIENCE",
-            DEFAULT_SHARED_AUTH_AUDIENCE,
-        );
+        let audience = env_or("BILLING_SHARED_AUTH_AUDIENCE", DEFAULT_SHARED_AUTH_AUDIENCE);
 
         let expected = Self {
             base_url: canonical_url(&base_url),
