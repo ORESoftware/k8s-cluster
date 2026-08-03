@@ -60,13 +60,13 @@ jobs:
 
           replace_once(
               'src/http_api.rs',
-              'const PUSH_BODY_LIMIT: usize = 512 * 1024;',
-              'pub(crate) const PUSH_BODY_LIMIT: usize = 512 * 1024;',
+              'const MAX_HTTP_BODY_BYTES: usize = 512 * 1024;',
+              'pub(crate) const MAX_HTTP_BODY_BYTES: usize = 512 * 1024;',
           )
           replace_once(
               'src/contact/http.rs',
-              'const CONTACT_BODY_LIMIT: usize = 768 * 1024;',
-              'pub(crate) const CONTACT_BODY_LIMIT: usize = 768 * 1024;',
+              'const MAX_CONTACT_HTTP_BODY_BYTES: usize = 768 * 1024;',
+              'pub(crate) const MAX_CONTACT_HTTP_BODY_BYTES: usize = 768 * 1024;',
           )
           replace_once(
               'src/api_docs.rs',
@@ -76,7 +76,7 @@ jobs:
           replace_once(
               'src/api_docs.rs',
               'use crate::contact::http::{ContactApiState, contact_openapi_router};\nuse crate::http_api::{ApiState, RequestAuthenticator, push_openapi_router};',
-              'use crate::contact::http::{\n    CONTACT_BODY_LIMIT, ContactApiState, contact_openapi_router,\n};\nuse crate::http_api::{\n    PUSH_BODY_LIMIT, ApiState, RequestAuthenticator, push_openapi_router,\n};',
+              'use crate::contact::http::{\n    ContactApiState, MAX_CONTACT_HTTP_BODY_BYTES, contact_openapi_router,\n};\nuse crate::http_api::{\n    ApiState, MAX_HTTP_BODY_BYTES, RequestAuthenticator, push_openapi_router,\n};',
           )
           replace_once(
               'src/api_docs.rs',
@@ -85,11 +85,11 @@ jobs:
                   .merge(contact_router.with_state(contact_state))
                   .merge(docs_router.with_state(docs_state)))''',
               '''    let push_router = push_router
-                  .with_state(push_state)
-                  .layer(DefaultBodyLimit::max(PUSH_BODY_LIMIT));
+                  .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
+                  .with_state(push_state);
               let contact_router = contact_router
-                  .with_state(contact_state)
-                  .layer(DefaultBodyLimit::max(CONTACT_BODY_LIMIT));
+                  .layer(DefaultBodyLimit::max(MAX_CONTACT_HTTP_BODY_BYTES))
+                  .with_state(contact_state);
 
               Ok(push_router
                   .merge(contact_router)
@@ -162,8 +162,8 @@ jobs:
           assert 'PushJob' not in schemas and 'ContactJob' not in schemas
           assert {'ServiceHealth', 'ReadinessResponse', 'ContactReadinessResponse'} <= set(schemas)
           PY
-          grep --fixed-strings --quiet '.layer(DefaultBodyLimit::max(PUSH_BODY_LIMIT))' src/api_docs.rs
-          grep --fixed-strings --quiet '.layer(DefaultBodyLimit::max(CONTACT_BODY_LIMIT))' src/api_docs.rs
+          grep --fixed-strings --quiet '.layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))' src/api_docs.rs
+          grep --fixed-strings --quiet '.layer(DefaultBodyLimit::max(MAX_CONTACT_HTTP_BODY_BYTES))' src/api_docs.rs
           git diff --check
 
       - name: Remove transport and commit reconciled product head
