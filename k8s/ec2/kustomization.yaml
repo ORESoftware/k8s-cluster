@@ -5,3 +5,6 @@ resources:
   - dd-billing-server-secrets.externalsecret.yaml
   - dd-billing-server.deployment.yaml
   - dd-billing-server.service.yaml
+
+patches:
+  - path: dd-billing-server.shared-auth.patch.yaml
