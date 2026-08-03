@@ -13,6 +13,7 @@ CONTRACTOR_HANDBOOK_FILES = {
     "README.md",
     "PRODUCT.md",
     "ARCHITECTURE.md",
+    "OFFLINE_SYNC_PROTOCOL.md",
     "DOMAIN_MODEL.md",
     "USER_EXPERIENCE.md",
     "PRIVACY_AND_TRUST.md",
@@ -110,7 +111,7 @@ class RepositoryContractTests(unittest.TestCase):
             content = path.read_text(encoding="utf-8")
             self.assertTrue(content.startswith("# "), relative)
             self.assertGreater(len(content), 900, relative)
-            self.assertEqual(content.count("```" ) % 2, 0, relative)
+            self.assertEqual(content.count("```") % 2, 0, relative)
 
     def test_contractor_handbook_keeps_the_product_name_provisional(self):
         index = (CONTRACTOR_HANDBOOK / "README.md").read_text(encoding="utf-8")
@@ -150,6 +151,30 @@ class RepositoryContractTests(unittest.TestCase):
             self.assertIn("## Context", content, path.name)
             self.assertIn("## Decision", content, path.name)
             self.assertIn("## Consequences", content, path.name)
+
+    def test_offline_sync_protocol_preserves_replay_and_trust_invariants(self):
+        protocol = (
+            CONTRACTOR_HANDBOOK / "OFFLINE_SYNC_PROTOCOL.md"
+        ).read_text(encoding="utf-8")
+        for required in (
+            "Array order is never authority",
+            "new",
+            "duplicate",
+            "conflict",
+            "last-write-wins",
+            "cryptographicallyEraseEvidence",
+            "sync-batch.schema.json",
+            "sync-semantics.mjs",
+            "production mobile sync worker",
+        ):
+            self.assertIn(required, protocol)
+        normalized = " ".join(protocol.split())
+        self.assertIn(
+            "never resolves an identity conflict with last-write-wins",
+            normalized,
+        )
+        self.assertIn("Raw evidence bytes are carried separately", protocol)
+        self.assertNotIn("status: live", protocol.lower())
 
 
 if __name__ == "__main__":

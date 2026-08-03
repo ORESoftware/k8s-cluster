@@ -25,6 +25,7 @@ customer-facing factual claim.
 | --- | --- | --- |
 | Product promise, users, scope, metrics | Incubation baseline | [Product brief](PRODUCT.md) |
 | System context and component boundaries | Incubation baseline | [Architecture](ARCHITECTURE.md) |
+| Offline envelopes, replay, causality, attachments | Implemented contract + service roadmap | [Offline sync protocol](OFFLINE_SYNC_PROTOCOL.md) |
 | Entities, states, invariants, lineage | Implemented contract + roadmap | [Domain model](DOMAIN_MODEL.md) |
 | Worker, reviewer, and customer workflows | Design baseline | [User experience](USER_EXPERIENCE.md) |
 | Consent, retention, redaction, anti-surveillance | Mandatory product policy | [Privacy and trust](PRIVACY_AND_TRUST.md) |
@@ -45,8 +46,9 @@ The handbook describes the intended product as a whole. The following artifacts
 are normative for the parts they already implement:
 
 - [`apps/sonus-auris-interfaces/incubation/contractor-work-intelligence/v1/`](../../apps/sonus-auris-interfaces/incubation/contractor-work-intelligence/v1/)
-  contains the versioned v1 ledger schema, semantic validator, golden workday,
-  and negative billing/privacy tests.
+  contains the versioned v1 work-ledger and offline-sync schemas, semantic
+  validators, golden workday/offline batches, and negative billing, privacy,
+  replay, lineage, and attachment tests.
 - Linear [DEN-989](https://linear.app/denman/issue/DEN-989) is the parent product
   program.
 - Linear [DEN-990](https://linear.app/denman/issue/DEN-990) owns market, launch
@@ -55,6 +57,8 @@ are normative for the parts they already implement:
   shared-component architecture.
 - Linear [DEN-992](https://linear.app/denman/issue/DEN-992) owns portable domain
   contracts.
+- Linear [DEN-1542](https://linear.app/denman/issue/DEN-1542) owns the offline
+  envelope, replay, causal-ordering, and encrypted-attachment contract slice.
 - Linear [DEN-994](https://linear.app/denman/issue/DEN-994) owns sonic and verbal
   cue recognition.
 - Linear [DEN-996](https://linear.app/denman/issue/DEN-996) owns generated field
@@ -82,15 +86,17 @@ Read [Product brief](PRODUCT.md), [User experience](USER_EXPERIENCE.md),
 ### Application and backend engineers
 
 Read [Architecture](ARCHITECTURE.md), [Domain model](DOMAIN_MODEL.md),
+[Offline sync protocol](OFFLINE_SYNC_PROTOCOL.md),
 [Reports and billing](REPORTS_AND_BILLING.md), and
 [Operations and quality](OPERATIONS_AND_QUALITY.md), then inspect the versioned
-ledger contract.
+ledger and sync contracts.
 
 ### Security, privacy, legal, and labor reviewers
 
 Read [Privacy and trust](PRIVACY_AND_TRUST.md), ADR-0002, ADR-0003, the data
-classification section in [Architecture](ARCHITECTURE.md), and every rollout gate
-in [Operations and quality](OPERATIONS_AND_QUALITY.md).
+classification section in [Architecture](ARCHITECTURE.md), the evidence-lifecycle
+and attachment sections in [Offline sync protocol](OFFLINE_SYNC_PROTOCOL.md), and
+every rollout gate in [Operations and quality](OPERATIONS_AND_QUALITY.md).
 
 ### Model and audio engineers
 
@@ -112,13 +118,16 @@ evaluation matrix in [Operations and quality](OPERATIONS_AND_QUALITY.md).
   policy.
 - Every feature that captures sound or location must document visible state,
   pause/stop behavior, retention, sharing, and deletion.
+- Every sync feature must document local durability, stable identity, replay,
+  conflict, partial failure, attachment encryption, and user-visible status.
 - Update the handbook in the same PR as a material contract or architecture
   change. A code-only semantic change is incomplete.
 
 ## Current product maturity
 
-The product is in **incubation**. The portable work-ledger contract and semantic
-safety rules exist, but the final organization, repositories, cloud environments,
-mobile application, production API, reports, invoices, and pilot integrations do
-not yet constitute a released product. This handbook is a design and engineering
-contract for building those pieces, not a statement that they are already live.
+The product is in **incubation**. Portable work-ledger and offline-sync contracts
+and semantic safety rules exist, but the final organization, repositories, cloud
+environments, mobile application, production API/sync service, reports, invoices,
+and pilot integrations do not yet constitute a released product. This handbook
+is a design and engineering contract for building those pieces, not a statement
+that they are already live.
