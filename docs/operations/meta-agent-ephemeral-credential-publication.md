@@ -31,9 +31,10 @@ of that parent; PR-controlled code is never checked out or executed.
 Before generating an RSA key or requesting any owner credential, the broker
 runs a source preflight with the ordinary workflow-scoped read token. The
 preflight reconstructs the exact recovered Git history from the sealed source,
-verifies the bundle and publisher digests, verifies the exact two-ref inventory,
-and proves `git bundle verify` succeeds inside an initialized source repository.
-A challenge is posted only after that read-only preflight succeeds.
+verifies the bundle and publisher digests, verifies the exact two publishable
+branch refs, and proves `git bundle verify` succeeds inside an initialized
+source repository. A challenge is posted only after that read-only preflight
+succeeds.
 
 After decryption, the workflow verifies the credential identifies exactly
 `ORESoftware` and has active admin membership in `meta-agents-demo` before any
@@ -78,9 +79,14 @@ Git Database API, and require byte-exact reconstruction.
 
 Bundle verification must run inside an initialized source repository. `git
 bundle verify` consults repository state even for a self-contained bundle. The
-verifier creates a temporary bare repository, verifies the bundle there,
-enumerates its heads, and rejects any ref or SHA beyond the exact reviewed
-inventory.
+verifier creates a temporary bare repository and verifies the bundle there.
+It classifies only `refs/heads/*` entries as publishable branches and requires
+them to equal the reviewed `main` and feature map exactly. A Git bundle may also
+advertise the non-pushable pseudo-ref `HEAD`; it is accepted only when it points
+to one of the reviewed branch SHAs. Tags, remote-tracking refs, additional
+branches, unknown pseudo-refs, or a `HEAD` pointing outside the reviewed branch
+SHAs fail closed. The publisher independently pushes only the two explicit
+`refs/heads/*` entries and never pushes `HEAD`.
 
 ## Trusted helper pin
 
@@ -89,7 +95,8 @@ validation it reads `verify_meta_agent_source_snapshot.py` from the exact
 trusted-main SHA returned by GitHub, requires the reviewed Git blob SHA, decodes
 the helper into the runner's private temporary directory, and compiles it before
 execution. Source preflight output is limited to sanitized source SHA, tree SHA,
-asset count, digests, exact refs, and temporary output paths.
+asset count, digests, publishable branch refs, allowed auxiliary refs, and
+temporary output paths.
 
 ## CI proof
 
@@ -97,9 +104,9 @@ The focused broker contract performs two complementary checks on every broker,
 verifier, diagnostic test, fixture test, or runbook change:
 
 - unit and structural tests for trust boundaries, bounded API traversal,
-  two-layer decoding, truncated-tree rejection, exact-ref rejection, memory-only
-  credentials, no-force behavior, stage ordering, target verification, and
-  carrier cleanup;
+  two-layer decoding, truncated-tree rejection, branch-ref drift, auxiliary-ref
+  rejection, memory-only credentials, no-force behavior, stage ordering, target
+  verification, and carrier cleanup;
 - a live read-only source preflight using `${{ github.token }}` that reconstructs
   and verifies the actual DEN-1057 bundle and publisher.
 
@@ -114,8 +121,8 @@ provider responses:
 - `source-helper`: the trusted helper was missing, had the wrong blob SHA, or did
   not compile;
 - `source-preflight`: the exact commit/tree/blob snapshot, two base64 layers,
-  bundle or publisher digest, initialized repository context, or exact ref
-  inventory failed;
+  bundle or publisher digest, initialized repository context, publishable branch
+  inventory, or auxiliary-ref policy failed;
 - `challenge-bootstrap`: ephemeral RSA key or challenge creation failed;
 - `await-encrypted-response`: no valid newer owner-authored ciphertext response
   arrived for the active nonce;
