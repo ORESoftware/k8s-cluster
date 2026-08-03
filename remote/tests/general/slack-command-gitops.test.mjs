@@ -100,7 +100,7 @@ test('only the three exact signed Slack routes are publicly exposed', () => {
   assert.doesNotMatch(bundle, /pathType: Prefix/);
 });
 
-test('service, probes, state, and pod security are explicit', () => {
+test('service, probes, state, pod security, and monitoring labels are explicit', () => {
   assert.match(bundle, /name: dd-slack-command[\s\S]*?type: ClusterIP/);
   assert.match(bundle, /port: 8151\n\s+targetPort: http/);
   assert.match(bundle, /containerPort: 8151/);
@@ -117,6 +117,19 @@ test('service, probes, state, and pod security are explicit', () => {
   assert.match(bundle, /capabilities:\n\s+drop:\n\s+- ALL/);
   assert.match(bundle, /seccompProfile:\n\s+type: RuntimeDefault/);
   assert.match(bundle, /resources:\n\s+requests:[\s\S]*?limits:/);
+  assert.match(
+    bundle,
+    /kind: Deployment\nmetadata:\n  name: dd-slack-command[\s\S]*?labels:\n    app: dd-ai-agent-bridge\n    app\.kubernetes\.io\/component: slack-command/,
+  );
+  assert.match(
+    bundle,
+    /kind: Deployment[\s\S]*?selector:\n    matchLabels:\n      app: dd-ai-agent-bridge\n      app\.kubernetes\.io\/component: slack-command/,
+  );
+  assert.match(
+    bundle,
+    /kind: Service\nmetadata:\n  name: dd-slack-command[\s\S]*?selector:\n    app: dd-ai-agent-bridge\n    app\.kubernetes\.io\/component: slack-command/,
+  );
+  assert.equal(count(bundle, 'app.kubernetes.io/component: slack-command'), 6);
 });
 
 test('network policy limits ingress and grants only required egress classes', () => {
