@@ -57,11 +57,12 @@ class PublisherContractTests(unittest.TestCase):
         positions = [
             self.broker.index("aws-secrets-manager"),
             self.broker.index("kubernetes-secret"),
-            self.broker.index("protected-gh-cli"),
+            self.broker.index("protected-gh-profile"),
         ]
         self.assertEqual(positions, sorted(positions))
-        self.assertIn("base64", self.broker)
-        self.assertIn("runuser", self.broker)
+        self.assertIn("base64 --wrap=0", self.broker)
+        self.assertIn("sudo -u ec2-user -H", self.broker)
+        self.assertIn("gh auth token --hostname github.com", self.broker)
 
     def test_github_api_is_bounded_and_does_not_follow_redirects(self) -> None:
         self.assertIn("urllib.request.urlopen(req, timeout=30)", self.publisher)
