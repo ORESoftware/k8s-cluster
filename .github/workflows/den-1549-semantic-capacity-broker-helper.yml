@@ -1,0 +1,259 @@
+name: DEN-1549 semantic capacity broker merge helper
+
+on:
+  push:
+    branches:
+      - agent/den-1549-semantic-capacity-broker-20260803
+    paths:
+      - .github/workflows/den-1549-semantic-capacity-broker-helper.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1549-semantic-capacity-broker-helper
+  cancel-in-progress: false
+
+jobs:
+  apply-validate-and-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Semantically overlay DEN-1549 without replacing the workflow mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_branch='agent/den-1549-sonus-gha-failover-20260803'
+          git fetch --no-tags origin "refs/heads/${source_branch}:refs/remotes/origin/${source_branch}"
+          source_sha="$(git rev-parse "refs/remotes/origin/${source_branch}")"
+
+          copy_from_source() {
+            local source_path="$1"
+            local destination_path="${2:-$1}"
+            mkdir -p "$(dirname "$destination_path")"
+            git show "${source_sha}:${source_path}" > "$destination_path"
+          }
+
+          while IFS= read -r path; do
+            test -n "$path" || continue
+            copy_from_source "$path"
+          done <<'FILES'
+          .github/workflows/sonus-arc-scaffold.yml
+          docs/github-actions-self-hosted-failover.md
+          remote/argocd/ci-runners/sonus-auris-arc-plan.md
+          remote/argocd/ci-runners/sonus-auris/README.md
+          remote/argocd/ci-runners/sonus-auris/base/externalsecrets.yaml
+          remote/argocd/ci-runners/sonus-auris/base/kustomization.yaml
+          remote/argocd/ci-runners/sonus-auris/base/namespace.yaml
+          remote/argocd/ci-runners/sonus-auris/base/resource-policy.yaml
+          remote/argocd/ci-runners/sonus-auris/base/runner-networkpolicy.yaml
+          remote/argocd/ci-runners/sonus-auris/sonus-arc-github.externalsecret.template.yaml
+          remote/argocd/ci-runners/sonus-auris/sonus-ci-runner-set.application.template.yaml
+          remote/argocd/ci-runners/sonus-auris/sonus-ci-smoke.workflow.template.yml
+          remote/argocd/ci-runners/validate-sonus-arc-scaffold.py
+          remote/argocd/clusters/aws/gha-ci.applications.yaml
+          remote/argocd/clusters/hetzner/gha-ci.applications.yaml
+          FILES
+
+          copy_from_source \
+            remote/argocd/ci-runners/sonus-auris/gha-clone-server-policy.configmap.template.yaml \
+            remote/argocd/ci-runners/sonus-auris/gha-capacity-broker-policy.configmap.template.yaml
+          copy_from_source \
+            remote/argocd/ci-runners/sonus-auris/gha-clone-server.deployment.template.yaml \
+            remote/argocd/ci-runners/sonus-auris/gha-capacity-broker.deployment.template.yaml
+
+          while IFS= read -r source_path; do
+            test -n "$source_path" || continue
+            destination_path="${source_path/remote\/deployments\/gha-clone-server-rs/remote\/deployments\/gha-capacity-broker-rs}"
+            copy_from_source "$source_path" "$destination_path"
+          done < <(git ls-tree -r --name-only "$source_sha" -- remote/deployments/gha-clone-server-rs)
+
+          python - <<'PY'
+          from pathlib import Path
+
+          text_paths = [
+              Path('.github/workflows/sonus-arc-scaffold.yml'),
+              Path('docs/github-actions-self-hosted-failover.md'),
+              Path('remote/argocd/ci-runners/sonus-auris-arc-plan.md'),
+              Path('remote/argocd/ci-runners/sonus-auris/README.md'),
+              Path('remote/argocd/ci-runners/sonus-auris/base/externalsecrets.yaml'),
+              Path('remote/argocd/ci-runners/sonus-auris/base/kustomization.yaml'),
+              Path('remote/argocd/ci-runners/sonus-auris/base/namespace.yaml'),
+              Path('remote/argocd/ci-runners/sonus-auris/base/resource-policy.yaml'),
+              Path('remote/argocd/ci-runners/sonus-auris/base/runner-networkpolicy.yaml'),
+              Path('remote/argocd/ci-runners/sonus-auris/gha-capacity-broker-policy.configmap.template.yaml'),
+              Path('remote/argocd/ci-runners/sonus-auris/gha-capacity-broker.deployment.template.yaml'),
+              Path('remote/argocd/ci-runners/sonus-auris/sonus-arc-github.externalsecret.template.yaml'),
+              Path('remote/argocd/ci-runners/sonus-auris/sonus-ci-runner-set.application.template.yaml'),
+              Path('remote/argocd/ci-runners/sonus-auris/sonus-ci-smoke.workflow.template.yml'),
+              Path('remote/argocd/ci-runners/validate-sonus-arc-scaffold.py'),
+          ]
+          text_paths.extend(
+              path for path in Path('remote/deployments/gha-capacity-broker-rs').rglob('*')
+              if path.is_file()
+          )
+          replacements = (
+              ('gha_clone_server', 'gha_capacity_broker'),
+              ('GHA_CLONE_SERVER', 'GHA_CAPACITY_BROKER'),
+              ('gha-clone-server-rs', 'gha-capacity-broker-rs'),
+              ('gha-clone-server', 'gha-capacity-broker'),
+              ('GHA Clone Server', 'GHA Capacity Broker'),
+              ('GHA clone server', 'GHA capacity broker'),
+          )
+          for path in text_paths:
+              text = path.read_text(encoding='utf-8')
+              for old, new in replacements:
+                  text = text.replace(old, new)
+              path.write_text(text, encoding='utf-8')
+
+          def ensure_resource(path: str, resource: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding='utf-8')
+              line = f'  - {resource}'
+              if line not in text:
+                  text = text.rstrip() + f'\n{line}\n'
+                  file.write_text(text, encoding='utf-8')
+
+          ensure_resource('remote/argocd/clusters/aws/kustomization.yaml', 'gha-ci.applications.yaml')
+          ensure_resource('remote/argocd/clusters/hetzner/kustomization.yaml', 'gha-ci.applications.yaml')
+
+          def ensure_replacement(path: str, old: str, new: str, sentinel: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding='utf-8')
+              if sentinel in text:
+                  return
+              if old not in text:
+                  raise SystemExit(f'{path}: expected merge anchor not found: {old}')
+              file.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          for path in (
+              'remote/argocd/observability/k8s-resource-exporter.configmap.yaml',
+              'remote/argocd/observability/k8s-resource-exporter.deployment.yaml',
+          ):
+              ensure_replacement(
+                  path,
+                  'anon-proxy,athleto',
+                  'anon-proxy,arc-runners-sonus,athleto',
+                  'arc-runners-sonus',
+              )
+              ensure_replacement(
+                  path,
+                  'gcs-router,headlamp',
+                  'gcs-router,gha-capacity-broker-sonus,headlamp',
+                  'gha-capacity-broker-sonus',
+              )
+
+          architecture_note = '''
+
+          ## Independent workflow mirror boundary
+
+          The quota and lane-selection service in this document is
+          `remote/deployments/gha-capacity-broker-rs`. It is intentionally separate from
+          `remote/deployments/gha-clone-server-rs`, which remains the fail-closed workflow
+          planner and fixed-profile dispatcher promoted through DEN-1550. The capacity
+          broker may select hosted, ARC, or reviewed build-server mode; it does not parse
+          or execute repository workflow commands and it never replaces the independent
+          mirror.
+          '''.strip()
+          doc = Path('docs/github-actions-self-hosted-failover.md')
+          text = doc.read_text(encoding='utf-8').rstrip()
+          if '## Independent workflow mirror boundary' not in text:
+              doc.write_text(text + '\n\n' + architecture_note + '\n', encoding='utf-8')
+
+          readme_note = '''
+
+          ## Capacity broker versus workflow mirror
+
+          `gha-capacity-broker-rs` owns billing/capacity policy and reviewed repository
+          routing. `gha-clone-server-rs` remains a separate, fail-closed independent
+          workflow mirror backed by fixed `dd-build-server` profiles. Neither service
+          silently substitutes unsupported GitHub Actions semantics.
+          '''.strip()
+          readme = Path('remote/argocd/ci-runners/sonus-auris/README.md')
+          text = readme.read_text(encoding='utf-8').rstrip()
+          if '## Capacity broker versus workflow mirror' not in text:
+              readme.write_text(text + '\n\n' + readme_note + '\n', encoding='utf-8')
+          PY
+
+          python tools/application_catalog.py generate catalog/applications.json
+          python tools/application_catalog.py check catalog/applications.json
+          python -m py_compile remote/argocd/ci-runners/validate-sonus-arc-scaffold.py
+          python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py
+          git diff --check
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: -config-file .github/actionlint.yaml .github/workflows/gha-clone-server.yml .github/workflows/sonus-arc-scaffold.yml .github/workflows/den-1549-semantic-capacity-broker-helper.yml
+
+      - name: Validate capacity broker Rust crate
+        working-directory: remote/deployments/gha-capacity-broker-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo test --all-features
+          cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Revalidate independent workflow mirror Rust crate
+        working-directory: remote/deployments/gha-clone-server-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo test --locked --all-targets
+          cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Reject credentials and conflict markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- \
+            .github/workflows/sonus-arc-scaffold.yml \
+            docs/github-actions-self-hosted-failover.md \
+            remote/argocd/ci-runners/sonus-auris \
+            remote/argocd/ci-runners/sonus-auris-arc-plan.md \
+            remote/argocd/ci-runners/validate-sonus-arc-scaffold.py \
+            remote/argocd/clusters/aws \
+            remote/argocd/clusters/hetzner \
+            remote/deployments/gha-capacity-broker-rs \
+            remote/deployments/gha-clone-server-rs; then
+            echo 'conflict marker found' >&2
+            exit 1
+          fi
+          if grep -RIE \
+            --exclude='den-1549-semantic-capacity-broker-helper.yml' \
+            'ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|BEGIN (RSA |EC )?PRIVATE KEY' \
+            docs/github-actions-self-hosted-failover.md \
+            remote/argocd/ci-runners/sonus-auris \
+            remote/deployments/gha-capacity-broker-rs; then
+            echo 'credential-like material found' >&2
+            exit 1
+          fi
+
+      - name: Commit validated semantic merge and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/den-1549-semantic-capacity-broker-helper.yml
+          git add -A
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-1549 separate capacity broker from GHA workflow mirror'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
