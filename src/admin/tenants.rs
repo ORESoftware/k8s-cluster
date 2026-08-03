@@ -169,8 +169,7 @@ pub async fn create(
     validation::country_code(&country_code)
         .map_err(|message| AppError::BadRequest(message.into()))?;
     if let Some(state_code) = us_state.as_deref() {
-        validation::us_state(state_code)
-            .map_err(|message| AppError::BadRequest(message.into()))?;
+        validation::us_state(state_code).map_err(|message| AppError::BadRequest(message.into()))?;
     }
     if let Some(currency) = base_currency.as_deref() {
         validation::currency_code(currency)
