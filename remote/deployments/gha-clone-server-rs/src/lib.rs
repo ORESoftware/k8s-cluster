@@ -45,7 +45,6 @@ fn default_hosted_runs_on() -> Vec<String> {
     vec![DEFAULT_HOSTED_RUNS_ON.to_string()]
 }
 
-
 impl OrgPolicy {
     pub fn validate(&self) -> Result<(), String> {
         if !self.warn_percent.is_finite() || !(0.0..=100.0).contains(&self.warn_percent) {
@@ -190,8 +189,9 @@ pub fn decide_capacity(policy: &OrgPolicy, actions_minutes: Option<f64>) -> Capa
                 CapacityDecision {
                     mode: ExecutionMode::SelfHosted,
                     runs_on: policy.self_hosted_runs_on.clone(),
-                    reason: "configured hosted-minute hard stop reached; using validated ARC capacity"
-                        .to_string(),
+                    reason:
+                        "configured hosted-minute hard stop reached; using validated ARC capacity"
+                            .to_string(),
                     actions_minutes,
                     usage_percent,
                     warnings,
@@ -210,8 +210,9 @@ pub fn decide_capacity(policy: &OrgPolicy, actions_minutes: Option<f64>) -> Capa
                 CapacityDecision {
                     mode: ExecutionMode::Hold,
                     runs_on: Vec::new(),
-                    reason: "hosted-minute hard stop reached and no certified fallback is available"
-                        .to_string(),
+                    reason:
+                        "hosted-minute hard stop reached and no certified fallback is available"
+                            .to_string(),
                     actions_minutes,
                     usage_percent,
                     warnings,
@@ -240,8 +241,9 @@ pub fn decide_capacity(policy: &OrgPolicy, actions_minutes: Option<f64>) -> Capa
         None if policy.self_hosted_ready => CapacityDecision {
             mode: ExecutionMode::SelfHosted,
             runs_on: policy.self_hosted_runs_on.clone(),
-            reason: "billing usage is unavailable; failing closed onto validated self-hosted capacity"
-                .to_string(),
+            reason:
+                "billing usage is unavailable; failing closed onto validated self-hosted capacity"
+                    .to_string(),
             actions_minutes,
             usage_percent,
             warnings,
@@ -413,8 +415,6 @@ mod tests {
         let decision = decide_capacity(&value, Some(1_900.0));
         assert!(decision_variables(&value, &decision).is_err());
     }
-
-
 
     #[test]
     fn prefer_self_hosted_overrides_low_usage_after_certification() {

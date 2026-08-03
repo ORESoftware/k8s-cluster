@@ -97,10 +97,7 @@ impl Config {
             )?),
             operator_secret,
             mutation_enabled: env_bool("GHA_MUTATION_ENABLED", false),
-            reconcile_interval: Duration::from_secs(env_u64(
-                "GHA_RECONCILE_INTERVAL_SECONDS",
-                900,
-            )),
+            reconcile_interval: Duration::from_secs(env_u64("GHA_RECONCILE_INTERVAL_SECONDS", 900)),
             organization,
             policy,
         })
@@ -372,7 +369,9 @@ impl GitHubClient {
             .json(&json!({}))
             .send()
             .await
-            .map_err(|error| ApiError::bad_gateway(format!("GitHub token request failed: {error}")))?;
+            .map_err(|error| {
+                ApiError::bad_gateway(format!("GitHub token request failed: {error}"))
+            })?;
         let status = response.status();
         let body = response.text().await.map_err(|error| {
             ApiError::bad_gateway(format!("failed to read GitHub token response: {error}"))
@@ -384,7 +383,9 @@ impl GitHubClient {
             )));
         }
         let token: InstallationTokenResponse = serde_json::from_str(&body).map_err(|error| {
-            ApiError::bad_gateway(format!("invalid GitHub installation token response: {error}"))
+            ApiError::bad_gateway(format!(
+                "invalid GitHub installation token response: {error}"
+            ))
         })?;
         *guard = Some(CachedInstallationToken {
             token: token.token.clone(),
@@ -414,7 +415,9 @@ impl GitHubClient {
             .bearer_auth(token)
             .send()
             .await
-            .map_err(|error| ApiError::bad_gateway(format!("GitHub billing request failed: {error}")))?;
+            .map_err(|error| {
+                ApiError::bad_gateway(format!("GitHub billing request failed: {error}"))
+            })?;
         let status = response.status();
         let body = response.text().await.map_err(|error| {
             ApiError::bad_gateway(format!("failed to read GitHub billing response: {error}"))
@@ -451,7 +454,9 @@ impl GitHubClient {
             .json(&body)
             .send()
             .await
-            .map_err(|error| ApiError::bad_gateway(format!("GitHub variable update failed: {error}")))?;
+            .map_err(|error| {
+                ApiError::bad_gateway(format!("GitHub variable update failed: {error}"))
+            })?;
         if patch.status().is_success() {
             return Ok(());
         }
@@ -464,7 +469,10 @@ impl GitHubClient {
             )));
         }
 
-        let create_url = format!("{}/orgs/{org}/actions/variables", self.config.github_api_base);
+        let create_url = format!(
+            "{}/orgs/{org}/actions/variables",
+            self.config.github_api_base
+        );
         let create = self
             .http
             .post(create_url)
@@ -474,7 +482,9 @@ impl GitHubClient {
             .json(&body)
             .send()
             .await
-            .map_err(|error| ApiError::bad_gateway(format!("GitHub variable create failed: {error}")))?;
+            .map_err(|error| {
+                ApiError::bad_gateway(format!("GitHub variable create failed: {error}"))
+            })?;
         if create.status().is_success() {
             return Ok(());
         }
@@ -504,11 +514,7 @@ async fn decision_for_org(state: &AppState, org: &str) -> Result<CapacityDecisio
         .metrics
         .billing_reads_total
         .fetch_add(1, Ordering::Relaxed);
-    let usage = match state
-        .github
-        .billing_usage(&state.config.organization)
-        .await
-    {
+    let usage = match state.github.billing_usage(&state.config.organization).await {
         Ok(usage) => Some(usage.actions_minutes()),
         Err(error) => {
             state
@@ -653,7 +659,8 @@ async fn reconcile_organization(
         return Err(ApiError::unauthorized());
     }
     let decision = decision_for_org(&state, &org).await?;
-    let variables = decision_variables(&state.config.policy, &decision).map_err(ApiError::internal)?;
+    let variables =
+        decision_variables(&state.config.policy, &decision).map_err(ApiError::internal)?;
     state
         .metrics
         .reconcile_total
@@ -783,7 +790,11 @@ async fn reconcile_all(state: AppState) {
                         .metrics
                         .reconcile_failures_total
                         .fetch_add(1, Ordering::Relaxed);
-                    error!(organization = org, error = message, "variable reconciliation blocked");
+                    error!(
+                        organization = org,
+                        error = message,
+                        "variable reconciliation blocked"
+                    );
                 }
             }
         }
