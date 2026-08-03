@@ -16,26 +16,22 @@ jobs:
           ref: harden/shared-auth-production
           fetch-depth: 0
           persist-credentials: true
-      - name: Apply reviewed patches and push the real source diff
+      - name: Apply reviewed source patches and push
         shell: bash
         run: |
           set -euo pipefail
-          # Two temporary CI edits sit above the real branch content. Restore
-          # the pre-materializer workflow into the final commit.
-          git show HEAD^^:.github/workflows/ci.yml > /tmp/ci.yml.original
 
           first=/tmp/0001-tenant-governance.patch
           base64 --decode .github/agent-patches/0001-tenant-governance.patch.gz.b64 \
             | gzip --decompress --stdout > "$first"
-          git apply --check "$first"
-          git apply "$first"
+          # The connected GitHub app applies the permanent workflow hunk after
+          # this source commit. GITHUB_TOKEN intentionally lacks workflows scope.
+          git apply --exclude=.github/workflows/compile.yml --check "$first"
+          git apply --exclude=.github/workflows/compile.yml "$first"
 
           oauth=/tmp/0003-redirect-oauth-gate.patch
           base64 --decode .github/agent-patches/0003-redirect-oauth-gate.patch.gz.b64 \
             | gzip --decompress --stdout > "$oauth"
-          # Config evolved after the reviewed patch was prepared. Apply the
-          # unchanged docs/K8s/handler hunks, then merge the config intent into
-          # the current layout with exact, single-use anchors.
           git apply --exclude=src/config.rs --check "$oauth"
           git apply --exclude=src/config.rs "$oauth"
 
@@ -106,16 +102,13 @@ jobs:
               "            redirect_oauth_enabled: false,\n"
               "            require_webhook_signatures: false,",
           )
-
           path.write_text(text)
           PY
 
           cargo fmt --all
-          cp /tmp/ci.yml.original .github/workflows/ci.yml
           rm -f \
             .github/agent-patches/0001-tenant-governance.patch.gz.b64 \
-            .github/agent-patches/0003-redirect-oauth-gate.patch.gz.b64 \
-            .github/workflows/agent-apply-production-hardening.yml
+            .github/agent-patches/0003-redirect-oauth-gate.patch.gz.b64
           rmdir .github/agent-patches 2>/dev/null || true
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
