@@ -40,216 +40,210 @@ jobs:
               print('WebRTC shared-auth integration is already present.')
               raise SystemExit(0)
 
-          def replace_exact(old: str, new: str) -> None:
+          def replace_once(label: str, old: str, new: str) -> None:
               global text
               if old not in text:
-                  raise SystemExit(f'expected source block not found:\n{old}')
+                  raise SystemExit(f'expected {label} block not found:\n{old}')
               text = text.replace(old, new, 1)
 
-          replace_exact(
-              'use std::{\n',
-              'mod auth;\n\nuse std::{\n',
-          )
-          replace_exact(
+          replace_once('module declaration', 'use std::{\n', 'mod auth;\n\nuse std::{\n')
+          replace_once(
+              'auth imports',
               'use tokio::sync::{mpsc, RwLock};\n',
-              'use tokio::sync::{mpsc, RwLock};\n\nuse crate::auth::{\n    sanitize_client_metadata, PeerIdentity, SignalAuthConfig, SignalAuthError,\n};\n',
+              'use tokio::sync::{mpsc, RwLock};\n\n'
+              'use crate::auth::{\n'
+              '    sanitize_client_metadata, PeerIdentity, SignalAuthConfig, SignalAuthError,\n'
+              '};\n',
           )
-          replace_exact(
+          replace_once(
+              'frame limit',
               'static PEER_SEQUENCE: AtomicU64 = AtomicU64::new(1);\n',
-              'static PEER_SEQUENCE: AtomicU64 = AtomicU64::new(1);\nconst MAX_SIGNAL_FRAME_BYTES: usize = 64 * 1024;\n',
+              'static PEER_SEQUENCE: AtomicU64 = AtomicU64::new(1);\n'
+              'const MAX_SIGNAL_FRAME_BYTES: usize = 64 * 1024;\n',
           )
-          replace_exact(
-              '''struct AppState {
-              rooms: Arc<RwLock<HashMap<String, RoomState>>>,
-              admin_runtime_clients: Arc<RwLock<HashMap<u64, mpsc::UnboundedSender<Message>>>>,
-          }
-          ''',
-              '''struct AppState {
-              rooms: Arc<RwLock<HashMap<String, RoomState>>>,
-              admin_runtime_clients: Arc<RwLock<HashMap<u64, mpsc::UnboundedSender<Message>>>>,
-              signal_auth: SignalAuthConfig,
-          }
-          ''',
+          replace_once(
+              'application state',
+              'struct AppState {\n'
+              '    rooms: Arc<RwLock<HashMap<String, RoomState>>>,\n'
+              '    admin_runtime_clients: Arc<RwLock<HashMap<u64, mpsc::UnboundedSender<Message>>>>,\n'
+              '}\n',
+              'struct AppState {\n'
+              '    rooms: Arc<RwLock<HashMap<String, RoomState>>>,\n'
+              '    admin_runtime_clients: Arc<RwLock<HashMap<u64, mpsc::UnboundedSender<Message>>>>,\n'
+              '    signal_auth: SignalAuthConfig,\n'
+              '}\n',
           )
-          replace_exact(
-              '''    #[serde(skip_serializing_if = "Option::is_none", rename = "userAgent")]
-              user_agent: Option<String>,
-              metadata: Value,
-          ''',
-              '''    #[serde(skip_serializing_if = "Option::is_none", rename = "userAgent")]
-              user_agent: Option<String>,
-              #[serde(skip_serializing_if = "Option::is_none")]
-              identity: Option<PeerIdentity>,
-              metadata: Value,
-          ''',
+          replace_once(
+              'peer identity',
+              '    #[serde(skip_serializing_if = "Option::is_none", rename = "userAgent")]\n'
+              '    user_agent: Option<String>,\n'
+              '    metadata: Value,\n',
+              '    #[serde(skip_serializing_if = "Option::is_none", rename = "userAgent")]\n'
+              '    user_agent: Option<String>,\n'
+              '    #[serde(skip_serializing_if = "Option::is_none")]\n'
+              '    identity: Option<PeerIdentity>,\n'
+              '    metadata: Value,\n',
           )
-          replace_exact(
-              '''            if !metadata.is_null() {
-                  update_peer_metadata(state, room_id, peer_id, metadata).await;
-              }
-          ''',
-              '''            if !metadata.is_null() {
-                  match sanitize_client_metadata(metadata) {
-                      Ok(metadata) => {
-                          update_peer_metadata(state, room_id, peer_id, metadata).await;
-                      }
-                      Err(message) => {
-                          SIGNAL_ERRORS.with_label_values(&["invalid_metadata"]).inc();
-                          send_json(
-                              own_tx,
-                              json!({
-                                  "type": "error",
-                                  "code": "invalid_metadata",
-                                  "message": message,
-                                  "atMs": now_ms(),
-                              }),
-                          );
-                          return true;
-                      }
-                  }
-              }
-          ''',
+          replace_once(
+              'hello metadata',
+              '            if !metadata.is_null() {\n'
+              '                update_peer_metadata(state, room_id, peer_id, metadata).await;\n'
+              '            }\n',
+              '            if !metadata.is_null() {\n'
+              '                match sanitize_client_metadata(metadata) {\n'
+              '                    Ok(metadata) => {\n'
+              '                        update_peer_metadata(state, room_id, peer_id, metadata).await;\n'
+              '                    }\n'
+              '                    Err(message) => {\n'
+              '                        SIGNAL_ERRORS.with_label_values(&["invalid_metadata"]).inc();\n'
+              '                        send_json(\n'
+              '                            own_tx,\n'
+              '                            json!({\n'
+              '                                "type": "error",\n'
+              '                                "code": "invalid_metadata",\n'
+              '                                "message": message,\n'
+              '                                "atMs": now_ms(),\n'
+              '                            }),\n'
+              '                        );\n'
+              '                        return true;\n'
+              '                    }\n'
+              '                }\n'
+              '            }\n',
           )
-          replace_exact(
-              '''async fn signal_socket(
-              mut socket: WebSocket,
-              state: AppState,
-              room_id: String,
-              peer_id: String,
-              user_agent: Option<String>,
-          ) {
-          ''',
-              '''async fn signal_socket(
-              mut socket: WebSocket,
-              state: AppState,
-              room_id: String,
-              peer_id: String,
-              user_agent: Option<String>,
-              identity: Option<PeerIdentity>,
-          ) {
-          ''',
+          replace_once(
+              'signal socket signature',
+              'async fn signal_socket(\n'
+              '    mut socket: WebSocket,\n'
+              '    state: AppState,\n'
+              '    room_id: String,\n'
+              '    peer_id: String,\n'
+              '    user_agent: Option<String>,\n'
+              ') {\n',
+              'async fn signal_socket(\n'
+              '    mut socket: WebSocket,\n'
+              '    state: AppState,\n'
+              '    room_id: String,\n'
+              '    peer_id: String,\n'
+              '    user_agent: Option<String>,\n'
+              '    identity: Option<PeerIdentity>,\n'
+              ') {\n',
           )
-          replace_exact(
-              '''        connected_at_ms,
-                  user_agent,
-                  metadata: Value::Null,
-          ''',
-              '''        connected_at_ms,
-                  user_agent,
-                  identity,
-                  metadata: Value::Null,
-          ''',
+          replace_once(
+              'peer construction',
+              '        connected_at_ms,\n'
+              '        user_agent,\n'
+              '        metadata: Value::Null,\n',
+              '        connected_at_ms,\n'
+              '        user_agent,\n'
+              '        identity,\n'
+              '        metadata: Value::Null,\n',
           )
-          replace_exact(
-              '''async fn signal_ws(
-              ws: WebSocketUpgrade,
-              Query(query): Query<SignalQuery>,
-              State(state): State<AppState>,
-              headers: HeaderMap,
-          ) -> Response {
-              let room_id = match normalize_id(query.room, "room") {
-                  Ok(room_id) => room_id,
-                  Err(message) => {
-                      record_http("GET", "/signal", StatusCode::BAD_REQUEST);
-                      return (StatusCode::BAD_REQUEST, message).into_response();
-                  }
-              };
-              let peer_id = match normalize_id(query.peer, "peer") {
-                  Ok(peer_id) => peer_id,
-                  Err(message) => {
-                      record_http("GET", "/signal", StatusCode::BAD_REQUEST);
-                      return (StatusCode::BAD_REQUEST, message).into_response();
-                  }
-              };
-              let user_agent = headers
-                  .get(header::USER_AGENT)
-                  .and_then(|value| value.to_str().ok())
-                  .map(str::to_string);
-
-              record_http("GET", "/signal", StatusCode::SWITCHING_PROTOCOLS);
-              ws.on_upgrade(move |socket| signal_socket(socket, state, room_id, peer_id, user_agent))
-          }
-          ''',
-              '''async fn signal_ws(
-              ws: WebSocketUpgrade,
-              Query(query): Query<SignalQuery>,
-              State(state): State<AppState>,
-              headers: HeaderMap,
-          ) -> Response {
-              let identity = match state.signal_auth.identity_from_headers(&headers) {
-                  Ok(identity) => identity,
-                  Err(error @ (SignalAuthError::AuthenticationRequired
-                  | SignalAuthError::UntrustedProxy
-                  | SignalAuthError::InvalidIdentity)) => {
-                      record_http("GET", "/signal", StatusCode::UNAUTHORIZED);
-                      return (StatusCode::UNAUTHORIZED, error.public_message()).into_response();
-                  }
-              };
-              let room_id = match normalize_id(query.room, "room") {
-                  Ok(room_id) => room_id,
-                  Err(message) => {
-                      record_http("GET", "/signal", StatusCode::BAD_REQUEST);
-                      return (StatusCode::BAD_REQUEST, message).into_response();
-                  }
-              };
-              let peer_id = match normalize_id(query.peer, "peer") {
-                  Ok(peer_id) => peer_id,
-                  Err(message) => {
-                      record_http("GET", "/signal", StatusCode::BAD_REQUEST);
-                      return (StatusCode::BAD_REQUEST, message).into_response();
-                  }
-              };
-              let user_agent = headers
-                  .get(header::USER_AGENT)
-                  .and_then(|value| value.to_str().ok())
-                  .map(str::to_string);
-
-              record_http("GET", "/signal", StatusCode::SWITCHING_PROTOCOLS);
-              ws.max_message_size(MAX_SIGNAL_FRAME_BYTES)
-                  .max_frame_size(MAX_SIGNAL_FRAME_BYTES)
-                  .on_upgrade(move |socket| {
-                      signal_socket(socket, state, room_id, peer_id, user_agent, identity)
-                  })
-          }
-          ''',
+          replace_once(
+              'websocket upgrade',
+              'async fn signal_ws(\n'
+              '    ws: WebSocketUpgrade,\n'
+              '    Query(query): Query<SignalQuery>,\n'
+              '    State(state): State<AppState>,\n'
+              '    headers: HeaderMap,\n'
+              ') -> Response {\n'
+              '    let room_id = match normalize_id(query.room, "room") {\n'
+              '        Ok(room_id) => room_id,\n'
+              '        Err(message) => {\n'
+              '            record_http("GET", "/signal", StatusCode::BAD_REQUEST);\n'
+              '            return (StatusCode::BAD_REQUEST, message).into_response();\n'
+              '        }\n'
+              '    };\n'
+              '    let peer_id = match normalize_id(query.peer, "peer") {\n'
+              '        Ok(peer_id) => peer_id,\n'
+              '        Err(message) => {\n'
+              '            record_http("GET", "/signal", StatusCode::BAD_REQUEST);\n'
+              '            return (StatusCode::BAD_REQUEST, message).into_response();\n'
+              '        }\n'
+              '    };\n'
+              '    let user_agent = headers\n'
+              '        .get(header::USER_AGENT)\n'
+              '        .and_then(|value| value.to_str().ok())\n'
+              '        .map(str::to_string);\n'
+              '\n'
+              '    record_http("GET", "/signal", StatusCode::SWITCHING_PROTOCOLS);\n'
+              '    ws.on_upgrade(move |socket| signal_socket(socket, state, room_id, peer_id, user_agent))\n'
+              '}\n',
+              'async fn signal_ws(\n'
+              '    ws: WebSocketUpgrade,\n'
+              '    Query(query): Query<SignalQuery>,\n'
+              '    State(state): State<AppState>,\n'
+              '    headers: HeaderMap,\n'
+              ') -> Response {\n'
+              '    let identity = match state.signal_auth.identity_from_headers(&headers) {\n'
+              '        Ok(identity) => identity,\n'
+              '        Err(error @ (SignalAuthError::AuthenticationRequired\n'
+              '        | SignalAuthError::UntrustedProxy\n'
+              '        | SignalAuthError::InvalidIdentity)) => {\n'
+              '            record_http("GET", "/signal", StatusCode::UNAUTHORIZED);\n'
+              '            return (StatusCode::UNAUTHORIZED, error.public_message()).into_response();\n'
+              '        }\n'
+              '    };\n'
+              '    let room_id = match normalize_id(query.room, "room") {\n'
+              '        Ok(room_id) => room_id,\n'
+              '        Err(message) => {\n'
+              '            record_http("GET", "/signal", StatusCode::BAD_REQUEST);\n'
+              '            return (StatusCode::BAD_REQUEST, message).into_response();\n'
+              '        }\n'
+              '    };\n'
+              '    let peer_id = match normalize_id(query.peer, "peer") {\n'
+              '        Ok(peer_id) => peer_id,\n'
+              '        Err(message) => {\n'
+              '            record_http("GET", "/signal", StatusCode::BAD_REQUEST);\n'
+              '            return (StatusCode::BAD_REQUEST, message).into_response();\n'
+              '        }\n'
+              '    };\n'
+              '    let user_agent = headers\n'
+              '        .get(header::USER_AGENT)\n'
+              '        .and_then(|value| value.to_str().ok())\n'
+              '        .map(str::to_string);\n'
+              '\n'
+              '    record_http("GET", "/signal", StatusCode::SWITCHING_PROTOCOLS);\n'
+              '    ws.max_message_size(MAX_SIGNAL_FRAME_BYTES)\n'
+              '        .max_frame_size(MAX_SIGNAL_FRAME_BYTES)\n'
+              '        .on_upgrade(move |socket| {\n'
+              '            signal_socket(socket, state, room_id, peer_id, user_agent, identity)\n'
+              '        })\n'
+              '}\n',
           )
-          replace_exact(
-              '''    let state = AppState {
-                  rooms: Arc::new(RwLock::new(HashMap::new())),
-                  admin_runtime_clients: Arc::new(RwLock::new(HashMap::new())),
-              };
-          ''',
-              '''    let signal_auth = SignalAuthConfig::from_env()
-                  .expect("invalid WebRTC shared-auth configuration");
-              tracing::info!(auth_mode = ?signal_auth.mode, "configured WebRTC upgrade authentication");
-              let state = AppState {
-                  rooms: Arc::new(RwLock::new(HashMap::new())),
-                  admin_runtime_clients: Arc::new(RwLock::new(HashMap::new())),
-                  signal_auth,
-              };
-          ''',
+          replace_once(
+              'production state',
+              '    let state = AppState {\n'
+              '        rooms: Arc::new(RwLock::new(HashMap::new())),\n'
+              '        admin_runtime_clients: Arc::new(RwLock::new(HashMap::new())),\n'
+              '    };\n',
+              '    let signal_auth = SignalAuthConfig::from_env()\n'
+              '        .expect("invalid WebRTC shared-auth configuration");\n'
+              '    tracing::info!(auth_mode = ?signal_auth.mode, "configured WebRTC upgrade authentication");\n'
+              '    let state = AppState {\n'
+              '        rooms: Arc::new(RwLock::new(HashMap::new())),\n'
+              '        admin_runtime_clients: Arc::new(RwLock::new(HashMap::new())),\n'
+              '        signal_auth,\n'
+              '    };\n',
           )
-          replace_exact(
-              '''        AppState {
-                      rooms: Arc::new(RwLock::new(HashMap::new())),
-                      admin_runtime_clients: Arc::new(RwLock::new(HashMap::new())),
-                  }
-          ''',
-              '''        AppState {
-                      rooms: Arc::new(RwLock::new(HashMap::new())),
-                      admin_runtime_clients: Arc::new(RwLock::new(HashMap::new())),
-                      signal_auth: SignalAuthConfig::disabled(),
-                  }
-          ''',
+          replace_once(
+              'test state',
+              '        AppState {\n'
+              '            rooms: Arc::new(RwLock::new(HashMap::new())),\n'
+              '            admin_runtime_clients: Arc::new(RwLock::new(HashMap::new())),\n'
+              '        }\n',
+              '        AppState {\n'
+              '            rooms: Arc::new(RwLock::new(HashMap::new())),\n'
+              '            admin_runtime_clients: Arc::new(RwLock::new(HashMap::new())),\n'
+              '            signal_auth: SignalAuthConfig::disabled(),\n'
+              '        }\n',
           )
-          replace_exact(
-              '''                    user_agent: None,
-                          metadata: Value::Null,
-          ''',
-              '''                    user_agent: None,
-                          identity: None,
-                          metadata: Value::Null,
-          ''',
+          replace_once(
+              'test peer identity',
+              '                    user_agent: None,\n'
+              '                    metadata: Value::Null,\n',
+              '                    user_agent: None,\n'
+              '                    identity: None,\n'
+              '                    metadata: Value::Null,\n',
           )
 
           path.write_text(text)
