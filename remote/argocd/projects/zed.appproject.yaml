@@ -16,6 +16,8 @@ kind: AppProject
 metadata:
   name: zed
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-15"
 spec:
   description: "Tenant project for zed-pkg — namespace `zed`, no cluster resources."
   sourceRepos:
