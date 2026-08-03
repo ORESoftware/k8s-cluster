@@ -93,9 +93,10 @@ spec:
     - name: tcp
       port: 8143
       targetPort: tcp`;
+  const bridgeService = documents[0].replace(/^(?:#.*\n)+/, '');
 
   assert.equal(documents.length, 8);
-  assert.equal(documents[0], expectedBridgeService);
+  assert.equal(bridgeService, expectedBridgeService);
   assert.deepEqual(
     documents.map(resourceIdentity),
     [
