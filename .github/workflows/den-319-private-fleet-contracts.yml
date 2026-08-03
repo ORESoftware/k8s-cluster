@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/den-319-private-fleet-contracts.yml
+      - .github/workflows/observe-private-fleet-publisher.yml
       - .github/workflows/ops-dispatch-private-fleet-gaps-comment.yml
       - .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml
       - scripts/ops/publish_missing_org_repositories.py
@@ -18,6 +19,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/den-319-private-fleet-contracts.yml
+      - .github/workflows/observe-private-fleet-publisher.yml
       - .github/workflows/ops-dispatch-private-fleet-gaps-comment.yml
       - .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml
       - scripts/ops/publish_missing_org_repositories.py
@@ -79,7 +81,7 @@ jobs:
           set -euo pipefail
           python3 scripts/ops/test_private_fleet_publisher_contract.py -v
 
-      - name: Run trusted owner-comment dispatch contracts
+      - name: Run trusted dispatch and observer contracts
         shell: bash
         run: |
           set -euo pipefail
@@ -92,6 +94,7 @@ jobs:
           git diff --check HEAD^ HEAD
           ! git grep -nE '^(<{7}|={7}|>{7})' -- \
             .github/workflows/den-319-private-fleet-contracts.yml \
+            .github/workflows/observe-private-fleet-publisher.yml \
             .github/workflows/ops-dispatch-private-fleet-gaps-comment.yml \
             .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml \
             scripts/ops/repository_fleet_visibility.py \
