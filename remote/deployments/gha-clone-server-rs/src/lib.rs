@@ -153,10 +153,13 @@ pub fn build_plan(
 ) -> Result<WorkflowPlan, Vec<String>> {
     let mut errors = Vec::new();
     if !valid_repository(&request.repository) {
-        errors.push("repository must be an owner/name identifier using GitHub-safe characters".into());
+        errors.push(
+            "repository must be an owner/name identifier using GitHub-safe characters".into(),
+        );
     }
     if !valid_workflow_path(&request.workflow_path) {
-        errors.push("workflowPath must stay under .github/workflows and end in .yml or .yaml".into());
+        errors
+            .push("workflowPath must stay under .github/workflows and end in .yml or .yaml".into());
     }
     if request.workflow_yaml.len() > limits.max_workflow_bytes {
         errors.push(format!(
@@ -214,7 +217,10 @@ pub fn build_plan(
 
     let mut plans = Vec::with_capacity(jobs.len());
     for (job_key, job_value) in jobs {
-        let id = job_key.as_str().expect("validated string job ID").to_string();
+        let id = job_key
+            .as_str()
+            .expect("validated string job ID")
+            .to_string();
         if !valid_job_id(&id) {
             errors.push(format!(
                 "jobs.{id}: job ID must use letters, numbers, '_', or '-' and be at most 100 characters"
@@ -270,11 +276,7 @@ pub fn build_plan(
     })
 }
 
-fn compile_job(
-    id: &str,
-    job: &Mapping,
-    limits: &PlannerLimits,
-) -> Result<JobPlan, Vec<String>> {
+fn compile_job(id: &str, job: &Mapping, limits: &PlannerLimits) -> Result<JobPlan, Vec<String>> {
     let mut errors = Vec::new();
     let needs = parse_string_or_sequence(
         mapping_get(job, "needs"),
@@ -518,7 +520,10 @@ fn validate_dependencies(
         indegree.insert(job.id.clone(), job.needs.len());
         for dependency in &job.needs {
             if dependency == &job.id {
-                errors.push(format!("jobs.{}.needs: job cannot depend on itself", job.id));
+                errors.push(format!(
+                    "jobs.{}.needs: job cannot depend on itself",
+                    job.id
+                ));
             } else if !job_ids.contains(dependency) {
                 errors.push(format!(
                     "jobs.{}.needs: unknown dependency {dependency:?}",
@@ -559,7 +564,7 @@ fn validate_dependencies(
     }
     if ordered.len() != jobs.len() {
         return Err(vec![
-            "workflow job dependency graph contains a cycle".to_string(),
+            "workflow job dependency graph contains a cycle".to_string()
         ]);
     }
     Ok(ordered)
@@ -619,7 +624,7 @@ fn allowed_setup_action(action: &str) -> bool {
 }
 
 fn mapping_get<'a>(mapping: &'a Mapping, key: &str) -> Option<&'a Value> {
-    mapping.get(&Value::String(key.to_string()))
+    mapping.get(Value::String(key.to_string()))
 }
 
 fn compact_yaml(value: &Value) -> String {
@@ -907,9 +912,9 @@ jobs:
 
     #[test]
     fn workflow_limits_and_paths_fail_closed() {
-        let mut request = request("jobs: {}");
-        request.workflow_path = "../ci.yml".into();
-        let errors = build_plan(&request, &PlannerLimits::default())
+        let mut invalid_path_request = request("jobs: {}");
+        invalid_path_request.workflow_path = "../ci.yml".into();
+        let errors = build_plan(&invalid_path_request, &PlannerLimits::default())
             .unwrap_err()
             .join("\n");
         assert!(errors.contains("workflowPath"));

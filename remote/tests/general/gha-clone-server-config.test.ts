@@ -49,7 +49,8 @@ test('all service resources participate in the dd-next-runtime render', () => {
     'dd-gha-clone-server.service.yaml',
     'dd-gha-clone-server.networkpolicy.yaml',
   ]) {
-    assert.match(kustomization, new RegExp(`- ${resource.replaceAll('.', '\\.')}`));
+    const escaped = resource.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    assert.match(kustomization, new RegExp(`- ${escaped}`));
   }
   assert.match(read(servicePath), /port:\s*8125/);
 });

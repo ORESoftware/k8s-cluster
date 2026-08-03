@@ -14,8 +14,8 @@ use axum::{
     Json, Router,
 };
 use gha_clone_server::{
-    build_plan, capabilities, is_full_commit_sha, verify_github_signature, PlanRequest, PlannerLimits,
-    WorkflowPlan, SERVICE_NAME,
+    build_plan, capabilities, is_full_commit_sha, verify_github_signature, PlanRequest,
+    PlannerLimits, WorkflowPlan, SERVICE_NAME,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -88,19 +88,13 @@ impl Config {
             allowed_repositories,
             workflow_rules,
             execution_enabled: env_bool("GHA_CLONE_EXECUTION_ENABLED", false)?,
-            webhook_execution_enabled: env_bool(
-                "GHA_CLONE_WEBHOOK_EXECUTION_ENABLED",
-                false,
-            )?,
+            webhook_execution_enabled: env_bool("GHA_CLONE_WEBHOOK_EXECUTION_ENABLED", false)?,
             limits: PlannerLimits {
                 max_workflow_bytes: env_usize(
                     "GHA_CLONE_MAX_WORKFLOW_BYTES",
                     gha_clone_server::MAX_WORKFLOW_BYTES_DEFAULT,
                 )?,
-                max_jobs: env_usize(
-                    "GHA_CLONE_MAX_JOBS",
-                    gha_clone_server::MAX_JOBS_DEFAULT,
-                )?,
+                max_jobs: env_usize("GHA_CLONE_MAX_JOBS", gha_clone_server::MAX_JOBS_DEFAULT)?,
                 max_steps_per_job: env_usize(
                     "GHA_CLONE_MAX_STEPS_PER_JOB",
                     gha_clone_server::MAX_STEPS_PER_JOB_DEFAULT,
@@ -785,8 +779,12 @@ async fn fetch_workflow(
 fn webhook_revision(event: &str, payload: &Value) -> Option<String> {
     match event {
         "push" => payload.get("after").and_then(Value::as_str),
-        "pull_request" => payload.pointer("/pull_request/head/sha").and_then(Value::as_str),
-        "workflow_run" => payload.pointer("/workflow_run/head_sha").and_then(Value::as_str),
+        "pull_request" => payload
+            .pointer("/pull_request/head/sha")
+            .and_then(Value::as_str),
+        "workflow_run" => payload
+            .pointer("/workflow_run/head_sha")
+            .and_then(Value::as_str),
         _ => None,
     }
     .map(str::to_string)
@@ -992,13 +990,9 @@ mod tests {
     fn terminal_run_pruning_never_discards_active_runs() {
         let now = now_ms();
         let mut runs = BTreeMap::new();
-        for (index, status) in [
-            RunStatus::Running,
-            RunStatus::Succeeded,
-            RunStatus::Failed,
-        ]
-        .into_iter()
-        .enumerate()
+        for (index, status) in [RunStatus::Running, RunStatus::Succeeded, RunStatus::Failed]
+            .into_iter()
+            .enumerate()
         {
             let id = Uuid::new_v4();
             runs.insert(
