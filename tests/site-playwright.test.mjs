@@ -4,13 +4,18 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { chromium } from "playwright";
 import { assertVisibleText } from "@fiducia/test-config/assert";
-import { chromeExecutablePath, startSite } from "./site-browser-harness.mjs";
+import {
+  chromeExecutablePath,
+  sitePath,
+  startSite,
+} from "./site-browser-harness.mjs";
 
 test("playwright renders the Fiducia marketing landing page and custom 404", async (t) => {
   const server = await startSite();
   t.after(() => server.stop());
 
   const browser = await chromium.launch({
+    args: process.env.CI === "true" ? ["--no-sandbox", "--disable-dev-shm-usage"] : [],
     executablePath: chromeExecutablePath(),
     headless: true,
   });
@@ -20,8 +25,8 @@ test("playwright renders the Fiducia marketing landing page and custom 404", asy
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
-  // --- Landing page (served under the /fiducia base) -------------------------
-  await page.goto(`${server.url}/fiducia/`, { waitUntil: "networkidle" });
+  // --- Landing page at the configured deployment base -----------------------
+  await page.goto(`${server.url}${sitePath()}`, { waitUntil: "networkidle" });
   assert.equal(await page.title(), "Fiducia — Consensus & Coordination as a Service");
 
   // Hero <h1> — the headline is split across a <br>, so match the normalized
@@ -45,7 +50,7 @@ test("playwright renders the Fiducia marketing landing page and custom 404", asy
   assert.equal(await getStarted.count(), 1);
 
   // The six coordination-primitive service cards.
-  for (const svc of [
+  for (const service of [
     "Locks & Semaphores",
     "Rate Limiting",
     "Cron & Scheduling",
@@ -53,13 +58,13 @@ test("playwright renders the Fiducia marketing landing page and custom 404", asy
     "Leader Election",
     "Service Discovery",
   ]) {
-    await page.getByRole("heading", { name: svc, exact: true }).waitFor({ state: "visible" });
+    await page.getByRole("heading", { name: service, exact: true }).waitFor({ state: "visible" });
   }
 
-  // CTA link to the API (base-prefixed href).
+  // CTA link to the API uses the same configured deployment base.
   const apiLink = page.getByRole("link", { name: "View the API", exact: true });
   await apiLink.waitFor({ state: "visible" });
-  assert.equal(await apiLink.getAttribute("href"), "/fiducia/api/info");
+  assert.equal(await apiLink.getAttribute("href"), sitePath("api/info"));
 
   // Footer.
   await assertVisibleText(page, "© 2026 Fiducia");
@@ -67,7 +72,7 @@ test("playwright renders the Fiducia marketing landing page and custom 404", asy
   // --- Custom 404 ------------------------------------------------------------
   // A genuinely-missing path yields astro-preview's own bare 404, so load the
   // built custom 404 directly (served 200) to assert its content.
-  await page.goto(`${server.url}/fiducia/404.html`, { waitUntil: "networkidle" });
+  await page.goto(`${server.url}${sitePath("404.html")}`, { waitUntil: "networkidle" });
   assert.equal(await page.title(), "Not found — Fiducia");
   await assertVisibleText(page, "quorum on this page");
 
