@@ -88,6 +88,10 @@ jobs:
         shell: bash
         run: bash scripts/ci/test-tenant-membership-invariants.sh
 
+      - name: Prove membership audit events are append-only and well-formed
+        shell: bash
+        run: bash scripts/ci/test-tenant-membership-audit.sh
+
   real-shared-libs:
     name: real-shared-libs-contract
     runs-on: ubuntu-24.04
