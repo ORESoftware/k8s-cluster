@@ -24,6 +24,8 @@ pub struct ExchangeResponse {
     pub token_type: &'static str,
     pub expires_at: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub auth_time: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub refresh_token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub refresh_expires_at: Option<u64>,
@@ -50,6 +52,10 @@ struct VerifiedSupabaseAssuranceClaims {
 #[derive(Debug, Deserialize)]
 struct SupabaseAmrEntry {
     method: String,
+    /// Supabase signs each AMR entry's ceremony time. It is parsed only after
+    /// the exact JWT has passed signature, issuer, audience, and expiry checks.
+    #[serde(default)]
+    timestamp: Option<u64>,
 }
 
 pub(crate) async fn perform_exchange(
@@ -105,6 +111,7 @@ pub(crate) async fn perform_exchange(
         access_token: issued.access.token,
         token_type: "Bearer",
         expires_at: issued.access.expires_at,
+        auth_time: issued.access.auth_time,
         refresh_token: issued.refresh_token,
         refresh_expires_at: issued.refresh_expires_at,
         shared_user_id,
@@ -118,9 +125,10 @@ pub(crate) async fn perform_exchange(
     })
 }
 
-/// Extract `aal` and `amr` from a token that the caller has already verified.
-/// This helper intentionally performs no authentication and must never be used
-/// before `ProjectRegistry::verify` succeeds for the same token.
+/// Extract `aal`, `amr`, and the latest AMR ceremony timestamp from a token that
+/// the caller has already verified. This helper intentionally performs no
+/// authentication and must never be used before `ProjectRegistry::verify`
+/// succeeds for the same token.
 fn verified_supabase_assurance(token: &str) -> AuthenticationAssurance {
     let Some(payload) = token.split('.').nth(1) else {
         return AuthenticationAssurance::from_supabase(None, &[]);
@@ -131,12 +139,17 @@ fn verified_supabase_assurance(token: &str) -> AuthenticationAssurance {
     let Ok(claims) = serde_json::from_slice::<VerifiedSupabaseAssuranceClaims>(&decoded) else {
         return AuthenticationAssurance::from_supabase(None, &[]);
     };
+    let auth_time = claims
+        .amr
+        .iter()
+        .filter_map(|entry| entry.timestamp)
+        .max();
     let methods = claims
         .amr
         .into_iter()
         .map(|entry| entry.method)
         .collect::<Vec<_>>();
-    AuthenticationAssurance::from_supabase(claims.aal.as_deref(), &methods)
+    AuthenticationAssurance::from_supabase_at(claims.aal.as_deref(), &methods, auth_time)
 }
 
 pub async fn exchange(
@@ -178,6 +191,7 @@ mod tests {
         let assurance = verified_supabase_assurance(&token);
         assert_eq!(assurance.amr, ["federated", "pwd", "totp"]);
         assert_eq!(assurance.acr.as_deref(), Some(ACR_LOA2));
+        assert_eq!(assurance.auth_time, Some(3));
     }
 
     #[test]
@@ -189,6 +203,18 @@ mod tests {
         let assurance = verified_supabase_assurance(&token);
         assert_eq!(assurance.amr, ["federated"]);
         assert_eq!(assurance.acr.as_deref(), Some(ACR_LOA1));
+        assert_eq!(assurance.auth_time, Some(1));
+    }
+
+    #[test]
+    fn aal2_without_a_signed_amr_timestamp_cannot_masquerade_as_fresh() {
+        let token = token_with_payload(json!({
+            "aal": "aal2",
+            "amr": [{ "method": "totp" }]
+        }));
+        let assurance = verified_supabase_assurance(&token);
+        assert_eq!(assurance.acr.as_deref(), Some(ACR_LOA2));
+        assert_eq!(assurance.auth_time, None);
     }
 
     #[test]
