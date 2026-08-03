@@ -42,13 +42,21 @@ use std::net::IpAddr;
 use std::sync::Arc;
 
 use axum::extract::{Request, State};
-use axum::http::{HeaderValue, StatusCode, Uri, header};
+use axum::http::{HeaderValue, Method, StatusCode, Uri, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use uuid::Uuid;
 
 use crate::config::Config;
 use crate::supabase_auth::{AuthError, SupabaseIdentity, SupabaseVerifier, bearer_token};
+
+/// Financial scope a human caller must hold to mutate a tenant's ledger state.
+/// A canonical Shared Auth scope name; it must match what the issuer grants.
+pub const SCOPE_FINANCIAL_WRITE: &str = "billing:write";
+
+/// Maximum age of a step-up (fresh AAL2) accepted for a financial mutation.
+/// Beyond this, a human mutation must re-assert the second factor.
+pub const MAX_STEP_UP_AGE_SECS: u64 = 15 * 60;
 
 /// Who is making this request, once authenticated.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -148,6 +156,99 @@ pub fn authorize_tenant(
     }
 }
 
+/// Whether a request reads or mutates, derived from the HTTP method. Unknown or
+/// non-safe methods are treated as mutations so a new verb can never slip past
+/// the financial step-up gate by default.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Action {
+    Read,
+    Mutate,
+}
+
+impl Action {
+    pub fn of(method: &Method) -> Self {
+        match *method {
+            Method::GET | Method::HEAD | Method::OPTIONS | Method::TRACE => Action::Read,
+            _ => Action::Mutate,
+        }
+    }
+}
+
+/// The two migration-gated authorization policies, bundled so the decision
+/// function and the middleware agree on exactly one shape.
+#[derive(Clone, Copy, Debug)]
+pub struct AuthzPolicy {
+    /// See [`Config::tenant_routes_require_user_jwt`].
+    pub require_user_jwt: bool,
+    /// See [`Config::step_up_required_for_mutations`]. When on, a human mutation
+    /// of a tenant's financial state requires fresh AAL2 and an explicit scope.
+    pub require_step_up_for_mutations: bool,
+}
+
+/// Full per-request authorization.
+///
+/// Layered deliberately, most-fundamental first, each in one readable place:
+///   1. **Tenant entitlement** — the IDOR fix ([`authorize_tenant`]).
+///   2. **Financial step-up** — a *human mutation* of a named tenant additionally
+///      requires a genuine, *fresh* AAL2 session and an explicit financial scope.
+///
+/// Reads and unscoped provisioning calls are not subject to step-up. The legacy
+/// shared service credential carries no tenant, role, assurance, or scope, so
+/// mutation hardening denies it on every named tenant write until tenant-bound
+/// service identities exist. `now` is the current Unix time, used only to measure
+/// step-up freshness. Pure, so it is exhaustively unit-tested without a router.
+pub fn authorize_request(
+    principal: &Principal,
+    scope: TenantScope,
+    action: Action,
+    policy: AuthzPolicy,
+    now: u64,
+) -> Result<(), StatusCode> {
+    authorize_tenant(principal, scope, policy.require_user_jwt)?;
+
+    if !policy.require_step_up_for_mutations {
+        return Ok(());
+    }
+    // Only human mutations of a *named* tenant are financial-mutation-gated.
+    let (Action::Mutate, TenantScope::Tenant(tenant_id)) = (action, scope) else {
+        return Ok(());
+    };
+    let Principal::User(identity) = principal else {
+        tracing::warn!(
+            tenant.id = %tenant_id,
+            "rejected tenant mutation: shared service credential has no tenant, assurance, or write scope"
+        );
+        return Err(StatusCode::FORBIDDEN);
+    };
+
+    if !identity.assurance.is_aal2() {
+        tracing::warn!(
+            auth.subject = %identity.subject, tenant.id = %tenant_id,
+            "rejected financial mutation: session is not AAL2 (step-up required)"
+        );
+        return Err(StatusCode::FORBIDDEN);
+    }
+    match identity.step_up_age_secs(now) {
+        Some(age) if age <= MAX_STEP_UP_AGE_SECS => {}
+        _ => {
+            tracing::warn!(
+                auth.subject = %identity.subject, tenant.id = %tenant_id,
+                "rejected financial mutation: AAL2 step-up is stale or absent"
+            );
+            return Err(StatusCode::FORBIDDEN);
+        }
+    }
+    if !identity.has_scope(SCOPE_FINANCIAL_WRITE) {
+        tracing::warn!(
+            auth.subject = %identity.subject, tenant.id = %tenant_id,
+            auth.scope = SCOPE_FINANCIAL_WRITE,
+            "rejected financial mutation: caller is missing the required financial scope"
+        );
+        return Err(StatusCode::FORBIDDEN);
+    }
+    Ok(())
+}
+
 /// Per-request auth state. Built once at boot and shared via `Arc` so the
 /// middleware closure doesn't carry the full `AppState`.
 #[derive(Clone)]
@@ -158,6 +259,8 @@ pub struct ApiAuth {
     pub supabase: Option<Arc<SupabaseVerifier>>,
     /// See [`Config::tenant_routes_require_user_jwt`].
     pub require_user_jwt: bool,
+    /// See [`Config::step_up_required_for_mutations`].
+    pub require_step_up: bool,
 }
 
 // `bearer` is a credential; keep it off the Debug surface, matching the
@@ -168,6 +271,7 @@ impl std::fmt::Debug for ApiAuth {
             .field("bearer", &self.bearer.as_ref().map(|_| "<redacted>"))
             .field("supabase_enabled", &self.supabase.is_some())
             .field("require_user_jwt", &self.require_user_jwt)
+            .field("require_step_up", &self.require_step_up)
             .finish()
     }
 }
@@ -178,6 +282,7 @@ impl ApiAuth {
             bearer: cfg.api_auth_bearer.clone(),
             supabase: SupabaseVerifier::from_config(&cfg.supabase).map(Arc::new),
             require_user_jwt: cfg.tenant_routes_require_user_jwt,
+            require_step_up: cfg.step_up_required_for_mutations,
         })
     }
 }
@@ -304,12 +409,22 @@ pub async fn require_api_auth(
         return unauthorized();
     };
 
-    if let Err(status) = authorize_tenant(
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(0);
+    let policy = AuthzPolicy {
+        require_user_jwt: auth.require_user_jwt,
+        require_step_up_for_mutations: auth.require_step_up,
+    };
+    if let Err(status) = authorize_request(
         &principal,
         tenant_scope_of(req.uri()),
-        auth.require_user_jwt,
+        Action::of(req.method()),
+        policy,
+        now,
     ) {
-        return (status, "not entitled to this tenant\n").into_response();
+        return (status, "forbidden\n").into_response();
     }
 
     // Hand the verified principal to the handlers. Anything needing the acting
@@ -412,6 +527,7 @@ pub fn is_private_ip(ip: IpAddr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::supabase_auth::Aal;
     use std::net::Ipv4Addr;
 
     #[test]
@@ -554,6 +670,7 @@ mod tests {
             // `crate::supabase_auth`.
             supabase: None,
             require_user_jwt: false,
+            require_step_up: false,
         })
     }
 
@@ -752,12 +869,27 @@ mod tests {
 
     // --- The IDOR fix: per-tenant authorization ------------------------------
 
+    /// A fully-privileged human: AAL2, financial scope, and a fresh step-up.
+    /// Keeps the existing `authorize_tenant` tests (which only care about tenant
+    /// membership) unchanged, while the step-up tests below vary the extras.
     fn user_of(tenants: &[Uuid]) -> Principal {
+        user_full(tenants, Aal::Aal2, &[SCOPE_FINANCIAL_WRITE], Some(1_000))
+    }
+
+    fn user_full(
+        tenants: &[Uuid],
+        assurance: Aal,
+        scopes: &[&str],
+        step_up_at: Option<u64>,
+    ) -> Principal {
         Principal::User(Box::new(SupabaseIdentity {
             subject: "user-abc".into(),
             email: Some("operator@example.com".into()),
             role: Some("authenticated".into()),
             tenant_ids: tenants.to_vec(),
+            assurance,
+            scopes: scopes.iter().map(|s| s.to_string()).collect(),
+            step_up_at,
         }))
     }
 
@@ -850,6 +982,180 @@ mod tests {
         }
     }
 
+    // --- DEN-1190: fresh-AAL2 + financial-scope step-up for human mutations ---
+
+    const NOW: u64 = 1_000_000;
+
+    fn step_up_policy() -> AuthzPolicy {
+        AuthzPolicy {
+            require_user_jwt: true,
+            require_step_up_for_mutations: true,
+        }
+    }
+
+    fn authz(principal: &Principal, scope: TenantScope, action: Action) -> Result<(), StatusCode> {
+        authorize_request(principal, scope, action, step_up_policy(), NOW)
+    }
+
+    #[test]
+    fn aal2_scoped_fresh_user_may_mutate_own_tenant() {
+        let user = user_full(&[uuid_a()], Aal::Aal2, &[SCOPE_FINANCIAL_WRITE], Some(NOW));
+        assert_eq!(
+            authz(&user, TenantScope::Tenant(uuid_a()), Action::Mutate),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn reads_never_require_step_up() {
+        // An AAL1 user with no scope may still *read* their own tenant.
+        let user = user_full(&[uuid_a()], Aal::Aal1, &[], None);
+        assert_eq!(
+            authz(&user, TenantScope::Tenant(uuid_a()), Action::Read),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn aal1_user_may_not_mutate() {
+        let user = user_full(&[uuid_a()], Aal::Aal1, &[SCOPE_FINANCIAL_WRITE], Some(NOW));
+        assert_eq!(
+            authz(&user, TenantScope::Tenant(uuid_a()), Action::Mutate),
+            Err(StatusCode::FORBIDDEN)
+        );
+    }
+
+    #[test]
+    fn stale_or_absent_step_up_is_refused_but_the_boundary_is_fresh() {
+        let stale = user_full(
+            &[uuid_a()],
+            Aal::Aal2,
+            &[SCOPE_FINANCIAL_WRITE],
+            Some(NOW - (MAX_STEP_UP_AGE_SECS + 1)),
+        );
+        assert_eq!(
+            authz(&stale, TenantScope::Tenant(uuid_a()), Action::Mutate),
+            Err(StatusCode::FORBIDDEN)
+        );
+        let absent = user_full(&[uuid_a()], Aal::Aal2, &[SCOPE_FINANCIAL_WRITE], None);
+        assert_eq!(
+            authz(&absent, TenantScope::Tenant(uuid_a()), Action::Mutate),
+            Err(StatusCode::FORBIDDEN)
+        );
+        // Exactly at the max age still counts as fresh.
+        let boundary = user_full(
+            &[uuid_a()],
+            Aal::Aal2,
+            &[SCOPE_FINANCIAL_WRITE],
+            Some(NOW - MAX_STEP_UP_AGE_SECS),
+        );
+        assert_eq!(
+            authz(&boundary, TenantScope::Tenant(uuid_a()), Action::Mutate),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn missing_financial_scope_is_refused() {
+        let user = user_full(&[uuid_a()], Aal::Aal2, &["billing:read"], Some(NOW));
+        assert_eq!(
+            authz(&user, TenantScope::Tenant(uuid_a()), Action::Mutate),
+            Err(StatusCode::FORBIDDEN)
+        );
+    }
+
+    #[test]
+    fn wrong_tenant_is_refused_before_any_step_up_check() {
+        // Tenant entitlement is layered first; a fully-privileged user still
+        // cannot touch a tenant that is not theirs.
+        let user = user_full(&[uuid_a()], Aal::Aal2, &[SCOPE_FINANCIAL_WRITE], Some(NOW));
+        assert_eq!(
+            authz(&user, TenantScope::Tenant(uuid_b()), Action::Mutate),
+            Err(StatusCode::FORBIDDEN)
+        );
+    }
+
+    #[test]
+    fn service_principal_cannot_mutate_a_tenant_route() {
+        // Service/user confusion: the shared bearer names no tenant and carries
+        // no assurance; step-up mode does not loosen the migration rule.
+        assert_eq!(
+            authz(
+                &Principal::Service,
+                TenantScope::Tenant(uuid_a()),
+                Action::Mutate
+            ),
+            Err(StatusCode::FORBIDDEN)
+        );
+    }
+
+    #[test]
+    fn mutation_hardening_denies_shared_service_credential_during_user_jwt_migration() {
+        let policy = AuthzPolicy {
+            require_user_jwt: false,
+            require_step_up_for_mutations: true,
+        };
+        assert_eq!(
+            authorize_request(
+                &Principal::Service,
+                TenantScope::Tenant(uuid_a()),
+                Action::Mutate,
+                policy,
+                NOW,
+            ),
+            Err(StatusCode::FORBIDDEN)
+        );
+        assert_eq!(
+            authorize_request(
+                &Principal::Service,
+                TenantScope::Tenant(uuid_a()),
+                Action::Read,
+                policy,
+                NOW,
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn unscoped_provisioning_mutation_is_not_financial_gated() {
+        // POST /v1/tenants creates a tenant; there is no tenant to be scoped to.
+        let user = user_full(&[], Aal::Aal1, &[], None);
+        assert_eq!(authz(&user, TenantScope::None, Action::Mutate), Ok(()));
+    }
+
+    #[test]
+    fn step_up_disabled_preserves_pre_migration_behaviour() {
+        // With the flag off (default), an AAL1 user mutating their own tenant is
+        // allowed exactly as before — turning Supabase on can't instantly break
+        // callers who have not stepped up yet.
+        let policy = AuthzPolicy {
+            require_user_jwt: true,
+            require_step_up_for_mutations: false,
+        };
+        let user = user_full(&[uuid_a()], Aal::Aal1, &[], None);
+        assert_eq!(
+            authorize_request(
+                &user,
+                TenantScope::Tenant(uuid_a()),
+                Action::Mutate,
+                policy,
+                NOW
+            ),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn action_derivation_is_fail_closed() {
+        for m in [Method::GET, Method::HEAD, Method::OPTIONS, Method::TRACE] {
+            assert_eq!(Action::of(&m), Action::Read, "{m} should read");
+        }
+        for m in [Method::POST, Method::PUT, Method::PATCH, Method::DELETE] {
+            assert_eq!(Action::of(&m), Action::Mutate, "{m} should mutate");
+        }
+    }
+
     // --- End-to-end through the middleware -----------------------------------
 
     fn tenant_router(auth: Arc<ApiAuth>) -> Router {
@@ -872,6 +1178,7 @@ mod tests {
             bearer: Some("service-token".into()),
             supabase: None,
             require_user_jwt: true,
+            require_step_up: false,
         });
         let app = tenant_router(auth);
 
@@ -908,6 +1215,7 @@ mod tests {
             bearer: Some("service-token".into()),
             supabase: None,
             require_user_jwt: true,
+            require_step_up: false,
         });
         let app = tenant_router(auth);
         assert_eq!(
@@ -928,6 +1236,7 @@ mod tests {
             bearer: Some("super-secret-bearer".into()),
             supabase: None,
             require_user_jwt: true,
+            require_step_up: false,
         };
         let rendered = format!("{auth:?}");
         assert!(!rendered.contains("super-secret-bearer"));
