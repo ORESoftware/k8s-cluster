@@ -1,0 +1,282 @@
+name: Materialize clean Tor OpenAPI PR
+
+on:
+  push:
+    branches:
+      - agent/executable-openapi-dashboard-clean
+    paths:
+      - '.github/workflows/materialize-executable-openapi-clean.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: materialize-tor-openapi-clean
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  SOURCE_SHA: 06377ad3a8528b4d5858eb50ba26da24480ed6c5
+
+jobs:
+  certify-and-squash:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact writable branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/executable-openapi-dashboard-clean
+          fetch-depth: 0
+          persist-credentials: true
+          show-progress: false
+
+      - name: Setup Rust 1.88
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt, clippy
+
+      - name: Setup Node 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Import the exact reviewed transformation inputs
+        run: |
+          set -euo pipefail
+          git cat-file -e "$SOURCE_SHA^{commit}"
+          files=(
+            .github/workflows/openapi-browser.yml
+            .github/workflows/openapi-contract.yml
+            scripts/apply-executable-openapi.py
+            src/web/openapi.rs
+            tests/browser/openapi-dashboard.spec.mjs
+          )
+          git checkout "$SOURCE_SHA" -- "${files[@]}"
+          git diff --check
+
+      - name: Normalize and apply the code-first transformation
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('scripts/apply-executable-openapi.py')
+          source = path.read_text()
+          start_marker = '# Add the missing dashboard annotation after status helpers are in place.\n'
+          end_marker = 'web_path.write_text(web)\n'
+          if start_marker in source:
+              start = source.index(start_marker)
+              end = source.index(end_marker, start)
+              middle = source[start:end]
+              if middle.count('operation_id = "getTorDashboard"') != 1:
+                  raise SystemExit('duplicate dashboard block changed unexpectedly')
+              source = source[:start] + source[end:]
+              path.write_text(source)
+          elif source.count('operation_id = "getTorDashboard"') != 1:
+              raise SystemExit('expected exactly one dashboard annotation in normalized transform')
+          PY
+          python3 -m py_compile scripts/apply-executable-openapi.py
+          python3 scripts/apply-executable-openapi.py
+
+      - name: Pin the reviewed Utoipa pastey migration
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('Cargo.toml')
+          source = path.read_text()
+          before = '''utoipa = "=5.5.0"
+          utoipa-axum = "=0.2.0"
+          utoipa-scalar = "=0.3.0"'''
+          after = '''# crates.io utoipa-axum 0.2.0 still pulls the archived `paste` crate.
+          # Pin the complete type family to the reviewed upstream pastey migration.
+          utoipa = { git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa" }
+          utoipa-axum = { git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa-axum" }
+          utoipa-scalar = { git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa-scalar" }'''
+          if source.count(before) != 1:
+              raise SystemExit('unexpected Utoipa dependency block')
+          path.write_text(source.replace(before, after, 1))
+          PY
+
+      - name: Resolve, compile, lint, and test the complete application
+        run: |
+          set -euo pipefail
+          cargo check
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo check --locked
+          cargo clippy --locked --all-targets -- \
+            -D warnings \
+            -A clippy::needless_return \
+            -A clippy::needless_range_loop \
+            -A clippy::doc_overindented_list_items
+          cargo test --locked --all-targets
+
+      - name: Reproduce and validate public and internal contracts
+        run: |
+          set -euo pipefail
+          mkdir -p generated
+          cargo run --locked --quiet -- --export-openapi=internal > generated/openapi.internal.json
+          cargo run --locked --quiet -- --export-openapi=public > generated/openapi.public.json
+          cargo run --locked --quiet -- --export-openapi=internal > /tmp/openapi.internal.2.json
+          cargo run --locked --quiet -- --export-openapi=public > /tmp/openapi.public.2.json
+          cmp generated/openapi.internal.json /tmp/openapi.internal.2.json
+          cmp generated/openapi.public.json /tmp/openapi.public.2.json
+          python3 -m json.tool generated/openapi.internal.json >/dev/null
+          python3 -m json.tool generated/openapi.public.json >/dev/null
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          public = json.loads(Path('generated/openapi.public.json').read_text())
+          internal = json.loads(Path('generated/openapi.internal.json').read_text())
+          expected_public = {
+              '/healthz', '/vendor/{file}', '/docs', '/docs/{name}', '/proxy.pac',
+              '/openapi.json', '/api/docs.json', '/api/docs', '/docs/api',
+          }
+          sensitive = {
+              '/', '/api/status', '/api/fetch', '/ws/stats',
+              '/internal/openapi.json', '/internal/docs/api',
+          }
+          assert public['openapi'] == '3.1.0'
+          assert internal['openapi'] == '3.1.0'
+          assert set(public['paths']) == expected_public
+          assert set(internal['paths']) == expected_public | sensitive
+          assert public['x-dd-contract-scope'] == 'public'
+          assert internal['x-dd-contract-scope'] == 'internal'
+          assert 'securitySchemes' not in public.get('components', {})
+          assert 'ui_token' in internal['components']['securitySchemes']
+
+          operation_ids = []
+          for path, item in internal['paths'].items():
+              for method, operation in item.items():
+                  if method.lower() not in {'get', 'post', 'put', 'patch', 'delete'}:
+                      continue
+                  operation_ids.append(operation['operationId'])
+                  if path in sensitive:
+                      assert operation.get('security') == [{'ui_token': []}], (method, path)
+          assert len(operation_ids) == len(set(operation_ids))
+          assert internal['paths']['/ws/stats']['get']['responses'].get('101') is not None
+          PY
+
+      - name: Install pinned Playwright, WebSocket client, and Chromium
+        run: |
+          set -euo pipefail
+          npm install --no-save --ignore-scripts --no-audit --no-fund \
+            @playwright/test@1.55.0 \
+            ws@8.18.3
+          npx playwright install --with-deps chromium
+
+      - name: Create an offline relay fixture
+        run: |
+          set -euo pipefail
+          cat > /tmp/tor-browser-directory.toml <<'TOML'
+          [[relays]]
+          name = "browser-fixture"
+          addr = "127.0.0.1:65530"
+          pubkey = "CQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          TOML
+
+      - name: Start the authenticated loopback dashboard
+        env:
+          TOR_ROLE: client
+          TOR_BACKEND: overlay
+          TOR_DIRECTORY: /tmp/tor-browser-directory.toml
+          TOR_HOPS: '1'
+          TOR_SOCKS_LISTEN: 127.0.0.1:19050
+          TOR_UI_LISTEN: 127.0.0.1:19060
+          TOR_UI_TOKEN: browser+smoke/token:0123456789abcdef
+          TOR_MAX_SOCKS_CONNECTIONS: '8'
+          RUST_LOG: tor_server=info
+        run: |
+          set -euo pipefail
+          cargo run --locked > /tmp/tor-server.log 2>&1 &
+          echo $! > /tmp/tor-server.pid
+          for _ in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:19060/healthz >/dev/null; then
+              exit 0
+            fi
+            if ! kill -0 "$(cat /tmp/tor-server.pid)" 2>/dev/null; then
+              cat /tmp/tor-server.log >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          cat /tmp/tor-server.log >&2
+          exit 1
+
+      - name: Exercise Scalar, aliases, auth, WebSocket, and proxy defenses
+        env:
+          TOR_DOCS_BASE_URL: http://127.0.0.1:19060
+          TOR_DOCS_TOKEN: browser+smoke/token:0123456789abcdef
+        run: npx playwright test tests/browser/openapi-dashboard.spec.mjs --browser=chromium --workers=1 --reporter=line
+
+      - name: Verify token redaction and repository hygiene
+        env:
+          TOR_DOCS_TOKEN: browser+smoke/token:0123456789abcdef
+        run: |
+          set -euo pipefail
+          if grep --fixed-strings --quiet -- "$TOR_DOCS_TOKEN" /tmp/tor-server.log; then
+            echo 'dashboard log leaked TOR_UI_TOKEN' >&2
+            exit 1
+          fi
+          if git grep -nE '^(<<<<<<< |=======|>>>>>>> )' -- Cargo.toml generated src tests; then
+            echo 'git conflict marker detected' >&2
+            exit 1
+          fi
+          git diff --check
+
+      - name: Stop dashboard
+        if: always()
+        run: |
+          if test -f /tmp/tor-server.pid; then
+            kill "$(cat /tmp/tor-server.pid)" 2>/dev/null || true
+          fi
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tor-openapi-clean-certification-${{ github.sha }}
+          path: |
+            /tmp/tor-server.log
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Replace transport history with one certified product commit
+        run: |
+          set -euo pipefail
+          rm -rf node_modules package-lock.json npm-shrinkwrap.json playwright-report test-results
+          rm -f scripts/apply-executable-openapi.py
+          rm -f .github/workflows/materialize-executable-openapi-clean.yml
+
+          printf '%s\n' \
+            .github/workflows/openapi-browser.yml \
+            .github/workflows/openapi-contract.yml \
+            Cargo.lock \
+            Cargo.toml \
+            generated/openapi.internal.json \
+            generated/openapi.public.json \
+            src/main.rs \
+            src/web.rs \
+            src/web/openapi.rs \
+            tests/browser/openapi-dashboard.spec.mjs | sort > /tmp/expected-final-paths
+
+          git reset --soft origin/main
+          git add -A
+          git diff --cached --check
+          git diff --cached --name-only | sort > /tmp/actual-final-paths
+          diff -u /tmp/expected-final-paths /tmp/actual-final-paths
+          test -z "$(git diff --cached --name-only | grep -E 'materialize-executable-openapi-clean|apply-executable-openapi' || true)"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'feat(DEN-465): add executable Tor dashboard OpenAPI routes'
+          git push --force-with-lease origin HEAD:agent/executable-openapi-dashboard-clean
