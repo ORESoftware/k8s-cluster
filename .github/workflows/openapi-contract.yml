@@ -90,7 +90,7 @@ jobs:
           cmp /tmp/openapi.internal.1.json generated/openapi.internal.json
           cmp /tmp/openapi.public.1.json generated/openapi.public.json
 
-      - name: Validate visibility, auth, and stable operations
+      - name: Validate visibility, schema minimization, auth, and stable operations
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -103,22 +103,31 @@ jobs:
               '/healthz', '/readyz', '/v1/contact/readyz',
               '/openapi.json', '/api/docs.json', '/api/docs', '/docs/api',
           }
-          expected_internal = expected_public | {
+          sensitive = {
               '/v1/push/jobs', '/v1/push/jobs/batch',
               '/v1/contact/jobs', '/v1/contact/jobs/batch',
               '/internal/openapi.json', '/internal/docs/api',
           }
           assert set(public['paths']) == expected_public
-          assert set(internal['paths']) == expected_internal
+          assert set(internal['paths']) == expected_public | sensitive
           assert public['x-dd-contract-scope'] == 'public'
+          assert internal['x-dd-contract-scope'] == 'internal'
+          assert 'contact' not in public['info'] and 'license' not in public['info']
+          assert 'contact' not in internal['info'] and 'license' not in internal['info']
+          assert 'securitySchemes' not in public.get('components', {})
+          public_schemas = public['components']['schemas']
+          assert 'PushJob' not in public_schemas
+          assert 'ContactJob' not in public_schemas
+          assert {'ServiceHealth', 'ReadinessResponse', 'ContactReadinessResponse'} <= set(public_schemas)
           assert 'bearer_auth' in internal['components']['securitySchemes']
+
           operation_ids = []
           for path, item in internal['paths'].items():
               for method, operation in item.items():
                   if method.lower() not in {'get', 'post', 'put', 'patch', 'delete'}:
                       continue
                   operation_ids.append(operation['operationId'])
-                  if path.startswith('/v1/') and path != '/v1/contact/readyz':
+                  if path in sensitive:
                       assert operation.get('security') == [{'bearer_auth': []}], (method, path)
           assert len(operation_ids) == len(set(operation_ids))
           PY
