@@ -3,6 +3,8 @@
 //! Assurance describes how authentication happened. It never replaces tenant,
 //! role, or resource authorization checks.
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 pub const ACR_LOA1: &str = "urn:oresoftware:loa:1";
 pub const ACR_LOA2: &str = "urn:oresoftware:loa:2";
 
@@ -10,6 +12,10 @@ pub const ACR_LOA2: &str = "urn:oresoftware:loa:2";
 pub struct AuthenticationAssurance {
     pub amr: Vec<String>,
     pub acr: Option<String>,
+    /// Unix time at which the authentication ceremony represented by this
+    /// assurance completed. For LOA2 this is the second-factor/passkey time,
+    /// not the time a downstream access token happened to be minted.
+    pub auth_time: Option<u64>,
 }
 
 impl AuthenticationAssurance {
@@ -17,6 +23,7 @@ impl AuthenticationAssurance {
         Self {
             amr: vec!["pwd".to_owned()],
             acr: Some(ACR_LOA1.to_owned()),
+            auth_time: Some(now_secs()),
         }
     }
 
@@ -26,6 +33,7 @@ impl AuthenticationAssurance {
         Self {
             amr: vec!["refresh_token".to_owned()],
             acr: Some(ACR_LOA1.to_owned()),
+            auth_time: None,
         }
     }
 
@@ -50,6 +58,7 @@ impl AuthenticationAssurance {
         Self {
             amr,
             acr: Some(ACR_LOA2.to_owned()),
+            auth_time: Some(now_secs()),
         }
     }
 
@@ -75,6 +84,7 @@ impl AuthenticationAssurance {
         Self {
             amr,
             acr: Some(if level >= 2 { ACR_LOA2 } else { ACR_LOA1 }.to_owned()),
+            auth_time: Some(now_secs()),
         }
     }
 
@@ -92,6 +102,18 @@ impl AuthenticationAssurance {
     /// issuer, audience, and expiry have verified. Missing or unknown AAL never
     /// satisfies an explicit LOA policy.
     pub fn from_supabase(aal: Option<&str>, methods: &[String]) -> Self {
+        Self::from_supabase_at(aal, methods, None)
+    }
+
+    /// Supabase bridge that also carries the latest signed AMR timestamp. A
+    /// caller must derive `auth_time` from the same provider token whose
+    /// signature/issuer/audience/expiry were verified; request JSON must never
+    /// supply it independently.
+    pub fn from_supabase_at(
+        aal: Option<&str>,
+        methods: &[String],
+        auth_time: Option<u64>,
+    ) -> Self {
         let mut amr = vec!["federated".to_owned()];
         for method in methods.iter().filter_map(|method| normalize_method(method)) {
             if !amr.contains(&method) {
@@ -106,7 +128,11 @@ impl AuthenticationAssurance {
             Some("aal2") => Some(ACR_LOA2.to_owned()),
             _ => None,
         };
-        Self { amr, acr }
+        Self {
+            amr,
+            acr,
+            auth_time,
+        }
     }
 }
 
@@ -134,27 +160,37 @@ fn normalize_method(input: &str) -> Option<String> {
     Some(canonical.to_owned())
 }
 
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn local_and_refresh_sessions_are_explicitly_base_assurance() {
-        assert_eq!(AuthenticationAssurance::local_password().amr, ["pwd"]);
-        assert_eq!(
-            AuthenticationAssurance::refresh_token().acr.as_deref(),
-            Some(ACR_LOA1)
-        );
+        let local = AuthenticationAssurance::local_password();
+        assert_eq!(local.amr, ["pwd"]);
+        assert!(local.auth_time.is_some());
+        let refresh = AuthenticationAssurance::refresh_token();
+        assert_eq!(refresh.acr.as_deref(), Some(ACR_LOA1));
+        assert_eq!(refresh.auth_time, None);
     }
 
     #[test]
     fn signed_supabase_aal2_maps_to_loa2_and_normalizes_methods() {
-        let assurance = AuthenticationAssurance::from_supabase(
+        let assurance = AuthenticationAssurance::from_supabase_at(
             Some("aal2"),
             &["password".into(), "totp".into(), "totp".into()],
+            Some(123),
         );
         assert_eq!(assurance.amr, ["federated", "pwd", "totp"]);
         assert_eq!(assurance.acr.as_deref(), Some(ACR_LOA2));
+        assert_eq!(assurance.auth_time, Some(123));
     }
 
     #[test]
