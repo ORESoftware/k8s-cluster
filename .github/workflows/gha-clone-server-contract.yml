@@ -1,0 +1,101 @@
+name: GHA clone server contract
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/gha-clone-server-contract.yml'
+      - '.github/workflows/self-hosted-fallback.yml'
+      - '.github/workflows/gha-clone-images.yml'
+      - 'scripts/ops/register_github_org_webhook.py'
+      - 'scripts/ops/test_gha_clone_server_contract.py'
+      - 'remote/deployments/gha-clone-server-rs/**'
+      - 'remote/deployments/oresoftware-ci-runner/**'
+      - 'remote/argocd/ci-runners/oresoftware/**'
+      - 'remote/argocd/apps/oresoftware-gha-clone.application.yaml'
+      - 'remote/argocd/apps/oresoftware-ci-fleet.application.yaml'
+      - 'docs/operations/github-actions-self-hosted-fallback.md'
+  push:
+    branches: [main, dev]
+    paths:
+      - '.github/workflows/gha-clone-server-contract.yml'
+      - '.github/workflows/self-hosted-fallback.yml'
+      - '.github/workflows/gha-clone-images.yml'
+      - 'scripts/ops/register_github_org_webhook.py'
+      - 'scripts/ops/test_gha_clone_server_contract.py'
+      - 'remote/deployments/gha-clone-server-rs/**'
+      - 'remote/deployments/oresoftware-ci-runner/**'
+      - 'remote/argocd/ci-runners/oresoftware/**'
+      - 'remote/argocd/apps/oresoftware-gha-clone.application.yaml'
+      - 'remote/argocd/apps/oresoftware-ci-fleet.application.yaml'
+      - 'docs/operations/github-actions-self-hosted-fallback.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gha-clone-server-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: >-
+            .github/workflows/gha-clone-server-contract.yml
+            .github/workflows/self-hosted-fallback.yml
+            .github/workflows/gha-clone-images.yml
+
+      - name: Compile Python contracts
+        run: |
+          python3 -m py_compile \
+            scripts/ops/register_github_org_webhook.py \
+            scripts/ops/test_gha_clone_server_contract.py
+
+      - name: Run Python contracts
+        run: python3 -m unittest -v scripts/ops/test_gha_clone_server_contract.py
+
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml -- --check
+
+      - name: Run Rust clippy
+        run: cargo clippy --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml -- -D warnings
+
+      - name: Run Rust tests
+        run: cargo test --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml
+
+      - name: Reject whitespace and merge markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- \
+            .github/workflows/gha-clone-server-contract.yml \
+            .github/workflows/self-hosted-fallback.yml \
+            .github/workflows/gha-clone-images.yml \
+            scripts/ops/register_github_org_webhook.py \
+            scripts/ops/test_gha_clone_server_contract.py \
+            remote/deployments/gha-clone-server-rs \
+            remote/deployments/oresoftware-ci-runner \
+            remote/argocd/ci-runners/oresoftware \
+            docs/operations/github-actions-self-hosted-fallback.md; then
+            echo 'conflict marker found' >&2
+            exit 1
+          fi
