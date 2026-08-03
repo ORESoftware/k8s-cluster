@@ -1,0 +1,133 @@
+name: image
+
+# Build once in CI, publish to GHCR, and deploy only by immutable digest. The
+# private OreSoftware shared-libs checkout is pinned independently from this
+# repository so an unrelated change cannot silently enter a billing image.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: billing-image-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/quaestor-ledger/quaestor-ledger-server
+  SHARED_LIBS_REF: 823ba65f8f032595880b801a7458596828ea31da
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out billing source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Require a least-privilege cross-org read credential
+        shell: bash
+        env:
+          SHARED_LIBS_TOKEN: ${{ secrets.ORE_SHARED_LIBS_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SHARED_LIBS_TOKEN" ]; then
+            echo "ORE_SHARED_LIBS_READ_TOKEN is required." >&2
+            echo "Use a fine-grained read-only token or GitHub App credential scoped only to ORESoftware/k8s-libs-and-shared-defs." >&2
+            exit 1
+          fi
+
+      - name: Check out pinned OreSoftware shared libraries
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ORESoftware/k8s-libs-and-shared-defs
+          ref: ${{ env.SHARED_LIBS_REF }}
+          path: .build/shared-libs
+          token: ${{ secrets.ORE_SHARED_LIBS_READ_TOKEN }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Verify the shared-libs pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual=$(git -C .build/shared-libs rev-parse HEAD)
+          test "$actual" = "$SHARED_LIBS_REF" || {
+            echo "expected shared libs $SHARED_LIBS_REF, got $actual" >&2
+            exit 1
+          }
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - uses: docker/login-action@371161bbe7024a29a25c5e19bfcbc0804fe9ad2c # v4.5.2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image tags and labels
+        id: meta
+        shell: bash
+        env:
+          SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          set -euo pipefail
+          short="${SHA:0:12}"
+          tags="${IMAGE}:sha-${short}"
+          if [ "$REF_TYPE" = "tag" ]; then
+            tags="${tags},${IMAGE}:${REF_NAME}"
+          else
+            tags="${tags},${IMAGE}:main"
+          fi
+          {
+            printf 'tags=%s\n' "$tags"
+            printf 'short_sha=%s\n' "$short"
+            printf 'labels<<EOF\n'
+            printf 'org.opencontainers.image.source=https://github.com/%s\n' "$GITHUB_REPOSITORY"
+            printf 'org.opencontainers.image.revision=%s\n' "$SHA"
+            printf 'org.opencontainers.image.title=Quaestor Ledger billing server\n'
+            printf 'EOF\n'
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Build and push immutable billing image
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          target: runtime
+          platforms: linux/amd64
+          pull: true
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=billing-server
+          cache-to: type=gha,mode=max,scope=billing-server
+
+      - name: Record the reviewed deployment pin
+        shell: bash
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          tick='`'
+          {
+            echo '### Quaestor Ledger billing image'
+            echo
+            echo "- tags: ${tick}${TAGS}${tick}"
+            echo "- digest: ${tick}${DIGEST}${tick}"
+            echo "- production pin: ${tick}${IMAGE}@${DIGEST}${tick}"
+            echo "- shared libs: ${tick}${SHARED_LIBS_REF}${tick}"
+          } >>"$GITHUB_STEP_SUMMARY"
