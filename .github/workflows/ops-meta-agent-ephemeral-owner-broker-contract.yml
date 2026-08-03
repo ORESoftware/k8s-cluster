@@ -1,0 +1,56 @@
+name: Meta Agent ephemeral owner broker contract
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/ops-meta-agent-ephemeral-owner-broker.yml
+      - .github/workflows/ops-meta-agent-ephemeral-owner-broker-contract.yml
+      - scripts/ops/test_meta_agent_ephemeral_owner_broker.py
+      - docs/operations/meta-agent-ephemeral-credential-publication.md
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ops-meta-agent-ephemeral-owner-broker.yml
+      - .github/workflows/ops-meta-agent-ephemeral-owner-broker-contract.yml
+      - scripts/ops/test_meta_agent_ephemeral_owner_broker.py
+      - docs/operations/meta-agent-ephemeral-credential-publication.md
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meta-agent-ephemeral-owner-broker-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Check out proposed tree without persisted credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: >-
+            .github/workflows/ops-meta-agent-ephemeral-owner-broker.yml
+            .github/workflows/ops-meta-agent-ephemeral-owner-broker-contract.yml
+
+      - name: Compile and run fail-closed broker contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ops/test_meta_agent_ephemeral_owner_broker.py
+          python3 -m unittest -v scripts/ops/test_meta_agent_ephemeral_owner_broker.py
+          git diff --check
+          if git grep -nE '^(<{7}|={7}|>{7})' -- \
+            .github/workflows/ops-meta-agent-ephemeral-owner-broker.yml \
+            .github/workflows/ops-meta-agent-ephemeral-owner-broker-contract.yml \
+            scripts/ops/test_meta_agent_ephemeral_owner_broker.py \
+            docs/operations/meta-agent-ephemeral-credential-publication.md; then
+            echo 'Git conflict markers are forbidden.' >&2
+            exit 1
+          fi
