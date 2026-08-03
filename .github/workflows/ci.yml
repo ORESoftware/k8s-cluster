@@ -12,6 +12,14 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Exhaustively check the bounded ledger posting model
         run: cargo test --manifest-path formal/ledger-model/Cargo.toml --locked -- --nocapture
+  shared-auth-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Format the isolated Shared Auth startup contract
+        run: cargo fmt --manifest-path formal/shared-auth-runtime/Cargo.toml --check
+      - name: Compile and test the production Shared Auth startup contract
+        run: cargo test --manifest-path formal/shared-auth-runtime/Cargo.toml
   hygiene:
     runs-on: ubuntu-latest
     steps:
