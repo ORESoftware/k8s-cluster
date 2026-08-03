@@ -10,6 +10,7 @@ active admin membership in every organization in the bounded fleet.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
+import hashlib
 import json
 import re
 import sys
@@ -59,6 +60,9 @@ ORGANIZATIONS: tuple[str, ...] = (
 
 EXPECTED_LOGIN = "ORESoftware"
 TOKEN_NAME_PATTERN = re.compile(r"(?:github|gh|token|pat)", re.IGNORECASE)
+REJECTED_TOKEN_SHA256: frozenset[str] = frozenset(
+    {"777160bba7726b4740510c570437121769c3c2ed18d7c3ee06ff060b304f0fca"}
+)
 PREFERRED_LEAF_NAMES: dict[str, int] = {
     "GH_PAT": 0,
     "GITHUB_PAT": 1,
@@ -74,7 +78,10 @@ class CredentialSelectionError(RuntimeError):
 
 
 def _valid_token(value: str) -> bool:
-    return bool(value) and not any(character.isspace() for character in value)
+    if not value or any(character.isspace() for character in value):
+        return False
+    fingerprint = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return fingerprint not in REJECTED_TOKEN_SHA256
 
 
 def iter_candidates(value: Any, path: tuple[str, ...] = ()) -> Iterator[tuple[str, str]]:
