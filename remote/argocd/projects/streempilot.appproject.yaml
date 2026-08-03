@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: streempilot
+  namespace: argocd
+spec:
+  description: StreemPilot Rust control-plane API and server-rendered web UI.
+  sourceRepos:
+    - git@github.com:StreemPilot/streempilot-api-server.rs.git
+    - git@github.com:StreemPilot/streempilot-web-server.rs.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: streempilot
+  clusterResourceWhitelist: []
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange
