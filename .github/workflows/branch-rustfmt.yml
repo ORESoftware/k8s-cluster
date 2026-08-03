@@ -1,0 +1,54 @@
+name: temporary branch rustfmt
+
+on:
+  push:
+    branches:
+      - harden/shared-auth-production
+    paths:
+      - .github/workflows/branch-rustfmt.yml
+
+permissions:
+  contents: write
+
+jobs:
+  rustfmt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the feature branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: harden/shared-auth-production
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Select stable Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal --component rustfmt
+          rustup default stable
+
+      - name: Format only the CI-reported Shared Auth files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+
+          changed="$(git diff --name-only)"
+          unexpected="$(printf '%s\n' "$changed" | sed '/^$/d' | grep -Ev '^(src/api/oauth\.rs|src/shared_auth\.rs)$' || true)"
+          if [[ -n "$unexpected" ]]; then
+            printf 'rustfmt unexpectedly changed:\n%s\n' "$unexpected" >&2
+            exit 1
+          fi
+
+          if [[ -z "$changed" ]]; then
+            echo 'No formatting changes required.'
+            exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/api/oauth.rs src/shared_auth.rs
+          git commit -m 'chore: apply rustfmt to Shared Auth boundary'
+          git push origin HEAD:harden/shared-auth-production
