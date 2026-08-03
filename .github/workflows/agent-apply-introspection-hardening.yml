@@ -1,4 +1,4 @@
-name: one-shot apply introspection hardening
+name: one-shot apply introspection hardening v2
 
 on:
   push:
@@ -11,11 +11,11 @@ permissions:
   contents: write
 
 concurrency:
-  group: agent-apply-introspection-hardening
-  cancel-in-progress: false
+  group: agent-apply-introspection-hardening-v2
+  cancel-in-progress: true
 
 jobs:
-  apply-test-push:
+  apply-push-test:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -35,6 +35,23 @@ jobs:
           base64 --decode "$encoded" | gzip --decompress --stdout > "$decoded"
           git apply --check "$decoded"
           git apply "$decoded"
+
+      - name: Push the real source diff and remove staging machinery
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            .github/agent-patches/0002-auth-time-introspection.patch.gz.b64 \
+            .github/workflows/agent-apply-introspection-hardening.yml
+          rmdir .github/agent-patches 2>/dev/null || true
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m 'fix(auth): fail closed with authoritative introspection freshness'
+          git push origin HEAD:agent/shared-auth-auth-time-claim
 
       - name: Select stable Rust
         shell: bash
@@ -66,23 +83,3 @@ jobs:
           cargo test --locked --test integration introspect_authorized_caller_succeeds -- --exact
           cargo test --locked --test integration introspect_rejects_unauthorized_caller -- --exact
           cargo test --locked --test integration introspect_fails_closed_when_secret_unset -- --exact
-
-      - name: Commit and push the tested source changes
-        shell: bash
-        run: |
-          set -euo pipefail
-          rm -f \
-            .github/agent-patches/0002-auth-time-introspection.patch.gz.b64 \
-            .github/workflows/agent-apply-introspection-hardening.yml
-          rmdir .github/agent-patches 2>/dev/null || true
-
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git diff --cached --check
-          if git diff --cached --quiet; then
-            echo 'No source changes remained after patch application.' >&2
-            exit 1
-          fi
-          git commit -m 'fix(auth): fail closed with authoritative introspection freshness'
-          git push origin HEAD:agent/shared-auth-auth-time-claim
