@@ -1,10 +1,10 @@
-//! Signed GitHub `workflow_run` failure bridge.
-//!
-//! This service does **not** implement the GitHub Actions execution protocol.
-//! Official GitHub Actions Runner Controller (ARC) runners preserve workflow
-//! semantics. The bridge only receives signed failure events and performs one
-//! operator-reviewed action from a static rule: dispatch a named fallback
-//! workflow to ARC, or submit an allowlisted profile to `dd-build-server`.
+// Signed GitHub `workflow_run` failure bridge.
+//
+// This service does **not** implement the GitHub Actions execution protocol.
+// Official GitHub Actions Runner Controller (ARC) runners preserve workflow
+// semantics. The bridge only receives signed failure events and performs one
+// operator-reviewed action from a static rule: dispatch a named fallback
+// workflow to ARC, or submit an allowlisted profile to `dd-build-server`.
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
