@@ -12,7 +12,7 @@ publish = false
 async-nats = "=0.50.0"
 async-trait = "0.1"
 axum = "0.8"
-base64 = "0.22"
+base64 = "0.23"
 ece = "2.3"
 futures-util = "0.3"
 hex = "0.4"
