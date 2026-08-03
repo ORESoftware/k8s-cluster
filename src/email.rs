@@ -28,11 +28,19 @@ async fn send_magic_link_to(
     token: &str,
     otp: &str,
 ) -> Result<(), AuthError> {
+    if !config.is_enabled() {
+        return Err(AuthError::Unavailable);
+    }
     let api_key = config
         .sendgrid_api_key
         .as_deref()
+        .map(str::trim)
         .ok_or(AuthError::Unavailable)?;
-    let from_email = config.from_email.as_deref().ok_or(AuthError::Unavailable)?;
+    let from_email = config
+        .from_email
+        .as_deref()
+        .map(str::trim)
+        .ok_or(AuthError::Unavailable)?;
     let link = magic_link_url(config, token)?;
     let escaped_link = escape_html(&link);
     let text = format!(
@@ -91,6 +99,8 @@ fn magic_link_url(config: &MagicLinkConfig, token: &str) -> Result<String, AuthE
     let base = config
         .link_base_url
         .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
         .ok_or(AuthError::Unavailable)?;
     let mut url = reqwest::Url::parse(base).map_err(|_| AuthError::Internal)?;
     url.query_pairs_mut().append_pair("token", token);
