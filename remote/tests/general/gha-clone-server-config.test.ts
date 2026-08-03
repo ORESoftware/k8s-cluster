@@ -100,7 +100,14 @@ test('build server exposes fixed Rust, Node, and Python continuity profiles', ()
   assert.match(profiles, /cargo clippy --all-targets --all-features -- -D warnings/);
   assert.match(profiles, /pnpm install --frozen-lockfile/);
   assert.match(profiles, /python -m pytest/);
-  assert.doesNotMatch(profiles, /:latest"/);
+
+  const imageAssignments = [
+    ...profiles.matchAll(/const\s+[A-Z_]+_IMAGE:\s*&str\s*=\s*"([^"]+)";/g),
+  ];
+  assert.ok(imageAssignments.length >= 5, 'expected all fixed runner image assignments');
+  for (const [, image] of imageAssignments) {
+    assert.ok(!image.endsWith(':latest'), `runner image must be pinned: ${image}`);
+  }
 });
 
 test('planner and dispatcher preserve the fail-closed command boundary', () => {
