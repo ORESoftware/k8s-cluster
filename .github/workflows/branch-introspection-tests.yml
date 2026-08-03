@@ -1,4 +1,4 @@
-name: temporary introspection contract test repair
+name: temporary introspection contract test artifact
 
 on:
   pull_request:
@@ -7,18 +7,13 @@ on:
       - tests/integration.rs
       - .github/workflows/branch-introspection-tests.yml
       - .github/workflows/branch-introspection-tests-retrigger.yml
-  push:
-    branches:
-      - harden/auth-time-introspection
-    paths:
-      - .github/workflows/branch-introspection-tests.yml
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: temporary-introspection-contract-test-repair
+  group: temporary-introspection-contract-test-artifact
   cancel-in-progress: true
 
 jobs:
@@ -32,9 +27,9 @@ jobs:
         with:
           ref: harden/auth-time-introspection
           fetch-depth: 1
-          persist-credentials: true
+          persist-credentials: false
 
-      - name: Update integration tests for authenticated introspection
+      - name: Build exact authenticated-introspection test repair
         shell: bash
         run: |
           set -euo pipefail
@@ -186,21 +181,14 @@ jobs:
           PY
 
           cargo fmt --all
+          git diff --exit-code -- . ':!tests/integration.rs'
+          git diff --check -- tests/integration.rs
+          test -s tests/integration.rs
 
-          changed="$(git diff --name-only)"
-          unexpected="$(printf '%s\n' "$changed" | sed '/^$/d' | grep -Ev '^tests/integration\.rs$' || true)"
-          if [[ -n "$unexpected" ]]; then
-            printf 'test repair unexpectedly changed:\n%s\n' "$unexpected" >&2
-            exit 1
-          fi
-
-          if [[ -z "$changed" ]]; then
-            echo 'Integration tests already satisfy the authenticated introspection contract.'
-            exit 0
-          fi
-
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add tests/integration.rs
-          git commit -m 'test(auth): require service-authenticated introspection'
-          git push origin HEAD:harden/auth-time-introspection
+      - name: Upload the reviewed replacement test file
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: authenticated-introspection-integration-test
+          path: tests/integration.rs
+          if-no-files-found: error
+          retention-days: 1
