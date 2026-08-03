@@ -9,6 +9,7 @@ on:
       - 'Cargo.toml'
       - 'crates/api/**'
       - 'docs/openapi-rollout.md'
+      - 'docs/den-1263-openapi-diagnostic.txt'
       - 'e2e/playwright.api.config.ts'
       - 'e2e/tests/api-docs.spec.ts'
   workflow_dispatch:
@@ -50,10 +51,31 @@ jobs:
           toolchain: '1.90.0'
           components: rustfmt, clippy
 
-      - name: Resolve dependencies and validate the live router
+      - name: Resolve dependencies and capture compiler evidence
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          diagnostic='docs/den-1263-openapi-diagnostic.txt'
+          cargo check -p t2v-api --all-targets >"$diagnostic" 2>&1
+          status=$?
+          set -e
+          cat "$diagnostic"
+          if [ "$status" -ne 0 ]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add "$diagnostic"
+            if ! git diff --cached --quiet; then
+              git commit -m 'chore(DEN-1263): capture OpenAPI compiler diagnostics'
+              git push origin HEAD:agent/den-1263-executable-openapi
+            fi
+            exit "$status"
+          fi
+          rm -f "$diagnostic"
+
+      - name: Format, compile, lint, and test the live router
         run: |
           set -euo pipefail
-          cargo check -p t2v-api --all-targets
           cargo fmt --all
           cargo fmt --all -- --check
           cargo check --locked -p t2v-api --all-targets
