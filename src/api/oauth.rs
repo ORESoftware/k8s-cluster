@@ -440,12 +440,9 @@ mod tests {
     #[test]
     fn absolute_url_allowed_only_via_allowlist() {
         assert!(check(&[], Some("https://app.example/done")).is_err());
-        let result = check(
-            &["https://app.example/"],
-            Some("https://app.example/done"),
-        )
-        .unwrap()
-        .unwrap();
+        let result = check(&["https://app.example/"], Some("https://app.example/done"))
+            .unwrap()
+            .unwrap();
         assert_eq!(result, "https://app.example/done");
     }
 
