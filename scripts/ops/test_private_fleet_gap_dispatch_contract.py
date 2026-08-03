@@ -7,6 +7,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 DISPATCHER = ROOT / ".github/workflows/ops-dispatch-private-fleet-gaps-comment.yml"
+CARRIER = ROOT / ".github/workflows/ops-dispatch-private-fleet-gaps-pr-target.yml"
 OBSERVER = ROOT / ".github/workflows/observe-private-fleet-publisher.yml"
 PUBLISHER = ROOT / ".github/workflows/ops-publish-missing-org-repositories-gh-profile.yml"
 
@@ -15,6 +16,7 @@ class PrivateFleetGapDispatchContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.dispatcher = DISPATCHER.read_text(encoding="utf-8")
+        cls.carrier = CARRIER.read_text(encoding="utf-8")
         cls.observer = OBSERVER.read_text(encoding="utf-8")
         cls.publisher = PUBLISHER.read_text(encoding="utf-8")
 
@@ -62,6 +64,74 @@ class PrivateFleetGapDispatchContractTests(unittest.TestCase):
             self.assertNotIn(marker, self.dispatcher)
         self.assertIn("permissions:\n  actions: write\n  contents: read", self.dispatcher)
         self.assertIn("GH_TOKEN: ${{ github.token }}", self.dispatcher)
+
+    def test_pr_target_carrier_is_bound_to_one_exact_same_repo_marker(self) -> None:
+        self.assertIn("pull_request_target:", self.carrier)
+        self.assertIn("github.actor == 'ORESoftware'", self.carrier)
+        self.assertIn(
+            "github.event.pull_request.head.repo.full_name == github.repository",
+            self.carrier,
+        )
+        self.assertIn(
+            "github.event.pull_request.head.ref == 'agent/den-319-private-fleet-execution-carrier'",
+            self.carrier,
+        )
+        self.assertIn("github.event.pull_request.base.ref == 'main'", self.carrier)
+        self.assertIn(
+            "github.event.pull_request.title == 'ops(DEN-319): dispatch gap-aware private fleet publisher'",
+            self.carrier,
+        )
+        self.assertIn(
+            "test \"$files\" = 'ops/den-319-private-fleet-execution.trigger'",
+            self.carrier,
+        )
+        self.assertIn(
+            "publisher_merge=0cdb72ec06cff74a4cb5d6062777b619703be12b",
+            self.carrier,
+        )
+        self.assertIn('test "$marker" = "$EXPECTED_MARKER"', self.carrier)
+
+    def test_pr_target_carrier_revalidates_exact_merged_publisher_provenance(self) -> None:
+        self.assertIn("TRACKING_PR: '595'", self.carrier)
+        self.assertIn("EXPECTED_PUBLISHER_HEAD_SHA: '04352cf5e8d87532ffc65afa9480a7ccdc3407b8'", self.carrier)
+        self.assertIn("EXPECTED_PUBLISHER_MERGE_SHA: '0cdb72ec06cff74a4cb5d6062777b619703be12b'", self.carrier)
+        self.assertIn("test \"$(jq -r '.merged'", self.carrier)
+        self.assertIn("compare/${EXPECTED_PUBLISHER_MERGE_SHA}...main", self.carrier)
+        self.assertIn("trusted gap-aware publisher is not contained by current main", self.carrier)
+
+    def test_pr_target_carrier_dispatches_only_default_branch_workflow_and_waits(self) -> None:
+        self.assertIn(
+            "PUBLISH_WORKFLOW: ops-publish-missing-org-repositories-gh-profile.yml",
+            self.carrier,
+        )
+        self.assertIn('gh workflow run "$PUBLISH_WORKFLOW"', self.carrier)
+        self.assertIn('--ref main', self.carrier)
+        self.assertIn("before=", self.carrier)
+        self.assertIn("candidate=", self.carrier)
+        self.assertIn("gh run watch \"$RUN_ID\"", self.carrier)
+        self.assertIn("--exit-status", self.carrier)
+        self.assertIn("test \"$JOB_RESULT\" = success", self.carrier)
+        self.assertNotIn("actions/checkout", self.carrier)
+        self.assertNotIn("github.event.pull_request.head.sha }}\n          fetch-depth", self.carrier)
+
+    def test_pr_target_carrier_has_no_repository_or_host_credentials(self) -> None:
+        forbidden = (
+            "GITHUB_REPOSITORY_ADMIN_TOKEN",
+            "REMOTE_DEV_GH_PAT",
+            "HYPESIEGE_REPOSITORY_ADMIN_TOKEN",
+            "STREEMPILOT_REPOSITORY_ADMIN_TOKEN",
+            "AWS_SSM_INSTANCE_ID",
+            "GIT_ASKPASS",
+            "configure-aws-credentials",
+        )
+        for marker in forbidden:
+            self.assertNotIn(marker, self.carrier)
+        self.assertIn("permissions:\n  actions: write\n  contents: read", self.carrier)
+        self.assertIn("pull-requests: write", self.carrier)
+        self.assertIn("GH_TOKEN: ${{ github.token }}", self.carrier)
+        self.assertIn("gh pr comment \"$CARRIER_PR\"", self.carrier)
+        self.assertIn("gh pr comment \"$TRACKING_PR\"", self.carrier)
+        self.assertIn("gh pr comment \"$PORTFOLIO_PR\"", self.carrier)
 
     def test_protected_publisher_remains_idempotent_and_gap_aware(self) -> None:
         self.assertIn("stage=publisher-static-validation", self.publisher)

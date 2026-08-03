@@ -6,6 +6,7 @@ on:
       - .github/workflows/den-319-private-fleet-contracts.yml
       - .github/workflows/observe-private-fleet-publisher.yml
       - .github/workflows/ops-dispatch-private-fleet-gaps-comment.yml
+      - .github/workflows/ops-dispatch-private-fleet-gaps-pr-target.yml
       - .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml
       - scripts/ops/publish_missing_org_repositories.py
       - scripts/ops/publish_missing_org_repositories_current.py
@@ -21,6 +22,7 @@ on:
       - .github/workflows/den-319-private-fleet-contracts.yml
       - .github/workflows/observe-private-fleet-publisher.yml
       - .github/workflows/ops-dispatch-private-fleet-gaps-comment.yml
+      - .github/workflows/ops-dispatch-private-fleet-gaps-pr-target.yml
       - .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml
       - scripts/ops/publish_missing_org_repositories.py
       - scripts/ops/publish_missing_org_repositories_current.py
@@ -96,6 +98,7 @@ jobs:
             .github/workflows/den-319-private-fleet-contracts.yml \
             .github/workflows/observe-private-fleet-publisher.yml \
             .github/workflows/ops-dispatch-private-fleet-gaps-comment.yml \
+            .github/workflows/ops-dispatch-private-fleet-gaps-pr-target.yml \
             .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml \
             scripts/ops/repository_fleet_visibility.py \
             scripts/ops/repository_fleet_remote_state.py \
