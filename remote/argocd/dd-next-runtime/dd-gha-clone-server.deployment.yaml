@@ -58,6 +58,14 @@ spec:
               value: "false"
             - name: GHA_CLONE_WEBHOOK_EXECUTION_ENABLED
               value: "false"
+            - name: GHA_CLONE_WEBHOOK_FAILURE_CONCLUSIONS
+              value: failure,cancelled,timed_out,action_required,startup_failure,stale
+            - name: GHA_CLONE_WEBHOOK_IGNORED_WORKFLOWS
+              value: GHA continuity server
+            - name: GHA_CLONE_WEBHOOK_DELIVERY_TTL_SECONDS
+              value: "86400"
+            - name: GHA_CLONE_MAX_WEBHOOK_DELIVERIES
+              value: "4096"
             - name: GHA_CLONE_BUILD_SERVER_URL
               value: http://dd-build-server.default.svc.cluster.local:8100
             - name: GHA_CLONE_BUILD_POLL_SECONDS
