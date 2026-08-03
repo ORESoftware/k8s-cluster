@@ -114,10 +114,24 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
         self.assertLess(membership, publication)
         self.assertIn('test "$membership" = admin:active', self.workflow)
 
+    def test_bundle_verify_runs_inside_initialized_source_repository(self) -> None:
+        init = self.workflow.index('git init "$source_root"')
+        worktree_guard = self.workflow.index(
+            'test "$(git -C "$source_root" rev-parse --is-inside-work-tree)" = true'
+        )
+        bundle_verify = self.workflow.index(
+            'git -C "$source_root" bundle verify "$bundle" >/dev/null'
+        )
+        publication = self.workflow.index('python3 "$publisher" "$bundle"')
+        self.assertLess(init, worktree_guard)
+        self.assertLess(worktree_guard, bundle_verify)
+        self.assertLess(bundle_verify, publication)
+        self.assertNotIn('\n          git bundle verify "$bundle"', self.workflow)
+
     def test_exact_bundle_and_live_refs_are_verified(self) -> None:
         required = (
             'sha256sum --check --strict',
-            'git bundle verify "$bundle"',
+            'git -C "$source_root" bundle verify "$bundle"',
             'test "$observed_heads" = "$expected_heads"',
             'test "$main_sha" = "$EXPECTED_MAIN"',
             'test "$feature_sha" = "$EXPECTED_FEATURE"',
@@ -146,6 +160,7 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
             "ephemeral RSA",
             "rotate the credential",
             "exact recovered Git history",
+            "initialized source repository",
             "Linear",
         ):
             with self.subTest(phrase=phrase):
