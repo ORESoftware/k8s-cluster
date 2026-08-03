@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 from pathlib import Path
 import unittest
+from unittest import mock
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -86,6 +88,13 @@ class OrgDotgithubOwnerTokenSelectorTests(unittest.TestCase):
             "notes": ["github_pat_not_named_as_a_field_1234567890"],
         }
         self.assertEqual([], list(selector.iter_candidates(payload)))
+
+    def test_rejects_explicitly_revoked_credential_fingerprint(self) -> None:
+        token = "github_pat_fixture_revoked_1234567890"
+        fingerprint = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        with mock.patch.object(selector, "REJECTED_TOKEN_SHA256", frozenset({fingerprint})):
+            self.assertFalse(selector._valid_token(token))
+            self.assertEqual([], list(selector.iter_candidates({"GH_PAT": token})))
 
     def test_duplicate_token_is_validated_only_once(self) -> None:
         token = "github_pat_duplicate_secret_1234567890"
