@@ -55,9 +55,11 @@ jobs:
       - name: Compile, lint, and test
         run: |
           set -euo pipefail
-          # The repository carries unrelated legacy formatting. Keep the
-          # contract gate exact to the three Rust files this feature owns.
-          rustfmt --edition 2021 --check src/main.rs src/web.rs src/web/openapi.rs
+          # Rustfmt follows `mod` declarations by default. Keep this check
+          # exact to the product-owned files instead of reformatting legacy
+          # modules that are outside this PR.
+          rustfmt --edition 2021 --config skip_children=true --check src/main.rs src/web.rs
+          rustfmt --edition 2021 --check src/web/openapi.rs
           cargo check --locked
           cargo clippy --locked --all-targets -- \
             -D warnings \
