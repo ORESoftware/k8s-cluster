@@ -19,9 +19,10 @@ pub enum CliFlagError {
 }
 
 fn redact_unknown_option(option: &str) -> String {
-    option
-        .split_once('=')
-        .map_or_else(|| option.to_owned(), |(name, _)| format!("{name}=<redacted>"))
+    option.split_once('=').map_or_else(
+        || option.to_owned(),
+        |(name, _)| format!("{name}=<redacted>"),
+    )
 }
 
 pub fn parse_cli_flags(
