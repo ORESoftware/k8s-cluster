@@ -1,6 +1,12 @@
 name: temporary introspection contract test repair
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - tests/integration.rs
+      - .github/workflows/branch-introspection-tests.yml
+      - .github/workflows/branch-introspection-tests-retrigger.yml
   push:
     branches:
       - harden/auth-time-introspection
@@ -11,8 +17,13 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: temporary-introspection-contract-test-repair
+  cancel-in-progress: true
+
 jobs:
   patch:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -181,6 +192,11 @@ jobs:
           if [[ -n "$unexpected" ]]; then
             printf 'test repair unexpectedly changed:\n%s\n' "$unexpected" >&2
             exit 1
+          fi
+
+          if [[ -z "$changed" ]]; then
+            echo 'Integration tests already satisfy the authenticated introspection contract.'
+            exit 0
           fi
 
           git config user.name 'github-actions[bot]'
