@@ -44,20 +44,30 @@ spec:
                 configMapKeyRef:
                   name: gha-capacity-broker-policy
                   key: policy.json
-            - name: GITHUB_APP_ID
+            - name: GITHUB_MUTATION_APP_ID
               valueFrom:
                 secretKeyRef:
                   name: sonus-auris-gha-capacity-broker
                   key: github_app_id
-            - name: GITHUB_APP_INSTALLATION_ID
+            - name: GITHUB_MUTATION_APP_INSTALLATION_ID
               valueFrom:
                 secretKeyRef:
                   name: sonus-auris-gha-capacity-broker
                   key: github_app_installation_id
-            - name: GITHUB_APP_PRIVATE_KEY_PATH
-              value: /var/run/gha-app/github_app_private_key
-            - name: GITHUB_BILLING_TOKEN_PATH
-              value: /var/run/gha-billing/token
+            - name: GITHUB_MUTATION_APP_PRIVATE_KEY_PATH
+              value: /var/run/gha-mutation-app/github_app_private_key
+            - name: GITHUB_BILLING_APP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: sonus-auris-gha-billing
+                  key: github_app_id
+            - name: GITHUB_BILLING_APP_INSTALLATION_ID
+              valueFrom:
+                secretKeyRef:
+                  name: sonus-auris-gha-billing
+                  key: github_app_installation_id
+            - name: GITHUB_BILLING_APP_PRIVATE_KEY_PATH
+              value: /var/run/gha-billing-app/github_app_private_key
             - name: SERVER_AUTH_SECRET
               valueFrom:
                 secretKeyRef:
@@ -99,28 +109,28 @@ spec:
               port: http
             periodSeconds: 30
           volumeMounts:
-            - name: app-key
-              mountPath: /var/run/gha-app
+            - name: mutation-app-key
+              mountPath: /var/run/gha-mutation-app
               readOnly: true
-            - name: billing-token
-              mountPath: /var/run/gha-billing
+            - name: billing-app-key
+              mountPath: /var/run/gha-billing-app
               readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
-        - name: app-key
+        - name: mutation-app-key
           secret:
             secretName: sonus-auris-gha-capacity-broker
             items:
               - key: github_app_private_key
                 path: github_app_private_key
                 mode: 0400
-        - name: billing-token
+        - name: billing-app-key
           secret:
             secretName: sonus-auris-gha-billing
             items:
-              - key: billing_token
-                path: token
+              - key: github_app_private_key
+                path: github_app_private_key
                 mode: 0400
         - name: tmp
           emptyDir:
