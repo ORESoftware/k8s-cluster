@@ -50,3 +50,17 @@ jobs:
           )
           PY
           bash /tmp/repair-introspection-tests.sh
+
+      - name: Commit the reviewed integration-test repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- tests/integration.rs; then
+            echo "The integration test already matches the reviewed contract."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/integration.rs
+          git commit -m "test: enforce authenticated introspection contract"
+          git push origin HEAD:harden/auth-time-introspection
