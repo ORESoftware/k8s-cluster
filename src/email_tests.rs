@@ -137,3 +137,90 @@ async fn sendgrid_non_accepted_response_fails_closed() {
     .await;
     assert!(matches!(result, Err(AuthError::Upstream)));
 }
+
+#[tokio::test]
+async fn missing_sendgrid_delivery_fields_fail_before_network() {
+    let mut missing_api_key = config();
+    missing_api_key.sendgrid_api_key = None;
+    let mut missing_sender = config();
+    missing_sender.from_email = None;
+    let mut missing_link_base = config();
+    missing_link_base.link_base_url = None;
+
+    for (field, incomplete) in [
+        ("api key", missing_api_key),
+        ("sender", missing_sender),
+        ("link base", missing_link_base),
+    ] {
+        let (base, requests) = mock_server(StatusCode::ACCEPTED, "").await;
+        let result = send_magic_link_to(
+            &reqwest::Client::new(),
+            &incomplete,
+            &format!("{base}/v3/mail/send"),
+            "person@example.com",
+            "sat_magic_contract",
+            "123456",
+        )
+        .await;
+        assert!(
+            matches!(result, Err(AuthError::Unavailable)),
+            "missing {field} must disable delivery"
+        );
+        assert_eq!(
+            requests.lock().unwrap().len(),
+            0,
+            "missing {field} must fail before contacting SendGrid"
+        );
+    }
+}
+
+#[tokio::test]
+async fn malformed_magic_link_base_fails_before_network() {
+    let mut invalid = config();
+    invalid.link_base_url = Some("not an absolute URL".into());
+    let (base, requests) = mock_server(StatusCode::ACCEPTED, "").await;
+
+    let result = send_magic_link_to(
+        &reqwest::Client::new(),
+        &invalid,
+        &format!("{base}/v3/mail/send"),
+        "person@example.com",
+        "sat_magic_contract",
+        "123456",
+    )
+    .await;
+
+    assert!(matches!(result, Err(AuthError::Internal)));
+    assert_eq!(requests.lock().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn sendgrid_payload_encodes_untrusted_token_and_never_embeds_api_key() {
+    let raw_token = "\"><script>alert(1)</script>&next=value";
+    let (base, requests) = mock_server(StatusCode::ACCEPTED, "").await;
+    send_magic_link_to(
+        &reqwest::Client::new(),
+        &config(),
+        &format!("{base}/v3/mail/send"),
+        "person@example.com",
+        raw_token,
+        "123456",
+    )
+    .await
+    .unwrap();
+
+    let requests = requests.lock().unwrap();
+    let request = &requests[0];
+    let serialized = String::from_utf8(request.body.clone()).unwrap();
+    assert!(!serialized.contains("Bearer secret"));
+    assert!(!serialized.contains("<script>"));
+    assert!(!serialized.contains(raw_token));
+
+    let payload: Value = serde_json::from_slice(&request.body).unwrap();
+    for index in [0, 1] {
+        let content = payload["content"][index]["value"].as_str().unwrap();
+        assert!(!content.contains("<script>"));
+        assert!(!content.contains(raw_token));
+        assert!(content.contains("token="));
+    }
+}
