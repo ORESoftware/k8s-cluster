@@ -9,8 +9,10 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
 
+from private_repository_creation import (
+    ensure_private_repository as ensure_private_repository_with_api,
+)
 from repository_fleet_visibility import project_private_execution_manifest
 
 MODULE_PATH = Path(__file__).with_name("publish_missing_org_repositories.py")
@@ -66,40 +68,17 @@ case \"$1\" in *Username*) echo x-access-token;; *) echo \"$GITHUB_REPOSITORY_AD
     subprocess.run([sys.executable, "-m", "py_compile", str(path)], check=True)
 
 
-def ensure_private_repository(owner: str, name: str, description: str) -> dict[str, Any]:
-    """Create extracted repositories privately and reject visibility drift."""
+def ensure_private_repository(
+    owner: str, name: str, description: str
+) -> dict[str, object]:
+    """Create or safely reconcile the exact private repository."""
 
-    status, current = MODULE.api("GET", f"/repos/{owner}/{name}")
-    if status == 404:
-        status, current = MODULE.api(
-            "POST",
-            f"/orgs/{owner}/repos",
-            {
-                "name": name,
-                "description": description,
-                "private": True,
-                "has_issues": True,
-                "has_projects": False,
-                "has_wiki": False,
-                "auto_init": False,
-                "allow_squash_merge": True,
-                "allow_merge_commit": True,
-                "allow_rebase_merge": False,
-                "delete_branch_on_merge": True,
-            },
-        )
-        if status != 201 or not isinstance(current, dict):
-            fail(f"failed to create {owner}/{name}: HTTP {status}")
-        print(f"CREATED_PRIVATE {owner}/{name}")
-
-    if not isinstance(current, dict):
-        fail(f"invalid repository response for {owner}/{name}")
-    if current.get("private") is not True or current.get("visibility") != "private":
-        fail(
-            f"visibility mismatch for {owner}/{name}: "
-            f"private={current.get('private')!r}, visibility={current.get('visibility')!r}"
-        )
-    return current
+    return ensure_private_repository_with_api(
+        MODULE.api,
+        owner,
+        name,
+        description,
+    )
 
 
 def publish_current_hypesiege_and_streempilot(work: Path) -> None:
