@@ -111,7 +111,8 @@ test('planner and dispatcher preserve the fail-closed command boundary', () => {
   assert.match(planner, /workflow job dependency graph contains a cycle/);
   assert.match(planner, /revision is not an exact 40-hex commit SHA/);
   assert.match(planner, /workflow-level .* is unsupported by the independent lane/);
-  assert.match(planner, /working-directory.*unsupported by the fixed-profile executor/);
+  assert.match(planner, /"working-directory"/);
+  assert.match(planner, /unsupported by the fixed-profile executor/);
   assert.match(planner, /non-Linux native execution is unavailable/);
   assert.match(server, /job_kind: "run-profile"/);
   assert.match(server, /profile,/);
