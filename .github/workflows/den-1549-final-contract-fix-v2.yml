@@ -1,0 +1,126 @@
+name: DEN-1549 final contract fix v2
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/workflows/den-1549-final-contract-fix-v2.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: den-1549-final-contract-fix-v2-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  fix-validate-and-commit:
+    if: github.event.pull_request.head.ref == 'agent/den-1549-semantic-capacity-broker-20260803'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: agent/den-1549-semantic-capacity-broker-20260803
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
+        with:
+          toolchain: '1.90.0'
+          components: rustfmt, clippy
+
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6
+        with:
+          version: 10.33.0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: remote/tests/pnpm-lock.yaml
+
+      - name: Apply key-file and catalog correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(grep -RIl --exclude-dir=.git \
+            'GITHUB_APP_PRIVATE_KEY_PATH' \
+            remote/deployments/gha-capacity-broker-rs \
+            remote/argocd/ci-runners/sonus-auris \
+            docs || true)
+          test "${#files[@]}" -gt 0 || { echo 'expected private-key path configuration references' >&2; exit 1; }
+          python - "${files[@]}" <<'PY'
+          from pathlib import Path
+          import sys
+
+          for value in sys.argv[1:]:
+              path = Path(value)
+              text = path.read_text(encoding='utf-8')
+              changed = text.replace('GITHUB_APP_PRIVATE_KEY_PATH', 'GHA_APP_KEY_FILE')
+              if changed == text:
+                  raise SystemExit(f'{path}: replacement unexpectedly produced no change')
+              path.write_text(changed, encoding='utf-8')
+          PY
+          python tools/application_catalog.py generate catalog/applications.json
+          python tools/application_catalog.py check catalog/applications.json
+          git diff --check
+
+      - name: Validate capacity broker Rust
+        working-directory: remote/deployments/gha-capacity-broker-rs
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo test --all-features
+          cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Validate ARC and catalog contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile remote/argocd/ci-runners/validate-sonus-arc-scaffold.py
+          python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py
+          python tools/application_catalog.py check catalog/applications.json
+
+      - name: Validate repository credential-manifest contract
+        working-directory: remote/tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm exec tsx --test general/security-hardening-contract.test.ts
+
+      - name: Reject conflict markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- \
+            catalog/applications.json \
+            docs/github-actions-self-hosted-failover.md \
+            remote/argocd/ci-runners/sonus-auris \
+            remote/deployments/gha-capacity-broker-rs; then
+            echo 'conflict marker found' >&2
+            exit 1
+          fi
+
+      - name: Commit validated non-workflow corrections
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add \
+            catalog/applications.json \
+            docs/github-actions-self-hosted-failover.md \
+            remote/argocd/ci-runners/sonus-auris \
+            remote/deployments/gha-capacity-broker-rs
+          git diff --cached --check
+          git diff --cached --quiet && { echo 'expected corrections were not produced' >&2; exit 1; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'DEN-1549 refresh catalog and harden key-file configuration'
+          git push origin HEAD:agent/den-1549-semantic-capacity-broker-20260803
