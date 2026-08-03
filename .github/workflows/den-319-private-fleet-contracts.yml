@@ -8,7 +8,9 @@ on:
       - scripts/ops/publish_missing_org_repositories.py
       - scripts/ops/publish_missing_org_repositories_current.py
       - scripts/ops/repository_fleet_visibility.py
+      - scripts/ops/repository_fleet_remote_state.py
       - scripts/ops/test_repository_fleet_visibility.py
+      - scripts/ops/test_repository_fleet_remote_state.py
       - scripts/ops/test_private_fleet_publisher_contract.py
       - scripts/ops/finalize_missing_org_repositories.py
   push:
@@ -19,7 +21,9 @@ on:
       - scripts/ops/publish_missing_org_repositories.py
       - scripts/ops/publish_missing_org_repositories_current.py
       - scripts/ops/repository_fleet_visibility.py
+      - scripts/ops/repository_fleet_remote_state.py
       - scripts/ops/test_repository_fleet_visibility.py
+      - scripts/ops/test_repository_fleet_remote_state.py
       - scripts/ops/test_private_fleet_publisher_contract.py
       - scripts/ops/finalize_missing_org_repositories.py
   workflow_dispatch:
@@ -48,7 +52,9 @@ jobs:
           set -euo pipefail
           python3 -m py_compile \
             scripts/ops/repository_fleet_visibility.py \
+            scripts/ops/repository_fleet_remote_state.py \
             scripts/ops/test_repository_fleet_visibility.py \
+            scripts/ops/test_repository_fleet_remote_state.py \
             scripts/ops/test_private_fleet_publisher_contract.py \
             scripts/ops/publish_missing_org_repositories_current.py
 
@@ -57,6 +63,12 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/ops/test_repository_fleet_visibility.py -v
+
+      - name: Run gap-versus-preserved remote-state fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ops/test_repository_fleet_remote_state.py -v
 
       - name: Run protected publisher wiring contracts
         shell: bash
@@ -73,5 +85,8 @@ jobs:
             .github/workflows/den-319-private-fleet-contracts.yml \
             .github/workflows/ops-publish-missing-org-repositories-gh-profile.yml \
             scripts/ops/repository_fleet_visibility.py \
+            scripts/ops/repository_fleet_remote_state.py \
             scripts/ops/test_repository_fleet_visibility.py \
-            scripts/ops/test_private_fleet_publisher_contract.py
+            scripts/ops/test_repository_fleet_remote_state.py \
+            scripts/ops/test_private_fleet_publisher_contract.py \
+            scripts/ops/publish_missing_org_repositories_current.py
