@@ -2,16 +2,18 @@
 //!
 //! JSON API + a small script-free Maud HTML UI. No websockets.
 //! - `GET  /`                           status landing (HTML)
-//! - `GET  /ui`                          token-exchange helper (HTML)
-//! - `POST /ui/exchange`                 exchange result (HTML)
-//! - `GET  /healthz`                     liveness
-//! - `GET  /readyz`                      readiness (DB ping if configured)
-//! - `GET  /.well-known/jwks.json`       our public JWKS (downstream verifiers)
-//! - `POST /auth/exchange`               Supabase access token → OreSoftware JWT
-//! - `POST /auth/introspect`             validate an OreSoftware JWT → claims
-//! - `GET  /auth/verify`                 bearer check (gateway auth_request)
-//! - `GET  /metrics`                     Prometheus
+//! - `GET  /ui`                         token-exchange helper (HTML)
+//! - `POST /ui/exchange`                exchange result (HTML)
+//! - `GET  /healthz`                    liveness
+//! - `GET  /readyz`                     readiness (DB ping if configured)
+//! - `GET  /.well-known/jwks.json`      our public JWKS (downstream verifiers)
+//! - `POST /auth/exchange`              provider access token → OreSoftware JWT
+//! - `POST /auth/delegate`              OreSoftware JWT → narrow product JWT
+//! - `POST /auth/introspect`            validate an OreSoftware JWT → claims
+//! - `GET  /auth/verify`                bearer check (gateway auth_request)
+//! - `GET  /metrics`                    Prometheus
 
+mod delegate;
 mod docs;
 mod exchange;
 mod health;
@@ -59,6 +61,7 @@ pub fn router(state: AppState) -> Router {
         .route("/readyz", get(health::readyz))
         .route("/.well-known/jwks.json", get(jwks::jwks))
         .route("/auth/exchange", post(exchange::exchange))
+        .route("/auth/delegate", post(delegate::delegate))
         .route("/auth/register", post(local::register))
         .route("/auth/login", post(local::login))
         .route("/auth/passwordless/request", post(passwordless::request))
@@ -147,7 +150,7 @@ fn build_cors(state: &AppState) -> CorsLayer {
         .config
         .cors_allow_origins
         .iter()
-        .filter_map(|o| o.parse().ok())
+        .filter_map(|origin| origin.parse().ok())
         .collect::<Vec<_>>();
     CorsLayer::new()
         .allow_origin(origins)
@@ -163,5 +166,5 @@ pub(crate) fn bearer(headers: &axum::http::HeaderMap) -> Option<&str> {
         .ok()?
         .strip_prefix("Bearer ")
         .map(str::trim)
-        .filter(|t| !t.is_empty())
+        .filter(|token| !token.is_empty())
 }
