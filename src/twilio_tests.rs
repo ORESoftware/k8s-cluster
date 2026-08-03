@@ -94,6 +94,8 @@ async fn twilio_start_contract_uses_basic_auth_and_sms_form() {
     assert_basic_auth(&request.headers);
     assert!(request.body.contains("To=%2B14155550100"));
     assert!(request.body.contains("Channel=sms"));
+    assert!(!request.body.contains("twilio-test-token"));
+    assert!(!request.body.contains("AC00000000000000000000000000000000"));
 }
 
 #[tokio::test]
@@ -119,6 +121,7 @@ async fn twilio_check_contract_accepts_only_approved_codes() {
     assert_basic_auth(&request.headers);
     assert!(request.body.contains("To=%2B14155550100"));
     assert!(request.body.contains("Code=123456"));
+    assert!(!request.body.contains("twilio-test-token"));
 }
 
 #[tokio::test]
@@ -142,4 +145,85 @@ async fn twilio_provider_error_fails_closed() {
     let result =
         start_sms_verification_at(&reqwest::Client::new(), &config(), &base, "+14155550100").await;
     assert!(matches!(result, Err(AuthError::Upstream)));
+}
+
+#[tokio::test]
+async fn incomplete_twilio_configuration_fails_before_network() {
+    let mut missing_account = config();
+    missing_account.account_sid = None;
+    let mut missing_token = config();
+    missing_token.auth_token = None;
+    let mut missing_service = config();
+    missing_service.service_sid = None;
+
+    for (field, incomplete) in [
+        ("account SID", missing_account),
+        ("auth token", missing_token),
+        ("service SID", missing_service),
+    ] {
+        let (base, requests) = mock_server(StatusCode::OK, r#"{"status":"pending"}"#).await;
+        let start = start_sms_verification_at(
+            &reqwest::Client::new(),
+            &incomplete,
+            &base,
+            "+14155550100",
+        )
+        .await;
+        assert!(
+            matches!(start, Err(AuthError::Unavailable)),
+            "missing {field} must disable SMS start"
+        );
+        assert_eq!(
+            requests.lock().unwrap().len(),
+            0,
+            "missing {field} must fail before contacting Twilio"
+        );
+    }
+}
+
+#[tokio::test]
+async fn twilio_start_rejects_success_with_unexpected_status() {
+    let (base, _) = mock_server(StatusCode::OK, r#"{"status":"canceled"}"#).await;
+    let result =
+        start_sms_verification_at(&reqwest::Client::new(), &config(), &base, "+14155550100").await;
+    assert!(matches!(result, Err(AuthError::Upstream)));
+}
+
+#[tokio::test]
+async fn twilio_pending_code_is_not_approved() {
+    let (base, _) = mock_server(StatusCode::OK, r#"{"status":"pending"}"#).await;
+    let approved = check_sms_verification_at(
+        &reqwest::Client::new(),
+        &config(),
+        &base,
+        "+14155550100",
+        "123456",
+    )
+    .await
+    .unwrap();
+    assert!(!approved);
+}
+
+#[tokio::test]
+async fn twilio_success_with_malformed_json_fails_closed() {
+    let (start_base, _) = mock_server(StatusCode::OK, "not-json").await;
+    let start = start_sms_verification_at(
+        &reqwest::Client::new(),
+        &config(),
+        &start_base,
+        "+14155550100",
+    )
+    .await;
+    assert!(matches!(start, Err(AuthError::Upstream)));
+
+    let (check_base, _) = mock_server(StatusCode::OK, r#"{"unexpected":true}"#).await;
+    let check = check_sms_verification_at(
+        &reqwest::Client::new(),
+        &config(),
+        &check_base,
+        "+14155550100",
+        "123456",
+    )
+    .await;
+    assert!(matches!(check, Err(AuthError::Upstream)));
 }
