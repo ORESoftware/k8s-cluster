@@ -549,10 +549,7 @@ mod tests {
         claims.provider_tenant = Some("https://issuer.example/tenant/acme".to_owned());
         claims.provider_subject = Some("auth0|customers/acme/user-1".to_owned());
         let identity = verifier.identity_from_claims(claims).unwrap();
-        assert_eq!(
-            identity.provider_subject,
-            "auth0|customers/acme/user-1"
-        );
+        assert_eq!(identity.provider_subject, "auth0|customers/acme/user-1");
     }
 
     #[test]
