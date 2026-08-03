@@ -56,6 +56,23 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342 # v31.11.0
 
+      - name: Generate current catalog evidence
+        id: generate_catalog
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cp catalog/applications.json artifacts/applications.committed.json
+          nix develop --accept-flake-config -c \
+            python3 tools/application_catalog.py \
+              --repo-root . \
+              generate artifacts/applications.json
+          git diff --no-index -- \
+            artifacts/applications.committed.json \
+            artifacts/applications.json \
+            > artifacts/applications.diff || true
+
       - name: Run the locked development-shell gate
         id: agent_check
         continue-on-error: true
@@ -67,18 +84,14 @@ jobs:
         continue-on-error: true
         run: nix flake check --accept-flake-config --print-build-logs
 
-      - name: Preserve generated catalog evidence
-        if: ${{ always() }}
+      - name: Preserve generation failure evidence
+        if: ${{ always() && steps.generate_catalog.outcome != 'success' }}
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          if [[ -f catalog/applications.json ]]; then
-            cp catalog/applications.json artifacts/applications.json
-            git diff -- catalog/applications.json > artifacts/applications.diff || true
-          else
-            printf '%s\n' 'catalog/applications.json was not generated' > artifacts/catalog-generation-error.txt
-          fi
+          printf 'catalog generation outcome=%s\n' '${{ steps.generate_catalog.outcome }}' \
+            > artifacts/catalog-generation-error.txt
 
       - name: Upload drift and dashboard evidence
         if: ${{ always() }}
@@ -90,9 +103,10 @@ jobs:
           retention-days: 14
 
       - name: Enforce catalog and flake gates
-        if: ${{ steps.agent_check.outcome != 'success' || steps.flake_check.outcome == 'failure' }}
+        if: ${{ steps.generate_catalog.outcome != 'success' || steps.agent_check.outcome != 'success' || steps.flake_check.outcome == 'failure' }}
         shell: bash
         run: |
+          printf 'generate-catalog outcome=%s\n' '${{ steps.generate_catalog.outcome }}'
           printf 'agent-check outcome=%s\n' '${{ steps.agent_check.outcome }}'
           printf 'flake-check outcome=%s\n' '${{ steps.flake_check.outcome }}'
           exit 1
