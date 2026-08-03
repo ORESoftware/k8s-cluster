@@ -17,7 +17,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  SOURCE_SHA: 5e5b85ff6a04765499905fc976747e754f4eed81
+  SOURCE_SHA: 1a6ec6b661dd747e2d38033f708d08b83e1d14aa
 
 jobs:
   certify-and-squash:
@@ -86,17 +86,15 @@ jobs:
           cargo clippy --locked --all-targets --all-features -- -D warnings
           cargo test --locked --all-targets --all-features
 
-      - name: Reproduce and validate both executable contracts
+      - name: Regenerate and validate both executable contracts
         run: |
           set -euo pipefail
-          cargo run --locked --quiet -- --export-openapi=internal > /tmp/openapi.internal.1.json
+          cargo run --locked --quiet -- --export-openapi=internal > generated/openapi.internal.json
+          cargo run --locked --quiet -- --export-openapi=public > generated/openapi.public.json
           cargo run --locked --quiet -- --export-openapi=internal > /tmp/openapi.internal.2.json
-          cargo run --locked --quiet -- --export-openapi=public > /tmp/openapi.public.1.json
           cargo run --locked --quiet -- --export-openapi=public > /tmp/openapi.public.2.json
-          cmp /tmp/openapi.internal.1.json /tmp/openapi.internal.2.json
-          cmp /tmp/openapi.public.1.json /tmp/openapi.public.2.json
-          cmp /tmp/openapi.internal.1.json generated/openapi.internal.json
-          cmp /tmp/openapi.public.1.json generated/openapi.public.json
+          cmp generated/openapi.internal.json /tmp/openapi.internal.2.json
+          cmp generated/openapi.public.json /tmp/openapi.public.2.json
           python3 -m json.tool generated/openapi.internal.json >/dev/null
           python3 -m json.tool generated/openapi.public.json >/dev/null
 
@@ -121,7 +119,13 @@ jobs:
           assert set(internal['paths']) == expected_public | sensitive
           assert public['x-dd-contract-scope'] == 'public'
           assert internal['x-dd-contract-scope'] == 'internal'
+          assert 'contact' not in public['info'] and 'license' not in public['info']
+          assert 'contact' not in internal['info'] and 'license' not in internal['info']
           assert 'securitySchemes' not in public.get('components', {})
+          public_schemas = public['components']['schemas']
+          assert 'PushJob' not in public_schemas
+          assert 'ContactJob' not in public_schemas
+          assert {'ServiceHealth', 'ReadinessResponse', 'ContactReadinessResponse'} <= set(public_schemas)
           assert 'bearer_auth' in internal['components']['securitySchemes']
 
           operation_ids = []
