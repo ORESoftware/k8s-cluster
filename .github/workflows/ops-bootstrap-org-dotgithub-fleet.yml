@@ -1,0 +1,121 @@
+name: Bootstrap organization .github governance fleet
+run-name: Bootstrap organization .github governance fleet from issue 615
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  id-token: write
+  issues: write
+
+concurrency:
+  group: ops-bootstrap-organization-dotgithub-fleet
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      !github.event.issue.pull_request &&
+      github.event.issue.number == 615 &&
+      github.actor == 'ORESoftware' &&
+      github.event.comment.body == 'ops-bootstrap-org-dotgithub:615:ad6e27250729ed647513a302d02fd767'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - name: Check out trusted default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate bounded publisher and tests before credential access
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/ops/bootstrap_org_dotgithub_repositories.py
+          python3 -m unittest tests/ops/test_bootstrap_org_dotgithub_repositories.py -v
+
+      - name: Configure trusted main-ref AWS OIDC credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME || secrets.REMOTE_DEV_AWS_ROLE_TO_ASSUME || secrets.AWS_OIDC_ROLE_ARN || secrets.AWS_ECR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || secrets.AWS_REGION || 'us-east-1' }}
+          role-session-name: org-dotgithub-governance-publisher
+          retry-max-attempts: 2
+          mask-aws-account-id: true
+
+      - name: Load and mask protected owner publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_json="$(aws secretsmanager get-secret-value \
+            --secret-id dd/remote-dev/agent-secrets \
+            --query SecretString \
+            --output text)"
+          token="$(jq -er '.GH_PAT | select(type == "string" and length > 0)' <<<"$secret_json")"
+          printf '::add-mask::%s\n' "$token"
+          printf 'GH_TOKEN=%s\n' "$token" >> "$GITHUB_ENV"
+          unset token secret_json
+
+      - name: Preflight, publish, and verify the fixed organization allowlist
+        id: publish
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          log="$RUNNER_TEMP/org-dotgithub-governance.log"
+          python3 scripts/ops/bootstrap_org_dotgithub_repositories.py \
+            --execute \
+            --json-report "$RUNNER_TEMP/org-dotgithub-governance.json" \
+            --markdown-report "$RUNNER_TEMP/org-dotgithub-governance.md" \
+            2>&1 | tee "$log"
+
+      - name: Report result to the bounded issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_url="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          body="$RUNNER_TEMP/org-dotgithub-result.md"
+          if [[ "$PUBLISH_OUTCOME" == success ]]; then
+            cp "$RUNNER_TEMP/org-dotgithub-governance.md" "$body"
+            {
+              echo
+              echo "Trusted-main workflow run: ${run_url}"
+            } >> "$body"
+          else
+            LOG="$RUNNER_TEMP/org-dotgithub-governance.log" python3 - <<'PY' > "$RUNNER_TEMP/org-dotgithub-redacted.log"
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path(os.environ["LOG"])
+          text = path.read_text(errors="replace") if path.exists() else "publisher log was not created"
+          patterns = [
+              (r"https://x-access-token:[^@\\s]+@github\\.com/", "https://x-access-token:***@github.com/"),
+              (r"github_pat_[A-Za-z0-9_]{20,}", "github_pat_***"),
+              (r"gh[pousr]_[A-Za-z0-9_]{20,}", "gh*_***"),
+              (r"(Authorization:\\s*Bearer\\s+)[A-Za-z0-9._-]{20,}", r"\\1***"),
+          ]
+          for pattern, replacement in patterns:
+              text = re.sub(pattern, replacement, text, flags=re.I)
+          print("\\n".join(text.splitlines()[-220:])[-24000:])
+          PY
+            {
+              echo '# Organization `.github` governance publication failed'
+              echo
+              echo "Trusted-main workflow run: ${run_url}"
+              echo
+              echo '```text'
+              cat "$RUNNER_TEMP/org-dotgithub-redacted.log"
+              echo '```'
+            } > "$body"
+          fi
+          gh issue comment 615 --repo "$GITHUB_REPOSITORY" --body-file "$body"
+          test "$PUBLISH_OUTCOME" == success
