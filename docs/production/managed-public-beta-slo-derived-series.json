@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "contract_issue": "DEN-1390",
+  "allowed_source_statuses": [
+    "specified",
+    "instrumented",
+    "queryable",
+    "measured"
+  ],
+  "series": [
+    {
+      "name": "fiducia_failover_recovery_seconds_max",
+      "type": "gauge",
+      "required_labels": [
+        "cell",
+        "fault_class",
+        "result"
+      ],
+      "producer": "Failure-test harness and incident controller",
+      "semantics": "For each completed controlled or real failover event, emit the observed recovery duration as a scrape-visible gauge and retain the sample long enough for the configured metrics store to evaluate max_over_time over the release evidence window. Events must be serialized or individually persisted so a shorter later event cannot erase an unsampled longer event.",
+      "source_status": "specified",
+      "blocking_issues": [
+        "DEN-85",
+        "DEN-946",
+        "DEN-1392"
+      ],
+      "evidence": []
+    }
+  ]
+}
