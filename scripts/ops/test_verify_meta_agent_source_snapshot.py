@@ -199,24 +199,43 @@ class MetaAgentSourceSnapshotTests(unittest.TestCase):
             self.assertEqual(evidence["auxiliary_heads"], {})
             self.assertNotIn("token", result.sanitized_json().lower())
 
-    def test_allows_head_pseudo_ref_at_a_reviewed_branch_sha(self) -> None:
+    def test_requires_exact_head_pseudo_ref_at_feature_sha(self) -> None:
         expected = {
             "refs/heads/main": "1" * 40,
             "refs/heads/agent/feature": "2" * 40,
         }
+        expected_auxiliary = {"HEAD": expected["refs/heads/agent/feature"]}
         branches, auxiliary = MODULE.validate_bundle_heads(
-            {**expected, "HEAD": expected["refs/heads/agent/feature"]}, expected
+            {**expected, **expected_auxiliary}, expected, expected_auxiliary
         )
         self.assertEqual(branches, expected)
-        self.assertEqual(auxiliary, {"HEAD": "2" * 40})
+        self.assertEqual(auxiliary, expected_auxiliary)
+
+    def test_rejects_missing_required_head_pseudo_ref(self) -> None:
+        expected = {
+            "refs/heads/main": "1" * 40,
+            "refs/heads/agent/feature": "2" * 40,
+        }
+        with self.assertRaisesRegex(
+            MODULE.VerificationError,
+            "bundle auxiliary refs do not exactly match the reviewed auxiliary inventory",
+        ):
+            MODULE.validate_bundle_heads(
+                expected,
+                expected,
+                {"HEAD": expected["refs/heads/agent/feature"]},
+            )
 
     def test_rejects_head_pseudo_ref_at_an_unreviewed_sha(self) -> None:
         expected = {"refs/heads/main": "1" * 40}
+        unexpected = {"HEAD": "2" * 40}
         with self.assertRaisesRegex(
             MODULE.VerificationError,
             "auxiliary ref HEAD points outside the reviewed branch SHAs",
         ):
-            MODULE.validate_bundle_heads({**expected, "HEAD": "2" * 40}, expected)
+            MODULE.validate_bundle_heads(
+                {**expected, **unexpected}, expected, unexpected
+            )
 
     def test_rejects_non_head_auxiliary_refs(self) -> None:
         expected = {"refs/heads/main": "1" * 40}
@@ -225,7 +244,9 @@ class MetaAgentSourceSnapshotTests(unittest.TestCase):
             "unsupported auxiliary refs: refs/tags/not-publishable",
         ):
             MODULE.validate_bundle_heads(
-                {**expected, "refs/tags/not-publishable": "1" * 40}, expected
+                {**expected, "refs/tags/not-publishable": "1" * 40},
+                expected,
+                {},
             )
 
     def test_rejects_truncated_bounded_tree(self) -> None:
@@ -271,6 +292,19 @@ class MetaAgentSourceSnapshotTests(unittest.TestCase):
                     expected_heads={"refs/heads/main": fixture.main_sha},
                     output_dir=root / "output",
                 )
+
+    def test_parses_only_allowed_auxiliary_ref_names(self) -> None:
+        self.assertEqual(
+            MODULE.parse_expected_auxiliary_heads(["HEAD=" + "1" * 40]),
+            {"HEAD": "1" * 40},
+        )
+        with self.assertRaisesRegex(
+            MODULE.VerificationError,
+            "invalid or duplicate expected auxiliary ref",
+        ):
+            MODULE.parse_expected_auxiliary_heads(
+                ["refs/tags/not-allowed=" + "1" * 40]
+            )
 
 
 if __name__ == "__main__":
