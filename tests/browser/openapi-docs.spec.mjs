@@ -95,6 +95,13 @@ test('public OpenAPI JSON is a byte-stable fail-closed projection', async ({ req
   expect(new Set(Object.keys(document.paths))).toEqual(publicPaths);
   for (const path of privatePaths) expect(document.paths[path]).toBeUndefined();
   expect(document.components?.securitySchemes).toBeUndefined();
+  expect(document.components.schemas.PushJob).toBeUndefined();
+  expect(document.components.schemas.ContactJob).toBeUndefined();
+  expect(document.components.schemas.ServiceHealth).toBeDefined();
+  expect(document.components.schemas.ReadinessResponse).toBeDefined();
+  expect(document.components.schemas.ContactReadinessResponse).toBeDefined();
+  expect(document.info.contact).toBeUndefined();
+  expect(document.info.license).toBeUndefined();
 });
 
 test('readiness reports fail-closed startup without credentials or providers', async ({ request }) => {
