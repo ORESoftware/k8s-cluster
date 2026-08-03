@@ -1,0 +1,381 @@
+name: Owner-authorize and publish organization .github governance fleet
+run-name: Publish 36 organization .github governance repositories from issue 615
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/ops-owner-device-publish-org-dotgithub-fleet.yml
+      - tests/ops/test_owner_device_publish_org_dotgithub_fleet.py
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: owner-device-publish-organization-dotgithub-fleet
+  cancel-in-progress: false
+
+jobs:
+  validate-pr:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Validate credential-free workflow contracts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          work="$RUNNER_TEMP/org-dotgithub-device-pr-validation"
+          mkdir -p "$work/.github/workflows" "$work/tests/ops"
+
+          fetch_pr_file() {
+            local path="$1"
+            local destination="$2"
+            local metadata
+            metadata="$(gh api "repos/${GITHUB_REPOSITORY}/contents/${path}?ref=${HEAD_SHA}")"
+            test "$(jq -er '.encoding' <<<"$metadata")" = base64
+            jq -er '.content' <<<"$metadata" | tr -d '\n' | base64 --decode > "$destination"
+            test -s "$destination"
+          }
+
+          fetch_pr_file \
+            .github/workflows/ops-owner-device-publish-org-dotgithub-fleet.yml \
+            "$work/.github/workflows/ops-owner-device-publish-org-dotgithub-fleet.yml"
+          fetch_pr_file \
+            tests/ops/test_owner_device_publish_org_dotgithub_fleet.py \
+            "$work/tests/ops/test_owner_device_publish_org_dotgithub_fleet.py"
+          ROOT_OVERRIDE="$work" \
+            python3 "$work/tests/ops/test_owner_device_publish_org_dotgithub_fleet.py" -v
+
+  publish:
+    if: >-
+      !github.event.issue.pull_request &&
+      github.event.issue.number == 615 &&
+      github.actor == 'ORESoftware' &&
+      github.event.comment.body == 'ops-owner-device-org-dotgithub:615:20260803-v1'
+    permissions:
+      contents: read
+      issues: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      TRACKING_ISSUE: '615'
+      OAUTH_CLIENT_ID: 178c6fc778ccc68e1d6a
+      EXPECTED_LOGIN: ORESoftware
+      SOURCE_REPOSITORY: ORESoftware/k8s-cluster
+      SOURCE_SHA: 412f03155ba108890735414d6fbf5a1a72d9c554
+      BASE_PUBLISHER_BLOB: 2028311196f066d4e73473562e9dea33bd9d5c10
+      HARDENED_PUBLISHER_BLOB: 0960606f1f0c8136b3f9ea42f8f41aae8b450906
+      BASE_TEST_BLOB: 1a5e83d49d0b2f6acfdca657f4f71cb4f86a6b2d
+      HARDENED_TEST_BLOB: a358aabc444f90f02c0ff7f7514eb94dcb4c9fcf
+      FLEET_WORKFLOW_BLOB: 7e2aea773c6e17ff2f021604907bcdec42387fbd
+
+    steps:
+      - name: Fetch and validate the immutable hardened publisher without checkout
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          source_root="$RUNNER_TEMP/org-dotgithub-device-source"
+          mkdir -p \
+            "$source_root/scripts/ops" \
+            "$source_root/tests/ops" \
+            "$source_root/.github/workflows"
+
+          fetch_pinned_file() {
+            local path="$1"
+            local expected_blob="$2"
+            local destination="$3"
+            local metadata
+            metadata="$(gh api "repos/${SOURCE_REPOSITORY}/contents/${path}?ref=${SOURCE_SHA}")"
+            test "$(jq -er '.sha' <<<"$metadata")" = "$expected_blob"
+            test "$(jq -er '.encoding' <<<"$metadata")" = base64
+            jq -er '.content' <<<"$metadata" | tr -d '\n' | base64 --decode > "$destination"
+            test -s "$destination"
+          }
+
+          fetch_pinned_file \
+            scripts/ops/bootstrap_org_dotgithub_repositories.py \
+            "$BASE_PUBLISHER_BLOB" \
+            "$source_root/scripts/ops/bootstrap_org_dotgithub_repositories.py"
+          fetch_pinned_file \
+            scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py \
+            "$HARDENED_PUBLISHER_BLOB" \
+            "$source_root/scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py"
+          fetch_pinned_file \
+            tests/ops/test_bootstrap_org_dotgithub_repositories.py \
+            "$BASE_TEST_BLOB" \
+            "$source_root/tests/ops/test_bootstrap_org_dotgithub_repositories.py"
+          fetch_pinned_file \
+            tests/ops/test_bootstrap_org_dotgithub_repositories_hardened.py \
+            "$HARDENED_TEST_BLOB" \
+            "$source_root/tests/ops/test_bootstrap_org_dotgithub_repositories_hardened.py"
+          fetch_pinned_file \
+            .github/workflows/ops-bootstrap-org-dotgithub-fleet.yml \
+            "$FLEET_WORKFLOW_BLOB" \
+            "$source_root/.github/workflows/ops-bootstrap-org-dotgithub-fleet.yml"
+
+          python3 -m py_compile \
+            "$source_root/scripts/ops/bootstrap_org_dotgithub_repositories.py" \
+            "$source_root/scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py"
+          python3 -m unittest discover \
+            -s "$source_root/tests/ops" \
+            -p 'test_bootstrap_org_dotgithub_repositories*.py' \
+            -v
+
+      - name: Authorize owner, preflight all organizations, publish, and verify
+        id: publish
+        continue-on-error: true
+        shell: bash
+        env:
+          COMMENT_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          stage=initialize
+          workflow_token="$COMMENT_TOKEN"
+          access_token=''
+          failure_report="$RUNNER_TEMP/org-dotgithub-device-failure.md"
+          success_report="$RUNNER_TEMP/org-dotgithub-governance.md"
+          publisher_log="$RUNNER_TEMP/org-dotgithub-governance.log"
+
+          clear_sensitive_state() {
+            unset access_token device_code token_json token_response token_response_body
+            unset GH_TOKEN GITHUB_TOKEN GITHUB_REPOSITORY_ADMIN_TOKEN COMMENT_TOKEN
+          }
+          report_failure() {
+            status=$?
+            trap - ERR
+            clear_sensitive_state
+            {
+              echo '# Organization `.github` device-authorized publication failed'
+              echo
+              echo "- Bounded stage: \`${stage}\`"
+              echo "- No OAuth access token was written to Git, Actions outputs, artifacts, issue comments, or \`GITHUB_ENV\`."
+              echo "- No destructive recovery command was used."
+              echo
+              echo "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            } > "$failure_report"
+            exit "$status"
+          }
+          trap clear_sensitive_state EXIT
+          trap report_failure ERR
+
+          stage=request-device-code
+          device_response="$(
+            curl --silent --show-error \
+              --request POST \
+              --header 'Accept: application/json' \
+              --data-urlencode "client_id=${OAUTH_CLIENT_ID}" \
+              --data-urlencode 'scope=public_repo read:org' \
+              --write-out $'\n%{http_code}' \
+              https://github.com/login/device/code
+          )"
+          device_status="${device_response##*$'\n'}"
+          device_json="${device_response%$'\n'*}"
+          test "$device_status" = 200
+          device_code="$(jq -er '.device_code | select(type == "string" and length > 0)' <<<"$device_json")"
+          user_code="$(jq -er '.user_code | select(type == "string" and length > 0)' <<<"$device_json")"
+          verification_uri="$(jq -er '.verification_uri | select(type == "string" and . == "https://github.com/login/device")' <<<"$device_json")"
+          expires_in="$(jq -er '.expires_in | select(type == "number" and . > 0 and . <= 900)' <<<"$device_json")"
+          interval="$(jq -er '.interval | select(type == "number" and . > 0)' <<<"$device_json")"
+          [[ "$user_code" =~ ^[A-Z0-9]{4}-[A-Z0-9]{4}$ ]]
+          unset device_response device_json device_status
+
+          authorization_body="$(cat <<EOF
+          ## Authorize the 36-organization `.github` governance publication
+
+          Open ${verification_uri} and enter **\`${user_code}\`**.
+
+          - Code lifetime: about $((expires_in / 60)) minutes
+          - Requested OAuth scopes: \`public_repo\` and \`read:org\`
+          - Accepted account: \`${EXPECTED_LOGIN}\` only
+          - Mutation starts only after active owner/admin membership is verified for all 36 organizations
+          - The token remains memory-only for this workflow run; revoke the authorized OAuth app after the run completes
+
+          Run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          EOF
+          )"
+          GH_TOKEN="$workflow_token" gh api --method POST \
+            "repos/${GITHUB_REPOSITORY}/issues/${TRACKING_ISSUE}/comments" \
+            -f body="$authorization_body" >/dev/null
+          echo "::notice title=GitHub owner authorization::Open ${verification_uri} and enter ${user_code}"
+          unset authorization_body user_code verification_uri
+
+          stage=await-device-authorization
+          elapsed=0
+          access_token=''
+          granted_scope=''
+          while (( elapsed < expires_in )); do
+            sleep "$interval"
+            elapsed=$((elapsed + interval))
+            token_response="$(
+              curl --silent --show-error \
+                --request POST \
+                --header 'Accept: application/json' \
+                --data-urlencode "client_id=${OAUTH_CLIENT_ID}" \
+                --data-urlencode "device_code=${device_code}" \
+                --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:device_code' \
+                --write-out $'\n%{http_code}' \
+                https://github.com/login/oauth/access_token
+            )"
+            token_status="${token_response##*$'\n'}"
+            token_json="${token_response%$'\n'*}"
+            test "$token_status" = 200
+            error="$(jq -r '.error // empty' <<<"$token_json")"
+            case "$error" in
+              '')
+                access_token="$(jq -er '.access_token | select(type == "string" and length > 0)' <<<"$token_json")"
+                granted_scope="$(jq -er '.scope | select(type == "string")' <<<"$token_json")"
+                break
+                ;;
+              authorization_pending)
+                ;;
+              slow_down)
+                interval=$((interval + 5))
+                ;;
+              access_denied|expired_token|incorrect_device_code|incorrect_client_credentials)
+                echo "GitHub device authorization stopped with bounded error: ${error}" >&2
+                false
+                ;;
+              *)
+                echo 'GitHub device authorization returned an unexpected bounded error.' >&2
+                false
+                ;;
+            esac
+          done
+          test -n "$access_token"
+          [[ "$access_token" != *$'\n'* && "$access_token" != *$'\r'* && "$access_token" != *$'\t'* && "$access_token" != *' '* ]]
+          echo "::add-mask::$access_token"
+          normalized_scope="$(tr -d ' ' <<<"$granted_scope")"
+          case ",${normalized_scope}," in
+            *,public_repo,*|*,repo,*) ;;
+            *) echo 'Authorized token lacks public repository write scope.' >&2; false ;;
+          esac
+          case ",${normalized_scope}," in
+            *,read:org,*|*,admin:org,*) ;;
+            *) echo 'Authorized token lacks organization membership read scope.' >&2; false ;;
+          esac
+          unset token_response token_status token_json error device_code granted_scope normalized_scope
+          export GH_TOKEN="$access_token"
+          export GITHUB_REPOSITORY_ADMIN_TOKEN="$access_token"
+
+          stage=verify-owner-identity
+          test "$(gh api user --jq '.login')" = "$EXPECTED_LOGIN"
+
+          stage=preflight-all-36-owner-memberships
+          organizations=(
+            channelsiege OmniBlitz streamkore hypeblitz 3FA-app messaging-intel
+            akrion-sim athlet-o benefactor-cc canonical-cloud claritas-viz cliptown
+            daedalus-fab declarative-migrations fiducia-cloud anticaptrad opto-sync
+            quaestor-ledger sagitta-stack shared-auth scintilla-run rust-ssr-demos
+            sonus-auris usa-acc voxletra zed-pkg zed-pkg-test memebank
+            meta-agents-demo networking-components StreemPilot unreal-unity-poc
+            file-tunnel hypesiege discrete-event-systems drone-mngr
+          )
+          test "${#organizations[@]}" -eq 36
+          for organization in "${organizations[@]}"; do
+            membership="$(gh api "/user/memberships/orgs/${organization}")"
+            test "$(jq -er '.role' <<<"$membership")" = admin
+            test "$(jq -er '.state' <<<"$membership")" = active
+          done
+          unset membership organizations
+
+          stage=execute-hardened-fleet-publisher
+          source_root="$RUNNER_TEMP/org-dotgithub-device-source"
+          set +e
+          python3 "$source_root/scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py" \
+            --execute \
+            --json-report "$RUNNER_TEMP/org-dotgithub-governance.json" \
+            --markdown-report "$success_report" \
+            >"$publisher_log" 2>&1
+          publisher_status=$?
+          set -e
+          if test "$publisher_status" -ne 0; then
+            clear_sensitive_state
+            LOG="$publisher_log" python3 - <<'PY' >&2
+          import os
+          import re
+          from pathlib import Path
+
+          path = Path(os.environ["LOG"])
+          text = path.read_text(errors="replace") if path.exists() else "publisher log was not created"
+          patterns = [
+              (r"https://x-access-token:[^@\s]+@github\.com/", "https://x-access-token:***@github.com/"),
+              (r"github_pat_[A-Za-z0-9_]{20,}", "github_pat_***"),
+              (r"gh[a-z]_[A-Za-z0-9_]{20,}", "gh*_***"),
+              (r"(Authorization:\s*(?:Bearer|token)\s+)[A-Za-z0-9._-]{20,}", r"\1***"),
+          ]
+          for pattern, replacement in patterns:
+              text = re.sub(pattern, replacement, text, flags=re.I)
+          print("\n".join(text.splitlines()[-220:])[-24000:])
+          PY
+            exit "$publisher_status"
+          fi
+
+          stage=certify-36-organization-report
+          REPORT="$RUNNER_TEMP/org-dotgithub-governance.json" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path(os.environ["REPORT"]).read_text(encoding="utf-8"))
+          organizations = payload.get("organizations")
+          assert payload.get("mode") == "execute"
+          assert isinstance(organizations, list) and len(organizations) == 36
+          assert len({item["organization"].casefold() for item in organizations}) == 36
+          for item in organizations:
+              assert item["repository"] == f"{item['organization']}/.github"
+              assert item["verified"] is True
+          PY
+          test -s "$success_report"
+          {
+            echo
+            echo '## Authorization hygiene'
+            echo
+            echo '- The OAuth access token was held only in runner memory and was not written to Git, Actions outputs, artifacts, issue comments, or `GITHUB_ENV`.'
+            echo '- Revoke the authorized OAuth app from GitHub account settings after reviewing this report.'
+            echo
+            echo "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo '<!-- org-dotgithub-owner-device-report-complete -->'
+          } >> "$success_report"
+          clear_sensitive_state
+          trap - ERR
+
+      - name: Publish the bounded result to issue 615
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if [[ "$PUBLISH_OUTCOME" == success ]]; then
+            report="$RUNNER_TEMP/org-dotgithub-governance.md"
+            test -s "$report"
+            grep -Fq '<!-- org-dotgithub-owner-device-report-complete -->' "$report"
+          else
+            report="$RUNNER_TEMP/org-dotgithub-device-failure.md"
+            if [[ ! -s "$report" ]]; then
+              {
+                echo '# Organization `.github` device-authorized publication failed'
+                echo
+                echo '- The workflow stopped before a bounded stage report could be produced.'
+                echo
+                echo "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+              } > "$report"
+            fi
+          fi
+          gh issue comment "$TRACKING_ISSUE" --repo "$GITHUB_REPOSITORY" --body-file "$report"
+          test "$PUBLISH_OUTCOME" == success
