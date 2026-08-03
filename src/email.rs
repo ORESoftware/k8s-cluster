@@ -28,18 +28,23 @@ async fn send_magic_link_to(
     token: &str,
     otp: &str,
 ) -> Result<(), AuthError> {
-    if !config.is_enabled() {
-        return Err(AuthError::Unavailable);
-    }
     let api_key = config
         .sendgrid_api_key
         .as_deref()
         .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or(AuthError::Unavailable)?;
+    config
+        .otp_pepper
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
         .ok_or(AuthError::Unavailable)?;
     let from_email = config
         .from_email
         .as_deref()
         .map(str::trim)
+        .filter(|value| !value.is_empty())
         .ok_or(AuthError::Unavailable)?;
     let link = magic_link_url(config, token)?;
     let escaped_link = escape_html(&link);
