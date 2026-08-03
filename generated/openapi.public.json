@@ -1,0 +1,344 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "push-notification-server API (public)",
+    "description": "Provider-neutral push, email, and SMS delivery API. The contract is generated from the same annotated handlers and Serde DTOs mounted by the running Axum process.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/docs": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "operationId": "getPublicApiReference",
+        "responses": {
+          "200": {
+            "description": "Scalar reference for the public contract",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "operationId": "getPublicOpenApiCompatibilityAlias",
+        "responses": {
+          "200": {
+            "description": "Compatibility alias for the public OpenAPI document",
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "operationId": "getPublicApiReferenceCompatibilityAlias",
+        "responses": {
+          "200": {
+            "description": "Compatibility alias for the public Scalar reference",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "operationId": "getPushServiceHealth",
+        "responses": {
+          "200": {
+            "description": "Process liveness",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceHealth"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "operationId": "getPublicOpenApi",
+        "responses": {
+          "200": {
+            "description": "Fail-closed public OpenAPI 3.1 document",
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/readyz": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "operationId": "getPushServiceReadiness",
+        "responses": {
+          "200": {
+            "description": "Authentication and at least one push provider are configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication or push providers are unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/v1/contact/readyz": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "operationId": "getContactServiceReadiness",
+        "responses": {
+          "200": {
+            "description": "Authentication and at least one contact provider are configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactReadinessResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication or contact providers are unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactReadinessResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuthenticationReadiness": {
+        "type": "object",
+        "required": [
+          "configured",
+          "mode"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string"
+          }
+        }
+      },
+      "ContactProviderReadinessView": {
+        "type": "object",
+        "required": [
+          "configured"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "safe_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ContactReadinessResponse": {
+        "type": "object",
+        "required": [
+          "ok",
+          "authentication_configured",
+          "authentication_mode",
+          "providers"
+        ],
+        "properties": {
+          "authentication_configured": {
+            "type": "boolean"
+          },
+          "authentication_mode": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "providers": {
+            "$ref": "#/components/schemas/ContactRegistryReadiness"
+          }
+        }
+      },
+      "ContactRegistryReadiness": {
+        "type": "object",
+        "required": [
+          "sendgrid",
+          "twilio"
+        ],
+        "properties": {
+          "sendgrid": {
+            "$ref": "#/components/schemas/ContactProviderReadinessView"
+          },
+          "twilio": {
+            "$ref": "#/components/schemas/ContactProviderReadinessView"
+          }
+        }
+      },
+      "ProviderReadinessView": {
+        "type": "object",
+        "required": [
+          "configured"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "safe_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ReadinessResponse": {
+        "type": "object",
+        "required": [
+          "ok",
+          "authentication",
+          "providers"
+        ],
+        "properties": {
+          "authentication": {
+            "$ref": "#/components/schemas/AuthenticationReadiness"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "providers": {
+            "$ref": "#/components/schemas/RegistryReadiness"
+          }
+        }
+      },
+      "RegistryReadiness": {
+        "type": "object",
+        "required": [
+          "fcm",
+          "apns_production",
+          "apns_sandbox",
+          "expo",
+          "web_push"
+        ],
+        "properties": {
+          "apns_production": {
+            "$ref": "#/components/schemas/ProviderReadinessView"
+          },
+          "apns_sandbox": {
+            "$ref": "#/components/schemas/ProviderReadinessView"
+          },
+          "expo": {
+            "$ref": "#/components/schemas/ProviderReadinessView"
+          },
+          "fcm": {
+            "$ref": "#/components/schemas/ProviderReadinessView"
+          },
+          "web_push": {
+            "$ref": "#/components/schemas/ProviderReadinessView"
+          }
+        }
+      },
+      "ServiceHealth": {
+        "type": "object",
+        "required": [
+          "ok",
+          "service"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "service": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "x-dd-contract-scope": "public"
+}

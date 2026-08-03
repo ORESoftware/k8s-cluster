@@ -1,0 +1,146 @@
+name: executable OpenAPI contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/openapi-contract.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'docs/openapi-contract.md'
+      - 'generated/openapi.internal.json'
+      - 'generated/openapi.public.json'
+      - 'src/api_docs.rs'
+      - 'src/contact/contracts.rs'
+      - 'src/contact/dispatch.rs'
+      - 'src/contact/http.rs'
+      - 'src/contracts.rs'
+      - 'src/dispatch.rs'
+      - 'src/http_api.rs'
+      - 'src/lib.rs'
+      - 'src/main.rs'
+      - 'src/redaction.rs'
+      - 'tests/http_boundary_hardening.rs'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/openapi-contract.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'docs/openapi-contract.md'
+      - 'generated/openapi.internal.json'
+      - 'generated/openapi.public.json'
+      - 'src/api_docs.rs'
+      - 'src/contact/contracts.rs'
+      - 'src/contact/dispatch.rs'
+      - 'src/contact/http.rs'
+      - 'src/contracts.rs'
+      - 'src/dispatch.rs'
+      - 'src/http_api.rs'
+      - 'src/lib.rs'
+      - 'src/main.rs'
+      - 'src/redaction.rs'
+      - 'tests/http_boundary_hardening.rs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: push-openapi-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Setup Rust 1.88
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.88.0'
+          components: rustfmt, clippy
+
+      - name: Compile and test the executable contract
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo check --locked
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo test --locked --all-targets
+
+      - name: Prove deterministic public and internal exports
+        run: |
+          set -euo pipefail
+          cargo run --locked --quiet -- --export-openapi=internal > /tmp/openapi.internal.1.json
+          cargo run --locked --quiet -- --export-openapi=internal > /tmp/openapi.internal.2.json
+          cargo run --locked --quiet -- --export-openapi=public > /tmp/openapi.public.1.json
+          cargo run --locked --quiet -- --export-openapi=public > /tmp/openapi.public.2.json
+          cmp /tmp/openapi.internal.1.json /tmp/openapi.internal.2.json
+          cmp /tmp/openapi.public.1.json /tmp/openapi.public.2.json
+          cmp /tmp/openapi.internal.1.json generated/openapi.internal.json
+          cmp /tmp/openapi.public.1.json generated/openapi.public.json
+
+      - name: Validate visibility, schema minimization, auth, and stable operations
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          internal = json.loads(Path('generated/openapi.internal.json').read_text())
+          public = json.loads(Path('generated/openapi.public.json').read_text())
+          expected_public = {
+              '/healthz', '/readyz', '/v1/contact/readyz',
+              '/openapi.json', '/api/docs.json', '/api/docs', '/docs/api',
+          }
+          sensitive = {
+              '/v1/push/jobs', '/v1/push/jobs/batch',
+              '/v1/contact/jobs', '/v1/contact/jobs/batch',
+              '/internal/openapi.json', '/internal/docs/api',
+          }
+          assert set(public['paths']) == expected_public
+          assert set(internal['paths']) == expected_public | sensitive
+          assert public['x-dd-contract-scope'] == 'public'
+          assert internal['x-dd-contract-scope'] == 'internal'
+          assert 'contact' not in public['info'] and 'license' not in public['info']
+          assert 'contact' not in internal['info'] and 'license' not in internal['info']
+          assert 'securitySchemes' not in public.get('components', {})
+          public_schemas = public['components']['schemas']
+          assert 'PushJob' not in public_schemas
+          assert 'ContactJob' not in public_schemas
+          assert {'ServiceHealth', 'ReadinessResponse', 'ContactReadinessResponse'} <= set(public_schemas)
+          assert 'bearer_auth' in internal['components']['securitySchemes']
+
+          operation_ids = []
+          for path, item in internal['paths'].items():
+              for method, operation in item.items():
+                  if method.lower() not in {'get', 'post', 'put', 'patch', 'delete'}:
+                      continue
+                  operation_ids.append(operation['operationId'])
+                  if path in sensitive:
+                      assert operation.get('security') == [{'bearer_auth': []}], (method, path)
+          assert len(operation_ids) == len(set(operation_ids))
+          PY
+
+      - name: Reject repository drift
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -z "$(git status --short)"
+          if git grep -nE '^(<<<<<<< |=======|>>>>>>> )' -- \
+            Cargo.toml \
+            generated \
+            src; then
+            echo 'git conflict marker detected' >&2
+            exit 1
+          fi

@@ -1,5 +1,7 @@
 3b8cb8eb4d161ef5bfa5bf487e0cae6bdaaa3b56:src/validation.rs:generic-api-key:313
 0c2a25def1f5115d929d6ead0e5a8d39863aad27:src/providers/apns.rs:generic-api-key:583
 0c2a25def1f5115d929d6ead0e5a8d39863aad27:src/providers/apns.rs:generic-api-key:586
-# Empty TWILIO_API_KEY_SECRET= placeholder in .env.example; exact historical finding only.
+# Empty TWILIO_API_KEY_SECRET= placeholders in historical .env.example commits;
+# each exception is scoped to one exact fingerprint.
 149ae09029e48e3f34b0e1f81a9eeb1c72fdc295:.env.example:generic-api-key:24
+bda44677bff7b4d5e467c8c788268c9e40064b8d:.env.example:generic-api-key:24

@@ -24,3 +24,9 @@ wildcards = "deny"
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
+# The complete Utoipa type family is pinned to one reviewed upstream commit
+# that replaced the archived `paste` dependency. No branch, tag, or wildcard
+# Git source is accepted.
+allow-git = [
+  "https://github.com/juhaku/utoipa?rev=aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a",
+]

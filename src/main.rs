@@ -1,13 +1,24 @@
 use std::{env, net::SocketAddr};
 
 use push_notification_server::{
-    ApiState, ContactApiState, NatsConfig, contact_registry_from_env, contact_router,
-    provider_registry_from_env, request_authenticator_from_env, router, run_nats_consumer,
+    ApiState, ContactApiState, NatsConfig, application_router, canonical_json,
+    contact_registry_from_env, openapi_document, provider_registry_from_env,
+    public_openapi_document, request_authenticator_from_env, run_nats_consumer,
 };
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(scope) = export_openapi_scope() {
+        let openapi = match scope.as_str() {
+            "internal" => openapi_document(),
+            "public" => public_openapi_document()?,
+            other => return Err(format!("unsupported OpenAPI scope: {other}").into()),
+        };
+        print!("{}", canonical_json(&openapi)?);
+        return Ok(());
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| {
@@ -32,9 +43,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         tracing::info!("JetStream push ingestion disabled because NATS_URL is not configured");
     }
 
-    let app = router(ApiState::new(registry, authenticator.clone())).merge(contact_router(
-        ContactApiState::new(contact_registry, authenticator),
-    ));
+    let app = application_router(
+        ApiState::new(registry, authenticator.clone()),
+        ContactApiState::new(contact_registry, authenticator.clone()),
+        authenticator,
+    )?;
     let listener = tokio::net::TcpListener::bind(address).await?;
 
     tracing::info!(%address, "notification server listening");
@@ -43,6 +56,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     Ok(())
+}
+
+fn export_openapi_scope() -> Option<String> {
+    env::args().find_map(|argument| {
+        argument
+            .strip_prefix("--export-openapi=")
+            .map(ToOwned::to_owned)
+    })
 }
 
 fn bind_address() -> Result<SocketAddr, std::net::AddrParseError> {
@@ -92,13 +113,11 @@ mod tests {
     #[test]
     fn routers_can_be_constructed_without_runtime_credentials() {
         let authenticator = Arc::new(DenyAllAuthenticator);
-        let _ = router(ApiState::new(
-            ProviderRegistry::new(),
-            authenticator.clone(),
-        ))
-        .merge(contact_router(ContactApiState::new(
-            ContactProviderRegistry::new(),
+        let _ = push_notification_server::application_router(
+            ApiState::new(ProviderRegistry::new(), authenticator.clone()),
+            ContactApiState::new(ContactProviderRegistry::new(), authenticator.clone()),
             authenticator,
-        )));
+        )
+        .expect("application router");
     }
 }

@@ -1,0 +1,131 @@
+name: OpenAPI browser smoke
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/openapi-browser.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'generated/openapi.internal.json'
+      - 'generated/openapi.public.json'
+      - 'src/api_docs.rs'
+      - 'src/contact/http.rs'
+      - 'src/http_api.rs'
+      - 'src/main.rs'
+      - 'tests/browser/openapi-docs.spec.mjs'
+      - 'tests/http_boundary_hardening.rs'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/openapi-browser.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'generated/openapi.internal.json'
+      - 'generated/openapi.public.json'
+      - 'src/api_docs.rs'
+      - 'src/contact/http.rs'
+      - 'src/http_api.rs'
+      - 'src/main.rs'
+      - 'tests/browser/openapi-docs.spec.mjs'
+      - 'tests/http_boundary_hardening.rs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: push-openapi-browser-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  chromium:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Setup Rust 1.88
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4
+        with:
+          toolchain: '1.88.0'
+
+      - name: Setup Node 22.23.1
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22.23.1'
+
+      - name: Install pinned Playwright and Chromium
+        run: |
+          set -euo pipefail
+          npm install --no-save --ignore-scripts --no-audit --no-fund @playwright/test@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Start the fail-closed notification server
+        env:
+          HOST: 127.0.0.1
+          PORT: '8121'
+          RUST_LOG: push_notification_server=info
+        run: |
+          set -euo pipefail
+          cargo run --locked > /tmp/push-notification-server.log 2>&1 &
+          echo $! > /tmp/push-notification-server.pid
+          for _ in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:8121/healthz >/dev/null; then
+              exit 0
+            fi
+            if ! kill -0 "$(cat /tmp/push-notification-server.pid)" 2>/dev/null; then
+              cat /tmp/push-notification-server.log >&2
+              exit 1
+            fi
+            sleep 1
+          done
+          cat /tmp/push-notification-server.log >&2
+          exit 1
+
+      - name: Exercise docs, contracts, aliases, readiness, limits, and auth in Chromium
+        env:
+          PUSH_DOCS_BASE_URL: http://127.0.0.1:8121
+        run: npx playwright test tests/browser/openapi-docs.spec.mjs --browser=chromium --workers=1 --reporter=line
+
+      - name: Assert server logs do not expose test capabilities
+        if: always()
+        run: |
+          set -euo pipefail
+          if test -f /tmp/push-notification-server.log; then
+            for secret in \
+              'fixture-device-token-that-must-never-be-echoed' \
+              'private-recipient@example.com' \
+              'Private Recipient'; do
+              if grep --fixed-strings --quiet -- "$secret" /tmp/push-notification-server.log; then
+                echo "server log leaked a test capability" >&2
+                exit 1
+              fi
+            done
+          fi
+
+      - name: Upload browser evidence on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: push-openapi-browser-evidence-${{ github.sha }}
+          path: |
+            /tmp/push-notification-server.log
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Stop server
+        if: always()
+        run: |
+          if test -f /tmp/push-notification-server.pid; then
+            kill "$(cat /tmp/push-notification-server.pid)" 2>/dev/null || true
+          fi

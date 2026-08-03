@@ -2,11 +2,12 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use utoipa::ToSchema;
 
 use crate::redaction::{TargetFingerprint, fingerprint_target};
 
 /// The wire-contract version accepted by this service.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ContractVersion {
     V1,
@@ -19,7 +20,7 @@ impl Default for ContractVersion {
 }
 
 /// Supported upstream delivery providers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
     Fcm,
@@ -40,7 +41,7 @@ impl ProviderKind {
 }
 
 /// Provider environment where a target is valid.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderEnvironment {
     Production,
@@ -51,7 +52,7 @@ pub enum ProviderEnvironment {
 ///
 /// Values in this enum are secrets or capabilities. They must never be logged
 /// or copied into result events. Use [`PushTarget::fingerprint`] instead.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PushTarget {
     Fcm {
@@ -109,7 +110,7 @@ impl PushTarget {
 }
 
 /// User-visible notification content and provider-neutral application data.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema, Default)]
 pub struct Notification {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -122,7 +123,7 @@ pub struct Notification {
 }
 
 /// Delivery urgency requested by the producer.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum PushPriority {
     #[default]
@@ -131,7 +132,7 @@ pub enum PushPriority {
 }
 
 /// Provider-neutral delivery controls.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema, Default)]
 pub struct PushOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ttl_seconds: Option<u32>,
@@ -144,7 +145,7 @@ pub struct PushOptions {
 }
 
 /// Trace and correlation data safe to propagate across service boundaries.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema, Default)]
 pub struct TraceMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub traceparent: Option<String>,
@@ -155,7 +156,7 @@ pub struct TraceMetadata {
 }
 
 /// Versioned provider-neutral input consumed by all delivery adapters.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct PushJob {
     #[serde(default)]
     pub version: ContractVersion,
@@ -173,7 +174,7 @@ pub struct PushJob {
 }
 
 /// Stable outcome categories shared by HTTP, NATS, and database integrations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum OutcomeClass {
     Accepted,
@@ -195,7 +196,7 @@ impl OutcomeClass {
 }
 
 /// Redacted provider-neutral result safe to publish or persist.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct PushOutcome {
     pub version: ContractVersion,
     pub job_id: String,

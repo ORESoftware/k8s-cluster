@@ -6,9 +6,10 @@ use axum::body::Body;
 use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 #[cfg(test)]
 use super::contracts::ContactProviderKind;
@@ -20,7 +21,7 @@ use crate::contracts::ContractVersion;
 use crate::http_api::RequestAuthenticator;
 use crate::redaction::truncate_utf8;
 
-const MAX_CONTACT_HTTP_BODY_BYTES: usize = 768 * 1024;
+pub(crate) const MAX_CONTACT_HTTP_BODY_BYTES: usize = 768 * 1024;
 const MAX_CONTACT_BATCH_JOBS: usize = 100;
 const MAX_SAFE_DETAIL_BYTES: usize = 512;
 
@@ -42,15 +43,31 @@ impl ContactApiState {
     }
 }
 
+pub(crate) fn contact_openapi_router() -> OpenApiRouter<ContactApiState> {
+    OpenApiRouter::new()
+        .routes(routes!(readyz))
+        .routes(routes!(submit_job))
+        .routes(routes!(submit_batch))
+}
+
 pub fn contact_router(state: ContactApiState) -> Router {
-    Router::new()
-        .route("/v1/contact/readyz", get(readyz))
-        .route("/v1/contact/jobs", post(submit_job))
-        .route("/v1/contact/jobs/batch", post(submit_batch))
+    let (router, _) = contact_openapi_router().split_for_parts();
+    router
         .layer(DefaultBodyLimit::max(MAX_CONTACT_HTTP_BODY_BYTES))
         .with_state(state)
 }
 
+#[utoipa::path(
+    get,
+    path = "/v1/contact/readyz",
+    operation_id = "getContactServiceReadiness",
+    tag = "operations",
+    security(()),
+    responses(
+        (status = 200, description = "Authentication and at least one contact provider are configured", body = ContactReadinessResponse),
+        (status = 503, description = "Authentication or contact providers are unavailable", body = ContactReadinessResponse)
+    )
+)]
 async fn readyz(State(state): State<ContactApiState>) -> Response {
     let providers = state.registry.readiness();
     let auth_configured = state.authenticator.configured();
@@ -72,6 +89,23 @@ async fn readyz(State(state): State<ContactApiState>) -> Response {
         .into_response()
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/contact/jobs",
+    operation_id = "submitContactJob",
+    tag = "contact",
+    request_body = ContactJob,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 202, description = "Provider accepted the contact job", body = ContactOutcome),
+        (status = 400, description = "Contract validation failed", body = ContactErrorEnvelope),
+        (status = 401, description = "Authentication failed", body = ContactErrorEnvelope),
+        (status = 422, description = "Provider rejected the target", body = ContactOutcome),
+        (status = 429, description = "Provider throttled the request", body = ContactOutcome),
+        (status = 502, description = "Permanent provider failure", body = ContactOutcome),
+        (status = 503, description = "Transient or internal provider failure", body = ContactOutcome)
+    )
+)]
 async fn submit_job(
     State(state): State<ContactApiState>,
     headers: HeaderMap,
@@ -84,6 +118,20 @@ async fn submit_job(
     (status_for_outcome(outcome.class), Json(outcome)).into_response()
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/contact/jobs/batch",
+    operation_id = "submitContactBatch",
+    tag = "contact",
+    request_body = ContactBatchRequest,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 202, description = "Every job was accepted", body = ContactBatchResponse),
+        (status = 207, description = "Batch contains mixed outcomes", body = ContactBatchResponse),
+        (status = 400, description = "Batch size is invalid", body = ContactErrorEnvelope),
+        (status = 401, description = "Authentication failed", body = ContactErrorEnvelope)
+    )
+)]
 async fn submit_batch(
     State(state): State<ContactApiState>,
     headers: HeaderMap,
@@ -222,33 +270,35 @@ fn duration_to_millis(duration: Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct ContactReadinessResponse {
     ok: bool,
     authentication_configured: bool,
+    #[schema(value_type = String)]
     authentication_mode: &'static str,
     providers: ContactRegistryReadiness,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct ContactBatchRequest {
     pub jobs: Vec<ContactJob>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct ContactBatchResponse {
     pub accepted: usize,
     pub rejected: usize,
     pub outcomes: Vec<ContactOutcome>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct ContactErrorEnvelope {
     error: ContactErrorBody,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct ContactErrorBody {
+    #[schema(value_type = String)]
     code: &'static str,
     safe_detail: String,
 }

@@ -3,13 +3,14 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use utoipa::ToSchema;
 
 use crate::contracts::{ContractVersion, TraceMetadata};
 
 const FINGERPRINT_HEX_LENGTH: usize = 24;
 
 /// Optional non-push providers supported by the notification service.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ContactProviderKind {
     Sendgrid,
@@ -27,7 +28,7 @@ impl ContactProviderKind {
 
 /// Recipient capability. Raw addresses and phone numbers must never be logged or
 /// copied into normalized outcomes; use [`ContactTarget::fingerprint`] instead.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContactTarget {
     Email {
@@ -65,7 +66,7 @@ impl ContactTarget {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ToSchema)]
 #[serde(transparent)]
 pub struct ContactTargetFingerprint(String);
 
@@ -83,7 +84,7 @@ impl std::fmt::Display for ContactTargetFingerprint {
 
 /// Channel-specific content. Senders and provider credentials are server-side
 /// configuration and can never be supplied by producers.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(tag = "channel", rename_all = "snake_case")]
 pub enum ContactContent {
     Email {
@@ -116,7 +117,7 @@ impl ContactContent {
 
 /// Versioned email/SMS request contract. This is deliberately separate from
 /// `PushJob` so adding fallback channels cannot weaken push-target validation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct ContactJob {
     #[serde(default)]
     pub version: ContractVersion,
@@ -131,7 +132,7 @@ pub struct ContactJob {
     pub trace: TraceMetadata,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ContactOutcomeClass {
     Accepted,
@@ -155,7 +156,7 @@ impl ContactOutcomeClass {
 /// Capability-safe result suitable for HTTP responses, NATS events, and audit
 /// persistence. The provider code is an opaque SendGrid message ID, Twilio SID,
 /// or bounded provider error code, never the recipient.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 pub struct ContactOutcome {
     pub version: ContractVersion,
     pub job_id: String,

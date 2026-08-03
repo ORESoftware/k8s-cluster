@@ -7,9 +7,10 @@ use axum::extract::{DefaultBodyLimit, State};
 use axum::http::header::AUTHORIZATION;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 #[cfg(test)]
 use crate::contracts::ProviderKind;
@@ -19,7 +20,7 @@ use crate::provider::ProviderError;
 use crate::redaction::truncate_utf8;
 use crate::validation::validate_push_job;
 
-const MAX_HTTP_BODY_BYTES: usize = 512 * 1024;
+pub(crate) const MAX_HTTP_BODY_BYTES: usize = 512 * 1024;
 const MAX_BATCH_JOBS: usize = 100;
 const MAX_SAFE_DETAIL_BYTES: usize = 512;
 
@@ -117,16 +118,29 @@ impl ApiState {
     }
 }
 
+pub(crate) fn push_openapi_router() -> OpenApiRouter<ApiState> {
+    OpenApiRouter::new()
+        .routes(routes!(healthz))
+        .routes(routes!(readyz))
+        .routes(routes!(submit_job))
+        .routes(routes!(submit_batch))
+}
+
 pub fn router(state: ApiState) -> Router {
-    Router::new()
-        .route("/healthz", get(healthz))
-        .route("/readyz", get(readyz))
-        .route("/v1/push/jobs", post(submit_job))
-        .route("/v1/push/jobs/batch", post(submit_batch))
+    let (router, _) = push_openapi_router().split_for_parts();
+    router
         .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
         .with_state(state)
 }
 
+#[utoipa::path(
+    get,
+    path = "/healthz",
+    operation_id = "getPushServiceHealth",
+    tag = "operations",
+    security(()),
+    responses((status = 200, description = "Process liveness", body = ServiceHealth))
+)]
 async fn healthz() -> Json<ServiceHealth> {
     Json(ServiceHealth {
         ok: true,
@@ -134,6 +148,17 @@ async fn healthz() -> Json<ServiceHealth> {
     })
 }
 
+#[utoipa::path(
+    get,
+    path = "/readyz",
+    operation_id = "getPushServiceReadiness",
+    tag = "operations",
+    security(()),
+    responses(
+        (status = 200, description = "Authentication and at least one push provider are configured", body = ReadinessResponse),
+        (status = 503, description = "Authentication or push providers are unavailable", body = ReadinessResponse)
+    )
+)]
 async fn readyz(State(state): State<ApiState>) -> Response {
     let providers = state.registry.readiness();
     let auth_configured = state.authenticator.configured();
@@ -157,6 +182,23 @@ async fn readyz(State(state): State<ApiState>) -> Response {
         .into_response()
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/push/jobs",
+    operation_id = "submitPushJob",
+    tag = "push",
+    request_body = PushJob,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 202, description = "Provider accepted the push job", body = PushOutcome),
+        (status = 400, description = "Contract validation failed", body = ErrorEnvelope),
+        (status = 401, description = "Authentication failed", body = ErrorEnvelope),
+        (status = 422, description = "Provider rejected the target", body = PushOutcome),
+        (status = 429, description = "Provider throttled the request", body = PushOutcome),
+        (status = 502, description = "Permanent provider failure", body = PushOutcome),
+        (status = 503, description = "Transient or internal provider failure", body = PushOutcome)
+    )
+)]
 async fn submit_job(
     State(state): State<ApiState>,
     headers: HeaderMap,
@@ -170,6 +212,20 @@ async fn submit_job(
     (status_for_outcome(outcome.class), Json(outcome)).into_response()
 }
 
+#[utoipa::path(
+    post,
+    path = "/v1/push/jobs/batch",
+    operation_id = "submitPushBatch",
+    tag = "push",
+    request_body = BatchRequest,
+    security(("bearer_auth" = [])),
+    responses(
+        (status = 202, description = "Every job was accepted", body = BatchResponse),
+        (status = 207, description = "Batch contains mixed outcomes", body = BatchResponse),
+        (status = 400, description = "Batch size is invalid", body = ErrorEnvelope),
+        (status = 401, description = "Authentication failed", body = ErrorEnvelope)
+    )
+)]
 async fn submit_batch(
     State(state): State<ApiState>,
     headers: HeaderMap,
@@ -308,44 +364,47 @@ fn api_error(status: StatusCode, code: &'static str, detail: impl AsRef<str>) ->
         .into_response()
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct ServiceHealth {
     ok: bool,
+    #[schema(value_type = String)]
     service: &'static str,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct ReadinessResponse {
     ok: bool,
     authentication: AuthenticationReadiness,
     providers: RegistryReadiness,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct AuthenticationReadiness {
     configured: bool,
+    #[schema(value_type = String)]
     mode: &'static str,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct BatchRequest {
     pub jobs: Vec<PushJob>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 pub struct BatchResponse {
     pub accepted: usize,
     pub rejected: usize,
     pub outcomes: Vec<PushOutcome>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct ErrorEnvelope {
     error: ErrorBody,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 struct ErrorBody {
+    #[schema(value_type = String)]
     code: &'static str,
     safe_detail: String,
 }

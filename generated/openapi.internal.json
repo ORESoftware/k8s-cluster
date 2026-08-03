@@ -1,0 +1,1403 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "push-notification-server API",
+    "description": "Provider-neutral push, email, and SMS delivery API. The contract is generated from the same annotated handlers and Serde DTOs mounted by the running Axum process.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/docs": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "operationId": "getPublicApiReference",
+        "responses": {
+          "200": {
+            "description": "Scalar reference for the public contract",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/api/docs.json": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "operationId": "getPublicOpenApiCompatibilityAlias",
+        "responses": {
+          "200": {
+            "description": "Compatibility alias for the public OpenAPI document",
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/docs/api": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "operationId": "getPublicApiReferenceCompatibilityAlias",
+        "responses": {
+          "200": {
+            "description": "Compatibility alias for the public Scalar reference",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "operationId": "getPushServiceHealth",
+        "responses": {
+          "200": {
+            "description": "Process liveness",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceHealth"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/internal/docs/api": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "operationId": "getInternalApiReference",
+        "responses": {
+          "200": {
+            "description": "Scalar reference for the complete private contract",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/internal/openapi.json": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "operationId": "getInternalOpenApi",
+        "responses": {
+          "200": {
+            "description": "Complete private OpenAPI 3.1 document",
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "operationId": "getPublicOpenApi",
+        "responses": {
+          "200": {
+            "description": "Fail-closed public OpenAPI 3.1 document",
+            "content": {
+              "application/vnd.oai.openapi+json;version=3.1": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/readyz": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "operationId": "getPushServiceReadiness",
+        "responses": {
+          "200": {
+            "description": "Authentication and at least one push provider are configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication or push providers are unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/v1/contact/jobs": {
+      "post": {
+        "tags": [
+          "contact"
+        ],
+        "operationId": "submitContactJob",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactJob"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Provider accepted the contact job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactOutcome"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Contract validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Provider rejected the target",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactOutcome"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Provider throttled the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactOutcome"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Permanent provider failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactOutcome"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Transient or internal provider failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactOutcome"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/contact/jobs/batch": {
+      "post": {
+        "tags": [
+          "contact"
+        ],
+        "operationId": "submitContactBatch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Every job was accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactBatchResponse"
+                }
+              }
+            }
+          },
+          "207": {
+            "description": "Batch contains mixed outcomes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactBatchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Batch size is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/contact/readyz": {
+      "get": {
+        "tags": [
+          "operations"
+        ],
+        "operationId": "getContactServiceReadiness",
+        "responses": {
+          "200": {
+            "description": "Authentication and at least one contact provider are configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactReadinessResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Authentication or contact providers are unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactReadinessResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {}
+        ]
+      }
+    },
+    "/v1/push/jobs": {
+      "post": {
+        "tags": [
+          "push"
+        ],
+        "operationId": "submitPushJob",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushJob"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Provider accepted the push job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushOutcome"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Contract validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Provider rejected the target",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushOutcome"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Provider throttled the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushOutcome"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Permanent provider failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushOutcome"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Transient or internal provider failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushOutcome"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/v1/push/jobs/batch": {
+      "post": {
+        "tags": [
+          "push"
+        ],
+        "operationId": "submitPushBatch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Every job was accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResponse"
+                }
+              }
+            }
+          },
+          "207": {
+            "description": "Batch contains mixed outcomes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Batch size is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuthenticationReadiness": {
+        "type": "object",
+        "required": [
+          "configured",
+          "mode"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string"
+          }
+        }
+      },
+      "BatchRequest": {
+        "type": "object",
+        "required": [
+          "jobs"
+        ],
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PushJob"
+            }
+          }
+        }
+      },
+      "BatchResponse": {
+        "type": "object",
+        "required": [
+          "accepted",
+          "rejected",
+          "outcomes"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PushOutcome"
+            }
+          },
+          "rejected": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ContactBatchRequest": {
+        "type": "object",
+        "required": [
+          "jobs"
+        ],
+        "properties": {
+          "jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContactJob"
+            }
+          }
+        }
+      },
+      "ContactBatchResponse": {
+        "type": "object",
+        "required": [
+          "accepted",
+          "rejected",
+          "outcomes"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "outcomes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContactOutcome"
+            }
+          },
+          "rejected": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ContactContent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "channel"
+            ],
+            "properties": {
+              "channel": {
+                "type": "string",
+                "enum": [
+                  "email"
+                ]
+              },
+              "dynamic_template_data": {
+                "type": "object",
+                "additionalProperties": {},
+                "propertyNames": {
+                  "type": "string"
+                }
+              },
+              "html": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reply_to": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "subject": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "template_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "text": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "body",
+              "channel"
+            ],
+            "properties": {
+              "body": {
+                "type": "string"
+              },
+              "channel": {
+                "type": "string",
+                "enum": [
+                  "sms"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Channel-specific content. Senders and provider credentials are server-side\nconfiguration and can never be supplied by producers."
+      },
+      "ContactErrorBody": {
+        "type": "object",
+        "required": [
+          "code",
+          "safe_detail"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "safe_detail": {
+            "type": "string"
+          }
+        }
+      },
+      "ContactErrorEnvelope": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ContactErrorBody"
+          }
+        }
+      },
+      "ContactJob": {
+        "type": "object",
+        "description": "Versioned email/SMS request contract. This is deliberately separate from\n`PushJob` so adding fallback channels cannot weaken push-target validation.",
+        "required": [
+          "job_id",
+          "tenant_id",
+          "application_id",
+          "idempotency_key",
+          "provider",
+          "target",
+          "content"
+        ],
+        "properties": {
+          "application_id": {
+            "type": "string"
+          },
+          "content": {
+            "$ref": "#/components/schemas/ContactContent"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ContactProviderKind"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ContactTarget"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "trace": {
+            "$ref": "#/components/schemas/TraceMetadata"
+          },
+          "version": {
+            "$ref": "#/components/schemas/ContractVersion"
+          }
+        }
+      },
+      "ContactOutcome": {
+        "type": "object",
+        "description": "Capability-safe result suitable for HTTP responses, NATS events, and audit\npersistence. The provider code is an opaque SendGrid message ID, Twilio SID,\nor bounded provider error code, never the recipient.",
+        "required": [
+          "version",
+          "job_id",
+          "provider",
+          "target_fingerprint",
+          "class"
+        ],
+        "properties": {
+          "class": {
+            "$ref": "#/components/schemas/ContactOutcomeClass"
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ContactProviderKind"
+          },
+          "provider_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "retry_after_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "safe_detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_fingerprint": {
+            "$ref": "#/components/schemas/ContactTargetFingerprint"
+          },
+          "version": {
+            "$ref": "#/components/schemas/ContractVersion"
+          }
+        }
+      },
+      "ContactOutcomeClass": {
+        "type": "string",
+        "enum": [
+          "accepted",
+          "invalid_target",
+          "invalid_payload",
+          "throttled",
+          "transient_provider_failure",
+          "permanent_provider_failure",
+          "internal_failure"
+        ]
+      },
+      "ContactProviderKind": {
+        "type": "string",
+        "description": "Optional non-push providers supported by the notification service.",
+        "enum": [
+          "sendgrid",
+          "twilio"
+        ]
+      },
+      "ContactProviderReadinessView": {
+        "type": "object",
+        "required": [
+          "configured"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "safe_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ContactReadinessResponse": {
+        "type": "object",
+        "required": [
+          "ok",
+          "authentication_configured",
+          "authentication_mode",
+          "providers"
+        ],
+        "properties": {
+          "authentication_configured": {
+            "type": "boolean"
+          },
+          "authentication_mode": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "providers": {
+            "$ref": "#/components/schemas/ContactRegistryReadiness"
+          }
+        }
+      },
+      "ContactRegistryReadiness": {
+        "type": "object",
+        "required": [
+          "sendgrid",
+          "twilio"
+        ],
+        "properties": {
+          "sendgrid": {
+            "$ref": "#/components/schemas/ContactProviderReadinessView"
+          },
+          "twilio": {
+            "$ref": "#/components/schemas/ContactProviderReadinessView"
+          }
+        }
+      },
+      "ContactTarget": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "address",
+              "type"
+            ],
+            "properties": {
+              "address": {
+                "type": "string"
+              },
+              "name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "email"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "e164",
+              "type"
+            ],
+            "properties": {
+              "e164": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "sms"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Recipient capability. Raw addresses and phone numbers must never be logged or\ncopied into normalized outcomes; use [`ContactTarget::fingerprint`] instead."
+      },
+      "ContactTargetFingerprint": {
+        "type": "string"
+      },
+      "ContractVersion": {
+        "type": "string",
+        "description": "The wire-contract version accepted by this service.",
+        "enum": [
+          "v1"
+        ]
+      },
+      "ErrorBody": {
+        "type": "object",
+        "required": [
+          "code",
+          "safe_detail"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "safe_detail": {
+            "type": "string"
+          }
+        }
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        }
+      },
+      "Notification": {
+        "type": "object",
+        "description": "User-visible notification content and provider-neutral application data.",
+        "properties": {
+          "body": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": {},
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "image_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "OutcomeClass": {
+        "type": "string",
+        "description": "Stable outcome categories shared by HTTP, NATS, and database integrations.",
+        "enum": [
+          "accepted",
+          "invalid_token",
+          "invalid_payload",
+          "throttled",
+          "transient_provider_failure",
+          "permanent_provider_failure",
+          "internal_failure"
+        ]
+      },
+      "ProviderEnvironment": {
+        "type": "string",
+        "description": "Provider environment where a target is valid.",
+        "enum": [
+          "production",
+          "sandbox"
+        ]
+      },
+      "ProviderKind": {
+        "type": "string",
+        "description": "Supported upstream delivery providers.",
+        "enum": [
+          "fcm",
+          "apns",
+          "expo",
+          "web_push"
+        ]
+      },
+      "ProviderReadinessView": {
+        "type": "object",
+        "required": [
+          "configured"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "safe_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PushJob": {
+        "type": "object",
+        "description": "Versioned provider-neutral input consumed by all delivery adapters.",
+        "required": [
+          "job_id",
+          "tenant_id",
+          "application_id",
+          "idempotency_key",
+          "provider",
+          "target",
+          "notification"
+        ],
+        "properties": {
+          "application_id": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "notification": {
+            "$ref": "#/components/schemas/Notification"
+          },
+          "options": {
+            "$ref": "#/components/schemas/PushOptions"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ProviderKind"
+          },
+          "target": {
+            "$ref": "#/components/schemas/PushTarget"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "trace": {
+            "$ref": "#/components/schemas/TraceMetadata"
+          },
+          "version": {
+            "$ref": "#/components/schemas/ContractVersion"
+          }
+        }
+      },
+      "PushOptions": {
+        "type": "object",
+        "description": "Provider-neutral delivery controls.",
+        "properties": {
+          "collapse_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "priority": {
+            "$ref": "#/components/schemas/PushPriority"
+          },
+          "ttl_seconds": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "PushOutcome": {
+        "type": "object",
+        "description": "Redacted provider-neutral result safe to publish or persist.",
+        "required": [
+          "version",
+          "job_id",
+          "provider",
+          "target_fingerprint",
+          "class"
+        ],
+        "properties": {
+          "class": {
+            "$ref": "#/components/schemas/OutcomeClass"
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ProviderKind"
+          },
+          "provider_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "retry_after_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "minimum": 0
+          },
+          "safe_detail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_fingerprint": {
+            "$ref": "#/components/schemas/TargetFingerprint"
+          },
+          "version": {
+            "$ref": "#/components/schemas/ContractVersion"
+          }
+        }
+      },
+      "PushPriority": {
+        "type": "string",
+        "description": "Delivery urgency requested by the producer.",
+        "enum": [
+          "normal",
+          "high"
+        ]
+      },
+      "PushTarget": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "token",
+              "type"
+            ],
+            "properties": {
+              "token": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "fcm"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "token",
+              "environment",
+              "type"
+            ],
+            "properties": {
+              "environment": {
+                "$ref": "#/components/schemas/ProviderEnvironment"
+              },
+              "token": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "apns"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "token",
+              "type"
+            ],
+            "properties": {
+              "token": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "expo"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "endpoint",
+              "p256dh",
+              "auth",
+              "type"
+            ],
+            "properties": {
+              "auth": {
+                "type": "string"
+              },
+              "endpoint": {
+                "type": "string"
+              },
+              "p256dh": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "web_push"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "A provider-specific capability target.\n\nValues in this enum are secrets or capabilities. They must never be logged\nor copied into result events. Use [`PushTarget::fingerprint`] instead."
+      },
+      "ReadinessResponse": {
+        "type": "object",
+        "required": [
+          "ok",
+          "authentication",
+          "providers"
+        ],
+        "properties": {
+          "authentication": {
+            "$ref": "#/components/schemas/AuthenticationReadiness"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "providers": {
+            "$ref": "#/components/schemas/RegistryReadiness"
+          }
+        }
+      },
+      "RegistryReadiness": {
+        "type": "object",
+        "required": [
+          "fcm",
+          "apns_production",
+          "apns_sandbox",
+          "expo",
+          "web_push"
+        ],
+        "properties": {
+          "apns_production": {
+            "$ref": "#/components/schemas/ProviderReadinessView"
+          },
+          "apns_sandbox": {
+            "$ref": "#/components/schemas/ProviderReadinessView"
+          },
+          "expo": {
+            "$ref": "#/components/schemas/ProviderReadinessView"
+          },
+          "fcm": {
+            "$ref": "#/components/schemas/ProviderReadinessView"
+          },
+          "web_push": {
+            "$ref": "#/components/schemas/ProviderReadinessView"
+          }
+        }
+      },
+      "ServiceHealth": {
+        "type": "object",
+        "required": [
+          "ok",
+          "service"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "service": {
+            "type": "string"
+          }
+        }
+      },
+      "TargetFingerprint": {
+        "type": "string",
+        "description": "Stable, non-reversible identifier for a capability target."
+      },
+      "TraceMetadata": {
+        "type": "object",
+        "description": "Trace and correlation data safe to propagate across service boundaries.",
+        "properties": {
+          "correlation_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "traceparent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tracestate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearer_auth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "opaque service token",
+        "description": "Set Authorization: Bearer <token>. Protected routes fail closed when authentication is not configured."
+      }
+    }
+  },
+  "x-dd-contract-scope": "internal"
+}
