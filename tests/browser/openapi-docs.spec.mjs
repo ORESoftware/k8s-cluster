@@ -47,7 +47,7 @@ function contactPayload() {
     idempotency_key: 'browser-contact-event-1',
     provider: 'sendgrid',
     target: { type: 'email', address: privateRecipient, name: 'Private Recipient' },
-    content: { type: 'email', subject: 'Browser smoke', text: 'body' },
+    content: { channel: 'email', subject: 'Browser smoke', text: 'body' },
     trace: {},
   };
 }
