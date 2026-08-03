@@ -5,7 +5,9 @@ on:
   pull_request:
     paths:
       - scripts/ops/bootstrap_org_dotgithub_repositories.py
+      - scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py
       - tests/ops/test_bootstrap_org_dotgithub_repositories.py
+      - tests/ops/test_bootstrap_org_dotgithub_repositories_hardened.py
       - .github/workflows/ops-bootstrap-org-dotgithub-fleet.yml
   issue_comment:
     types: [created]
@@ -28,12 +30,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Compile publisher and run bounded tests
+      - name: Compile publishers and run bounded tests
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/ops/bootstrap_org_dotgithub_repositories.py
-          python3 -m unittest tests/ops/test_bootstrap_org_dotgithub_repositories.py -v
+          python3 -m py_compile \
+            scripts/ops/bootstrap_org_dotgithub_repositories.py \
+            scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py
+          python3 -m unittest discover \
+            -s tests/ops \
+            -p 'test_bootstrap_org_dotgithub_repositories*.py' \
+            -v
 
   publish:
     permissions:
@@ -59,8 +66,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile scripts/ops/bootstrap_org_dotgithub_repositories.py
-          python3 -m unittest tests/ops/test_bootstrap_org_dotgithub_repositories.py -v
+          python3 -m py_compile \
+            scripts/ops/bootstrap_org_dotgithub_repositories.py \
+            scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py
+          python3 -m unittest discover \
+            -s tests/ops \
+            -p 'test_bootstrap_org_dotgithub_repositories*.py' \
+            -v
 
       - name: Configure trusted main-ref AWS OIDC credentials
         uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6
@@ -92,7 +104,7 @@ jobs:
         run: |
           set -euo pipefail
           log="$RUNNER_TEMP/org-dotgithub-governance.log"
-          python3 scripts/ops/bootstrap_org_dotgithub_repositories.py \
+          python3 scripts/ops/bootstrap_org_dotgithub_repositories_hardened.py \
             --execute \
             --json-report "$RUNNER_TEMP/org-dotgithub-governance.json" \
             --markdown-report "$RUNNER_TEMP/org-dotgithub-governance.md" \
@@ -123,14 +135,14 @@ jobs:
           path = Path(os.environ["LOG"])
           text = path.read_text(errors="replace") if path.exists() else "publisher log was not created"
           patterns = [
-              (r"https://x-access-token:[^@\\s]+@github\\.com/", "https://x-access-token:***@github.com/"),
+              (r"https://x-access-token:[^@\s]+@github\.com/", "https://x-access-token:***@github.com/"),
               (r"github_pat_[A-Za-z0-9_]{20,}", "github_pat_***"),
               (r"gh[pousr]_[A-Za-z0-9_]{20,}", "gh*_***"),
-              (r"(Authorization:\\s*Bearer\\s+)[A-Za-z0-9._-]{20,}", r"\\1***"),
+              (r"(Authorization:\s*Bearer\s+)[A-Za-z0-9._-]{20,}", r"\1***"),
           ]
           for pattern, replacement in patterns:
               text = re.sub(pattern, replacement, text, flags=re.I)
-          print("\\n".join(text.splitlines()[-220:])[-24000:])
+          print("\n".join(text.splitlines()[-220:])[-24000:])
           PY
             {
               echo '# Organization `.github` governance publication failed'
