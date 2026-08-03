@@ -217,7 +217,10 @@ mod contract_tests {
         // Provider tenancy is identity-provider metadata, not billing tenancy.
         let mut provider_only = Claims::base(now);
         provider_only.provider_tenant = Some(tenant_a.to_string());
-        let provider_only = verifier.verify(&sign(&provider_only, KEY_ID)).await.unwrap();
+        let provider_only = verifier
+            .verify(&sign(&provider_only, KEY_ID))
+            .await
+            .unwrap();
         assert!(provider_only.tenant_ids.is_empty());
         assert_eq!(
             authorize_request(
@@ -314,10 +317,7 @@ mod contract_tests {
         let mut missing_time = Claims::entitled_writer(now, tenant_a);
         missing_time.auth_time = None;
         let missing_time = Principal::User(Box::new(
-            verifier
-                .verify(&sign(&missing_time, KEY_ID))
-                .await
-                .unwrap(),
+            verifier.verify(&sign(&missing_time, KEY_ID)).await.unwrap(),
         ));
         assert_eq!(
             authorize_request(
@@ -367,7 +367,11 @@ mod contract_tests {
             Err(AuthError::Unauthorized)
         );
         assert_eq!(
-            verifier.verify(&sign(&Claims::entitled_writer(now, tenant_a), "unknown-key"))
+            verifier
+                .verify(&sign(
+                    &Claims::entitled_writer(now, tenant_a),
+                    "unknown-key",
+                ))
                 .await,
             Err(AuthError::Unauthorized)
         );
