@@ -1,0 +1,52 @@
+name: compile
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compile-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: rust-check-and-auth-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Select stable Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - name: Materialize shared-crate interfaces for a clean checkout
+        shell: bash
+        run: bash scripts/ci/create-shared-lib-stubs.sh
+
+      - name: Verify formatting
+        run: cargo fmt --all --check
+
+      - name: Compile every target with the committed lockfile
+        run: cargo check --locked --all-targets
+
+      - name: Compile the complete test graph
+        run: cargo test --locked --no-run
+
+      - name: Run Shared Auth and tenant authorization tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked shared_auth::
+          cargo test --locked memberships::
+          cargo test --locked api::auth::
