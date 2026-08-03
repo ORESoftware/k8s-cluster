@@ -33,7 +33,7 @@ jobs:
       REPOSITORY: ${{ github.repository }}
       MARKER_PATH: .github/meta-agent-ephemeral-publish-trigger
       SOURCE_SHA: 55ee15c190b7cfa4e075f6984c7cb551acd4b9d3
-      SOURCE_HELPER_BLOB_SHA: 600e3d46c7604573af29a125ebfd43f0178844e3
+      SOURCE_HELPER_BLOB_SHA: ad74d368b46fca575115972eabcda4358d27a23d
       BUNDLE_SHA256: 1ddaa03743b864348162149b7d2d2e2dce7eab585cf092ea14547c647fcec031
       PUBLISHER_SHA256: e2fe6eaa622db02a54f83e27a822f64ad4b54971c883f97bbda4ac0a4db5d278
       EXPECTED_MAIN: 4d6ec3ad0ec7b688f0e777129eee7e0f0d999df1
