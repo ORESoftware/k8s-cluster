@@ -102,13 +102,12 @@ test('pg-defs --check passes (generated files in sync with schema.sql)', () => {
   assert.match(stdout, /pg-defs generated outputs are up to date\./);
 });
 
-test('generated Gleam package keeps the path-dep contract used by all gleam services', async () => {
+test('generated Gleam package keeps the path-dep contract used by all current Gleam services', async () => {
   const gleamToml = await readRepoFile('remote/libs/pg-defs/generated/gleam/gleam.toml');
   assert.match(gleamToml, /name = "dd_pg_defs"/);
   assert.match(gleamToml, /target = "erlang"/);
 
   const consumers = [
-    'remote/deployments/gleam-lambda-runner/gleam.toml',
     'remote/deployments/gleam-mcp-server/gleam.toml',
     'remote/deployments/gleamlang-server/gleam.toml',
   ];
@@ -122,7 +121,7 @@ test('generated Gleam package keeps the path-dep contract used by all gleam serv
   }
 });
 
-test('gleam services expose a single pg_contract module rather than hand-rolling SQL', async () => {
+test('current Gleam services expose a single pg_contract module rather than hand-rolling SQL', async () => {
   const mcpContract = await readRepoFile(
     'remote/deployments/gleam-mcp-server/src/gleam_mcp_server/pg_contract.gleam',
   );
@@ -143,27 +142,15 @@ test('gleam services expose a single pg_contract module rather than hand-rolling
   const wsMain = await readRepoFile('remote/deployments/gleamlang-server/src/gleamlang_server.gleam');
   assert.match(wsMain, /import gleamlang_server\/pg_contract/);
   assert.match(wsMain, /pg_contract\.app_config_table\(\)/);
-
-  const lambdaContract = await readRepoFile(
-    'remote/deployments/gleam-lambda-runner/src/gleam_lambda_runner/pg_contract.gleam',
-  );
-  assert.match(lambdaContract, /import pg_defs/);
-  assert.match(lambdaContract, /pg_defs\.lambda_functions_select_sql/);
 });
 
-test('gleam runtimes with database code receive a narrow optional Postgres secret', async () => {
+test('Gleam runtimes with database code receive a narrow optional Postgres secret', async () => {
   const services: ReadonlyArray<{
     name: string;
     ec2: string;
     secret: string;
     primaryUrlKey: string;
   }> = [
-    {
-      name: 'dd-gleam-lambda-runner',
-      ec2: 'remote/deployments/gleam-lambda-runner/k8s/ec2/dd-gleam-lambda-runner.deployment.yaml',
-      secret: 'dd-gleam-lambda-runner-secrets',
-      primaryUrlKey: 'LAMBDA_DATABASE_URL',
-    },
     {
       name: 'dd-gleamlang-server',
       ec2: 'remote/deployments/gleamlang-server/k8s/ec2/dd-gleamlang-server.deployment.yaml',
@@ -209,10 +196,9 @@ test('gleam MCP does not receive unused database credentials', async () => {
   assert.match(deployment, /Mounting unused DB[\s\S]*credentials[\s\S]*needless blast radius/);
 });
 
-test('each gleam runtime secret has an ExternalSecret backing it', async () => {
+test('each current Gleam runtime secret has an ExternalSecret backing it', async () => {
   const externalSecrets = await readRepoFile('remote/argocd/secrets/common/external-secrets.yaml');
   for (const secret of [
-    'dd-gleam-lambda-runner-secrets',
     'dd-gleam-mcp-server-secrets',
     'dd-gleamlang-server-secrets',
   ]) {
