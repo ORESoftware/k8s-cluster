@@ -67,12 +67,7 @@ impl TenantService {
     ) -> AppResult<Tenant> {
         let transaction = self.pool.begin().await?;
         let tenant = self.insert_on(&transaction, input).await?;
-        MembershipService::create_owner_on(
-            &transaction,
-            tenant.id,
-            owner_shared_user_id,
-        )
-        .await?;
+        MembershipService::create_owner_on(&transaction, tenant.id, owner_shared_user_id).await?;
         transaction.commit().await?;
         Ok(tenant)
     }
