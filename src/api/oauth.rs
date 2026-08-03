@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use axum::Json;
 use axum::extract::{Extension, Path, Query, State};
 use axum::response::{IntoResponse, Redirect, Response};
@@ -7,8 +9,9 @@ use sea_orm::ConnectionTrait;
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::api::auth::{self, Principal};
+use crate::api::auth::{self, MAX_STEP_UP_AGE_SECS, Principal};
 use crate::error::{AppError, AppResult};
+use crate::memberships::SCOPE_BILLING_WRITE;
 use crate::providers::connection::{CreateConnection, UpsertCredential};
 use crate::providers::oauth_common::CodeExchangeResult;
 use crate::providers::{ProviderKind, braintree, paypal, stripe};
@@ -20,6 +23,8 @@ use crate::state::AppState;
 /// via the standard scheduler API (`PATCH .../scheduled-jobs/{id}` once we
 /// add it; meanwhile they can disable + re-create with a different cadence).
 const BACKSTOP_SYNC_INTERVAL_SECONDS: i32 = 18_000;
+const OAUTH_STATE_TTL_MINUTES: i64 = 15;
+const AUTH_TIME_FUTURE_SKEW_SECONDS: u64 = 30;
 
 #[derive(Deserialize)]
 pub struct StartQuery {
@@ -30,46 +35,60 @@ pub struct StartQuery {
 pub async fn start(
     State(state): State<AppState>,
     Extension(principal): Extension<Principal>,
-    Path(provider): Path<String>,
+    Path(provider_str): Path<String>,
     Query(q): Query<StartQuery>,
 ) -> AppResult<Response> {
+    // Reject unsupported/non-redirect providers before creating a state row.
+    let provider = parse_redirect_provider(&provider_str)?;
+
     // This route carries tenant_id in the query rather than the canonical path,
     // so middleware cannot infer it. Resolve the exact membership explicitly
     // before minting state or contacting a provider.
     auth::require_embedded_tenant_write(&state, &principal, q.tenant_id).await?;
+    let user = principal.user()?;
+    let initiating_shared_user_id = user.identity.subject.clone();
+    let auth_time_unix = i64::try_from(user.identity.issued_at)
+        .map_err(|_| AppError::Forbidden)?;
 
-    let mut nonce = [0u8; 16];
+    // 256 bits keeps the callback capability comfortably above the strength of
+    // the access token and provider authorization code it protects.
+    let mut nonce = [0u8; 32];
     rng().fill(&mut nonce[..]);
     let state_token = hex::encode(nonce);
     let return_to = validate_return_to(&state, q.return_to.as_deref())?;
 
-    let provider_tag = provider.as_str();
     state
         .pool
         .execute(crate::db::stmt(
             r#"
-        INSERT INTO oauth_states (state, tenant_id, provider, return_to, expires_at)
-        VALUES ($1, $2, $3::provider_kind, $4, $5)
+        INSERT INTO oauth_states
+            (state, tenant_id, provider, return_to, expires_at,
+             initiating_shared_user_id, auth_time_unix)
+        VALUES ($1, $2, $3::provider_kind, $4, $5, $6, $7)
         "#,
             [
                 state_token.clone().into(),
                 q.tenant_id.into(),
-                provider_tag.into(),
+                provider.tag().into(),
                 return_to.clone().into(),
-                (Utc::now() + Duration::minutes(15)).into(),
+                (Utc::now() + Duration::minutes(OAUTH_STATE_TTL_MINUTES)).into(),
+                initiating_shared_user_id.into(),
+                auth_time_unix.into(),
             ],
         ))
         .await?;
 
-    let url = match provider.as_str() {
-        "stripe" => stripe::StripeOAuth::new(&state.cfg).authorize_url(&state_token)?,
-        "paypal" => paypal::PaypalOAuth::new(&state.cfg).authorize_url(&state_token)?,
-        "braintree" => braintree::BraintreeOAuth::new(&state.cfg).authorize_url(&state_token)?,
-        other => {
-            return Err(AppError::BadRequest(format!(
-                "unsupported provider: {other}"
-            )));
+    let url = match provider {
+        ProviderKind::Stripe => {
+            stripe::StripeOAuth::new(&state.cfg).authorize_url(&state_token)?
         }
+        ProviderKind::Paypal => {
+            paypal::PaypalOAuth::new(&state.cfg).authorize_url(&state_token)?
+        }
+        ProviderKind::Braintree => {
+            braintree::BraintreeOAuth::new(&state.cfg).authorize_url(&state_token)?
+        }
+        _ => unreachable!("parse_redirect_provider returned a non-redirect provider"),
     };
 
     Ok(Redirect::to(&url).into_response())
@@ -98,20 +117,12 @@ pub async fn callback(
     Path(provider_str): Path<String>,
     Query(q): Query<CallbackQuery>,
 ) -> AppResult<Json<CallbackResp>> {
-    if let Some(err) = q.error {
-        return Ok(Json(CallbackResp {
-            provider: provider_str,
-            tenant_id: Uuid::nil(),
-            connection_id: None,
-            status: "user_denied_or_error",
-            message: Some(err),
-            return_to: None,
-            backstop_job_id: None,
-        }));
-    }
+    let provider = parse_redirect_provider(&provider_str)?;
 
-    // Consume the one-time CSRF state row. It could only have been minted after
-    // the initiating Shared Auth principal passed a tenant billing:write check.
+    // Consume the callback capability exactly once, including provider-denied
+    // callbacks. The row binds this callback to the exact Shared Auth principal
+    // and factor ceremony that authorized the flow. Legacy/unbound rows fail
+    // closed after a rolling deployment.
     let row = state
         .pool
         .query_one(crate::db::stmt(
@@ -120,9 +131,9 @@ pub async fn callback(
         WHERE state = $1
           AND provider = $2::provider_kind
           AND expires_at > now()
-        RETURNING tenant_id, return_to
+        RETURNING tenant_id, return_to, initiating_shared_user_id, auth_time_unix
         "#,
-            [q.state.clone().into(), provider_str.as_str().into()],
+            [q.state.clone().into(), provider.tag().into()],
         ))
         .await?;
 
@@ -131,38 +142,86 @@ pub async fn callback(
     })?;
     let tenant_id: Uuid = row.try_get("", "tenant_id")?;
     let return_to: Option<String> = row.try_get("", "return_to")?;
+    let initiating_shared_user_id: Option<String> =
+        row.try_get("", "initiating_shared_user_id")?;
+    let auth_time_unix: Option<i64> = row.try_get("", "auth_time_unix")?;
+    let initiating_shared_user_id = initiating_shared_user_id
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty() && value.len() <= 200)
+        .ok_or(AppError::Forbidden)?;
+    let auth_time_unix = auth_time_unix
+        .and_then(|value| u64::try_from(value).ok())
+        .ok_or(AppError::Forbidden)?;
+
+    // A denial/error still consumes and validates state, but it stores no
+    // provider credential and therefore does not need a live billing grant.
+    if let Some(error) = q.error {
+        return Ok(Json(CallbackResp {
+            provider: provider_str,
+            tenant_id,
+            connection_id: None,
+            status: "user_denied_or_error",
+            message: Some(sanitize_provider_error(&error)),
+            return_to,
+            backstop_job_id: None,
+        }));
+    }
+
+    require_callback_authorization(
+        &state,
+        tenant_id,
+        &initiating_shared_user_id,
+        auth_time_unix,
+    )
+    .await?;
 
     let code = q
         .code
-        .ok_or_else(|| AppError::BadRequest("no code in callback".into()))?;
-
-    let provider = parse_provider(&provider_str)?;
+        .as_deref()
+        .map(str::trim)
+        .filter(|code| !code.is_empty() && code.len() <= 8 * 1024)
+        .ok_or_else(|| AppError::BadRequest("missing or oversized oauth code".into()))?;
 
     let exchanged: CodeExchangeResult = match provider {
         ProviderKind::Stripe => {
             stripe::StripeOAuth::new(&state.cfg)
-                .exchange_code(&code)
+                .exchange_code(code)
                 .await?
         }
         ProviderKind::Paypal => {
             paypal::PaypalOAuth::new(&state.cfg)
-                .exchange_code(&code)
+                .exchange_code(code)
                 .await?
         }
         ProviderKind::Braintree => {
             braintree::BraintreeOAuth::new(&state.cfg)
-                .exchange_code(&code)
+                .exchange_code(code)
                 .await?
         }
-        other => {
-            return Err(AppError::BadRequest(format!(
-                "{} is not a redirect-OAuth provider; use its dedicated endpoint",
-                other.tag()
-            )));
-        }
+        _ => unreachable!("parse_redirect_provider returned a non-redirect provider"),
     };
 
+    // Provider exchange is a network operation. Recheck after it completes so
+    // a grant revoked while the user was at the provider cannot be used to
+    // attach a credential. This also re-evaluates freshness against the actual
+    // factor ceremony rather than extending it from OAuth start time.
+    require_callback_authorization(
+        &state,
+        tenant_id,
+        &initiating_shared_user_id,
+        auth_time_unix,
+    )
+    .await?;
+
     let outcome = persist_and_schedule(&state, tenant_id, provider, exchanged).await?;
+    tracing::info!(
+        tenant.id = %tenant_id,
+        auth.subject = %initiating_shared_user_id,
+        auth.auth_time = auth_time_unix,
+        provider = provider.tag(),
+        connection.id = %outcome.connection_id,
+        "provider OAuth connection authorized by Shared Auth principal"
+    );
 
     Ok(Json(CallbackResp {
         provider: provider_str,
@@ -173,6 +232,47 @@ pub async fn callback(
         return_to,
         backstop_job_id: Some(outcome.backstop_job_id),
     }))
+}
+
+async fn require_callback_authorization(
+    state: &AppState,
+    tenant_id: Uuid,
+    shared_user_id: &str,
+    auth_time_unix: u64,
+) -> AppResult<()> {
+    if !authorization_time_is_fresh(auth_time_unix, now_seconds()) {
+        tracing::warn!(
+            tenant.id = %tenant_id,
+            auth.subject = %shared_user_id,
+            auth.auth_time = auth_time_unix,
+            "OAuth callback rejected: Shared Auth step-up is stale or future-dated"
+        );
+        return Err(AppError::Forbidden);
+    }
+    state
+        .memberships
+        .require_scope(tenant_id, shared_user_id, SCOPE_BILLING_WRITE)
+        .await?;
+    Ok(())
+}
+
+fn authorization_time_is_fresh(auth_time_unix: u64, now: u64) -> bool {
+    auth_time_unix <= now.saturating_add(AUTH_TIME_FUTURE_SKEW_SECONDS)
+        && now.saturating_sub(auth_time_unix) <= MAX_STEP_UP_AGE_SECS
+}
+
+fn sanitize_provider_error(error: &str) -> String {
+    let value = error
+        .trim()
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(512)
+        .collect::<String>();
+    if value.is_empty() {
+        "provider denied authorization".to_owned()
+    } else {
+        value
+    }
 }
 
 // --- Plaid Link --------------------------------------------------------------
@@ -224,6 +324,10 @@ pub async fn plaid_exchange(
         )
         .await?;
 
+    // Plaid exchange remains authenticated end-to-end, but recheck immediately
+    // before persistence because the upstream call may have taken long enough
+    // for the tenant grant or step-up window to change.
+    auth::require_embedded_tenant_write(&state, &principal, req.tenant_id).await?;
     let outcome =
         persist_and_schedule(&state, req.tenant_id, ProviderKind::PlaidBank, exchanged).await?;
 
@@ -331,34 +435,14 @@ async fn persist_and_schedule(
     })
 }
 
-fn parse_provider(s: &str) -> AppResult<ProviderKind> {
-    match s {
+fn parse_redirect_provider(value: &str) -> AppResult<ProviderKind> {
+    match value {
         "stripe" => Ok(ProviderKind::Stripe),
         "paypal" => Ok(ProviderKind::Paypal),
         "braintree" => Ok(ProviderKind::Braintree),
-        "coinbase_commerce" => Ok(ProviderKind::CoinbaseCommerce),
-        "coinbase_prime" => Ok(ProviderKind::CoinbasePrime),
-        "coinflow" => Ok(ProviderKind::Coinflow),
-        "plaid_bank" => Ok(ProviderKind::PlaidBank),
-        "swift_wire" => Ok(ProviderKind::SwiftWire),
-        "ach_direct" => Ok(ProviderKind::AchDirect),
-        "wise" => Ok(ProviderKind::Wise),
-        "solana_wallet" => Ok(ProviderKind::SolanaWallet),
-        "revolut" => Ok(ProviderKind::Revolut),
-        "remitly" => Ok(ProviderKind::Remitly),
-        "moneygram" => Ok(ProviderKind::MoneyGram),
-        "western_union" => Ok(ProviderKind::WesternUnion),
-        "us_bank_zelle" => Ok(ProviderKind::UsBankZelle),
-        "jpmorgan_zelle" => Ok(ProviderKind::JpmorganZelle),
-        "bofa_cashpro_gdd" => Ok(ProviderKind::BofaCashProGdd),
-        "modern_treasury" => Ok(ProviderKind::ModernTreasury),
-        "dwolla" => Ok(ProviderKind::Dwolla),
-        "ethereum_wallet" => Ok(ProviderKind::EthereumWallet),
-        "robinhood" => Ok(ProviderKind::Robinhood),
-        "mercury" => Ok(ProviderKind::Mercury),
-        "bridge" => Ok(ProviderKind::Bridge),
-        "gocardless" => Ok(ProviderKind::GoCardless),
-        other => Err(AppError::BadRequest(format!("unknown provider: {other}"))),
+        other => Err(AppError::BadRequest(format!(
+            "{other} is not a supported redirect-OAuth provider"
+        ))),
     }
 }
 
@@ -389,8 +473,17 @@ fn validate_return_to(state: &AppState, return_to: Option<&str>) -> AppResult<Op
     ))
 }
 
+fn now_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     fn mk_cfg(allowed: Vec<&str>) -> std::sync::Arc<crate::config::Config> {
         let mut cfg = crate::config::Config::for_tests();
         cfg.oauth_return_to_allowed_prefixes = allowed.into_iter().map(str::to_string).collect();
@@ -450,5 +543,31 @@ mod tests {
     fn for_tests_cfg_has_no_allow_list_by_default() {
         let cfg = mk_cfg(vec![]);
         assert!(cfg.oauth_return_to_allowed_prefixes.is_empty());
+    }
+
+    #[test]
+    fn callback_step_up_freshness_uses_original_ceremony_time() {
+        let now = 1_000_000;
+        assert!(authorization_time_is_fresh(now, now));
+        assert!(authorization_time_is_fresh(
+            now - MAX_STEP_UP_AGE_SECS,
+            now
+        ));
+        assert!(!authorization_time_is_fresh(
+            now - MAX_STEP_UP_AGE_SECS - 1,
+            now
+        ));
+        assert!(!authorization_time_is_fresh(
+            now + AUTH_TIME_FUTURE_SKEW_SECONDS + 1,
+            now
+        ));
+    }
+
+    #[test]
+    fn provider_error_is_bounded_and_control_free() {
+        let input = format!("denied\n{}", "x".repeat(1024));
+        let output = sanitize_provider_error(&input);
+        assert!(!output.contains('\n'));
+        assert!(output.chars().count() <= 512);
     }
 }
