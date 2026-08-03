@@ -166,4 +166,19 @@ jobs:
         working-directory: e2e
         env:
           T2V_OPENAPI_PORT: '18130'
-        run: npx playwright test --config playwright.api.config.ts
+          PLAYWRIGHT_HTML_OPEN: never
+        run: >-
+          npx playwright test
+          --config playwright.api.config.ts
+          --reporter=line,html
+
+      - name: Upload browser evidence on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: t2v-openapi-browser-evidence-${{ github.sha }}
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          if-no-files-found: ignore
+          retention-days: 7
