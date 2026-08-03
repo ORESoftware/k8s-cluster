@@ -17,6 +17,10 @@ const networkPath =
 const servicePath =
   'remote/argocd/dd-next-runtime/dd-gha-clone-server.service.yaml';
 const kustomizationPath = 'remote/argocd/dd-next-runtime/kustomization.yaml';
+const observabilityConfigPath =
+  'remote/argocd/observability/k8s-resource-exporter.configmap.yaml';
+const observabilityDeploymentPath =
+  'remote/argocd/observability/k8s-resource-exporter.deployment.yaml';
 const profilesPath = 'remote/deployments/build-server-rs/src/profiles.rs';
 const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';
 const serverPath = 'remote/deployments/gha-clone-server-rs/src/main.rs';
@@ -55,6 +59,16 @@ test('all service resources participate in the dd-next-runtime render', () => {
     );
   }
   assert.match(read(servicePath), /port:\s*8125/);
+});
+
+test('continuity deployment is registered with both resource exporter inventories', () => {
+  for (const path of [observabilityConfigPath, observabilityDeploymentPath]) {
+    assert.match(
+      read(path),
+      /dd-build-server,dd-gha-clone-server,/,
+      `${path} must watch dd-gha-clone-server immediately after dd-build-server`,
+    );
+  }
 });
 
 test('secret mapping names values without committing credential material', () => {
