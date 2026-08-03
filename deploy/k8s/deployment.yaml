@@ -1,0 +1,291 @@
+# Layer 2 workload manifest. The `quaestor` Namespace, quotas, default-deny,
+# ServiceAccount/RBAC, GHCR pull secret, Argo AppProject, and Argo Application
+# remain owned by ORESoftware/k8s-cluster.
+#
+# This object is deliberately named and labelled `candidate`. Its Service is not
+# the existing dd-billing-server Service, so applying it cannot repoint live
+# traffic. Promote only after replacing the fail-closed zero digest below,
+# provisioning the ExternalSecret, merging the Shared Auth PRs, and passing the
+# cutover checklist in README.md.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dd-billing-server-candidate
+  namespace: quaestor
+  labels:
+    app.kubernetes.io/name: quaestor-ledger-server
+    app.kubernetes.io/instance: candidate
+    app.kubernetes.io/part-of: quaestor-ledger
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # The current EC2 cluster is single-node. Do not require a second billing
+      # pod that the node cannot schedule during this additive migration.
+      maxSurge: 0
+      maxUnavailable: 1
+  minReadySeconds: 10
+  progressDeadlineSeconds: 300
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: quaestor-ledger-server
+      app.kubernetes.io/instance: candidate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: quaestor-ledger-server
+        app.kubernetes.io/instance: candidate
+        app.kubernetes.io/part-of: quaestor-ledger
+        dd.dev/fiducia-client: 'true'
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+        - name: ghcr-quaestor
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: billing-server
+          # Intentional fail-closed placeholder. The image workflow prints the
+          # immutable digest to its job summary; replace all zeros with that
+          # reviewed digest before any Argo registration or manual apply.
+          image: ghcr.io/quaestor-ledger/quaestor-ledger-server@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: BILLING_HOST
+              value: 0.0.0.0
+            - name: BILLING_PORT
+              value: '8087'
+            - name: HOME
+              value: /tmp
+            - name: RUST_LOG
+              value: info,sqlx=warn,hyper=warn,tower_http=info
+            - name: BILLING_LOG_FORMAT
+              value: json
+
+            # Shared Auth is the only human identity authority. Do not add
+            # BILLING_SUPABASE_* or BILLING_ALLOW_DIRECT_SUPABASE_AUTH here.
+            - name: BILLING_SHARED_AUTH_URL
+              value: http://dd-shared-auth.shared-auth.svc.cluster.local:8120
+            - name: BILLING_SHARED_AUTH_JWKS_URL
+              value: http://dd-shared-auth.shared-auth.svc.cluster.local:8120/.well-known/jwks.json
+            - name: BILLING_SHARED_AUTH_ISSUER
+              valueFrom:
+                secretKeyRef:
+                  name: dd-billing-server-candidate-secrets
+                  key: shared_auth_issuer
+            - name: BILLING_SHARED_AUTH_AUDIENCE
+              value: oresoftware
+            - name: BILLING_TENANT_ROUTES_REQUIRE_USER_JWT
+              value: 'true'
+            - name: BILLING_REQUIRE_STEP_UP_FOR_MUTATIONS
+              value: 'true'
+
+            # The current config still requires this process-wide credential at
+            # boot for unscoped internal/provisioning compatibility. Tenant
+            # routes reject it, and tenant mutations reject it even during a
+            # migration. Replace it with tenant-bound workload identities in a
+            # follow-up; never expose it to browser, mobile, or desktop clients.
+            - name: BILLING_API_AUTH_BEARER
+              valueFrom:
+                secretKeyRef:
+                  name: dd-billing-server-candidate-secrets
+                  key: api_auth_bearer
+
+            # The optional HTMX admin surface is not exposed in this workload.
+            - name: BILLING_ADMIN_UI_ENABLED
+              value: 'false'
+            - name: BILLING_REQUIRE_WEBHOOK_SIGNATURES
+              value: 'true'
+            - name: BILLING_WEBHOOK_SIGNATURE_TOLERANCE_SECONDS
+              value: '300'
+            - name: BILLING_BLOCK_PRIVATE_OUTBOUND
+              value: 'true'
+            - name: BILLING_OAUTH_REDIRECT_BASE
+              valueFrom:
+                secretKeyRef:
+                  name: dd-billing-server-candidate-secrets
+                  key: oauth_redirect_base
+            - name: BILLING_OAUTH_RETURN_TO_ALLOWED_PREFIXES
+              valueFrom:
+                secretKeyRef:
+                  name: dd-billing-server-candidate-secrets
+                  key: oauth_return_to_allowed_prefixes
+
+            # Fenced coordination protects customer snapshots and tenant jobs.
+            - name: BILLING_FIDUCIA_ENABLED
+              value: 'true'
+            - name: BILLING_FIDUCIA_BASE_URL
+              value: http://fiducia-load-balance.fiducia.svc.cluster.local:8088
+            - name: BILLING_FIDUCIA_LOCK_TTL_MS
+              value: '60000'
+            - name: BILLING_FIDUCIA_REQUEST_TIMEOUT_MS
+              value: '30000'
+            - name: BILLING_FIDUCIA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-billing-server-candidate-secrets
+                  key: fiducia_api_key
+
+            # Domain-event publishing is prepared but remains off until the
+            # consumer/replay runbook is exercised against this candidate.
+            - name: BILLING_NATS_PUBLISH_ENABLED
+              value: 'false'
+            - name: BILLING_NATS_URL
+              value: nats://nats.default.svc.cluster.local:4222
+            - name: BILLING_NATS_QUEUE_GROUP
+              value: dd-billing-server
+            - name: BILLING_NATS_MAX_PAYLOAD_BYTES
+              value: '1048576'
+
+            # Explicit production provider modes. Credentials remain optional;
+            # an unconfigured provider fails its own operation rather than
+            # weakening global authentication or webhook verification.
+            - name: STRIPE_API_VERSION
+              value: 2026-04-22.dahlia
+            - name: PAYPAL_ENV
+              value: production
+            - name: BRAINTREE_ENV
+              value: production
+            - name: PLAID_ENV
+              value: production
+            - name: SOLANA_CLUSTER
+              value: mainnet
+            - name: SOLANA_RPC_URL
+              value: https://api.mainnet-beta.solana.com
+
+            # Telemetry: explicit OTLP/HTTP, plus pod identity attributes. JSON
+            # stdout remains available to Promtail/Loki if OTLP is unavailable.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://dd-otel-collector.observability.svc.cluster.local:4318
+            - name: OTEL_SERVICE_NAME
+              value: dd-billing-server
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: deployment.environment=candidate,service.name=dd-billing-server
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+            # Required service-owned secrets.
+            - name: BILLING_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: dd-billing-server-candidate-secrets
+                  key: database_url
+            - name: BILLING_MASTER_SEAL_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dd-billing-server-candidate-secrets
+                  key: master_seal_key_b64
+
+            # Optional provider credentials and webhook verification material.
+            - name: STRIPE_CLIENT_ID
+              valueFrom:
+                secretKeyRef: { name: dd-billing-server-candidate-secrets, key: stripe_client_id, optional: true }
+            - name: STRIPE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: { name: dd-billing-server-candidate-secrets, key: stripe_client_secret, optional: true }
+            - name: STRIPE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dd-billing-server-candidate-secrets, key: stripe_api_key, optional: true }
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef: { name: dd-billing-server-candidate-secrets, key: stripe_webhook_secret, optional: true }
+            - name: PAYPAL_CLIENT_ID
+              valueFrom:
+                secretKeyRef: { name: dd-billing-server-candidate-secrets, key: paypal_client_id, optional: true }
+            - name: PAYPAL_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: { name: dd-billing-server-candidate-secrets, key: paypal_client_secret, optional: true }
+            - name: PAYPAL_WEBHOOK_ID
+              valueFrom:
+                secretKeyRef: { name: dd-billing-server-candidate-secrets, key: paypal_webhook_id, optional: true }
+            - name: BRAINTREE_CLIENT_ID
+              valueFrom:
+                secretKeyRef: { name: dd-billing-server-candidate-secrets, key: braintree_client_id, optional: true }
+            - name: BRAINTREE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: { name: dd-billing-server-candidate-secrets, key: braintree_client_secret, optional: true }
+            - name: PLAID_CLIENT_ID
+              valueFrom:
+                secretKeyRef: { name: dd-billing-server-candidate-secrets, key: plaid_client_id, optional: true }
+            - name: PLAID_SECRET
+              valueFrom:
+                secretKeyRef: { name: dd-billing-server-candidate-secrets, key: plaid_secret, optional: true }
+            - name: COINBASE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef: { name: dd-billing-server-candidate-secrets, key: coinbase_webhook_secret, optional: true }
+            - name: COINFLOW_WEBHOOK_VALIDATION_KEY
+              valueFrom:
+                secretKeyRef: { name: dd-billing-server-candidate-secrets, key: coinflow_webhook_validation_key, optional: true }
+            - name: REVOLUT_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef: { name: dd-billing-server-candidate-secrets, key: revolut_webhook_secret, optional: true }
+            - name: GOCARDLESS_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef: { name: dd-billing-server-candidate-secrets, key: gocardless_webhook_secret, optional: true }
+            - name: MERCURY_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef: { name: dd-billing-server-candidate-secrets, key: mercury_webhook_secret, optional: true }
+            - name: SOLANA_ANCHOR_KEYPAIR_B58
+              valueFrom:
+                secretKeyRef: { name: dd-billing-server-candidate-secrets, key: solana_anchor_keypair_b58, optional: true }
+          ports:
+            - name: http
+              containerPort: 8087
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: '2'
+              memory: 1Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
