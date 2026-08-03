@@ -7,6 +7,7 @@ on:
       - '.github/workflows/slack-command-gitops.yml'
       - 'docs/alex-main-agent-slack-command-gitops.md'
       - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml'
+      - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/slack-command-gitops.test.mjs'
   push:
     branches: [dev]
@@ -14,6 +15,7 @@ on:
       - '.github/workflows/slack-command-gitops.yml'
       - 'docs/alex-main-agent-slack-command-gitops.md'
       - 'remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml'
+      - 'remote/argocd/dd-next-runtime/kustomization.yaml'
       - 'remote/tests/general/slack-command-gitops.test.mjs'
   workflow_dispatch:
 
@@ -93,21 +95,78 @@ jobs:
           SLACK_COMMAND_GITOPS_AUDIT_PATH: ${{ runner.temp }}/slack-command-gitops-audit.json
         run: node --test remote/tests/general/slack-command-gitops.test.mjs
 
-      - name: Render the applied dd-next-runtime overlay
+      - name: Render and inspect the applied dd-next-runtime overlay
         shell: bash
         run: |
           set -euo pipefail
           command -v kubectl
           kubectl version --client
-          kubectl kustomize remote/argocd/dd-next-runtime \
-            > "${RUNNER_TEMP}/dd-next-runtime.rendered.yaml"
+          rendered="${RUNNER_TEMP}/dd-next-runtime.rendered.yaml"
+          kubectl kustomize remote/argocd/dd-next-runtime > "$rendered"
 
-          grep -q '^  name: dd-slack-command$' "${RUNNER_TEMP}/dd-next-runtime.rendered.yaml"
-          grep -q 'name: SLACK_COMMAND_DRY_RUN' "${RUNNER_TEMP}/dd-next-runtime.rendered.yaml"
-          grep -q 'value: "true"' "${RUNNER_TEMP}/dd-next-runtime.rendered.yaml"
-          grep -q 'path: /slack/commands/ores-claude' "${RUNNER_TEMP}/dd-next-runtime.rendered.yaml"
-          grep -q 'path: /slack/commands/ores-chatgpt' "${RUNNER_TEMP}/dd-next-runtime.rendered.yaml"
-          grep -q 'path: /slack/interactions' "${RUNNER_TEMP}/dd-next-runtime.rendered.yaml"
+          RENDERED_PATH="$rendered" python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          path = Path(os.environ['RENDERED_PATH'])
+          documents = [document.strip() for document in path.read_text(encoding='utf-8').split('\n---\n') if document.strip()]
+
+          def identity(document):
+              kind_match = re.search(r'^kind:\s*(\S+)\s*$', document, re.MULTILINE)
+              metadata_match = re.search(r'^metadata:\n(?P<body>(?:  .*(?:\n|$))*)', document, re.MULTILINE)
+              if not kind_match or not metadata_match:
+                  return None
+              name_match = re.search(r'^  name:\s*(\S+)\s*$', metadata_match.group('body'), re.MULTILINE)
+              if not name_match:
+                  return None
+              return (kind_match.group(1), name_match.group(1))
+
+          relevant_names = {
+              'dd-slack-command',
+              'dd-slack-command-secrets',
+              'dd-slack-command-state',
+          }
+          relevant = sorted(
+              item for document in documents
+              if (item := identity(document)) and item[1] in relevant_names
+          )
+          expected = sorted([
+              ('ExternalSecret', 'dd-slack-command-secrets'),
+              ('PersistentVolumeClaim', 'dd-slack-command-state'),
+              ('Deployment', 'dd-slack-command'),
+              ('Service', 'dd-slack-command'),
+              ('NetworkPolicy', 'dd-slack-command'),
+              ('PodDisruptionBudget', 'dd-slack-command'),
+              ('Ingress', 'dd-slack-command'),
+          ])
+          if relevant != expected:
+              raise SystemExit(f'rendered Slack resource inventory mismatch: {relevant!r}')
+
+          deployment = next(
+              document for document in documents
+              if identity(document) == ('Deployment', 'dd-slack-command')
+          )
+          if not re.search(r'- name: SLACK_COMMAND_DRY_RUN\n\s+value: ["\']?true["\']?', deployment):
+              raise SystemExit('rendered deployment is not pinned to dry-run mode')
+          if '7f1ad57126231c0a27da19799a27aa71f4ffaf5d' not in deployment:
+              raise SystemExit('rendered deployment lost its immutable source revision')
+
+          ingress = next(
+              document for document in documents
+              if identity(document) == ('Ingress', 'dd-slack-command')
+          )
+          paths = re.findall(r'^\s*- path:\s*(\S+)\s*$', ingress, re.MULTILINE)
+          expected_paths = [
+              '/slack/commands/ores-claude',
+              '/slack/commands/ores-chatgpt',
+              '/slack/interactions',
+          ]
+          if paths != expected_paths:
+              raise SystemExit(f'rendered ingress paths mismatch: {paths!r}')
+          if len(re.findall(r'^\s+pathType:\s*Exact\s*$', ingress, re.MULTILINE)) != 3:
+              raise SystemExit('rendered ingress must contain three exact paths')
+          PY
 
       - name: Compile-check the pinned command binary
         working-directory: .tmp/ai-agent-bridge
@@ -124,6 +183,7 @@ jobs:
             .github/workflows/slack-command-gitops.yml
             docs/alex-main-agent-slack-command-gitops.md
             remote/argocd/dd-next-runtime/dd-ai-agent-bridge.service.yaml
+            remote/argocd/dd-next-runtime/kustomization.yaml
             remote/tests/general/slack-command-gitops.test.mjs
             "${RUNNER_TEMP}/slack-command-gitops-audit.json"
             "${RUNNER_TEMP}/dd-next-runtime.rendered.yaml"
@@ -139,14 +199,14 @@ jobs:
       - name: Publish non-secret activation summary
         if: always()
         shell: bash
-        env:
-          AUDIT_PATH: ${{ runner.temp }}/slack-command-gitops-audit.json
         run: |
           {
             echo '## alex-main-agent Slack command GitOps'
             echo
             echo '- source revision: `7f1ad57126231c0a27da19799a27aa71f4ffaf5d`'
             echo '- installed app identity: enforced'
+            echo '- focused source contracts: 12'
+            echo '- rendered resource inventory: exact'
             echo '- public surface: three exact Slack-signed POST routes'
             echo '- routing registry: thirteen reviewed channel bindings'
             echo '- dispatch mode: `SLACK_COMMAND_DRY_RUN=true`'
