@@ -104,8 +104,24 @@ jobs:
           # blanket `cargo update`, which previously drifted dozens of unrelated
           # packages while materializing this bounded feature.
           cargo check
-          rustfmt --edition 2021 src/main.rs src/web.rs src/web/openapi.rs
-          rustfmt --edition 2021 --check src/main.rs src/web.rs src/web/openapi.rs
+
+          # Rustfmt normally follows every `mod` declaration. Format the two
+          # parent modules without children, format the new child explicitly,
+          # and restore any unrelated source path as a defense in depth.
+          rustfmt --edition 2021 --config skip_children=true src/main.rs src/web.rs
+          rustfmt --edition 2021 src/web/openapi.rs
+          while IFS= read -r path; do
+            case "$path" in
+              src/main.rs|src/web.rs|src/web/openapi.rs)
+                ;;
+              *)
+                git restore --source=HEAD --worktree -- "$path"
+                ;;
+            esac
+          done < <(git diff --name-only -- src)
+          rustfmt --edition 2021 --config skip_children=true --check src/main.rs src/web.rs
+          rustfmt --edition 2021 --check src/web/openapi.rs
+
           cargo check --locked
           # The repository intentionally retains three legacy style families.
           # Keep every other warning fatal while making that baseline explicit.
@@ -176,7 +192,7 @@ jobs:
           test "${#changed[@]}" -gt 0
           for path in "${changed[@]}"; do
             case "$path" in
-              Cargo.lock|Cargo.toml|generated/openapi.internal.json|generated/openapi.public.json|scripts/apply-executable-openapi.py|src/main.rs|src/web.rs)
+              Cargo.lock|Cargo.toml|generated/openapi.internal.json|generated/openapi.public.json|scripts/apply-executable-openapi.py|src/main.rs|src/web.rs|src/web/openapi.rs)
                 ;;
               *)
                 echo "unexpected transformation path: $path" >&2
