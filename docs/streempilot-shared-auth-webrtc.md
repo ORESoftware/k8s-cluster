@@ -87,3 +87,7 @@ Browser sessions may authenticate with the shared-auth cookie. Flutter desktop/m
 3. Deploy the StreemPilot room-grant API and map product room roles to shared-auth/room claims.
 4. Switch the authenticated production route to `required`.
 5. Add an explicit guest-invite route only after the room grant has expiry, room binding, role, and replay protection.
+
+## Merge gate
+
+The branch must contain the compiled `main.rs` integration—not only the helper module—and `cargo test --manifest-path remote/deployments/webrtc-signaling-rs/Cargo.toml` must pass before the pull request is marked ready. Remove the one-shot repair workflow after it has produced and verified that integration.
