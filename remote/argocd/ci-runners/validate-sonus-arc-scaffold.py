@@ -216,13 +216,17 @@ def check_activation() -> None:
         "apiVersion: external-secrets.io/v1",
         "name: sonus-auris-arc-github",
         "name: sonus-auris-gha-capacity-broker",
+        "name: sonus-auris-gha-billing",
         "name: dd-cluster-secrets",
         "key: dd/ci/github-apps/sonus-auris-arc",
         "key: dd/ci/github-apps/sonus-auris-capacity-broker",
+        "key: dd/ci/github-billing/sonus-auris",
         "secretKey: github_app_id",
         "secretKey: github_app_installation_id",
         "secretKey: github_app_private_key",
         "property: server_auth_secret",
+        "secretKey: billing_token",
+        "property: token",
     ):
         require(token in external, f"ExternalSecret contract missing: {token}")
 
@@ -241,6 +245,11 @@ def check_activation() -> None:
         "value: sonus-auris",
         "GHA_ORG_POLICY_JSON",
         "GITHUB_APP_PRIVATE_KEY_PATH",
+        "/var/run/gha-app/github_app_private_key",
+        "GITHUB_BILLING_TOKEN_PATH",
+        "/var/run/gha-billing/token",
+        "secretName: sonus-auris-gha-billing",
+        "key: billing_token",
         "automountServiceAccountToken: false",
         "readOnlyRootFilesystem: true",
     ):
@@ -274,7 +283,6 @@ def check_runner() -> None:
         "containerd.sock",
         "--privileged",
         "github_token",
-        "ghp_",
         ":latest",
     ):
         require(
@@ -335,6 +343,11 @@ def check_docs() -> None:
         "personal GitHub account",
         "current UTC year and month",
         "dd-build-server",
+        "gha-clone-server-rs",
+        "classic PAT",
+        "/usage/summary",
+        "billing-authorized",
+        "ci-capacity-hold-no-runner",
     ):
         require(phrase.lower() in combined.lower(), f"documentation missing: {phrase}")
 
@@ -353,12 +366,18 @@ def check_secrets() -> None:
     for forbidden in (
         "BEGIN RSA PRIVATE KEY",
         "BEGIN PRIVATE KEY",
-        "ghp_",
-        "github_pat_",
         "GH_PAT",
         "personal_access_token",
     ):
         require(forbidden not in combined, f"possible committed secret marker: {forbidden}")
+    for pattern in (
+        r"ghp_[A-Za-z0-9]{30,}",
+        r"github_pat_[A-Za-z0-9_]{20,}",
+    ):
+        require(
+            re.search(pattern, combined) is None,
+            f"possible committed GitHub credential matching {pattern}",
+        )
 
     main = read(BROKER / "src/main.rs")
     lib = read(BROKER / "src/lib.rs")
@@ -369,29 +388,69 @@ def check_secrets() -> None:
         "GITHUB_TOKEN",
     ):
         require(forbidden not in main, f"broker violates bounded control-plane contract: {forbidden}")
+
     for token in (
-        "/organizations/{org}/settings/billing/usage",
+        "/organizations/{org}/settings/billing/usage/summary",
         '("year", now.year().to_string())',
         '("month", (now.month() as u8).to_string())',
         "/orgs/{org}/actions/variables/{}",
-        "GHA_ORGANIZATION",
-        "GHA_ORG_POLICY_JSON",
+        "GITHUB_BILLING_TOKEN_PATH",
+        "GITHUB_APP_PRIVATE_KEY_PATH",
+        "billing_token().await?",
+        "installation_token().await?",
         "arbitrary_command_execution: false",
+        "github_error_summary",
     ):
         require(token in main, f"broker implementation missing: {token}")
+
+    billing_block = main.split("async fn billing_usage", 1)[1].split(
+        "async fn upsert_variable", 1
+    )[0]
+    require(
+        "billing_token().await?" in billing_block,
+        "billing request must use the billing-only credential",
+    )
+    require(
+        "installation_token().await?" not in billing_block,
+        "billing request must not use a GitHub App installation token",
+    )
+    mutation_block = main.split("async fn upsert_variable", 1)[1].split(
+        "fn github_error_summary", 1
+    )[0]
+    require(
+        "installation_token().await?" in mutation_block,
+        "variable mutation must use the short-lived installation token",
+    )
+    require(
+        "billing_token().await?" not in mutation_block,
+        "variable mutation must not use the billing credential",
+    )
+
     for token in (
         "moves_to_arc_at_threshold",
         "uses_bounded_build_server_only_at_hard_stop",
         "billing_failure_fails_closed_to_validated_arc",
         "broad_variable_visibility_is_impossible_without_repo_ids",
+        "non_github_modes_publish_a_nonexistent_runner_label",
+        "runner_labels_are_trimmed_unique_and_lane_distinct",
+        "repository_ids_must_be_positive_and_unique",
         "prefer_self_hosted_overrides_low_usage_after_certification",
         "prefer_self_hosted_does_not_bypass_readiness",
         "unavailable_billing_holds_before_arc_certification",
         "negative_usage_is_clamped_and_product_matching_is_case_insensitive",
         "self_hosted_label_must_be_explicit",
         "rejects_non_finite_policy_numbers",
+        "CI_HOLD_RUNNER_LABEL",
     ):
-        require(token in lib, f"broker unit test missing: {token}")
+        require(token in lib, f"broker policy or unit test missing: {token}")
+
+    for token in (
+        "billing_url_uses_current_summary_endpoint",
+        "billing_token_accepts_only_bounded_single_line_file_content",
+        "billing_and_app_credentials_must_use_distinct_files",
+        "github_error_summary_omits_non_message_fields",
+    ):
+        require(token in main, f"broker authentication unit test missing: {token}")
 
 
 CHECKS = {
