@@ -39,6 +39,8 @@ spec:
     spec:
       automountServiceAccountToken: false
       enableServiceLinks: false
+      imagePullSecrets:
+        - name: fiducia-revocation-ghcr-pull
       terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true
