@@ -2,6 +2,9 @@ import { defineConfig, devices } from "@playwright/test";
 
 const PORT = process.env.T2V_OPENAPI_PORT ?? "18130";
 const baseURL = `http://127.0.0.1:${PORT}`;
+const fixtureCommand =
+  process.env.T2V_OPENAPI_FIXTURE_COMMAND ??
+  "cargo run --manifest-path ../Cargo.toml --locked -p t2v-api --example openapi_fixture";
 
 export default defineConfig({
   testDir: "./tests",
@@ -15,8 +18,7 @@ export default defineConfig({
   use: { baseURL, trace: "on-first-retry" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command:
-      "cargo run --manifest-path ../Cargo.toml --locked -p t2v-api --example openapi_fixture",
+    command: fixtureCommand,
     url: `${baseURL}/healthz`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
