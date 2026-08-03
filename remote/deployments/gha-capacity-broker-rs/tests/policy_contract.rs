@@ -18,6 +18,22 @@ fn policy() -> OrgPolicy {
     }
 }
 
+fn usage_item(product: &str, unit_type: &str, gross: f64, net: f64) -> BillingUsageItem {
+    BillingUsageItem {
+        product: product.to_string(),
+        sku: "test-sku".to_string(),
+        unit_type: unit_type.to_string(),
+        price_per_unit: 0.008,
+        gross_quantity: gross,
+        gross_amount: gross * 0.008,
+        discount_quantity: (gross - net).max(0.0),
+        discount_amount: ((gross - net).max(0.0)) * 0.008,
+        net_quantity: net,
+        net_amount: net * 0.008,
+        model: None,
+    }
+}
+
 #[test]
 fn threshold_boundaries_preserve_warn_route_and_hard_stop_semantics() {
     let below_warning = decide_capacity(&policy(), Some(1_499.0));
@@ -106,45 +122,49 @@ fn invalid_label_and_repository_policies_fail_before_mutation() {
 }
 
 #[test]
-fn billing_summary_counts_only_nonnegative_actions_minutes() {
+fn billing_summary_uses_gross_minutes_for_capacity_and_net_for_cost() {
     let usage = BillingUsageResponse {
         usage_items: vec![
-            BillingUsageItem {
-                product: "Actions".to_string(),
-                sku: "Actions Linux".to_string(),
-                unit_type: "minutes".to_string(),
-                quantity: 123.0,
-                organization_name: Some("sonus-auris".to_string()),
-                repository_name: Some("sonus-auris-monorepo".to_string()),
-            },
-            BillingUsageItem {
-                product: "actions".to_string(),
-                sku: "Actions Windows".to_string(),
-                unit_type: "MINUTES".to_string(),
-                quantity: 7.0,
-                organization_name: Some("sonus-auris".to_string()),
-                repository_name: None,
-            },
-            BillingUsageItem {
-                product: "Actions".to_string(),
-                sku: "refund".to_string(),
-                unit_type: "minutes".to_string(),
-                quantity: -50.0,
-                organization_name: Some("sonus-auris".to_string()),
-                repository_name: None,
-            },
-            BillingUsageItem {
-                product: "Packages".to_string(),
-                sku: "storage".to_string(),
-                unit_type: "gigabytes".to_string(),
-                quantity: 900.0,
-                organization_name: Some("sonus-auris".to_string()),
-                repository_name: None,
-            },
+            usage_item("Actions", "minutes", 123.0, 23.0),
+            usage_item("actions", "MINUTES", 7.0, 7.0),
+            usage_item("Actions", "minutes", -50.0, -50.0),
+            usage_item("Packages", "gigabytes", 900.0, 900.0),
         ],
     };
 
     assert_eq!(usage.actions_minutes(), 130.0);
+    assert_eq!(usage.actions_gross_minutes(), 130.0);
+    assert_eq!(usage.actions_billable_minutes(), 30.0);
+}
+
+#[test]
+fn official_summary_json_shape_is_accepted() {
+    let usage: BillingUsageResponse = serde_json::from_str(
+        r#"{
+            "timePeriod": {"year": 2026, "month": 8},
+            "organization": "sonus-auris",
+            "usageItems": [{
+                "product": "Actions",
+                "sku": "actions_linux",
+                "unitType": "minutes",
+                "pricePerUnit": 0.008,
+                "grossQuantity": 2000,
+                "grossAmount": 16,
+                "discountQuantity": 2000,
+                "discountAmount": 16,
+                "netQuantity": 0,
+                "netAmount": 0
+            }]
+        }"#,
+    )
+    .expect("official public-preview response shape");
+
+    assert_eq!(usage.actions_minutes(), 2_000.0);
+    assert_eq!(usage.actions_billable_minutes(), 0.0);
+    assert_eq!(
+        decide_capacity(&policy(), Some(usage.actions_minutes())).mode,
+        ExecutionMode::SelfHosted
+    );
 }
 
 #[test]
