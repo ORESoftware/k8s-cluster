@@ -168,6 +168,21 @@ fn official_summary_json_shape_is_accepted() {
 }
 
 #[test]
+fn empty_usage_items_is_a_real_zero_not_an_unavailable_billing_signal() {
+    let usage = BillingUsageResponse {
+        usage_items: Vec::new(),
+    };
+
+    assert_eq!(usage.actions_gross_minutes(), 0.0);
+    assert_eq!(usage.actions_billable_minutes(), 0.0);
+
+    let decision = decide_capacity(&policy(), Some(usage.actions_minutes()));
+    assert_eq!(decision.mode, ExecutionMode::Hosted);
+    assert_eq!(decision.usage_percent, Some(0.0));
+    assert!(decision.warnings.is_empty());
+}
+
+#[test]
 fn explicit_self_hosted_preference_still_requires_certification() {
     let mut certified = policy();
     certified.prefer_self_hosted = true;
