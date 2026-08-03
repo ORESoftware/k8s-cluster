@@ -1,0 +1,162 @@
+# Layer 1 owns the namespace-wide default-deny. These additive policies open
+# only the flows required by the candidate billing workload.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: billing-candidate-allow-http-ingress
+  namespace: quaestor
+  labels:
+    app.kubernetes.io/name: quaestor-ledger-server
+    app.kubernetes.io/instance: candidate
+    app.kubernetes.io/part-of: quaestor-ledger
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: quaestor-ledger-server
+      app.kubernetes.io/instance: candidate
+  policyTypes: [Ingress]
+  ingress:
+    # Shared gateway. The candidate has no gateway route yet, but committing the
+    # narrow allow now avoids a policy edit during the controlled cutover.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+          podSelector:
+            matchLabels:
+              app: dd-remote-gateway
+      ports:
+        - { protocol: TCP, port: 8087 }
+    # Kubelet probes originate from the node/VPC address rather than a pod.
+    - from:
+        - ipBlock:
+            cidr: 172.31.0.0/16
+      ports:
+        - { protocol: TCP, port: 8087 }
+    # Prometheus may scrape /metrics; path authorization remains application or
+    # gateway policy, while this rule limits the source namespace and port.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - { protocol: TCP, port: 8087 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: billing-candidate-allow-dns-egress
+  namespace: quaestor
+  labels:
+    app.kubernetes.io/name: quaestor-ledger-server
+    app.kubernetes.io/instance: candidate
+    app.kubernetes.io/part-of: quaestor-ledger
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: quaestor-ledger-server
+      app.kubernetes.io/instance: candidate
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: billing-candidate-allow-internal-egress
+  namespace: quaestor
+  labels:
+    app.kubernetes.io/name: quaestor-ledger-server
+    app.kubernetes.io/instance: candidate
+    app.kubernetes.io/part-of: quaestor-ledger
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: quaestor-ledger-server
+      app.kubernetes.io/instance: candidate
+  policyTypes: [Egress]
+  egress:
+    # Shared Auth JWKS and future authenticated introspection.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: shared-auth
+          podSelector:
+            matchLabels:
+              app: dd-shared-auth
+      ports:
+        - { protocol: TCP, port: 8120 }
+    # OTLP/HTTP traces and metrics.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - { protocol: TCP, port: 4318 }
+    # Fenced locks / election leases for customer-critical jobs.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: fiducia
+      ports:
+        - { protocol: TCP, port: 8088 }
+    # Domain-event bus. Publishing remains disabled until replay is tested.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: default
+          podSelector:
+            matchLabels:
+              app: nats
+      ports:
+        - { protocol: TCP, port: 4222 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: billing-candidate-allow-data-provider-egress
+  namespace: quaestor
+  labels:
+    app.kubernetes.io/name: quaestor-ledger-server
+    app.kubernetes.io/instance: candidate
+    app.kubernetes.io/part-of: quaestor-ledger
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: quaestor-ledger-server
+      app.kubernetes.io/instance: candidate
+  policyTypes: [Egress]
+  egress:
+    # Private VPC Postgres. Narrow this to the exact RDS security-group/CIDR when
+    # the production database endpoint is finalized.
+    - to:
+        - ipBlock:
+            cidr: 172.31.0.0/16
+      ports:
+        - { protocol: TCP, port: 5432 }
+    # External Postgres plus payment, OAuth, GitHub, webhook, and RPC providers.
+    # NetworkPolicy cannot select FQDNs; the private/link-local/loopback exclusions
+    # combine with BILLING_BLOCK_PRIVATE_OUTBOUND for SSRF containment.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 5432 }
