@@ -118,6 +118,10 @@ class PrivateFleetPublisherContractTests(unittest.TestCase):
         self.assertIn('record.get("kind") == "monorepo"', self.remote_state)
         self.assertIn("Missing leaf histories must be published", self.remote_state)
 
+    def test_obsolete_public_exact_root_finalizer_is_not_used(self) -> None:
+        self.assertNotIn("finalize_missing_org_repositories.py", self.workflow)
+        self.assertIn("created-exact-preserved-unchanged", self.workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
