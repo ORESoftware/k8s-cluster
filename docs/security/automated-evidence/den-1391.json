@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "gate_issue": "DEN-1391",
+  "purpose": "Durable index of passing automated evidence that is narrower than exact-candidate production certification.",
+  "status_policy": {
+    "allowed": [
+      "automated",
+      "live_evidence_pending"
+    ],
+    "forbidden": [
+      "passed"
+    ],
+    "note": "This overlay cannot certify a matrix row. The canonical release gate remains closed until exact-release, live-environment evidence and independent review update the main matrix."
+  },
+  "evidence": [
+    {
+      "id": "AUTH-001",
+      "status": "automated",
+      "repository": "fiducia-cloud/fiducia-e2e",
+      "pull_request": 17,
+      "commit": "9e3faf3bd2046b06626712f359eaa9b35c5e17cb",
+      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30779009835",
+      "workflow": ".github/workflows/production-security-system.yml",
+      "source_tests": [
+        "tests/system/security-boundaries.test.mjs"
+      ],
+      "environment": "Three real durable fiducia-node Raft processes behind the real fiducia-load-balance process, with immutable node/LB/routing/interface/test-config revisions.",
+      "assertions": [
+        "Two organizations using the same raw KV key receive only their own value through edge to load balancer to node.",
+        "Two organizations can independently hold the same raw lock key without sharing ownership authority."
+      ],
+      "limitations": [
+        "Local process composition, not the exact production image digests or external ingress.",
+        "Does not yet cover project/environment/path scopes, customer API-key issuance, live network policy, or independent reviewer acceptance."
+      ],
+      "executed_at": "2026-08-03T02:23:00Z"
+    },
+    {
+      "id": "AUTH-002",
+      "status": "automated",
+      "repository": "fiducia-cloud/fiducia-e2e",
+      "pull_request": 17,
+      "commit": "9e3faf3bd2046b06626712f359eaa9b35c5e17cb",
+      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30779009835",
+      "workflow": ".github/workflows/production-security-system.yml",
+      "source_tests": [
+        "tests/system/security-boundaries.test.mjs"
+      ],
+      "environment": "Three real durable fiducia-node Raft processes behind the real fiducia-load-balance process.",
+      "assertions": [
+        "Direct-node requests with missing, wrong, edge-only, bearer-only, or duplicated internal credentials are denied.",
+        "Denied direct-node writes do not later appear in authoritative KV state."
+      ],
+      "limitations": [
+        "Does not prove Kubernetes NetworkPolicy, public ingress reachability, peer-port policy, or exact production secrets/certificates.",
+        "No packet capture or independent live-environment review is attached yet."
+      ],
+      "executed_at": "2026-08-03T02:23:00Z"
+    },
+    {
+      "id": "AUTH-007",
+      "status": "automated",
+      "repository": "fiducia-cloud/fiducia-e2e",
+      "pull_request": 17,
+      "commit": "9e3faf3bd2046b06626712f359eaa9b35c5e17cb",
+      "workflow_run": "https://github.com/fiducia-cloud/fiducia-e2e/actions/runs/30779009835",
+      "workflow": ".github/workflows/production-security-system.yml",
+      "source_tests": [
+        "tests/system/security-boundaries.test.mjs"
+      ],
+      "environment": "Real fiducia-load-balance and three real fiducia-node processes using the pinned trusted-hop contract.",
+      "assertions": [
+        "The load balancer rejects node-plane credentials, wrong or duplicated edge credentials, missing organization identity, and duplicated organization identity.",
+        "The load balancer strips a client-supplied node credential and injects its canonical trusted-hop credential."
+      ],
+      "limitations": [
+        "Does not yet exercise an external CDN/edge product, malicious DNS, unregistered redirect targets, or production egress policy.",
+        "The exact production release and live packet/evidence bundle remain pending."
+      ],
+      "executed_at": "2026-08-03T02:23:00Z"
+    }
+  ]
+}
