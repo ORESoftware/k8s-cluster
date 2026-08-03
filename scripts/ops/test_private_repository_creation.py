@@ -2,17 +2,19 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from pathlib import Path
 import unittest
 
 from private_repository_creation import ensure_private_repository
 
 
 ApiResponse = tuple[int, object | None]
+ApiOutcome = ApiResponse | Exception
 ApiCall = tuple[str, str, dict[str, object] | None]
 
 
 class ScriptedApi:
-    def __init__(self, script: Iterable[tuple[ApiCall, ApiResponse]]) -> None:
+    def __init__(self, script: Iterable[tuple[ApiCall, ApiOutcome]]) -> None:
         self.script = list(script)
         self.calls: list[ApiCall] = []
 
@@ -23,10 +25,12 @@ class ScriptedApi:
         self.calls.append(call)
         if not self.script:
             raise AssertionError(f"unexpected API call: {call!r}")
-        expected, response = self.script.pop(0)
+        expected, outcome = self.script.pop(0)
         if expected != call:
             raise AssertionError(f"expected API call {expected!r}, got {call!r}")
-        return response
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
 
     def assert_exhausted(self) -> None:
         if self.script:
@@ -80,7 +84,7 @@ class PrivateRepositoryCreationTests(unittest.TestCase):
     def test_existing_private_repository_is_reused_without_post(self) -> None:
         existing = private_repository()
         api = ScriptedApi(
-            [(('GET', self.repository_path, None), (200, existing))]
+            [(("GET", self.repository_path, None), (200, existing))]
         )
         emitted: list[str] = []
 
@@ -102,12 +106,34 @@ class PrivateRepositoryCreationTests(unittest.TestCase):
         self.assertEqual(emitted, ["CREATED_PRIVATE example/service.rs"])
         self.assertEqual([method for method, _, _ in api.calls], ["GET", "POST"])
 
-    def test_422_create_race_reconciles_exact_private_repository(self) -> None:
+    def test_returned_422_create_race_reconciles_exact_private_repository(self) -> None:
         reconciled = private_repository(full_name="EXAMPLE/SERVICE.RS")
         api = ScriptedApi(
             [
                 (("GET", self.repository_path, None), (404, None)),
                 (("POST", self.organization_path, create_payload()), (422, {})),
+                (("GET", self.repository_path, None), (200, reconciled)),
+            ]
+        )
+        emitted: list[str] = []
+
+        self.assertIs(self.ensure(api, emitted), reconciled)
+        self.assertEqual(
+            emitted,
+            ["RECONCILED_PRIVATE example/service.rs after HTTP 422"],
+        )
+
+    def test_raised_422_create_race_reconciles_exact_private_repository(self) -> None:
+        reconciled = private_repository()
+        api = ScriptedApi(
+            [
+                (("GET", self.repository_path, None), (404, None)),
+                (
+                    ("POST", self.organization_path, create_payload()),
+                    RuntimeError(
+                        "GitHub API 422 for POST /orgs/example/repos: already exists"
+                    ),
+                ),
                 (("GET", self.repository_path, None), (200, reconciled)),
             ]
         )
@@ -183,7 +209,7 @@ class PrivateRepositoryCreationTests(unittest.TestCase):
 
     def test_unexpected_preflight_status_fails_without_post(self) -> None:
         api = ScriptedApi(
-            [(('GET', self.repository_path, None), (503, {"message": "down"}))]
+            [(("GET", self.repository_path, None), (503, {"message": "down"}))]
         )
 
         with self.assertRaisesRegex(RuntimeError, "before creation: HTTP 503"):
@@ -204,6 +230,23 @@ class PrivateRepositoryCreationTests(unittest.TestCase):
         api.assert_exhausted()
         self.assertEqual([method for method, _, _ in api.calls], ["GET", "POST"])
 
+    def test_unrecognized_api_exception_is_not_swallowed(self) -> None:
+        api = ScriptedApi(
+            [
+                (("GET", self.repository_path, None), (404, None)),
+                (
+                    ("POST", self.organization_path, create_payload()),
+                    RuntimeError(
+                        "GitHub API 500 for POST /orgs/example/repos: unavailable"
+                    ),
+                ),
+            ]
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "GitHub API 500"):
+            self.ensure(api, [])
+        api.assert_exhausted()
+
     def test_success_response_still_requires_exact_private_metadata(self) -> None:
         api = ScriptedApi(
             [
@@ -216,11 +259,13 @@ class PrivateRepositoryCreationTests(unittest.TestCase):
             self.ensure(api, [])
         api.assert_exhausted()
 
-    def test_publisher_has_no_patch_method(self) -> None:
-        for status in (200, 201, 409, 422):
-            with self.subTest(status=status):
-                self.assertNotEqual(status, "PATCH")
-        self.assertNotIn("PATCH", create_payload())
+    def test_helper_has_no_visibility_patch_or_force_path(self) -> None:
+        source = Path(__file__).with_name("private_repository_creation.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn('api("PATCH"', source)
+        self.assertNotIn("--force", source)
+        self.assertNotIn("push -f", source)
 
 
 if __name__ == "__main__":
