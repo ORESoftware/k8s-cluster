@@ -49,11 +49,18 @@ fi
   cat "$base_schema"
   printf '\n\n-- BEGIN DECLARATIVE SCHEMA FRAGMENTS --\n'
   if [ -d "$fragment_dir" ]; then
-    while IFS= read -r -d '' fragment; do
-      printf '\n-- BEGIN %s --\n' "${fragment#$billing_dir/}"
-      cat "$fragment"
-      printf '\n-- END %s --\n' "${fragment#$billing_dir/}"
-    done < <(find "$fragment_dir" -maxdepth 1 -type f -name '*.sql' -print0 | sort -z)
+    # Avoid GNU-only `find -print0 | sort -z`; developers run this wrapper on
+    # macOS as well as Linux. The C-locale sort keeps composition deterministic.
+    shopt -s nullglob
+    fragments=("$fragment_dir"/*.sql)
+    shopt -u nullglob
+    if [ "${#fragments[@]}" -gt 0 ]; then
+      while IFS= read -r fragment; do
+        printf '\n-- BEGIN %s --\n' "${fragment#$billing_dir/}"
+        cat "$fragment"
+        printf '\n-- END %s --\n' "${fragment#$billing_dir/}"
+      done < <(printf '%s\n' "${fragments[@]}" | LC_ALL=C sort)
+    fi
   fi
 } > "$combined_schema"
 
