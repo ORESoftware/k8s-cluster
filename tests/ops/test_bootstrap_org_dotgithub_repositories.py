@@ -71,6 +71,20 @@ class GovernancePublisherTests(unittest.TestCase):
         self.assertIn("not automatically inherited", rendered)
         self.assertIn("fallback defaults", rendered)
 
+    def test_workflow_is_secret_isolated_and_bounded(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "ops-bootstrap-org-dotgithub-fleet.yml").read_text()
+        before_publish, publish = workflow.split("  publish:\n", 1)
+        self.assertNotIn("id-token: write", before_publish)
+        self.assertNotIn("issues: write", before_publish)
+        self.assertIn("id-token: write", publish)
+        self.assertIn("issues: write", publish)
+        self.assertIn("github.actor == 'ORESoftware'", publish)
+        self.assertIn("github.event.issue.number == 615", publish)
+        self.assertIn(
+            "ops-bootstrap-org-dotgithub:615:ad6e27250729ed647513a302d02fd767",
+            publish,
+        )
+
     def test_report_contains_no_token_material(self) -> None:
         result = module.OrganizationResult(
             organization="example-org",
