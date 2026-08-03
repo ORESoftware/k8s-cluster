@@ -26,20 +26,36 @@ Decision and reconcile routes require `x-server-auth`. Reconciliation is dry-run
 
 ## Organization boundary
 
-One process represents exactly one GitHub organization, one variable-mutation GitHub App installation, and one separately managed billing identity. `GHA_ORGANIZATION` names the organization and `GHA_ORG_POLICY_JSON` carries its policy. A request naming another organization receives `404`; do not model one installation ID or billing credential as cross-organization authority.
+One process represents exactly one GitHub organization, one billing-read GitHub App installation, and one variable-mutation GitHub App installation. `GHA_ORGANIZATION` names the organization and `GHA_ORG_POLICY_JSON` carries its policy. A request naming another organization receives `404`; do not model one installation as cross-organization authority.
 
 A personal-account owner such as `ORESoftware` is not an organization and cannot use this organization billing/variable path. Use repository-scoped runners for personal repositories or move the repository under an organization.
 
-## Authentication separation
+## Three-App authority model
 
-GitHub currently requires a billing-authorized **classic PAT** for organization billing usage summaries. A GitHub App installation token is not used for that request. The service therefore has two independent credentials:
+Use three independently installed GitHub Apps per organization:
 
-1. **Billing read credential** — a classic PAT owned by a dedicated organization owner or billing-manager identity, mounted as a read-only file at `GITHUB_BILLING_TOKEN_PATH`. It is used only for `GET /organizations/{org}/settings/billing/usage/summary` and is never copied into an environment variable, log, metric, response, workflow, or organization variable.
-2. **Variable mutation App** — a least-privilege GitHub App whose short-lived installation token is used only to create or update `CI_EXECUTION_MODE` and `CI_LINUX_RUNS_ON_JSON` for explicitly selected repositories.
+1. **ARC registration App** — organization self-hosted-runner registration only. ARC owns this credential; the broker never mounts it.
+2. **Billing-read App** — organization `Administration: read`, used only for the public-preview billing summary endpoint.
+3. **Variable-mutation App** — only the permissions required to create or update `CI_EXECUTION_MODE` and `CI_LINUX_RUNS_ON_JSON` for explicitly selected repositories.
 
-ARC registration uses a third, separate App with organization self-hosted-runner permissions. Store the three credentials under separate Secrets Manager records and project them with External Secrets. The billing token and App private key must never share a file or Secret key.
+The broker mints separate short-lived installation tokens for the billing and mutation Apps. Their App IDs, installation IDs, private-key files, token caches, and secret-manager records must remain distinct. A configuration that reuses the same App installation or private-key path fails at startup.
 
-The classic PAT pasted into chat is not an activation credential. Revoke and rotate it under `DEN-27`; create a dedicated billing-only credential through the approved secret-management process.
+The long-lived PAT pasted into chat is not an activation credential. Revoke and rotate it under `DEN-27`; this implementation does not store or use it.
+
+## Billing API and quantity semantics
+
+The broker queries the current UTC month from the public-preview endpoint:
+
+```text
+GET /organizations/{org}/settings/billing/usage/summary?year=YYYY&month=M&product=Actions
+```
+
+The current response uses `grossQuantity`, `discountQuantity`, and `netQuantity` rather than the older detailed-report `quantity` field.
+
+- `grossQuantity` is the total Actions-minute consumption before included-usage or other quantity discounts. It is the numerator for the configured included-minute threshold.
+- `netQuantity` is retained separately as billable minutes after quantity discounts. It is useful for cost reporting but must not drive included-minute capacity routing.
+
+The parser requires the current `usageItems` shape and has a checked-in fixture matching the public-preview contract. Missing or malformed billing data fails closed to certified ARC capacity or hold.
 
 ## Configuration
 
@@ -47,14 +63,13 @@ Required variables:
 
 - `GHA_ORGANIZATION`
 - `GHA_ORG_POLICY_JSON`
-- `GITHUB_APP_ID`
-- `GITHUB_APP_INSTALLATION_ID`
-- `GITHUB_APP_PRIVATE_KEY_PATH`
+- `GITHUB_MUTATION_APP_ID`
+- `GITHUB_MUTATION_APP_INSTALLATION_ID`
+- `GITHUB_MUTATION_APP_PRIVATE_KEY_PATH`
+- `GITHUB_BILLING_APP_ID`
+- `GITHUB_BILLING_APP_INSTALLATION_ID`
+- `GITHUB_BILLING_APP_PRIVATE_KEY_PATH`
 - `SERVER_AUTH_SECRET` (at least 32 characters)
-
-Activation-required billing variable:
-
-- `GITHUB_BILLING_TOKEN_PATH` — mounted file containing the billing-authorized classic PAT. If absent or unreadable, billing is treated as unavailable and routing fails closed.
 
 Optional variables:
 
@@ -80,7 +95,7 @@ Example Sonus policy:
 }
 ```
 
-The billing request supplies the current UTC year and month. `selfHostedReady` is an operator-controlled certification bit and must remain false until runner groups exist, a scale set registers, the manual smoke passes, and hosted-vs-ARC parity is recorded.
+`selfHostedReady` is an operator-controlled certification bit and must remain false until runner groups exist, a scale set registers, the manual smoke passes, and hosted-vs-ARC parity is recorded.
 
 If billing cannot be read, policy fails closed: use validated ARC capacity when certified, otherwise hold. `build-server` mode is advisory and applies only to jobs already represented by a reviewed `dd-build-server` run profile.
 
@@ -103,12 +118,14 @@ Do not use the variable for macOS, Windows, iOS signing, Android emulator/KVM, s
 
 ## Image and deployment
 
-The Dockerfile creates an unprivileged runtime image. Publish it through the existing build server or a dedicated container-build lane, scan it, generate SBOM/provenance, and record the immutable digest. The deployment and policy templates remain excluded from active Kustomizations until the digest, all three credentials, runner groups, and parity evidence exist.
+The Dockerfile creates an unprivileged runtime image. Publish it through the existing build server or a dedicated container-build lane, scan it, generate SBOM/provenance, and record the immutable digest. The deployment and policy templates remain excluded from active Kustomizations until the digest, all three Apps, runner groups, and parity evidence exist.
 
-The Sonus template mounts:
+The Sonus template mounts only the two Apps needed by the broker:
 
-- `/var/run/gha-app/github_app_private_key` from `sonus-auris-gha-capacity-broker`;
-- `/var/run/gha-billing/token` from the independent `sonus-auris-gha-billing` Secret.
+- `/var/run/gha-mutation-app/github_app_private_key` from `sonus-auris-gha-capacity-broker`;
+- `/var/run/gha-billing-app/github_app_private_key` from `sonus-auris-gha-billing`.
+
+The ARC registration App is consumed only by ARC through `sonus-auris-arc-github`.
 
 ## Local and CI checks
 
