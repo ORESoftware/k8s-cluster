@@ -1,0 +1,227 @@
+name: Probe organization .github App capability
+run-name: Probe organization .github App capability from issue 615
+
+on:
+  workflow_dispatch:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: probe-organization-dotgithub-app-capability
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        !github.event.issue.pull_request &&
+        github.event.issue.number == 615 &&
+        github.actor == 'ORESoftware' &&
+        github.event.comment.body == 'ops-probe-org-dotgithub-app:615:20260803-v1'
+      )
+    permissions:
+      contents: read
+      issues: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      K8S_SUBMODULE_APP_ID: ${{ secrets.K8S_SUBMODULE_APP_ID }}
+      K8S_SUBMODULE_APP_PRIVATE_KEY: ${{ secrets.K8S_SUBMODULE_APP_PRIVATE_KEY }}
+    steps:
+      - name: Check out trusted default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Probe exact 36-organization installation capabilities
+        id: probe
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          umask 077
+          [[ "${K8S_SUBMODULE_APP_ID:-}" =~ ^[0-9]+$ ]]
+          test -n "${K8S_SUBMODULE_APP_PRIVATE_KEY:-}"
+          grep -Eq '^-----BEGIN (RSA )?PRIVATE KEY-----' <<<"$K8S_SUBMODULE_APP_PRIVATE_KEY"
+
+          organizations=(
+            channelsiege OmniBlitz streamkore hypeblitz 3FA-app messaging-intel
+            akrion-sim athlet-o benefactor-cc canonical-cloud claritas-viz cliptown
+            daedalus-fab declarative-migrations fiducia-cloud anticaptrad opto-sync
+            quaestor-ledger sagitta-stack shared-auth scintilla-run rust-ssr-demos
+            sonus-auris usa-acc voxletra zed-pkg zed-pkg-test memebank
+            meta-agents-demo networking-components StreemPilot unreal-unity-poc
+            file-tunnel hypesiege discrete-event-systems drone-mngr
+          )
+          test "${#organizations[@]}" -eq 36
+
+          base64url() {
+            openssl base64 -A | tr '+/' '-_' | tr -d '='
+          }
+
+          now="$(date +%s)"
+          header='{"alg":"RS256","typ":"JWT"}'
+          payload="$(printf '{"iat":%s,"exp":%s,"iss":%s}' "$((now - 60))" "$((now + 540))" "$K8S_SUBMODULE_APP_ID")"
+          unsigned="$(printf '%s' "$header" | base64url).$(printf '%s' "$payload" | base64url)"
+          signature="$(
+            printf '%s' "$unsigned" |
+              openssl dgst -sha256 -sign /dev/fd/3 -binary \
+                3<<<"$K8S_SUBMODULE_APP_PRIVATE_KEY" |
+              base64url
+          )"
+          app_jwt="${unsigned}.${signature}"
+          echo "::add-mask::$app_jwt"
+          unset signature unsigned payload header K8S_SUBMODULE_APP_PRIVATE_KEY
+
+          evidence_lines="$RUNNER_TEMP/org-dotgithub-app-capabilities.ndjson"
+          : > "$evidence_lines"
+
+          for organization in "${organizations[@]}"; do
+            installation_response="$(
+              curl --silent --show-error \
+                --header 'Accept: application/vnd.github+json' \
+                --header "Authorization: Bearer ${app_jwt}" \
+                --header 'X-GitHub-Api-Version: 2022-11-28' \
+                --write-out $'\n%{http_code}' \
+                "https://api.github.com/orgs/${organization}/installation"
+            )"
+            installation_status="${installation_response##*$'\n'}"
+            installation_json="${installation_response%$'\n'*}"
+
+            installed=false
+            repository_selection=null
+            token_status=null
+            administration=null
+            contents=null
+            metadata=null
+            capable=false
+
+            if [[ "$installation_status" == 200 ]]; then
+              installed=true
+              installation_id="$(jq -er '.id | select(type == "number" and . > 0)' <<<"$installation_json")"
+              repository_selection="$(jq -c '.repository_selection // null' <<<"$installation_json")"
+
+              token_response="$(
+                curl --silent --show-error \
+                  --request POST \
+                  --header 'Accept: application/vnd.github+json' \
+                  --header "Authorization: Bearer ${app_jwt}" \
+                  --header 'X-GitHub-Api-Version: 2022-11-28' \
+                  --header 'Content-Type: application/json' \
+                  --data '{"permissions":{"administration":"write","contents":"write","metadata":"read"}}' \
+                  --write-out $'\n%{http_code}' \
+                  "https://api.github.com/app/installations/${installation_id}/access_tokens"
+              )"
+              token_status="${token_response##*$'\n'}"
+              token_json="${token_response%$'\n'*}"
+
+              if [[ "$token_status" == 201 ]]; then
+                installation_token="$(jq -er '.token | select(type == "string" and length > 0)' <<<"$token_json")"
+                echo "::add-mask::$installation_token"
+                administration="$(jq -c '.permissions.administration // null' <<<"$token_json")"
+                contents="$(jq -c '.permissions.contents // null' <<<"$token_json")"
+                metadata="$(jq -c '.permissions.metadata // null' <<<"$token_json")"
+                if [[ "$repository_selection" == '"all"' &&
+                      "$administration" == '"write"' &&
+                      "$contents" == '"write"' &&
+                      "$metadata" == '"read"' ]]; then
+                  capable=true
+                fi
+                unset installation_token
+              fi
+              unset installation_id token_json token_response
+            fi
+
+            jq -nc \
+              --arg organization "$organization" \
+              --argjson installed "$installed" \
+              --argjson installation_http_status "$installation_status" \
+              --argjson repository_selection "$repository_selection" \
+              --argjson token_http_status "$token_status" \
+              --argjson administration "$administration" \
+              --argjson contents "$contents" \
+              --argjson metadata "$metadata" \
+              --argjson repository_creation_capable "$capable" \
+              '{
+                organization: $organization,
+                installed: $installed,
+                installation_http_status: $installation_http_status,
+                repository_selection: $repository_selection,
+                token_http_status: $token_status,
+                permissions: {
+                  administration: $administration,
+                  contents: $contents,
+                  metadata: $metadata
+                },
+                repository_creation_capable: $repository_creation_capable
+              }' >> "$evidence_lines"
+
+            unset installation_response installation_status installation_json
+          done
+          unset app_jwt
+
+          evidence="$RUNNER_TEMP/org-dotgithub-app-capabilities.json"
+          jq -s '{schema_version:1, organizations:.}' "$evidence_lines" > "$evidence"
+          jq -e '
+            .schema_version == 1 and
+            (.organizations | length == 36) and
+            ([.organizations[].organization | ascii_downcase] | unique | length == 36) and
+            all(.organizations[];
+              (.organization | type == "string") and
+              (.installed | type == "boolean") and
+              (.installation_http_status | type == "number") and
+              (.repository_creation_capable | type == "boolean") and
+              (.permissions | type == "object")
+            )
+          ' "$evidence" >/dev/null
+
+          capable_count="$(jq '[.organizations[] | select(.repository_creation_capable)] | length' "$evidence")"
+          installed_count="$(jq '[.organizations[] | select(.installed)] | length' "$evidence")"
+          {
+            echo '# GitHub App capability for organization `.github` publication'
+            echo
+            echo "- Organizations probed: **36**"
+            echo "- App installed: **${installed_count}/36**"
+            echo "- Repository-creation capable: **${capable_count}/36**"
+            echo
+            echo '| Organization | Installed | Repository selection | Administration | Contents | Metadata | Capable |'
+            echo '|---|---:|---|---|---|---|---:|'
+            jq -r '.organizations[] | "| `\(.organization)` | \(if .installed then "yes" else "no" end) | `\(.repository_selection // "n/a")` | `\(.permissions.administration // "n/a")` | `\(.permissions.contents // "n/a")` | `\(.permissions.metadata // "n/a")` | \(if .repository_creation_capable then "yes" else "no" end) |"' "$evidence"
+            echo
+            echo 'No installation ID, access token, App JWT, private key, API response body, or credential value is included in this evidence.'
+          } > "$RUNNER_TEMP/org-dotgithub-app-capabilities.md"
+
+          echo "installed_count=$installed_count" >> "$GITHUB_OUTPUT"
+          echo "capable_count=$capable_count" >> "$GITHUB_OUTPUT"
+
+      - name: Publish bounded capability evidence to issue 615
+        if: always() && github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          report="$RUNNER_TEMP/org-dotgithub-app-capabilities.md"
+          if [[ ! -s "$report" ]]; then
+            printf '%s\n' \
+              '# GitHub App capability probe failed before bounded evidence was produced' \
+              '' \
+              "Workflow run: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+              > "$report"
+          else
+            printf '\nWorkflow run: https://github.com/%s/actions/runs/%s\n' \
+              "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$report"
+          fi
+          gh issue comment 615 --repo "$GITHUB_REPOSITORY" --body-file "$report"
+
+      - name: Require complete repository-administration capability
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "${{ steps.probe.outputs.installed_count }}" = 36
+          test "${{ steps.probe.outputs.capable_count }}" = 36
