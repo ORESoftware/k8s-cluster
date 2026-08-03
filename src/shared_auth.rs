@@ -389,16 +389,17 @@ struct Introspection {
 
 fn bounded_identifier(value: Option<String>, max: usize) -> Result<String, AuthError> {
     let value = value.unwrap_or_default();
-    let value = value.trim();
-    if value.is_empty()
-        || value.len() > max
-        || value
+    let canonical = value.trim();
+    if canonical != value.as_str()
+        || canonical.is_empty()
+        || canonical.len() > max
+        || canonical
             .chars()
             .any(|character| character.is_control() || matches!(character, '/' | '\\'))
     {
         return Err(AuthError::Unauthorized);
     }
-    Ok(value.to_owned())
+    Ok(value)
 }
 
 fn bounded_text(value: Option<String>, max: usize) -> Result<String, AuthError> {
@@ -623,12 +624,24 @@ mod tests {
             config: config(),
             http: Client::new(),
         };
-        let mut claims = active();
-        claims.sub = Some("../other-tenant".to_owned());
-        assert!(matches!(
-            verifier.identity_from_claims(claims),
-            Err(AuthError::Unauthorized)
-        ));
+
+        for malformed_subject in ["../other-tenant", " shared-user-1", "shared-user-1 "] {
+            let mut claims = active();
+            claims.sub = Some(malformed_subject.to_owned());
+            assert!(matches!(
+                verifier.identity_from_claims(claims),
+                Err(AuthError::Unauthorized)
+            ));
+        }
+
+        for malformed_session in [" session-1", "session-1 "] {
+            let mut claims = active();
+            claims.sid = Some(malformed_session.to_owned());
+            assert!(matches!(
+                verifier.identity_from_claims(claims),
+                Err(AuthError::Unauthorized)
+            ));
+        }
     }
 
     #[test]
