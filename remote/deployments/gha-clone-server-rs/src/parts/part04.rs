@@ -1,17 +1,3 @@
-        .header("x-server-auth", auth)
-        .json(&request)
-        .send()
-        .await
-        .map_err(|error| format!("build-server request failed: {error}"))?;
-    if response.status().is_success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "build-server returned status {}",
-            response.status().as_u16()
-        ))
-    }
-}
 
 fn header_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers.get(name).and_then(|value| value.to_str().ok())
