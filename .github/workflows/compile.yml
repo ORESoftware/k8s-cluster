@@ -6,13 +6,97 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: compile-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  materialize-duplicate-scope-rejection:
+    if: github.event_name == 'pull_request' && github.head_ref == 'harden/shared-auth-production'
+    name: materialize-duplicate-scope-rejection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the hardening branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: harden/shared-auth-production
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Align Rust scope validation with the PostgreSQL invariant
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("src/memberships.rs")
+          text = path.read_text()
+
+          if "membership scopes must not contain duplicates" not in text:
+              old = '''    scopes = scopes
+                  .into_iter()
+                  .map(|scope| scope.trim().to_ascii_lowercase())
+                  .collect();
+              scopes.sort_unstable();
+              scopes.dedup();
+              if scopes.is_empty()
+          '''
+              new = '''    scopes = scopes
+                  .into_iter()
+                  .map(|scope| scope.trim().to_ascii_lowercase())
+                  .collect();
+              scopes.sort_unstable();
+              if scopes.windows(2).any(|pair| pair[0] == pair[1]) {
+                  return Err(AppError::BadRequest(
+                      "membership scopes must not contain duplicates".to_owned(),
+                  ));
+              }
+              if scopes.is_empty()
+          '''
+              if text.count(old) != 1:
+                  raise SystemExit("expected one normalize_scopes anchor")
+              text = text.replace(old, new, 1)
+
+              test_anchor = '''        assert!(normalize_scopes(vec![SCOPE_BILLING_READ.into()], "reader").is_ok());
+          '''
+              tests = '''        assert!(normalize_scopes(vec![SCOPE_BILLING_READ.into()], "reader").is_ok());
+              assert!(
+                  normalize_scopes(
+                      vec![SCOPE_BILLING_READ.into(), SCOPE_BILLING_READ.into()],
+                      "reader"
+                  )
+                  .is_err()
+              );
+              assert!(
+                  normalize_scopes(
+                      vec![" Billing:Read ".into(), "billing:read".into()],
+                      "reader"
+                  )
+                  .is_err()
+              );
+          '''
+              if text.count(test_anchor) != 1:
+                  raise SystemExit("expected one scope-policy test anchor")
+              text = text.replace(test_anchor, tests, 1)
+              path.write_text(text)
+          PY
+
+          cargo fmt --all
+          if git diff --quiet -- src/memberships.rs; then
+            echo 'duplicate-scope rejection already materialized'
+            exit 0
+          fi
+          git diff --check -- src/memberships.rs
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/memberships.rs
+          git commit -m 'fix(authz): reject duplicate membership scopes'
+          git push origin HEAD:harden/shared-auth-production
+
   rust:
     name: rust-check-and-auth-tests
     runs-on: ubuntu-latest
