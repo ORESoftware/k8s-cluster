@@ -35,10 +35,9 @@ fn export_openapi(scope: &str) -> Result<(), Box<dyn std::error::Error>> {
         "public" => &documents.public,
         "internal" => &documents.internal,
         other => {
-            return Err(format!(
-                "unknown OpenAPI scope '{other}'; expected public or internal"
+            return Err(
+                format!("unknown OpenAPI scope '{other}'; expected public or internal").into(),
             )
-            .into())
         }
     };
     let json = openapi::canonical_json(document)?;

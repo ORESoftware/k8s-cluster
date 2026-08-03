@@ -104,7 +104,10 @@ fn set_document_metadata(document: &mut Value, scope: &str) -> Result<(), String
         "x-dd-contract-scope".to_string(),
         Value::String(scope.to_string()),
     );
-    object.insert("x-dd-language".to_string(), Value::String("rust".to_string()));
+    object.insert(
+        "x-dd-language".to_string(),
+        Value::String("rust".to_string()),
+    );
     Ok(())
 }
 
@@ -116,12 +119,13 @@ fn merge_contract(target: &mut Value, extra: OpenApi) -> Result<(), String> {
             continue;
         };
         let target_object = document_object(target)?;
-        let destination = target_object
-            .entry(section.to_string())
-            .or_insert_with(|| match source {
-                Value::Array(_) => Value::Array(Vec::new()),
-                _ => Value::Object(Map::new()),
-            });
+        let destination =
+            target_object
+                .entry(section.to_string())
+                .or_insert_with(|| match source {
+                    Value::Array(_) => Value::Array(Vec::new()),
+                    _ => Value::Object(Map::new()),
+                });
         merge_value(destination, source, section)?;
     }
     Ok(())

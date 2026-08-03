@@ -150,7 +150,10 @@ pub async fn internal_openapi(Extension(docs): Extension<SharedApiDocs>) -> Resp
     )
 )]
 pub async fn internal_scalar(Extension(docs): Extension<SharedApiDocs>) -> Response {
-    bytes_response(docs.internal_scalar_html.clone(), "text/html; charset=utf-8")
+    bytes_response(
+        docs.internal_scalar_html.clone(),
+        "text/html; charset=utf-8",
+    )
 }
 
 #[utoipa::path(

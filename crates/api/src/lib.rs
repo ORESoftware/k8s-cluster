@@ -114,10 +114,7 @@ pub fn app(state: AppState) -> Router {
     let (internal_unprotected, _) = internal_unprotected_contract_router().split_for_parts();
     let (operator, _) = operator_contract_router().split_for_parts();
     let operator = operator
-        .route_layer(from_fn_with_state(
-            state.clone(),
-            auth::require_server_auth,
-        ))
+        .route_layer(from_fn_with_state(state.clone(), auth::require_server_auth))
         .layer(DefaultBodyLimit::max(MAX_JSON_BODY));
 
     public
