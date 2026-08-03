@@ -148,31 +148,41 @@ async fn twilio_provider_error_fails_closed() {
 }
 
 #[tokio::test]
-async fn incomplete_twilio_configuration_fails_before_network() {
+async fn missing_or_blank_twilio_configuration_fails_before_network() {
     let mut missing_account = config();
     missing_account.account_sid = None;
     let mut missing_token = config();
     missing_token.auth_token = None;
     let mut missing_service = config();
     missing_service.service_sid = None;
+    let mut blank_account = config();
+    blank_account.account_sid = Some("  ".into());
+    let mut blank_token = config();
+    blank_token.auth_token = Some("\t".into());
+    let mut blank_service = config();
+    blank_service.service_sid = Some("\n".into());
 
     for (field, incomplete) in [
-        ("account SID", missing_account),
-        ("auth token", missing_token),
-        ("service SID", missing_service),
+        ("missing account SID", missing_account),
+        ("missing auth token", missing_token),
+        ("missing service SID", missing_service),
+        ("blank account SID", blank_account),
+        ("blank auth token", blank_token),
+        ("blank service SID", blank_service),
     ] {
+        assert!(!incomplete.is_enabled(), "{field} must disable Twilio Verify");
         let (base, requests) = mock_server(StatusCode::OK, r#"{"status":"pending"}"#).await;
         let start =
             start_sms_verification_at(&reqwest::Client::new(), &incomplete, &base, "+14155550100")
                 .await;
         assert!(
             matches!(start, Err(AuthError::Unavailable)),
-            "missing {field} must disable SMS start"
+            "{field} must disable SMS start"
         );
         assert_eq!(
             requests.lock().unwrap().len(),
             0,
-            "missing {field} must fail before contacting Twilio"
+            "{field} must fail before contacting Twilio"
         );
     }
 }
