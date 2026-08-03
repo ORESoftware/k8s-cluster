@@ -7,6 +7,9 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/ops-meta-agent-ephemeral-owner-broker.yml"
+CONTRACT = ROOT / ".github/workflows/ops-meta-agent-ephemeral-owner-broker-contract.yml"
+HELPER = ROOT / "scripts/ops/verify_meta_agent_source_snapshot.py"
+HELPER_TEST = ROOT / "scripts/ops/test_verify_meta_agent_source_snapshot.py"
 DOC = ROOT / "docs/operations/meta-agent-ephemeral-credential-publication.md"
 
 
@@ -14,6 +17,9 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.workflow = WORKFLOW.read_text(encoding="utf-8")
+        cls.contract = CONTRACT.read_text(encoding="utf-8")
+        cls.helper = HELPER.read_text(encoding="utf-8")
+        cls.helper_test = HELPER_TEST.read_text(encoding="utf-8")
         cls.doc = DOC.read_text(encoding="utf-8")
 
     def test_trigger_and_permissions_are_metadata_only_and_bounded(self) -> None:
@@ -56,15 +62,63 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
             with self.subTest(snippet=snippet):
                 self.assertIn(snippet, self.workflow)
 
-    def test_carrier_is_ancestor_safe_and_pins_reviewed_bundle(self) -> None:
+    def test_carrier_is_ancestor_safe_and_pins_reviewed_artifacts(self) -> None:
         required = (
             'test "$marker_main" = "$parent_sha"',
             '(.status == "ahead" or .status == "identical") and .behind_by == 0',
             "SOURCE_SHA: 55ee15c190b7cfa4e075f6984c7cb551acd4b9d3",
+            "SOURCE_HELPER_BLOB_SHA: 5accfab2d09fdda1ee0564c1fd28be1ecf6b91e9",
             "BUNDLE_SHA256: 1ddaa03743b864348162149b7d2d2e2dce7eab585cf092ea14547c647fcec031",
             "PUBLISHER_SHA256: e2fe6eaa622db02a54f83e27a822f64ad4b54971c883f97bbda4ac0a4db5d278",
             "EXPECTED_MAIN: 4d6ec3ad0ec7b688f0e777129eee7e0f0d999df1",
             "EXPECTED_FEATURE: 789d48039da232faed985d4f8de176959f117e08",
+        )
+        for snippet in required:
+            with self.subTest(snippet=snippet):
+                self.assertIn(snippet, self.workflow)
+
+    def test_trusted_helper_is_blob_pinned_and_compiled(self) -> None:
+        required = (
+            "contents/scripts/ops/verify_meta_agent_source_snapshot.py?ref=${TRUSTED_SHA}",
+            'test "$(jq -er \'.sha\' <<<"$helper_response")" = "$SOURCE_HELPER_BLOB_SHA"',
+            'test "$(jq -er \'.encoding\' <<<"$helper_response")" = base64',
+            'base64 --decode > "$helper"',
+            'chmod 700 "$helper"',
+            'python3 -m py_compile "$helper"',
+        )
+        for snippet in required:
+            with self.subTest(snippet=snippet):
+                self.assertIn(snippet, self.workflow)
+        self.assertIn('GH_TOKEN="$workflow_token" gh api', self.workflow)
+
+    def test_source_preflight_completes_before_any_owner_challenge(self) -> None:
+        preflight = self.workflow.index('stage=source-preflight')
+        helper_call = self.workflow.index('GH_TOKEN="$workflow_token" python3 "$helper"')
+        bundle_guard = self.workflow.index('test -s "$bundle"')
+        challenge = self.workflow.index('stage=challenge-bootstrap')
+        key_generation = self.workflow.index("openssl genpkey")
+        owner_decryption = self.workflow.index('stage=decrypt-and-validate-owner')
+        self.assertLess(preflight, helper_call)
+        self.assertLess(helper_call, bundle_guard)
+        self.assertLess(bundle_guard, challenge)
+        self.assertLess(challenge, key_generation)
+        self.assertLess(key_generation, owner_decryption)
+        self.assertIn(
+            "Immutable source preflight already passed.",
+            self.workflow,
+        )
+
+    def test_source_preflight_arguments_are_exact(self) -> None:
+        required = (
+            "--repository ORESoftware/k8s-cluster",
+            '--source-sha "$SOURCE_SHA"',
+            '--bundle-sha256 "$BUNDLE_SHA256"',
+            '--publisher-sha256 "$PUBLISHER_SHA256"',
+            '--expected-head "refs/heads/main=${EXPECTED_MAIN}"',
+            '--expected-head "refs/heads/${FEATURE_REF}=${EXPECTED_FEATURE}"',
+            '--output-dir "$source_root"',
+            'bundle="$source_root/meta-agent-control-plane-den-1057.bundle"',
+            'publisher="$source_root/publish_meta_control_plane.py"',
         )
         for snippet in required:
             with self.subTest(snippet=snippet):
@@ -117,78 +171,73 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
         self.assertLess(membership, publication)
         self.assertIn('test "$membership" = admin:active', self.workflow)
 
-    def test_source_snapshot_uses_commit_tree_blob_api_without_git_fetch(self) -> None:
+    def test_helper_walks_bounded_non_recursive_trees(self) -> None:
         required = (
-            "source_repository='ORESoftware/k8s-cluster'",
-            'gh api "repos/${source_repository}/git/commits/${SOURCE_SHA}"',
-            'test "$(jq -er \'.sha\' <<<"$source_commit")" = "$SOURCE_SHA"',
-            'gh api "repos/${source_repository}/git/trees/${source_tree_sha}?recursive=1"',
-            'test "$(jq -r \'.truncated\' <<<"$source_tree")" = false',
-            '^scripts/critical-org-fleet/assets/meta\\.part[^/]+$',
-            'gh api "repos/${source_repository}/git/blobs/${asset_sha}"',
-            "publisher_relative='scripts/critical-org-fleet/publish_meta_control_plane.py'",
-            'gh api "repos/${source_repository}/git/blobs/${publisher_blob_sha}"',
+            'path="scripts"',
+            'path="critical-org-fleet"',
+            'path="assets"',
+            'path=PUBLISHER_NAME',
+            "ASSET_NAME_PATTERN.fullmatch",
+            "client.tree(root_tree_sha)",
+            "client.tree(scripts_sha)",
+            "client.tree(fleet_sha)",
+            "client.tree(assets_sha)",
+            'payload.get("truncated") is True',
         )
         for snippet in required:
             with self.subTest(snippet=snippet):
-                self.assertIn(snippet, self.workflow)
-        self.assertGreaterEqual(self.workflow.count('GH_TOKEN="$workflow_token"'), 4)
-        self.assertNotIn('git -C "$source_root" remote add origin', self.workflow)
-        self.assertNotIn(
-            'git -C "$source_root" -c protocol.version=2 fetch', self.workflow
-        )
-        self.assertNotIn(
-            'git -C "$source_root" checkout --detach FETCH_HEAD', self.workflow
-        )
-        tree_read = self.workflow.index(
-            'gh api "repos/${source_repository}/git/trees/${source_tree_sha}?recursive=1"'
-        )
-        bundle_digest = self.workflow.index(
-            "printf '%s  %s\\n' \"$BUNDLE_SHA256\" \"$bundle\" | sha256sum --check --strict"
-        )
-        publication = self.workflow.index('python3 "$publisher" "$bundle"')
-        self.assertLess(tree_read, bundle_digest)
-        self.assertLess(bundle_digest, publication)
+                self.assertIn(snippet, self.helper)
+        self.assertNotIn("recursive=1", self.helper)
+        self.assertNotIn("git fetch", self.helper)
+        self.assertNotIn("git clone", self.helper)
 
-    def test_sealed_parts_are_decoded_through_both_base64_layers(self) -> None:
-        outer_decode = (
-            "jq -er '.content' <<<\"$asset_blob\" \\\n"
-            "              | tr -d '\\n' \\\n"
-            "              | base64 --decode >> \"$bundle_base64\""
+    def test_helper_decodes_both_layers_and_verifies_digest(self) -> None:
+        outer_decode = "encoded_bundle.extend(decode_blob(client.blob(blob_sha), f\"assets/{path}\"))"
+        inner_decode = "bundle_bytes = base64.b64decode(bytes(encoded_bundle), validate=False)"
+        digest = "observed_bundle_sha256 = sha256_bytes(bundle_bytes)"
+        self.assertIn(outer_decode, self.helper)
+        self.assertIn(inner_decode, self.helper)
+        self.assertIn(digest, self.helper)
+        self.assertLess(self.helper.index(outer_decode), self.helper.index(inner_decode))
+        self.assertLess(self.helper.index(inner_decode), self.helper.index(digest))
+        self.assertIn(
+            'if observed_bundle_sha256 != expected_bundle_sha256:', self.helper
         )
-        inner_decode = 'base64 --decode "$bundle_base64" > "$bundle"'
-        digest = (
-            "printf '%s  %s\\n' \"$BUNDLE_SHA256\" \"$bundle\" "
-            "| sha256sum --check --strict"
-        )
-        self.assertIn('bundle_base64="$work/meta-agent-control-plane-den-1057.bundle.b64"', self.workflow)
-        self.assertIn(outer_decode, self.workflow)
-        self.assertIn('test -s "$bundle_base64"', self.workflow)
-        self.assertIn(inner_decode, self.workflow)
-        self.assertIn('test -s "$bundle"', self.workflow)
-        self.assertLess(self.workflow.index(outer_decode), self.workflow.index(inner_decode))
-        self.assertLess(self.workflow.index(inner_decode), self.workflow.index(digest))
-        self.assertNotIn('base64 --decode >> "$bundle"', self.workflow)
 
-    def test_bundle_verify_runs_inside_initialized_source_repository(self) -> None:
-        init = self.workflow.index('git init "$source_root"')
-        worktree_guard = self.workflow.index(
-            'test "$(git -C "$source_root" rev-parse --is-inside-work-tree)" = true'
+    def test_helper_verifies_bundle_in_repository_context_and_exact_refs(self) -> None:
+        init = self.helper.index('run_git(["init", "--bare", "--quiet"')
+        verify = self.helper.index(
+            'run_git(["-C", str(repository_context), "bundle", "verify"'
         )
-        bundle_verify = self.workflow.index(
-            'git -C "$source_root" bundle verify "$bundle" >/dev/null'
-        )
-        publication = self.workflow.index('python3 "$publisher" "$bundle"')
-        self.assertLess(init, worktree_guard)
-        self.assertLess(worktree_guard, bundle_verify)
-        self.assertLess(bundle_verify, publication)
-        self.assertNotIn('\n          git bundle verify "$bundle"', self.workflow)
+        heads = self.helper.index("observed_heads = parse_bundle_heads(bundle_path)")
+        exact = self.helper.index("if observed_heads != dict(expected_heads):")
+        self.assertLess(init, verify)
+        self.assertLess(verify, heads)
+        self.assertLess(heads, exact)
 
-    def test_exact_bundle_and_live_refs_are_verified(self) -> None:
+    def test_contract_runs_unit_and_live_read_only_preflight(self) -> None:
         required = (
-            "sha256sum --check --strict",
-            'git -C "$source_root" bundle verify "$bundle"',
-            'test "$observed_heads" = "$expected_heads"',
+            "scripts/ops/verify_meta_agent_source_snapshot.py",
+            "scripts/ops/test_verify_meta_agent_source_snapshot.py",
+            "Prove the immutable source snapshot before owner authorization",
+            "GH_TOKEN: ${{ github.token }}",
+            "python3 scripts/ops/verify_meta_agent_source_snapshot.py",
+            "--source-sha 55ee15c190b7cfa4e075f6984c7cb551acd4b9d3",
+            "--bundle-sha256 1ddaa03743b864348162149b7d2d2e2dce7eab585cf092ea14547c647fcec031",
+            "--publisher-sha256 e2fe6eaa622db02a54f83e27a822f64ad4b54971c883f97bbda4ac0a4db5d278",
+        )
+        for snippet in required:
+            with self.subTest(snippet=snippet):
+                self.assertIn(snippet, self.contract)
+        self.assertIn("SnapshotFixture", self.helper_test)
+        self.assertIn(
+            "test_reconstructs_two_layer_bundle_and_verifies_exact_refs",
+            self.helper_test,
+        )
+
+    def test_exact_target_and_live_refs_are_verified(self) -> None:
+        required = (
+            'python3 "$publisher" "$bundle"',
             'test "$main_sha" = "$EXPECTED_MAIN"',
             'test "$feature_sha" = "$EXPECTED_FEATURE"',
             '.visibility == "public"',
@@ -200,10 +249,11 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
                 self.assertIn(snippet, self.workflow)
 
     def test_no_force_or_generated_replacement_history_path_exists(self) -> None:
-        self.assertNotIn("git push --force", self.workflow)
-        self.assertNotIn("git push -f", self.workflow)
-        self.assertNotIn('"--force"', self.workflow)
-        self.assertIn("publish_meta_control_plane.py", self.workflow)
+        combined = self.workflow + self.helper
+        self.assertNotIn("git push --force", combined)
+        self.assertNotIn("git push -f", combined)
+        self.assertNotIn('"--force"', combined)
+        self.assertIn("publish_meta_control_plane.py", combined)
 
     def test_review_pr_and_carrier_cleanup_are_required(self) -> None:
         self.assertIn(
@@ -211,11 +261,14 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
         )
         self.assertIn("Review PR: ${pr_url}", self.workflow)
         self.assertIn(
-            'gh api --method PATCH "repos/${REPOSITORY}/pulls/${PR_NUMBER}" -f state=closed',
+            'GH_TOKEN="$workflow_token" gh api --method PATCH', self.workflow
+        )
+        self.assertIn(
+            '"repos/${REPOSITORY}/pulls/${PR_NUMBER}" -f state=closed',
             self.workflow,
         )
 
-    def test_documentation_names_rotation_and_non_persistence_boundary(self) -> None:
+    def test_documentation_names_preflight_rotation_and_non_persistence(self) -> None:
         for phrase in (
             "never committed",
             "ephemeral RSA",
@@ -223,6 +276,8 @@ class MetaAgentEphemeralOwnerBrokerTests(unittest.TestCase):
             "exact recovered Git history",
             "commit/tree/blob API snapshot",
             "two base64 layers",
+            "bounded non-recursive tree walk",
+            "source preflight",
             "initialized source repository",
             "Linear",
         ):
