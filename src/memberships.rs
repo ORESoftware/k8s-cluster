@@ -58,21 +58,8 @@ impl MembershipService {
         tenant_id: Uuid,
         shared_user_id: &str,
     ) -> AppResult<Option<TenantGrant>> {
-        validate_subject(shared_user_id)?;
-        let row = self
-            .pool
-            .query_one(stmt(
-                r#"
-                SELECT tenant_id, shared_user_id, role, scopes, created_at, updated_at
-                FROM tenant_memberships
-                WHERE tenant_id = $1
-                  AND shared_user_id = $2
-                  AND revoked_at IS NULL
-                "#,
-                [tenant_id.into(), shared_user_id.to_owned().into()],
-            ))
-            .await?;
-        row.map(grant_from_row).transpose()
+        let shared_user_id = canonical_subject(shared_user_id)?;
+        grant_for_on(&self.pool, tenant_id, &shared_user_id).await
     }
 
     pub async fn require_scope(
@@ -116,11 +103,22 @@ impl MembershipService {
         input: UpsertMembership,
         actor_shared_user_id: &str,
     ) -> AppResult<TenantGrant> {
-        validate_subject(shared_user_id)?;
-        validate_subject(actor_shared_user_id)?;
+        let shared_user_id = canonical_subject(shared_user_id)?;
+        let actor_shared_user_id = canonical_subject(actor_shared_user_id)?;
         let role = normalize_role(&input.role)?;
         let scopes = normalize_scopes(input.scopes, &role)?;
         let transaction = self.pool.begin().await?;
+        lock_tenant(&transaction, tenant_id).await?;
+        let actor = grant_for_on(&transaction, tenant_id, &actor_shared_user_id)
+            .await?
+            .ok_or(AppError::Forbidden)?;
+        let current = grant_for_on(&transaction, tenant_id, &shared_user_id).await?;
+        authorize_membership_change(
+            &actor.role,
+            actor.has_scope(SCOPE_BILLING_ADMIN),
+            current.as_ref().map(|grant| grant.role.as_str()),
+            Some(&role),
+        )?;
         let row = transaction
             .query_one(stmt(
                 r#"
@@ -139,10 +137,10 @@ impl MembershipService {
                 "#,
                 [
                     tenant_id.into(),
-                    shared_user_id.to_owned().into(),
+                    shared_user_id.clone().into(),
                     role.clone().into(),
                     scopes.clone().into(),
-                    actor_shared_user_id.to_owned().into(),
+                    actor_shared_user_id.clone().into(),
                 ],
             ))
             .await?
@@ -150,8 +148,8 @@ impl MembershipService {
         record_event(
             &transaction,
             tenant_id,
-            shared_user_id,
-            actor_shared_user_id,
+            &shared_user_id,
+            &actor_shared_user_id,
             "grant_or_update",
             Some(&role),
             &scopes,
@@ -167,14 +165,29 @@ impl MembershipService {
         shared_user_id: &str,
         actor_shared_user_id: &str,
     ) -> AppResult<()> {
-        validate_subject(shared_user_id)?;
-        validate_subject(actor_shared_user_id)?;
+        let shared_user_id = canonical_subject(shared_user_id)?;
+        let actor_shared_user_id = canonical_subject(actor_shared_user_id)?;
         if shared_user_id == actor_shared_user_id {
             return Err(AppError::BadRequest(
                 "operators may not revoke their own active membership".to_owned(),
             ));
         }
         let transaction = self.pool.begin().await?;
+        lock_tenant(&transaction, tenant_id).await?;
+        let actor = grant_for_on(&transaction, tenant_id, &actor_shared_user_id)
+            .await?
+            .ok_or(AppError::Forbidden)?;
+        let current = grant_for_on(&transaction, tenant_id, &shared_user_id)
+            .await?
+            .ok_or_else(|| {
+                AppError::NotFound(format!("active membership {tenant_id}/{shared_user_id}"))
+            })?;
+        authorize_membership_change(
+            &actor.role,
+            actor.has_scope(SCOPE_BILLING_ADMIN),
+            Some(&current.role),
+            None,
+        )?;
         let result = transaction
             .execute(stmt(
                 r#"
@@ -184,7 +197,7 @@ impl MembershipService {
                   AND shared_user_id = $2
                   AND revoked_at IS NULL
                 "#,
-                [tenant_id.into(), shared_user_id.to_owned().into()],
+                [tenant_id.into(), shared_user_id.clone().into()],
             ))
             .await?;
         if result.rows_affected() == 0 {
@@ -195,8 +208,8 @@ impl MembershipService {
         record_event(
             &transaction,
             tenant_id,
-            shared_user_id,
-            actor_shared_user_id,
+            &shared_user_id,
+            &actor_shared_user_id,
             "revoke",
             None,
             &[],
@@ -215,7 +228,7 @@ impl MembershipService {
     where
         C: ConnectionTrait,
     {
-        validate_subject(shared_user_id)?;
+        let shared_user_id = canonical_subject(shared_user_id)?;
         let scopes = vec![
             SCOPE_BILLING_READ.to_owned(),
             SCOPE_BILLING_WRITE.to_owned(),
@@ -231,7 +244,7 @@ impl MembershipService {
                 "#,
                 [
                     tenant_id.into(),
-                    shared_user_id.to_owned().into(),
+                    shared_user_id.clone().into(),
                     scopes.clone().into(),
                 ],
             ))
@@ -239,8 +252,8 @@ impl MembershipService {
         record_event(
             connection,
             tenant_id,
-            shared_user_id,
-            shared_user_id,
+            &shared_user_id,
+            &shared_user_id,
             "create_owner",
             Some("owner"),
             &scopes,
@@ -257,6 +270,60 @@ impl MembershipService {
             .await
             .is_ok()
     }
+}
+
+async fn lock_tenant<C>(connection: &C, tenant_id: Uuid) -> AppResult<()>
+where
+    C: ConnectionTrait,
+{
+    connection
+        .query_one(stmt(
+            "SELECT id FROM tenants WHERE id = $1 FOR UPDATE",
+            [tenant_id.into()],
+        ))
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("tenant {tenant_id}")))?;
+    Ok(())
+}
+
+async fn grant_for_on<C>(
+    connection: &C,
+    tenant_id: Uuid,
+    shared_user_id: &str,
+) -> AppResult<Option<TenantGrant>>
+where
+    C: ConnectionTrait,
+{
+    let row = connection
+        .query_one(stmt(
+            r#"
+            SELECT tenant_id, shared_user_id, role, scopes, created_at, updated_at
+            FROM tenant_memberships
+            WHERE tenant_id = $1
+              AND shared_user_id = $2
+              AND revoked_at IS NULL
+            "#,
+            [tenant_id.into(), shared_user_id.to_owned().into()],
+        ))
+        .await?;
+    row.map(grant_from_row).transpose()
+}
+
+fn authorize_membership_change(
+    actor_role: &str,
+    actor_has_admin_scope: bool,
+    current_target_role: Option<&str>,
+    requested_role: Option<&str>,
+) -> AppResult<()> {
+    if !actor_has_admin_scope || !matches!(actor_role, "owner" | "admin") {
+        return Err(AppError::Forbidden);
+    }
+
+    let touches_ownership = current_target_role == Some("owner") || requested_role == Some("owner");
+    if touches_ownership && actor_role != "owner" {
+        return Err(AppError::Forbidden);
+    }
+    Ok(())
 }
 
 async fn record_event<C>(
@@ -303,19 +370,20 @@ fn grant_from_row(row: sea_orm::QueryResult) -> AppResult<TenantGrant> {
     })
 }
 
-fn validate_subject(subject: &str) -> AppResult<()> {
-    let subject = subject.trim();
-    if subject.is_empty()
-        || subject.len() > 200
-        || subject
+fn canonical_subject(subject: &str) -> AppResult<String> {
+    let canonical = subject.trim();
+    if canonical != subject
+        || canonical.is_empty()
+        || canonical.len() > 200
+        || canonical
             .chars()
             .any(|character| character.is_control() || matches!(character, '/' | '\\'))
     {
         return Err(AppError::BadRequest(
-            "invalid Shared Auth subject".to_owned(),
+            "invalid or non-canonical Shared Auth subject".to_owned(),
         ));
     }
-    Ok(())
+    Ok(canonical.to_owned())
 }
 
 fn normalize_role(role: &str) -> AppResult<String> {
@@ -436,10 +504,26 @@ mod tests {
     }
 
     #[test]
-    fn shared_auth_subjects_are_bounded() {
-        assert!(validate_subject("shared-user-1").is_ok());
-        assert!(validate_subject("").is_err());
-        assert!(validate_subject("../other").is_err());
-        assert!(validate_subject(&"x".repeat(201)).is_err());
+    fn shared_auth_subjects_are_canonical_and_bounded() {
+        assert_eq!(canonical_subject("shared-user-1").unwrap(), "shared-user-1");
+        assert!(canonical_subject("").is_err());
+        assert!(canonical_subject(" padded").is_err());
+        assert!(canonical_subject("padded ").is_err());
+        assert!(canonical_subject("../other").is_err());
+        assert!(canonical_subject(&"x".repeat(201)).is_err());
+    }
+
+    #[test]
+    fn only_owners_may_change_ownership() {
+        assert!(authorize_membership_change("admin", true, Some("billing"), Some("admin")).is_ok());
+        assert!(authorize_membership_change("admin", true, None, Some("owner")).is_err());
+        assert!(authorize_membership_change("admin", true, Some("owner"), Some("admin")).is_err());
+        assert!(authorize_membership_change("admin", true, Some("owner"), None).is_err());
+        assert!(authorize_membership_change("owner", true, None, Some("owner")).is_ok());
+        assert!(authorize_membership_change("owner", true, Some("owner"), Some("admin")).is_ok());
+        assert!(authorize_membership_change("owner", true, Some("owner"), None).is_ok());
+        assert!(
+            authorize_membership_change("reader", false, Some("reader"), Some("reader")).is_err()
+        );
     }
 }

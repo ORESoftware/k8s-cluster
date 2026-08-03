@@ -16,9 +16,17 @@ create table if not exists tenant_memberships (
   created_at                   timestamptz not null default now(),
   updated_at                   timestamptz not null default now(),
   primary key (tenant_id, shared_user_id),
-  constraint tenant_memberships_subject_length check (
-    length(shared_user_id) between 1 and 200
-    and length(granted_by_shared_user_id) between 1 and 200
+  constraint tenant_memberships_subject_canonical check (
+    octet_length(shared_user_id) between 1 and 200
+    and octet_length(granted_by_shared_user_id) between 1 and 200
+    and shared_user_id = btrim(shared_user_id)
+    and granted_by_shared_user_id = btrim(granted_by_shared_user_id)
+    and shared_user_id !~ '[[:cntrl:]]'
+    and granted_by_shared_user_id !~ '[[:cntrl:]]'
+    and strpos(shared_user_id, '/') = 0
+    and strpos(shared_user_id, E'\\') = 0
+    and strpos(granted_by_shared_user_id, '/') = 0
+    and strpos(granted_by_shared_user_id, E'\\') = 0
   ),
   constraint tenant_memberships_role check (
     role in ('owner', 'admin', 'billing', 'reader')
@@ -27,6 +35,9 @@ create table if not exists tenant_memberships (
     cardinality(scopes) between 1 and 3
     and scopes <@ array['billing:read', 'billing:write', 'billing:admin']::text[]
     and scopes @> array['billing:read']::text[]
+    and cardinality(array_positions(scopes, 'billing:read')) = 1
+    and cardinality(array_positions(scopes, 'billing:write')) <= 1
+    and cardinality(array_positions(scopes, 'billing:admin')) <= 1
   ),
   constraint tenant_memberships_role_scope check (
     (
@@ -59,9 +70,56 @@ create table if not exists tenant_membership_events (
   role                         text,
   scopes                       text[] not null default array[]::text[],
   occurred_at                  timestamptz not null default now(),
-  constraint tenant_membership_events_subject_length check (
-    length(shared_user_id) between 1 and 200
-    and length(actor_shared_user_id) between 1 and 200
+  constraint tenant_membership_events_subject_canonical check (
+    octet_length(shared_user_id) between 1 and 200
+    and octet_length(actor_shared_user_id) between 1 and 200
+    and shared_user_id = btrim(shared_user_id)
+    and actor_shared_user_id = btrim(actor_shared_user_id)
+    and shared_user_id !~ '[[:cntrl:]]'
+    and actor_shared_user_id !~ '[[:cntrl:]]'
+    and strpos(shared_user_id, '/') = 0
+    and strpos(shared_user_id, E'\\') = 0
+    and strpos(actor_shared_user_id, '/') = 0
+    and strpos(actor_shared_user_id, E'\\') = 0
+  ),
+  constraint tenant_membership_events_role check (
+    role is null or role in ('owner', 'admin', 'billing', 'reader')
+  ),
+  constraint tenant_membership_events_scopes check (
+    cardinality(scopes) between 0 and 3
+    and scopes <@ array['billing:read', 'billing:write', 'billing:admin']::text[]
+    and cardinality(array_positions(scopes, 'billing:read')) <= 1
+    and cardinality(array_positions(scopes, 'billing:write')) <= 1
+    and cardinality(array_positions(scopes, 'billing:admin')) <= 1
+  ),
+  constraint tenant_membership_events_payload check (
+    (
+      event_type = 'revoke'
+      and role is null
+      and cardinality(scopes) = 0
+    )
+    or (
+      event_type = 'create_owner'
+      and role = 'owner'
+      and actor_shared_user_id = shared_user_id
+      and scopes @> array['billing:read', 'billing:write', 'billing:admin']::text[]
+    )
+    or (
+      event_type = 'grant_or_update'
+      and role is not null
+      and scopes @> array['billing:read']::text[]
+      and (
+        (
+          role in ('owner', 'admin')
+          and scopes @> array['billing:read', 'billing:write', 'billing:admin']::text[]
+        )
+        or (
+          role = 'billing'
+          and scopes <@ array['billing:read', 'billing:write']::text[]
+        )
+        or (role = 'reader' and scopes = array['billing:read']::text[])
+      )
+    )
   )
 );
 
@@ -90,8 +148,52 @@ create trigger tenant_membership_events_no_delete
   before delete on tenant_membership_events
   for each row execute function tenant_membership_events_immutable();
 
+-- Serialize every membership mutation on the tenant row. Without this lock two
+-- concurrent transactions can each observe the other owner and both demote or
+-- revoke, defeating a deferred final-owner check.
+create or replace function tenant_membership_serialize_change()
+returns trigger
+language plpgsql
+as $$
+declare
+  affected_tenant uuid;
+begin
+  if tg_op = 'UPDATE'
+     and (new.tenant_id, new.shared_user_id)
+         is distinct from (old.tenant_id, old.shared_user_id) then
+    raise exception 'tenant membership identity is immutable'
+      using errcode = '23514';
+  end if;
+
+  if tg_op = 'DELETE' then
+    affected_tenant := old.tenant_id;
+  else
+    affected_tenant := new.tenant_id;
+  end if;
+
+  -- A cascading tenant delete may no longer expose the parent row to this
+  -- transaction. In that case the deferred owner check also skips the deleted
+  -- tenant; ordinary inserts/updates remain protected by the foreign key.
+  perform 1
+  from tenants
+  where id = affected_tenant
+  for update;
+
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists tenant_memberships_serialize_change on tenant_memberships;
+create trigger tenant_memberships_serialize_change
+  before insert or update or delete on tenant_memberships
+  for each row execute function tenant_membership_serialize_change();
+
 -- A tenant may never lose its final active owner. Deferred evaluation allows
--- tenant creation and its first owner grant to commit atomically.
+-- tenant creation and its first owner grant to commit atomically. The BEFORE
+-- trigger above makes this invariant safe under concurrent owner mutations.
 create or replace function tenant_membership_change_must_retain_owner()
 returns trigger
 language plpgsql

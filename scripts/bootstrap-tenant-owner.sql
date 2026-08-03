@@ -29,7 +29,8 @@
 -- variables inside dollar-quoted PL/pgSQL bodies, so do not hide these checks
 -- in a DO $$ block.
 select (
-  length(:'shared_user_id') between 1 and 200
+  octet_length(:'shared_user_id') between 1 and 200
+  and :'shared_user_id' = btrim(:'shared_user_id')
   and :'shared_user_id' !~ '[[:cntrl:]]'
   and strpos(:'shared_user_id', '/') = 0
   and strpos(:'shared_user_id', E'\\') = 0

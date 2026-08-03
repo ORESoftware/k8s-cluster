@@ -38,6 +38,8 @@ pub async fn start(
     Path(provider_str): Path<String>,
     Query(q): Query<StartQuery>,
 ) -> AppResult<Response> {
+    require_redirect_oauth_enabled(&state)?;
+
     // Reject unsupported/non-redirect providers before creating a state row.
     let provider = parse_redirect_provider(&provider_str)?;
 
@@ -112,6 +114,7 @@ pub async fn callback(
     Path(provider_str): Path<String>,
     Query(q): Query<CallbackQuery>,
 ) -> AppResult<Json<CallbackResp>> {
+    require_redirect_oauth_enabled(&state)?;
     let provider = parse_redirect_provider(&provider_str)?;
 
     // Consume the callback capability exactly once, including provider-denied
@@ -429,6 +432,21 @@ async fn persist_and_schedule(
     })
 }
 
+fn require_redirect_oauth_enabled(state: &AppState) -> AppResult<()> {
+    redirect_oauth_gate(state.cfg.redirect_oauth_enabled)
+}
+
+fn redirect_oauth_gate(enabled: bool) -> AppResult<()> {
+    if enabled {
+        Ok(())
+    } else {
+        Err(AppError::NotFound(
+            "redirect OAuth linking is disabled until session-bound finalization is deployed"
+                .to_owned(),
+        ))
+    }
+}
+
 fn parse_redirect_provider(value: &str) -> AppResult<ProviderKind> {
     match value {
         "stripe" => Ok(ProviderKind::Stripe),
@@ -537,6 +555,13 @@ mod tests {
     fn for_tests_cfg_has_no_allow_list_by_default() {
         let cfg = mk_cfg(vec![]);
         assert!(cfg.oauth_return_to_allowed_prefixes.is_empty());
+        assert!(!cfg.redirect_oauth_enabled);
+    }
+
+    #[test]
+    fn redirect_oauth_gate_fails_closed() {
+        assert!(redirect_oauth_gate(false).is_err());
+        assert!(redirect_oauth_gate(true).is_ok());
     }
 
     #[test]

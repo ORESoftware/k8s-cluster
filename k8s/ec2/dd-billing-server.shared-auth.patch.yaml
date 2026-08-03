@@ -49,6 +49,12 @@ spec:
             - name: BILLING_REQUIRE_STEP_UP_FOR_MUTATIONS
               value: 'true'
 
+            # Redirect callbacks cannot present the initiating user's bearer,
+            # so production keeps credential linking closed until a two-phase,
+            # session-bound finalization endpoint replaces direct persistence.
+            - name: BILLING_REDIRECT_OAUTH_ENABLED
+              value: 'false'
+
             # The embedded HTMX admin still uses a separate static credential.
             # Keep it off in production until it is fronted by a Shared Auth-
             # aware gateway/session adapter; the JSON membership API is the
