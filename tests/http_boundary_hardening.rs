@@ -106,8 +106,7 @@ fn shared_secret_configuration_enforces_exact_bounds_and_control_rejection() {
     assert!(SharedSecretAuthenticator::new("x".repeat(4096)).is_ok());
     assert!(SharedSecretAuthenticator::new("x".repeat(4097)).is_err());
     assert!(
-        SharedSecretAuthenticator::new(format!("{}\n{}", "x".repeat(16), "x".repeat(16)))
-            .is_err()
+        SharedSecretAuthenticator::new(format!("{}\n{}", "x".repeat(16), "x".repeat(16))).is_err()
     );
 }
 

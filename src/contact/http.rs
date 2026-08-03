@@ -21,7 +21,7 @@ use crate::contracts::ContractVersion;
 use crate::http_api::RequestAuthenticator;
 use crate::redaction::truncate_utf8;
 
-const MAX_CONTACT_HTTP_BODY_BYTES: usize = 768 * 1024;
+pub(crate) const MAX_CONTACT_HTTP_BODY_BYTES: usize = 768 * 1024;
 const MAX_CONTACT_BATCH_JOBS: usize = 100;
 const MAX_SAFE_DETAIL_BYTES: usize = 512;
 

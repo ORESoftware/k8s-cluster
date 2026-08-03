@@ -20,7 +20,7 @@ use crate::provider::ProviderError;
 use crate::redaction::truncate_utf8;
 use crate::validation::validate_push_job;
 
-const MAX_HTTP_BODY_BYTES: usize = 512 * 1024;
+pub(crate) const MAX_HTTP_BODY_BYTES: usize = 512 * 1024;
 const MAX_BATCH_JOBS: usize = 100;
 const MAX_SAFE_DETAIL_BYTES: usize = 512;
 

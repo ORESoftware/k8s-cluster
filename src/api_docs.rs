@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::body::Bytes;
-use axum::extract::State;
+use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value};
@@ -20,8 +20,8 @@ use utoipa::openapi::{Components, OpenApi};
 use utoipa_axum::{router::OpenApiRouter, routes};
 use utoipa_scalar::Scalar;
 
-use crate::contact::http::{ContactApiState, contact_openapi_router};
-use crate::http_api::{ApiState, RequestAuthenticator, push_openapi_router};
+use crate::contact::http::{ContactApiState, MAX_CONTACT_HTTP_BODY_BYTES, contact_openapi_router};
+use crate::http_api::{ApiState, MAX_HTTP_BODY_BYTES, RequestAuthenticator, push_openapi_router};
 
 const OPENAPI_CONTENT_TYPE: &str = "application/vnd.oai.openapi+json;version=3.1";
 const PUBLIC_PATHS: &[&str] = &[
@@ -72,9 +72,15 @@ pub fn application_router(
     let openapi = merge_and_finalize(push_openapi, contact_openapi, docs_openapi);
     let docs_state = DocsState::new(&openapi, authenticator)?;
 
+    let push_router = push_router
+        .layer(DefaultBodyLimit::max(MAX_HTTP_BODY_BYTES))
+        .with_state(push_state);
+    let contact_router = contact_router
+        .layer(DefaultBodyLimit::max(MAX_CONTACT_HTTP_BODY_BYTES))
+        .with_state(contact_state);
+
     Ok(push_router
-        .with_state(push_state)
-        .merge(contact_router.with_state(contact_state))
+        .merge(contact_router)
         .merge(docs_router.with_state(docs_state)))
 }
 
@@ -161,7 +167,10 @@ fn collect_schema_refs(value: &Value, refs: &mut BTreeSet<String>) {
     }
 }
 
-fn reachable_public_schemas(paths: &Map<String, Value>, all_schemas: &Map<String, Value>) -> Map<String, Value> {
+fn reachable_public_schemas(
+    paths: &Map<String, Value>,
+    all_schemas: &Map<String, Value>,
+) -> Map<String, Value> {
     let mut required = BTreeSet::new();
     collect_schema_refs(&Value::Object(paths.clone()), &mut required);
 
@@ -204,8 +213,14 @@ fn public_projection(openapi: &OpenApi) -> Result<OpenApi, serde_json::Error> {
     let schemas = reachable_public_schemas(&public_paths, &all_schemas);
     value["components"] = serde_json::json!({ "schemas": schemas });
     value["info"]["title"] = Value::String("push-notification-server API (public)".to_owned());
-    value["info"].as_object_mut().expect("OpenAPI info object").remove("contact");
-    value["info"].as_object_mut().expect("OpenAPI info object").remove("license");
+    value["info"]
+        .as_object_mut()
+        .expect("OpenAPI info object")
+        .remove("contact");
+    value["info"]
+        .as_object_mut()
+        .expect("OpenAPI info object")
+        .remove("license");
     value["x-dd-contract-scope"] = Value::String("public".to_owned());
     serde_json::from_value(value)
 }

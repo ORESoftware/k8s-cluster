@@ -29,9 +29,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 # crates.io utoipa-axum 0.2.0 still pulls the archived `paste` crate.
 # Pin the complete type family to the reviewed upstream pastey migration.
-utoipa = { git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa" }
-utoipa-axum = { git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa-axum" }
-utoipa-scalar = { git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa-scalar" }
+utoipa = { version = "=5.5.0", git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa" }
+utoipa-axum = { version = "=0.2.0", git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa-axum" }
+utoipa-scalar = { version = "=0.3.0", git = "https://github.com/juhaku/utoipa", rev = "aecd7f75c8a8fa586e5d821cbabdb63fa27ad30a", package = "utoipa-scalar" }
 url = "2"
 
 [dev-dependencies]

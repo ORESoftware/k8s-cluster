@@ -3,14 +3,6 @@
   "info": {
     "title": "push-notification-server API",
     "description": "Provider-neutral push, email, and SMS delivery API. The contract is generated from the same annotated handlers and Serde DTOs mounted by the running Axum process.",
-    "contact": {
-      "name": "Juha Kukkonen",
-      "email": "juha7kukkonen@gmail.com"
-    },
-    "license": {
-      "name": "MIT OR Apache-2.0",
-      "identifier": "MIT OR Apache-2.0"
-    },
     "version": "0.1.0"
   },
   "paths": {
@@ -1406,5 +1398,6 @@
         "description": "Set Authorization: Bearer <token>. Protected routes fail closed when authentication is not configured."
       }
     }
-  }
+  },
+  "x-dd-contract-scope": "internal"
 }
