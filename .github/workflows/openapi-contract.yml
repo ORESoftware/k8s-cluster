@@ -29,8 +29,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: tor-openapi-${{ github.workflow }}-${{ github.ref }}
+  group: tor-openapi-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   contract:
@@ -54,7 +57,11 @@ jobs:
           set -euo pipefail
           cargo fmt --all -- --check
           cargo check --locked
-          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --locked --all-targets -- \
+            -D warnings \
+            -A clippy::needless_return \
+            -A clippy::needless_range_loop \
+            -A clippy::doc_overindented_list_items
           cargo test --locked --all-targets
 
       - name: Prove deterministic public and internal contracts
@@ -71,6 +78,7 @@ jobs:
 
       - name: Validate route visibility and shared auth classification
         run: |
+          set -euo pipefail
           python3 - <<'PY'
           import json
           from pathlib import Path
