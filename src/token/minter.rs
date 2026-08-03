@@ -246,7 +246,9 @@ mod tests {
         let claims = m.verify(&minted.token).unwrap();
         assert_eq!(claims.acr.as_deref(), Some(ACR_LOA2));
         assert_eq!(claims.aal, 2);
-        assert!(claims.auth_time.is_some_and(|at| at >= before && at <= now_secs()));
+        assert!(claims
+            .auth_time
+            .is_some_and(|at| at >= before && at <= now_secs()));
     }
 
     #[test]
