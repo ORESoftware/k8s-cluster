@@ -1,0 +1,28 @@
+name: opto-sync real web application e2e
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'astro.config.*'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/opto-sync-real-web.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-web:
+    uses: opto-sync/opto-sync-e2e/.github/workflows/real-web-app-reusable.yml@acc2299690c91709077883da8a6d56ebe67c52e0
+    with:
+      sibling_repository_1: fiducia-cloud/fiducia-interfaces
+      sibling_ref_1: f64cefd987ed16173c526b33a92fb90cbdfcac45
+      sibling_path_1: fiducia-interfaces
+      sibling_repository_2: fiducia-cloud/fiducia-test-config
+      sibling_ref_2: 026fcf28193c7baeb7f5feb68480a91539c1f0fa
+      sibling_path_2: fiducia-test-config
