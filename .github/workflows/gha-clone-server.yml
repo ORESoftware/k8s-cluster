@@ -42,77 +42,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  repair-candidate:
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.head_ref == 'agent/den-1550-gha-continuity-20260803'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.head_ref }}
-          persist-credentials: true
-      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
-        with:
-          toolchain: '1.90.0'
-          components: rustfmt
-      - name: Apply bounded compiler and contract fixes
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          lib = Path('remote/deployments/gha-clone-server-rs/src/lib.rs')
-          source = lib.read_text()
-          source = source.replace(
-              'mapping.get(&Value::String(key.to_string()))',
-              'mapping.get(Value::String(key.to_string()))',
-              1,
-          )
-          source = source.replace(
-              '''let mut request = request("jobs: {}");
-                  request.workflow_path = "../ci.yml".into();
-                  let errors = build_plan(&request, &PlannerLimits::default())''',
-              '''let mut invalid_path_request = request("jobs: {}");
-                  invalid_path_request.workflow_path = "../ci.yml".into();
-                  let errors = build_plan(&invalid_path_request, &PlannerLimits::default())''',
-              1,
-          )
-          lib.write_text(source)
-
-          contract = Path('remote/tests/general/gha-clone-server-config.test.ts')
-          lines = contract.read_text().splitlines()
-          repaired = []
-          for line in lines:
-              if 'resource.replaceAll' in line:
-                  repaired.append(r"    const escaped = resource.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');")
-                  repaired.append('    assert.match(kustomization, new RegExp(`- ${escaped}`));')
-              else:
-                  repaired.append(line)
-          contract.write_text('\n'.join(repaired) + '\n')
-          PY
-          cargo generate-lockfile --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml
-          cargo fmt --manifest-path remote/deployments/gha-clone-server-rs/Cargo.toml --all
-      - name: Commit exact formatter output when needed
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add \
-            remote/deployments/gha-clone-server-rs/Cargo.lock \
-            remote/deployments/gha-clone-server-rs/src/lib.rs \
-            remote/deployments/gha-clone-server-rs/src/main.rs \
-            remote/tests/general/gha-clone-server-config.test.ts
-          if git diff --cached --quiet; then
-            echo 'candidate already contains the exact repair and formatter output'
-            exit 0
-          fi
-          git diff --cached --check
-          git commit -m 'DEN-1550 apply formatter and CI fixes'
-          git push origin "HEAD:${GITHUB_HEAD_REF}"
-
   rust:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -124,29 +53,15 @@ jobs:
         with:
           toolchain: '1.90.0'
           components: rustfmt, clippy
-      - name: Resolve dependency lock for this candidate
+      - name: Check formatting
         working-directory: remote/deployments/gha-clone-server-rs
-        run: cargo generate-lockfile
-      - name: Format candidate sources
-        working-directory: remote/deployments/gha-clone-server-rs
-        run: cargo fmt --all
-      - name: Upload formatted Rust sources
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: gha-clone-server-rustfmt
-          path: |
-            remote/deployments/gha-clone-server-rs/src/lib.rs
-            remote/deployments/gha-clone-server-rs/src/main.rs
-          if-no-files-found: error
-          retention-days: 2
+        run: cargo fmt --all -- --check
       - name: Run Clippy
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo clippy --locked --all-targets -- -D warnings
       - name: Run unit tests
         working-directory: remote/deployments/gha-clone-server-rs
         run: cargo test --locked --all-targets
-      - name: Require committed formatting
-        run: git diff --exit-code -- remote/deployments/gha-clone-server-rs/src
 
   contracts:
     runs-on: ubuntu-latest
@@ -201,4 +116,4 @@ jobs:
           printf 'runner=%s arch=%s temp=%s\n' "$RUNNER_NAME" "$RUNNER_ARCH" "$RUNNER_TEMP"
       - name: Run the same Rust contract on ARC
         working-directory: remote/deployments/gha-clone-server-rs
-        run: cargo generate-lockfile && cargo test --locked --all-targets
+        run: cargo test --locked --all-targets
