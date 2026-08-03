@@ -29,6 +29,52 @@ pub struct ProfileSpec {
 const FLUTTER_IMAGE: &str =
     "710156900967.dkr.ecr.us-east-1.amazonaws.com/sonus-flutter-builder:3.44.2-c9a6c48423";
 const BROWSER_IMAGE: &str = "mcr.microsoft.com/playwright:v1.60.0-noble";
+const RUST_IMAGE: &str = "docker.io/library/rust:1.90-bookworm";
+const NODE_IMAGE: &str = "docker.io/library/node:22-bookworm";
+const PYTHON_IMAGE: &str = "docker.io/library/python:3.13-bookworm";
+
+const RUST_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
+    name: "Rust formatting, Clippy, and tests",
+    image: RUST_IMAGE,
+    subdirectory: ".",
+    script: "rustup component add rustfmt clippy && cargo fmt --all -- --check && cargo clippy --all-targets --all-features -- -D warnings && cargo test --all-features",
+}];
+
+const NODE_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
+    name: "Node dependency and test verification",
+    image: NODE_IMAGE,
+    subdirectory: ".",
+    script: r#"set -euo pipefail
+if [ -f pnpm-lock.yaml ]; then
+  corepack enable
+  pnpm install --frozen-lockfile
+  pnpm test
+elif [ -f yarn.lock ]; then
+  corepack enable
+  yarn install --immutable
+  yarn test
+elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+  npm ci
+  npm test
+else
+  echo "node-verify requires pnpm-lock.yaml, yarn.lock, package-lock.json, or npm-shrinkwrap.json" >&2
+  exit 2
+fi"#,
+}];
+
+const PYTHON_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
+    name: "Python compile and pytest verification",
+    image: PYTHON_IMAGE,
+    subdirectory: ".",
+    script: r#"set -euo pipefail
+python -m compileall -q .
+if [ -f requirements.txt ]; then
+  python -m pip install --disable-pip-version-check --no-input -r requirements.txt
+elif [ -f pyproject.toml ]; then
+  python -m pip install --disable-pip-version-check --no-input .
+fi
+python -m pytest"#,
+}];
 
 const FLUTTER_VERIFY_STEPS: &[ProfileStep] = &[ProfileStep {
     name: "flutter verify",
@@ -103,6 +149,27 @@ const BROWSER_E2E_STEPS: &[ProfileStep] = &[ProfileStep {
 
 pub const SPECS: &[ProfileSpec] = &[
     ProfileSpec {
+        name: "rust-verify",
+        platform: "linux",
+        description: "Rust formatting, Clippy with warnings denied, and all-feature tests",
+        steps: RUST_VERIFY_STEPS,
+        artifact_paths: &[],
+    },
+    ProfileSpec {
+        name: "node-verify",
+        platform: "linux",
+        description: "Lockfile-strict Node dependency installation and repository tests",
+        steps: NODE_VERIFY_STEPS,
+        artifact_paths: &[],
+    },
+    ProfileSpec {
+        name: "python-verify",
+        platform: "linux",
+        description: "Python bytecode compilation, declared dependency install, and pytest",
+        steps: PYTHON_VERIFY_STEPS,
+        artifact_paths: &[],
+    },
+    ProfileSpec {
         name: "flutter-verify",
         platform: "linux",
         description: "Flutter dependency resolution, analysis, and unit tests",
@@ -174,4 +241,43 @@ pub fn find(name: &str) -> Option<&'static ProfileSpec> {
 
 pub fn names() -> impl Iterator<Item = &'static str> {
     SPECS.iter().map(|profile| profile.name)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::*;
+
+    #[test]
+    fn profile_names_are_unique_and_resolvable() {
+        let names = names().collect::<Vec<_>>();
+        let unique = names.iter().copied().collect::<BTreeSet<_>>();
+        assert_eq!(names.len(), unique.len());
+        for name in names {
+            assert_eq!(find(name).map(|profile| profile.name), Some(name));
+        }
+    }
+
+    #[test]
+    fn every_profile_is_linux_fixed_and_bounded() {
+        for profile in SPECS {
+            assert_eq!(profile.platform, "linux");
+            assert!(!profile.steps.is_empty());
+            for step in profile.steps {
+                assert!(!step.name.is_empty());
+                assert!(!step.image.ends_with(":latest"));
+                assert!(!step.script.trim().is_empty());
+                assert!(!step.script.contains("curl | sh"));
+                assert!(!step.script.contains("wget | sh"));
+            }
+        }
+    }
+
+    #[test]
+    fn continuity_profiles_are_installed() {
+        for name in ["rust-verify", "node-verify", "python-verify"] {
+            assert!(find(name).is_some(), "{name} should be installed");
+        }
+    }
 }
