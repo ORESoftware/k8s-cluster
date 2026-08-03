@@ -19,3 +19,80 @@ data:
       "sonus-auris/sonus-auris-interfaces": [".github/workflows/ci.yml"],
       "sonus-auris/sonus-auris-ui.dart": [".github/workflows/ci.yml", ".github/workflows/android-emulator-test.yml"]
     }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dd-gha-capacity-audit
+  namespace: default
+  labels:
+    app: dd-gha-clone-server
+    app.kubernetes.io/component: capacity-audit
+  annotations:
+    dd.dev/activation-state: image-digest-app-permission-and-smoke-gated
+    dd.dev/linear-issue: DEN-1549
+spec:
+  schedule: "17 * * * *"
+  timeZone: Etc/UTC
+  suspend: true
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 300
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app: dd-gha-clone-server
+            app.kubernetes.io/component: capacity-audit
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: audit
+              image: ghcr.io/oresoftware/gha-clone-server@sha256:REPLACE_GHA_CLONE_SERVER_IMAGE_DIGEST
+              imagePullPolicy: IfNotPresent
+              command: ["/usr/local/bin/gha-capacity-audit"]
+              env:
+                - name: GHA_CAPACITY_ORGANIZATION
+                  value: sonus-auris
+                - name: GHA_CAPACITY_INCLUDED_MINUTES
+                  value: "2000"
+                - name: GHA_CAPACITY_WARN_PERCENT
+                  value: "75"
+                - name: GHA_CAPACITY_CRITICAL_PERCENT
+                  value: "90"
+                - name: GHA_CAPACITY_HARD_PERCENT
+                  value: "100"
+                - name: GHA_CAPACITY_MUTATION_ENABLED
+                  value: "false"
+                - name: GHA_CAPACITY_SELECTED_REPOSITORY_IDS
+                  value: "1294558398"
+                - name: GHA_CAPACITY_GITHUB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: dd-gha-clone-server-secrets
+                      key: github_app_installation_token
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 64Mi
+                limits:
+                  cpu: 250m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+                seccompProfile:
+                  type: RuntimeDefault

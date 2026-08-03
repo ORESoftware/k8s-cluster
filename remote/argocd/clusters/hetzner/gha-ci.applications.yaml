@@ -1,18 +1,42 @@
-# INERT TEMPLATE: this file is intentionally outside remote/argocd/apps/.
-# Promotion requires replacing every REPLACE_* token, pinning the image by
-# digest, reconciling the ExternalSecret, and completing the checklist in
-# README.md. Keep the controller and runner-scale-set chart versions identical.
+# DEN-1549: provider-local prerequisites plus one active-active Sonus runner scale set.
+# The scale-set Application is deliberately manual until the GitHub runner group,
+# ExternalSecret, and read-only smoke evidence exist for this provider.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: sonus-ci-runner-set
+  name: dd-sonus-ci-runner-prereqs-hetzner
   namespace: argocd
   annotations:
-    sonus-auris.dev/promotion-state: template-only
-    sonus-auris.dev/activation-state: credential-runner-group-and-smoke-gated
+    argocd.argoproj.io/sync-wave: "0"
+    sonus-auris.dev/cloud-provider: hetzner
     sonus-auris.dev/linear-issue: DEN-1549
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ORESoftware/k8s-cluster.git
+    targetRevision: dev
+    path: remote/argocd/ci-runners/sonus-auris/base
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: arc-runners-sonus
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dd-sonus-ci-runner-set-hetzner
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+    sonus-auris.dev/activation-state: credential-runner-group-and-smoke-gated
+    sonus-auris.dev/cloud-provider: hetzner
+    sonus-auris.dev/linear-issue: DEN-1549
 spec:
   project: default
   source:
@@ -20,15 +44,15 @@ spec:
     chart: gha-runner-scale-set
     targetRevision: 0.14.2
     helm:
-      releaseName: sonus-ci
+      releaseName: sonus-ci-hetzner
       skipTests: true
       values: |
         githubConfigUrl: https://github.com/sonus-auris
         githubConfigSecret: sonus-auris-arc-github
-        runnerGroup: "REPLACE_RUNNER_GROUP"
+        runnerGroup: "sonus-hetzner"
         runnerScaleSetName: sonus-ci
         minRunners: 0
-        maxRunners: 2
+        maxRunners: 4
 
         controllerServiceAccount:
           namespace: arc-systems
@@ -46,10 +70,10 @@ spec:
                     cpu: 500m
                     memory: 512Mi
                 securityContext:
+                  runAsNonRoot: true
                   allowPrivilegeEscalation: false
                   capabilities:
                     drop: ["ALL"]
-                  runAsNonRoot: true
                   seccompProfile:
                     type: RuntimeDefault
 
@@ -57,9 +81,11 @@ spec:
           metadata:
             labels:
               sonus-auris.dev/ci-runner: sonus-ci
+              sonus-auris.dev/cloud-provider: hetzner
           spec:
             automountServiceAccountToken: false
             restartPolicy: Never
+            terminationGracePeriodSeconds: 30
             securityContext:
               fsGroup: 1001
               runAsNonRoot: true
@@ -68,9 +94,7 @@ spec:
                 type: RuntimeDefault
             containers:
               - name: runner
-                # Build from remote/deployments/sonus-auris-ci-runner and
-                # replace with an immutable digest before promotion.
-                image: ghcr.io/oresoftware/sonus-auris-ci-runner@sha256:REPLACE_IMAGE_DIGEST
+                image: ghcr.io/actions/actions-runner:2.334.0
                 imagePullPolicy: IfNotPresent
                 command: ["/home/runner/run.sh"]
                 env:
@@ -84,33 +108,27 @@ spec:
                   limits:
                     cpu: "4"
                     memory: 8Gi
-                    ephemeral-storage: 30Gi
+                    ephemeral-storage: 24Gi
                 securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 1001
                   allowPrivilegeEscalation: false
                   capabilities:
                     drop: ["ALL"]
-                  readOnlyRootFilesystem: false
-                  runAsNonRoot: true
-                  runAsUser: 1001
                   seccompProfile:
                     type: RuntimeDefault
                 volumeMounts:
                   - name: work
                     mountPath: /home/runner/_work
-                  - name: tool-cache
-                    mountPath: /opt/hostedtoolcache
                   - name: tmp
                     mountPath: /tmp
             volumes:
               - name: work
                 emptyDir:
                   sizeLimit: 20Gi
-              - name: tool-cache
-                emptyDir:
-                  sizeLimit: 10Gi
               - name: tmp
                 emptyDir:
-                  sizeLimit: 5Gi
+                  sizeLimit: 4Gi
   destination:
     server: https://kubernetes.default.svc
     namespace: arc-runners-sonus

@@ -1,67 +1,111 @@
-name: Sonus Auris ARC scaffold
+name: Sonus Auris ARC and GHA failover
 
 on:
   pull_request:
-    branches: [main]
+    branches: [dev, main]
     paths:
+      - "docs/github-actions-self-hosted-failover.md"
       - "remote/argocd/ci-runners/sonus-auris/**"
       - "remote/argocd/ci-runners/validate-sonus-arc-scaffold.py"
+      - "remote/argocd/ci-runners/validate-sonus-gha-ha.py"
       - "remote/deployments/sonus-auris-ci-runner/**"
+      - "remote/deployments/gha-clone-server-rs/**"
       - "remote/argocd/apps/canonical-ci-arc-controller.application.yaml"
+      - "remote/argocd/clusters/aws/gha-ci.applications.yaml"
+      - "remote/argocd/clusters/aws/kustomization.yaml"
+      - "remote/argocd/clusters/hetzner/gha-ci.applications.yaml"
+      - "remote/argocd/clusters/hetzner/kustomization.yaml"
+      - "remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml"
+      - ".github/actionlint.yaml"
       - ".github/workflows/sonus-arc-scaffold.yml"
   push:
-    branches: [main]
+    branches: [dev, main]
     paths:
+      - "docs/github-actions-self-hosted-failover.md"
       - "remote/argocd/ci-runners/sonus-auris/**"
       - "remote/argocd/ci-runners/validate-sonus-arc-scaffold.py"
+      - "remote/argocd/ci-runners/validate-sonus-gha-ha.py"
       - "remote/deployments/sonus-auris-ci-runner/**"
+      - "remote/deployments/gha-clone-server-rs/**"
       - "remote/argocd/apps/canonical-ci-arc-controller.application.yaml"
+      - "remote/argocd/clusters/aws/gha-ci.applications.yaml"
+      - "remote/argocd/clusters/aws/kustomization.yaml"
+      - "remote/argocd/clusters/hetzner/gha-ci.applications.yaml"
+      - "remote/argocd/clusters/hetzner/kustomization.yaml"
+      - "remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml"
+      - ".github/actionlint.yaml"
       - ".github/workflows/sonus-arc-scaffold.yml"
   workflow_dispatch:
+    inputs:
+      run_self_hosted_smoke:
+        description: Run the read-only sonus-ci registration smoke
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 concurrency:
-  group: sonus-arc-scaffold-${{ github.ref }}
+  group: sonus-arc-failover-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: "3.12"
-      - name: Compile validator
-        run: python -m py_compile remote/argocd/ci-runners/validate-sonus-arc-scaffold.py
-      - name: Validate required scaffold files
-        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py files
-      - name: Validate inert promotion state
-        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py inert
-      - name: Validate ARC chart/controller alignment
-        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py versions
-      - name: Validate non-privileged runner template
-        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py template
-      - name: Validate ExternalSecret and smoke templates
-        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py activation
-      - name: Validate pinned runner image contract
-        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py runner
-      - name: Validate operational documentation
-        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py docs
-      - name: Validate committed secret boundaries
-        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py secrets
-      - name: Check repository whitespace and conflict markers
+      - name: Compile validators
         run: |
-          git diff --check HEAD^ HEAD
+          python -m py_compile \
+            remote/argocd/ci-runners/validate-sonus-arc-scaffold.py \
+            remote/argocd/ci-runners/validate-sonus-gha-ha.py
+      - name: Validate legacy inert scaffold contract
+        run: python remote/argocd/ci-runners/validate-sonus-arc-scaffold.py
+      - name: Validate AWS/Hetzner failover and capacity contract
+        run: python remote/argocd/ci-runners/validate-sonus-gha-ha.py
+      - name: Validate workflow syntax
+        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+        with:
+          args: .github/workflows/sonus-arc-scaffold.yml
+      - name: Check whitespace and conflict markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check "origin/${GITHUB_BASE_REF:-dev}...HEAD"
           if git grep -nE '^(<<<<<<<|=======|>>>>>>>)' -- \
+            docs/github-actions-self-hosted-failover.md \
             remote/argocd/ci-runners/sonus-auris \
-            remote/deployments/sonus-auris-ci-runner \
-            remote/argocd/ci-runners/validate-sonus-arc-scaffold.py; then
+            remote/argocd/ci-runners/validate-sonus-arc-scaffold.py \
+            remote/argocd/ci-runners/validate-sonus-gha-ha.py \
+            remote/argocd/clusters/aws/gha-ci.applications.yaml \
+            remote/argocd/clusters/hetzner/gha-ci.applications.yaml \
+            remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml; then
             echo "conflict marker found" >&2
             exit 1
           fi
+
+  self-hosted-smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_self_hosted_smoke }}
+    runs-on: [self-hosted, linux, sonus-ci]
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Prove runner isolation without repository secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(id -u)" != 0
+          test ! -e /var/run/docker.sock
+          test ! -e /run/containerd/containerd.sock
+          test ! -e /var/run/secrets/kubernetes.io/serviceaccount/token
+          test -n "${RUNNER_NAME:-}"
+          printf 'runner=%s os=%s arch=%s\n' "$RUNNER_NAME" "$RUNNER_OS" "$RUNNER_ARCH"
