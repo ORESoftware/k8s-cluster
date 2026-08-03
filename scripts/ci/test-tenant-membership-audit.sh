@@ -147,18 +147,19 @@ set -e
 [[ "$owner_status" -ne 0 ]]
 grep -F 'tenant_membership_events_payload' "$owner_log" >/dev/null
 
-# Audit payloads reject duplicate scopes just like live grants.
+# This billing event is otherwise payload-valid; only the repeated write scope
+# violates the dedicated audit-scope uniqueness constraint.
 set +e
 psql -v ON_ERROR_STOP=1 >"$scopes_log" 2>&1 <<'SQL'
 insert into tenant_membership_events (
   tenant_id, shared_user_id, actor_shared_user_id, event_type, role, scopes
 ) values (
   '33333333-3333-4333-8333-333333333333',
-  'audit-reader-2',
+  'audit-billing-2',
   'audit-owner',
   'grant_or_update',
-  'reader',
-  array['billing:read', 'billing:read']::text[]
+  'billing',
+  array['billing:read', 'billing:write', 'billing:write']::text[]
 );
 SQL
 scopes_status=$?
