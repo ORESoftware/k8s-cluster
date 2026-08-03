@@ -2,9 +2,9 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
-use p256::SecretKey;
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use p256::pkcs8::{DecodePrivateKey, EncodePublicKey, LineEnding};
+use p256::SecretKey;
 
 use crate::config::SigningConfig;
 use crate::error::AuthError;
@@ -166,7 +166,7 @@ fn now_secs() -> u64 {
 mod tests {
     use super::*;
     use crate::config::SigningConfig;
-    use crate::token::{ACR_LOA1, AuthenticationAssurance};
+    use crate::token::{AuthenticationAssurance, ACR_LOA1};
 
     use p256::pkcs8::{EncodePrivateKey, LineEnding};
 
