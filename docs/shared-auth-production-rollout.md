@@ -124,14 +124,14 @@ kubectl kustomize k8s/ec2 > /tmp/quaestor-rendered.yaml
 
 grep -n 'BILLING_SHARED_AUTH' /tmp/quaestor-rendered.yaml
 grep -n 'BILLING_TENANT_ROUTES_REQUIRE_USER_JWT' /tmp/quaestor-rendered.yaml
-grep -n 'BILLING_TENANT_MUTATIONS_REQUIRE_STEP_UP' /tmp/quaestor-rendered.yaml
+grep -n 'BILLING_REQUIRE_STEP_UP_FOR_MUTATIONS' /tmp/quaestor-rendered.yaml
 ```
 
 Expected production values:
 
 ```text
 BILLING_TENANT_ROUTES_REQUIRE_USER_JWT=true
-BILLING_TENANT_MUTATIONS_REQUIRE_STEP_UP=true
+BILLING_REQUIRE_STEP_UP_FOR_MUTATIONS=true
 BILLING_SHARED_AUTH_REQUIRE_SESSION_ID=true
 BILLING_ADMIN_UI_ENABLED=false
 ```
@@ -200,9 +200,9 @@ an application rollback. If the new application cannot remain deployed:
 5. reconcile all requests accepted during the rollout window before resuming.
 
 Do not disable `BILLING_TENANT_ROUTES_REQUIRE_USER_JWT` or
-`BILLING_TENANT_MUTATIONS_REQUIRE_STEP_UP` as a convenience rollback. That
-would restore a known cross-tenant/global-secret risk. A safe rollback reduces
-traffic or restores the prior image; it does not weaken authorization.
+`BILLING_REQUIRE_STEP_UP_FOR_MUTATIONS` as a convenience rollback. That would
+restore a known cross-tenant/global-secret risk. A safe rollback reduces traffic
+or restores the prior image; it does not weaken authorization.
 
 ## Billing-platform boundary
 
