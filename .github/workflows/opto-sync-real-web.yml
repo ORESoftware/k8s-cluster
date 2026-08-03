@@ -1,0 +1,21 @@
+name: opto-sync real web application e2e
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'astro.config.*'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/opto-sync-real-web.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-web:
+    uses: opto-sync/opto-sync-e2e/.github/workflows/real-web-app-reusable.yml@baccdb78bf9af696b516e7f7f599c11fdd859387
