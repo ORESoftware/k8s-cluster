@@ -151,7 +151,10 @@ mod tests {
     #[test]
     fn unknown_contract_scope_is_rejected() {
         let internal = super::super::openapi_document().expect("internal OpenAPI document");
-        let error = document_for_scope(&internal, "partner").expect_err("unknown scope must fail");
+        let error = match document_for_scope(&internal, "partner") {
+            Ok(_) => panic!("unknown scope must fail"),
+            Err(error) => error,
+        };
         assert!(error.to_string().contains("expected public|internal"));
     }
 }
