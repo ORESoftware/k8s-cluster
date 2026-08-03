@@ -6,6 +6,11 @@ on:
       - agent/code-first-openapi-routes
     paths:
       - '.github/workflows/reconcile-openapi-head.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/reconcile-openapi-head.yml'
   workflow_dispatch:
 
 permissions:
@@ -20,6 +25,9 @@ env:
 
 jobs:
   reconcile:
+    if: >-
+      github.repository == 'ORESoftware/push-notification-server.rs' &&
+      (github.event_name != 'pull_request' || github.head_ref == 'agent/code-first-openapi-routes')
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
