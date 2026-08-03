@@ -573,14 +573,14 @@ impl SupabaseVerifier {
                 if let Some(jwk) = self.cached_jwk(kid, algorithm, JWKS_CACHE_TTL).await {
                     return Ok(jwk);
                 }
-                if !refreshed {
-                    if let Some(jwk) = self.cached_jwk(kid, algorithm, JWKS_STALE_GRACE).await {
-                        warn!(
-                            key.id = kid,
-                            "using recently stale Shared Auth signing key while refresh is throttled"
-                        );
-                        return Ok(jwk);
-                    }
+                if !refreshed
+                    && let Some(jwk) = self.cached_jwk(kid, algorithm, JWKS_STALE_GRACE).await
+                {
+                    warn!(
+                        key.id = kid,
+                        "using recently stale Shared Auth signing key while refresh is throttled"
+                    );
+                    return Ok(jwk);
                 }
                 if self.jwks_cache.read().await.is_some() {
                     Err(AuthError::Unauthorized)
