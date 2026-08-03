@@ -70,6 +70,7 @@ pub struct JobPlan {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub independent_profile: Option<String>,
     pub independent_reasons: Vec<String>,
+    pub independent_notes: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -193,6 +194,15 @@ pub fn build_plan(
         return Err(errors);
     }
 
+    let mut workflow_reasons = Vec::new();
+    for key in root.keys().filter_map(Value::as_str) {
+        if !matches!(key, "name" | "run-name" | "on" | "jobs") {
+            workflow_reasons.push(format!(
+                "workflow-level {key} is unsupported by the independent lane"
+            ));
+        }
+    }
+
     let job_ids = jobs
         .keys()
         .filter_map(Value::as_str)
@@ -216,7 +226,14 @@ pub fn build_plan(
             continue;
         };
         match compile_job(&id, job, limits) {
-            Ok(plan) => plans.push(plan),
+            Ok(mut plan) => {
+                plan.independent_reasons.extend(workflow_reasons.clone());
+                if !plan.independent_reasons.is_empty() {
+                    plan.independent_supported = false;
+                    plan.independent_profile = None;
+                }
+                plans.push(plan);
+            }
             Err(mut job_errors) => errors.append(&mut job_errors),
         }
     }
@@ -259,25 +276,43 @@ fn compile_job(
     limits: &PlannerLimits,
 ) -> Result<JobPlan, Vec<String>> {
     let mut errors = Vec::new();
-    let needs = parse_string_or_sequence(mapping_get(job, "needs"), &format!("jobs.{id}.needs"), &mut errors);
+    let needs = parse_string_or_sequence(
+        mapping_get(job, "needs"),
+        &format!("jobs.{id}.needs"),
+        &mut errors,
+    );
     let runs_on = parse_string_or_sequence(
         mapping_get(job, "runs-on"),
         &format!("jobs.{id}.runs-on"),
         &mut errors,
     );
     if runs_on.is_empty() {
-        errors.push(format!("jobs.{id}.runs-on: at least one runner label is required"));
+        errors.push(format!(
+            "jobs.{id}.runs-on: at least one runner label is required"
+        ));
     }
 
     let mut reasons = Vec::new();
+    let mut notes = Vec::new();
     let mut combined = String::new();
     let has_services = mapping_get(job, "services").is_some();
     let has_container = mapping_get(job, "container").is_some();
     let has_strategy = mapping_get(job, "strategy").is_some();
 
-    for key in ["uses", "permissions", "environment", "secrets"] {
+    for key in [
+        "uses",
+        "permissions",
+        "environment",
+        "secrets",
+        "defaults",
+        "outputs",
+        "continue-on-error",
+        "timeout-minutes",
+    ] {
         if mapping_get(job, key).is_some() {
-            reasons.push(format!("job-level {key} is unsupported by the independent lane"));
+            reasons.push(format!(
+                "job-level {key} is unsupported by the independent lane"
+            ));
         }
     }
     if has_services {
@@ -288,6 +323,10 @@ fn compile_job(
     }
     if has_strategy {
         reasons.push("dynamic strategy/matrix expansion is unsupported".into());
+    }
+    let runner_text = runs_on.join(" ").to_ascii_lowercase();
+    if runner_text.contains("macos") || runner_text.contains("windows") {
+        reasons.push("non-Linux native execution is unavailable in the independent lane".into());
     }
     if let Some(value) = mapping_get(job, "if") {
         reasons.push(format!(
@@ -320,16 +359,32 @@ fn compile_job(
         if mapping_get(step, "if").is_some() {
             reasons.push(format!("{path}: conditional steps are unsupported"));
         }
+        for key in [
+            "working-directory",
+            "continue-on-error",
+            "timeout-minutes",
+            "shell",
+        ] {
+            if mapping_get(step, key).is_some() {
+                reasons.push(format!(
+                    "{path}: {key} is unsupported by the fixed-profile executor"
+                ));
+            }
+        }
         if contains_secret_expression(mapping_get(step, "env"))
             || contains_secret_expression(mapping_get(step, "with"))
         {
-            reasons.push(format!("{path}: secret-bearing env/with values are unsupported"));
+            reasons.push(format!(
+                "{path}: secret-bearing env/with values are unsupported"
+            ));
         }
         if let Some(run) = mapping_get(step, "run").and_then(Value::as_str) {
             combined.push_str(run);
             combined.push('\n');
             if run.contains("${{") {
-                reasons.push(format!("{path}: expressions inside run commands are unsupported"));
+                reasons.push(format!(
+                    "{path}: expressions inside run commands are unsupported"
+                ));
             }
         }
         if let Some(action) = mapping_get(step, "uses").and_then(Value::as_str) {
@@ -338,6 +393,10 @@ fn compile_job(
             if !allowed_setup_action(action) {
                 reasons.push(format!(
                     "{path}: marketplace action {action:?} has no independent-lane equivalence"
+                ));
+            } else if mapping_get(step, "with").is_some() {
+                notes.push(format!(
+                    "{path}: setup action inputs are advisory; the fixed profile pins the actual toolchain"
                 ));
             }
         }
@@ -365,6 +424,7 @@ fn compile_job(
         independent_supported,
         independent_profile: if independent_supported { profile } else { None },
         independent_reasons: reasons,
+        independent_notes: notes,
     })
 }
 
@@ -820,6 +880,11 @@ jobs:
         assert_eq!(plan.jobs[1].arc_lane, "sonus-android-kvm");
         assert_eq!(plan.jobs[2].arc_lane, "github-hosted-native");
         assert!(!plan.jobs[2].arc_compatible);
+        assert!(!plan.jobs[2].independent_supported);
+        assert!(plan.jobs[2]
+            .independent_reasons
+            .iter()
+            .any(|reason| reason.contains("non-Linux")));
         assert!(!plan.arc_fully_covered);
     }
 
@@ -857,6 +922,62 @@ jobs:
             .unwrap_err()
             .join("\n");
         assert!(errors.contains("byte limit"));
+    }
+
+    #[test]
+    fn workflow_and_working_directory_semantics_are_not_silently_ignored() {
+        let plan = build_plan(
+            &request(
+                r#"
+permissions:
+  contents: read
+concurrency: ci-main
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: subdir
+    steps:
+      - run: npm test
+        working-directory: subdir
+"#,
+            ),
+            &PlannerLimits::default(),
+        )
+        .expect("valid but unsupported plan");
+
+        assert!(!plan.independent_executable);
+        let reasons = plan.jobs[0].independent_reasons.join("\n");
+        assert!(reasons.contains("workflow-level permissions"));
+        assert!(reasons.contains("workflow-level concurrency"));
+        assert!(reasons.contains("job-level defaults"));
+        assert!(reasons.contains("working-directory"));
+    }
+
+    #[test]
+    fn setup_action_inputs_are_reported_as_fixed_profile_advisory_notes() {
+        let plan = build_plan(
+            &request(
+                r#"
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@abc
+        with:
+          node-version: '22'
+      - run: npm test
+"#,
+            ),
+            &PlannerLimits::default(),
+        )
+        .expect("valid plan");
+        assert!(plan.jobs[0].independent_supported);
+        assert!(plan.jobs[0]
+            .independent_notes
+            .iter()
+            .any(|note| note.contains("fixed profile pins")));
     }
 
     #[test]
