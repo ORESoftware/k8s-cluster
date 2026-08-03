@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gha-clone-server
+  namespace: default
+  labels:
+    app: gha-clone-server
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: gha-clone-server
+  template:
+    metadata:
+      labels:
+        app: gha-clone-server
+      annotations:
+        dd.dev/security-boundary: signed-github-workflow-failure-bridge
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gha-clone-server
+          # Bootstrap tag. Replace with the published immutable digest before
+          # enabling the organization webhook.
+          image: ghcr.io/oresoftware/gha-clone-server:main
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: GHA_CLONE_BIND
+              value: 0.0.0.0:8117
+            - name: GHA_CLONE_RULES_PATH
+              value: /etc/gha-clone/rules.json
+            - name: GHA_CLONE_BUILD_SERVER_URL
+              value: http://dd-build-server.default.svc.cluster.local:8100
+            - name: GHA_CLONE_DRY_RUN
+              value: "false"
+            - name: RUST_LOG
+              value: info
+            - name: GHA_CLONE_GITHUB_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: dd-build-server-secrets
+                  key: BUILD_SERVER_GITHUB_WEBHOOK_SECRET
+                  optional: false
+            # Rotate any credential previously disclosed outside the secret
+            # manager before enabling this pod. A GitHub App installation token
+            # is preferred; GH_PAT is only the existing bootstrap contract.
+            - name: GHA_CLONE_GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: GH_PAT
+                  optional: false
+            - name: GHA_CLONE_BUILD_SERVER_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: dd-agent-secrets
+                  key: SERVER_AUTH_SECRET
+                  optional: false
+          ports:
+            - name: http
+              containerPort: 8117
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+              ephemeral-storage: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+              ephemeral-storage: 256Mi
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 3
+            failureThreshold: 40
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 2
+            failureThreshold: 3
+          volumeMounts:
+            - name: rules
+              mountPath: /etc/gha-clone
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: rules
+          configMap:
+            name: gha-clone-server-rules
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
