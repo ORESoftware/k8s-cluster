@@ -272,6 +272,10 @@ test('runbook binds live evidence to the exact release and GitOps contract', asy
   }
   assert.ok(deployment.includes(AUTH_REF));
   assert.match(runbook, /DEN-1119 remains open until/);
-  assert.match(runbook, /no Rust builder image[\s\S]*no public `0\.0\.0\.0\/0`/);
+  assert.match(runbook, /no Rust builder image/);
+  assert.match(
+    runbook,
+    /no authority egress rule contains `ipBlock`, `0\.0\.0\.0\/0`/,
+  );
   assert.doesNotMatch(runbook, /bypass revocation to restore availability/i);
 });
