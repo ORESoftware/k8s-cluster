@@ -139,19 +139,35 @@ async fn sendgrid_non_accepted_response_fails_closed() {
 }
 
 #[tokio::test]
-async fn missing_sendgrid_delivery_fields_fail_before_network() {
+async fn missing_or_blank_sendgrid_fields_fail_before_network() {
     let mut missing_api_key = config();
     missing_api_key.sendgrid_api_key = None;
+    let mut missing_pepper = config();
+    missing_pepper.otp_pepper = None;
     let mut missing_sender = config();
     missing_sender.from_email = None;
     let mut missing_link_base = config();
     missing_link_base.link_base_url = None;
+    let mut blank_api_key = config();
+    blank_api_key.sendgrid_api_key = Some("   ".into());
+    let mut blank_pepper = config();
+    blank_pepper.otp_pepper = Some("\t".into());
+    let mut blank_sender = config();
+    blank_sender.from_email = Some("\n".into());
+    let mut blank_link_base = config();
+    blank_link_base.link_base_url = Some("  ".into());
 
     for (field, incomplete) in [
-        ("api key", missing_api_key),
-        ("sender", missing_sender),
-        ("link base", missing_link_base),
+        ("missing api key", missing_api_key),
+        ("missing OTP pepper", missing_pepper),
+        ("missing sender", missing_sender),
+        ("missing link base", missing_link_base),
+        ("blank api key", blank_api_key),
+        ("blank OTP pepper", blank_pepper),
+        ("blank sender", blank_sender),
+        ("blank link base", blank_link_base),
     ] {
+        assert!(!incomplete.is_enabled(), "{field} must disable magic links");
         let (base, requests) = mock_server(StatusCode::ACCEPTED, "").await;
         let result = send_magic_link_to(
             &reqwest::Client::new(),
@@ -164,12 +180,12 @@ async fn missing_sendgrid_delivery_fields_fail_before_network() {
         .await;
         assert!(
             matches!(result, Err(AuthError::Unavailable)),
-            "missing {field} must disable delivery"
+            "{field} must disable delivery"
         );
         assert_eq!(
             requests.lock().unwrap().len(),
             0,
-            "missing {field} must fail before contacting SendGrid"
+            "{field} must fail before contacting SendGrid"
         );
     }
 }
