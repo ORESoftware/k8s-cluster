@@ -1,5 +1,7 @@
 //! Exchange a verified external-provider token for a shared-auth session.
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use axum::{extract::State, http::HeaderMap, Json};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::{Deserialize, Serialize};
@@ -12,6 +14,8 @@ use crate::token::AuthenticationAssurance;
 
 use super::bearer;
 use super::session_tokens;
+
+const AUTH_TIME_FUTURE_LEEWAY_SECS: u64 = 30;
 
 #[derive(Debug, Deserialize)]
 pub struct ExchangeRequest {
@@ -50,6 +54,22 @@ struct VerifiedSupabaseAssuranceClaims {
 #[derive(Debug, Deserialize)]
 struct SupabaseAmrEntry {
     method: String,
+    #[serde(default)]
+    timestamp: Option<u64>,
+}
+
+struct VerifiedAssurance {
+    assurance: AuthenticationAssurance,
+    auth_time: Option<u64>,
+}
+
+impl VerifiedAssurance {
+    fn fail_closed() -> Self {
+        Self {
+            assurance: AuthenticationAssurance::from_supabase(None, &[]),
+            auth_time: None,
+        }
+    }
 }
 
 pub(crate) async fn perform_exchange(
@@ -67,7 +87,14 @@ pub(crate) async fn perform_exchange(
     // Parse assurance only after the exact token has passed signature, issuer,
     // audience, and expiry verification. Any malformed or unknown metadata is
     // normalized to a federated method with no ACR, which fails closed for LOA2.
-    let assurance = verified_supabase_assurance(token);
+    //
+    // AAL2 additionally requires a usable AMR timestamp. That timestamp is
+    // preserved in the unified token's OIDC `auth_time` claim so downstream
+    // financial services can apply their own freshness window.
+    let VerifiedAssurance {
+        assurance,
+        auth_time,
+    } = verified_supabase_assurance(token);
 
     let identity = match &state.db {
         Some(db) => db.upsert_supabase_identity(&verified).await?,
@@ -92,7 +119,8 @@ pub(crate) async fn perform_exchange(
     let project = identity.provider_tenant.clone();
     let provider_subject = identity.provider_subject.clone();
     let roles = identity.roles.clone();
-    let issued = session_tokens::issue_with_assurance(state, identity, assurance).await?;
+    let issued =
+        session_tokens::issue_with_assurance_at(state, identity, assurance, auth_time).await?;
 
     state
         .metrics
@@ -118,25 +146,59 @@ pub(crate) async fn perform_exchange(
     })
 }
 
-/// Extract `aal` and `amr` from a token that the caller has already verified.
+/// Extract `aal`, `amr`, and the newest AMR timestamp from a token that the
+/// caller has already verified.
+///
 /// This helper intentionally performs no authentication and must never be used
-/// before `ProjectRegistry::verify` succeeds for the same token.
-fn verified_supabase_assurance(token: &str) -> AuthenticationAssurance {
+/// before `ProjectRegistry::verify` succeeds for the same token. A provider
+/// token claiming AAL2 without a timestamp fails closed to base assurance:
+/// otherwise exchanging an arbitrarily old second factor would manufacture a
+/// newly fresh AAL2 token at the shared-auth boundary.
+fn verified_supabase_assurance(token: &str) -> VerifiedAssurance {
     let Some(payload) = token.split('.').nth(1) else {
-        return AuthenticationAssurance::from_supabase(None, &[]);
+        return VerifiedAssurance::fail_closed();
     };
     let Ok(decoded) = URL_SAFE_NO_PAD.decode(payload) else {
-        return AuthenticationAssurance::from_supabase(None, &[]);
+        return VerifiedAssurance::fail_closed();
     };
     let Ok(claims) = serde_json::from_slice::<VerifiedSupabaseAssuranceClaims>(&decoded) else {
-        return AuthenticationAssurance::from_supabase(None, &[]);
+        return VerifiedAssurance::fail_closed();
     };
+
     let methods = claims
         .amr
-        .into_iter()
-        .map(|entry| entry.method)
+        .iter()
+        .map(|entry| entry.method.clone())
         .collect::<Vec<_>>();
-    AuthenticationAssurance::from_supabase(claims.aal.as_deref(), &methods)
+    let latest_auth_time = claims.amr.iter().filter_map(|entry| entry.timestamp).max();
+
+    if claims.aal.as_deref() == Some("aal2") {
+        let now = now_secs();
+        let Some(auth_time) =
+            latest_auth_time.filter(|at| *at <= now.saturating_add(AUTH_TIME_FUTURE_LEEWAY_SECS))
+        else {
+            return VerifiedAssurance {
+                assurance: AuthenticationAssurance::from_supabase(None, &methods),
+                auth_time: None,
+            };
+        };
+        return VerifiedAssurance {
+            assurance: AuthenticationAssurance::from_supabase(Some("aal2"), &methods),
+            auth_time: Some(auth_time),
+        };
+    }
+
+    VerifiedAssurance {
+        assurance: AuthenticationAssurance::from_supabase(claims.aal.as_deref(), &methods),
+        auth_time: None,
+    }
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
 }
 
 pub async fn exchange(
@@ -166,43 +228,66 @@ mod tests {
     }
 
     #[test]
-    fn signed_aal2_and_amr_normalize_into_shared_assurance() {
+    fn signed_aal2_and_amr_preserve_verified_auth_time() {
         let token = token_with_payload(json!({
             "aal": "aal2",
             "amr": [
-                { "method": "password", "timestamp": 1 },
-                { "method": "totp", "timestamp": 2 },
-                { "method": "totp", "timestamp": 3 }
+                { "method": "password", "timestamp": 1_700_000_001u64 },
+                { "method": "totp", "timestamp": 1_700_000_002u64 },
+                { "method": "totp", "timestamp": 1_700_000_003u64 }
             ]
         }));
-        let assurance = verified_supabase_assurance(&token);
-        assert_eq!(assurance.amr, ["federated", "pwd", "totp"]);
-        assert_eq!(assurance.acr.as_deref(), Some(ACR_LOA2));
+        let verified = verified_supabase_assurance(&token);
+        assert_eq!(verified.assurance.amr, ["federated", "pwd", "totp"]);
+        assert_eq!(verified.assurance.acr.as_deref(), Some(ACR_LOA2));
+        assert_eq!(verified.auth_time, Some(1_700_000_003));
     }
 
     #[test]
     fn signed_aal1_normalizes_without_inventing_step_up() {
         let token = token_with_payload(json!({
             "aal": "aal1",
-            "amr": [{ "method": "oauth", "timestamp": 1 }]
+            "amr": [{ "method": "oauth", "timestamp": 1_700_000_001u64 }]
         }));
-        let assurance = verified_supabase_assurance(&token);
-        assert_eq!(assurance.amr, ["federated"]);
-        assert_eq!(assurance.acr.as_deref(), Some(ACR_LOA1));
+        let verified = verified_supabase_assurance(&token);
+        assert_eq!(verified.assurance.amr, ["federated"]);
+        assert_eq!(verified.assurance.acr.as_deref(), Some(ACR_LOA1));
+        assert_eq!(verified.auth_time, None);
+    }
+
+    #[test]
+    fn aal2_without_a_usable_timestamp_fails_closed() {
+        let missing = token_with_payload(json!({
+            "aal": "aal2",
+            "amr": [{ "method": "totp" }]
+        }));
+        let verified = verified_supabase_assurance(&missing);
+        assert_eq!(verified.assurance.acr, None);
+        assert_eq!(verified.auth_time, None);
+
+        let future = token_with_payload(json!({
+            "aal": "aal2",
+            "amr": [{ "method": "totp", "timestamp": u64::MAX }]
+        }));
+        let verified = verified_supabase_assurance(&future);
+        assert_eq!(verified.assurance.acr, None);
+        assert_eq!(verified.auth_time, None);
     }
 
     #[test]
     fn malformed_or_unknown_assurance_fails_closed() {
         let malformed = verified_supabase_assurance("not-a-jwt");
-        assert_eq!(malformed.amr, ["federated"]);
-        assert_eq!(malformed.acr, None);
+        assert_eq!(malformed.assurance.amr, ["federated"]);
+        assert_eq!(malformed.assurance.acr, None);
+        assert_eq!(malformed.auth_time, None);
 
         let token = token_with_payload(json!({
             "aal": "aal3",
-            "amr": [{ "method": "<untrusted>", "timestamp": 1 }]
+            "amr": [{ "method": "<untrusted>", "timestamp": 1_700_000_001u64 }]
         }));
         let unknown = verified_supabase_assurance(&token);
-        assert_eq!(unknown.amr, ["federated"]);
-        assert_eq!(unknown.acr, None);
+        assert_eq!(unknown.assurance.amr, ["federated"]);
+        assert_eq!(unknown.assurance.acr, None);
+        assert_eq!(unknown.auth_time, None);
     }
 }
