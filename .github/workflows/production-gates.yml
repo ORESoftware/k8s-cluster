@@ -7,7 +7,7 @@ on:
       - 'docs/production/**'
       - 'docs/operations/**'
       - 'docs/security/**'
-      - 'tools/validate-production-gates.mjs'
+      - 'tools/validate-*.mjs'
       - '.github/workflows/production-gates.yml'
       - '.github/workflows/ci.yml'
   push:
@@ -17,7 +17,7 @@ on:
       - 'docs/production/**'
       - 'docs/operations/**'
       - 'docs/security/**'
-      - 'tools/validate-production-gates.mjs'
+      - 'tools/validate-*.mjs'
       - '.github/workflows/production-gates.yml'
       - '.github/workflows/ci.yml'
   workflow_dispatch:
@@ -44,5 +44,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
           node-version: '22.22.1'
-      - name: Validate service contract and gate schema
+      - name: Validate contract, gate matrix, and evidence controls
         run: node tools/validate-production-gates.mjs
+      - name: Validate SLO raw and derived series references
+        run: node tools/validate-slo-series.mjs
