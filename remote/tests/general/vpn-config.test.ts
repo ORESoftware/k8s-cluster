@@ -27,14 +27,17 @@ test('vpn app deploys wg-easy wireguard with private admin UI and mobile Argo CD
   const mobileConfig = await readRepoFile(
     'remote/argocd/vpn/dd-argocd-mobile.configmap.yaml',
   );
+  const mobileCloudflareSecret = await readRepoFile(
+    'remote/argocd/vpn/dd-argocd-mobile-cloudflare.externalsecret.yaml',
+  );
+  const mobileIssuer = await readRepoFile(
+    'remote/argocd/vpn/dd-argocd-mobile.clusterissuer.yaml',
+  );
   const mobileCertificate = await readRepoFile(
     'remote/argocd/vpn/dd-argocd-mobile.certificate.yaml',
   );
   const mobileArgoConfig = await readRepoFile(
     'remote/argocd/vpn/dd-argocd-mobile.argocd-config.yaml',
-  );
-  const mobilePrereqs = await readRepoFile(
-    'remote/argocd/vpn/dd-argocd-mobile-prereqs.application.yaml',
   );
   const externalSecret = await readRepoFile(
     'remote/argocd/vpn/dd-vpn-secrets.externalsecret.yaml',
@@ -57,7 +60,8 @@ test('vpn app deploys wg-easy wireguard with private admin UI and mobile Argo CD
     'dd-vpn-secrets.externalsecret.yaml',
     'dd-vpn.pv.yaml',
     'dd-vpn.pvc.yaml',
-    'dd-argocd-mobile-prereqs.application.yaml',
+    'dd-argocd-mobile-cloudflare.externalsecret.yaml',
+    'dd-argocd-mobile.clusterissuer.yaml',
     'dd-argocd-mobile.configmap.yaml',
     'dd-argocd-mobile.certificate.yaml',
     'dd-argocd-mobile.argocd-config.yaml',
@@ -67,6 +71,7 @@ test('vpn app deploys wg-easy wireguard with private admin UI and mobile Argo CD
   ]) {
     assert.match(kustomization, new RegExp(resource.replaceAll('.', '\\.')));
   }
+  assert.doesNotMatch(kustomization, /argocd-mobile-prereqs\.application\.yaml/);
 
   assert.match(config, /INIT_HOST:\s*"[A-Za-z0-9.-]+"/);
   assert.match(config, /INIT_PORT:\s*"51820"/);
@@ -90,29 +95,45 @@ test('vpn app deploys wg-easy wireguard with private admin UI and mobile Argo CD
   assert.match(mobileConfig, /proxy_ssl_verify off/);
   assert.match(mobileConfig, /proxy_buffering off/);
 
+  assert.match(mobileCloudflareSecret, /kind:\s*ExternalSecret/);
+  assert.match(
+    mobileCloudflareSecret,
+    /name:\s*argocd-mobile-cloudflare-dns-api-token/,
+  );
+  assert.match(mobileCloudflareSecret, /namespace:\s*cert-manager/);
+  assert.match(mobileCloudflareSecret, /sync-wave:\s*"-2"/);
+  assert.match(mobileCloudflareSecret, /name:\s*dd-cluster-secrets/);
+  assert.match(mobileCloudflareSecret, /key:\s*dd\/remote-dev\/cloudflare/);
+  assert.match(mobileCloudflareSecret, /property:\s*CLOUDFLARE_DNS_API_TOKEN/);
+  assert.match(mobileCloudflareSecret, /secretKey:\s*api-token/);
+  assert.match(mobileCloudflareSecret, /deletionPolicy:\s*Retain/);
+  assert.match(mobileCloudflareSecret, /conversionStrategy:\s*Default/);
+  assert.match(mobileCloudflareSecret, /decodingStrategy:\s*None/);
+  assert.match(mobileCloudflareSecret, /metadataPolicy:\s*None/);
+
+  assert.match(mobileIssuer, /kind:\s*ClusterIssuer/);
+  assert.match(
+    mobileIssuer,
+    /name:\s*letsencrypt-prod-dns01-argocd-mobile/,
+  );
+  assert.match(mobileIssuer, /sync-wave:\s*"-2"/);
+  assert.match(mobileIssuer, /name:\s*letsencrypt-prod-dns01-argocd-mobile-key/);
+  assert.match(mobileIssuer, /dnsZones:[\s\S]*- fiducia\.cloud/);
+  assert.match(
+    mobileIssuer,
+    /name:\s*argocd-mobile-cloudflare-dns-api-token[\s\S]*key:\s*api-token/,
+  );
+
   assert.match(mobileCertificate, /kind:\s*Certificate/);
   assert.match(mobileCertificate, /name:\s*argocd-mobile-tls/);
   assert.match(mobileCertificate, /namespace:\s*vpn/);
   assert.match(mobileCertificate, /secretName:\s*argocd-mobile-tls/);
-  assert.match(mobileCertificate, /name:\s*letsencrypt-prod-dns01/);
+  assert.match(
+    mobileCertificate,
+    /name:\s*letsencrypt-prod-dns01-argocd-mobile/,
+  );
   assert.match(mobileCertificate, /- argocd-vpn\.fiducia\.cloud/);
   assert.match(mobileCertificate, /rotationPolicy:\s*Always/);
-
-  assert.match(mobilePrereqs, /name:\s*argocd-mobile-dns01/);
-  assert.match(
-    mobilePrereqs,
-    /path:\s*remote\/argocd\/cert-manager\/dns01-cloudflare/,
-  );
-  assert.match(
-    mobilePrereqs,
-    /include:\s*["']\{cloudflare-api-token\.externalsecret\.yaml,clusterissuer\.yaml\}["']/,
-  );
-  assert.match(
-    mobilePrereqs,
-    /exclude:\s*["']\{kustomization\.yaml,gateway-certificate\.yaml\}["']/,
-  );
-  assert.match(mobilePrereqs, /prune:\s*false/);
-  assert.match(mobilePrereqs, /ServerSideApply=true/);
 
   assert.match(mobileArgoConfig, /name:\s*argocd-cm/);
   assert.match(mobileArgoConfig, /accounts\.argocd-mobile:\s*login/);
@@ -204,6 +225,7 @@ test('vpn app deploys wg-easy wireguard with private admin UI and mobile Argo CD
   assert.match(readme, /Server:\s+https:\/\/argocd-vpn\.fiducia\.cloud:8443/);
   assert.match(readme, /Username:\s+argocd-mobile/);
   assert.match(readme, /does not grant application-spec updates/);
+  assert.match(readme, /letsencrypt-prod-dns01-argocd-mobile/);
   assert.match(readme, /no whole-pod restart/);
   assert.match(readme, /VPC-like overlay/);
   assert.match(readme, /does not create or manage AWS VPC resources/);
