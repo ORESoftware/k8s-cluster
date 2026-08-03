@@ -4,6 +4,13 @@
 //! The public document is assembled only from the public router. The internal
 //! document merges that contract with partner-webhook and operator routers,
 //! then declares the exact authentication schemes those live routes enforce.
+//!
+//! The finalized documents intentionally remain `serde_json::Value`. Utoipa's
+//! router model is the executable source fragment, while JSON is the canonical
+//! wire artifact after visibility metadata, JSON Schema dialect, and security
+//! schemes are applied. Re-deserializing that enriched OpenAPI 3.1 document
+//! into Utoipa's internal `RefOr` representation is both unnecessary and more
+//! restrictive than the wire format. Scalar directly accepts a JSON value.
 
 use axum::body::Bytes;
 use serde_json::{Map, Value};
@@ -11,8 +18,7 @@ use std::sync::Arc;
 use utoipa::openapi::OpenApi;
 use utoipa_scalar::Scalar;
 
-pub const OPENAPI_CONTENT_TYPE: &str =
-    "application/vnd.oai.openapi+json;version=3.1";
+pub const OPENAPI_CONTENT_TYPE: &str = "application/vnd.oai.openapi+json;version=3.1";
 
 #[derive(Clone)]
 pub struct ApiDocs {
@@ -25,8 +31,8 @@ pub struct ApiDocs {
 pub type SharedApiDocs = Arc<ApiDocs>;
 
 pub struct ApiDocuments {
-    pub public: OpenApi,
-    pub internal: OpenApi,
+    pub public: Value,
+    pub internal: Value,
 }
 
 impl ApiDocs {
@@ -44,7 +50,7 @@ impl ApiDocs {
     }
 }
 
-pub fn canonical_json(document: &OpenApi) -> Result<String, serde_json::Error> {
+pub fn canonical_json(document: &Value) -> Result<String, serde_json::Error> {
     let mut json = serde_json::to_string_pretty(document)?;
     json.push('\n');
     Ok(json)
@@ -55,21 +61,17 @@ pub fn finalize(
     partner: OpenApi,
     operator: OpenApi,
 ) -> Result<ApiDocuments, String> {
-    let mut public_value = serde_json::to_value(public)
+    let mut public = serde_json::to_value(public)
         .map_err(|error| format!("serializing public route contract: {error}"))?;
-    set_document_metadata(&mut public_value, "public")?;
-    remove_security_schemes(&mut public_value)?;
+    set_document_metadata(&mut public, "public")?;
+    remove_security_schemes(&mut public)?;
 
-    let mut internal_value = public_value.clone();
-    merge_contract(&mut internal_value, partner)?;
-    merge_contract(&mut internal_value, operator)?;
-    set_document_metadata(&mut internal_value, "internal")?;
-    install_internal_security_schemes(&mut internal_value)?;
+    let mut internal = public.clone();
+    merge_contract(&mut internal, partner)?;
+    merge_contract(&mut internal, operator)?;
+    set_document_metadata(&mut internal, "internal")?;
+    install_internal_security_schemes(&mut internal)?;
 
-    let public = serde_json::from_value(public_value)
-        .map_err(|error| format!("decoding public OpenAPI: {error}"))?;
-    let internal = serde_json::from_value(internal_value)
-        .map_err(|error| format!("decoding internal OpenAPI: {error}"))?;
     Ok(ApiDocuments { public, internal })
 }
 
@@ -206,5 +208,19 @@ mod tests {
         merge_value(&mut left, &right, "root").expect("disjoint paths merge");
         assert!(left["paths"]["/one"].is_object());
         assert!(left["paths"]["/two"].is_object());
+    }
+
+    #[test]
+    fn scalar_accepts_the_finalized_json_wire_document() {
+        let document = serde_json::json!({
+            "openapi": "3.1.0",
+            "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+            "info": {"title": "fixture", "version": "1"},
+            "paths": {},
+            "components": {}
+        });
+        let html = Scalar::new(document).to_html();
+        assert!(html.contains("3.1.0"));
+        assert!(html.contains("jsonSchemaDialect"));
     }
 }
