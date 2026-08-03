@@ -20,7 +20,6 @@
 //! values — a fetched server's status line, directory relay names — are escaped
 //! at the source rather than by ad-hoc client-side string handling.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -32,18 +31,25 @@ use axum::extract::{Path as AxPath, Query, Request, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Json, Response};
-use axum::routing::get;
-use axum::Router;
+use axum::Extension;
 use maud::{html, Markup, PreEscaped, DOCTYPE};
+use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::time::{sleep, timeout, Duration};
 use tower_http::trace::TraceLayer;
 use tracing::info;
+use utoipa::openapi::OpenApi;
+use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::config::Directory;
 use crate::connector::Connector;
 use crate::stats::Stats;
+
+mod openapi;
+use openapi::{ApiDocs, SharedApiDocs};
+
+const OPENAPI_CONTENT_TYPE: &str = "application/vnd.oai.openapi+json;version=3.1";
 
 /// Cap on the response body we buffer for the in-browser fetch preview.
 const FETCH_MAX_BODY: usize = 512 * 1024;
@@ -68,17 +74,45 @@ pub struct WebConfig {
 
 type AppState = Arc<WebConfig>;
 
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+struct RelayStatus {
+    name: String,
+    addr: String,
+}
+
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+struct StatusResponse {
+    backend: String,
+    socks_listen: String,
+    hops: usize,
+    relay_count: usize,
+    relays: Vec<RelayStatus>,
+    circuits_built: u64,
+    circuits_failed: u64,
+    circuits_active: u64,
+}
+
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
+struct FetchQuery {
+    /// Plaintext HTTP URL fetched through a fresh onion circuit.
+    url: Option<String>,
+    /// Compatibility query token. Prefer `Authorization: Bearer`.
+    token: Option<String>,
+}
+
 pub async fn run(cfg: Arc<WebConfig>) -> Result<()> {
-    let app = Router::new()
-        .route("/", get(index))
-        .route("/api/status", get(status))
-        .route("/api/fetch", get(fetch))
-        .route("/ws/stats", get(ws_stats))
-        .route("/vendor/{file}", get(vendor))
-        .route("/docs", get(docs_index))
-        .route("/docs/{name}", get(docs_page))
-        .route("/proxy.pac", get(proxy_pac))
-        .route("/healthz", get(|| async { "ok" }))
+    let internal = openapi_document()?;
+    let docs = Arc::new(ApiDocs::new(&internal)?);
+    let (router, runtime_openapi) = openapi_router().split_for_parts();
+    let runtime_openapi = openapi::finalize(runtime_openapi)?;
+    debug_assert_eq!(
+        openapi::canonical_json(&internal)?,
+        openapi::canonical_json(&runtime_openapi)?,
+        "runtime router and exported OpenAPI contract diverged"
+    );
+    let app = router
+        .layer(Extension(docs))
         .layer(middleware::from_fn_with_state(cfg.clone(), require_token))
         .layer(TraceLayer::new_for_http())
         .with_state(cfg.clone());
@@ -89,38 +123,189 @@ pub async fn run(cfg: Arc<WebConfig>) -> Result<()> {
     return Ok(());
 }
 
+fn openapi_router() -> OpenApiRouter<AppState> {
+    OpenApiRouter::new()
+        .routes(routes!(index))
+        .routes(routes!(status))
+        .routes(routes!(fetch))
+        .routes(routes!(ws_stats))
+        .routes(routes!(vendor))
+        .routes(routes!(docs_index))
+        .routes(routes!(docs_page))
+        .routes(routes!(proxy_pac))
+        .routes(routes!(healthz))
+        .routes(routes!(openapi_json))
+        .routes(routes!(api_docs_json))
+        .routes(routes!(api_docs_ui))
+        .routes(routes!(docs_api_ui))
+        .routes(routes!(internal_openapi_json))
+        .routes(routes!(internal_docs_api_ui))
+}
+
+pub fn openapi_document() -> Result<OpenApi> {
+    openapi::finalize(openapi_router().into_openapi())
+}
+
+pub fn export_openapi(scope: &str) -> Result<String> {
+    let internal = openapi_document()?;
+    let document = openapi::document_for_scope(&internal, scope)?;
+    return Ok(openapi::canonical_json(&document)?);
+}
+
+#[utoipa::path(
+    get,
+    path = "/healthz",
+    operation_id = "getTorDashboardHealth",
+    tag = "operations",
+    responses((status = 200, description = "Dashboard process liveness", body = String, content_type = "text/plain"))
+)]
+async fn healthz() -> &'static str {
+    "ok"
+}
+
+fn public_json_response(docs: SharedApiDocs) -> Response {
+    return (
+        [(header::CONTENT_TYPE, OPENAPI_CONTENT_TYPE)],
+        docs.public_json.clone(),
+    )
+        .into_response();
+}
+
+fn public_scalar_response(docs: SharedApiDocs) -> Response {
+    return (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        docs.public_scalar_html.clone(),
+    )
+        .into_response();
+}
+
+#[utoipa::path(
+    get,
+    path = "/openapi.json",
+    operation_id = "getTorPublicOpenApiDocument",
+    tag = "documentation",
+    responses((status = 200, description = "Fail-closed public OpenAPI 3.1 document", content_type = "application/vnd.oai.openapi+json;version=3.1"))
+)]
+async fn openapi_json(Extension(docs): Extension<SharedApiDocs>) -> Response {
+    public_json_response(docs)
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/docs.json",
+    operation_id = "getTorPublicOpenApiDocumentAlias",
+    tag = "documentation",
+    responses((status = 200, description = "Compatibility alias for the public OpenAPI document", content_type = "application/vnd.oai.openapi+json;version=3.1"))
+)]
+async fn api_docs_json(Extension(docs): Extension<SharedApiDocs>) -> Response {
+    public_json_response(docs)
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/docs",
+    operation_id = "getTorPublicApiReference",
+    tag = "documentation",
+    responses((status = 200, description = "Interactive Scalar reference", body = String, content_type = "text/html"))
+)]
+async fn api_docs_ui(Extension(docs): Extension<SharedApiDocs>) -> Response {
+    public_scalar_response(docs)
+}
+
+#[utoipa::path(
+    get,
+    path = "/docs/api",
+    operation_id = "getTorPublicApiReferenceAlias",
+    tag = "documentation",
+    responses((status = 200, description = "Compatibility alias for the Scalar reference", body = String, content_type = "text/html"))
+)]
+async fn docs_api_ui(Extension(docs): Extension<SharedApiDocs>) -> Response {
+    public_scalar_response(docs)
+}
+
+#[utoipa::path(
+    get,
+    path = "/internal/openapi.json",
+    operation_id = "getTorInternalOpenApiDocument",
+    tag = "documentation",
+    responses((status = 200, description = "Complete private OpenAPI 3.1 document", content_type = "application/vnd.oai.openapi+json;version=3.1")),
+    security(("ui_token" = []))
+)]
+async fn internal_openapi_json(Extension(docs): Extension<SharedApiDocs>) -> Response {
+    return (
+        [(header::CONTENT_TYPE, OPENAPI_CONTENT_TYPE)],
+        docs.internal_json.clone(),
+    )
+        .into_response();
+}
+
+#[utoipa::path(
+    get,
+    path = "/internal/docs/api",
+    operation_id = "getTorInternalApiReference",
+    tag = "documentation",
+    responses((status = 200, description = "Interactive private Scalar reference", body = String, content_type = "text/html")),
+    security(("ui_token" = []))
+)]
+async fn internal_docs_api_ui(Extension(docs): Extension<SharedApiDocs>) -> Response {
+    return (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        docs.internal_scalar_html.clone(),
+    )
+        .into_response();
+}
+
 /// Config + live counters as JSON, shared by `/api/status` and the WebSocket.
-fn status_value(cfg: &WebConfig) -> serde_json::Value {
+fn status_value(cfg: &WebConfig) -> StatusResponse {
     let s = cfg.stats.snapshot();
-    let relays: Vec<serde_json::Value> = cfg
+    let relays: Vec<RelayStatus> = cfg
         .directory
         .as_ref()
         .map(|d| {
             d.relays
                 .iter()
-                .map(|r| serde_json::json!({ "name": r.name, "addr": r.addr }))
+                .map(|r| RelayStatus {
+                    name: r.name.clone(),
+                    addr: r.addr.clone(),
+                })
                 .collect()
         })
         .unwrap_or_default();
-    return serde_json::json!({
-        "backend": cfg.connector.backend(),
-        "socks_listen": cfg.socks_listen,
-        "hops": cfg.hops,
-        "relay_count": relays.len(),
-        "relays": relays,
-        "circuits_built": s.circuits_built,
-        "circuits_failed": s.circuits_failed,
-        "circuits_active": s.circuits_active,
-    });
+    return StatusResponse {
+        backend: cfg.connector.backend().to_owned(),
+        socks_listen: cfg.socks_listen.clone(),
+        hops: cfg.hops,
+        relay_count: relays.len(),
+        relays,
+        circuits_built: s.circuits_built,
+        circuits_failed: s.circuits_failed,
+        circuits_active: s.circuits_active,
+    };
 }
 
-async fn status(State(cfg): State<AppState>) -> Json<serde_json::Value> {
+#[utoipa::path(
+    get,
+    path = "/api/status",
+    operation_id = "getTorDashboardStatus",
+    tag = "dashboard",
+    responses((status = 200, description = "Live dashboard status and relay inventory", body = StatusResponse)),
+    security(("ui_token" = []))
+)]
+async fn status(State(cfg): State<AppState>) -> Json<StatusResponse> {
     return Json(status_value(&cfg));
 }
 
 /// WebSocket that pushes the live counters to the dashboard grid every couple of
 /// seconds. The initial values are also server-rendered into the page, so the
 /// dashboard is correct even before the socket delivers its first frame.
+#[utoipa::path(
+    get,
+    path = "/ws/stats",
+    operation_id = "streamTorDashboardStats",
+    tag = "dashboard",
+    responses((status = 101, description = "WebSocket upgrade for live counters")),
+    security(("ui_token" = []))
+)]
 async fn ws_stats(
     State(cfg): State<AppState>,
     headers: HeaderMap,
@@ -157,7 +342,8 @@ fn same_origin(headers: &HeaderMap) -> bool {
 
 async fn stats_socket(mut socket: WebSocket, cfg: AppState) {
     loop {
-        let payload = status_value(&cfg).to_string();
+        let payload = serde_json::to_string(&status_value(&cfg))
+            .unwrap_or_else(|_| "{\"error\":\"status serialization failed\"}".to_owned());
         if socket.send(Message::Text(payload.into())).await.is_err() {
             break;
         }
@@ -165,6 +351,14 @@ async fn stats_socket(mut socket: WebSocket, cfg: AppState) {
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/",
+    operation_id = "getTorDashboard",
+    tag = "dashboard",
+    responses((status = 200, description = "Interactive Tor dashboard", body = String, content_type = "text/html")),
+    security(("ui_token" = []))
+)]
 async fn index(State(cfg): State<AppState>) -> Html<String> {
     let s = cfg.stats.snapshot();
     let relays: Vec<(String, String)> = cfg
@@ -254,10 +448,22 @@ async fn index(State(cfg): State<AppState>) -> Html<String> {
     return Html(markup.into_string());
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/fetch",
+    operation_id = "fetchThroughTorCircuit",
+    tag = "dashboard",
+    params(FetchQuery),
+    responses(
+        (status = 200, description = "Escaped htmx result fragment", body = String, content_type = "text/html"),
+        (status = 401, description = "Dashboard token missing or invalid", body = String, content_type = "text/plain")
+    ),
+    security(("ui_token" = []))
+)]
 async fn fetch(
     State(cfg): State<AppState>,
     headers: HeaderMap,
-    Query(q): Query<HashMap<String, String>>,
+    Query(q): Query<FetchQuery>,
 ) -> Html<String> {
     if !authorized(&cfg, &headers, &q) {
         return Html(
@@ -267,8 +473,8 @@ async fn fetch(
             .into_string(),
         );
     }
-    let url = match q.get("url") {
-        Some(u) if !u.is_empty() => u.clone(),
+    let url = match q.url.as_deref() {
+        Some(u) if !u.is_empty() => u.to_owned(),
         _ => return Html(render_fetch_error("missing ?url= parameter").into_string()),
     };
     let started = Instant::now();
@@ -327,12 +533,12 @@ fn render_fetch_error(message: &str) -> Markup {
 /// Whether a request may use the `/api/fetch` proxy primitive. Open when no
 /// `TOR_UI_TOKEN` is configured; otherwise the token must match (checked in
 /// constant time).
-fn authorized(cfg: &WebConfig, headers: &HeaderMap, q: &HashMap<String, String>) -> bool {
+fn authorized(cfg: &WebConfig, headers: &HeaderMap, q: &FetchQuery) -> bool {
     let expected = match &cfg.ui_token {
         None => return true,
         Some(t) => t,
     };
-    let provided = q.get("token").map(|s| s.as_str()).or_else(|| {
+    let provided = q.token.as_deref().or_else(|| {
         headers
             .get(header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
@@ -356,11 +562,21 @@ fn ct_str_eq(a: &str, b: &str) -> bool {
 /// `/api/status`, and `/ws/stats` to any unauthenticated client. `/docs`,
 /// `/proxy.pac`, `/vendor/*`, and `/healthz` carry nothing sensitive and stay
 /// open so navigation, the PAC file, the JS asset, and liveness probes work.
+fn requires_ui_token(path: &str) -> bool {
+    return matches!(
+        path,
+        "/" | "/api/status"
+            | "/ws/stats"
+            | "/api/fetch"
+            | "/internal/openapi.json"
+            | "/internal/docs/api"
+    );
+}
+
 async fn require_token(State(cfg): State<AppState>, req: Request, next: Next) -> Response {
     if let Some(expected) = cfg.ui_token.as_deref() {
         let path = req.uri().path();
-        let sensitive = matches!(path, "/" | "/api/status" | "/ws/stats" | "/api/fetch");
-        if sensitive && !request_token_ok(&req, expected) {
+        if requires_ui_token(path) && !request_token_ok(&req, expected) {
             return (
                 StatusCode::UNAUTHORIZED,
                 "unauthorized: dashboard requires TOR_UI_TOKEN (?token= or Authorization: Bearer)",
@@ -591,6 +807,13 @@ fn split_http_response(raw: &[u8]) -> (String, u16, Vec<(String, String)>, Vec<u
     return (status_line, status_code, headers, body);
 }
 
+#[utoipa::path(
+    get,
+    path = "/docs",
+    operation_id = "listTorDocumentation",
+    tag = "documentation",
+    responses((status = 200, description = "Markdown documentation index", body = String, content_type = "text/html"))
+)]
 async fn docs_index(State(cfg): State<AppState>) -> Html<String> {
     let mut names = list_docs(&cfg.docs_dir);
     names.sort();
@@ -616,6 +839,18 @@ async fn docs_index(State(cfg): State<AppState>) -> Html<String> {
     return Html(markup.into_string());
 }
 
+#[utoipa::path(
+    get,
+    path = "/docs/{name}",
+    operation_id = "getTorDocumentationPage",
+    tag = "documentation",
+    params(("name" = String, Path, description = "Safe markdown document slug")),
+    responses(
+        (status = 200, description = "Rendered markdown documentation", body = String, content_type = "text/html"),
+        (status = 400, description = "Invalid document slug", body = String),
+        (status = 404, description = "Document not found", body = String)
+    )
+)]
 async fn docs_page(State(cfg): State<AppState>, AxPath(name): AxPath<String>) -> Response {
     // Sanitize: only a bare doc slug, no path traversal.
     if !is_doc_slug(&name) {
@@ -688,6 +923,13 @@ fn list_docs(dir: &std::path::Path) -> Vec<String> {
     return out;
 }
 
+#[utoipa::path(
+    get,
+    path = "/proxy.pac",
+    operation_id = "getTorProxyAutoConfig",
+    tag = "proxy",
+    responses((status = 200, description = "Browser proxy auto-configuration", body = String, content_type = "application/x-ns-proxy-autoconfig"))
+)]
 async fn proxy_pac(State(cfg): State<AppState>) -> Response {
     // The client's SOCKS listener may bind 0.0.0.0; browsers need a real host.
     let hostport = cfg.socks_listen.replace("0.0.0.0", "127.0.0.1");
@@ -703,6 +945,17 @@ async fn proxy_pac(State(cfg): State<AppState>) -> Response {
 
 /// Serve vendored front-end assets from the binary. A strict allowlist (no path
 /// component) means this cannot read anything but the files baked in here.
+#[utoipa::path(
+    get,
+    path = "/vendor/{file}",
+    operation_id = "getTorDashboardAsset",
+    tag = "assets",
+    params(("file" = String, Path, description = "Allowlisted embedded asset name")),
+    responses(
+        (status = 200, description = "Embedded dashboard asset", body = String),
+        (status = 404, description = "Asset not found", body = String)
+    )
+)]
 async fn vendor(AxPath(file): AxPath<String>) -> Response {
     return match file.as_str() {
         "htmx.min.js" => (

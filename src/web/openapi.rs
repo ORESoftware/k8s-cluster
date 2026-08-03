@@ -60,9 +60,8 @@ pub fn finalize(openapi: OpenApi) -> anyhow::Result<OpenApi> {
 
     let mut value = serde_json::to_value(openapi)?;
     value["openapi"] = serde_json::Value::String("3.1.0".to_owned());
-    value["jsonSchemaDialect"] = serde_json::Value::String(
-        "https://json-schema.org/draft/2020-12/schema".to_owned(),
-    );
+    value["jsonSchemaDialect"] =
+        serde_json::Value::String("https://json-schema.org/draft/2020-12/schema".to_owned());
     value["x-dd-contract-scope"] = serde_json::Value::String("internal".to_owned());
     Ok(serde_json::from_value(value)?)
 }
@@ -145,7 +144,10 @@ mod tests {
         let second = canonical_json(&internal).expect("second export");
         assert_eq!(first, second);
         assert!(first.ends_with('\n'));
-        assert_eq!(serde_json::from_str::<serde_json::Value>(&first).unwrap()["openapi"], "3.1.0");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&first).unwrap()["openapi"],
+            "3.1.0"
+        );
     }
 
     #[test]

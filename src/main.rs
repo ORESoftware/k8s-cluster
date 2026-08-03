@@ -98,6 +98,10 @@ async fn main() -> Result<()> {
         .nth(1)
         .or_else(|| std::env::var("TOR_ROLE").ok())
         .unwrap_or_default();
+    if let Some(scope) = role.strip_prefix("--export-openapi=") {
+        print!("{}", web::export_openapi(scope)?);
+        return Ok(());
+    }
     let telemetry_service = match role.as_str() {
         "client" => "tor-client",
         "relay" => "tor-relay",
