@@ -1,12 +1,14 @@
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ConnectionTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryOrder, QuerySelect, Set,
+    TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::entity::tenants;
 use crate::error::{AppError, AppResult};
+use crate::memberships::MembershipService;
 use crate::shard::Region;
 
 #[derive(Clone, Debug, Serialize)]
@@ -49,7 +51,36 @@ impl TenantService {
         Self { pool }
     }
 
+    /// Legacy/admin provisioning without an end-user owner. Network API tenant
+    /// creation uses [`Self::create_owned`] instead.
     pub async fn create(&self, input: CreateTenant) -> AppResult<Tenant> {
+        self.insert_on(&self.pool, input).await
+    }
+
+    /// Create a tenant and its first Shared Auth owner in one transaction. A
+    /// failure in either half rolls the whole operation back, so no network API
+    /// call can produce an ownerless billing tenant.
+    pub async fn create_owned(
+        &self,
+        input: CreateTenant,
+        owner_shared_user_id: &str,
+    ) -> AppResult<Tenant> {
+        let transaction = self.pool.begin().await?;
+        let tenant = self.insert_on(&transaction, input).await?;
+        MembershipService::create_owner_on(
+            &transaction,
+            tenant.id,
+            owner_shared_user_id,
+        )
+        .await?;
+        transaction.commit().await?;
+        Ok(tenant)
+    }
+
+    async fn insert_on<C>(&self, connection: &C, input: CreateTenant) -> AppResult<Tenant>
+    where
+        C: ConnectionTrait,
+    {
         // Validate region early so we fail fast on bad country/state codes.
         let _ = Region::from_codes(&input.country_code, input.us_state.as_deref())
             .map_err(|e| AppError::BadRequest(e.to_string()))?;
@@ -57,9 +88,6 @@ impl TenantService {
         let base_currency = input.base_currency.unwrap_or_else(|| "USD".into());
         let kms_key_id = input.kms_key_id.unwrap_or_else(|| "kms/local-dev".into());
 
-        // id / status / created_at / updated_at come from column defaults;
-        // RETURNING (exec_with_returning) hands the full row back with the
-        // citext slug cast to text via the entity's select_as.
         let model = tenants::Entity::insert(tenants::ActiveModel {
             slug: Set(input.slug),
             display_name: Set(input.display_name),
@@ -69,7 +97,7 @@ impl TenantService {
             kms_key_id: Set(kms_key_id),
             ..Default::default()
         })
-        .exec_with_returning(&self.pool)
+        .exec_with_returning(connection)
         .await?;
 
         Ok(model_to_tenant(model))
@@ -100,10 +128,6 @@ impl TenantService {
     }
 
     pub async fn by_slug(&self, slug: &str) -> AppResult<Tenant> {
-        // Raw SQL (SeaORM Statement): the `$1::citext` cast is load-bearing —
-        // comparing the citext column against a bare text parameter resolves
-        // to the case-SENSITIVE text `=` operator, silently breaking
-        // case-insensitive slug lookup.
         let row = self
             .pool
             .query_one(crate::db::stmt(
@@ -131,16 +155,16 @@ impl TenantService {
     }
 }
 
-fn model_to_tenant(m: tenants::Model) -> Tenant {
+fn model_to_tenant(model: tenants::Model) -> Tenant {
     Tenant {
-        id: m.id,
-        slug: m.slug,
-        display_name: m.display_name,
-        country_code: m.country_code,
-        us_state: m.us_state,
-        base_currency: m.base_currency,
-        kms_key_id: m.kms_key_id,
-        status: m.status,
-        created_at: m.created_at.with_timezone(&Utc),
+        id: model.id,
+        slug: model.slug,
+        display_name: model.display_name,
+        country_code: model.country_code,
+        us_state: model.us_state,
+        base_currency: model.base_currency,
+        kms_key_id: model.kms_key_id,
+        status: model.status,
+        created_at: model.created_at.with_timezone(&Utc),
     }
 }
