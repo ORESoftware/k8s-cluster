@@ -13,6 +13,10 @@ const paths = {
     repoRoot,
     'docs/production/managed-public-beta-service-contract-v0.1.md',
   ),
+  sloCatalog: resolve(
+    repoRoot,
+    'docs/production/managed-public-beta-slos.json',
+  ),
   matrix: resolve(
     repoRoot,
     'docs/security/production-safety-release-gate.json',
@@ -37,6 +41,7 @@ const paths = {
 
 const [
   contract,
+  sloCatalogText,
   matrixText,
   gateDoc,
   incidentRunbook,
@@ -44,6 +49,7 @@ const [
   evidenceTemplate,
 ] = await Promise.all([
   readFile(paths.contract, 'utf8'),
+  readFile(paths.sloCatalog, 'utf8'),
   readFile(paths.matrix, 'utf8'),
   readFile(paths.gateDoc, 'utf8'),
   readFile(paths.incidentRunbook, 'utf8'),
@@ -55,13 +61,17 @@ const errors = [];
 const warnings = [];
 const fail = (message) => errors.push(message);
 
-let matrix;
-try {
-  matrix = JSON.parse(matrixText);
-} catch (error) {
-  fail(`Gate matrix is not valid JSON: ${error.message}`);
-  matrix = {};
+function parseJson(name, text) {
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    fail(`${name} is not valid JSON: ${error.message}`);
+    return {};
+  }
 }
+
+const sloCatalog = parseJson('SLO catalog', sloCatalogText);
+const matrix = parseJson('Gate matrix', matrixText);
 
 function requireText(documentName, text, requiredValues) {
   for (const required of requiredValues) {
@@ -69,6 +79,14 @@ function requireText(documentName, text, requiredValues) {
       fail(`${documentName} is missing required text: ${required}`);
     }
   }
+}
+
+function requireNonEmptyString(object, field, label) {
+  if (typeof object?.[field] !== 'string' || object[field].trim().length === 0) {
+    fail(`${label}.${field} must be a non-empty string.`);
+    return false;
+  }
+  return true;
 }
 
 requireText('Service contract', contract, [
@@ -152,8 +170,212 @@ for (const sloId of requiredSloIds) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Machine-readable SLO contract.
+// ---------------------------------------------------------------------------
+
+if (sloCatalog.schema_version !== 1) {
+  fail(
+    `Expected SLO catalog schema_version 1, received ${String(sloCatalog.schema_version)}.`,
+  );
+}
+if (sloCatalog.contract_issue !== 'DEN-1390') {
+  fail(
+    `Expected SLO catalog contract_issue DEN-1390, received ${String(sloCatalog.contract_issue)}.`,
+  );
+}
+
+const allowedSourceStatuses = new Set(sloCatalog.allowed_source_statuses ?? []);
+for (const status of ['specified', 'instrumented', 'queryable', 'measured']) {
+  if (!allowedSourceStatuses.has(status)) {
+    fail(`SLO allowed_source_statuses is missing ${status}.`);
+  }
+}
+
+const allowedGroupingLabels = new Set(
+  sloCatalog.label_policy?.allowed_grouping_labels ?? [],
+);
+const forbiddenCustomerLabels = new Set(
+  sloCatalog.label_policy?.forbidden_customer_labels ?? [],
+);
+if (allowedGroupingLabels.size === 0) {
+  fail('SLO label policy must declare allowed_grouping_labels.');
+}
+if (forbiddenCustomerLabels.size === 0) {
+  fail('SLO label policy must declare forbidden_customer_labels.');
+}
+for (const label of allowedGroupingLabels) {
+  if (forbiddenCustomerLabels.has(label)) {
+    fail(`SLO label ${label} cannot be both allowed and forbidden.`);
+  }
+}
+
+const slos = Array.isArray(sloCatalog.slos) ? sloCatalog.slos : [];
+if (slos.length !== requiredSloIds.length) {
+  fail(
+    `Expected exactly ${requiredSloIds.length} SLO catalog entries; found ${slos.length}.`,
+  );
+}
+
+const seenSloIds = new Set();
+const sloStatusCounts = new Map();
+const requiredSloFields = [
+  'id',
+  'name',
+  'objective',
+  'source_type',
+  'source_status',
+  'source_series',
+  'objective_queries',
+  'alert_queries',
+  'owner',
+  'review_cadence',
+  'blocking_issues',
+  'evidence',
+];
+
+for (const [index, slo] of slos.entries()) {
+  const label = slo?.id || `SLO row ${index + 1}`;
+  for (const field of requiredSloFields) {
+    if (!(field in (slo ?? {}))) {
+      fail(`${label} is missing field ${field}.`);
+    }
+  }
+  for (const field of [
+    'id',
+    'name',
+    'objective',
+    'source_type',
+    'source_status',
+    'owner',
+    'review_cadence',
+  ]) {
+    requireNonEmptyString(slo, field, label);
+  }
+
+  if (!requiredSloIds.includes(slo.id)) {
+    fail(`${label} is not one of the contract's required SLO IDs.`);
+  }
+  if (seenSloIds.has(slo.id)) {
+    fail(`Duplicate SLO catalog id ${slo.id}.`);
+  }
+  seenSloIds.add(slo.id);
+
+  if (!allowedSourceStatuses.has(slo.source_status)) {
+    fail(`${label} uses unsupported source_status ${String(slo.source_status)}.`);
+  }
+  sloStatusCounts.set(
+    slo.source_status,
+    (sloStatusCounts.get(slo.source_status) ?? 0) + 1,
+  );
+
+  if (!Array.isArray(slo.source_series) || slo.source_series.length === 0) {
+    fail(`${label}.source_series must be a non-empty array.`);
+  } else {
+    const seenSeries = new Set();
+    for (const [seriesIndex, series] of slo.source_series.entries()) {
+      const seriesLabel = `${label}.source_series[${seriesIndex}]`;
+      for (const field of ['name', 'type', 'producer', 'eligibility']) {
+        requireNonEmptyString(series, field, seriesLabel);
+      }
+      if (seenSeries.has(series.name)) {
+        fail(`${label} repeats source series ${series.name}.`);
+      }
+      seenSeries.add(series.name);
+      if (
+        !Array.isArray(series.required_labels) ||
+        series.required_labels.length === 0
+      ) {
+        fail(`${seriesLabel}.required_labels must be a non-empty array.`);
+      } else {
+        for (const metricLabel of series.required_labels) {
+          if (!allowedGroupingLabels.has(metricLabel)) {
+            fail(
+              `${seriesLabel} uses undeclared/high-cardinality label ${String(metricLabel)}.`,
+            );
+          }
+          if (forbiddenCustomerLabels.has(metricLabel)) {
+            fail(`${seriesLabel} uses forbidden customer label ${metricLabel}.`);
+          }
+        }
+      }
+    }
+  }
+
+  if (!Array.isArray(slo.objective_queries) || slo.objective_queries.length === 0) {
+    fail(`${label}.objective_queries must be a non-empty array.`);
+  } else {
+    for (const [queryIndex, query] of slo.objective_queries.entries()) {
+      const queryLabel = `${label}.objective_queries[${queryIndex}]`;
+      for (const field of ['name', 'language', 'expression', 'pass_condition']) {
+        requireNonEmptyString(query, field, queryLabel);
+      }
+      if (!['promql', 'sql'].includes(query.language)) {
+        fail(`${queryLabel}.language must be promql or sql.`);
+      }
+    }
+  }
+
+  if (!Array.isArray(slo.alert_queries) || slo.alert_queries.length === 0) {
+    fail(`${label}.alert_queries must be a non-empty array.`);
+  } else {
+    for (const [alertIndex, alert] of slo.alert_queries.entries()) {
+      const alertLabel = `${label}.alert_queries[${alertIndex}]`;
+      for (const field of ['name', 'severity', 'for', 'expression']) {
+        requireNonEmptyString(alert, field, alertLabel);
+      }
+      if (!['warning', 'critical'].includes(alert.severity)) {
+        fail(`${alertLabel}.severity must be warning or critical.`);
+      }
+      if (!/^\d+(ms|s|m|h|d)$/.test(alert.for ?? '')) {
+        fail(`${alertLabel}.for must be a duration such as 0m, 5m, or 1h.`);
+      }
+    }
+  }
+
+  if (!Array.isArray(slo.blocking_issues) || slo.blocking_issues.length === 0) {
+    fail(`${label}.blocking_issues must be a non-empty array.`);
+  } else {
+    for (const issue of slo.blocking_issues) {
+      if (!/^DEN-\d+$/.test(issue)) {
+        fail(`${label} has malformed blocking issue ${String(issue)}.`);
+      }
+    }
+  }
+
+  if (!Array.isArray(slo.evidence)) {
+    fail(`${label}.evidence must be an array.`);
+  }
+
+  if (slo.source_status === 'measured' && slo.evidence?.length === 0) {
+    fail(`${label} is measured but has no exact-candidate evidence.`);
+  }
+  if (requirePass && slo.source_status !== 'measured') {
+    fail(`${label} source_status is ${slo.source_status}; certification requires measured.`);
+  }
+  if (requirePass && slo.evidence?.length === 0) {
+    fail(`${label} has no exact-candidate measurement evidence.`);
+  }
+}
+
+for (const requiredSloId of requiredSloIds) {
+  if (!seenSloIds.has(requiredSloId)) {
+    fail(`SLO catalog is missing ${requiredSloId}.`);
+  }
+}
+
+if (!requirePass && (sloStatusCounts.get('measured') ?? 0) === 0) {
+  warnings.push(
+    'No SLO sources are measured yet. The query contracts are defined, but exact-candidate telemetry evidence is still required.',
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Machine-readable adversarial safety gate.
+// ---------------------------------------------------------------------------
+
 if (matrix.schema_version !== 1) {
-  fail(`Expected schema_version 1, received ${String(matrix.schema_version)}.`);
+  fail(`Expected gate schema_version 1, received ${String(matrix.schema_version)}.`);
 }
 if (matrix.gate_issue !== 'DEN-1391') {
   fail(`Expected gate_issue DEN-1391, received ${String(matrix.gate_issue)}.`);
@@ -196,6 +418,10 @@ for (const invariant of [
     fail(`automatic_no_go_invariants is missing ${invariant}.`);
   }
 }
+const declaredInvariants = new Set([
+  ...automaticNoGo,
+  ...(matrix.waivable_invariants ?? []),
+]);
 
 const tests = Array.isArray(matrix.tests) ? matrix.tests : [];
 if (tests.length < 20) {
@@ -253,7 +479,7 @@ for (const [index, row] of tests.entries()) {
   }
   statusCounts.set(row.status, (statusCounts.get(row.status) ?? 0) + 1);
 
-  if (!automaticNoGo.has(row.invariant)) {
+  if (!declaredInvariants.has(row.invariant)) {
     fail(`${label} uses undeclared invariant ${row.invariant}.`);
   }
 
@@ -342,22 +568,26 @@ for (const mustReference of [
 
 if (!requirePass && (statusCounts.get('passed') ?? 0) === 0) {
   warnings.push(
-    'No rows are passed yet. Structural validation is green, but the release gate remains open and --require-pass will fail.',
+    'No safety rows are passed yet. Structural validation is green, but the release gate remains open and --require-pass will fail.',
   );
 }
 
 console.log(
+  `Validated ${slos.length} SLO definitions; source states: ${[...sloStatusCounts.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([status, count]) => `${status}=${count}`)
+    .join(', ') || 'none'}.`,
+);
+console.log(
   `Validated ${tests.length} production-gate rows across ${coveredRoutes.size}/${requiredRouteClasses.size} required route classes.`,
 );
 console.log(
-  `Validated ${requiredSloIds.length} SLO IDs plus the incident, communication, and evidence controls.`,
-);
-console.log(
-  `Statuses: ${[...statusCounts.entries()]
+  `Safety statuses: ${[...statusCounts.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([status, count]) => `${status}=${count}`)
     .join(', ') || 'none'}`,
 );
+console.log('Validated the incident, communication, and evidence controls.');
 
 for (const warning of warnings) {
   console.warn(`WARN: ${warning}`);
@@ -372,7 +602,7 @@ if (errors.length > 0) {
 } else {
   console.log(
     requirePass
-      ? 'Production release gate is evidence-complete.'
-      : 'Production contract, operations controls, and gate schema are structurally valid.',
+      ? 'Production release gate and exact-candidate SLO evidence are complete.'
+      : 'Production contract, SLO catalog, operations controls, and gate schema are structurally valid.',
   );
 }
