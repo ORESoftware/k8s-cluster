@@ -1,0 +1,44 @@
+name: Zed cloud observability contract
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - remote/argocd/apps/zed.applications.yaml
+      - remote/argocd/clusters/aws/**
+      - remote/argocd/clusters/hetzner/**
+      - remote/argocd/observability/**
+      - remote/argocd/projects/zed.*.yaml
+      - remote/tests/general/zed-cloud-observability-contract.test.mjs
+      - .github/workflows/zed-cloud-observability-contract.yml
+  pull_request:
+    paths:
+      - remote/argocd/apps/zed.applications.yaml
+      - remote/argocd/clusters/aws/**
+      - remote/argocd/clusters/hetzner/**
+      - remote/argocd/observability/**
+      - remote/argocd/projects/zed.*.yaml
+      - remote/tests/general/zed-cloud-observability-contract.test.mjs
+      - .github/workflows/zed-cloud-observability-contract.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zed-cloud-observability-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the exact source without retained credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Validate AWS Hetzner Zed and telemetry contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test remote/tests/general/zed-cloud-observability-contract.test.mjs
