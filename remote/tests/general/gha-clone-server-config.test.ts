@@ -7,20 +7,20 @@ const root = join(import.meta.dirname, '../../..');
 const read = (path: string) => readFileSync(join(root, path), 'utf8');
 
 const deploymentPath =
-  'argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml';
+  'remote/argocd/dd-next-runtime/dd-gha-clone-server.deployment.yaml';
 const configMapPath =
-  'argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml';
+  'remote/argocd/dd-next-runtime/dd-gha-clone-server.configmap.yaml';
 const secretPath =
-  'argocd/dd-next-runtime/dd-gha-clone-server.externalsecret.yaml';
+  'remote/argocd/dd-next-runtime/dd-gha-clone-server.externalsecret.yaml';
 const networkPath =
-  'argocd/dd-next-runtime/dd-gha-clone-server.networkpolicy.yaml';
+  'remote/argocd/dd-next-runtime/dd-gha-clone-server.networkpolicy.yaml';
 const servicePath =
-  'argocd/dd-next-runtime/dd-gha-clone-server.service.yaml';
-const kustomizationPath = 'argocd/dd-next-runtime/kustomization.yaml';
-const profilesPath = 'deployments/build-server-rs/src/profiles.rs';
-const plannerPath = 'deployments/gha-clone-server-rs/src/lib.rs';
-const serverPath = 'deployments/gha-clone-server-rs/src/main.rs';
-const workflowPath = '../.github/workflows/gha-clone-server.yml';
+  'remote/argocd/dd-next-runtime/dd-gha-clone-server.service.yaml';
+const kustomizationPath = 'remote/argocd/dd-next-runtime/kustomization.yaml';
+const profilesPath = 'remote/deployments/build-server-rs/src/profiles.rs';
+const plannerPath = 'remote/deployments/gha-clone-server-rs/src/lib.rs';
+const serverPath = 'remote/deployments/gha-clone-server-rs/src/main.rs';
+const workflowPath = '.github/workflows/gha-clone-server.yml';
 
 test('GHA continuity service is installed fail-closed with no cluster identity', () => {
   const deployment = read(deploymentPath);
@@ -107,6 +107,9 @@ test('planner and dispatcher preserve the fail-closed command boundary', () => {
   assert.match(planner, /secret-bearing env\/with values are unsupported/);
   assert.match(planner, /workflow job dependency graph contains a cycle/);
   assert.match(planner, /revision is not an exact 40-hex commit SHA/);
+  assert.match(planner, /workflow-level .* is unsupported by the independent lane/);
+  assert.match(planner, /working-directory.*unsupported by the fixed-profile executor/);
+  assert.match(planner, /non-Linux native execution is unavailable/);
   assert.match(server, /job_kind: "run-profile"/);
   assert.match(server, /profile,/);
   assert.doesNotMatch(server, /command:\s*&|script:\s*&|runner_image/);
